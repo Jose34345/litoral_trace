@@ -15,12 +15,14 @@ app = FastAPI(
 # --- MODIFICACIÓN EN api/main.py ---
 
 def get_db_engine():
-    # 1. INTENTO NUBE: Buscar en variables de entorno (Render)
+    # 1. INTENTO NUBE: Buscar en variables de entorno
     db_url = os.environ.get("DATABASE_URL")
     
     if db_url:
-        # Si existe en el sistema, usamos esa (Modo Nube)
-        return create_engine(db_url)
+        # 🧹 SANITIZACIÓN DE URGENCIA
+        # Esto elimina espacios vacíos al inicio/final y borra comillas si se colaron.
+        clean_url = db_url.strip().replace('"', '').replace("'", "")
+        return create_engine(clean_url)
     
     # 2. INTENTO LOCAL: Buscar archivo secrets.toml
     try:
@@ -32,7 +34,6 @@ def get_db_engine():
     except Exception as e:
         print(f"⚠️ No se encontró configuración local ni de nube: {e}")
         return None
-
 # --- ENDPOINTS ---
 
 @app.get("/")
