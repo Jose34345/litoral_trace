@@ -1,0 +1,29 @@
+name: Actualizador Vaca Muerta
+
+on:
+  schedule:
+    # Se ejecuta a las 00:00 del día 1 de cada mes
+    - cron: '0 0 1 * *'
+  workflow_dispatch: # Permite que lo ejecutes manualmente con un botón (para probar)
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Chequear repositorio
+      uses: actions/checkout@v3
+      
+    - name: Configurar Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+        
+    - name: Instalar librerías
+      run: |
+        pip install pandas sqlalchemy psycopg2-binary requests
+        
+    - name: Correr Script de Actualización
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      run: python update_data.py
