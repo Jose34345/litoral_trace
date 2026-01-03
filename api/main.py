@@ -1,26 +1,24 @@
 from fastapi import FastAPI, HTTPException
 import pandas as pd
 from sqlalchemy import create_engine, text
-import tomllib  # <--- CAMBIO 1: Usamos la librería nativa de Python 3.11+
+import tomllib  # <--- Librería nativa de Python 3.11+
 import os
 
 # --- CONFIGURACIÓN ---
 app = FastAPI(
     title="Vaca Muerta Intelligence API",
-    version="2.0.0",
+    version="2.1.0",
     description="Backend oficial conectado a Neon PostgreSQL"
 )
 
 # Función para obtener la conexión
-# --- MODIFICACIÓN EN api/main.py ---
-
 def get_db_engine():
     # 1. INTENTO NUBE: Buscar en variables de entorno
     db_url = os.environ.get("DATABASE_URL")
     
     if db_url:
         # 🧹 SANITIZACIÓN DE URGENCIA
-        # Esto elimina espacios vacíos al inicio/final y borra comillas si se colaron.
+        # Esto elimina espacios vacíos y comillas si se colaron en Render
         clean_url = db_url.strip().replace('"', '').replace("'", "")
         return create_engine(clean_url)
     
@@ -34,6 +32,7 @@ def get_db_engine():
     except Exception as e:
         print(f"⚠️ No se encontró configuración local ni de nube: {e}")
         return None
+
 # --- ENDPOINTS ---
 
 @app.get("/")
@@ -48,7 +47,6 @@ def get_empresas():
         raise HTTPException(status_code=500, detail="Error de conexión a Base de Datos")
     
     try:
-        # Usamos SQL directo para ser ultra rápidos
         with engine.connect() as conn:
             result = conn.execute(text("SELECT DISTINCT empresa FROM produccion ORDER BY empresa ASC"))
             empresas = [row[0] for row in result]
@@ -61,7 +59,6 @@ def get_produccion_empresa(empresa: str):
     """Obtiene volumen Y facturación histórica para una empresa."""
     engine = get_db_engine()
     
-    # QUERY MEJORADA: Incluye el cruce con precios_brent para calcular revenue
     query = text("""
         SELECT 
             p.fecha_data, 
@@ -77,7 +74,6 @@ def get_produccion_empresa(empresa: str):
     
     try:
         df = pd.read_sql(query, engine, params={"empresa": empresa})
-        # Pandas no serializa bien las fechas a JSON por defecto, así que las convertimos a string
         if not df.empty:
             df['fecha_data'] = df['fecha_data'].astype(str)
         return df.to_dict(orient="records")
@@ -86,20 +82,14 @@ def get_produccion_empresa(empresa: str):
     
 @app.get("/eficiencia/{empresa}")
 def get_eficiencia_empresa(empresa: str):
-    """
-    Devuelve métricas operativas críticas:
-    1. Producción de Agua (Costo de tratamiento).
-    2. GOR (Gas-Oil Ratio): Indicador de presión y madurez del reservorio.
-    """
+    """Devuelve métricas operativas críticas (Agua y GOR)."""
     engine = get_db_engine()
     
-    # Calculamos GOR como (Gas / Petróleo).
-    # Ojo: Evitamos dividir por cero usando NULLIF
     query = text("""
         SELECT 
             fecha_data,
             SUM(prod_agua) as agua_m3,
-            SUM(prod_gas) * 1000 as gas_m3, -- Ajuste de unidades si es necesario
+            SUM(prod_gas) * 1000 as gas_m3, 
             SUM(prod_pet) as petroleo_m3,
             CASE 
                 WHEN SUM(prod_pet) > 0 THEN (SUM(prod_gas) * 1000) / SUM(prod_pet) 
@@ -121,16 +111,10 @@ def get_eficiencia_empresa(empresa: str):
     
 @app.get("/curvas-tipo/{empresa}")
 def get_curvas_tipo(empresa: str):
-    """
-    Genera la Curva Tipo (Promedio de pozos) para comparar eficiencia.
-    Normaliza la producción por 'Mes N' desde el inicio del pozo.
-    """
+    """Genera la Curva Tipo (Promedio de pozos) normalizada."""
     engine = get_db_engine()
     
-    # Esta Query es Nivel Senior:
-    # 1. Detecta la fecha de inicio de cada pozo (min_fecha).
-    # 2. Calcula cuántos meses pasaron desde el inicio (mes_relativo).
-    # 3. Promedia la producción de TODOS los pozos para ese mes relativo.
+    # 🛡️ QUERY BLINDADA: Agregamos ::DATE para evitar errores de tipo
     query = text("""
         WITH inicio_pozos AS (
             SELECT idpozo, MIN(fecha_data) as fecha_inicio
@@ -143,9 +127,9 @@ def get_curvas_tipo(empresa: str):
                 p.idpozo,
                 p.prod_pet,
                 p.fecha_data,
-                -- Calculamos mes relativo: (AñoActual - AñoInicio)*12 + (MesActual - MesInicio)
-                ((EXTRACT(YEAR FROM p.fecha_data) - EXTRACT(YEAR FROM i.fecha_inicio)) * 12 + 
-                 (EXTRACT(MONTH FROM p.fecha_data) - EXTRACT(MONTH FROM i.fecha_inicio))) as mes_n
+                -- Calculamos mes relativo asegurando que sean FECHAS (::DATE)
+                ((EXTRACT(YEAR FROM p.fecha_data::DATE) - EXTRACT(YEAR FROM i.fecha_inicio::DATE)) * 12 + 
+                 (EXTRACT(MONTH FROM p.fecha_data::DATE) - EXTRACT(MONTH FROM i.fecha_inicio::DATE))) as mes_n
             FROM produccion p
             JOIN inicio_pozos i ON p.idpozo = i.idpozo
             WHERE p.empresa = :empresa
@@ -155,7 +139,7 @@ def get_curvas_tipo(empresa: str):
             AVG(prod_pet) as promedio_petroleo,
             COUNT(DISTINCT idpozo) as cantidad_pozos
         FROM produccion_normalizada
-        WHERE mes_n <= 24 -- Miramos solo los primeros 2 años
+        WHERE mes_n <= 24 
         GROUP BY mes_n
         ORDER BY mes_n ASC;
     """)
@@ -164,5 +148,4 @@ def get_curvas_tipo(empresa: str):
         df = pd.read_sql(query, engine, params={"empresa": empresa})
         return df.to_dict(orient="records")
     except Exception as e:
-        return {"error": str(e)} 
-    
+        return {"error": str(e)}
