@@ -7,7 +7,8 @@ from ml_forecasting import predecir_produccion
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Vaca Muerta Intelligence", page_icon="🛢️", layout="wide")
-API_URL = "http://127.0.0.1:8000"  # Dirección de tu API local
+//API_URL = "http://127.0.0.1:8000"  # Dirección de tu API local
+API_URL = "https://vaca-muerta-intel.onrender.com"
 
 # --- FUNCIONES DE CONEXIÓN A LA API ---
 @st.cache_data(ttl=300)
