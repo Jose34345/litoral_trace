@@ -52,6 +52,15 @@ def get_eficiencia_empresa(empresa):
         return pd.DataFrame()
     except:
         return pd.DataFrame()
+    
+def get_curva_tipo(empresa):
+    try:
+        response = requests.get(f"{API_URL}/curvas-tipo/{empresa}")
+        if response.status_code == 200:
+            return pd.DataFrame(response.json())
+        return pd.DataFrame()
+    except:
+        return pd.DataFrame()
 
 # --- INTERFAZ ---
 st.title("🛢️ Vaca Muerta Intelligence 2.0")
@@ -88,7 +97,7 @@ if lista_empresas:
             
             st.markdown("---")
             
-            tab1, tab2, tab3, tab4 = st.tabs(["📊 Producción", "💰 Finanzas", "🔮 Predicción IA", "⚙️ Ingeniería"])            
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Producción", "💰 Finanzas", "🔮 Predicción IA", "⚙️ Ingeniería", "📉 Benchmarking"])            
             
             with tab1:
                 fig = px.line(df_view, x='fecha', y='petroleo', color='empresa', title="Curva de Producción")
@@ -151,6 +160,23 @@ if lista_empresas:
                                         title="Evolución del GOR (m³ gas / m³ oil)")
                         st.plotly_chart(fig_gor, use_container_width=True)
                         st.info("💡 Insight: Un aumento rápido del GOR puede indicar despresurización del pozo.")
+            with tab5:
+                st.subheader("Curvas Tipo (Eficiencia de Pozos)")
+                st.markdown("Comparativa de rendimiento promedio por pozo en sus primeros 24 meses de vida.")
+                
+                df_curves = pd.DataFrame()
+                for emp in empresas_sel:
+                    df_temp = get_curva_tipo(emp)
+                    if not df_temp.empty:
+                        df_temp['empresa'] = emp
+                        df_curves = pd.concat([df_curves, df_temp])
+                
+                if not df_curves.empty:
+                    fig_type = px.line(df_curves, x='mes_n', y='promedio_petroleo', color='empresa',
+                                     title="Curva de Declino Promedio (Type Curve)",
+                                     labels={'mes_n': 'Meses desde inicio de perforación', 'promedio_petroleo': 'Producción Promedio (m³)'})
+                    st.plotly_chart(fig_type, use_container_width=True)
+                    st.info("🧠 Análisis: Quien tenga la curva más alta al principio tiene mejores técnicas de fractura (Fracking). Quien tenga la curva más plana, tiene mejor mantenimiento de presión.")
     else:
         st.info("Selecciona al menos una operadora para conectar al servidor.")
 else:

@@ -118,3 +118,50 @@ def get_eficiencia_empresa(empresa: str):
         return df.to_dict(orient="records")
     except Exception as e:
         return {"error": str(e)}
+    
+@app.get("/curvas-tipo/{empresa}")
+def get_curvas_tipo(empresa: str):
+    """
+    Genera la Curva Tipo (Promedio de pozos) para comparar eficiencia.
+    Normaliza la producción por 'Mes N' desde el inicio del pozo.
+    """
+    engine = get_db_engine()
+    
+    # Esta Query es Nivel Senior:
+    # 1. Detecta la fecha de inicio de cada pozo (min_fecha).
+    # 2. Calcula cuántos meses pasaron desde el inicio (mes_relativo).
+    # 3. Promedia la producción de TODOS los pozos para ese mes relativo.
+    query = text("""
+        WITH inicio_pozos AS (
+            SELECT idpozo, MIN(fecha_data) as fecha_inicio
+            FROM produccion
+            WHERE empresa = :empresa
+            GROUP BY idpozo
+        ),
+        produccion_normalizada AS (
+            SELECT 
+                p.idpozo,
+                p.prod_pet,
+                p.fecha_data,
+                -- Calculamos mes relativo: (AñoActual - AñoInicio)*12 + (MesActual - MesInicio)
+                ((EXTRACT(YEAR FROM p.fecha_data) - EXTRACT(YEAR FROM i.fecha_inicio)) * 12 + 
+                 (EXTRACT(MONTH FROM p.fecha_data) - EXTRACT(MONTH FROM i.fecha_inicio))) as mes_n
+            FROM produccion p
+            JOIN inicio_pozos i ON p.idpozo = i.idpozo
+            WHERE p.empresa = :empresa
+        )
+        SELECT 
+            mes_n,
+            AVG(prod_pet) as promedio_petroleo,
+            COUNT(DISTINCT idpozo) as cantidad_pozos
+        FROM produccion_normalizada
+        WHERE mes_n <= 24 -- Miramos solo los primeros 2 años
+        GROUP BY mes_n
+        ORDER BY mes_n ASC;
+    """)
+    
+    try:
+        df = pd.read_sql(query, engine, params={"empresa": empresa})
+        return df.to_dict(orient="records")
+    except Exception as e:
+        return {"error": str(e)}
