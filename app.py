@@ -155,3 +155,7 @@ if lista_empresas:
         st.info("Selecciona al menos una operadora para conectar al servidor.")
 else:
     st.error("No se pudo obtener la lista de empresas. Verifica que 'api/main.py' esté corriendo.")
+
+
+
+# Forzando actualizacion de la app
