@@ -1,9 +1,9 @@
 [![Actualizador Vaca Muerta](https://github.com/Jose34345/vaca-muerta-intel/actions/workflows/mensual.yml/badge.svg)](https://github.com/Jose34345/vaca-muerta-intel/actions/workflows/mensual.yml)
 
-Vaca Muerta Intelligence Platform
+Vaca Muerta Intelligence Platform:
 Plataforma de Inteligencia de Negocios y Data Science para la formación Vaca Muerta. Este proyecto implementa una arquitectura moderna de microservicios distribuida para analizar, visualizar y predecir la producción de petróleo y gas en tiempo real.
 
-Arquitectura del Sistema
+Arquitectura del Sistema:
 El sistema sigue una arquitectura desacoplada y escalable ("Industrial Standard"):
 
 Frontend (BI): Streamlit Cloud (San Francisco) - Dashboard Interactivo.
@@ -62,3 +62,4 @@ Data Science,Pandas / Scikit-Learn,Procesamiento y ML
 Dashboard Público: https://vaca-muerta-intel-dcsymyjlcarmudqb8jmnyu.streamlit.app/
 
 Desarrollado por Jose David Lezcano
+
