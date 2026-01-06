@@ -58,6 +58,16 @@ if st.session_state["authentication_status"]:
     API_URL = "https://vaca-muerta-intel.onrender.com"
 
     # --- FUNCIONES DE CONEXIÓN ---
+
+    def get_ducs_data():
+        try:
+            response = requests.get(f"{API_URL}/ducs")
+            if response.status_code == 200:
+                return pd.DataFrame(response.json())
+            return pd.DataFrame()
+        except:
+            return pd.DataFrame()
+
     @st.cache_data(ttl=300)
     def get_lista_empresas():
         try:
@@ -67,7 +77,7 @@ if st.session_state["authentication_status"]:
             return []
         except:
             return []
-
+    
     def get_data_empresa(empresa):
         try:
             response = requests.get(f"{API_URL}/produccion/{empresa}")
@@ -253,10 +263,43 @@ if st.session_state["authentication_status"]:
                             st.plotly_chart(fig_gor, use_container_width=True)
 
                 with tab5:
-                    st.subheader("Curvas Tipo (Type Curves)")
-                    st.caption("Comparativa de eficiencia inicial de pozos (Normalizado al Mes 0)")
+                    st.header("Benchmarking Operativo")
+                    
+                    # --- SECCIÓN 1: DUC INVENTORY (NUEVO) ---
+                    st.markdown("### 🚜 DUC Inventory (Drilled but Uncompleted)")
+                    st.caption("Pozos perforados desde 2023 que aún no han entrado en producción. Indica stock de trabajo futuro.")
+                    
+                    # Llamamos a la función que conecta con el endpoint /ducs
+                    df_ducs = get_ducs_data()
+                    
+                    if not df_ducs.empty:
+                        col_kpi, col_chart = st.columns([1, 3])
+                        
+                        with col_kpi:
+                            # KPI destacado a la izquierda
+                            total_ducs = df_ducs['ducs'].sum()
+                            st.metric("Total DUCs (Vaca Muerta)", f"{total_ducs}", delta="Stock Disponible")
+                            st.info("💡 Un nivel alto de DUCs suele indicar alta demanda de sets de fractura (Cuello de botella).")
+                        
+                        with col_chart:
+                            # Gráfico de barras a la derecha
+                            fig_duc = px.bar(df_ducs, x='empresa', y='ducs', text='ducs', 
+                                             title="Stock de DUCs por Operadora (Top 10)",
+                                             color='ducs', color_continuous_scale='Oranges')
+                            fig_duc.update_traces(textposition='outside')
+                            fig_duc.update_layout(xaxis_title="Operadora", yaxis_title="Cantidad de Pozos")
+                            st.plotly_chart(fig_duc, use_container_width=True)
+                    else:
+                        st.warning("⚠️ No se encontraron datos de DUCs. Asegurate de haber corrido el ETL actualizado (tabla 'padron').")
+                    
+                    st.divider() # Línea separadora visual
+                    
+                    # --- SECCIÓN 2: CURVAS TIPO (EXISTENTE) ---
+                    st.markdown("### 📉 Curvas Tipo (Type Curves)")
+                    st.caption("Comparativa de eficiencia inicial de pozos (Normalizado al Mes 0).")
                     
                     df_curves = pd.DataFrame()
+                    # Iteramos sobre las empresas seleccionadas en el sidebar
                     for emp in empresas_sel:
                         df_temp = get_curva_tipo(emp)
                         if not df_temp.empty:
@@ -265,10 +308,11 @@ if st.session_state["authentication_status"]:
                     
                     if not df_curves.empty:
                         fig_type = px.line(df_curves, x='mes_n', y='promedio_petroleo', color='empresa',
-                                         title="Rendimiento Promedio por Pozo", markers=True)
-                        fig_type.update_layout(xaxis_title="Meses desde inicio perforación", yaxis_title="Producción (m³)")
+                                         title="Rendimiento Promedio por Pozo (Primeros 24 Meses)", markers=True)
+                        fig_type.update_layout(xaxis_title="Meses desde inicio perforación", yaxis_title="Producción Promedio (m³)")
                         st.plotly_chart(fig_type, use_container_width=True)
-
+                    else:
+                        st.info("Selecciona más operadoras para comparar sus curvas de declino.")
         else:
             st.info("👈 Selecciona una o más operadoras en el panel lateral para comenzar.")
     else:

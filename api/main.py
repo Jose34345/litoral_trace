@@ -79,7 +79,43 @@ def get_produccion_empresa(empresa: str):
         return df.to_dict(orient="records")
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/ducs")
+def get_ducs_inventory():
+    """
+    Calcula el inventario de DUCs (Drilled but Uncompleted).
+    Lógica: Pozos con fecha_fin_perforacion NOT NULL y fecha_inicio_produccion NULL.
+    """
+    engine = get_db_engine()
     
+    # Query Inteligente:
+    # Filtramos pozos perforados desde 2023 para que sea "inventario reciente" 
+    # y no basura de hace 20 años abandonada.
+    query = text("""
+        SELECT 
+            empresa,
+            COUNT(*) as duc_count
+        FROM padron
+        WHERE fecha_terminacion_perforacion >= '2023-01-01'
+          AND (fecha_inicio_produccion IS NULL OR fecha_inicio_produccion > CURRENT_DATE)
+        GROUP BY empresa
+        HAVING COUNT(*) > 0
+        ORDER BY duc_count DESC
+        LIMIT 10
+    """)
+    
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            # Formateamos para el frontend
+            data = [{"empresa": row[0], "ducs": row[1]} for row in result]
+            
+        return data
+    except Exception as e:
+        # Si la tabla padron no existe aun (porque no corrió el ETL), devolvemos lista vacía
+        print(f"Error DUCs: {e}")
+        return []
+
 @app.get("/eficiencia/{empresa}")
 def get_eficiencia_empresa(empresa: str):
     """Devuelve métricas operativas críticas (Agua y GOR)."""
