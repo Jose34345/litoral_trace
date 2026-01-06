@@ -54,20 +54,10 @@ if st.session_state["authentication_status"]:
         authenticator.logout('Cerrar Sesión', 'sidebar')
         st.divider()
 
-    # --- INICIO DE LA APP (Toda la lógica va indentada aquí) ---
+    # --- INICIO DE LA APP ---
     API_URL = "https://vaca-muerta-intel.onrender.com"
 
     # --- FUNCIONES DE CONEXIÓN ---
-
-    def get_ducs_data():
-        try:
-            response = requests.get(f"{API_URL}/ducs")
-            if response.status_code == 200:
-                return pd.DataFrame(response.json())
-            return pd.DataFrame()
-        except:
-            return pd.DataFrame()
-
     @st.cache_data(ttl=300)
     def get_lista_empresas():
         try:
@@ -77,7 +67,7 @@ if st.session_state["authentication_status"]:
             return []
         except:
             return []
-    
+
     def get_data_empresa(empresa):
         try:
             response = requests.get(f"{API_URL}/produccion/{empresa}")
@@ -90,12 +80,10 @@ if st.session_state["authentication_status"]:
             return pd.DataFrame()
         except:
             return pd.DataFrame()
-    
+
     @st.cache_data
     def convert_df(df):
-        """
-        Convierte un DataFrame a CSV optimizado para Excel (utf-8).
-        """
+        """Convierte DataFrame a CSV para descarga."""
         return df.to_csv(index=False).encode('utf-8')
 
     def get_eficiencia_empresa(empresa):
@@ -120,13 +108,35 @@ if st.session_state["authentication_status"]:
         except:
             return pd.DataFrame()
 
+    @st.cache_data(ttl=3600)
+    def get_ducs_data():
+        """Obtiene inventario de DUCs."""
+        try:
+            response = requests.get(f"{API_URL}/ducs")
+            if response.status_code == 200:
+                return pd.DataFrame(response.json())
+            return pd.DataFrame()
+        except:
+            return pd.DataFrame()
+
+    @st.cache_data(ttl=3600)
+    def get_venteo_data():
+        """Obtiene datos de Gas Flaring (ESG)."""
+        try:
+            response = requests.get(f"{API_URL}/venteo")
+            if response.status_code == 200:
+                return pd.DataFrame(response.json())
+            return pd.DataFrame()
+        except:
+            return pd.DataFrame()
+
     # --- HEADER PRINCIPAL ---
     st.title("⚡ Vaca Muerta Intelligence 2.0")
     st.markdown("Plataforma de análisis estratégico en tiempo real. **Backend:** Online 🟢")
     st.markdown("---")
 
-    # --- SIDEBAR MEJORADO (UX) ---
-    st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2103/2103633.png", width=50) # Icono de pozo
+    # --- SIDEBAR ---
+    st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2103/2103633.png", width=50)
     st.sidebar.title("Panel de Control")
 
     lista_empresas = get_lista_empresas()
@@ -155,7 +165,7 @@ if st.session_state["authentication_status"]:
         empresas_sel = list(set(selected_majors + selected_others))
 
         if empresas_sel:
-            # --- CARGA DE DATOS ---
+            # --- CARGA DE DATOS PRINCIPALES ---
             all_data = []
             for emp in empresas_sel:
                 df_temp = get_data_empresa(emp)
@@ -180,13 +190,12 @@ if st.session_state["authentication_status"]:
                     "📊 Producción", "💰 Finanzas", "🔮 IA Predictiva", "⚙️ Ingeniería", "📉 Benchmarking"
                 ])
                 
-                # PESTAÑA 1: PRODUCCIÓN + DESCARGA
+                # PESTAÑA 1: PRODUCCIÓN
                 with tab1:
                     col_title, col_download = st.columns([4, 1])
                     with col_title:
                         st.subheader("Curva de Producción de Petróleo")
                     with col_download:
-                        # 📥 BOTÓN DE DESCARGA
                         csv = convert_df(df_view)
                         st.download_button(
                             label="📥 Descargar Data",
@@ -200,7 +209,7 @@ if st.session_state["authentication_status"]:
                                   color_discrete_sequence=px.colors.qualitative.Vivid)
                     st.plotly_chart(fig, use_container_width=True)
                 
-                # PESTAÑA 2: FINANZAS + DESCARGA
+                # PESTAÑA 2: FINANZAS
                 with tab2:
                     st.subheader("Ranking Financiero")
                     col_rank, col_pie = st.columns([2,1])
@@ -222,6 +231,7 @@ if st.session_state["authentication_status"]:
                         fig_pie = px.pie(df_rank, values='revenue_usd', names='empresa', hole=0.4)
                         st.plotly_chart(fig_pie, use_container_width=True)
 
+                # PESTAÑA 3: IA PREDICTIVA
                 with tab3:
                     st.subheader("Simulación de Escenarios Futuros")
                     c_sim1, c_sim2 = st.columns([1, 3])
@@ -241,10 +251,34 @@ if st.session_state["authentication_status"]:
                                 fig_ia = px.line(pred, x='fecha', y='prod_pet_pred', title=f"Proyección 12 Meses: {empresa_pred}")
                                 fig_ia.add_vline(x=pd.Timestamp.now().timestamp()*1000, line_dash="dash", annotation_text="Hoy")
                                 st.plotly_chart(fig_ia, use_container_width=True)
-                                
                                 st.success(f"💰 Revenue Proyectado (Próx. Año): **US$ {pred['revenue_proyectado'].sum()/1e6:.1f} Millones**")
 
+                # PESTAÑA 4: INGENIERÍA + ESG
                 with tab4:
+                    st.header("⚙️ Ingeniería & Sustentabilidad (ESG)")
+                    
+                    # 1. SECCIÓN DE VENTEO (NUEVO)
+                    st.subheader("🔥 Intensidad de Venteo (Gas Flaring)")
+                    st.caption("% del gas natural extraído que es quemado en antorcha.")
+                    
+                    df_venteo = get_venteo_data()
+                    
+                    if not df_venteo.empty:
+                        col_esg1, col_esg2 = st.columns([1, 3])
+                        with col_esg1:
+                            avg_venteo = df_venteo['ratio_venteo'].mean()
+                            st.metric("Promedio Vaca Muerta", f"{avg_venteo:.1f}%", delta="Objetivo < 1%", delta_color="inverse")
+                        with col_esg2:
+                            fig_venteo = px.bar(df_venteo, x='empresa', y='ratio_venteo',
+                                              title="Ranking de Intensidad de Venteo (%)",
+                                              color='ratio_venteo', color_continuous_scale='RdYlGn_r')
+                            st.plotly_chart(fig_venteo, use_container_width=True)
+                    else:
+                        st.info("Datos de venteo no disponibles.")
+
+                    st.divider()
+
+                    # 2. SECCIÓN AGUA Y GOR
                     df_ing = pd.DataFrame()
                     for emp in empresas_sel:
                         df_temp = get_eficiencia_empresa(emp)
@@ -262,44 +296,38 @@ if st.session_state["authentication_status"]:
                             fig_gor = px.line(df_ing, x='fecha', y='gor_promedio', color='empresa')
                             st.plotly_chart(fig_gor, use_container_width=True)
 
+                # PESTAÑA 5: BENCHMARKING
                 with tab5:
                     st.header("Benchmarking Operativo")
                     
-                    # --- SECCIÓN 1: DUC INVENTORY (NUEVO) ---
+                    # 1. SECCIÓN DUCs
                     st.markdown("### 🚜 DUC Inventory (Drilled but Uncompleted)")
-                    st.caption("Pozos perforados desde 2023 que aún no han entrado en producción. Indica stock de trabajo futuro.")
+                    st.caption("Pozos perforados desde 2023 que aún no han entrado en producción.")
                     
-                    # Llamamos a la función que conecta con el endpoint /ducs
                     df_ducs = get_ducs_data()
                     
                     if not df_ducs.empty:
                         col_kpi, col_chart = st.columns([1, 3])
-                        
                         with col_kpi:
-                            # KPI destacado a la izquierda
                             total_ducs = df_ducs['ducs'].sum()
-                            st.metric("Total DUCs (Vaca Muerta)", f"{total_ducs}", delta="Stock Disponible")
-                            st.info("💡 Un nivel alto de DUCs suele indicar alta demanda de sets de fractura (Cuello de botella).")
-                        
+                            st.metric("Total DUCs", f"{total_ducs}", delta="Stock Disponible")
+                            st.info("💡 Un nivel alto indica alta demanda de fractura.")
                         with col_chart:
-                            # Gráfico de barras a la derecha
                             fig_duc = px.bar(df_ducs, x='empresa', y='ducs', text='ducs', 
-                                             title="Stock de DUCs por Operadora (Top 10)",
+                                             title="Stock de DUCs por Operadora",
                                              color='ducs', color_continuous_scale='Oranges')
                             fig_duc.update_traces(textposition='outside')
-                            fig_duc.update_layout(xaxis_title="Operadora", yaxis_title="Cantidad de Pozos")
                             st.plotly_chart(fig_duc, use_container_width=True)
                     else:
-                        st.warning("⚠️ No se encontraron datos de DUCs. Asegurate de haber corrido el ETL actualizado (tabla 'padron').")
+                        st.warning("⚠️ No se encontraron datos de DUCs.")
                     
-                    st.divider() # Línea separadora visual
+                    st.divider()
                     
-                    # --- SECCIÓN 2: CURVAS TIPO (EXISTENTE) ---
+                    # 2. SECCIÓN CURVAS TIPO
                     st.markdown("### 📉 Curvas Tipo (Type Curves)")
-                    st.caption("Comparativa de eficiencia inicial de pozos (Normalizado al Mes 0).")
+                    st.caption("Comparativa de eficiencia inicial (Normalizado Mes 0).")
                     
                     df_curves = pd.DataFrame()
-                    # Iteramos sobre las empresas seleccionadas en el sidebar
                     for emp in empresas_sel:
                         df_temp = get_curva_tipo(emp)
                         if not df_temp.empty:
@@ -308,17 +336,14 @@ if st.session_state["authentication_status"]:
                     
                     if not df_curves.empty:
                         fig_type = px.line(df_curves, x='mes_n', y='promedio_petroleo', color='empresa',
-                                         title="Rendimiento Promedio por Pozo (Primeros 24 Meses)", markers=True)
-                        fig_type.update_layout(xaxis_title="Meses desde inicio perforación", yaxis_title="Producción Promedio (m³)")
+                                         title="Rendimiento Promedio por Pozo", markers=True)
                         st.plotly_chart(fig_type, use_container_width=True)
                     else:
-                        st.info("Selecciona más operadoras para comparar sus curvas de declino.")
+                        st.info("Selecciona más operadoras para comparar curvas.")
         else:
-            st.info("👈 Selecciona una o más operadoras en el panel lateral para comenzar.")
+            st.info("👈 Selecciona una o más operadoras en el panel lateral.")
     else:
         st.error("Error de conexión con el Servidor. Revisa el estado de Render.")
-
-# ... (Todo el código anterior sigue igual) ...
 
 elif st.session_state["authentication_status"] is False:
     st.error('❌ Usuario o contraseña incorrectos')
@@ -336,13 +361,13 @@ elif st.session_state["authentication_status"] is None:
         Esta es una plataforma privada de inteligencia de mercado para Vaca Muerta.
         
         **Incluye:**
-        *  Producción en tiempo real.
-        *  Modelado Financiero.
-        *  Curvas Tipo y Benchmarking.
+        * 📊 Producción en tiempo real.
+        * 💰 Modelado Financiero.
+        * 📉 Curvas Tipo y Benchmarking.
         """)
         
     with col_contact:
-        st.success(" **Solicitar Demo**")
+        st.success("🚀 **Solicitar Demo**")
         st.markdown("""
         Escríbenos para obtener un usuario de prueba por 7 días.
         

@@ -1,56 +1,75 @@
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 import os
 
-# --- URLS OFICIALES ---
-# Producción (Capítulo IV) - Datos Dinámicos
-URL_PRODUCCION = "http://datos.energia.gob.ar/dataset/c846e79c-02aa-4036-8086-39766ee99555/resource/4d7159c2-965a-4b95-a226-f7831f13b652/download/produccin-de-pozos-de-gas-y-petrleo-2024.csv"
-
-# Padrón de Pozos (Capítulo 0) - Datos Estáticos (Metadata: Fechas de perforación, ubicación, etc.)
-# Usamos el listado histórico completo o el más reciente disponible
-URL_PADRON = "http://datos.energia.gob.ar/dataset/c846e79c-02aa-4036-8086-39766ee99555/resource/20857c7b-ac58-4e0c-8438-2e06c496101c/download/listado-de-pozos-cargados-por-empresas-operadoras.csv"
+# --- URLS ---
+# ⚠️ IMPORTANTE: Pegá acá el link nuevo que encontraste
+URL_PADRON = "http://datos.energia.gob.ar/dataset/c846e79c-02aa-4036-8086-39766ee99555/resource/cbfa4d79-ffb3-4096-bab5-eb0dde9a8385/download/listado-de-pozos-cargados-por-empresas-operadoras.csv" 
 
 def run_update():
-    print("🚀 Iniciando actualización del Data Lake...")
+    print("🚀 Iniciando actualización INTELIGENTE...")
     
-    # 1. CONEXIÓN
-    db_url = os.environ.get("DATABASE_URL")
+    # 1. CONEXIÓN (Modo Manual para tu prueba local)
+    # db_url = os.environ.get("DATABASE_URL")
+    # 👇 DESCOMENTÁ ESTO Y PONÉ TU CLAVE PARA LA PRUEBA LOCAL
+    db_url = "postgresql://neondb_owner:npg_nxamLK5P6thM@ep-royal-snow-a488eu3z-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+    
     if not db_url:
-        raise ValueError("❌ Error: Falta DATABASE_URL")
-    
-    clean_url = db_url.strip().replace('"', '').replace("'", "")
-    engine = create_engine(clean_url)
+        raise ValueError("Falta la conexión a la Base de Datos")
+        
+    engine = create_engine(db_url)
     
     try:
-        # --- A. PROCESAR PADRÓN (Para DUCs) ---
-        print("⬇️ Descargando Padrón de Pozos...")
-        # Leemos solo columnas clave para no saturar la memoria
-        cols_padron = ['idpozo', 'empresa', 'fecha_terminacion_perforacion', 'fecha_inicio_produccion', 'provincia']
+        # --- A. PROCESAR PADRÓN ---
+        print("⬇️ Descargando Padrón (sin filtros)...")
         
-        # Ojo: Los CSV del gobierno a veces cambian nombres de columnas, ajustamos si falla
-        # Nota: simulamos la carga si la URL falla por timeout, en prod usar try/except
-        df_padron = pd.read_csv(URL_PADRON, usecols=lambda c: c in cols_padron, low_memory=False)
+        # Leemos TODO el archivo para ver qué columnas trajo realmente
+        df_padron = pd.read_csv(URL_PADRON, low_memory=False)
         
-        # Limpieza básica de fechas
+        # Normalizamos nombres de columnas a minúsculas para evitar errores por mayúsculas
+        df_padron.columns = [c.lower().strip() for c in df_padron.columns]
+        
+        print(f"👀 Columnas detectadas: {list(df_padron.columns)}")
+        
+        # DICCIONARIO DE SINÓNIMOS
+        # Si el gobierno cambia el nombre, nosotros lo arreglamos acá
+        correcciones = {
+            'fecha_fin_perforacion': 'fecha_terminacion_perforacion',
+            'fecha_fin_perf': 'fecha_terminacion_perforacion',
+            'fec_term_perf': 'fecha_terminacion_perforacion',
+            'fecha_inicio_prod': 'fecha_inicio_produccion',
+            'fec_ini_prod': 'fecha_inicio_produccion'
+        }
+        
+        # Aplicamos correcciones
+        df_padron.rename(columns=correcciones, inplace=True)
+        
+        # Verificamos si ahora sí tenemos las columnas críticas
+        if 'fecha_terminacion_perforacion' not in df_padron.columns:
+            raise KeyError(f"❌ Sigue faltando la fecha de terminación. Columnas disponibles: {df_padron.columns}")
+
+        # Filtramos solo lo que necesitamos y solo Neuquén
+        cols_finales = ['idpozo', 'empresa', 'fecha_terminacion_perforacion', 'fecha_inicio_produccion', 'provincia']
+        
+        # Nos aseguramos de que existan antes de filtrar
+        cols_existentes = [c for c in cols_finales if c in df_padron.columns]
+        df_padron = df_padron[cols_existentes]
+        
+        if 'provincia' in df_padron.columns:
+            df_padron = df_padron[df_padron['provincia'] == 'Neuquén']
+        
+        # Convertimos fechas
+        print("🔄 Procesando fechas...")
         df_padron['fecha_terminacion_perforacion'] = pd.to_datetime(df_padron['fecha_terminacion_perforacion'], errors='coerce')
         df_padron['fecha_inicio_produccion'] = pd.to_datetime(df_padron['fecha_inicio_produccion'], errors='coerce')
-        
-        # Filtramos solo Neuquén (Vaca Muerta principal) para optimizar
-        df_padron = df_padron[df_padron['provincia'] == 'Neuquén']
         
         print(f"💾 Guardando {len(df_padron)} registros en tabla 'padron'...")
         df_padron.to_sql('padron', engine, if_exists='replace', index=False)
         
-        # --- B. PROCESAR PRODUCCIÓN (Tu lógica actual) ---
-        print("⬇️ Descargando Producción...")
-        # (Aquí iría tu lógica de descarga de producción actual)
-        # Por ahora asumimos que la tabla 'produccion' ya existe y está bien.
-        
-        print("✅ Base de Datos Actualizada con Éxito.")
+        print("✅ ÉXITO TOTAL. Tabla creada.")
         
     except Exception as e:
-        print(f"❌ Error crítico: {e}")
-        # No rompemos el script si falla una descarga, pero avisamos
+        print(f"❌ Error: {e}")
         raise e
 
 if __name__ == "__main__":

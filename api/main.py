@@ -185,3 +185,50 @@ def get_curvas_tipo(empresa: str):
         return df.to_dict(orient="records")
     except Exception as e:
         return {"error": str(e)}
+    
+@app.get("/venteo")
+def get_venteo_kpi():
+    """
+    Calcula el Ratio de Venteo (Gas Flaring) por empresa.
+    Fórmula: (Gas Venteado / (Gas Producción + Gas Venteado)) * 100
+    """
+    engine = get_db_engine()
+    
+    # Usamos COALESCE para evitar divisiones por cero o nulos
+    query = text("""
+        SELECT 
+            empresa,
+            SUM(gas_prod) as total_gas_prod,
+            SUM(gas_venteo) as total_gas_venteo
+        FROM produccion
+        WHERE fecha_data >= '2023-01-01'
+        GROUP BY empresa
+        HAVING SUM(gas_prod) > 1000000 -- Filtramos empresas muy chicas
+        ORDER BY total_gas_prod DESC
+    """)
+    
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            data = []
+            for row in result:
+                prod = row[1] or 0
+                venteo = row[2] or 0
+                total = prod + venteo
+                
+                # Evitamos dividir por cero
+                ratio = (venteo / total * 100) if total > 0 else 0
+                
+                data.append({
+                    "empresa": row[0],
+                    "ratio_venteo": round(ratio, 2),
+                    "volumen_venteado": venteo
+                })
+            
+            # Ordenamos por quién ventea MÁS (el "Ranking de la Vergüenza" o de Oportunidad)
+            data.sort(key=lambda x: x['ratio_venteo'], reverse=True)
+            
+        return data[:10] # Top 10
+    except Exception as e:
+        print(f"Error Venteo: {e}")
+        return []
