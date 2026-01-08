@@ -67,7 +67,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- SISTEMA DE AUTENTICACIÓN (HÍBRIDO) ---
-# Intentamos cargar desde Secrets (Nube) o Archivo Local (PC) para que no falle.
 try:
     if 'credentials' in st.secrets:
         config = st.secrets
@@ -78,7 +77,6 @@ except FileNotFoundError:
     st.error("⚠️ No se encontró configuración de acceso. Sube 'config.yaml' o configura los Secrets.")
     st.stop()
 
-# Manejo seguro de tipos de datos (Convertimos a dict si viene de Secrets)
 credentials = config['credentials'].to_dict() if hasattr(config['credentials'], 'to_dict') else config['credentials']
 cookie_cfg = config['cookie'].to_dict() if hasattr(config['cookie'], 'to_dict') else config['cookie']
 
@@ -178,10 +176,13 @@ if st.session_state["authentication_status"]:
         try:
             response = requests.get(f"{API_URL}/ducs")
             if response.status_code == 200:
-                return pd.DataFrame(response.json())
-            return pd.DataFrame()
-        except:
-            return pd.DataFrame()
+                data = response.json()
+                if not data:
+                    return pd.DataFrame(), "API respondió lista vacía []"
+                return pd.DataFrame(data), "OK"
+            return pd.DataFrame(), f"Error API: Status {response.status_code}"
+        except Exception as e:
+            return pd.DataFrame(), f"Fallo de conexión: {str(e)}"
 
     # --- HEADER PRINCIPAL ---
     st.title("⚡ Vaca Muerta Intelligence 2.0")
@@ -245,48 +246,57 @@ if st.session_state["authentication_status"]:
                 
                 # PESTAÑA 1: MAPA + PRODUCCIÓN
                 with tab1:
-                    # --- SECCIÓN 1: MAPA INTERACTIVO ---
                     st.header("📍 Inteligencia Territorial")
                     
-                    df_mapa = get_mapa_data()
+                    # --- BLOQUE DE DIAGNÓSTICO (NUEVO) ---
+                    df_mapa, status_msg = get_mapa_data()
                     
-                    if not df_mapa.empty and "latitud" in df_mapa.columns:
+                    with st.expander("🔍 Estado Técnico de Datos GIS (Mapa)"):
+                        st.write(f"**URL API:** {API_URL}/ducs")
+                        st.write(f"**Resultado Conexión:** {status_msg}")
+                        
+                        if not df_mapa.empty:
+                            st.success(f"¡Datos recibidos! Filas: {len(df_mapa)}")
+                            st.write("**Columnas detectadas:**", df_mapa.columns.tolist())
+                            st.write("**Vista previa de coordenadas:**")
+                            st.dataframe(df_mapa[['empresa', 'latitud', 'longitud']].head())
+                            
+                            if st.button("♻️ Forzar Recarga de Datos (Limpiar Caché)"):
+                                st.cache_data.clear()
+                                st.rerun()
+                        else:
+                            st.error("No se recibieron datos para el mapa.")
+                    
+                    # --- RENDERIZADO DEL MAPA ---
+                    if not df_mapa.empty and "latitud" in df_mapa.columns and "longitud" in df_mapa.columns:
                         col_map_text, col_map_viz = st.columns([1, 3])
                         
                         with col_map_text:
-                            st.info("Visualización de activos geolocalizados en la formación Vaca Muerta.")
-                            
+                            st.info("Activos geolocalizados en la formación Vaca Muerta.")
                             if "distancia_ducto_km" in df_mapa.columns:
                                 avg_dist = df_mapa['distancia_ducto_km'].mean()
                                 avg_capex = df_mapa['capex_conexion_usd'].mean() if "capex_conexion_usd" in df_mapa.columns else 0
                                 st.metric("Distancia Media a Ducto", f"{avg_dist:.1f} km")
                                 st.metric("CAPEX Conexión Promedio", f"US$ {avg_capex/1000:.0f} k")
-                                st.caption("Costo estimado de flowlines.")
                         
                         with col_map_viz:
-                            # Lógica inteligente de coloreado
-                            if "capex_conexion_usd" in df_mapa.columns:
-                                color_col = "capex_conexion_usd"
-                                title_map = "Mapa de Costos Logísticos (CAPEX Conexión)"
-                                color_scale = "Jet" # Rojo es caro
-                            else:
-                                color_col = "empresa"
-                                title_map = "Ubicación de Activos por Operadora"
-                                color_scale = None # Usa colores discretos
+                            # Configuración del color según datos disponibles
+                            color_col = "capex_conexion_usd" if "capex_conexion_usd" in df_mapa.columns else "empresa"
+                            color_scale = "Jet" if "capex_conexion_usd" in df_mapa.columns else None
                             
                             fig_mapa = px.scatter_mapbox(
                                 df_mapa, 
                                 lat="latitud", 
                                 lon="longitud",
                                 color=color_col, 
-                                size="ducs", 
+                                size="ducs" if "ducs" in df_mapa.columns else None,
                                 color_continuous_scale=color_scale,
-                                color_discrete_map=COMPANY_COLORS, 
+                                color_discrete_map=COMPANY_COLORS,
                                 hover_name="empresa",
-                                hover_data=["ducs"],
+                                hover_data=["ducs"] if "ducs" in df_mapa.columns else [],
                                 zoom=8, 
-                                height=500,
-                                title=title_map
+                                height=600,
+                                title="Mapa de Activos e Infraestructura"
                             )
                             
                             fig_mapa.update_layout(
@@ -295,11 +305,11 @@ if st.session_state["authentication_status"]:
                             )
                             st.plotly_chart(fig_mapa, use_container_width=True)
                     else:
-                        st.warning("⚠️ Cargando datos geográficos... (Si esto persiste, verifica el script de carga GIS)")
+                        st.warning("⚠️ No se pueden mostrar los puntos: Faltan coordenadas en la base de datos.")
 
                     st.divider()
 
-                    # --- SECCIÓN 2: PRODUCCIÓN ---
+                    # --- SECCIÓN PRODUCCIÓN ---
                     st.subheader("📊 Curva de Producción de Petróleo")
                     col_title, col_download = st.columns([4, 1])
                     with col_download:
@@ -317,14 +327,12 @@ if st.session_state["authentication_status"]:
                                   color_discrete_sequence=DEFAULT_COLOR_SEQ)
                     
                     fig.update_layout(
-                        xaxis_title="Fecha",
-                        yaxis_title="Producción (m³)",
-                        legend_title="Operadora",
-                        hovermode="x unified"
+                        xaxis_title="Fecha", yaxis_title="Producción (m³)",
+                        legend_title="Operadora", hovermode="x unified"
                     )
                     st.plotly_chart(fig, use_container_width=True)
                 
-                # PESTAÑA 2: FINANZAS (SIMULADOR)
+                # PESTAÑA 2: FINANZAS
                 with tab2:
                     st.subheader("Ranking Financiero")
                     col_rank, col_pie = st.columns([2,1])
@@ -337,220 +345,70 @@ if st.session_state["authentication_status"]:
                         st.plotly_chart(fig_bar, use_container_width=True)
                     
                     with col_pie:
-                        csv_rank = convert_df(df_rank)
-                        st.download_button(
-                            label="📥 Bajar Ranking",
-                            data=csv_rank,
-                            file_name='ranking_financiero.csv',
-                            mime='text/csv',
-                            key='download-rank'
-                        )
                         fig_pie = px.pie(df_rank, values='revenue_usd', names='empresa', hole=0.4,
                                         color='empresa', color_discrete_map=COMPANY_COLORS)
                         st.plotly_chart(fig_pie, use_container_width=True)
 
                     st.divider()
-
-                    # --- SIMULADOR FINANCIERO (Cockpit) ---
                     st.header("💎 Simulación de Escenarios Financieros")
-                    st.markdown("Stress-test de ingresos bajo diferentes condiciones de mercado.")
-
                     c_scen, c_oil, c_gas = st.columns([2, 1, 1])
-                    
                     with c_scen:
-                        st.subheader("1. Elegir Escenario")
-                        scenario_type = st.radio(
-                            "Perfil de Mercado:",
-                            ["🐻 Bear (Pesimista)", "⚓ Base (Actual)", "🐂 Bull (Optimista)"],
-                            horizontal=True,
-                            index=1
-                        )
+                        scenario_type = st.radio("Perfil de Mercado:", ["🐻 Bear (Pesimista)", "⚓ Base (Actual)", "🐂 Bull (Optimista)"], horizontal=True, index=1)
 
                     if "Bear" in scenario_type:
-                        price_brent_sim = 55.0
-                        price_gas_sim = 2.5
-                        prod_factor = 0.90
+                        p_b, p_g, p_f = 55.0, 2.5, 0.90
                     elif "Bull" in scenario_type:
-                        price_brent_sim = 95.0
-                        price_gas_sim = 6.0
-                        prod_factor = 1.15
+                        p_b, p_g, p_f = 95.0, 6.0, 1.15
                     else: 
-                        price_brent_sim = 75.0
-                        price_gas_sim = 4.0
-                        prod_factor = 1.0
+                        p_b, p_g, p_f = 75.0, 4.0, 1.0
 
-                    with c_oil:
-                        brent_input = st.number_input("Precio Brent (USD/bbl)", value=price_brent_sim, step=1.0, format="%.2f")
-                    
-                    with c_gas:
-                        gas_input = st.number_input("Precio Gas (USD/MMBtu)", value=price_gas_sim, step=0.1, format="%.2f")
+                    with c_oil: brent_in = st.number_input("Precio Brent (USD/bbl)", value=p_b, step=1.0)
+                    with c_gas: gas_in = st.number_input("Precio Gas (USD/MMBtu)", value=p_g, step=0.1)
 
-                    # CÁLCULOS
-                    df_sim = df_view.copy()
-                    total_revenue_actual = df_sim['revenue_usd'].sum()
-                    
-                    factor_ajuste_precio = (brent_input / 75.0) 
-                    total_revenue_simulado = total_revenue_actual * factor_ajuste_precio * prod_factor
-                    
-                    delta_rev = total_revenue_simulado - total_revenue_actual
-                    delta_pct = (delta_rev / total_revenue_actual) * 100 if total_revenue_actual > 0 else 0
+                    actual_rev = df_view['revenue_usd'].sum()
+                    sim_rev = actual_rev * (brent_in / 75.0) * p_f
+                    st.metric("Revenue Proyectado", f"US$ {sim_rev/1e6:,.1f} M", delta=f"{((sim_rev/actual_rev)-1)*100:.1f}%")
 
-                    # MÉTRICAS
-                    st.markdown("---")
-                    c_m1, c_m2, c_m3 = st.columns(3)
-                    c_m1.metric("Revenue Proyectado (Anual)", f"US$ {total_revenue_simulado/1e6:,.1f} M", 
-                                delta=f"{delta_pct:.1f}% vs Actual", delta_color="normal")
-                    c_m2.metric("Impacto en Caja", f"US$ {delta_rev/1e6:,.1f} M", 
-                                delta="Ganancia/Pérdida Neta", delta_color="off")
-                    c_m3.metric("Sensibilidad Precio", f"{brent_input} USD/bbl", 
-                                delta=f"{(brent_input-75):.1f} vs Base")
-
-                    # HEATMAP RENTABILIDAD
-                    st.markdown("### 🌡️ Matriz de Rentabilidad (Profit Heatmap)")
-                    st.caption(f"Margen Operativo estimado sobre Breakeven de USD 45/bbl.")
-
-                    rango_precios = np.linspace(brent_input * 0.7, brent_input * 1.3, 5)
-                    rango_prod = np.linspace(prod_factor * 0.8, prod_factor * 1.2, 5)
-                    
-                    # Lógica Marín (Breakeven 45 USD)
-                    breakeven_full = 45.0
-                    z_data = []
-                    for p_fac in rango_prod:
-                        row = []
-                        for pr in rango_precios:
-                            margen = pr - breakeven_full
-                            # Resultado proxy
-                            res = (total_revenue_actual / 75.0) * margen * p_fac
-                            row.append(res / 1e6) 
-                        z_data.append(row)
-
-                    fig_heat = go.Figure(data=go.Heatmap(
-                        z=z_data,
-                        x=[f"${x:.0f}" for x in rango_precios],
-                        y=[f"{y*100:.0f}%" for y in rango_prod],
-                        colorscale='RdYlGn',
-                        zmid=0, # Punto cero es el blanco
-                        texttemplate="$%{z:.0f}M",
-                        textfont={"size": 12}
-                    ))
-                    
-                    fig_heat.update_layout(
-                        title="Impacto en Margen Operativo (Millones USD)",
-                        xaxis_title="Precio del Barril (Brent)",
-                        yaxis_title="% Eficiencia Producción",
-                        height=400
-                    )
-                    
-                    st.plotly_chart(fig_heat, use_container_width=True)
-
-                # PESTAÑA 3: IA PREDICTIVA
+                # PESTAÑA 3: IA
                 with tab3:
-                    st.subheader("Simulación de Escenarios Futuros")
-                    c_sim1, c_sim2 = st.columns([1, 3])
-                    with c_sim1:
-                        empresa_pred = st.selectbox("Seleccionar Operadora para IA:", empresas_sel)
-                        precio_futuro = st.slider("Precio Brent Futuro (IA) US$:", 40, 100, 75)
-                    
-                    with c_sim2:
-                        if empresa_pred:
-                            df_ia = df_view[df_view['empresa'] == empresa_pred].copy()
-                            df_ia = df_ia.rename(columns={'petroleo': 'prod_pet'}).sort_values('fecha')
-                            
-                            if len(df_ia) > 6:
-                                pred = predecir_produccion(df_ia)
-                                pred['revenue_proyectado'] = pred['prod_pet_pred'] * precio_futuro
-                                
-                                fig_ia = px.line(pred, x='fecha', y='prod_pet_pred', title=f"Proyección 12 Meses: {empresa_pred}",
-                                               color_discrete_sequence=[COMPANY_COLORS.get(empresa_pred, "white")])
-                                fig_ia.add_vline(x=pd.Timestamp.now().timestamp()*1000, line_dash="dash", annotation_text="Hoy")
-                                st.plotly_chart(fig_ia, use_container_width=True)
-                                st.success(f"💰 Revenue Proyectado (Próx. Año): **US$ {pred['revenue_proyectado'].sum()/1e6:.1f} Millones**")
+                    st.subheader("IA Predictiva")
+                    empresa_pred = st.selectbox("Operadora para IA:", empresas_sel)
+                    if empresa_pred:
+                        df_ia = df_view[df_view['empresa'] == empresa_pred].copy().rename(columns={'petroleo': 'prod_pet'})
+                        if len(df_ia) > 6:
+                            pred = predecir_produccion(df_ia)
+                            fig_ia = px.line(pred, x='fecha', y='prod_pet_pred', title=f"Predicción: {empresa_pred}",
+                                           color_discrete_sequence=[COMPANY_COLORS.get(empresa_pred, "white")])
+                            st.plotly_chart(fig_ia, use_container_width=True)
 
-                # PESTAÑA 4: INGENIERÍA + ESG
+                # PESTAÑA 4: INGENIERÍA
                 with tab4:
-                    st.header("⚙️ Ingeniería & Sustentabilidad (ESG)")
-                    
-                    st.subheader("🔥 Intensidad de Venteo (Gas Flaring)")
-                    
+                    st.header("⚙️ Ingeniería & ESG")
                     df_venteo = get_venteo_data()
-                    
                     if not df_venteo.empty:
-                        col_esg1, col_esg2 = st.columns([1, 3])
-                        with col_esg1:
-                            avg_venteo = df_venteo['ratio_venteo'].mean()
-                            st.metric("Promedio Vaca Muerta", f"{avg_venteo:.1f}%", delta="Objetivo < 1%", delta_color="inverse")
-                        with col_esg2:
-                            fig_venteo = px.bar(df_venteo, x='empresa', y='ratio_venteo',
-                                              title="Ranking de Intensidad de Venteo (%)",
-                                              color='ratio_venteo', color_continuous_scale='RdYlGn_r')
-                            st.plotly_chart(fig_venteo, use_container_width=True)
-                    else:
-                        st.info("Datos de venteo no disponibles.")
-
-                    st.divider()
-
+                        st.plotly_chart(px.bar(df_venteo, x='empresa', y='ratio_venteo', title="Gas Flaring (%)"), use_container_width=True)
+                    
                     df_ing = pd.DataFrame()
                     for emp in empresas_sel:
-                        df_temp = get_eficiencia_empresa(emp)
-                        if not df_temp.empty:
-                            df_ing = pd.concat([df_ing, df_temp])
-                    
+                        df_ing = pd.concat([df_ing, get_eficiencia_empresa(emp)])
                     if not df_ing.empty:
-                        col_agua, col_gor = st.columns(2)
-                        with col_agua:
-                            st.markdown("##### 💧 Gestión de Agua")
-                            fig_agua = px.line(df_ing, x='fecha', y='agua_m3', color='empresa', markers=True,
-                                             color_discrete_map=COMPANY_COLORS)
-                            st.plotly_chart(fig_agua, use_container_width=True)
-                        with col_gor:
-                            st.markdown("##### ⛽ Gas-Oil Ratio (GOR)")
-                            fig_gor = px.line(df_ing, x='fecha', y='gor_promedio', color='empresa',
-                                            color_discrete_map=COMPANY_COLORS)
-                            st.plotly_chart(fig_gor, use_container_width=True)
+                        st.plotly_chart(px.line(df_ing, x='fecha', y='gor_promedio', color='empresa', title="Gas-Oil Ratio"), use_container_width=True)
 
                 # PESTAÑA 5: BENCHMARKING
                 with tab5:
-                    st.header("Benchmarking Operativo")
-                    
-                    st.markdown("### 🚜 DUC Inventory (Drilled but Uncompleted)")
-                    st.caption("Pozos perforados desde 2023 que aún no han entrado en producción.")
-                    
-                    df_ducs = get_ducs_data()
-                    
-                    if not df_ducs.empty:
-                        col_kpi, col_chart = st.columns([1, 3])
-                        with col_kpi:
-                            total_ducs = df_ducs['ducs'].sum()
-                            st.metric("Total DUCs", f"{total_ducs}", delta="Stock Disponible")
-                            st.info("💡 Un nivel alto indica alta demanda de fractura.")
-                        with col_chart:
-                            fig_duc = px.bar(df_ducs, x='empresa', y='ducs', text='ducs', 
-                                             title="Stock de DUCs por Operadora",
-                                             color='ducs', color_continuous_scale='Oranges')
-                            fig_duc.update_traces(textposition='outside')
-                            st.plotly_chart(fig_duc, use_container_width=True)
-                    else:
-                        st.warning("⚠️ No se encontraron datos de DUCs.")
-                    
-                    st.divider()
-                    
-                    st.markdown("### 📉 Curvas Tipo (Type Curves)")
-                    st.caption("Comparativa de eficiencia inicial (Normalizado Mes 0).")
+                    st.header("Benchmarking")
+                    df_ducs_b = get_ducs_data()
+                    if not df_ducs_b.empty:
+                        st.plotly_chart(px.bar(df_ducs_b, x='empresa', y='ducs', title="Inventario de DUCs"), use_container_width=True)
                     
                     df_curves = pd.DataFrame()
                     for emp in empresas_sel:
-                        df_temp = get_curva_tipo(emp)
-                        if not df_temp.empty:
-                            df_temp['empresa'] = emp
-                            df_curves = pd.concat([df_curves, df_temp])
-                    
+                        dt = get_curva_tipo(emp)
+                        if not dt.empty:
+                            dt['empresa'] = emp
+                            df_curves = pd.concat([df_curves, dt])
                     if not df_curves.empty:
-                        fig_type = px.line(df_curves, x='mes_n', y='promedio_petroleo', color='empresa',
-                                         title="Rendimiento Promedio por Pozo", markers=True,
-                                         color_discrete_map=COMPANY_COLORS)
-                        st.plotly_chart(fig_type, use_container_width=True)
-                    else:
-                        st.info("Selecciona más operadoras para comparar curvas.")
+                        st.plotly_chart(px.line(df_curves, x='mes_n', y='promedio_petroleo', color='empresa', title="Curvas Tipo"), use_container_width=True)
         else:
             st.info("👈 Selecciona una o más operadoras en el panel lateral.")
     else:
@@ -558,30 +416,5 @@ if st.session_state["authentication_status"]:
 
 elif st.session_state["authentication_status"] is False:
     st.error('❌ Usuario o contraseña incorrectos')
-    
 elif st.session_state["authentication_status"] is None:
-    # MENSAJE DE VENTA PARA VISITANTES
-    st.warning('🔒 Por favor, ingresa tus credenciales para acceder al Dashboard.')
-    
-    st.markdown("---")
-    col_promo, col_contact = st.columns(2)
-    
-    with col_promo:
-        st.info("**¿No tenés cuenta?**")
-        st.markdown("""
-        Esta es una plataforma privada de inteligencia de mercado para Vaca Muerta.
-        
-        **Incluye:**
-        * 📊 Producción en tiempo real.
-        * 💰 Modelado Financiero.
-        * 📉 Curvas Tipo y Benchmarking.
-        """)
-        
-    with col_contact:
-        st.success("🚀 **Solicitar Demo**")
-        st.markdown("""
-        Escríbenos para obtener un usuario de prueba por 7 días.
-        
-        📧 **Ventas:** lezcanojose7@gmail.com
-        📞 **Tel:** 3794631300
-        """)
+    st.warning('🔒 Por favor, ingresa tus credenciales para acceder.')
