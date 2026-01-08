@@ -28,7 +28,7 @@ def get_db_engine():
     # Prioridad 2: Hardcode de emergencia (Tu string de conexión)
     # Si todo falla, poné tu link real acá abajo entre las comillas
     if not db_url:
-        db_url = "postgresql://tu_usuario:tu_clave@...neon.tech/neondb?sslmode=require"
+        db_url = "postgresql://neondb_owner:npg_nxamLK5P6thM@ep-royal-snow-a488eu3z-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
     
     if db_url:
         clean_url = db_url.strip().replace('"', '').replace("'", "")
