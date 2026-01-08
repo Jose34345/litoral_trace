@@ -24,7 +24,7 @@ def actualizar_precios_brent():
 
     # 4. Guardar en PostgreSQL
     # REEMPLAZA CON TU CONTRASEÑA
-    engine = create_engine('postgresql://postgres:33842439@localhost:5432/postgres')
+    engine = create_engine('postgresql://neondb_owner:npg_nxamLK5P6thM@ep-royal-snow-a488eu3z-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require')
     
     try:
         df_sql.to_sql('precios_brent', engine, if_exists='replace', index=False)

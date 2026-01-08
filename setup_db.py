@@ -5,7 +5,7 @@ def crear_base_de_datos():
     config = {
         "dbname": "postgres",
         "user": "postgres",
-        "password": "TU_CONTRASEÑA_AQUÍ", # <--- PONÉ TU CLAVE
+        "password": "postgresql://neondb_owner:npg_nxamLK5P6thM@ep-royal-snow-a488eu3z-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require", # <--- PONÉ TU CLAVE
         "host": "localhost",
         "port": "5432"
     }
