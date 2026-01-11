@@ -163,16 +163,35 @@ if not gdf.empty:
     with col_map:
         st.subheader("📍 Mapa de Activos")
         lotes_json = gdf.__geo_interface__
+        
+        # --- CAMBIO: CONFIGURACIÓN SATELITAL ---
         fig_map = px.choropleth_mapbox(
             gdf, geojson=lotes_json, locations=gdf.index,
             color="estatus_cumplimiento",
             color_discrete_map={"Verde": "#2ECC71", "Amarillo": "#F1C40F", "Rojo": "#E74C3C", "Pendiente": "#95A5A6"},
-            mapbox_style="open-street-map",
+            # Usamos white-bg para poder poner capas personalizadas
+            mapbox_style="white-bg", 
             center={"lat": gdf.centroide_lat.mean(), "lon": gdf.centroide_lon.mean()},
-            zoom=10, height=500,
-            hover_data=["nombre_lote", "tipo_cultivo"]
+            zoom=13, height=500,
+            hover_data=["nombre_lote", "tipo_cultivo"],
+            opacity=0.6 # Un poco más transparente para ver el suelo abajo
         )
-        fig_map.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+        
+        # Agregamos la capa de Satélite de Esri (Gratis y de alta calidad)
+        fig_map.update_layout(
+            mapbox_layers=[
+                {
+                    "below": 'traces',
+                    "sourcetype": "raster",
+                    "sourceattribution": "Esri World Imagery",
+                    "source": [
+                        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                    ]
+                }
+            ],
+            margin={"r":0,"t":0,"l":0,"b":0}
+        )
+        
         st.plotly_chart(fig_map, use_container_width=True)
 
     with col_analisis:
