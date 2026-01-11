@@ -1,8 +1,0 @@
-{
-"type": "FeatureCollection",
-"name": "ductos_vaca_muerta",
-"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
-"features": [
-{ "type": "Feature", "properties": { "nombre": "Gasoducto Vaca Muerta Norte", "tipo": "Gasoducto" }, "geometry": { "type": "LineString", "coordinates": [ [ -68.9, -38.3 ], [ -68.7, -38.4 ] ] } }
-]
-}

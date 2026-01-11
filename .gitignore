@@ -1,6 +1,13 @@
+# Ignorar entorno virtual
 venv/
 .venv/
 __pycache__/
-.streamlit/secrets.toml
-*.csv
-config.yaml
+
+# Ignorar secretos y configs locales
+.streamlit/
+secrets.toml
+*.env
+
+# Ignorar archivos del sistema
+.DS_Store
+Thumbs.db
