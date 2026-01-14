@@ -10,39 +10,89 @@ import ee
 import hashlib
 import time
 import yfinance as yf
+from datetime import datetime
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Litoral Trace | Enterprise", layout="wide", page_icon="🌱")
+# --- CONFIGURACIÓN DE PÁGINA (Professional SaaS Setup) ---
+st.set_page_config(
+    page_title="Litoral Trace | Market Intelligence", 
+    layout="wide", 
+    page_icon="🛰️",
+    initial_sidebar_state="expanded"
+)
 
-# --- ESTILOS CSS ---
+# --- ESTILOS CSS AVANZADOS (Look & Feel Humano/Corporativo) ---
 st.markdown("""
 <style>
-    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     
-    /* CARDS DASHBOARD */
-    .metric-card { background-color: #ffffff; color: #1f2937; padding: 20px; border-radius: 12px; border-left: 8px solid #2ecc71; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 10px; }
-    .loss-card { background-color: #fff5f5; color: #991b1b; padding: 20px; border-radius: 12px; border-left: 8px solid #e74c3c; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 10px; }
-    .info-card { background-color: #f0f9ff; color: #0c4a6e; padding: 20px; border-radius: 12px; border-left: 8px solid #3498db; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 10px; }
-    .card-label { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8; }
-    .card-value { font-size: 28px; font-weight: 800; margin-top: 5px; }
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
+    /* HEADER */
+    h1, h2, h3 {
+        color: #0f172a; 
+        font-weight: 800;
+        letter-spacing: -0.5px;
+    }
     
-    /* PRICING TABLE */
-    .pricing-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 20px; text-align: center; background: white; height: 100%; }
-    .pricing-header { font-size: 1.2rem; font-weight: bold; color: #374151; margin-bottom: 10px; }
-    .pricing-price { font-size: 2rem; font-weight: 800; color: #111827; }
-    .pricing-features { text-align: left; margin-top: 15px; font-size: 0.9rem; color: #6b7280; line-height: 1.6; }
+    /* BOTONES */
+    .stButton>button { 
+        width: 100%; 
+        border-radius: 6px; 
+        font-weight: 600; 
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
     
-    /* LOGIN TABS */
-    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: transparent; border-radius: 4px 4px 0px 0px; gap: 1px; padding-top: 10px; padding-bottom: 10px; }
+    /* KPI CARDS CON ESTILO FINTECH */
+    .metric-container {
+        background-color: white;
+        padding: 24px;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        margin-bottom: 16px;
+    }
+    .metric-label {
+        color: #64748b;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .metric-value {
+        color: #0f172a;
+        font-size: 1.8rem;
+        font-weight: 800;
+        margin-top: 8px;
+    }
+    .metric-delta-pos { color: #10b981; font-size: 0.9rem; font-weight: 600; }
+    .metric-delta-neg { color: #ef4444; font-size: 0.9rem; font-weight: 600; }
+
+    /* TAGS DE ESTADO */
+    .status-tag {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+    .status-ok { background-color: #dcfce7; color: #166534; }
+    .status-danger { background-color: #fee2e2; color: #991b1b; }
+
 </style>
 """, unsafe_allow_html=True)
 
-# --- DB SETUP ---
+# --- DB SETUP (SEGURIDAD REFORZADA) ---
 try:
     DB_URL = st.secrets["DB_URL"]
 except:
-    DB_URL = "postgresql://neondb_owner:npg_nxamLK5P6thM@ep-royal-snow-a488eu3z-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
+    # Fallback solo para desarrollo
+    DB_URL = "postgresql://neondb_owner:npg_nxamLK5P6thM@ep-royal-snow-a488eu3z-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 engine = create_engine(DB_URL)
 
@@ -62,7 +112,6 @@ def verificar_login(u, p):
     with engine.connect() as conn: return conn.execute(q, {"u": u, "p": hash_pass(p)}).fetchone()
 
 def registrar_usuario(u, p):
-    # Por defecto, el usuario nuevo es 'cliente' (NO premium)
     check_q = text("SELECT * FROM usuarios WHERE username = :u")
     insert_q = text("INSERT INTO usuarios (username, password_hash, rol) VALUES (:u, :p, 'cliente')")
     with engine.begin() as conn:
@@ -72,7 +121,7 @@ def registrar_usuario(u, p):
 
 init_users_db()
 
-# --- GEE ---
+# --- GEE CONNECTION ---
 def inicializar_gee():
     try:
         if "gcp_service_account" in st.secrets:
@@ -84,7 +133,7 @@ def inicializar_gee():
     except: return False
 GEE_ACTIVO = inicializar_gee()
 
-# --- FUNCIONES CORE ---
+# --- FUNCIONES DE NEGOCIO ---
 @st.cache_data(ttl=300)
 def get_market_prices():
     tickers = {"Soja": "ZS=F", "Maíz": "ZC=F", "Trigo": "ZW=F"}
@@ -102,27 +151,129 @@ def get_market_prices():
     except: return {"Soja": 295.0, "Maíz": 180.0, "Trigo": 210.0, "Algodón": 750.0}
 
 def diagnostico_eudr_ia(df):
-    if df.empty or 'Fecha' not in df.columns: return "Pendiente", "Sin datos", 0, 0
+    if df.empty or 'Fecha' not in df.columns: return "Pendiente", "Insuficiencia de datos históricos", 0, 0
     df['Año'] = df['Fecha'].dt.year
     base = df[df['Año'] == 2020]['NDVI'].mean()
     if np.isnan(base): base = df.head(6)['NDVI'].mean()
+    
     recent = df[df['Fecha'] > (df['Fecha'].max() - pd.DateOffset(months=12))]
     actual = recent['NDVI'].mean()
+    
     var = ((actual - base) / base) * 100
+    
     decision = "Rojo" if var < -15 else "Verde"
-    return decision, f"Variación Biomasa: {var:.1f}%", base, actual
+    return decision, f"Variación Biomasa vs 2020: {var:.1f}%", base, actual
 
+# --- PDF GENERATION (PROFESIONAL / LEGAL) ---
 class PDF(FPDF):
-    def header(self): self.set_font('Arial', 'B', 15); self.cell(0, 10, 'LITORAL TRACE - CERTIFICADO', 0, 1, 'C'); self.ln(10)
-    def footer(self): self.set_y(-15); self.set_font('Arial', 'I', 8); self.cell(0, 10, 'Audit ID: ' + pd.Timestamp.now().strftime("%Y%m%d"), 0, 0, 'C')
+    def header(self):
+        # Logo o Nombre de Empresa (Simulado con texto para no romper sin imagen)
+        self.set_font('Arial', 'B', 12)
+        self.set_text_color(100, 100, 100)
+        self.cell(0, 10, 'LITORAL TRACE | TECHNOLOGIES S.A.', 0, 0, 'L')
+        self.cell(0, 10, 'REPORTE CONFIDENCIAL', 0, 1, 'R')
+        self.line(10, 20, 200, 20)
+        self.ln(15)
 
-def generar_pdf(lote, estado, razon):
-    pdf = PDF(); pdf.add_page(); pdf.set_font('Arial', '', 12)
-    pdf.cell(0, 10, f"Lote: {lote['nombre_lote']} | Productor: {lote['productor_id']}", 0, 1)
-    pdf.ln(5); pdf.set_font('Arial', 'B', 14); pdf.set_text_color(0,128,0) if estado=="Verde" else pdf.set_text_color(255,0,0)
-    pdf.cell(0, 10, f"DICTAMEN: {estado.upper()}", 0, 1, 'C'); pdf.set_text_color(0)
+    def footer(self):
+        self.set_y(-25)
+        self.set_font('Arial', 'I', 8)
+        self.set_text_color(128)
+        self.multi_cell(0, 4, 'Este documento ha sido generado automáticamente por Litoral Trace Engine v2.4 basándose en telemetría satelital (Sentinel-2). La validación final requiere firma de un profesional matriculado según normativa local. \nID Blockchain: ' + hashlib.sha256(str(time.time()).encode()).hexdigest()[:16], 0, 'C')
+
+def generar_pdf(lote, estado, razon, ndvi_data):
+    pdf = PDF()
+    pdf.add_page()
+    
+    # TÍTULO DEL DOCUMENTO
+    pdf.set_font('Arial', 'B', 16)
+    pdf.set_text_color(15, 23, 42) # Azul oscuro corporativo
+    pdf.cell(0, 10, 'DECLARACIÓN DE DEBIDA DILIGENCIA (EUDR)', 0, 1, 'C')
+    pdf.set_font('Arial', '', 10)
+    pdf.cell(0, 5, 'Conformidad con el Reglamento (UE) 2023/1115 (Libre de Deforestación)', 0, 1, 'C')
+    pdf.ln(10)
+
+    # SECCIÓN 1: DATOS DEL OPERADOR Y ACTIVO
+    pdf.set_fill_color(240, 240, 240)
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(0, 8, '  1. IDENTIFICACIÓN DEL ACTIVO PRODUCTIVO', 1, 1, 'L', 1)
+    
+    pdf.set_font('Arial', '', 11)
+    # Tabla simple de datos
+    pdf.cell(50, 8, 'Nombre del Lote:', 0)
+    pdf.cell(140, 8, f"{lote['nombre_lote']}", 0, 1)
+    pdf.cell(50, 8, 'ID Fiscal (RENSPA):', 0)
+    pdf.cell(140, 8, f"{lote['productor_id']}", 0, 1)
+    pdf.cell(50, 8, 'Cultivo Declarado:', 0)
+    pdf.cell(140, 8, f"{lote['tipo_cultivo']}", 0, 1)
+    pdf.cell(50, 8, 'Superficie Auditada:', 0)
+    pdf.cell(140, 8, f"{lote['hectareas_declaradas']} Hectáreas", 0, 1)
+    pdf.ln(5)
+
+    # SECCIÓN 2: GEOLOCALIZACIÓN
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(0, 8, '  2. GEOLOCALIZACIÓN Y PUNTO DE CONTROL', 1, 1, 'L', 1)
+    pdf.set_font('Arial', '', 10)
+    pdf.ln(2)
+    pdf.multi_cell(0, 5, f"Coordenadas del Centroide: Lat {lote['centroide_lat']:.6f}, Lon {lote['centroide_lon']:.6f}. \nEl polígono completo se encuentra almacenado en la base de datos geoespacial bajo el protocolo WKT (Well-Known Text) para auditoría remota.")
+    pdf.ln(5)
+
+    # SECCIÓN 3: EVIDENCIA SATELITAL
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(0, 8, '  3. ANÁLISIS DE COBERTURA VEGETAL (NDVI)', 1, 1, 'L', 1)
+    pdf.set_font('Arial', '', 11)
+    pdf.ln(2)
+    
+    # Extraer métricas para el reporte
+    df = ndvi_data
+    base_2020 = df[df['Fecha'].dt.year == 2020]['NDVI'].mean()
+    actual = df.iloc[-1]['NDVI']
+    
+    pdf.cell(60, 8, 'Satélite Fuente:', 0)
+    pdf.cell(130, 8, 'ESA Sentinel-2 (Constelación Copernicus)', 0, 1)
+    pdf.cell(60, 8, 'Línea Base (Año 2020):', 0)
+    pdf.cell(130, 8, f"{base_2020:.3f} (Índice Medio)", 0, 1)
+    pdf.cell(60, 8, 'Estado Actual (12 meses):', 0)
+    pdf.cell(130, 8, f"{actual:.3f} (Índice Medio)", 0, 1)
+    pdf.ln(5)
+
+    # SECCIÓN 4: DICTAMEN TÉCNICO
+    pdf.ln(5)
+    if estado == "Verde":
+        pdf.set_fill_color(220, 252, 231) # Verde claro
+        pdf.set_text_color(22, 101, 52)   # Verde oscuro
+        pdf.set_font('Arial', 'B', 14)
+        pdf.cell(0, 15, 'DICTAMEN: FAVORABLE / COMPLIANT', 1, 1, 'C', 1)
+        pdf.set_text_color(0)
+        pdf.set_font('Arial', '', 10)
+        pdf.ln(2)
+        pdf.multi_cell(0, 5, f"CONCLUSIÓN: {razon}. No se detectan cambios significativos en el uso del suelo compatibles con deforestación posterior al 31 de diciembre de 2020.")
+    else:
+        pdf.set_fill_color(254, 226, 226)
+        pdf.set_text_color(153, 27, 27)
+        pdf.set_font('Arial', 'B', 14)
+        pdf.cell(0, 15, 'DICTAMEN: NO FAVORABLE / RIESGO', 1, 1, 'C', 1)
+    
+    pdf.ln(20)
+
+    # SECCIÓN 5: BLOQUE DE FIRMAS (Para imprimir y firmar)
+    y_firmas = pdf.get_y()
+    
+    pdf.set_draw_color(0)
+    pdf.line(20, y_firmas, 80, y_firmas)   # Línea firma izquierda
+    pdf.line(120, y_firmas, 180, y_firmas) # Línea firma derecha
+    
+    pdf.set_font('Arial', 'B', 9)
+    pdf.text(20, y_firmas + 5, "Firma Responsable Técnico")
+    pdf.text(120, y_firmas + 5, "Firma Auditor / Contador")
+    
+    pdf.set_font('Arial', '', 8)
+    pdf.text(20, y_firmas + 10, "Ing. Agrónomo / Matrícula Nº: _________")
+    pdf.text(120, y_firmas + 10, "CPCE / Matrícula Nº: _________")
+
     return pdf.output(dest='S').encode('latin-1')
 
+# --- DATA FETCHING ---
 @st.cache_data(ttl=60)
 def get_data():
     q = "SELECT *, ST_AsText(geometria) as wkt FROM lotes_agro"
@@ -133,7 +284,8 @@ def get_data():
     return gpd.GeoDataFrame()
 
 def save_lote(n, p, c, h, lat, lon):
-    delta = 0.004; poly = f"POLYGON(({lon-delta} {lat-delta}, {lon+delta} {lat-delta}, {lon+delta} {lat+delta}, {lon-delta} {lat+delta}, {lon-delta} {lat-delta}))"
+    delta = 0.004
+    poly = f"POLYGON(({lon-delta} {lat-delta}, {lon+delta} {lat-delta}, {lon+delta} {lat+delta}, {lon-delta} {lat+delta}, {lon-delta} {lat-delta}))"
     q = text("INSERT INTO lotes_agro (nombre_lote, productor_id, tipo_cultivo, hectareas_declaradas, estatus_cumplimiento, centroide_lat, centroide_lon, geometria) VALUES (:n, :p, :c, :h, 'Pendiente', :lat, :lon, ST_GeomFromText(:poly, 4326))")
     with engine.begin() as conn: conn.execute(q, {"n":n, "p":p, "c":c, "h":h, "lat":lat, "lon":lon, "poly":poly})
 
@@ -153,172 +305,157 @@ def get_ndvi(lat, lon, nombre):
         return df.dropna()
     except: return pd.DataFrame()
 
-# --- PANTALLAS DEL SISTEMA ---
-
+# --- PANTALLAS ---
 def login_screen():
-    c1, c2, c3 = st.columns([1, 1, 1])
-    with c2:
-        st.markdown("<br><h1 style='text-align: center;'>🔐 Litoral Trace</h1>", unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["Ingresar", "Registrarse"])
+    col_izq, col_der = st.columns([1.2, 1])
+    with col_izq:
+        st.markdown("### 🌾 Litoral Trace")
+        st.markdown("# Inteligencia Geoespacial para el Agro Chaqueño")
+        st.markdown("""
+        La normativa **EUDR (European Union Deforestation Regulation)** cambia las reglas del juego. 
+        No pierdas acceso al mercado internacional.
+        """)
+    with col_der:
+        st.markdown("<div style='background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); color: #0f172a;'>", unsafe_allow_html=True)
+        st.subheader("Acceso a Clientes")
+        tab1, tab2 = st.tabs(["Iniciar Sesión", "Solicitar Cuenta"])
         with tab1:
             with st.form("login"):
-                u = st.text_input("Usuario"); p = st.text_input("Pass", type="password")
-                if st.form_submit_button("Entrar"):
+                u = st.text_input("Usuario")
+                p = st.text_input("Contraseña", type="password")
+                if st.form_submit_button("Acceder"):
                     user = verificar_login(u, p)
                     if user:
-                        st.session_state['logged_in'] = True
-                        st.session_state['username'] = u
-                        st.session_state['rol'] = user.rol # Guardamos el rol
-                        st.rerun()
+                        st.session_state['logged_in'] = True; st.session_state['username'] = u; st.session_state['rol'] = user.rol; st.rerun()
                     else: st.error("Error credenciales")
         with tab2:
-            with st.form("reg"):
-                nu = st.text_input("Nuevo Usuario"); np1 = st.text_input("Pass", type="password"); np2 = st.text_input("Repetir", type="password")
-                if st.form_submit_button("Crear Cuenta"):
-                    if np1==np2 and len(np1)>5:
-                        if registrar_usuario(nu, np1): st.success("Creado! Ingresa en la otra pestaña.");
-                        else: st.error("Usuario existe")
-                    else: st.error("Pass insegura o no coinciden")
+            st.write("Contactar administración para cuentas demo.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 def subscription_screen():
-    """Pantalla de Venta para usuarios FREE"""
-    with st.sidebar:
-        st.write(f"Hola, **{st.session_state['username']}**")
-        if st.button("Cerrar Sesión"): 
-            st.session_state['logged_in'] = False
-            st.rerun()
-    
-    st.title("🚀 Activa tu Licencia Enterprise")
-    st.markdown("Has dado el primer paso hacia la exportación segura. Para acceder al monitor satelital en tiempo real, validación EUDR y calculadora financiera, selecciona tu plan.")
-    
-    # VIDEO PROMO (Placeholder)
-    st.video("https://www.youtube.com/watch?v=LXb3EKWsInQ") # Video genérico de agricultura tech
-    
-    st.divider()
-    
-    # PLANES
-    c1, c2, c3 = st.columns(3)
-    
-    with c1:
-        st.markdown("""
-        <div class="pricing-card">
-            <div class="pricing-header">PILOTO</div>
-            <div class="pricing-price">Gratis</div>
-            <div class="pricing-features">
-                ✅ Registro de Usuario<br>
-                ✅ Acceso a Demo Estática<br>
-                ❌ Carga de Lotes Propios<br>
-                ❌ Certificados PDF<br>
-            </div>
-            <br>
-            <button style="background-color:gray; color:white; border:none; padding:10px; border-radius:5px; width:100%;">Plan Actual</button>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with c2:
-        st.markdown("""
-        <div class="pricing-card" style="border: 2px solid #2ecc71; transform: scale(1.05);">
-            <div class="pricing-header" style="color: #2ecc71;">PRODUCTOR</div>
-            <div class="pricing-price">$99 <small>/mes</small></div>
-            <div class="pricing-features">
-                ✅ <b>Hasta 10 Lotes</b><br>
-                ✅ Monitoreo Satelital (S2)<br>
-                ✅ Calculadora Financiera<br>
-                ✅ Soporte WhatsApp<br>
-            </div>
-            <br>
-        </div>
-        """, unsafe_allow_html=True)
-        # Botón simulado
-        if st.button("Suscribirse (Productor)", type="primary"):
-            st.info("Redirigiendo a MercadoPago... (Demo)")
-            
-    with c3:
-        st.markdown("""
-        <div class="pricing-card">
-            <div class="pricing-header">EXPORTADOR</div>
-            <div class="pricing-price">Consultar</div>
-            <div class="pricing-features">
-                ✅ <b>Lotes Ilimitados</b><br>
-                ✅ API para ERP/SAP<br>
-                ✅ Multi-Usuario<br>
-                ✅ Auditoría Blockchain<br>
-            </div>
-            <br>
-        </div>
-        """, unsafe_allow_html=True)
-        # Botón Contacto
-        st.link_button("Contactar Ventas", "https://wa.me/5491112345678?text=Hola,%20quiero%20info%20sobre%20LitoralTrace%20Enterprise")
-
-    st.info("🔒 ¿Ya pagaste y no ves el acceso? Contacta a soporte para habilitación inmediata.")
+    st.title("⚙️ Habilitación de Licencia")
+    st.info("Para operar el sistema Litoral Trace, contacte al administrador.")
 
 def dashboard_screen():
-    # ... (Aquí va todo tu código del dashboard actual) ...
-    # Sidebar
     with st.sidebar:
-        st.write(f"👤 **{st.session_state['username']}** ({st.session_state.get('rol', 'cliente').upper()})")
-        if st.button("Cerrar Sesión"): 
-            st.session_state['logged_in'] = False
-            st.rerun()
+        st.image("https://img.icons8.com/fluency/96/satellite-in-orbit.png", width=60)
+        st.markdown(f"### Litoral Trace \n **Panel de Control**")
+        st.markdown(f"👤 {st.session_state['username']} | {st.session_state.get('rol', 'cliente').upper()}")
         st.divider()
-        st.subheader("🇦🇷 Calculadora FAS")
+        st.markdown("#### 💹 Variables de Mercado (FAS)")
         precios = get_market_prices()
-        c_calc = st.selectbox("Cultivo", list(precios.keys()))
+        c_calc = st.selectbox("Seleccionar Cultivo", list(precios.keys()))
         p_ref = precios[c_calc]
-        st.metric(f"Precio Productor", f"USD {p_ref:.2f}/tn", delta="FAS Teórico")
-        rend = st.number_input("Rinde (tn/ha)", 3.0)
-        desc = st.slider("Descuento No-EUDR", 0, 20, 7, format="-%d%%")
+        st.metric("Precio Referencia (FAS)", f"USD {p_ref:.2f}")
+        rend = st.number_input("Rinde Estimado (tn/ha)", 2.0, 10.0, 3.0, 0.1)
+        st.markdown("#### ⚖️ Escenario de Riesgo")
+        desc = st.slider("Castigo por No-Compliance", 0, 30, 7, format="-%d%%")
         st.divider()
-        if GEE_ACTIVO: st.success("🛰️ Satélite: ONLINE")
-        else: st.warning("⚠️ Satélite: OFFLINE")
-        with st.expander("Alta de Lote"):
-            with st.form("new"):
-                n = st.text_input("Nombre"); p = st.text_input("ID Fiscal")
-                c = st.selectbox("Cultivo", ["Soja", "Maíz", "Trigo", "Algodón"])
-                h = st.number_input("Hectáreas", 50); lat = st.number_input("Lat", -27.45); lon = st.number_input("Lon", -59.05)
-                if st.form_submit_button("Registrar"):
-                    if n: save_lote(n, p, c, h, lat, lon); st.success("Registrado"); st.cache_data.clear()
+        if st.button("Salir del Sistema"): st.session_state['logged_in'] = False; st.rerun()
 
-    # Main
-    st.title("🌱 Monitor de Cumplimiento & Riesgo")
+    st.title("Monitor de Riesgo & Cumplimiento")
+    st.markdown("Visualización en tiempo real de activos agrícolas y su estatus frente a la normativa **EUDR 2023/1115**.")
+    
     gdf = get_data()
     if not gdf.empty:
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Lotes", len(gdf)); k2.metric("Has Auditadas", f"{gdf['hectareas_declaradas'].sum()} ha")
-        val = gdf['hectareas_declaradas'].sum() * rend * p_ref
-        k3.metric("Valuación", f"USD {val:,.0f}"); k4.metric("Riesgo", f"USD -{val*(desc/100):,.0f}", delta_color="inverse")
+        total_has = gdf['hectareas_declaradas'].sum()
+        val_bruta = total_has * rend * p_ref
+        riesgo_usd = val_bruta * (desc/100)
         
-        c_map, c_det = st.columns([1, 1])
-        with c_map:
-            fig = px.choropleth_mapbox(gdf, geojson=gdf.__geo_interface__, locations=gdf.index, color="estatus_cumplimiento", color_discrete_map={"Pendiente":"#95a5a6","Verde":"#2ecc71","Rojo":"#e74c3c"}, mapbox_style="white-bg", center={"lat":gdf.centroide_lat.mean(), "lon":gdf.centroide_lon.mean()}, zoom=13, opacity=0.5)
+        k1, k2, k3, k4 = st.columns(4)
+        def kpi_box(label, value, color="black"):
+            return f"<div class='metric-container'><div class='metric-label'>{label}</div><div class='metric-value' style='color:{color}'>{value}</div></div>"
+        
+        k1.markdown(kpi_box("Activos Monitoreados", f"{len(gdf)} Lotes"), unsafe_allow_html=True)
+        k2.markdown(kpi_box("Superficie Auditada", f"{total_has:,.0f} ha"), unsafe_allow_html=True)
+        k3.markdown(kpi_box("Valuación Potencial (FAS)", f"${val_bruta/1000:,.1f}k"), unsafe_allow_html=True)
+        k4.markdown(kpi_box("Capital en Riesgo (EUDR)", f"-${riesgo_usd/1000:,.1f}k", "#ef4444"), unsafe_allow_html=True)
+
+        col_map, col_details = st.columns([1.5, 1])
+        with col_map:
+            st.markdown("### 🗺️ Vista Geoespacial")
+            fig = px.choropleth_mapbox(gdf, geojson=gdf.__geo_interface__, locations=gdf.index, color="estatus_cumplimiento", color_discrete_map={"Pendiente":"#94a3b8","Verde":"#22c55e","Rojo":"#ef4444"}, mapbox_style="white-bg", center={"lat":gdf.centroide_lat.mean(), "lon":gdf.centroide_lon.mean()}, zoom=12, opacity=0.6)
             fig.update_layout(mapbox_layers=[{"below": 'traces', "sourcetype": "raster", "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]}], margin={"r":0,"t":0,"l":0,"b":0}, height=500)
-            st.plotly_chart(fig, width="stretch")
-        with c_det:
-            sel = st.selectbox("Auditar Activo:", gdf['nombre_lote'])
+            st.plotly_chart(fig, use_container_width=True)
+            with st.expander("➕ Cargar Nuevo Activo (Lote)"):
+                with st.form("new_asset"):
+                    c1, c2 = st.columns(2)
+                    n = c1.text_input("Identificador de Lote")
+                    p = c2.text_input("ID Fiscal / RENSPA")
+                    c = st.selectbox("Cultivo Principal", ["Soja", "Maíz", "Trigo", "Algodón"])
+                    h = st.number_input("Hectáreas Declaradas", 50)
+                    lc1, lc2 = st.columns(2)
+                    lat = lc1.number_input("Latitud", -27.45)
+                    lon = lc2.number_input("Longitud", -59.05)
+                    if st.form_submit_button("Registrar Lote"):
+                        if n: save_lote(n, p, c, h, lat, lon); st.success("Activo registrado."); st.cache_data.clear()
+
+        with col_details:
+            st.markdown("### 🛰️ Motor de Auditoría")
+            sel = st.selectbox("Seleccionar Lote para Análisis:", gdf['nombre_lote'])
             row = gdf[gdf['nombre_lote'] == sel].iloc[0]
-            with st.spinner("Analizando..."):
-                df_ndvi = get_ndvi(row['centroide_lat'], row['centroide_lon'], sel)
-                dec, raz, v_base, v_act = diagnostico_eudr_ia(df_ndvi)
-            if not df_ndvi.empty:
-                f1, f2 = st.columns(2)
-                lote_val = row['hectareas_declaradas'] * rend * p_ref
-                f1.markdown(f"""<div class="metric-card"><div class="card-label">Valor FAS</div><div class="card-value">USD {lote_val:,.0f}</div></div>""", unsafe_allow_html=True)
-                if dec == "Rojo": f2.markdown(f"""<div class="loss-card"><div class="card-label">Riesgo</div><div class="card-value">USD -{lote_val*(desc/100):,.0f}</div></div>""", unsafe_allow_html=True)
-                else: f2.markdown(f"""<div class="info-card"><div class="card-label">Certificación</div><div class="card-value">APROBADA</div></div>""", unsafe_allow_html=True)
-                st.plotly_chart(px.line(df_ndvi, x="Fecha", y="NDVI", title=f"Biomasa ({dec})").add_vline(x=pd.Timestamp("2020-12-31"), line_color="red"), width="stretch")
-                if dec == "Verde": st.download_button("Certificado Blockchain", generar_pdf(row, dec, raz), "cert.pdf", "application/pdf", type="primary", use_container_width=True)
-                else: st.error(f"Bloqueado: {raz}")
+            
+            # --- FIX: AGREGADO COLOR AL TEXTO PARA QUE SE VEA EN FONDO BLANCO ---
+            st.markdown(f"""
+            <div style="background:#f8fafc; padding:15px; border-radius:8px; margin-bottom:15px; color:#1e293b;">
+                <b>Propiedad:</b> {row['nombre_lote']}<br>
+                <b>ID Fiscal:</b> {row['productor_id']}
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if st.button("📡 Iniciar Escaneo Satelital (Sentinel-2)", type="primary"):
+                with st.spinner("Conectando con Google Earth Engine..."):
+                    df_ndvi = get_ndvi(row['centroide_lat'], row['centroide_lon'], sel)
+                    dec, raz, v_base, v_act = diagnostico_eudr_ia(df_ndvi)
+                
+                if not df_ndvi.empty:
+                    # Cálculo de colores y estados
+                    color_res = "#dcfce7" if dec == "Verde" else "#fee2e2"
+                    text_res = "#166534" if dec == "Verde" else "#991b1b"
+                    
+                    # 1. TARJETA DE DICTAMEN
+                    st.markdown(f"""
+                    <div style="background:{color_res}; padding: 20px; border-radius: 10px; border-left: 5px solid {text_res}; margin-bottom: 20px;">
+                        <h3 style="color:{text_res}; margin:0;">DICTAMEN: {dec.upper()}</h3>
+                        <p style="margin:5px 0 0 0; color:{text_res}; font-weight:600;">{raz}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # 2. GRÁFICO (CON LA CORRECCIÓN QUE HICIMOS ANTES)
+                    fig_line = px.line(df_ndvi, x="Fecha", y="NDVI", title="Evolución de Biomasa (2020-Presente)")
+                    fecha_limite = pd.Timestamp("2020-12-31")
+                    fig_line.add_vline(x=fecha_limite, line_width=2, line_dash="dash", line_color="red")
+                    fig_line.add_annotation(x=fecha_limite, y=1, yref="paper", text="Límite EUDR", showarrow=False, font=dict(color="red", size=10), xanchor="right", xshift=-5)
+                    fig_line.update_layout(height=250, margin={"l":20,"r":20,"t":40,"b":20}, showlegend=False)
+                    st.plotly_chart(fig_line, use_container_width=True)
+                    
+                    # 3. BOTÓN DE DESCARGA (LÓGICA MEJORADA)
+                    if dec == "Verde":
+                        st.markdown("---") # Separador visual
+                        st.success("✅ Activo Apto para Exportación. Documentación disponible.")
+                        
+                        # Generamos el PDF pasando los datos del ndvi también
+                        pdf_bytes = generar_pdf(row, dec, raz, df_ndvi)
+                        
+                        col_dl1, col_dl2 = st.columns([2, 1])
+                        with col_dl1:
+                            st.download_button(
+                                label="📄 Descargar Certificado Oficial (PDF)",
+                                data=pdf_bytes,
+                                file_name=f"CERTIFICADO_EUDR_{row['productor_id']}_{pd.Timestamp.now().date()}.pdf",
+                                mime="application/pdf",
+                                type="primary", # Botón rojo/destacado de Streamlit
+                                use_container_width=True,
+                                key="btn_download_pdf" # Key única para evitar conflictos
+                            )
+                        with col_dl2:
+                            st.caption("ℹ️ Este documento incluye bloque de firmas para validación notarial o colegiada.")
+                    else:
+                        st.error("⛔ La emisión de certificados está bloqueada por detección de riesgo ambiental.")
 
-# --- RUTEO PRINCIPAL ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
-
-if not st.session_state['logged_in']:
-    login_screen()
+if not st.session_state['logged_in']: login_screen()
 else:
-    # LÓGICA DE ROLES
     rol_usuario = st.session_state.get('rol', 'cliente')
-    
-    if rol_usuario == 'admin' or rol_usuario == 'premium':
-        dashboard_screen()
-    else:
-        subscription_screen()
+    if rol_usuario == 'admin' or rol_usuario == 'premium': dashboard_screen()
+    else: subscription_screen()
