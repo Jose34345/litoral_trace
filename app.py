@@ -113,12 +113,23 @@ def verificar_login(u, p):
     q = text("SELECT * FROM usuarios WHERE username = :u AND password_hash = :p")
     with engine.connect() as conn: return conn.execute(q, {"u": u, "p": hash_pass(p)}).fetchone()
 
-def registrar_usuario(u, p):
-    check_q = text("SELECT * FROM usuarios WHERE username = :u")
-    insert_q = text("INSERT INTO usuarios (username, password_hash, rol) VALUES (:u, :p, 'cliente')")
+def registrar_usuario(u, p, email):
+    # Verificamos si el usuario O el email ya existen para evitar duplicados
+    check_q = text("SELECT * FROM usuarios WHERE username = :u OR email = :e")
+    
+    # Insertamos el usuario, contraseña, rol 'cliente', el email y la fecha de hoy
+    insert_q = text("""
+        INSERT INTO usuarios (username, password_hash, rol, email, fecha_registro) 
+        VALUES (:u, :p, 'cliente', :e, NOW())
+    """)
+    
     with engine.begin() as conn:
-        if conn.execute(check_q, {"u": u}).fetchone(): return False
-        conn.execute(insert_q, {"u": u, "p": hash_pass(p)})
+        # Si encuentra algo en la búsqueda, devuelve False (no registra)
+        if conn.execute(check_q, {"u": u, "e": email}).fetchone(): 
+            return False
+        
+        # Si no existe, lo inserta
+        conn.execute(insert_q, {"u": u, "p": hash_pass(p), "e": email})
         return True
 
 init_users_db()
@@ -316,11 +327,19 @@ def login_screen():
         st.markdown("""
         La normativa **EUDR (European Union Deforestation Regulation)** cambia las reglas del juego. 
         No pierdas acceso al mercado internacional.
+        
+        ---
+        **Al ingresar a la plataforma accederás a:**
+        
+        * 📡 **Auditoría Satelital en Tiempo Real:** Visualización de lotes con imágenes Sentinel-2 y detección histórica de deforestación (2020-Presente).
+        * 💹 **Calculadora Financiera FAS:** Estimación de márgenes brutos y cuantificación del "Costo de No-Cumplimiento" en mercados restringidos.
+        * 📄 **Certificación Digital:** Emisión automática de reportes de Debida Diligencia listos para presentar ante autoridades de exportación.
         """)
     with col_der:
         st.markdown("<div style='background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); color: #0f172a;'>", unsafe_allow_html=True)
         st.subheader("Acceso a Clientes")
-        tab1, tab2 = st.tabs(["Iniciar Sesión", "Solicitar Cuenta"])
+        tab1, tab2 = st.tabs(["Iniciar Sesión", "Crear Cuenta Nueva"])
+        
         with tab1:
             with st.form("login"):
                 u = st.text_input("Usuario")
@@ -329,9 +348,26 @@ def login_screen():
                     user = verificar_login(u, p)
                     if user:
                         st.session_state['logged_in'] = True; st.session_state['username'] = u; st.session_state['rol'] = user.rol; st.rerun()
-                    else: st.error("Error credenciales")
+                    else: st.error("Usuario o contraseña incorrectos")
+        
         with tab2:
-            st.write("Contactar administración para cuentas demo.")
+            with st.form("reg"):
+                st.markdown("##### Únete a la plataforma")
+                nu = st.text_input("Usuario Deseado")
+                ne = st.text_input("Correo Electrónico")
+                np1 = st.text_input("Contraseña", type="password")
+                np2 = st.text_input("Repetir Contraseña", type="password")
+                
+                if st.form_submit_button("Registrarse"):
+                    if np1 == np2 and len(np1) > 5 and "@" in ne:
+                        if registrar_usuario(nu, np1, ne): 
+                            st.success("¡Cuenta creada exitosamente! Ya puedes iniciar sesión en la otra pestaña.")
+                            st.balloons()
+                        else: 
+                            st.error("El nombre de usuario o el correo ya están registrados.")
+                    else: 
+                        st.warning("Verifica que las contraseñas coincidan y el correo sea válido.")
+        
         st.markdown("</div>", unsafe_allow_html=True)
 
 def subscription_screen():
