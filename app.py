@@ -495,5 +495,7 @@ if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if not st.session_state['logged_in']: login_screen()
 else:
     rol_usuario = st.session_state.get('rol', 'cliente')
-    if rol_usuario == 'admin' or rol_usuario == 'premium': dashboard_screen()
-    else: subscription_screen()
+    if rol_usuario in ['admin', 'premium', 'cliente']: 
+        dashboard_screen()
+    else: 
+        subscription_screen()
