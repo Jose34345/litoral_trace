@@ -91,8 +91,10 @@ st.markdown("""
 try:
     DB_URL = st.secrets["DB_URL"]
 except:
-    # Fallback solo para desarrollo
-    DB_URL = "postgresql://neondb_owner:npg_nxamLK5P6thM@ep-royal-snow-a488eu3z-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+    # Si no encuentra los secretos, detenemos la app para evitar errores de conexión
+    # IMPORTANTE: Nunca escribir la contraseña real aquí en texto plano
+    st.error("Error crítico: No se encontraron las credenciales de base de datos (secrets.toml).")
+    st.stop()
 
 engine = create_engine(DB_URL)
 
