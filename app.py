@@ -24,7 +24,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- ESTILOS CSS AVANZADOS (Look & Feel Corporativo) ---
+# --- ESTILOS CSS GLOBALES (Dashboard Look & Feel) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
@@ -74,7 +74,6 @@ st.markdown("""
         font-weight: 800;
         margin-top: 8px;
     }
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -127,7 +126,6 @@ GEE_ACTIVO = inicializar_gee()
 # --- FUNCIONES DE NEGOCIO (FORESTO-INDUSTRIAL) ---
 @st.cache_data(ttl=300)
 def get_market_prices():
-    # Precios simulados FAS teóricos para el sector forestal/taninero (USD/Ton)
     return {
         "Madera Aserrada (Pino)": 220.0,
         "Madera Aserrada (Eucalipto)": 280.0,
@@ -164,7 +162,7 @@ def generar_dds_json(lote, vol_exportar):
     }
     return json.dumps(dds_payload, indent=4)
 
-# --- PDF GENERATION (PROFESIONAL / LEGAL) ---
+# --- PDF GENERATION ---
 class PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 12)
@@ -299,14 +297,10 @@ def get_ndvi(lat, lon, nombre):
 def procesar_lote_masivo(df_upload):
     zip_buffer = io.BytesIO()
     resumen_resultados = []
-
-    # Abrimos un archivo ZIP en memoria
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         progress_bar = st.progress(0)
         total_rows = len(df_upload)
-
         for index, row in df_upload.iterrows():
-            # 1. Extracción segura de datos del Excel
             n = str(row.get('Identificador_Lote', f'Lote_Desconocido_{index}'))
             p = str(row.get('ID_Proveedor', 'N/A'))
             c = str(row.get('Producto_Forestal', 'Madera Aserrada (Pino)'))
@@ -316,13 +310,11 @@ def procesar_lote_masivo(df_upload):
             vol_in = float(row.get('Volumen_Ingresado_Ton', 0))
             vol_out = float(row.get('Volumen_Exportar_Ton', 0))
 
-            # 2. Auditoría de Balance de Masas
             rendimiento_industrial = {"Madera Aserrada (Pino)": 0.50, "Madera Aserrada (Eucalipto)": 0.45, "Extracto de Quebracho (Tanino)": 0.30, "Rollizo Triturable": 0.95}
             coeficiente = rendimiento_industrial.get(c, 0.50)
             vol_max = vol_in * coeficiente
             mass_balance_ok = vol_out <= vol_max
 
-            # 3. Auditoría Satelital (GEE)
             df_ndvi = get_ndvi(lat, lon, n)
             dec, raz, _, _ = diagnostico_eudr_ia(df_ndvi)
 
@@ -330,43 +322,26 @@ def procesar_lote_masivo(df_upload):
                 dec = "Rojo"
                 raz = f"Fallo en Balance de Masas. Exceso de {vol_out - vol_max:.1f} Toneladas."
 
-            # Guardamos el resultado para la tabla resumen
             resumen_resultados.append({
-                "Lote": n,
-                "Proveedor": p,
-                "Vol. Exportar (Tons)": vol_out,
-                "Dictamen": dec,
-                "Observación": raz
+                "Lote": n, "Proveedor": p, "Vol. Exportar (Tons)": vol_out,
+                "Dictamen": dec, "Observación": raz
             })
 
-            # 4. Generación de Certificados solo para los aprobados ("Verdes")
             if dec == "Verde":
-                lote_dict = {
-                    'nombre_lote': n, 'productor_id': p, 'tipo_cultivo': c, 
-                    'hectareas_declaradas': h, 'centroide_lat': lat, 'centroide_lon': lon
-                }
-                
+                lote_dict = {'nombre_lote': n, 'productor_id': p, 'tipo_cultivo': c, 'hectareas_declaradas': h, 'centroide_lat': lat, 'centroide_lon': lon}
                 pdf_bytes = generar_pdf(lote_dict, dec, raz, df_ndvi)
                 json_data = generar_dds_json(lote_dict, vol_out)
-
-                # Escribimos los archivos dentro del ZIP organizados por carpetas
                 carpeta = f"APROBADOS_{p}_{n}/"
                 zip_file.writestr(carpeta + f"CERTIFICADO_{p}.pdf", pdf_bytes)
                 zip_file.writestr(carpeta + f"DDS_{p}.json", json_data)
 
-            # Actualizar barra de progreso
             progress_bar.progress((index + 1) / total_rows)
 
     return pd.DataFrame(resumen_resultados), zip_buffer.getvalue()
 
 def generar_plantilla_excel():
-    df_template = pd.DataFrame(columns=[
-        'Identificador_Lote', 'ID_Proveedor', 'Producto_Forestal', 'Hectareas', 
-        'Latitud', 'Longitud', 'Volumen_Ingresado_Ton', 'Volumen_Exportar_Ton'
-    ])
-    # Fila de ejemplo
+    df_template = pd.DataFrame(columns=['Identificador_Lote', 'ID_Proveedor', 'Producto_Forestal', 'Hectareas', 'Latitud', 'Longitud', 'Volumen_Ingresado_Ton', 'Volumen_Exportar_Ton'])
     df_template.loc[0] = ['Rodal_Norte_01', 'CUIT-30123456789', 'Madera Aserrada (Eucalipto)', 120, -27.50, -58.90, 500, 200]
-    
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         df_template.to_excel(writer, index=False, sheet_name='Plantilla_Importacion')
@@ -374,54 +349,154 @@ def generar_plantilla_excel():
 
 # --- PANTALLAS ---
 def login_screen():
-    col_izq, col_der = st.columns([1.2, 1])
+    # Inyectar CSS ultra-profesional (Glassmorphism y tipografía clara)
+    st.markdown("""
+    <style>
+        /* Fondo inmersivo */
+        [data-testid="stAppViewContainer"] {
+            background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('https://images.unsplash.com/photo-1448375240586-882707db888b?q=80&w=2070&auto=format&fit=crop');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }
+        [data-testid="stHeader"] {
+            background: transparent;
+        }
+        
+        /* Estilos del formulario de Login (Efecto Vidrio) */
+        [data-testid="stForm"] {
+            background: rgba(30, 41, 59, 0.7) !important;
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            border-radius: 16px !important;
+            padding: 30px !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        /* Forzar etiquetas del formulario a color claro */
+        [data-testid="stForm"] label {
+            color: #f8fafc !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+        }
+        .form-title {
+            color: #ffffff;
+            font-size: 1.8rem;
+            font-weight: 800;
+            margin-bottom: 20px;
+            text-align: center;
+            letter-spacing: -0.5px;
+        }
+
+        /* Estilos del texto izquierdo (Propuesta de Valor) */
+        .hero-title {
+            color: #ffffff;
+            font-size: 3.2rem;
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 20px;
+            letter-spacing: -1px;
+        }
+        .hero-subtitle {
+            color: #94a3b8;
+            font-size: 1.2rem;
+            line-height: 1.5;
+            margin-bottom: 40px;
+        }
+        .value-box {
+            background: rgba(255, 255, 255, 0.03);
+            border-left: 4px solid #3b82f6;
+            padding: 15px 20px;
+            margin-bottom: 15px;
+            border-radius: 0 8px 8px 0;
+            transition: all 0.3s ease;
+        }
+        .value-box:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateX(5px);
+        }
+        .value-title {
+            color: #f8fafc;
+            font-weight: 700;
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+        }
+        .value-desc {
+            color: #94a3b8;
+            font-size: 0.95rem;
+            line-height: 1.4;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Añadir un espacio superior para centrar verticalmente
+    st.write("<br><br>", unsafe_allow_html=True)
+
+    col_izq, col_espacio, col_der = st.columns([1.3, 0.1, 1])
+    
     with col_izq:
-        st.markdown("### 🌲 Litoral Trace")
-        st.markdown("# Inteligencia Geoespacial Foresto-Industrial")
         st.markdown("""
-        La normativa **EUDR (European Union Deforestation Regulation)** prohíbe el ingreso de productos forestales sin trazabilidad absoluta.
+        <h1 class="hero-title">Inteligencia de Compliance Foresto-Industrial</h1>
+        <p class="hero-subtitle">
+            Asegure su exportación de madera y extracto de tanino hacia Europa. 
+            Automatice la cadena de custodia y capitalice el arancel cero sin riesgo de bloqueos.
+        </p>
         
-        ---
-        **Al ingresar a la plataforma accederás a:**
+        <div class="value-box">
+            <div class="value-title">⚖️ Auditoría de Balance de Masas</div>
+            <div class="value-desc">Prevenga el rechazo por "lavado de madera". El motor econométrico justifica los rendimientos industriales (rollo vs. extracto/tabla) ante TRACES NT.</div>
+        </div>
         
-        * 📡 **Auditoría Satelital:** Verificación automática de deforestación post-2020 con imágenes Sentinel-2.
-        * ⚖️ **Balance de Masas:** Prevención de "lavado de madera" mediante validación algorítmica de rendimientos industriales.
-        * 📄 **Generación DDS:** Emisión masiva de archivos JSON compatibles con TRACES NT (Aduana UE) y Certificados PDF.
-        """)
+        <div class="value-box">
+            <div class="value-title">📡 Validación Satelital Cero Fricción</div>
+            <div class="value-desc">Ingeste cientos de guías forestales en Excel. El sistema cruza coordenadas GPS con Sentinel-2 para garantizar lotes libres de deforestación post-2020.</div>
+        </div>
+        
+        <div class="value-box">
+            <div class="value-title">📄 Emisión Inmediata de DDS (JSON)</div>
+            <div class="value-desc">Transforme un cuello de botella de semanas en segundos. Descargue los archivos exigidos por la aduana europea listos para el embarque.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
     with col_der:
-        st.markdown("<div style='background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); color: #0f172a;'>", unsafe_allow_html=True)
-        st.subheader("Acceso a Clientes")
-        tab1, tab2 = st.tabs(["Iniciar Sesión", "Crear Cuenta Nueva"])
+        with st.form("login"):
+            st.markdown("<div class='form-title'>Acceso Corporativo</div>", unsafe_allow_html=True)
+            u = st.text_input("ID de Usuario")
+            p = st.text_input("Clave de Seguridad", type="password")
+            
+            st.write("") # Espaciador
+            if st.form_submit_button("Iniciar Sesión Segura", type="primary"):
+                user = verificar_login(u, p)
+                if user:
+                    st.session_state['logged_in'] = True; st.session_state['username'] = u; st.session_state['rol'] = user.rol; st.rerun()
+                else: 
+                    st.error("Credenciales incorrectas o usuario no autorizado.")
         
-        with tab1:
-            with st.form("login"):
-                u = st.text_input("Usuario")
-                p = st.text_input("Contraseña", type="password")
-                if st.form_submit_button("Acceder"):
-                    user = verificar_login(u, p)
-                    if user:
-                        st.session_state['logged_in'] = True; st.session_state['username'] = u; st.session_state['rol'] = user.rol; st.rerun()
-                    else: st.error("Usuario o contraseña incorrectos")
+        # Sección de contacto para ventas
+        # --- NUEVA SECCIÓN DE CONTACTO INTERACTIVA ---
+        st.write("<br>", unsafe_allow_html=True)
         
-        with tab2:
-            with st.form("reg"):
-                st.markdown("##### Únete a la plataforma")
-                nu = st.text_input("Usuario Deseado")
-                ne = st.text_input("Correo Electrónico")
-                np1 = st.text_input("Contraseña", type="password")
-                np2 = st.text_input("Repetir Contraseña", type="password")
-                
-                if st.form_submit_button("Registrarse"):
-                    if np1 == np2 and len(np1) > 5 and "@" in ne:
-                        if registrar_usuario(nu, np1, ne): 
-                            st.success("¡Cuenta creada exitosamente! Ya puedes iniciar sesión en la otra pestaña.")
-                            st.balloons()
-                        else: 
-                            st.error("El nombre de usuario o el correo ya están registrados.")
-                    else: 
-                        st.warning("Verifica que las contraseñas coincidan y el correo sea válido.")
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 10px;">
+            <p style="color: #94a3b8; font-size: 0.9rem;">Plataforma B2B de acceso cerrado.</p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        st.markdown("</div>", unsafe_allow_html=True)
+        # Usamos el estado de sesión para recordar si la tarjeta está abierta o cerrada
+        if 'mostrar_contacto' not in st.session_state:
+            st.session_state['mostrar_contacto'] = False
+            
+        if st.button("✉️ Solicitar Demo Comercial", use_container_width=True):
+            st.session_state['mostrar_contacto'] = not st.session_state['mostrar_contacto']
+            
+        if st.session_state['mostrar_contacto']:
+            st.markdown("""
+            <div style='background: rgba(15, 23, 42, 0.8); border: 1px solid #3b82f6; padding: 15px; border-radius: 8px; margin-top: 10px; color: #f8fafc; font-size: 0.95rem; box-shadow: 0 4px 6px rgba(0,0,0,0.3);'>
+                <b style='color: #60a5fa;'>Contacto Directo (Resistencia, Chaco):</b><br><br>
+                📞 Tel / Whatsapp: <b>+54 9 3794631300</b><br>
+                📧 <b>comercial@litoraltrace.com</b><br><br>
+                <i>Disponibilidad para demos presenciales en plantas industriales del NEA o vía videollamada.</i>
+            </div>
+            """, unsafe_allow_html=True)
 
 def subscription_screen():
     st.title("⚙️ Habilitación de Licencia")
@@ -482,7 +557,6 @@ def dashboard_screen():
             with st.expander("➕ Ingreso Masivo (Procesamiento Batch)", expanded=True):
                 st.markdown("Procesa múltiples remitos y polígonos simultáneamente subiendo tu matriz de datos.")
                 
-                # Botón para descargar la plantilla
                 st.download_button(
                     label="📥 Descargar Plantilla Excel",
                     data=generar_plantilla_excel(),
@@ -503,10 +577,8 @@ def dashboard_screen():
                             else:
                                 st.info(f"Procesando {len(df_upload)} lotes. Esto puede tomar unos segundos...")
                                 
-                                # Ejecutar el motor masivo
                                 df_resumen, zip_data = procesar_lote_masivo(df_upload)
                                 
-                                # Mostrar resultados
                                 st.markdown("#### 📊 Resumen de Auditoría")
                                 
                                 def color_dictamen(val):
