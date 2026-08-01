@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Litoral Trace | Compliance Intelligence EUDR{% endblock %}</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- HTMX CDN -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Leaflet.js Map CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        forest: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#064e3b',
+                        },
+                        timber: {
+                            600: '#d97706',
+                            700: '#b45309',
+                            800: '#92400e',
+                            900: '#78350f',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="h-full flex flex-col font-sans text-slate-800 antialiased">
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Logo & Niche Branding -->
+                <div class="flex items-center space-x-3">
+                    <span class="text-2xl">🌲</span>
+                    <div>
+                        <a href="/" class="font-bold text-xl tracking-tight text-white flex items-center gap-2">
+                            Litoral Trace
+                            <span class="bg-forest-800 text-forest-100 text-xs px-2 py-0.5 rounded font-medium border border-forest-600">EUDR B2B</span>
+                        </a>
+                        <p class="text-xs text-slate-400">Trazabilidad Forestal & Exportación a la Unión Europea</p>
+                    </div>
+                </div>
+                <!-- Right Header Metadata -->
+                <div class="flex items-center space-x-4">
+                    <span class="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800">
+                        <i class="fa-solid fa-earth-europe"></i> Mercado Objetivo: UE 2023/1115
+                    </span>
+                    {% if user %}
+                    <div class="text-right text-xs">
+                        <span class="block font-semibold text-slate-200">{{ user.organization_name }}</span>
+                        <span class="text-slate-400">{{ user.username }} ({{ user.role|upper }})</span>
+                    </div>
+                    <a href="/logout" class="text-slate-400 hover:text-white text-sm p-2"><i class="fa-solid fa-right-from-bracket"></i></a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-slate-900 border-t border-slate-800 text-slate-400 py-6 text-xs mt-auto">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <p class="font-semibold text-slate-300">Litoral Trace Compliance Intelligence v2.4</p>
+                <p>Monitoreo Satelital (Copernicus Sentinel-2), Balance de Masas & Declaraciones TRACES NT para Madera, Tanino y Carbón Vegetal.</p>
+            </div>
+            <div class="text-right">
+                <p>📍 Resistencia, Chaco | Gran Chaco - Argentina</p>
+                <p>Reglamento (UE) 2023/1115 Libre de Deforestación</p>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>

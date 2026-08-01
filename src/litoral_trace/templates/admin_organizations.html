@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}SuperAdmin | Gestión de Empresas B2B{% endblock %}
+
+{% block content %}
+<!-- Hero Header SuperAdmin -->
+<div class="mb-6 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div>
+        <div class="flex items-center gap-2 mb-1">
+            <span class="text-xs font-bold px-2.5 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-300">PANEL SUPERADMIN</span>
+            <span class="text-xs text-slate-500 font-medium"><i class="fa-solid fa-crown text-amber-500"></i> Control Total de Cuentas B2B</span>
+        </div>
+        <h1 class="text-2xl font-bold text-slate-900">Gestión de Clientes & Licencias de Pago</h1>
+        <p class="text-xs text-slate-500">Alta manual de empresas clientes, asignación de cuotas de lotes y emisión de credenciales privadas.</p>
+    </div>
+    <div class="flex gap-2">
+        <a href="/dashboard" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg shadow transition-colors inline-flex items-center gap-2">
+            <i class="fa-solid fa-chart-line"></i> Ir al Dashboard
+        </a>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Panel Izquierdo: Lista de Empresas Activas -->
+    <div class="lg:col-span-2 space-y-6">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <h3 class="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-building text-purple-800"></i> Empresas Clientes Registradas
+            </h3>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200">
+                        <tr>
+                            <th class="p-3">ID</th>
+                            <th class="p-3">Empresa / Razón Social</th>
+                            <th class="p-3">CUIT</th>
+                            <th class="p-3">Plan</th>
+                            <th class="p-3">Límite Lotes</th>
+                            <th class="p-3">Usuario Admin</th>
+                            <th class="p-3">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 font-medium text-slate-700">
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-3 font-bold">1</td>
+                            <td class="p-3 font-semibold text-slate-900">Exportadora Forestal del Chaco S.A.</td>
+                            <td class="p-3 text-slate-500">30-55555555-9</td>
+                            <td class="p-3"><span class="px-2 py-0.5 bg-purple-100 text-purple-800 rounded font-bold">ENTERPRISE</span></td>
+                            <td class="p-3 font-semibold">100 / mes</td>
+                            <td class="p-3 text-slate-600">admin</td>
+                            <td class="p-3"><span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold">ACTIVO</span></td>
+                        </tr>
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-3 font-bold">2</td>
+                            <td class="p-3 font-semibold text-slate-900">Aserradero Don Juan S.A.</td>
+                            <td class="p-3 text-slate-500">30-71234567-8</td>
+                            <td class="p-3"><span class="px-2 py-0.5 bg-sky-100 text-sky-800 rounded font-bold">PRO</span></td>
+                            <td class="p-3 font-semibold">50 / mes</td>
+                            <td class="p-3 text-slate-600">donjuan_admin</td>
+                            <td class="p-3"><span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold">ACTIVO</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel Derecho: Formulario de Alta Manual de Cliente -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <h3 class="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
+            <i class="fa-solid fa-plus-circle text-purple-800"></i> Alta de Cliente B2B
+        </h3>
+        <p class="text-xs text-slate-500 mb-4">Crea una cuenta una vez que el cliente haya contratado la suscripción.</p>
+
+        <form hx-post="/api/v1/admin/organizations" hx-target="#adminCreateResult" class="space-y-3">
+            <div>
+                <label class="block text-2xs font-semibold text-slate-700 uppercase mb-1">Nombre Empresa / Razón Social</label>
+                <input type="text" name="name" value="Aserradero San Miguel S.R.L." required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-600">
+            </div>
+            <div>
+                <label class="block text-2xs font-semibold text-slate-700 uppercase mb-1">CUIT de la Empresa</label>
+                <input type="text" name="tax_id" value="30-88888888-4" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-600">
+            </div>
+            <div>
+                <label class="block text-2xs font-semibold text-slate-700 uppercase mb-1">Correo Electrónico del Cliente</label>
+                <input type="email" name="admin_email" value="contacto@sanmiguel.com" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-600">
+            </div>
+            <div>
+                <label class="block text-2xs font-semibold text-slate-700 uppercase mb-1">Usuario Asignado</label>
+                <input type="text" name="admin_username" value="sanmiguel_admin" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-600">
+            </div>
+            <div>
+                <label class="block text-2xs font-semibold text-slate-700 uppercase mb-1">Contraseña Asignada</label>
+                <input type="text" name="admin_password" value="SanMiguel2026!" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-600">
+            </div>
+            <div>
+                <label class="block text-2xs font-semibold text-slate-700 uppercase mb-1">Plan Contratado</label>
+                <select name="tier" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white outline-none">
+                    <option value="pro">Pro (50 Lotes / mes)</option>
+                    <option value="enterprise">Enterprise (100+ Lotes / mes)</option>
+                </select>
+            </div>
+
+            <button type="submit" class="w-full py-2.5 bg-purple-800 hover:bg-purple-900 text-white font-semibold text-xs rounded-lg shadow transition-colors">
+                🔑 Activar Cuenta Cliente & Generar Ficha
+            </button>
+        </form>
+
+        <div id="adminCreateResult" class="mt-4"></div>
+    </div>
+</div>
+{% endblock %}
