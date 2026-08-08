@@ -28,6 +28,7 @@ from litoral_trace.auth.sessions import (
     sanitize_user_agent,
 )
 from litoral_trace.auth.passwords import verify_password
+from litoral_trace.auth.rbac import Permission, has_permission
 from litoral_trace.auth.tokens import create_jwt_token, verify_jwt_token
 from litoral_trace.config import get_settings
 from litoral_trace.db.auth_bootstrap import lookup_login_bootstrap_user
@@ -45,8 +46,6 @@ oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login",
     auto_error=False,
 )
-
-PLATFORM_SUPERADMIN_ROLE = "superadmin"
 
 
 class LoginRequest(BaseModel):
@@ -132,7 +131,7 @@ def _is_platform_superadmin(
     *,
     user: User,
 ) -> bool:
-    return user.role.strip().lower() == PLATFORM_SUPERADMIN_ROLE
+    return has_permission(user.role, Permission.PLATFORM_ADMIN)
 
 
 def _hydrate_user_tenant_context(

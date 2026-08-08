@@ -1,9 +1,8 @@
 import os
 import unittest
-import time
 from litoral_trace.auth.tokens import create_jwt_token, verify_jwt_token
 from litoral_trace.auth.api_keys import generate_api_key, hash_api_key, verify_api_key_hash
-from litoral_trace.auth.rbac import has_permission, get_role_level
+from litoral_trace.auth.rbac import Permission, has_permission, permissions_for_role
 
 class TestAuthAndRBAC(unittest.TestCase):
     def test_jwt_token_flow(self):
@@ -88,21 +87,21 @@ class TestAuthAndRBAC(unittest.TestCase):
         self.assertTrue(verify_api_key_hash(generated.full_key, generated.key_hash))
         self.assertFalse(verify_api_key_hash("lt_live_invalidkey12345", generated.key_hash))
 
-    def test_rbac_hierarchy(self):
-        self.assertEqual(get_role_level("superadmin"), 125)
-        self.assertEqual(get_role_level("admin"), 100)
-        self.assertEqual(get_role_level("manager"), 75)
-        self.assertEqual(get_role_level("auditor"), 50)
-        self.assertEqual(get_role_level("cliente"), 25)
-        self.assertEqual(get_role_level("unknown"), 0)
-        
-        # Permisos
-        self.assertTrue(has_permission("superadmin", "admin"))
-        self.assertTrue(has_permission("admin", "manager"))
-        self.assertTrue(has_permission("manager", "auditor"))
-        self.assertTrue(has_permission("auditor", "cliente"))
-        self.assertFalse(has_permission("cliente", "manager"))
-        self.assertFalse(has_permission("auditor", "admin"))
+    def test_rbac_permission_matrix(self):
+        self.assertEqual(permissions_for_role("unknown"), frozenset())
+        self.assertEqual(permissions_for_role(None), frozenset())
+
+        self.assertEqual(permissions_for_role("superadmin"), frozenset(Permission))
+        self.assertIn(Permission.PLATFORM_ADMIN, permissions_for_role("superadmin"))
+        self.assertNotIn(Permission.PLATFORM_ADMIN, permissions_for_role("admin"))
+        self.assertNotIn(Permission.SETTINGS_WRITE, permissions_for_role("manager"))
+        self.assertNotIn(Permission.SATELLITE_RUN, permissions_for_role("auditor"))
+
+        self.assertTrue(has_permission("admin", Permission.LOTE_CREATE))
+        self.assertTrue(has_permission("manager", Permission.SATELLITE_RUN))
+        self.assertTrue(has_permission("auditor", Permission.LOTE_READ))
+        self.assertFalse(has_permission("cliente", Permission.LOTE_DELETE))
+        self.assertFalse(has_permission("unknown", Permission.LOTE_READ))
 
 if __name__ == "__main__":
     unittest.main()

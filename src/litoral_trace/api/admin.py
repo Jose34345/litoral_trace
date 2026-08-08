@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from litoral_trace.api.auth import UserTenantContext, get_current_tenant_user
+from litoral_trace.api.auth import UserTenantContext
+from litoral_trace.auth.rbac import Permission, ensure_permission, require_permission
 from litoral_trace.services.admin import (
     alternar_estado_empresa,
     crear_nueva_empresa_cliente,
@@ -45,14 +46,10 @@ class CrearEmpresaClienteRequest(BaseModel):
 
 
 def require_superadmin_role(
-    user: UserTenantContext = Depends(get_current_tenant_user),
+    user: UserTenantContext = Depends(require_permission(Permission.PLATFORM_ADMIN)),
 ) -> UserTenantContext:
-    """Verifica que el usuario autenticado posea rol de SuperAdmin."""
-    if not user.is_platform_superadmin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acceso Denegado: Esta funcion esta reservada exclusivamente para el SuperAdmin.",
-        )
+    """Compatibilidad: delega la autorizacion de plataforma al RBAC central."""
+    ensure_permission(user, Permission.PLATFORM_ADMIN)
     return user
 
 

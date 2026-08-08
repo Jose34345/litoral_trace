@@ -7,7 +7,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from litoral_trace.api.auth import get_current_tenant_user, UserTenantContext
+from litoral_trace.api.auth import UserTenantContext
+from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.config import get_settings
 from litoral_trace.db.tenant import get_tenant_scoped_db_session
 from litoral_trace.services.gee import consultar_serie_temporal_ndvi_gee, generate_geometry_hash, ALGORITHM_VERSION
@@ -83,7 +84,7 @@ def _get_tenant_lote_geometry(
 @router.post("/ndvi", tags=["Telemetría Satelital GEE"])
 async def consultar_ndvi_satelital_lote_endpoint(
     payload: SatelliteQueryByLoteRequest,
-    user: UserTenantContext = Depends(get_current_tenant_user)
+    user: UserTenantContext = Depends(require_permission(Permission.SATELLITE_RUN))
 ) -> JSONResponse:
     """Consulta la serie temporal NDVI para un lote, con validación de propiedad multi-tenant, persistencia e incrementalidad."""
     t_start = time.time()

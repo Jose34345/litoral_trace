@@ -52,6 +52,9 @@ SECRETS
 > Las credenciales runtime no deben ser owner del schema ni tener `BYPASSRLS`.
 > `init_db.py` NO debe utilizarse en produccion; Alembic es el unico mecanismo oficial para crear o migrar el esquema.
 > SQLite solo es un fallback de desarrollo/local y NO debe usarse en produccion.
+> Autorizacion de aplicacion: el rol efectivo se revalida contra DB en cada request,
+> luego la matriz central `role -> permissions` decide capacidades, y recien despues
+> se fija el tenant context para operar bajo PostgreSQL RLS.
 
 ---
 

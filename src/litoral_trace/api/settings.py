@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from litoral_trace.api.auth import UserTenantContext, get_current_tenant_user
+from litoral_trace.api.auth import UserTenantContext
+from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.services.licenses import (
     generar_invitacion_demo_prospecto,
     obtener_cuota_tenant,
@@ -40,7 +41,7 @@ class InviteDemoUserRequest(BaseModel):
 
 @router.get("/license", tags=["Configuracion & Licencias B2B"])
 async def consultar_licencia_tenant(
-    user: UserTenantContext = Depends(get_current_tenant_user),
+    user: UserTenantContext = Depends(require_permission(Permission.LICENSE_READ)),
 ) -> JSONResponse:
     """Consulta el estado de la licencia, consumo mensual y limites de la organizacion."""
     status_obj = obtener_cuota_tenant(
@@ -56,7 +57,7 @@ async def consultar_licencia_tenant(
 @router.post("/invite_demo_user", tags=["Configuracion & Licencias B2B"])
 async def generar_invitacion_demo_endpoint(
     payload: InviteDemoUserRequest,
-    user: UserTenantContext = Depends(get_current_tenant_user),
+    user: UserTenantContext = Depends(require_permission(Permission.SETTINGS_WRITE)),
 ) -> JSONResponse:
     """Genera credenciales de acceso demo comercial para un prospecto."""
     demo_credentials = generar_invitacion_demo_prospecto(

@@ -20,8 +20,8 @@ from sqlalchemy import select
 
 from litoral_trace.api.auth import (
     UserTenantContext,
-    get_current_tenant_user,
 )
+from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import Lote
 from litoral_trace.db.tenant import (
@@ -236,19 +236,6 @@ class LoteEvaluacionRequest(BaseModel):
 # ============================================================================
 
 
-WRITE_ROLES = {"superadmin", "admin", "manager"}
-
-
-def _require_write_role(user: UserTenantContext) -> None:
-    """Permite escritura únicamente a admin y manager."""
-
-    if user.role.lower().strip() not in WRITE_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="El rol del usuario no tiene permisos para modificar lotes.",
-        )
-
-
 def _generate_default_polygon(
     latitud: float,
     longitud: float,
@@ -327,7 +314,7 @@ def _get_tenant_lote(
     tags=["Lotes Geoespaciales"],
 )
 async def listar_lotes_tenant(
-    user: UserTenantContext = Depends(get_current_tenant_user),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_READ)),
 ) -> JSONResponse:
     """
     Lista únicamente los lotes pertenecientes a la organización autenticada.
@@ -376,7 +363,7 @@ async def listar_lotes_tenant(
 )
 async def obtener_lote(
     lote_id: int,
-    user: UserTenantContext = Depends(get_current_tenant_user),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_READ)),
 ) -> LoteResponse:
     """Obtiene un lote perteneciente al tenant autenticado."""
 
@@ -414,13 +401,11 @@ async def obtener_lote(
 )
 async def crear_lote(
     payload: LoteCreateRequest,
-    user: UserTenantContext = Depends(get_current_tenant_user),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_CREATE)),
 ) -> LoteResponse:
     """
     Crea un lote real en PostgreSQL asociado al tenant autenticado.
     """
-
-    _require_write_role(user)
 
     session = get_tenant_scoped_db_session(user.organization_id)
 
@@ -505,11 +490,9 @@ async def crear_lote(
 async def actualizar_lote(
     lote_id: int,
     payload: LoteUpdateRequest,
-    user: UserTenantContext = Depends(get_current_tenant_user),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_UPDATE)),
 ) -> LoteResponse:
     """Actualiza un lote perteneciente exclusivamente al tenant autenticado."""
-
-    _require_write_role(user)
 
     session = get_tenant_scoped_db_session(user.organization_id)
 
@@ -596,15 +579,12 @@ async def actualizar_lote(
 )
 async def eliminar_lote(
     lote_id: int,
-    user: UserTenantContext = Depends(get_current_tenant_user),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_DELETE)),
 ) -> None:
     """
     Elimina un lote únicamente si pertenece al tenant autenticado.
 
-    Solamente admin y manager tienen permisos de escritura.
     """
-
-    _require_write_role(user)
 
     session = get_tenant_scoped_db_session(user.organization_id)
 
@@ -650,7 +630,7 @@ async def eliminar_lote(
 )
 async def evaluar_compliance_endpoint(
     payload: LoteEvaluacionRequest,
-    user: UserTenantContext = Depends(get_current_tenant_user),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_READ)),
 ) -> JSONResponse:
     """
     Ejecuta la evaluación integral de biomasa (NDVI)
@@ -744,7 +724,7 @@ async def descargar_plantilla_excel_endpoint() -> StreamingResponse:
 )
 async def procesar_batch_excel_endpoint(
     file: UploadFile = File(...),
-    user: UserTenantContext = Depends(get_current_tenant_user),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_CREATE)),
 ) -> StreamingResponse:
     """Procesa una matriz Excel y genera el paquete de auditoría ZIP."""
 

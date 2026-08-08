@@ -3,7 +3,7 @@ import json
 
 from litoral_trace.auth.tokens import create_jwt_token, verify_jwt_token
 from litoral_trace.auth.api_keys import generate_api_key, verify_api_key_hash
-from litoral_trace.auth.rbac import has_permission
+from litoral_trace.auth.rbac import Permission, has_permission
 from litoral_trace.services.compliance import evaluar_compliance_lote, generar_dds_json_traces_nt
 from litoral_trace.services.reports import generar_pdf_reporte_bytes
 
@@ -20,7 +20,7 @@ class TestFullProductionIntegration(unittest.TestCase):
         jwt_token = create_jwt_token({"sub": username, "org_id": org_id, "role": role})
         payload = verify_jwt_token(jwt_token)
         self.assertEqual(payload["org_id"], org_id)
-        self.assertTrue(has_permission(payload["role"], "auditor"))
+        self.assertTrue(has_permission(payload["role"], Permission.LOTE_CREATE))
 
         # 2. Evaluación de Compliance
         lote_dict = {

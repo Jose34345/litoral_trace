@@ -5,7 +5,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from litoral_trace.api.auth import get_current_tenant_user, UserTenantContext
+from litoral_trace.api.auth import UserTenantContext
+from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.services.vault import listar_documentos_boveda_tenant
 
 router = APIRouter(prefix="/api/v1/vault", tags=["Bóveda Documental B2B"])
@@ -14,7 +15,7 @@ router = APIRouter(prefix="/api/v1/vault", tags=["Bóveda Documental B2B"])
 async def consultar_documentos_boveda(
     q: str | None = Query(None, description="Buscador por nombre de archivo, rodal o CUIT"),
     type: str | None = Query(None, description="Filtro por tipo de documento"),
-    user: UserTenantContext = Depends(get_current_tenant_user)
+    user: UserTenantContext = Depends(require_permission(Permission.VAULT_READ))
 ) -> JSONResponse:
     """Consulta los documentos almacenados en la bóveda privada del cliente."""
     docs = listar_documentos_boveda_tenant(
@@ -37,7 +38,7 @@ async def consultar_documentos_boveda(
 @router.get("/download/{doc_id}", tags=["Bóveda Documental B2B"])
 async def descargar_documento_boveda(
     doc_id: str,
-    user: UserTenantContext = Depends(get_current_tenant_user)
+    user: UserTenantContext = Depends(require_permission(Permission.VAULT_READ))
 ) -> StreamingResponse:
     """Descarga segura de un documento desde la bóveda privada con verificación de tenant."""
     docs = listar_documentos_boveda_tenant(organization_id=user.organization_id)
