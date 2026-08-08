@@ -24,6 +24,10 @@ from litoral_trace.api.auth import (
 )
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import Lote
+from litoral_trace.db.tenant import (
+    get_tenant_scoped_db_session,
+    set_tenant_db_context,
+)
 from litoral_trace.services.batch import (
     generar_plantilla_excel,
     procesar_lote_masivo,
@@ -329,7 +333,7 @@ async def listar_lotes_tenant(
     Lista únicamente los lotes pertenecientes a la organización autenticada.
     """
 
-    session = get_db_session()
+    session = get_tenant_scoped_db_session(user.organization_id)
 
     if session is None:
         raise HTTPException(
@@ -376,7 +380,7 @@ async def obtener_lote(
 ) -> LoteResponse:
     """Obtiene un lote perteneciente al tenant autenticado."""
 
-    session = get_db_session()
+    session = get_tenant_scoped_db_session(user.organization_id)
 
     if session is None:
         raise HTTPException(
@@ -418,7 +422,7 @@ async def crear_lote(
 
     _require_write_role(user)
 
-    session = get_db_session()
+    session = get_tenant_scoped_db_session(user.organization_id)
 
     if session is None:
         raise HTTPException(
@@ -468,6 +472,7 @@ async def crear_lote(
 
         session.add(lote)
         session.commit()
+        set_tenant_db_context(session, user.organization_id)
         session.refresh(lote)
 
         return LoteResponse.model_validate(lote)
@@ -506,7 +511,7 @@ async def actualizar_lote(
 
     _require_write_role(user)
 
-    session = get_db_session()
+    session = get_tenant_scoped_db_session(user.organization_id)
 
     if session is None:
         raise HTTPException(
@@ -559,6 +564,7 @@ async def actualizar_lote(
             setattr(lote, field_name, value)
 
         session.commit()
+        set_tenant_db_context(session, user.organization_id)
         session.refresh(lote)
 
         return LoteResponse.model_validate(lote)
@@ -600,7 +606,7 @@ async def eliminar_lote(
 
     _require_write_role(user)
 
-    session = get_db_session()
+    session = get_tenant_scoped_db_session(user.organization_id)
 
     if session is None:
         raise HTTPException(

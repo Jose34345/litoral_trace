@@ -10,19 +10,85 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Select
+from sqlalchemy import Select, text
+from sqlalchemy.orm import Session
 
+from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import (
     ApiKey,
     AuditLog,
     License,
     Lote,
+    SatelliteNdviObservation,
     User,
 )
 
 
-TenantModel = type[Lote | User | AuditLog | ApiKey | License]
-TenantEntity = Lote | User | AuditLog | ApiKey | License
+TENANT_CONTEXT_GUC = "app.current_organization_id"
+
+TenantModel = type[Lote | User | AuditLog | ApiKey | License | SatelliteNdviObservation]
+TenantEntity = Lote | User | AuditLog | ApiKey | License | SatelliteNdviObservation
+
+
+def _normalize_organization_id(organization_id: int | str) -> int:
+    try:
+        normalized_organization_id = int(organization_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "organization_id debe ser un entero valido."
+        ) from exc
+
+    if normalized_organization_id <= 0:
+        raise ValueError(
+            "organization_id debe ser mayor que cero."
+        )
+
+    return normalized_organization_id
+
+
+def _supports_transaction_local_db_context(session: Session) -> bool:
+    bind = session.get_bind()
+    return bind is not None and bind.dialect.name == "postgresql"
+
+
+def set_tenant_db_context(
+    session: Session,
+    organization_id: int | str,
+) -> int:
+    """Instala el tenant context a nivel transaccional para PostgreSQL.
+
+    El contexto se limita a la transaccion actual mediante `set_config(..., true)`.
+    No realiza commit y en motores no PostgreSQL se comporta como no-op luego
+    de validar organization_id.
+    """
+    normalized_organization_id = _normalize_organization_id(organization_id)
+
+    if not _supports_transaction_local_db_context(session):
+        return normalized_organization_id
+
+    session.execute(
+        text(
+            "SELECT set_config("
+            f"'{TENANT_CONTEXT_GUC}', "
+            ":organization_id, "
+            "true"
+            ")"
+        ),
+        {"organization_id": str(normalized_organization_id)},
+    )
+    return normalized_organization_id
+
+
+def get_tenant_scoped_db_session(
+    organization_id: int | str,
+) -> Session | None:
+    """Obtiene una sesion y aplica tenant context transaccional si corresponde."""
+    session = get_db_session()
+    if session is None:
+        return None
+
+    set_tenant_db_context(session, organization_id)
+    return session
 
 
 def get_current_organization_id() -> int | None:

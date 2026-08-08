@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from litoral_trace.api.auth import get_current_tenant_user, UserTenantContext
 from litoral_trace.config import get_settings
+from litoral_trace.db.tenant import get_tenant_scoped_db_session
 from litoral_trace.services.gee import consultar_serie_temporal_ndvi_gee, generate_geometry_hash, ALGORITHM_VERSION
 from litoral_trace.services.ndvi import evaluar_indicador_variacion_biomasa, calcular_ndvi_simulado
 from litoral_trace.services.cache import (
@@ -45,7 +46,7 @@ def _get_tenant_lote_geometry(
     from litoral_trace.db.engine import get_db_session
     from litoral_trace.db.models import Lote
 
-    session = get_db_session()
+    session = get_tenant_scoped_db_session(user.organization_id)
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -160,9 +161,8 @@ async def consultar_ndvi_satelital_lote_endpoint(
     t_db_start = time.time()
     db_write_ms = 0
     try:
-        from litoral_trace.db.engine import get_db_session
         from litoral_trace.db.models import SatelliteNdviObservation
-        session = get_db_session()
+        session = get_tenant_scoped_db_session(user.organization_id)
         if session:
             try:
                 for obs in obs_list:

@@ -32,6 +32,7 @@ from litoral_trace.auth.tokens import create_jwt_token, verify_jwt_token
 from litoral_trace.config import get_settings
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import Organization, User, UserSession
+from litoral_trace.db.tenant import set_tenant_db_context
 
 
 router = APIRouter(
@@ -159,6 +160,7 @@ def _hydrate_user_tenant_context(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        set_tenant_db_context(session, user.organization_id)
         organization = session.execute(
             select(Organization).where(
                 Organization.id == user.organization_id,
@@ -421,6 +423,7 @@ async def login_b2b(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        set_tenant_db_context(session, user.organization_id)
         organization = session.execute(
             select(Organization).where(
                 Organization.id == user.organization_id

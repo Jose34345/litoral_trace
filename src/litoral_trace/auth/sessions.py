@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from litoral_trace.config import get_settings
 from litoral_trace.db.models import Organization, User, UserSession
+from litoral_trace.db.tenant import set_tenant_db_context
 
 ACCESS_TOKEN_COOKIE_KEY = "session_jwt"
 REFRESH_TOKEN_COOKIE_KEY = "refresh_token"
@@ -232,6 +233,7 @@ def rotate_refresh_session(
         raise SessionSecurityError("Refresh token invalido o expirado.")
 
     user = db_session.get(User, current_session.user_id)
+    set_tenant_db_context(db_session, current_session.organization_id)
     organization = db_session.get(Organization, current_session.organization_id)
     user, organization = _assert_user_and_organization_are_active(
         user=user,
