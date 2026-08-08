@@ -78,12 +78,12 @@ def get_engine() -> Any:
 def get_session_factory() -> Any:
     """Devuelve un factory de sesiones para SQLAlchemy."""
     global _session_factory
-    if _session_factory is not None:
-        return _session_factory
 
     try:
         from sqlalchemy.orm import sessionmaker
         engine = get_engine()
+        if _session_factory is not None:
+            return _session_factory
         if engine:
             _session_factory = sessionmaker(
                 bind=engine,

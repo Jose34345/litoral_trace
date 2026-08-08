@@ -6,6 +6,9 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.types import TypeDecorator
+
+from geoalchemy2 import Geography, Geometry
 
 
 # ============================================================
@@ -88,6 +91,13 @@ config.set_main_option(
 )
 
 
+POSTGIS_SYSTEM_OBJECTS = {
+    "spatial_ref_sys",
+    "geometry_columns",
+    "geography_columns",
+}
+
+
 # ============================================================
 # Filtro de objetos para Alembic
 # ============================================================
@@ -102,14 +112,57 @@ def include_object(
     """
     Controla qué objetos deben ser considerados por Alembic.
 
-    Ignoramos spatial_ref_sys porque pertenece a PostGIS y no
-    forma parte del modelo de datos de LitoralTrace.
+    Ignoramos los objetos internos de PostGIS porque no
+    forman parte del modelo de datos de Litoral Trace.
     """
 
-    if type_ == "table" and name == "spatial_ref_sys":
+    if type_ == "table" and name in POSTGIS_SYSTEM_OBJECTS:
         return False
 
     return True
+
+
+def _unwrap_type(type_):
+    if isinstance(type_, TypeDecorator):
+        return type_.impl
+    return type_
+
+
+def _normalize_geometry_type_name(geometry_type: str | None) -> str | None:
+    if geometry_type is None:
+        return None
+    normalized = geometry_type.strip().upper()
+    return normalized or None
+
+
+def _spatial_signature(type_) -> tuple[str, str | None, int | None, int | None] | None:
+    raw_type = _unwrap_type(type_)
+    if not isinstance(raw_type, (Geometry, Geography)):
+        return None
+
+    srid = getattr(raw_type, "srid", None)
+    try:
+        srid = int(srid) if srid is not None else None
+    except (TypeError, ValueError):
+        srid = None
+
+    return (
+        raw_type.__class__.__name__.lower(),
+        _normalize_geometry_type_name(getattr(raw_type, "geometry_type", None)),
+        srid,
+        getattr(raw_type, "dimension", None),
+    )
+
+
+def compare_type(context, inspected_column, metadata_column, inspected_type, metadata_type):
+    """Evita drift falso en tipos geoespaciales semánticamente equivalentes."""
+    inspected_signature = _spatial_signature(inspected_type)
+    metadata_signature = _spatial_signature(metadata_type)
+
+    if inspected_signature or metadata_signature:
+        return inspected_signature != metadata_signature
+
+    return None
 
 
 # ============================================================
@@ -130,7 +183,7 @@ def run_migrations_offline() -> None:
         dialect_opts={
             "paramstyle": "named",
         },
-        compare_type=True,
+        compare_type=compare_type,
         compare_server_default=False,
         include_schemas=False,
         include_object=include_object,
@@ -160,7 +213,7 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            compare_type=True,
+            compare_type=compare_type,
             compare_server_default=False,
             include_schemas=False,
             include_object=include_object,
