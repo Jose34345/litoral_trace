@@ -4,18 +4,17 @@ WARNING: Alembic es el mecanismo oficial para migrar producciÃ³n.
 Este mÃ³dulo solo debe usarse en desarrollo/local.
 """
 from __future__ import annotations
-import os
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from litoral_trace.config import get_settings
 from litoral_trace.db.base import Base
 from litoral_trace.db.engine import get_engine, get_session_factory
 from litoral_trace.db.models import License, Lote, Organization, User
 from litoral_trace.auth.passwords import hash_password
 
 def _is_production_environment() -> bool:
-    env_value = os.environ.get("ENVIRONMENT", "").strip().lower()
-    return env_value in {"production", "prod"}
+    return get_settings().is_production
 
 
 def inicializar_base_datos_postgis() -> None:

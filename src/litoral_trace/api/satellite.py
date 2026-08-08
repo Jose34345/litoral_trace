@@ -1,6 +1,5 @@
 """Router REST B2B de Telemetría Satelital, Procesamiento Incremental y Caché Redis."""
 from __future__ import annotations
-import os
 import time
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -8,6 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from litoral_trace.api.auth import get_current_tenant_user, UserTenantContext
+from litoral_trace.config import get_settings
 from litoral_trace.services.gee import consultar_serie_temporal_ndvi_gee, generate_geometry_hash, ALGORITHM_VERSION
 from litoral_trace.services.ndvi import evaluar_indicador_variacion_biomasa, calcular_ndvi_simulado
 from litoral_trace.services.cache import (
@@ -19,9 +19,19 @@ from litoral_trace.services.cache import (
 router = APIRouter(prefix="/api/v1/satellite", tags=["Telemetría Satelital GEE"])
 
 class SatelliteQueryByLoteRequest(BaseModel):
-    lote_id: int = Field(..., example=101, description="ID del lote en PostgreSQL")
-    start_date: str = Field(default="2020-12-31", example="2020-12-31")
-    end_date: str | None = Field(default=None, example="2026-08-01")
+    lote_id: int = Field(
+        ...,
+        description="ID del lote en PostgreSQL",
+        json_schema_extra={"example": 101},
+    )
+    start_date: str = Field(
+        default="2020-12-31",
+        json_schema_extra={"example": "2020-12-31"},
+    )
+    end_date: str | None = Field(
+        default=None,
+        json_schema_extra={"example": "2026-08-01"},
+    )
     max_cloud_pct: float = Field(default=20.0, ge=0.0, le=100.0)
     force_refresh: bool = Field(default=False)
 
@@ -112,7 +122,8 @@ async def consultar_ndvi_satelital_lote_endpoint(
 
     # Manejo de error cuando GEE no está disponible
     if result_gee.get("status") == "error" and not obs_list:
-        is_test = os.environ.get("ENVIRONMENT") == "test" or os.environ.get("TEST_MODE") == "1"
+        settings = get_settings()
+        is_test = settings.is_test or settings.gee.test_mode
         if not is_test and not result_gee.get("gee_connected"):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

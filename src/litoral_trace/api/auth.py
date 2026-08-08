@@ -1,4 +1,4 @@
-﻿"""Router de autenticacion REST B2B, emision JWT y contexto Tenant."""
+"""Router de autenticacion REST B2B, emision JWT y contexto Tenant."""
 from __future__ import annotations
 
 from typing import Any
@@ -18,6 +18,7 @@ from sqlalchemy import select
 
 from litoral_trace.auth.passwords import verify_password
 from litoral_trace.auth.tokens import create_jwt_token, verify_jwt_token
+from litoral_trace.config import get_settings
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import Organization, User
 
@@ -41,7 +42,7 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    expires_in_seconds: int = 86400
+    expires_in_seconds: int
     user_info: dict[str, Any]
 
 
@@ -53,12 +54,43 @@ class UserTenantContext(BaseModel):
     email: str
 
 
+def _build_user_tenant_context(payload: dict[str, Any]) -> UserTenantContext:
+    subject = str(payload.get("sub", "")).strip()
+    role = str(payload.get("role", "")).strip()
+    organization_name = str(payload.get("org_name", "")).strip()
+    email = str(payload.get("email", "")).strip()
+
+    try:
+        organization_id = int(payload.get("org_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token JWT invalido o incompleto.",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+
+    if not subject or organization_id <= 0 or not role:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token JWT invalido o incompleto.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return UserTenantContext(
+        username=subject,
+        organization_id=organization_id,
+        organization_name=organization_name,
+        role=role,
+        email=email,
+    )
+
+
 def get_current_tenant_user(
     authorization: str | None = Header(None),
     bearer_token: str | None = Depends(oauth2_scheme),
     session_jwt: str | None = Cookie(None),
 ) -> UserTenantContext:
-    """Extrae y valida el contexto Tenant desde JWT."""
+    """Extrae y valida el contexto Tenant desde un access token JWT."""
 
     token = None
 
@@ -76,7 +108,10 @@ def get_current_tenant_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    payload = verify_jwt_token(token)
+    payload = verify_jwt_token(
+        token,
+        expected_token_type="access",
+    )
 
     if not payload:
         raise HTTPException(
@@ -85,13 +120,7 @@ def get_current_tenant_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return UserTenantContext(
-        username=str(payload.get("sub", "")),
-        organization_id=int(payload.get("org_id", 0)),
-        organization_name=str(payload.get("org_name", "")),
-        role=str(payload.get("role", "cliente")),
-        email=str(payload.get("email", "")),
-    )
+    return _build_user_tenant_context(payload)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -99,7 +128,7 @@ async def login_b2b(
     payload: LoginRequest,
     response: Response,
 ) -> TokenResponse:
-    """Autentica un usuario real contra PostgreSQL y emite JWT."""
+    """Autentica un usuario real contra PostgreSQL y emite un access token JWT."""
 
     username = payload.username.strip()
     password = payload.password
@@ -119,11 +148,13 @@ async def login_b2b(
         )
 
     try:
+        settings = get_settings()
+        access_token_expire_seconds = settings.jwt.access_token_expire_seconds
+
         user = session.execute(
             select(User).where(User.username == username)
         ).scalar_one_or_none()
 
-        # No revelar si el usuario existe.
         if user is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -172,7 +203,8 @@ async def login_b2b(
 
         jwt_token = create_jwt_token(
             user_data,
-            expires_in_seconds=86400,
+            expires_in_seconds=access_token_expire_seconds,
+            token_type="access",
         )
 
         response.set_cookie(
@@ -180,12 +212,12 @@ async def login_b2b(
             value=jwt_token,
             httponly=True,
             samesite="lax",
-            max_age=86400,
+            max_age=access_token_expire_seconds,
         )
 
         return TokenResponse(
             access_token=jwt_token,
-            expires_in_seconds=86400,
+            expires_in_seconds=access_token_expire_seconds,
             user_info={
                 "username": user.username,
                 "organization_id": user.organization_id,

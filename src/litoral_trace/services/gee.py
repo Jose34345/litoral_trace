@@ -1,11 +1,12 @@
 """Servicio de Integración con Google Earth Engine (GEE) y Copernicus Sentinel-2 L2A."""
 from __future__ import annotations
-import os
 import time
 import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Any
+
+from litoral_trace.config import get_settings
 
 ALGORITHM_VERSION = "2.4.0-gee-sentinel2-scl-v2"
 
@@ -34,13 +35,14 @@ def initialize_earth_engine() -> tuple[bool, str, int]:
         tuple[success, detail_message, initialization_time_ms]
     """
     t0 = time.time()
-    gcp_project = os.environ.get("GCP_PROJECT_ID") or os.environ.get("GEE_PROJECT_ID") or "litoral-trace-engine"
+    settings = get_settings()
+    gcp_project = settings.gee.project_id
     
     try:
         import ee
         
         # 1. Fallback: Si existe la variable GCP_SERVICE_ACCOUNT / GEE_SERVICE_ACCOUNT con JSON de Service Account
-        sa_json = os.environ.get("GCP_SERVICE_ACCOUNT") or os.environ.get("GEE_SERVICE_ACCOUNT")
+        sa_json = settings.gee.service_account_json
         if sa_json:
             try:
                 sa_data = json.loads(sa_json)
@@ -83,7 +85,8 @@ def consultar_serie_temporal_ndvi_gee(
     gee_ready, gee_msg, init_ms = initialize_earth_engine()
     
     if not gee_ready:
-        is_test = os.environ.get("ENVIRONMENT") == "test" or os.environ.get("TEST_MODE") == "1"
+        settings = get_settings()
+        is_test = settings.is_test or settings.gee.test_mode
         if is_test:
             from litoral_trace.services.ndvi import calcular_ndvi_simulado
 

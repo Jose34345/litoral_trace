@@ -1,38 +1,67 @@
-"""Gestor de Conexiones de Base de Datos PostgreSQL + PostGIS con Pooling de Alto Rendimiento."""
+"""Gestor de conexiones de base de datos para Litoral Trace."""
 from __future__ import annotations
-import os
+
 from typing import Any
+
+from litoral_trace.config import get_settings
+from litoral_trace.config.settings import normalize_database_url
 
 _engine: Any | None = None
 _session_factory: Any | None = None
 
 
 def _is_production_environment() -> bool:
-    env_value = os.environ.get("ENVIRONMENT", "").strip().lower()
-    return env_value in {"production", "prod"}
+    return get_settings().is_production
+
+
+def _is_test_environment() -> bool:
+    return get_settings().is_test
 
 
 def _normalize_postgres_url(db_url: str) -> str:
-    if db_url.startswith("postgres://"):
-        return db_url.replace("postgres://", "postgresql+psycopg://", 1)
-    if db_url.startswith("postgresql://"):
-        return db_url.replace("postgresql://", "postgresql+psycopg://", 1)
-    return db_url
+    return normalize_database_url(db_url)
+
+
+def _normalize_database_url(db_url: str) -> str:
+    return normalize_database_url(db_url)
+
+
+def _get_application_database_url_from_environment() -> str | None:
+    return get_settings().database.application_database_url
+
+
+def _get_test_database_url() -> str:
+    return get_settings().database.resolved_test_database_url
+
+
+def reset_engine_state() -> None:
+    """Reinicia el engine cacheado y el session factory asociado."""
+    global _engine, _session_factory
+
+    if _engine is not None:
+        _engine.dispose()
+
+    _engine = None
+    _session_factory = None
 
 
 def get_database_url() -> str:
-    """Obtiene la URL de la base de datos desde variables de entorno, secrets o fallback local."""
-    db_url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or os.environ.get("DB_URL")
+    """Obtiene la URL de la base de datos desde settings, secrets o fallback local."""
+    if _is_test_environment():
+        return _get_test_database_url()
+
+    db_url = _get_application_database_url_from_environment()
 
     if not db_url:
         try:
             import streamlit as st
+
             db_url = st.secrets.get("DB_URL")
         except Exception:
             db_url = None
 
     if db_url:
-        db_url = _normalize_postgres_url(db_url)
+        db_url = _normalize_database_url(db_url)
 
     if _is_production_environment():
         if not db_url or not db_url.startswith("postgresql+psycopg://"):
@@ -44,6 +73,7 @@ def get_database_url() -> str:
         return "sqlite:///litoral_trace_prod.db"
 
     return db_url
+
 
 def get_engine() -> Any:
     """Devuelve o inicializa la instancia singleton del Engine de SQLAlchemy con Pooling."""
@@ -81,6 +111,7 @@ def get_session_factory() -> Any:
 
     try:
         from sqlalchemy.orm import sessionmaker
+
         engine = get_engine()
         if _session_factory is not None:
             return _session_factory
@@ -96,7 +127,7 @@ def get_session_factory() -> Any:
 
 
 def get_db_session() -> Any:
-    """Obtiene una nueva sesión de base de datos."""
+    """Obtiene una nueva sesion de base de datos."""
     try:
         factory = get_session_factory()
         if factory:

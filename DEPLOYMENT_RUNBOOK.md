@@ -32,17 +32,17 @@ Asegúrate de tener configuradas las credenciales del servidor:
 ```bash
 mkdir -p .streamlit
 cat << 'SECRETS' > .streamlit/secrets.toml
-DATABASE_URL = "postgresql+psycopg://usuario:password@db:5432/litoral_trace_db"
+DATABASE_URL = "<set-production-database-url>"
 # Legacy alias para compatibilidad temporal:
-# DB_URL = "postgresql+psycopg://usuario:password@db:5432/litoral_trace_db"
-# POSTGRES_URL = "postgresql+psycopg://usuario:password@db:5432/litoral_trace_db"
+# DB_URL = "<optional-legacy-alias>"
+# POSTGRES_URL = "<optional-legacy-alias>"
 
 [gcp_service_account]
 type = "service_account"
-project_id = "litoral-trace-prod"
-private_key_id = "PROD_KEY_ID"
-private_key = "-----BEGIN PRIVATE KEY-----\n..."
-client_email = "earthengine-sa@litoral-trace-prod.iam.gserviceaccount.com"
+project_id = "<set-production-gcp-project-id>"
+private_key_id = "<set-production-gcp-private-key-id>"
+private_key = "<load-from-secret-manager-or-escaped-env>"
+client_email = "<set-production-service-account-email>"
 SECRETS
 ```
 

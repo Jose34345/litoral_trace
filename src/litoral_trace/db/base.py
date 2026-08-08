@@ -1,15 +1,15 @@
 """Base declarativa y mixins comunes para SQLAlchemy 2.x."""
 from __future__ import annotations
-import os
 from datetime import datetime, timezone
 from sqlalchemy import DateTime, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from litoral_trace.config import get_settings
+
 
 def _disable_geoalchemy_sqlite_admin_for_non_production() -> None:
     """Evita hooks SpatiaLite en entornos locales donde sólo usamos SQLite simple."""
-    env_value = os.environ.get("ENVIRONMENT", "").strip().lower()
-    if env_value in {"production", "prod"}:
+    if get_settings().is_production:
         return
 
     try:

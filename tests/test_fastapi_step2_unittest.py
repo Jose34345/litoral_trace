@@ -7,6 +7,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from litoral_trace.api.auth import login_b2b, LoginRequest, get_current_tenant_user, UserTenantContext
+from litoral_trace.auth.tokens import create_jwt_token
+from fastapi import HTTPException
 from fastapi import Response
 
 class TestFastAPIStep2Auth(unittest.TestCase):
@@ -30,6 +32,14 @@ class TestFastAPIStep2Auth(unittest.TestCase):
         self.assertIsInstance(tenant_context, UserTenantContext)
         self.assertEqual(tenant_context.username, "admin")
         self.assertEqual(tenant_context.organization_id, 1)
+
+    def test_get_current_tenant_user_rejects_incomplete_claims(self):
+        token = create_jwt_token({"sub": "admin", "role": "admin"})
+
+        with self.assertRaises(HTTPException) as ctx:
+            get_current_tenant_user(authorization=f"Bearer {token}")
+
+        self.assertEqual(ctx.exception.status_code, 401)
 
 if __name__ == "__main__":
     unittest.main()

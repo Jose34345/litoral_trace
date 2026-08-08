@@ -45,6 +45,39 @@ class TestAuthAndRBAC(unittest.TestCase):
             else:
                 os.environ["JWT_SECRET_KEY"] = old_secret
 
+    def test_jwt_supports_explicit_security_context_injection(self):
+        payload = {"sub": "user_789", "org_id": 7, "role": "manager"}
+        token = create_jwt_token(
+            payload,
+            expires_in_seconds=900,
+            secret_key="explicit_secret_key_for_tests_123456",
+            issuer="litoral-trace-api",
+            audience="litoral-trace-b2b",
+            issued_at_epoch=1_700_000_000,
+        )
+
+        decoded = verify_jwt_token(
+            token,
+            secret_key="explicit_secret_key_for_tests_123456",
+            issuer="litoral-trace-api",
+            audience="litoral-trace-b2b",
+            now_epoch=1_700_000_100,
+        )
+        self.assertIsNotNone(decoded)
+        self.assertEqual(decoded["token_type"], "access")
+        self.assertEqual(decoded["iss"], "litoral-trace-api")
+        self.assertEqual(decoded["aud"], "litoral-trace-b2b")
+
+        self.assertIsNone(
+            verify_jwt_token(
+                token,
+                secret_key="explicit_secret_key_for_tests_123456",
+                issuer="otro-issuer",
+                audience="litoral-trace-b2b",
+                now_epoch=1_700_000_100,
+            )
+        )
+
     def test_api_key_generation_and_verification(self):
         generated = generate_api_key()
         self.assertTrue(generated.full_key.startswith("lt_live_"))

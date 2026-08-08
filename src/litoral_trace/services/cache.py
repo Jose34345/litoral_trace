@@ -1,23 +1,31 @@
-"""Estrategia de Caché Determinística en Redis para Telemetría Satelital."""
+"""Estrategia de cache deterministica en Redis para telemetria satelital."""
 from __future__ import annotations
-import os
-import time
+
 import json
+import time
 from typing import Any
+
+from litoral_trace.config import get_settings
 
 _redis_client: Any | None = None
 _redis_available: bool = False
 
+
 def get_redis_client() -> Any | None:
-    """Obtiene o inicializa la conexión singleton a Redis con manejo gracioso de fallos."""
+    """Obtiene o inicializa la conexion singleton a Redis con manejo gracioso de fallos."""
     global _redis_client, _redis_available
     if _redis_client is not None:
         return _redis_client if _redis_available else None
 
-    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    redis_url = get_settings().cache.redis_url
     try:
         import redis
-        client = redis.Redis.from_url(redis_url, socket_timeout=1.5, socket_connect_timeout=1.5)
+
+        client = redis.Redis.from_url(
+            redis_url,
+            socket_timeout=1.5,
+            socket_connect_timeout=1.5,
+        )
         client.ping()
         _redis_client = client
         _redis_available = True
@@ -27,6 +35,7 @@ def get_redis_client() -> Any | None:
         _redis_available = False
         return None
 
+
 def build_ndvi_cache_key(
     org_id: int,
     lote_id: int,
@@ -34,13 +43,20 @@ def build_ndvi_cache_key(
     start_date: str,
     end_date: str,
     cloud_threshold: float,
-    algorithm_version: str = "2.4.0-gee-sentinel2-scl-v2"
+    algorithm_version: str = "2.4.0-gee-sentinel2-scl-v2",
 ) -> str:
-    """Genera una clave de caché determinística para consultas satelitales."""
-    return f"ndvi:v1:{org_id}:{lote_id}:{geometry_hash}:{start_date}:{end_date}:{cloud_threshold:.1f}:{algorithm_version}"
+    """Genera una clave de cache deterministica para consultas satelitales."""
+    return (
+        "ndvi:v1:"
+        f"{org_id}:{lote_id}:{geometry_hash}:{start_date}:{end_date}:"
+        f"{cloud_threshold:.1f}:{algorithm_version}"
+    )
 
-def get_cached_satellite_data(cache_key: str) -> tuple[dict[str, Any] | None, int]:
-    """Intenta recuperar datos desde la caché Redis (Redis HIT). Devuelve (data, redis_read_ms)."""
+
+def get_cached_satellite_data(
+    cache_key: str,
+) -> tuple[dict[str, Any] | None, int]:
+    """Intenta recuperar datos desde Redis y devuelve (data, redis_read_ms)."""
     t0 = time.time()
     client = get_redis_client()
     if not client:
@@ -55,8 +71,13 @@ def get_cached_satellite_data(cache_key: str) -> tuple[dict[str, Any] | None, in
         pass
     return None, int((time.time() - t0) * 1000)
 
-def set_cached_satellite_data(cache_key: str, data: dict[str, Any], ttl_seconds: int = 86400) -> tuple[bool, int]:
-    """Guarda los datos procesados en la caché Redis con TTL configurable. Devuelve (success, redis_write_ms)."""
+
+def set_cached_satellite_data(
+    cache_key: str,
+    data: dict[str, Any],
+    ttl_seconds: int = 86400,
+) -> tuple[bool, int]:
+    """Guarda datos procesados en Redis con TTL configurable."""
     t0 = time.time()
     client = get_redis_client()
     if not client:
