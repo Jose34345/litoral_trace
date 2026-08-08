@@ -8,12 +8,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from litoral_trace.api.auth import login_b2b, LoginRequest, get_current_tenant_user, UserTenantContext
 from litoral_trace.auth.tokens import create_jwt_token
+from litoral_trace.db.init_db import get_non_production_superadmin_seed
 from fastapi import HTTPException
 from fastapi import Response
 
 class TestFastAPIStep2Auth(unittest.TestCase):
     def test_login_success_admin(self):
-        req = LoginRequest(username="admin", password="admin123")
+        req = LoginRequest(
+            username="admin",
+            password=get_non_production_superadmin_seed()[1],
+        )
         res_dummy = Response()
         
         token_res = asyncio.run(login_b2b(req, res_dummy))
@@ -23,7 +27,10 @@ class TestFastAPIStep2Auth(unittest.TestCase):
         self.assertEqual(token_res.user_info["role"], "superadmin")
 
     def test_get_current_tenant_user_from_bearer(self):
-        req = LoginRequest(username="admin", password="admin123")
+        req = LoginRequest(
+            username="admin",
+            password=get_non_production_superadmin_seed()[1],
+        )
         token_res = asyncio.run(login_b2b(req, Response()))
         
         bearer_hdr = f"Bearer {token_res.access_token}"

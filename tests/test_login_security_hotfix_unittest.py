@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from http.cookies import SimpleCookie
 import sys
 import unittest
 from pathlib import Path
@@ -22,6 +23,16 @@ from litoral_trace.db.init_db import (
 
 
 class TestLoginSecurityHotfix(unittest.TestCase):
+    @staticmethod
+    def _extract_cookies(response: Response) -> dict[str, str]:
+        parsed_cookie = SimpleCookie()
+        for set_cookie_header in response.headers.getlist("set-cookie"):
+            parsed_cookie.load(set_cookie_header)
+        return {
+            cookie_name: morsel.value
+            for cookie_name, morsel in parsed_cookie.items()
+        }
+
     def test_login_page_does_not_embed_public_credentials(self):
         request = Request(
             scope={"type": "http", "method": "GET", "path": "/", "headers": []}
@@ -37,8 +48,32 @@ class TestLoginSecurityHotfix(unittest.TestCase):
         self.assertNotIn('value="admin123"', body)
 
     def test_public_admin_view_does_not_embed_assigned_credentials(self):
+        login_response = Response()
+        asyncio.run(
+            login_b2b(
+                LoginRequest(
+                    username="admin",
+                    password=get_non_production_superadmin_seed()[1],
+                ),
+                login_response,
+            )
+        )
+        cookies = self._extract_cookies(login_response)
         request = Request(
-            scope={"type": "http", "method": "GET", "path": "/admin", "headers": []}
+            scope={
+                "type": "http",
+                "method": "GET",
+                "path": "/admin",
+                "headers": [
+                    (
+                        b"cookie",
+                        "; ".join(
+                            f"{cookie_name}={cookie_value}"
+                            for cookie_name, cookie_value in cookies.items()
+                        ).encode("utf-8"),
+                    )
+                ],
+            }
         )
         response = asyncio.run(render_admin_view(request))
         body = response.body.decode("utf-8")
@@ -52,7 +87,10 @@ class TestLoginSecurityHotfix(unittest.TestCase):
     def test_valid_login_still_succeeds(self):
         token_response = asyncio.run(
             login_b2b(
-                LoginRequest(username="admin", password="admin123"),
+                LoginRequest(
+                    username="admin",
+                    password=get_non_production_superadmin_seed()[1],
+                ),
                 Response(),
             )
         )
@@ -81,6 +119,7 @@ def test_non_production_seed_is_available_under_test_environment():
 
     assert username == DEVELOPMENT_SUPERADMIN_USERNAME
     assert password
+    assert password != "admin123"
 
 
 def test_production_seed_is_blocked(monkeypatch):

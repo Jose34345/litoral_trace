@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 # Ensure the source package directory is importable from pytest.
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -19,6 +20,10 @@ os.environ.setdefault(
 os.environ.setdefault(
     "JWT_SECRET_KEY",
     "test-only-jwt-secret-key-1234567890",
+)
+os.environ.setdefault(
+    "LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD",
+    f"TestBootstrap-{uuid4().hex}-Password!",
 )
 
 for variable_name in (

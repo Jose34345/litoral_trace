@@ -12,12 +12,16 @@ from litoral_trace.api.auth import login_b2b, LoginRequest, get_current_tenant_u
 from litoral_trace.api.satellite import consultar_ndvi_satelital_lote_endpoint, SatelliteQueryByLoteRequest
 from litoral_trace.services.gee import initialize_earth_engine, consultar_serie_temporal_ndvi_gee, generate_geometry_hash
 from litoral_trace.services.cache import build_ndvi_cache_key, get_cached_satellite_data, set_cached_satellite_data
+from litoral_trace.db.init_db import get_non_production_superadmin_seed
 from fastapi import Response, HTTPException
 
 class TestStep2LiveIntegration(unittest.TestCase):
     def setUp(self):
         os.environ["ENVIRONMENT"] = "test"
-        req = LoginRequest(username="admin", password="admin123")
+        req = LoginRequest(
+            username="admin",
+            password=get_non_production_superadmin_seed()[1],
+        )
         res_dummy = Response()
         token_res = asyncio.run(login_b2b(req, res_dummy))
         bearer_hdr = f"Bearer {token_res.access_token}"

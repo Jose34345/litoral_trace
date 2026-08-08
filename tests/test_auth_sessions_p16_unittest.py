@@ -27,6 +27,7 @@ from litoral_trace.auth.sessions import (
 )
 from litoral_trace.auth.tokens import verify_jwt_token
 from litoral_trace.db.engine import get_db_session
+from litoral_trace.db.init_db import get_non_production_superadmin_seed
 from litoral_trace.db.models import User, UserSession
 
 
@@ -67,7 +68,10 @@ def _login():
     response = Response()
     token_response = asyncio.run(
         login_b2b(
-            LoginRequest(username="admin", password="admin123"),
+            LoginRequest(
+                username="admin",
+                password=get_non_production_superadmin_seed()[1],
+            ),
             response,
         )
     )

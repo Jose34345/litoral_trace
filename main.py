@@ -1,10 +1,9 @@
-"""Punto de Entrada Servidor ASGI FastAPI - Litoral Trace Enterprise B2B."""
+"""ASGI entrypoint for the FastAPI HTML + API application."""
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-# Insertar rutas posibles en sys.path para resolución de módulos.
 base_dir = Path(__file__).resolve().parent
 src_dir = base_dir / "src"
 
@@ -12,13 +11,25 @@ sys.path.insert(0, str(src_dir))
 sys.path.insert(0, str(src_dir / "litoral_trace"))
 sys.path.insert(0, str(base_dir))
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-# ---------------------------------------------------------------------------
-# Aplicación FastAPI
-# ---------------------------------------------------------------------------
+from litoral_trace.api.admin import router as admin_router
+from litoral_trace.api.auth import (
+    LoginRequest,
+    clear_auth_cookies,
+    get_current_tenant_user,
+    login_b2b,
+    logout_b2b_session,
+    router as auth_router,
+)
+from litoral_trace.api.lotes import router as lotes_router
+from litoral_trace.api.satellite import router as satellite_router
+from litoral_trace.api.settings import router as settings_router
+from litoral_trace.api.vault import router as vault_router
+from litoral_trace.auth.rbac import Permission, ensure_permission
+from litoral_trace.auth.sessions import ACCESS_TOKEN_COOKIE_KEY, REFRESH_TOKEN_COOKIE_KEY
 
 app = FastAPI(
     title="Litoral Trace | Compliance Intelligence API",
@@ -31,39 +42,12 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ---------------------------------------------------------------------------
-# Routers de API
-# ---------------------------------------------------------------------------
-#
-# IMPORTANTE:
-# Los routers se importan de forma explícita y sin un try/except global.
-#
-# Si cualquiera de estos módulos tiene un error de importación, el proceso
-# debe fallar durante el arranque. Es preferible un fallo explícito a levantar
-# una API parcialmente funcional y ocultar rutas por un error de importación.
-# ---------------------------------------------------------------------------
-
-from litoral_trace.api.auth import router as auth_router
-from litoral_trace.api.auth import clear_auth_cookies
-from litoral_trace.api.auth import revoke_logout_target
-from litoral_trace.api.lotes import router as lotes_router
-from litoral_trace.api.vault import router as vault_router
-from litoral_trace.api.settings import router as settings_router
-from litoral_trace.api.admin import router as admin_router
-from litoral_trace.api.satellite import router as satellite_router
-from litoral_trace.auth.sessions import ACCESS_TOKEN_COOKIE_KEY, REFRESH_TOKEN_COOKIE_KEY
-from litoral_trace.db.engine import get_db_session
-
 app.include_router(auth_router)
 app.include_router(lotes_router)
 app.include_router(vault_router)
 app.include_router(settings_router)
 app.include_router(admin_router)
 app.include_router(satellite_router)
-
-# ---------------------------------------------------------------------------
-# Configuración de plantillas Jinja2
-# ---------------------------------------------------------------------------
 
 possible_template_dirs = [
     src_dir / "litoral_trace" / "templates",
@@ -84,7 +68,7 @@ def render_template(
     name: str,
     context: dict | None = None,
 ):
-    """Renderiza una plantilla Jinja2 con compatibilidad entre versiones."""
+    """Render a Jinja2 template with Starlette compatibility fallbacks."""
     ctx = context or {}
 
     try:
@@ -94,7 +78,6 @@ def render_template(
             context=ctx,
         )
     except Exception:
-        # Compatibilidad con versiones anteriores de Starlette/FastAPI.
         try:
             full_ctx = {"request": request, **ctx}
             return templates.TemplateResponse(name, full_ctx)
@@ -107,9 +90,81 @@ def render_template(
             )
 
 
-# ---------------------------------------------------------------------------
-# Vistas Frontend HTML B2B
-# ---------------------------------------------------------------------------
+def _copy_response_cookies(
+    *,
+    source: Response,
+    target: Response,
+) -> None:
+    for set_cookie_header in source.headers.getlist("set-cookie"):
+        target.headers.append("set-cookie", set_cookie_header)
+
+
+def _render_login_error(
+    request: Request,
+    *,
+    message: str,
+    status_code: int,
+) -> HTMLResponse:
+    response = render_template(
+        request,
+        "login.html",
+        {
+            "user": None,
+            "error": message,
+        },
+    )
+    response.status_code = status_code
+    return response
+
+
+def _redirect_to_login(*, clear_cookies: bool) -> RedirectResponse:
+    response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    if clear_cookies:
+        clear_auth_cookies(response)
+    return response
+
+
+def _render_access_denied() -> HTMLResponse:
+    return HTMLResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        content=(
+            "<!DOCTYPE html>"
+            "<html lang='es'><head><meta charset='UTF-8'>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+            "<title>Acceso denegado</title></head>"
+            "<body style='font-family: sans-serif; padding: 2rem;'>"
+            "<h2>Acceso denegado</h2>"
+            "<p>La cuenta autenticada no posee permisos para esta vista.</p>"
+            "<p><a href='/'>Volver al inicio</a></p>"
+            "</body></html>"
+        ),
+    )
+
+
+def _get_html_route_user(
+    request: Request,
+    *,
+    required_permission: Permission,
+):
+    session_jwt = request.cookies.get(ACCESS_TOKEN_COOKIE_KEY)
+    if not session_jwt:
+        return None, _redirect_to_login(clear_cookies=False)
+
+    try:
+        user = get_current_tenant_user(session_jwt=session_jwt)
+        if user.session_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Sesion HTML invalida o incompleta.",
+            )
+
+        ensure_permission(user, required_permission)
+        return user, None
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            return None, _render_access_denied()
+        return None, _redirect_to_login(clear_cookies=True)
+
 
 @app.get(
     "/",
@@ -117,12 +172,58 @@ def render_template(
     tags=["Frontend B2B"],
 )
 async def render_login_view(request: Request):
-    """Renderiza la pantalla de inicio de sesión."""
+    """Render the public HTML login page."""
     return render_template(
         request,
         "login.html",
         {"user": None},
     )
+
+
+@app.post(
+    "/login",
+    response_class=HTMLResponse,
+    tags=["Frontend B2B"],
+)
+async def submit_login_view(request: Request):
+    """Authenticate HTML credentials through the real auth flow."""
+    form = await request.form()
+    username = str(form.get("username", "")).strip()
+    password = str(form.get("password", ""))
+
+    temp_response = Response()
+
+    try:
+        await login_b2b(
+            LoginRequest(username=username, password=password),
+            temp_response,
+            request,
+        )
+    except HTTPException as exc:
+        error_message = (
+            exc.detail
+            if exc.status_code == status.HTTP_400_BAD_REQUEST
+            else "Usuario o contrasena incorrectos."
+        )
+        return _render_login_error(
+            request,
+            message=error_message,
+            status_code=(
+                exc.status_code
+                if exc.status_code == status.HTTP_400_BAD_REQUEST
+                else status.HTTP_401_UNAUTHORIZED
+            ),
+        )
+
+    redirect_response = RedirectResponse(
+        url="/dashboard",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+    _copy_response_cookies(
+        source=temp_response,
+        target=redirect_response,
+    )
+    return redirect_response
 
 
 @app.get(
@@ -131,17 +232,18 @@ async def render_login_view(request: Request):
     tags=["Frontend B2B"],
 )
 async def render_dashboard_view(request: Request):
-    """Renderiza el dashboard B2B."""
-    demo_user = {
-        "username": "admin",
-        "organization_name": "Exportadora Forestal del Chaco S.A.",
-        "role": "admin",
-    }
+    """Render the B2B dashboard for authenticated users."""
+    user, denied_response = _get_html_route_user(
+        request,
+        required_permission=Permission.LOTE_READ,
+    )
+    if denied_response is not None:
+        return denied_response
 
     return render_template(
         request,
         "dashboard.html",
-        {"user": demo_user},
+        {"user": user},
     )
 
 
@@ -151,17 +253,18 @@ async def render_dashboard_view(request: Request):
     tags=["Frontend B2B"],
 )
 async def render_vault_view(request: Request):
-    """Renderiza el vault documental."""
-    demo_user = {
-        "username": "admin",
-        "organization_name": "Exportadora Forestal del Chaco S.A.",
-        "role": "admin",
-    }
+    """Render the vault page for authenticated users."""
+    user, denied_response = _get_html_route_user(
+        request,
+        required_permission=Permission.VAULT_READ,
+    )
+    if denied_response is not None:
+        return denied_response
 
     return render_template(
         request,
         "vault.html",
-        {"user": demo_user},
+        {"user": user},
     )
 
 
@@ -171,17 +274,18 @@ async def render_vault_view(request: Request):
     tags=["Frontend B2B"],
 )
 async def render_settings_view(request: Request):
-    """Renderiza la configuración de la cuenta."""
-    demo_user = {
-        "username": "admin",
-        "organization_name": "Exportadora Forestal del Chaco S.A.",
-        "role": "admin",
-    }
+    """Render the settings page for authenticated users."""
+    user, denied_response = _get_html_route_user(
+        request,
+        required_permission=Permission.SETTINGS_WRITE,
+    )
+    if denied_response is not None:
+        return denied_response
 
     return render_template(
         request,
         "settings.html",
-        {"user": demo_user},
+        {"user": user},
     )
 
 
@@ -191,17 +295,18 @@ async def render_settings_view(request: Request):
     tags=["Frontend B2B"],
 )
 async def render_admin_view(request: Request):
-    """Renderiza la administración de organizaciones."""
-    demo_user = {
-        "username": "admin",
-        "organization_name": "Litoral Trace SuperAdmin",
-        "role": "admin",
-    }
+    """Render the platform admin page for superadmins."""
+    user, denied_response = _get_html_route_user(
+        request,
+        required_permission=Permission.PLATFORM_ADMIN,
+    )
+    if denied_response is not None:
+        return denied_response
 
     return render_template(
         request,
         "admin_organizations.html",
-        {"user": demo_user},
+        {"user": user},
     )
 
 
@@ -211,7 +316,7 @@ async def render_admin_view(request: Request):
     tags=["Frontend B2B"],
 )
 async def logout_view(request: Request):
-    """Muestra una confirmacion de logout sin mutar estado."""
+    """Show a logout confirmation page without mutating state."""
     return HTMLResponse(
         content=(
             "<!DOCTYPE html>"
@@ -235,45 +340,29 @@ async def logout_view(request: Request):
     tags=["Frontend B2B"],
 )
 async def logout_submit_view(request: Request):
-    """Revoca la sesion persistente activa y redirige al login."""
-    session = get_db_session()
-    if session is None:
-        return HTMLResponse(
-            status_code=503,
-            content="Servicio de base de datos no disponible.",
-        )
+    """Revoke the current session and redirect to login."""
+    temp_response = Response()
+    await logout_b2b_session(
+        temp_response,
+        request=request,
+        refresh_token_cookie=request.cookies.get(REFRESH_TOKEN_COOKIE_KEY),
+        session_jwt=request.cookies.get(ACCESS_TOKEN_COOKIE_KEY),
+    )
 
-    refresh_token = request.cookies.get(REFRESH_TOKEN_COOKIE_KEY)
-    access_token = request.cookies.get(ACCESS_TOKEN_COOKIE_KEY)
-
-    try:
-        revoke_logout_target(
-            session,
-            refresh_token=refresh_token,
-            access_token=access_token,
-        )
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
-
-    response = RedirectResponse(url="/", status_code=303)
-    clear_auth_cookies(response)
+    response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    _copy_response_cookies(
+        source=temp_response,
+        target=response,
+    )
     return response
 
-
-# ---------------------------------------------------------------------------
-# Healthchecks e información del servicio
-# ---------------------------------------------------------------------------
 
 @app.get(
     "/health",
     tags=["Infraestructura"],
 )
 async def health_check() -> JSONResponse:
-    """Healthcheck básico del servidor FastAPI."""
+    """Return a basic service healthcheck."""
     return JSONResponse(
         status_code=200,
         content={
@@ -289,7 +378,7 @@ async def health_check() -> JSONResponse:
     tags=["Infraestructura"],
 )
 async def root_index() -> JSONResponse:
-    """Información básica de la API."""
+    """Return basic API metadata."""
     return JSONResponse(
         status_code=200,
         content={
@@ -299,10 +388,6 @@ async def root_index() -> JSONResponse:
         },
     )
 
-
-# ---------------------------------------------------------------------------
-# Ejecución directa
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import uvicorn

@@ -16,10 +16,14 @@ from litoral_trace.api.lotes import (
     procesar_batch_excel_endpoint
 )
 from fastapi import Response, UploadFile
+from litoral_trace.db.init_db import get_non_production_superadmin_seed
 
 class TestFastAPIStep3Lotes(unittest.TestCase):
     def setUp(self):
-        req = LoginRequest(username="admin", password="admin123")
+        req = LoginRequest(
+            username="admin",
+            password=get_non_production_superadmin_seed()[1],
+        )
         token_res = asyncio.run(login_b2b(req, Response()))
         bearer_hdr = f"Bearer {token_res.access_token}"
         self.tenant_user = get_current_tenant_user(authorization=bearer_hdr)

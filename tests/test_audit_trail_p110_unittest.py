@@ -51,6 +51,7 @@ from litoral_trace.auth.sessions import (
 )
 from litoral_trace.auth.tokens import verify_jwt_token
 from litoral_trace.db.engine import get_db_session
+from litoral_trace.db.init_db import get_non_production_superadmin_seed
 from litoral_trace.db.models import AuditLog, Lote, User, UserSession
 from litoral_trace.services.admin import EMPRESAS_REGISTRADAS_DB
 from litoral_trace.services.audit import (
@@ -140,9 +141,11 @@ def _build_request(
 def _login(
     *,
     username: str = "admin",
-    password: str = "admin123",
+    password: str | None = None,
     request_id: str | None = None,
 ) -> tuple[object, Response, dict[str, str]]:
+    if password is None:
+        password = get_non_production_superadmin_seed()[1]
     response = Response()
     token_response = asyncio.run(
         login_b2b(
@@ -161,8 +164,10 @@ def _login(
 def _authenticated_context(
     *,
     username: str = "admin",
-    password: str = "admin123",
+    password: str | None = None,
 ):
+    if password is None:
+        password = get_non_production_superadmin_seed()[1]
     token_response, _, _ = _login(username=username, password=password)
     return get_current_tenant_user(
         authorization=f"Bearer {token_response.access_token}"
@@ -286,7 +291,10 @@ def test_login_success_and_failure_are_audited_without_passwords_or_tokens():
     assert int(verify_jwt_token(token_response.access_token)["sid"]) == login_event.entity_id
     _assert_no_sensitive_fields(
         login_event,
-        forbidden_values=[token_response.access_token, "admin123"],
+        forbidden_values=[
+            token_response.access_token,
+            get_non_production_superadmin_seed()[1],
+        ],
     )
 
     bad_password = "WrongPassword-P110!"

@@ -9,12 +9,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from litoral_trace.api.auth import login_b2b, LoginRequest, get_current_tenant_user
 from litoral_trace.api.satellite import consultar_ndvi_satelital_lote_endpoint, SatelliteQueryByLoteRequest
+from litoral_trace.db.init_db import get_non_production_superadmin_seed
 from fastapi import Response, HTTPException
 
 class TestStep2MultiTenant(unittest.TestCase):
     def setUp(self):
         os.environ["ENVIRONMENT"] = "test"
-        req = LoginRequest(username="admin", password="admin123")
+        req = LoginRequest(
+            username="admin",
+            password=get_non_production_superadmin_seed()[1],
+        )
         res_dummy = Response()
         token_res = asyncio.run(login_b2b(req, res_dummy))
         bearer_hdr = f"Bearer {token_res.access_token}"

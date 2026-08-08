@@ -34,6 +34,7 @@ from litoral_trace.api.settings import consultar_licencia_tenant
 from litoral_trace.api.vault import descargar_documento_boveda
 from litoral_trace.auth.passwords import hash_password
 from litoral_trace.db.engine import get_db_session
+from litoral_trace.db.init_db import get_non_production_superadmin_seed
 from litoral_trace.db.models import Lote, Organization, User
 
 
@@ -103,7 +104,10 @@ def tenant_fixture():
 
     token_a = asyncio.run(
         login_b2b(
-            LoginRequest(username="admin", password="admin123"),
+            LoginRequest(
+                username="admin",
+                password=get_non_production_superadmin_seed()[1],
+            ),
             Response(),
         )
     )

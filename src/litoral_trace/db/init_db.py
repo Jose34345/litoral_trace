@@ -4,6 +4,7 @@ WARNING: Alembic es el mecanismo oficial para migrar producciÃ³n.
 Este mÃ³dulo solo debe usarse en desarrollo/local.
 """
 from __future__ import annotations
+import os
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -15,11 +16,24 @@ from litoral_trace.auth.passwords import hash_password
 
 
 DEVELOPMENT_SUPERADMIN_USERNAME = "admin"
-DEVELOPMENT_SUPERADMIN_PASSWORD = "admin123"
+NON_PRODUCTION_SUPERADMIN_PASSWORD_ENV_VAR = (
+    "LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD"
+)
 
 
 def _is_production_environment() -> bool:
     return get_settings().is_production
+
+
+def _get_non_production_superadmin_password() -> str:
+    password = os.getenv(NON_PRODUCTION_SUPERADMIN_PASSWORD_ENV_VAR, "").strip()
+    if not password:
+        raise RuntimeError(
+            "Debe definir la variable de entorno "
+            f"{NON_PRODUCTION_SUPERADMIN_PASSWORD_ENV_VAR} "
+            "para inicializar el superadmin no productivo."
+        )
+    return password
 
 
 def get_non_production_superadmin_seed() -> tuple[str, str]:
@@ -32,7 +46,7 @@ def get_non_production_superadmin_seed() -> tuple[str, str]:
             "El seed inicial de superadmin no debe utilizarse en produccion."
         )
 
-    return DEVELOPMENT_SUPERADMIN_USERNAME, DEVELOPMENT_SUPERADMIN_PASSWORD
+    return DEVELOPMENT_SUPERADMIN_USERNAME, _get_non_production_superadmin_password()
 
 
 def inicializar_base_datos_postgis() -> None:

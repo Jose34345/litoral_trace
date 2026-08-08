@@ -41,6 +41,7 @@ from litoral_trace.auth.rbac import (
 )
 from litoral_trace.auth.tokens import create_jwt_token
 from litoral_trace.db.engine import get_db_session
+from litoral_trace.db.init_db import get_non_production_superadmin_seed
 from litoral_trace.db.models import Lote, Organization, User
 
 
@@ -325,7 +326,10 @@ def test_satellite_requires_capability_before_external_call(monkeypatch):
 
 
 def test_superadmin_has_platform_admin_endpoint_access():
-    superadmin = _authenticated_context(username="admin", password="admin123")
+    superadmin = _authenticated_context(
+        username="admin",
+        password=get_non_production_superadmin_seed()[1],
+    )
     platform_user = require_superadmin_role(user=superadmin)
     response = asyncio.run(
         listar_organizaciones_endpoint(admin=platform_user)
@@ -356,7 +360,10 @@ def test_forged_signed_role_claim_does_not_grant_extra_permissions():
 
 
 def test_tampered_jwt_is_rejected_with_401():
-    token = _login_access_token(username="admin", password="admin123")
+    token = _login_access_token(
+        username="admin",
+        password=get_non_production_superadmin_seed()[1],
+    )
     tampered_last_char = "a" if token[-1] != "a" else "b"
     tampered_token = token[:-1] + tampered_last_char
 
