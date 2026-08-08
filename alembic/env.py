@@ -46,6 +46,7 @@ sys.path.insert(
 # Metadata de SQLAlchemy
 # ============================================================
 
+from litoral_trace.config import resolve_migration_database_url
 from litoral_trace.db.base import Base
 from litoral_trace.db.models import *  # noqa: F401,F403
 
@@ -54,34 +55,15 @@ target_metadata = Base.metadata
 
 
 # ============================================================
-# DATABASE_URL
+# DATABASE URL para Alembic
 # ============================================================
 
-database_url = (
-    os.environ.get("DATABASE_URL")
-    or os.environ.get("POSTGRES_URL")
-    or os.environ.get("DB_URL")
-)
+database_url = resolve_migration_database_url()
 
 if not database_url:
     raise RuntimeError(
-        "DATABASE_URL is not set in the environment. "
-        "Configure it before running Alembic commands."
-    )
-
-
-if database_url.startswith("postgres://"):
-    database_url = database_url.replace(
-        "postgres://",
-        "postgresql+psycopg://",
-        1,
-    )
-
-elif database_url.startswith("postgresql://"):
-    database_url = database_url.replace(
-        "postgresql://",
-        "postgresql+psycopg://",
-        1,
+        "Alembic requires MIGRATION_DATABASE_URL or DATABASE_URL "
+        "to be configured in the environment."
     )
 
 

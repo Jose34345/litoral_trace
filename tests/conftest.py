@@ -21,7 +21,13 @@ os.environ.setdefault(
     "test-only-jwt-secret-key-1234567890",
 )
 
-for variable_name in ("DATABASE_URL", "POSTGRES_URL", "DB_URL"):
+for variable_name in (
+    "DATABASE_URL",
+    "MIGRATION_DATABASE_URL",
+    "POSTGRES_URL",
+    "DB_URL",
+    "RUNTIME_DATABASE_URL",
+):
     os.environ.pop(variable_name, None)
 
 

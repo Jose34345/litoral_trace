@@ -4,7 +4,10 @@ from __future__ import annotations
 from typing import Any
 
 from litoral_trace.config import get_settings
-from litoral_trace.config.settings import normalize_database_url
+from litoral_trace.config.settings import (
+    normalize_database_url,
+    resolve_runtime_database_url,
+)
 
 _engine: Any | None = None
 _session_factory: Any | None = None
@@ -27,7 +30,7 @@ def _normalize_database_url(db_url: str) -> str:
 
 
 def _get_application_database_url_from_environment() -> str | None:
-    return get_settings().database.application_database_url
+    return resolve_runtime_database_url(get_settings())
 
 
 def _get_test_database_url() -> str:

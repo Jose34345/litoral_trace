@@ -76,15 +76,16 @@ def normalize_database_url(database_url: str) -> str:
 class DatabaseSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    database_url: str | None = None
-    postgres_url: str | None = None
-    db_url: str | None = None
-    test_database_url: str | None = None
-    test_postgres_database_url: str | None = None
+    database_url: str | None = Field(default=None, repr=False)
+    migration_database_url: str | None = Field(default=None, repr=False)
+    postgres_url: str | None = Field(default=None, repr=False)
+    db_url: str | None = Field(default=None, repr=False)
+    test_database_url: str | None = Field(default=None, repr=False)
+    test_postgres_database_url: str | None = Field(default=None, repr=False)
     enable_postgres_tests: bool = False
 
     @property
-    def application_database_url(self) -> str | None:
+    def runtime_database_url(self) -> str | None:
         for value in (
             self.database_url,
             self.postgres_url,
@@ -93,6 +94,17 @@ class DatabaseSettings(BaseModel):
             if value:
                 return normalize_database_url(value)
         return None
+
+    @property
+    def application_database_url(self) -> str | None:
+        """Compatibilidad con llamadas existentes; usar runtime_database_url nuevo."""
+        return self.runtime_database_url
+
+    @property
+    def resolved_migration_database_url(self) -> str | None:
+        if self.migration_database_url:
+            return normalize_database_url(self.migration_database_url)
+        return self.runtime_database_url
 
     @property
     def resolved_test_database_url(self) -> str:
@@ -106,7 +118,7 @@ class DatabaseSettings(BaseModel):
                     "para evitar uso accidental durante pytest ordinario."
                 )
 
-            application_database_url = self.application_database_url
+            application_database_url = self.runtime_database_url
             normalized_postgres_test_url = normalize_database_url(
                 self.test_postgres_database_url
             )
@@ -233,6 +245,9 @@ class Settings(BaseModel):
             environment=environment,
             database=DatabaseSettings(
                 database_url=_read_optional_env("DATABASE_URL"),
+                migration_database_url=_read_optional_env(
+                    "MIGRATION_DATABASE_URL"
+                ),
                 postgres_url=_read_optional_env("POSTGRES_URL"),
                 db_url=_read_optional_env("DB_URL"),
                 test_database_url=_read_optional_env("TEST_DATABASE_URL"),
@@ -292,3 +307,13 @@ class Settings(BaseModel):
 def get_settings() -> Settings:
     """Construye una vista tipada del entorno actual."""
     return Settings.from_environment()
+
+
+def resolve_runtime_database_url(settings: Settings | None = None) -> str | None:
+    active_settings = settings or get_settings()
+    return active_settings.database.runtime_database_url
+
+
+def resolve_migration_database_url(settings: Settings | None = None) -> str | None:
+    active_settings = settings or get_settings()
+    return active_settings.database.resolved_migration_database_url
