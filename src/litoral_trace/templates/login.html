@@ -28,11 +28,11 @@
         <form method="POST" action="/login" class="space-y-4">
             <div>
                 <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Usuario / Credencial</label>
-                <input type="text" name="username" value="admin" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-forest-600 focus:border-forest-600 outline-none">
+                <input type="text" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-forest-600 focus:border-forest-600 outline-none">
             </div>
             <div>
                 <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Clave de Seguridad</label>
-                <input type="password" name="password" value="admin123" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-forest-600 focus:border-forest-600 outline-none">
+                <input type="password" name="password" autocomplete="current-password" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-forest-600 focus:border-forest-600 outline-none">
             </div>
 
             <button type="submit" class="w-full py-2.5 bg-forest-800 hover:bg-forest-900 text-white font-semibold rounded-lg text-sm shadow transition-colors flex items-center justify-center gap-2">

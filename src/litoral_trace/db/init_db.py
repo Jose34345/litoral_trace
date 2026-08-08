@@ -13,8 +13,26 @@ from litoral_trace.db.engine import get_engine, get_session_factory
 from litoral_trace.db.models import License, Lote, Organization, User
 from litoral_trace.auth.passwords import hash_password
 
+
+DEVELOPMENT_SUPERADMIN_USERNAME = "admin"
+DEVELOPMENT_SUPERADMIN_PASSWORD = "admin123"
+
+
 def _is_production_environment() -> bool:
     return get_settings().is_production
+
+
+def get_non_production_superadmin_seed() -> tuple[str, str]:
+    """Return the bootstrap superadmin credential reserved for local/dev/test.
+
+    Production must provision or rotate privileged credentials out of band.
+    """
+    if _is_production_environment():
+        raise RuntimeError(
+            "El seed inicial de superadmin no debe utilizarse en produccion."
+        )
+
+    return DEVELOPMENT_SUPERADMIN_USERNAME, DEVELOPMENT_SUPERADMIN_PASSWORD
 
 
 def inicializar_base_datos_postgis() -> None:
@@ -38,6 +56,7 @@ def inicializar_base_datos_postgis() -> None:
     Base.metadata.create_all(bind=engine)
 
     # 3. Seeding de la OrganizaciÃ³n SuperAdmin inicial
+    admin_username, admin_password = get_non_production_superadmin_seed()
     session_factory = get_session_factory()
     with session_factory() as session: # type: Session
         # Verificar si ya existe la organizaciÃ³n SuperAdmin
@@ -56,13 +75,13 @@ def inicializar_base_datos_postgis() -> None:
             session.refresh(admin_org)
 
         # Verificar si existe el usuario admin de plataforma
-        admin_user = session.query(User).filter_by(username="admin").first()
+        admin_user = session.query(User).filter_by(username=admin_username).first()
         if not admin_user:
             admin_user = User(
                 organization_id=admin_org.id,
                 email="comercial@litoraltrace.com",
-                username="admin",
-                password_hash=hash_password("admin123"),
+                username=admin_username,
+                password_hash=hash_password(admin_password),
                 role="superadmin",
                 full_name="JosÃ© David Lezcano (Fundador)",
                 is_active=True

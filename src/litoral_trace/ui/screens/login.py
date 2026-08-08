@@ -1,4 +1,8 @@
-"""Pantalla de Login B2B Enterprise - Litoral Trace."""
+"""Pantalla de Login B2B Enterprise - Litoral Trace.
+
+Legacy Streamlit screen kept for local/dev use. Production deployment is the
+FastAPI/Jinja app served by ``main.py``.
+"""
 from __future__ import annotations
 import streamlit as st
 
@@ -43,8 +47,8 @@ def login_screen() -> None:
     with col2:
         st.markdown("### Acceso Corporativo B2B")
         with st.form("login_form"):
-            username = st.text_input("Usuario / Credencial", value="admin", placeholder="Ingrese su usuario")
-            password = st.text_input("Clave de Seguridad", value="admin123", type="password")
+            username = st.text_input("Usuario / Credencial", placeholder="Ingrese su usuario")
+            password = st.text_input("Clave de Seguridad", type="password")
             submit = st.form_submit_button("Iniciar Sesión", type="primary", use_container_width=True)
 
             if submit:
