@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from litoral_trace.db.models.organization import Organization
     from litoral_trace.db.models.audit_log import AuditLog
     from litoral_trace.db.models.api_key import ApiKey
+    from litoral_trace.db.models.user_session import UserSession
 
 class User(Base, TimestampMixin):
     """Usuario del sistema con asignación multi-tenant a una Organización."""
@@ -30,6 +31,7 @@ class User(Base, TimestampMixin):
     organization: Mapped[Organization] = relationship("Organization", back_populates="users")
     audit_logs: Mapped[list[AuditLog]] = relationship("AuditLog", back_populates="user")
     api_keys: Mapped[list[ApiKey]] = relationship("ApiKey", back_populates="user")
+    sessions: Mapped[list[UserSession]] = relationship("UserSession", back_populates="user")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} username='{self.username}' role='{self.role}'>"

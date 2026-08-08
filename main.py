@@ -13,7 +13,7 @@ sys.path.insert(0, str(src_dir / "litoral_trace"))
 sys.path.insert(0, str(base_dir))
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 # ---------------------------------------------------------------------------
@@ -44,11 +44,15 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 
 from litoral_trace.api.auth import router as auth_router
+from litoral_trace.api.auth import clear_auth_cookies
+from litoral_trace.api.auth import revoke_logout_target
 from litoral_trace.api.lotes import router as lotes_router
 from litoral_trace.api.vault import router as vault_router
 from litoral_trace.api.settings import router as settings_router
 from litoral_trace.api.admin import router as admin_router
 from litoral_trace.api.satellite import router as satellite_router
+from litoral_trace.auth.sessions import ACCESS_TOKEN_COOKIE_KEY, REFRESH_TOKEN_COOKIE_KEY
+from litoral_trace.db.engine import get_db_session
 
 app.include_router(auth_router)
 app.include_router(lotes_router)
@@ -207,15 +211,56 @@ async def render_admin_view(request: Request):
     tags=["Frontend B2B"],
 )
 async def logout_view(request: Request):
-    """Elimina la cookie de sesión y vuelve al login."""
-    response = render_template(
-        request,
-        "login.html",
-        {"user": None},
+    """Muestra una confirmacion de logout sin mutar estado."""
+    return HTMLResponse(
+        content=(
+            "<!DOCTYPE html>"
+            "<html lang='es'><head><meta charset='UTF-8'>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+            "<title>Confirmar cierre de sesion</title></head>"
+            "<body style='font-family: sans-serif; padding: 2rem;'>"
+            "<h2>Cerrar sesion</h2>"
+            "<p>El cierre de sesion requiere una solicitud POST.</p>"
+            "<form method='post' action='/logout'>"
+            "<button type='submit'>Confirmar cierre de sesion</button>"
+            "</form>"
+            "<p><a href='/dashboard'>Volver</a></p>"
+            "</body></html>"
+        )
     )
 
-    response.delete_cookie("session_jwt")
 
+@app.post(
+    "/logout",
+    tags=["Frontend B2B"],
+)
+async def logout_submit_view(request: Request):
+    """Revoca la sesion persistente activa y redirige al login."""
+    session = get_db_session()
+    if session is None:
+        return HTMLResponse(
+            status_code=503,
+            content="Servicio de base de datos no disponible.",
+        )
+
+    refresh_token = request.cookies.get(REFRESH_TOKEN_COOKIE_KEY)
+    access_token = request.cookies.get(ACCESS_TOKEN_COOKIE_KEY)
+
+    try:
+        revoke_logout_target(
+            session,
+            refresh_token=refresh_token,
+            access_token=access_token,
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+    response = RedirectResponse(url="/", status_code=303)
+    clear_auth_cookies(response)
     return response
 
 

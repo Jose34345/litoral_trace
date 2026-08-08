@@ -65,7 +65,11 @@
                         <span class="block font-semibold text-slate-200">{{ user.organization_name }}</span>
                         <span class="text-slate-400">{{ user.username }} ({{ user.role|upper }})</span>
                     </div>
-                    <a href="/logout" class="text-slate-400 hover:text-white text-sm p-2"><i class="fa-solid fa-right-from-bracket"></i></a>
+                    <form method="post" action="/logout" class="inline">
+                        <button type="submit" class="text-slate-400 hover:text-white text-sm p-2" aria-label="Cerrar sesion">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                        </button>
+                    </form>
                     {% endif %}
                 </div>
             </div>
