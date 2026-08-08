@@ -22,6 +22,23 @@ REFRESH_TOKEN_COOKIE_KEY = "refresh_token"
 class SessionSecurityError(RuntimeError):
     """Error de autenticacion seguro para refresh/logout."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "session_security_error",
+        organization_id: int | None = None,
+        user_id: int | None = None,
+        session_id: int | None = None,
+        family_id: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.organization_id = organization_id
+        self.user_id = user_id
+        self.session_id = session_id
+        self.family_id = family_id
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -235,11 +252,25 @@ def rotate_refresh_session(
             organization_id=current_session.organization_id,
             revoked_at=rotation_time,
         )
-        raise SessionSecurityError("Refresh token invalido o expirado.")
+        raise SessionSecurityError(
+            "Refresh token invalido o expirado.",
+            code="refresh_reuse",
+            organization_id=current_session.organization_id,
+            user_id=current_session.user_id,
+            session_id=current_session.id,
+            family_id=current_session.family_id,
+        )
 
     if ensure_utc_datetime(current_session.expires_at) <= rotation_time:
         current_session.revoked_at = rotation_time
-        raise SessionSecurityError("Refresh token invalido o expirado.")
+        raise SessionSecurityError(
+            "Refresh token invalido o expirado.",
+            code="refresh_expired",
+            organization_id=current_session.organization_id,
+            user_id=current_session.user_id,
+            session_id=current_session.id,
+            family_id=current_session.family_id,
+        )
 
     user = db_session.get(User, current_session.user_id)
     organization = db_session.get(Organization, current_session.organization_id)

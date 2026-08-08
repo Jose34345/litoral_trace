@@ -11,6 +11,7 @@ from fastapi import (
     Depends,
     File,
     HTTPException,
+    Request,
     UploadFile,
     status,
 )
@@ -31,6 +32,14 @@ from litoral_trace.db.tenant import (
 from litoral_trace.services.batch import (
     generar_plantilla_excel,
     procesar_lote_masivo,
+)
+from litoral_trace.services.audit import (
+    AuditAction,
+    AuditOutcome,
+    build_audit_actor_from_user,
+    build_request_audit_context,
+    record_audit_event,
+    record_audit_event_now,
 )
 from litoral_trace.services.compliance import (
     evaluar_compliance_lote,
@@ -274,6 +283,16 @@ def _lote_to_dict(lote: Lote) -> dict[str, Any]:
     }
 
 
+def _build_lote_audit_state(lote: Lote) -> dict[str, Any]:
+    return {
+        "identificador": lote.identificador,
+        "estatus": lote.estatus,
+        "producto_forestal": lote.producto_forestal,
+        "volumen_ingresado_ton": lote.volumen_ingresado_ton,
+        "volumen_exportar_ton": lote.volumen_exportar_ton,
+    }
+
+
 def _get_tenant_lote(
     session: Any,
     lote_id: int,
@@ -401,6 +420,7 @@ async def obtener_lote(
 )
 async def crear_lote(
     payload: LoteCreateRequest,
+    request: Request = None,
     user: UserTenantContext = Depends(require_permission(Permission.LOTE_CREATE)),
 ) -> LoteResponse:
     """
@@ -416,6 +436,7 @@ async def crear_lote(
         )
 
     try:
+        request_context = build_request_audit_context(request)
         # Evita duplicar el mismo identificador dentro de una organización.
         existing = session.execute(
             select(Lote).where(
@@ -456,6 +477,18 @@ async def crear_lote(
         )
 
         session.add(lote)
+        session.flush()
+        record_audit_event(
+            session,
+            actor=build_audit_actor_from_user(user),
+            action=AuditAction.LOTE_CREATE,
+            entity_type="lote",
+            entity_id=lote.id,
+            outcome=AuditOutcome.SUCCESS,
+            request_context=request_context,
+            metadata={"identificador": lote.identificador},
+            after_data=_build_lote_audit_state(lote),
+        )
         session.commit()
         set_tenant_db_context(session, user.organization_id)
         session.refresh(lote)
@@ -490,6 +523,7 @@ async def crear_lote(
 async def actualizar_lote(
     lote_id: int,
     payload: LoteUpdateRequest,
+    request: Request = None,
     user: UserTenantContext = Depends(require_permission(Permission.LOTE_UPDATE)),
 ) -> LoteResponse:
     """Actualiza un lote perteneciente exclusivamente al tenant autenticado."""
@@ -503,11 +537,13 @@ async def actualizar_lote(
         )
 
     try:
+        request_context = build_request_audit_context(request)
         lote = _get_tenant_lote(
             session=session,
             lote_id=lote_id,
             organization_id=user.organization_id,
         )
+        before_state = _build_lote_audit_state(lote)
 
         changes = payload.model_dump(exclude_unset=True)
 
@@ -546,6 +582,18 @@ async def actualizar_lote(
         for field_name, value in changes.items():
             setattr(lote, field_name, value)
 
+        record_audit_event(
+            session,
+            actor=build_audit_actor_from_user(user),
+            action=AuditAction.LOTE_UPDATE,
+            entity_type="lote",
+            entity_id=lote.id,
+            outcome=AuditOutcome.SUCCESS,
+            request_context=request_context,
+            metadata={"identificador": lote.identificador},
+            before_data=before_state,
+            after_data=_build_lote_audit_state(lote),
+        )
         session.commit()
         set_tenant_db_context(session, user.organization_id)
         session.refresh(lote)
@@ -579,6 +627,7 @@ async def actualizar_lote(
 )
 async def eliminar_lote(
     lote_id: int,
+    request: Request = None,
     user: UserTenantContext = Depends(require_permission(Permission.LOTE_DELETE)),
 ) -> None:
     """
@@ -595,10 +644,25 @@ async def eliminar_lote(
         )
 
     try:
+        request_context = build_request_audit_context(request)
         lote = _get_tenant_lote(
             session=session,
             lote_id=lote_id,
             organization_id=user.organization_id,
+        )
+        before_state = _build_lote_audit_state(lote)
+        lote_identificador = lote.identificador
+
+        record_audit_event(
+            session,
+            actor=build_audit_actor_from_user(user),
+            action=AuditAction.LOTE_DELETE,
+            entity_type="lote",
+            entity_id=lote.id,
+            outcome=AuditOutcome.SUCCESS,
+            request_context=request_context,
+            metadata={"identificador": lote_identificador},
+            before_data=before_state,
         )
 
         session.delete(lote)
@@ -724,11 +788,13 @@ async def descargar_plantilla_excel_endpoint() -> StreamingResponse:
 )
 async def procesar_batch_excel_endpoint(
     file: UploadFile = File(...),
+    request: Request = None,
     user: UserTenantContext = Depends(require_permission(Permission.LOTE_CREATE)),
 ) -> StreamingResponse:
     """Procesa una matriz Excel y genera el paquete de auditoría ZIP."""
 
     filename = file.filename or ""
+    request_context = build_request_audit_context(request)
 
     if not filename.lower().endswith((".xlsx", ".xls")):
         raise HTTPException(
@@ -764,6 +830,18 @@ async def procesar_batch_excel_endpoint(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Error al procesar la planilla: {exc}",
         ) from exc
+
+    record_audit_event_now(
+        actor=build_audit_actor_from_user(user),
+        action=AuditAction.LOTE_BATCH_UPLOAD,
+        entity_type="lote_batch_upload",
+        outcome=AuditOutcome.SUCCESS,
+        request_context=request_context,
+        metadata={
+            "filename": filename,
+            "row_count": int(len(df_upload.index)),
+        },
+    )
 
     return StreamingResponse(
         io.BytesIO(zip_bytes),

@@ -3,12 +3,19 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.auth.rbac import Permission, require_permission
+from litoral_trace.services.audit import (
+    AuditAction,
+    AuditOutcome,
+    build_audit_actor_from_user,
+    build_request_audit_context,
+    record_audit_event_now,
+)
 from litoral_trace.services.licenses import (
     generar_invitacion_demo_prospecto,
     obtener_cuota_tenant,
@@ -57,6 +64,7 @@ async def consultar_licencia_tenant(
 @router.post("/invite_demo_user", tags=["Configuracion & Licencias B2B"])
 async def generar_invitacion_demo_endpoint(
     payload: InviteDemoUserRequest,
+    request: Request = None,
     user: UserTenantContext = Depends(require_permission(Permission.SETTINGS_WRITE)),
 ) -> JSONResponse:
     """Genera credenciales de acceso demo comercial para un prospecto."""
@@ -65,6 +73,19 @@ async def generar_invitacion_demo_endpoint(
         nombre_contacto=payload.nombre_contacto,
         email_contacto=payload.email_contacto,
         especie_principal=payload.especie_principal,
+    )
+    record_audit_event_now(
+        actor=build_audit_actor_from_user(user),
+        action=AuditAction.SETTINGS_INVITE_DEMO,
+        entity_type="demo_invitation",
+        entity_id=None,
+        outcome=AuditOutcome.SUCCESS,
+        request_context=build_request_audit_context(request),
+        metadata={
+            "cuit_empresa": payload.cuit_empresa,
+            "especie_principal": payload.especie_principal,
+        },
+        best_effort=True,
     )
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,

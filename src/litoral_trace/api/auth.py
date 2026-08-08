@@ -35,6 +35,15 @@ from litoral_trace.db.auth_bootstrap import lookup_login_bootstrap_user
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import Organization, User, UserSession
 from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.services.audit import (
+    AuditAction,
+    AuditOutcome,
+    build_audit_actor,
+    build_audit_actor_from_user,
+    build_request_audit_context,
+    record_audit_event,
+    record_audit_event_now,
+)
 
 
 router = APIRouter(
@@ -326,23 +335,48 @@ def revoke_logout_target(
     *,
     refresh_token: str | None = None,
     access_token: str | None = None,
-) -> None:
+) -> UserSession | None:
     if refresh_token is not None:
-        revoke_session(
+        return revoke_session(
             session,
             refresh_token=refresh_token,
         )
-        return
 
     session_reference = _extract_session_reference_from_access_token(access_token)
     if session_reference is None:
-        return
+        return None
 
     session_id, organization_id = session_reference
     set_tenant_db_context(session, organization_id)
-    revoke_session(
+    return revoke_session(
         session,
         session_id=session_id,
+    )
+
+
+def _record_login_failure_audit(
+    *,
+    organization_id: int,
+    user_id: int | None,
+    username: str,
+    role: str | None,
+    request_context,
+    reason: str,
+) -> None:
+    record_audit_event_now(
+        actor=build_audit_actor(
+            organization_id=organization_id,
+            user_id=user_id,
+            username=username,
+            role=role,
+        ),
+        action=AuditAction.AUTH_LOGIN_FAILURE,
+        entity_type="auth_identity",
+        entity_id=user_id,
+        outcome=AuditOutcome.FAILURE,
+        request_context=request_context,
+        metadata={"reason": reason},
+        best_effort=True,
     )
 
 
@@ -415,6 +449,7 @@ async def login_b2b(
         settings = get_settings()
         access_token_expire_seconds = settings.jwt.access_token_expire_seconds
         client_ip, user_agent = _extract_request_metadata(request)
+        request_context = build_request_audit_context(request)
 
         bootstrap_user = lookup_login_bootstrap_user(
             session,
@@ -428,22 +463,38 @@ async def login_b2b(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        if not bootstrap_user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="El usuario esta inactivo.",
-            )
-
-        if not verify_password(password, bootstrap_user.password_hash):
+        set_tenant_db_context(session, bootstrap_user.organization_id)
+        user = session.get(User, bootstrap_user.id)
+        if user is None or user.organization_id != bootstrap_user.organization_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Usuario o contrasena incorrectos.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        set_tenant_db_context(session, bootstrap_user.organization_id)
-        user = session.get(User, bootstrap_user.id)
-        if user is None or user.organization_id != bootstrap_user.organization_id:
+        if not bootstrap_user.is_active:
+            _record_login_failure_audit(
+                organization_id=bootstrap_user.organization_id,
+                user_id=user.id,
+                username=user.username,
+                role=user.role,
+                request_context=request_context,
+                reason="credential_validation_failed",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="El usuario esta inactivo.",
+            )
+
+        if not verify_password(password, bootstrap_user.password_hash):
+            _record_login_failure_audit(
+                organization_id=bootstrap_user.organization_id,
+                user_id=user.id,
+                username=user.username,
+                role=user.role,
+                request_context=request_context,
+                reason="credential_validation_failed",
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Usuario o contrasena incorrectos.",
@@ -479,6 +530,16 @@ async def login_b2b(
         user_info = _build_user_info(
             user=user,
             organization=organization,
+        )
+        record_audit_event(
+            session,
+            actor=build_audit_actor_from_user(user),
+            action=AuditAction.AUTH_LOGIN_SUCCESS,
+            entity_type="user_session",
+            entity_id=issued_session.session.id,
+            outcome=AuditOutcome.SUCCESS,
+            request_context=request_context,
+            metadata={"session_family_id": issued_session.session.family_id},
         )
 
         jwt_token = create_jwt_token(
@@ -552,6 +613,7 @@ async def refresh_b2b_session(
         settings = get_settings()
         access_token_expire_seconds = settings.jwt.access_token_expire_seconds
         client_ip, user_agent = _extract_request_metadata(request)
+        request_context = build_request_audit_context(request)
         rotated_session = rotate_refresh_session(
             session,
             refresh_token=refresh_token,
@@ -561,6 +623,19 @@ async def refresh_b2b_session(
         user_info = _build_user_info(
             user=rotated_session.user,
             organization=rotated_session.organization,
+        )
+        record_audit_event(
+            session,
+            actor=build_audit_actor_from_user(rotated_session.user),
+            action=AuditAction.AUTH_REFRESH_SUCCESS,
+            entity_type="user_session",
+            entity_id=rotated_session.new_session.id,
+            outcome=AuditOutcome.SUCCESS,
+            request_context=request_context,
+            metadata={
+                "previous_session_id": rotated_session.previous_session.id,
+                "session_family_id": rotated_session.new_session.family_id,
+            },
         )
 
         jwt_token = create_jwt_token(
@@ -586,6 +661,23 @@ async def refresh_b2b_session(
             user_info=user_info,
         )
     except SessionSecurityError as exc:
+        if exc.code == "refresh_reuse" and exc.organization_id is not None:
+            user = session.get(User, exc.user_id) if exc.user_id is not None else None
+            record_audit_event(
+                session,
+                actor=build_audit_actor(
+                    organization_id=exc.organization_id,
+                    user_id=exc.user_id,
+                    username=getattr(user, "username", None),
+                    role=getattr(user, "role", None),
+                ),
+                action=AuditAction.AUTH_REFRESH_REUSE,
+                entity_type="user_session",
+                entity_id=exc.session_id,
+                outcome=AuditOutcome.FAILURE,
+                request_context=request_context,
+                metadata={"session_family_id": exc.family_id},
+            )
         try:
             session.commit()
         except Exception:
@@ -607,6 +699,7 @@ async def refresh_b2b_session(
 async def logout_b2b_session(
     response: Response,
     payload: LogoutRequest | None = None,
+    request: Request = None,
     authorization: str | None = Header(None),
     bearer_token: str | None = Depends(oauth2_scheme),
     refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY),
@@ -635,11 +728,32 @@ async def logout_b2b_session(
         access_token = session_jwt
 
     try:
-        revoke_logout_target(
+        request_context = build_request_audit_context(request)
+        revoked_session = revoke_logout_target(
             session,
             refresh_token=refresh_token,
             access_token=access_token,
         )
+        if revoked_session is not None:
+            set_tenant_db_context(session, revoked_session.organization_id)
+            user = session.get(User, revoked_session.user_id)
+            record_audit_event(
+                session,
+                actor=build_audit_actor(
+                    organization_id=revoked_session.organization_id,
+                    user_id=revoked_session.user_id,
+                    username=getattr(user, "username", None),
+                    role=getattr(user, "role", None),
+                ),
+                action=AuditAction.AUTH_LOGOUT,
+                entity_type="user_session",
+                entity_id=revoked_session.id,
+                outcome=AuditOutcome.SUCCESS,
+                request_context=request_context,
+                metadata={
+                    "logout_via": "refresh_token" if refresh_token is not None else "access_token"
+                },
+            )
         session.commit()
         clear_auth_cookies(response)
     except Exception:

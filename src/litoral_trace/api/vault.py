@@ -1,12 +1,18 @@
 """Router REST de la Bóveda Documental Privada (Document Vault)."""
 from __future__ import annotations
 import io
-from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.auth.rbac import Permission, require_permission
+from litoral_trace.services.audit import (
+    AuditAction,
+    AuditOutcome,
+    build_audit_actor_from_user,
+    build_request_audit_context,
+    record_audit_event_now,
+)
 from litoral_trace.services.vault import listar_documentos_boveda_tenant
 
 router = APIRouter(prefix="/api/v1/vault", tags=["Bóveda Documental B2B"])
@@ -38,6 +44,7 @@ async def consultar_documentos_boveda(
 @router.get("/download/{doc_id}", tags=["Bóveda Documental B2B"])
 async def descargar_documento_boveda(
     doc_id: str,
+    request: Request = None,
     user: UserTenantContext = Depends(require_permission(Permission.VAULT_READ))
 ) -> StreamingResponse:
     """Descarga segura de un documento desde la bóveda privada con verificación de tenant."""
@@ -61,6 +68,21 @@ async def descargar_documento_boveda(
     else:
         content_bytes = b"Litoral Trace Remito Excel Data"
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    record_audit_event_now(
+        actor=build_audit_actor_from_user(user),
+        action=AuditAction.VAULT_DOWNLOAD,
+        entity_type="vault_document",
+        entity_id=None,
+        outcome=AuditOutcome.SUCCESS,
+        request_context=build_request_audit_context(request),
+        metadata={
+            "document_id": doc_id,
+            "filename": filename,
+            "doc_type": doc_match["doc_type"],
+        },
+        best_effort=True,
+    )
 
     return StreamingResponse(
         io.BytesIO(content_bytes),
