@@ -31,7 +31,7 @@ from litoral_trace.auth.passwords import verify_password
 from litoral_trace.auth.tokens import create_jwt_token, verify_jwt_token
 from litoral_trace.config import get_settings
 from litoral_trace.db.engine import get_db_session
-from litoral_trace.db.models import Organization, User
+from litoral_trace.db.models import Organization, User, UserSession
 
 
 router = APIRouter(
@@ -58,11 +58,15 @@ class TokenResponse(BaseModel):
 
 
 class UserTenantContext(BaseModel):
+    user_id: int | None = None
     username: str
     organization_id: int
     organization_name: str
+    organization_slug: str | None = None
     role: str
     email: str
+    session_id: int | None = None
+    is_platform_superadmin: bool = False
 
 
 class RefreshRequest(BaseModel):
@@ -99,13 +103,110 @@ def _build_user_tenant_context(payload: dict[str, Any]) -> UserTenantContext:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    session_id = None
+    if payload.get("sid") is not None:
+        try:
+            session_id = int(payload.get("sid"))
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token JWT invalido o incompleto.",
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from None
+
     return UserTenantContext(
         username=subject,
         organization_id=organization_id,
         organization_name=organization_name,
         role=role,
         email=email,
+        session_id=session_id,
     )
+
+
+def _is_platform_superadmin(
+    *,
+    user: User,
+    organization: Organization,
+) -> bool:
+    return (
+        user.role.strip().lower() == "admin"
+        and user.username.strip().lower() == "admin"
+        and organization.slug.strip().lower() == "exp-chaco"
+    )
+
+
+def _hydrate_user_tenant_context(
+    raw_context: UserTenantContext,
+) -> UserTenantContext:
+    session = get_db_session()
+
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio de base de datos no disponible.",
+        )
+
+    try:
+        user = session.execute(
+            select(User).where(
+                User.username == raw_context.username,
+                User.organization_id == raw_context.organization_id,
+            )
+        ).scalar_one_or_none()
+
+        if user is None or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token JWT invalido o expirado.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        organization = session.execute(
+            select(Organization).where(
+                Organization.id == user.organization_id,
+            )
+        ).scalar_one_or_none()
+
+        if organization is None or not organization.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token JWT invalido o expirado.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        if raw_context.session_id is not None:
+            user_session = session.execute(
+                select(UserSession).where(
+                    UserSession.id == raw_context.session_id,
+                    UserSession.user_id == user.id,
+                    UserSession.organization_id == organization.id,
+                )
+            ).scalar_one_or_none()
+
+            if user_session is None or user_session.revoked_at is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token JWT invalido o expirado.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+        return UserTenantContext(
+            user_id=user.id,
+            username=user.username,
+            organization_id=organization.id,
+            organization_name=organization.name,
+            organization_slug=organization.slug,
+            role=user.role,
+            email=user.email,
+            session_id=raw_context.session_id,
+            is_platform_superadmin=_is_platform_superadmin(
+                user=user,
+                organization=organization,
+            ),
+        )
+    finally:
+        session.close()
 
 
 def _build_user_info(
@@ -267,7 +368,9 @@ def get_current_tenant_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return _build_user_tenant_context(payload)
+    return _hydrate_user_tenant_context(
+        _build_user_tenant_context(payload)
+    )
 
 
 @router.post("/login", response_model=TokenResponse)

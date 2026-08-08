@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from litoral_trace.api.auth import get_current_tenant_user, UserTenantContext
 from litoral_trace.config import get_settings
@@ -35,6 +36,49 @@ class SatelliteQueryByLoteRequest(BaseModel):
     max_cloud_pct: float = Field(default=20.0, ge=0.0, le=100.0)
     force_refresh: bool = Field(default=False)
 
+
+def _get_tenant_lote_geometry(
+    *,
+    lote_id: int,
+    user: UserTenantContext,
+) -> tuple[str, float, float]:
+    from litoral_trace.db.engine import get_db_session
+    from litoral_trace.db.models import Lote
+
+    session = get_db_session()
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio de base de datos no disponible.",
+        )
+
+    try:
+        lote = session.execute(
+            select(Lote).where(
+                Lote.id == lote_id,
+                Lote.organization_id == user.organization_id,
+            )
+        ).scalar_one_or_none()
+
+        if lote is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lote no encontrado.",
+            )
+
+        polygon_wkt = lote.polygon_wkt or (
+            f"POLYGON(("
+            f"{lote.longitud-0.01} {lote.latitud-0.01}, "
+            f"{lote.longitud+0.01} {lote.latitud-0.01}, "
+            f"{lote.longitud+0.01} {lote.latitud+0.01}, "
+            f"{lote.longitud-0.01} {lote.latitud+0.01}, "
+            f"{lote.longitud-0.01} {lote.latitud-0.01}"
+            f"))"
+        )
+        return polygon_wkt, lote.latitud, lote.longitud
+    finally:
+        session.close()
+
 @router.post("/ndvi", tags=["Telemetría Satelital GEE"])
 async def consultar_ndvi_satelital_lote_endpoint(
     payload: SatelliteQueryByLoteRequest,
@@ -44,45 +88,10 @@ async def consultar_ndvi_satelital_lote_endpoint(
     t_start = time.time()
     end_date_str = payload.end_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # 1. Búsqueda y Validación de Propiedad Multi-Tenant en PostgreSQL
-    lote_org_id = None
-    polygon_wkt = None
-    lat, lon = -27.45, -58.90
-
-    try:
-        from litoral_trace.db.engine import get_db_session
-        from litoral_trace.db.models import Lote
-        session = get_db_session()
-        if session:
-            try:
-                lote = session.query(Lote).filter_by(id=payload.lote_id).first()
-                if lote:
-                    lote_org_id = lote.organization_id
-                    polygon_wkt = lote.polygon_wkt or f"POLYGON(({lote.longitud-0.01} {lote.latitud-0.01}, {lote.longitud+0.01} {lote.latitud-0.01}, {lote.longitud+0.01} {lote.latitud+0.01}, {lote.longitud-0.01} {lote.latitud+0.01}, {lote.longitud-0.01} {lote.latitud-0.01}))"
-                    lat, lon = lote.latitud, lote.longitud
-            finally:
-                session.close()
-    except Exception:
-        pass
-
-    # Fallback sintético si no hay DB ORM instanciada en entorno local
-    if lote_org_id is None:
-        if payload.lote_id in (101, 1, 42):
-            lote_org_id = user.organization_id
-            polygon_wkt = "POLYGON((-58.91 -27.46, -58.89 -27.46, -58.89 -27.44, -58.91 -27.44, -58.91 -27.46))"
-            lat, lon = -27.45, -58.90
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"El lote_id {payload.lote_id} no existe en el sistema."
-            )
-
-    # AISLAMIENTO MULTI-TENANT OBLIGATORIO
-    if lote_org_id != user.organization_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acceso Denegado: El lote especificado pertenece a otra organización."
-        )
+    polygon_wkt, lat, lon = _get_tenant_lote_geometry(
+        lote_id=payload.lote_id,
+        user=user,
+    )
 
     # Hash Criptográfico Determinístico de la Geometría
     geom_hash = generate_geometry_hash(polygon_wkt)

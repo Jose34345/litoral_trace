@@ -48,7 +48,7 @@ def require_superadmin_role(
     user: UserTenantContext = Depends(get_current_tenant_user),
 ) -> UserTenantContext:
     """Verifica que el usuario autenticado posea rol de SuperAdmin."""
-    if user.role.lower() != "admin":
+    if not user.is_platform_superadmin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acceso Denegado: Esta funcion esta reservada exclusivamente para el SuperAdmin.",

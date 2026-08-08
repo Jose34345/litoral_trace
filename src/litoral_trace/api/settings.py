@@ -43,7 +43,10 @@ async def consultar_licencia_tenant(
     user: UserTenantContext = Depends(get_current_tenant_user),
 ) -> JSONResponse:
     """Consulta el estado de la licencia, consumo mensual y limites de la organizacion."""
-    status_obj = obtener_cuota_tenant(user.organization_id)
+    status_obj = obtener_cuota_tenant(
+        user.organization_id,
+        organization_name=user.organization_name,
+    )
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content=asdict(status_obj),

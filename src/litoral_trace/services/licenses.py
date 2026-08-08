@@ -16,12 +16,15 @@ class LicenseQuotaStatus:
     valid_until: str
     quota_available: bool
 
-def obtener_cuota_tenant(organization_id: int) -> LicenseQuotaStatus:
+def obtener_cuota_tenant(
+    organization_id: int,
+    organization_name: str | None = None,
+) -> LicenseQuotaStatus:
     """Obtiene el estado actual de la licencia y cuotas de uso de la organización."""
     # Datos de demostración de licencias B2B
     return LicenseQuotaStatus(
         organization_id=organization_id,
-        organization_name="Exportadora Forestal del Chaco S.A.",
+        organization_name=organization_name or "Organización Demo",
         plan_name="Enterprise B2B (Especies Forestales EUDR)",
         monthly_lote_limit=100,
         monthly_lotes_used=12,
