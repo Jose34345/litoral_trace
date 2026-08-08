@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard B2B | Litoral Trace EUDR{% endblock %}
+
+{% block content %}
+<!-- Hero Section Enterprise -->
+<div class="mb-6 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div>
+        <div class="flex items-center gap-2 mb-1">
+            <span class="text-xs font-bold px-2.5 py-0.5 rounded bg-forest-100 text-forest-800 border border-forest-300">EUDR UE 2023/1115</span>
+            <span class="text-xs text-slate-500 font-medium"><i class="fa-solid fa-tree"></i> Especies: Pino, Eucalipto, Tanino Quebracho, Carbón</span>
+        </div>
+        <h1 class="text-2xl font-bold text-slate-900">Trazabilidad Forestal & Compliance EUDR</h1>
+        <p class="text-xs text-slate-500">Gestión de activos en origen (Gran Chaco), balance de masas y emisión de declaraciones DDS para TRACES NT.</p>
+    </div>
+    <div class="flex gap-2">
+        <a href="/api/v1/batch/template" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg border border-slate-300 transition-colors inline-flex items-center gap-2">
+            <i class="fa-solid fa-file-excel text-emerald-600"></i> Plantilla Excel
+        </a>
+    </div>
+</div>
+
+<!-- 4 Tarjetas KPI Enterprise -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Activos Monitoreados</div>
+        <div class="text-2xl font-bold text-slate-900 mt-1">12 Rodales</div>
+        <div class="text-xs font-medium text-emerald-600 mt-1"><i class="fa-solid fa-arrow-up"></i> Gran Chaco - NEA</div>
+    </div>
+    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Superficie Auditada</div>
+        <div class="text-2xl font-bold text-slate-900 mt-1">850 ha</div>
+        <div class="text-xs font-medium text-emerald-600 mt-1"><i class="fa-solid fa-satellite"></i> Linea base 2020 ok</div>
+    </div>
+    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Certificados DDS Emitidos</div>
+        <div class="text-2xl font-bold text-slate-900 mt-1">8 DDS</div>
+        <div class="text-xs font-medium text-emerald-600 mt-1"><i class="fa-solid fa-check-double"></i> TRACES NT Listos</div>
+    </div>
+    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Riesgo de Bloqueo Aduanero</div>
+        <div class="text-2xl font-bold text-slate-900 mt-1">0 Bloqueos</div>
+        <div class="text-xs font-medium text-emerald-600 mt-1"><i class="fa-solid fa-shield-halved"></i> 100% Compliant</div>
+    </div>
+</div>
+
+<!-- Tabs Secciones -->
+<div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+    <div class="border-b border-slate-200 mb-6">
+        <nav class="flex space-x-6 text-sm font-semibold">
+            <button onclick="showTab('mapa')" id="btn-tab-mapa" class="pb-3 border-b-2 border-forest-700 text-forest-800">
+                🗺️ Mapa Geoespacial de Rodales
+            </button>
+            <button onclick="showTab('batch')" id="btn-tab-batch" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800">
+                ⚡ Stress Test & Carga Masiva Batch
+            </button>
+            <button onclick="showTab('manual')" id="btn-tab-manual" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800">
+                🔍 Auditoría Lote a Lote
+            </button>
+        </nav>
+    </div>
+
+    <!-- Contenido Tab 1: Mapa Geoespacial -->
+    <div id="tab-mapa" class="tab-content">
+        <h3 class="text-base font-bold text-slate-900 mb-2">Monitoreo de Biomasa Satelital (Copernicus Sentinel-2)</h3>
+        <p class="text-xs text-slate-500 mb-4">Ubicación de rodales, aserraderos y centros de acopio en Chaco y Corrientes con estado de cumplimiento EUDR.</p>
+        <div id="map" class="h-96 w-full rounded-xl border border-slate-300"></div>
+    </div>
+
+    <!-- Contenido Tab 2: Stress Test Batch -->
+    <div id="tab-batch" class="tab-content hidden">
+        <h3 class="text-base font-bold text-slate-900 mb-2">Procesamiento Masivo de Guías Forestales y Remitos</h3>
+        <p class="text-xs text-slate-500 mb-4">Sube la matriz Excel de tu aserradero para auditar biomasa y balance de masas en segundos.</p>
+        
+        <form hx-post="/api/v1/batch/upload" hx-encoding="multipart/form-data" hx-target="#batchResult" class="space-y-4 max-w-xl bg-slate-50 p-6 rounded-xl border border-slate-200">
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Cargar Planilla Excel (.xlsx)</label>
+                <input type="file" name="file" accept=".xlsx,.xls" required class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-forest-800 file:text-white hover:file:bg-forest-900">
+            </div>
+            <button type="submit" class="px-5 py-2.5 bg-forest-800 hover:bg-forest-900 text-white font-semibold text-xs rounded-lg shadow">
+                🚀 Ejecutar Stress Test de Auditoría
+            </button>
+        </form>
+
+        <div id="batchResult" class="mt-6"></div>
+    </div>
+
+    <!-- Contenido Tab 3: Auditoría Manual -->
+    <div id="tab-manual" class="tab-content hidden">
+        <h3 class="text-base font-bold text-slate-900 mb-2">Evaluación Individual de Rodal</h3>
+        <p class="text-xs text-slate-500 mb-4">Ingresa los datos de materia prima y volumen a exportar para calcular el rendimiento físico permisible.</p>
+
+        <form hx-post="/api/v1/compliance/evaluate" hx-target="#manualResult" class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-6 rounded-xl border border-slate-200">
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Identificador Lote / Rodal</label>
+                <input type="text" name="identificador" value="Rodal Demo Norte 01" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">CUIT Proveedor / Guía Forestal</label>
+                <input type="text" name="productor_id" value="30-12345678-9" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Materia Prima / Especie</label>
+                <select name="producto_forestal" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white">
+                    <option value="Madera Aserrada (Pino)">Madera Aserrada (Pino) - Rend 50%</option>
+                    <option value="Madera Aserrada (Eucalipto)">Madera Aserrada (Eucalipto) - Rend 45%</option>
+                    <option value="Extracto de Quebracho (Tanino)">Extracto de Quebracho (Tanino) - Rend 30%</option>
+                    <option value="Carbón Vegetal">Carbón Vegetal - Rend 25%</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Superficie (Hectáreas)</label>
+                <input type="number" name="hectareas" value="120" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Latitud Centroide</label>
+                <input type="number" step="any" name="latitud" value="-27.45" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Longitud Centroide</label>
+                <input type="number" step="any" name="longitud" value="-58.90" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Materia Prima Ingresada (Ton)</label>
+                <input type="number" step="any" name="volumen_ingresado_ton" value="500" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Volumen a Exportar (Ton)</label>
+                <input type="number" step="any" name="volumen_exportar_ton" value="220" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs">
+            </div>
+
+            <div class="md:col-span-2 pt-2">
+                <button type="submit" class="px-6 py-2.5 bg-forest-800 hover:bg-forest-900 text-white font-semibold text-xs rounded-lg shadow">
+                    ⚖️ Evaluar Compliance & Generar DDS TRACES NT
+                </button>
+            </div>
+        </form>
+
+        <div id="manualResult" class="mt-6"></div>
+    </div>
+</div>
+
+<!-- Script Leaflet.js Map Initialization -->
+<script>
+    function showTab(tabName) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+        document.getElementById('tab-' + tabName).classList.remove('hidden');
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        var map = L.map('map').setView([-27.20, -59.50], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors | Litoral Trace'
+        }).addTo(map);
+
+        // Marcadores Lotes Forestales
+        L.marker([-27.45, -58.90]).addTo(map).bindPopup('<b>Rodal Norte 01</b><br>Especie: Pino<br>Dictamen: Apto EUDR');
+        L.marker([-26.80, -60.40]).addTo(map).bindPopup('<b>Rodal Sur 02</b><br>Especie: Carbón<br>Dictamen: Apto EUDR');
+        L.marker([-27.10, -59.50]).addTo(map).bindPopup('<b>Lote Tanino 03</b><br>Especie: Quebracho<br>Dictamen: Apto EUDR');
+    });
+</script>
+{% endblock %}
