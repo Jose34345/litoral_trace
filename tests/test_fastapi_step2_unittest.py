@@ -20,7 +20,7 @@ class TestFastAPIStep2Auth(unittest.TestCase):
         self.assertIsNotNone(token_res.access_token)
         self.assertEqual(token_res.user_info["username"], "admin")
         self.assertEqual(token_res.user_info["organization_id"], 1)
-        self.assertEqual(token_res.user_info["role"], "admin")
+        self.assertEqual(token_res.user_info["role"], "superadmin")
 
     def test_get_current_tenant_user_from_bearer(self):
         req = LoginRequest(username="admin", password="admin123")

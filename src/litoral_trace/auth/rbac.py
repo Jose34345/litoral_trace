@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 
 
 ROLE_LEVELS: dict[str, int] = {
+    "superadmin": 125,
     "admin": 100,
     "manager": 75,
     "auditor": 50,

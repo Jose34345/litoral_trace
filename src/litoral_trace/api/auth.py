@@ -44,6 +44,8 @@ oauth2_scheme = OAuth2PasswordBearer(
     auto_error=False,
 )
 
+PLATFORM_SUPERADMIN_ROLE = "superadmin"
+
 
 class LoginRequest(BaseModel):
     username: str
@@ -127,13 +129,8 @@ def _build_user_tenant_context(payload: dict[str, Any]) -> UserTenantContext:
 def _is_platform_superadmin(
     *,
     user: User,
-    organization: Organization,
 ) -> bool:
-    return (
-        user.role.strip().lower() == "admin"
-        and user.username.strip().lower() == "admin"
-        and organization.slug.strip().lower() == "exp-chaco"
-    )
+    return user.role.strip().lower() == PLATFORM_SUPERADMIN_ROLE
 
 
 def _hydrate_user_tenant_context(
@@ -200,10 +197,7 @@ def _hydrate_user_tenant_context(
             role=user.role,
             email=user.email,
             session_id=raw_context.session_id,
-            is_platform_superadmin=_is_platform_superadmin(
-                user=user,
-                organization=organization,
-            ),
+            is_platform_superadmin=_is_platform_superadmin(user=user),
         )
     finally:
         session.close()

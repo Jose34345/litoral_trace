@@ -89,6 +89,7 @@ class TestAuthAndRBAC(unittest.TestCase):
         self.assertFalse(verify_api_key_hash("lt_live_invalidkey12345", generated.key_hash))
 
     def test_rbac_hierarchy(self):
+        self.assertEqual(get_role_level("superadmin"), 125)
         self.assertEqual(get_role_level("admin"), 100)
         self.assertEqual(get_role_level("manager"), 75)
         self.assertEqual(get_role_level("auditor"), 50)
@@ -96,6 +97,7 @@ class TestAuthAndRBAC(unittest.TestCase):
         self.assertEqual(get_role_level("unknown"), 0)
         
         # Permisos
+        self.assertTrue(has_permission("superadmin", "admin"))
         self.assertTrue(has_permission("admin", "manager"))
         self.assertTrue(has_permission("manager", "auditor"))
         self.assertTrue(has_permission("auditor", "cliente"))

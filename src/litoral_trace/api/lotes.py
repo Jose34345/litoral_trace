@@ -232,7 +232,7 @@ class LoteEvaluacionRequest(BaseModel):
 # ============================================================================
 
 
-WRITE_ROLES = {"admin", "manager"}
+WRITE_ROLES = {"superadmin", "admin", "manager"}
 
 
 def _require_write_role(user: UserTenantContext) -> None:

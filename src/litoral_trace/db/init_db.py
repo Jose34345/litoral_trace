@@ -55,7 +55,7 @@ def inicializar_base_datos_postgis() -> None:
             session.commit()
             session.refresh(admin_org)
 
-        # Verificar si existe el usuario admin
+        # Verificar si existe el usuario admin de plataforma
         admin_user = session.query(User).filter_by(username="admin").first()
         if not admin_user:
             admin_user = User(
@@ -63,7 +63,7 @@ def inicializar_base_datos_postgis() -> None:
                 email="comercial@litoraltrace.com",
                 username="admin",
                 password_hash=hash_password("admin123"),
-                role="admin",
+                role="superadmin",
                 full_name="JosÃ© David Lezcano (Fundador)",
                 is_active=True
             )
