@@ -11,6 +11,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from litoral_trace.config import get_settings
+from litoral_trace.db.auth_bootstrap import lookup_session_bootstrap_by_token_hash
 from litoral_trace.db.models import Organization, User, UserSession
 from litoral_trace.db.tenant import set_tenant_db_context
 
@@ -210,12 +211,20 @@ def rotate_refresh_session(
     now: datetime | None = None,
 ) -> RotatedSession:
     rotation_time = ensure_utc_datetime(now or utc_now())
-    current_session = _get_session_by_token_hash(
+    session_lookup = lookup_session_bootstrap_by_token_hash(
         db_session,
         token_hash=hash_refresh_token(refresh_token),
-        for_update=True,
     )
 
+    if session_lookup is None:
+        raise SessionSecurityError("Refresh token invalido o expirado.")
+
+    set_tenant_db_context(db_session, session_lookup.organization_id)
+    current_session = _get_session_by_id(
+        db_session,
+        session_id=session_lookup.id,
+        for_update=False,
+    )
     if current_session is None:
         raise SessionSecurityError("Refresh token invalido o expirado.")
 
@@ -233,7 +242,6 @@ def rotate_refresh_session(
         raise SessionSecurityError("Refresh token invalido o expirado.")
 
     user = db_session.get(User, current_session.user_id)
-    set_tenant_db_context(db_session, current_session.organization_id)
     organization = db_session.get(Organization, current_session.organization_id)
     user, organization = _assert_user_and_organization_are_active(
         user=user,
@@ -278,11 +286,17 @@ def revoke_session(
     session_record: UserSession | None = None
 
     if refresh_token:
-        session_record = _get_session_by_token_hash(
+        session_lookup = lookup_session_bootstrap_by_token_hash(
             db_session,
             token_hash=hash_refresh_token(refresh_token),
-            for_update=True,
         )
+        if session_lookup is not None:
+            set_tenant_db_context(db_session, session_lookup.organization_id)
+            session_record = _get_session_by_id(
+                db_session,
+                session_id=session_lookup.id,
+                for_update=False,
+            )
     elif session_id is not None:
         session_record = _get_session_by_id(
             db_session,

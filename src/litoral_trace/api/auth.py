@@ -30,6 +30,7 @@ from litoral_trace.auth.sessions import (
 from litoral_trace.auth.passwords import verify_password
 from litoral_trace.auth.tokens import create_jwt_token, verify_jwt_token
 from litoral_trace.config import get_settings
+from litoral_trace.db.auth_bootstrap import lookup_login_bootstrap_user
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import Organization, User, UserSession
 from litoral_trace.db.tenant import set_tenant_db_context
@@ -146,6 +147,7 @@ def _hydrate_user_tenant_context(
         )
 
     try:
+        set_tenant_db_context(session, raw_context.organization_id)
         user = session.execute(
             select(User).where(
                 User.username == raw_context.username,
@@ -160,7 +162,6 @@ def _hydrate_user_tenant_context(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        set_tenant_db_context(session, user.organization_id)
         organization = session.execute(
             select(Organization).where(
                 Organization.id == user.organization_id,
@@ -295,7 +296,9 @@ def _extract_request_metadata(request: Request | None) -> tuple[str | None, str 
     return client_host, sanitize_user_agent(request.headers.get("user-agent"))
 
 
-def _extract_session_id_from_access_token(token: str | None) -> int | None:
+def _extract_session_reference_from_access_token(
+    token: str | None,
+) -> tuple[int, int] | None:
     if not token:
         return None
 
@@ -309,10 +312,14 @@ def _extract_session_id_from_access_token(token: str | None) -> int | None:
 
     try:
         session_id = int(payload.get("sid"))
+        organization_id = int(payload.get("org_id"))
     except (TypeError, ValueError):
         return None
 
-    return session_id if session_id > 0 else None
+    if session_id <= 0 or organization_id <= 0:
+        return None
+
+    return session_id, organization_id
 
 
 def revoke_logout_target(
@@ -321,11 +328,22 @@ def revoke_logout_target(
     refresh_token: str | None = None,
     access_token: str | None = None,
 ) -> None:
-    session_id = _extract_session_id_from_access_token(access_token)
+    if refresh_token is not None:
+        revoke_session(
+            session,
+            refresh_token=refresh_token,
+        )
+        return
+
+    session_reference = _extract_session_reference_from_access_token(access_token)
+    if session_reference is None:
+        return
+
+    session_id, organization_id = session_reference
+    set_tenant_db_context(session, organization_id)
     revoke_session(
         session,
-        refresh_token=refresh_token,
-        session_id=session_id if refresh_token is None else None,
+        session_id=session_id,
     )
 
 
@@ -399,31 +417,40 @@ async def login_b2b(
         access_token_expire_seconds = settings.jwt.access_token_expire_seconds
         client_ip, user_agent = _extract_request_metadata(request)
 
-        user = session.execute(
-            select(User).where(User.username == username)
-        ).scalar_one_or_none()
+        bootstrap_user = lookup_login_bootstrap_user(
+            session,
+            username=username,
+        )
 
-        if user is None:
+        if bootstrap_user is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Usuario o contrasena incorrectos.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        if not user.is_active:
+        if not bootstrap_user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="El usuario esta inactivo.",
             )
 
-        if not verify_password(password, user.password_hash):
+        if not verify_password(password, bootstrap_user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Usuario o contrasena incorrectos.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        set_tenant_db_context(session, user.organization_id)
+        set_tenant_db_context(session, bootstrap_user.organization_id)
+        user = session.get(User, bootstrap_user.id)
+        if user is None or user.organization_id != bootstrap_user.organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Usuario o contrasena incorrectos.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         organization = session.execute(
             select(Organization).where(
                 Organization.id == user.organization_id
@@ -450,6 +477,10 @@ async def login_b2b(
             user_agent=user_agent,
         )
         user.last_login_at = issued_session.session.issued_at
+        user_info = _build_user_info(
+            user=user,
+            organization=organization,
+        )
 
         jwt_token = create_jwt_token(
             _build_access_token_payload(
@@ -471,10 +502,7 @@ async def login_b2b(
         return TokenResponse(
             access_token=jwt_token,
             expires_in_seconds=access_token_expire_seconds,
-            user_info=_build_user_info(
-                user=user,
-                organization=organization,
-            ),
+            user_info=user_info,
         )
     except SessionSecurityError as exc:
         session.rollback()
@@ -531,6 +559,10 @@ async def refresh_b2b_session(
             created_ip=client_ip,
             user_agent=user_agent,
         )
+        user_info = _build_user_info(
+            user=rotated_session.user,
+            organization=rotated_session.organization,
+        )
 
         jwt_token = create_jwt_token(
             _build_access_token_payload(
@@ -552,10 +584,7 @@ async def refresh_b2b_session(
         return TokenResponse(
             access_token=jwt_token,
             expires_in_seconds=access_token_expire_seconds,
-            user_info=_build_user_info(
-                user=rotated_session.user,
-                organization=rotated_session.organization,
-            ),
+            user_info=user_info,
         )
     except SessionSecurityError as exc:
         try:
