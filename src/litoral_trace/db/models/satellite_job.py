@@ -15,7 +15,9 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -62,6 +64,7 @@ class SatelliteJob(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    lease_token: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -198,6 +201,12 @@ class SatelliteJob(Base):
             "organization_id",
             "lote_id",
             "created_at",
+        ),
+        Index(
+            "uq_satellite_jobs_lease_token_non_null",
+            "lease_token",
+            unique=True,
+            postgresql_where=text("lease_token IS NOT NULL"),
         ),
     )
 

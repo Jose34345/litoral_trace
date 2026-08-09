@@ -1,13 +1,17 @@
 """Minimal durable satellite job domain services."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from enum import StrEnum
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import Lote, SatelliteJob
+from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.tenant import get_tenant_scoped_db_session
 from litoral_trace.services.gee import ALGORITHM_VERSION, generate_geometry_hash
 
@@ -21,6 +25,32 @@ class SatelliteJobStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+
+
+WORKER_CLAIM_NEXT_FUNCTION = "public.worker_claim_next_satellite_job"
+
+
+@dataclass(frozen=True)
+class ClaimedSatelliteJob:
+    id: int
+    organization_id: int
+    lote_id: int | None
+    job_type: str
+    status: str
+    attempt_count: int
+    max_attempts: int
+    next_attempt_at: datetime
+    locked_by: str
+    locked_at: datetime
+    heartbeat_at: datetime
+    lease_token: UUID
+    started_at: datetime | None
+    request_start_date: date | None
+    request_end_date: date | None
+    max_cloud_pct: float | None
+    geometry_hash: str | None
+    algorithm_version: str | None
+    polygon_wkt_snapshot: str | None
 
 
 def _utc_now() -> datetime:
@@ -57,6 +87,15 @@ def _normalize_status(status: SatelliteJobStatus | str) -> SatelliteJobStatus:
         )
     except ValueError as exc:
         raise ValueError(f"Estado de satellite job no soportado: {status}") from exc
+
+
+def _normalize_worker_id(worker_id: str) -> str:
+    normalized_worker_id = (worker_id or "").strip()
+    if not normalized_worker_id:
+        raise ValueError("worker_id no puede ser nulo, vacio o whitespace.")
+    if len(normalized_worker_id) > 255:
+        raise ValueError("worker_id no puede superar 255 caracteres.")
+    return normalized_worker_id
 
 
 def _parse_iso_date(value: str | date) -> date:
@@ -118,6 +157,100 @@ def serialize_satellite_job(job: SatelliteJob) -> dict[str, Any]:
         "created_at": _serialize_datetime(job.created_at),
         "updated_at": _serialize_datetime(job.updated_at),
     }
+
+
+def _supports_postgresql_worker_claim_function(db_session: Session) -> bool:
+    bind = db_session.get_bind()
+    return bind is not None and bind.dialect.name == "postgresql"
+
+
+def _map_claimed_job_row(row: Any) -> ClaimedSatelliteJob:
+    lease_token = row["lease_token"]
+    if not isinstance(lease_token, UUID):
+        lease_token = UUID(str(lease_token))
+
+    return ClaimedSatelliteJob(
+        id=int(row["id"]),
+        organization_id=int(row["organization_id"]),
+        lote_id=int(row["lote_id"]) if row["lote_id"] is not None else None,
+        job_type=str(row["job_type"]),
+        status=str(row["status"]),
+        attempt_count=int(row["attempt_count"]),
+        max_attempts=int(row["max_attempts"]),
+        next_attempt_at=row["next_attempt_at"],
+        locked_by=str(row["locked_by"]),
+        locked_at=row["locked_at"],
+        heartbeat_at=row["heartbeat_at"],
+        lease_token=lease_token,
+        started_at=row["started_at"],
+        request_start_date=row["request_start_date"],
+        request_end_date=row["request_end_date"],
+        max_cloud_pct=(
+            float(row["max_cloud_pct"]) if row["max_cloud_pct"] is not None else None
+        ),
+        geometry_hash=(
+            str(row["geometry_hash"]) if row["geometry_hash"] is not None else None
+        ),
+        algorithm_version=(
+            str(row["algorithm_version"])
+            if row["algorithm_version"] is not None
+            else None
+        ),
+        polygon_wkt_snapshot=(
+            str(row["polygon_wkt_snapshot"])
+            if row["polygon_wkt_snapshot"] is not None
+            else None
+        ),
+    )
+
+
+def claim_next_satellite_job(
+    *,
+    worker_id: str,
+    db_session: Session | None = None,
+) -> ClaimedSatelliteJob | None:
+    normalized_worker_id = _normalize_worker_id(worker_id)
+    owns_session = db_session is None
+    session = db_session or get_db_session()
+    if session is None:
+        raise RuntimeError("Servicio de base de datos no disponible.")
+
+    try:
+        if not _supports_postgresql_worker_claim_function(session):
+            raise RuntimeError(
+                "Atomic satellite job claiming requires PostgreSQL worker SQL support."
+            )
+
+        row = session.execute(
+            text(
+                """
+                SELECT *
+                FROM public.worker_claim_next_satellite_job(
+                    :requested_worker_id
+                )
+                """
+            ),
+            {
+                "requested_worker_id": normalized_worker_id,
+            },
+        ).mappings().one_or_none()
+
+        if row is None:
+            if owns_session:
+                session.rollback()
+            return None
+
+        claimed_job = _map_claimed_job_row(row)
+        if owns_session:
+            session.commit()
+        return claimed_job
+    except Exception:
+        if owns_session:
+            session.rollback()
+        raise
+    finally:
+        if owns_session:
+            session.close()
 
 
 def _assert_same_idempotent_payload(
@@ -287,6 +420,7 @@ def update_satellite_job_status(
             job.locked_at = None
             job.locked_by = None
             job.heartbeat_at = None
+            job.lease_token = None
             job.error_code = None
             job.error_message = None
             job.next_attempt_at = next_attempt_at or now
