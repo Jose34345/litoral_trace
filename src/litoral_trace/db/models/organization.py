@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from litoral_trace.db.models.audit_log import AuditLog
     from litoral_trace.db.models.api_key import ApiKey
     from litoral_trace.db.models.license import License
+    from litoral_trace.db.models.satellite_job import SatelliteJob
     from litoral_trace.db.models.user_session import UserSession
 
 class Organization(Base, TimestampMixin):
@@ -31,6 +32,7 @@ class Organization(Base, TimestampMixin):
     audit_logs: Mapped[list[AuditLog]] = relationship("AuditLog", back_populates="organization", cascade="all, delete-orphan")
     api_keys: Mapped[list[ApiKey]] = relationship("ApiKey", back_populates="organization", cascade="all, delete-orphan")
     licenses: Mapped[list[License]] = relationship("License", back_populates="organization", cascade="all, delete-orphan")
+    satellite_jobs: Mapped[list[SatelliteJob]] = relationship("SatelliteJob", back_populates="organization", cascade="all, delete-orphan", overlaps="lote,satellite_jobs")
     sessions: Mapped[list[UserSession]] = relationship("UserSession", back_populates="organization", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:

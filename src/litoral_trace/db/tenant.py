@@ -19,6 +19,7 @@ from litoral_trace.db.models import (
     AuditLog,
     License,
     Lote,
+    SatelliteJob,
     SatelliteNdviObservation,
     User,
 )
@@ -26,8 +27,8 @@ from litoral_trace.db.models import (
 
 TENANT_CONTEXT_GUC = "app.current_organization_id"
 
-TenantModel = type[Lote | User | AuditLog | ApiKey | License | SatelliteNdviObservation]
-TenantEntity = Lote | User | AuditLog | ApiKey | License | SatelliteNdviObservation
+TenantModel = type[Lote | User | AuditLog | ApiKey | License | SatelliteJob | SatelliteNdviObservation]
+TenantEntity = Lote | User | AuditLog | ApiKey | License | SatelliteJob | SatelliteNdviObservation
 
 
 def _normalize_organization_id(organization_id: int | str) -> int:

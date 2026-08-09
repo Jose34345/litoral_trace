@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     UniqueConstraint,
     Index,
     func,
@@ -23,6 +24,7 @@ from litoral_trace.db.base import Base
 if TYPE_CHECKING:
     from litoral_trace.db.models.organization import Organization
     from litoral_trace.db.models.lote import Lote
+    from litoral_trace.db.models.satellite_job import SatelliteJob
 
 
 class SatelliteNdviObservation(Base):
@@ -51,6 +53,11 @@ class SatelliteNdviObservation(Base):
             ondelete="CASCADE",
         ),
         nullable=False,
+    )
+
+    satellite_job_id: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
     )
 
     observation_date: Mapped[date] = mapped_column(
@@ -131,10 +138,17 @@ class SatelliteNdviObservation(Base):
     # Relaciones
     organization: Mapped[Organization] = relationship(
         "Organization",
+        overlaps="observations,satellite_job",
     )
 
     lote: Mapped[Lote] = relationship(
         "Lote",
+    )
+
+    satellite_job: Mapped[SatelliteJob | None] = relationship(
+        "SatelliteJob",
+        back_populates="observations",
+        overlaps="organization,observations",
     )
 
     __table_args__ = (
@@ -145,6 +159,11 @@ class SatelliteNdviObservation(Base):
             "observation_date",
             "geometry_hash",
             name="uq_satellite_obs_tenant_lote_date_hash",
+        ),
+        ForeignKeyConstraint(
+            ["satellite_job_id", "organization_id"],
+            ["satellite_jobs.id", "satellite_jobs.organization_id"],
+            name="fk_satellite_obs_job_tenant",
         ),
 
         # Índices existentes en la base de datos.
@@ -168,6 +187,10 @@ class SatelliteNdviObservation(Base):
         Index(
             "ix_sat_obs_geometry_hash",
             "geometry_hash",
+        ),
+        Index(
+            "ix_sat_obs_satellite_job_id",
+            "satellite_job_id",
         ),
 
         # Índice compuesto para consultas históricas

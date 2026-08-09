@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from geoalchemy2 import Geometry
-from sqlalchemy import Float, ForeignKey, Index, String, Text
+from sqlalchemy import Float, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from litoral_trace.db.base import Base, TimestampMixin
@@ -13,6 +13,7 @@ from litoral_trace.db.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from litoral_trace.db.models.organization import Organization
+    from litoral_trace.db.models.satellite_job import SatelliteJob
 
 
 GEOM_COLUMN_TYPE = Geometry(
@@ -130,12 +131,22 @@ class Lote(Base, TimestampMixin):
         "Organization",
         back_populates="lotes",
     )
+    satellite_jobs: Mapped[list[SatelliteJob]] = relationship(
+        "SatelliteJob",
+        back_populates="lote",
+        overlaps="organization,satellite_jobs",
+    )
 
     # ============================================================
     # Índices
     # ============================================================
 
     __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_lotes_id_organization_id",
+        ),
         Index(
             "ix_lotes_geom_gist",
             "geom",
