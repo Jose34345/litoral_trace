@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-from copy import deepcopy
 from http.cookies import SimpleCookie
 from uuid import uuid4
 
@@ -18,6 +17,8 @@ from litoral_trace.api.admin import (
     CrearEmpresaClienteRequest,
     crear_organizacion_endpoint,
     toggle_organizacion_status_endpoint,
+    UpsertOrganizationLicenseRequest,
+    upsert_organizacion_license_endpoint,
 )
 from litoral_trace.api.auth import (
     LoginRequest,
@@ -52,8 +53,7 @@ from litoral_trace.auth.sessions import (
 from litoral_trace.auth.tokens import verify_jwt_token
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.init_db import get_non_production_superadmin_seed
-from litoral_trace.db.models import AuditLog, Lote, User, UserSession
-from litoral_trace.services.admin import EMPRESAS_REGISTRADAS_DB
+from litoral_trace.db.models import AuditLog, Lote, Organization, User, UserSession
 from litoral_trace.services.audit import (
     AuditAction,
     AuditOutcome,
@@ -66,10 +66,14 @@ from litoral_trace.services.audit import (
 
 @pytest.fixture(autouse=True)
 def cleanup_audit_state():
-    snapshot_empresas = deepcopy(EMPRESAS_REGISTRADAS_DB)
     db_session = get_db_session()
     db_session.execute(delete(AuditLog))
     db_session.execute(delete(UserSession))
+    created_test_orgs = db_session.execute(
+        select(Organization).where(Organization.name.like("P110 Demo Org %"))
+    ).scalars().all()
+    for organization in created_test_orgs:
+        db_session.delete(organization)
     admin_user = db_session.execute(
         select(User).where(User.username == "admin")
     ).scalar_one()
@@ -79,11 +83,14 @@ def cleanup_audit_state():
 
     yield
 
-    EMPRESAS_REGISTRADAS_DB[:] = snapshot_empresas
-
     db_session = get_db_session()
     db_session.execute(delete(AuditLog))
     db_session.execute(delete(UserSession))
+    created_test_orgs = db_session.execute(
+        select(Organization).where(Organization.name.like("P110 Demo Org %"))
+    ).scalars().all()
+    for organization in created_test_orgs:
+        db_session.delete(organization)
     admin_user = db_session.execute(
         select(User).where(User.username == "admin")
     ).scalar_one()
@@ -594,6 +601,7 @@ def test_batch_upload_and_vault_download_emit_audit_events(monkeypatch):
 
 def test_settings_satellite_and_platform_admin_emit_audit_events(monkeypatch):
     user = _authenticated_context()
+    _, _, cookies = _login()
 
     settings_response = asyncio.run(
         generar_invitacion_demo_endpoint(
@@ -674,13 +682,17 @@ def test_settings_satellite_and_platform_admin_emit_audit_events(monkeypatch):
     assert satellite_event.after_data["metadata"]["total_observations"] == 1
     assert satellite_event.after_data["metadata"]["start_date"] == "2026-07-01"
 
+    suffix = uuid4().hex[:8]
+    create_name = f"P110 Demo Org {suffix}"
+    create_username = f"demo_admin_p110_{suffix}"
+    create_email = f"new-admin-{suffix}@example.com"
     create_response = asyncio.run(
         crear_organizacion_endpoint(
             CrearEmpresaClienteRequest(
-                name="P110 Demo Org S.A.",
-                tax_id="30-99999999-9",
-                admin_email="new-admin@example.com",
-                admin_username="demo_admin_p110",
+                name=create_name,
+                tax_id=f"30-99{suffix}",
+                admin_email=create_email,
+                admin_username=create_username,
                 admin_password="DemoPassword-P110!",
                 tier="enterprise",
                 monthly_lote_limit=120,
@@ -691,6 +703,7 @@ def test_settings_satellite_and_platform_admin_emit_audit_events(monkeypatch):
                 path="/api/v1/admin/organizations",
                 request_id="platform-create-request",
             ),
+            refresh_token_cookie=cookies[REFRESH_TOKEN_COOKIE_KEY],
             admin=user,
         )
     )
@@ -701,11 +714,45 @@ def test_settings_satellite_and_platform_admin_emit_audit_events(monkeypatch):
     assert create_event.after_data["metadata"]["target_organization_id"] == int(
         create_body["organization_id"]
     )
-    assert create_event.after_data["metadata"]["organization_name"] == "P110 Demo Org S.A."
+    assert create_event.after_data["metadata"]["organization_name"] == create_name
+    assert create_event.organization_id == int(create_body["organization_id"])
     _assert_no_sensitive_fields(
         create_event,
-        forbidden_values=["DemoPassword-P110!", "new-admin@example.com"],
+        forbidden_values=["DemoPassword-P110!", create_email],
     )
+
+    create_admin_event = _latest_audit(
+        AuditAction.PLATFORM_ORGANIZATION_ADMIN_CREATE.value
+    )
+    assert create_admin_event.after_data["metadata"]["admin_username"] == create_username
+
+    create_license_event = _latest_audit(AuditAction.PLATFORM_LICENSE_CREATE.value)
+    assert create_license_event.after_data["metadata"]["plan_type"] == "enterprise"
+
+    license_response = asyncio.run(
+        upsert_organizacion_license_endpoint(
+            org_id=int(create_body["organization_id"]),
+            payload=UpsertOrganizationLicenseRequest(
+                plan_type="custom",
+                max_lotes=250,
+                max_volume_tons=15000.0,
+                max_batch_rows=750,
+                is_active=True,
+            ),
+            request=_build_request(
+                method="PUT",
+                path=f"/api/v1/admin/organizations/{create_body['organization_id']}/license",
+                request_id="platform-license-request",
+            ),
+            refresh_token_cookie=cookies[REFRESH_TOKEN_COOKIE_KEY],
+            admin=user,
+        )
+    )
+
+    assert license_response.status_code == status.HTTP_200_OK
+    license_event = _latest_audit(AuditAction.PLATFORM_LICENSE_UPDATE.value)
+    assert license_event.after_data["outcome"] == AuditOutcome.SUCCESS.value
+    assert license_event.after_data["metadata"]["plan_type"] == "custom"
 
     toggle_response = asyncio.run(
         toggle_organizacion_status_endpoint(
@@ -715,6 +762,7 @@ def test_settings_satellite_and_platform_admin_emit_audit_events(monkeypatch):
                 path=f"/api/v1/admin/organizations/{create_body['organization_id']}/toggle_status",
                 request_id="platform-toggle-request",
             ),
+            refresh_token_cookie=cookies[REFRESH_TOKEN_COOKIE_KEY],
             admin=user,
         )
     )
@@ -724,9 +772,11 @@ def test_settings_satellite_and_platform_admin_emit_audit_events(monkeypatch):
         AuditAction.PLATFORM_ORGANIZATION_STATUS_CHANGE.value
     )
     assert toggle_event.after_data["outcome"] == AuditOutcome.SUCCESS.value
-    assert toggle_event.after_data["metadata"] == {
-        "target_organization_id": int(create_body["organization_id"])
-    }
+    assert toggle_event.organization_id == int(create_body["organization_id"])
+    assert toggle_event.after_data["metadata"]["target_organization_id"] == int(
+        create_body["organization_id"]
+    )
+    assert toggle_event.after_data["metadata"]["is_active"] is False
 
 
 def test_satellite_unexpected_failure_is_audited_without_error_details(monkeypatch):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from http.cookies import SimpleCookie
 from uuid import uuid4
 
 import pytest
@@ -42,7 +43,7 @@ from litoral_trace.auth.rbac import (
 from litoral_trace.auth.tokens import create_jwt_token
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.init_db import get_non_production_superadmin_seed
-from litoral_trace.db.models import Lote, Organization, User
+from litoral_trace.db.models import License, Lote, Organization, User
 
 
 def _create_tenant_account(
@@ -65,6 +66,17 @@ def _create_tenant_account(
         db_session.add(organization)
         db_session.commit()
         db_session.refresh(organization)
+
+        license_record = License(
+            organization_id=organization.id,
+            plan_type="pro",
+            max_lotes=100,
+            max_volume_tons=5000.0,
+            max_batch_rows=500,
+            is_active=True,
+        )
+        db_session.add(license_record)
+        db_session.commit()
 
         user = User(
             organization_id=organization.id,
@@ -127,6 +139,23 @@ def _login_access_token(*, username: str, password: str) -> str:
         )
     )
     return token_response.access_token
+
+
+def _login_cookies(*, username: str, password: str) -> dict[str, str]:
+    response = Response()
+    asyncio.run(
+        login_b2b(
+            LoginRequest(username=username, password=password),
+            response,
+        )
+    )
+    parsed_cookie = SimpleCookie()
+    for set_cookie_header in response.headers.getlist("set-cookie"):
+        parsed_cookie.load(set_cookie_header)
+    return {
+        cookie_name: morsel.value
+        for cookie_name, morsel in parsed_cookie.items()
+    }
 
 
 def _authenticated_context_from_token(token: str):
@@ -326,13 +355,20 @@ def test_satellite_requires_capability_before_external_call(monkeypatch):
 
 
 def test_superadmin_has_platform_admin_endpoint_access():
+    cookies = _login_cookies(
+        username="admin",
+        password=get_non_production_superadmin_seed()[1],
+    )
     superadmin = _authenticated_context(
         username="admin",
         password=get_non_production_superadmin_seed()[1],
     )
     platform_user = require_superadmin_role(user=superadmin)
     response = asyncio.run(
-        listar_organizaciones_endpoint(admin=platform_user)
+        listar_organizaciones_endpoint(
+            refresh_token_cookie=cookies.get("refresh_token"),
+            admin=platform_user,
+        )
     )
 
     assert response.status_code == 200
@@ -364,8 +400,12 @@ def test_tampered_jwt_is_rejected_with_401():
         username="admin",
         password=get_non_production_superadmin_seed()[1],
     )
-    tampered_last_char = "a" if token[-1] != "a" else "b"
-    tampered_token = token[:-1] + tampered_last_char
+    header, payload, signature = token.split(".")
+
+    replacement = "A" if signature[0] != "A" else "B"
+    tampered_signature = replacement + signature[1:]
+
+    tampered_token = f"{header}.{payload}.{tampered_signature}"
 
     with pytest.raises(HTTPException) as auth_exc:
         _authenticated_context_from_token(tampered_token)

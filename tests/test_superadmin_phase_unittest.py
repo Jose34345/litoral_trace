@@ -4,6 +4,7 @@ import sys
 import json
 from http.cookies import SimpleCookie
 from pathlib import Path
+from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -43,28 +44,43 @@ class TestSuperAdminPhase(unittest.TestCase):
         self.assertIn("Ingresar", response.body.decode('utf-8'))
 
     def test_listar_organizaciones_superadmin(self):
-        res = asyncio.run(listar_organizaciones_endpoint(admin=self.superadmin_user))
+        res = asyncio.run(
+            listar_organizaciones_endpoint(
+                refresh_token_cookie=self.cookies.get("refresh_token"),
+                admin=self.superadmin_user,
+            )
+        )
         self.assertEqual(res.status_code, 200)
         body = json.loads(res.body.decode('utf-8'))
         self.assertIn("organizations", body)
         self.assertGreater(body["total"], 0)
 
     def test_crear_organizacion_superadmin(self):
+        suffix = uuid4().hex[:8]
         payload = CrearEmpresaClienteRequest(
-            name="Aserradero San Miguel S.R.L.",
-            tax_id="30-88888888-4",
-            admin_email="contacto@sanmiguel.com",
-            admin_username="sanmiguel_admin",
+            name=f"Aserradero San Miguel {suffix}",
+            tax_id=f"30-{suffix}",
+            admin_email=f"contacto.{suffix}@sanmiguel.com",
+            admin_username=f"sanmiguel_admin_{suffix}",
             admin_password="SanMiguelPassword2026!",
             tier="pro",
             monthly_lote_limit=50,
-            monthly_ton_limit=3000.0
+            monthly_ton_limit=3000.0,
         )
-        res = asyncio.run(crear_organizacion_endpoint(payload, admin=self.superadmin_user))
+        res = asyncio.run(
+            crear_organizacion_endpoint(
+                payload,
+                refresh_token_cookie=self.cookies.get("refresh_token"),
+                admin=self.superadmin_user,
+            )
+        )
         self.assertEqual(res.status_code, 201)
         body = json.loads(res.body.decode('utf-8'))
         self.assertEqual(body["status"], "success")
-        self.assertIn("whatsapp_share_text", body)
+        self.assertEqual(body["admin_username"], f"sanmiguel_admin_{suffix}")
+        self.assertIn("license_id", body)
+        self.assertNotIn("whatsapp_share_text", body)
+        self.assertNotIn("admin_password", json.dumps(body))
 
     def test_render_admin_view(self):
         req = Request(
@@ -86,6 +102,7 @@ class TestSuperAdminPhase(unittest.TestCase):
         res = asyncio.run(render_admin_view(req))
         self.assertEqual(res.status_code, 200)
         self.assertIn("PANEL SUPERADMIN", res.body.decode('utf-8'))
+        self.assertIn("Organizaciones Persistidas", res.body.decode('utf-8'))
 
 if __name__ == "__main__":
     unittest.main()

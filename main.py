@@ -30,6 +30,7 @@ from litoral_trace.api.settings import router as settings_router
 from litoral_trace.api.vault import router as vault_router
 from litoral_trace.auth.rbac import Permission, ensure_permission
 from litoral_trace.auth.sessions import ACCESS_TOKEN_COOKIE_KEY, REFRESH_TOKEN_COOKIE_KEY
+from litoral_trace.services.admin import listar_empresas_superadmin
 
 app = FastAPI(
     title="Litoral Trace | Compliance Intelligence API",
@@ -303,10 +304,25 @@ async def render_admin_view(request: Request):
     if denied_response is not None:
         return denied_response
 
+    try:
+        organizations = listar_empresas_superadmin(
+            refresh_token=request.cookies.get(REFRESH_TOKEN_COOKIE_KEY),
+        )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            return _redirect_to_login(clear_cookies=True)
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            return _render_access_denied()
+        raise
+
     return render_template(
         request,
         "admin_organizations.html",
-        {"user": user},
+        {
+            "user": user,
+            "organizations": organizations,
+            "organization_count": len(organizations),
+        },
     )
 
 

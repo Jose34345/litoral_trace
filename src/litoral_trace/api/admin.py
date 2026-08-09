@@ -1,23 +1,22 @@
-"""Router REST SuperAdmin para gestion B2B de clientes, empresas y credenciales."""
+"""Persistent platform-admin API for tenant organizations and licenses."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from datetime import datetime
+
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.auth.rbac import Permission, ensure_permission, require_permission
-from litoral_trace.services.audit import (
-    AuditAction,
-    AuditOutcome,
-    build_audit_actor_from_user,
-    build_request_audit_context,
-    record_audit_event_now,
-)
+from litoral_trace.auth.sessions import REFRESH_TOKEN_COOKIE_KEY
+from litoral_trace.services.audit import build_request_audit_context
 from litoral_trace.services.admin import (
     alternar_estado_empresa,
     crear_nueva_empresa_cliente,
     listar_empresas_superadmin,
+    upsert_license_superadmin,
 )
 
 router = APIRouter(prefix="/api/v1/admin", tags=["SuperAdmin B2B"])
@@ -50,6 +49,47 @@ class CrearEmpresaClienteRequest(BaseModel):
     )
     monthly_lote_limit: int = Field(default=50, ge=1)
     monthly_ton_limit: float = Field(default=3000.0, ge=1.0)
+    max_batch_rows: int = Field(default=500, ge=1)
+    valid_until: datetime | None = None
+
+
+class UpsertOrganizationLicenseRequest(BaseModel):
+    plan_type: str = Field(
+        default="pro",
+        json_schema_extra={"example": "enterprise"},
+    )
+    max_lotes: int = Field(default=100, ge=1)
+    max_volume_tons: float = Field(default=10000.0, ge=1.0)
+    max_batch_rows: int = Field(default=500, ge=1)
+    valid_until: datetime | None = None
+    is_active: bool = True
+
+
+async def _coerce_create_payload(
+    payload: CrearEmpresaClienteRequest | None,
+    request: Request | None,
+) -> CrearEmpresaClienteRequest:
+    if payload is not None:
+        return payload
+    if request is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No se recibieron datos para crear la organizacion.",
+        )
+
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "application/json" in content_type:
+        raw_payload = await request.json()
+    else:
+        raw_payload = dict(await request.form())
+
+    try:
+        return CrearEmpresaClienteRequest.model_validate(raw_payload)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=jsonable_encoder(exc.errors()),
+        ) from exc
 
 
 def require_superadmin_role(
@@ -62,10 +102,11 @@ def require_superadmin_role(
 
 @router.get("/organizations", tags=["SuperAdmin B2B"])
 async def listar_organizaciones_endpoint(
+    refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY),
     admin: UserTenantContext = Depends(require_superadmin_role),
 ) -> JSONResponse:
     """Lista todas las empresas clientes registradas en la plataforma."""
-    empresas = listar_empresas_superadmin()
+    empresas = listar_empresas_superadmin(refresh_token=refresh_token_cookie)
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={"total": len(empresas), "organizations": empresas},
@@ -74,35 +115,26 @@ async def listar_organizaciones_endpoint(
 
 @router.post("/organizations", tags=["SuperAdmin B2B"])
 async def crear_organizacion_endpoint(
-    payload: CrearEmpresaClienteRequest,
+    payload: CrearEmpresaClienteRequest | None = None,
     request: Request = None,
+    refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY),
     admin: UserTenantContext = Depends(require_superadmin_role),
 ) -> JSONResponse:
-    """Crea una nueva empresa cliente, su usuario principal y emite credenciales B2B."""
+    """Create a persisted tenant organization, license, and initial admin."""
+    resolved_payload = await _coerce_create_payload(payload, request)
     res = crear_nueva_empresa_cliente(
-        name=payload.name,
-        tax_id=payload.tax_id,
-        admin_email=payload.admin_email,
-        admin_username=payload.admin_username,
-        admin_password=payload.admin_password,
-        tier=payload.tier,
-        monthly_lote_limit=payload.monthly_lote_limit,
-        monthly_ton_limit=payload.monthly_ton_limit,
-    )
-    record_audit_event_now(
-        actor=build_audit_actor_from_user(admin),
-        action=AuditAction.PLATFORM_ORGANIZATION_CREATE,
-        entity_type="organization",
-        entity_id=int(res["organization_id"]),
-        outcome=AuditOutcome.SUCCESS,
-        request_context=build_request_audit_context(request),
-        metadata={
-            "target_organization_id": int(res["organization_id"]),
-            "organization_name": payload.name,
-            "tax_id": payload.tax_id,
-            "tier": payload.tier,
-        },
-        best_effort=True,
+        refresh_token=refresh_token_cookie,
+        name=resolved_payload.name,
+        tax_id=resolved_payload.tax_id,
+        admin_email=resolved_payload.admin_email,
+        admin_username=resolved_payload.admin_username,
+        admin_password=resolved_payload.admin_password,
+        tier=resolved_payload.tier,
+        monthly_lote_limit=resolved_payload.monthly_lote_limit,
+        monthly_ton_limit=resolved_payload.monthly_ton_limit,
+        max_batch_rows=resolved_payload.max_batch_rows,
+        valid_until=resolved_payload.valid_until,
+        audit_request_context=build_request_audit_context(request),
     )
     return JSONResponse(status_code=status.HTTP_201_CREATED, content=res)
 
@@ -111,26 +143,47 @@ async def crear_organizacion_endpoint(
 async def toggle_organizacion_status_endpoint(
     org_id: int,
     request: Request = None,
+    refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY),
     admin: UserTenantContext = Depends(require_superadmin_role),
 ) -> JSONResponse:
     """Activa o suspende el acceso de una empresa cliente."""
-    ok = alternar_estado_empresa(org_id)
-    if not ok:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Empresa con ID {org_id} no encontrada.",
-        )
-    record_audit_event_now(
-        actor=build_audit_actor_from_user(admin),
-        action=AuditAction.PLATFORM_ORGANIZATION_STATUS_CHANGE,
-        entity_type="organization",
-        entity_id=org_id,
-        outcome=AuditOutcome.SUCCESS,
-        request_context=build_request_audit_context(request),
-        metadata={"target_organization_id": org_id},
-        best_effort=True,
+    status_result = alternar_estado_empresa(
+        refresh_token=refresh_token_cookie,
+        org_id=org_id,
+        audit_request_context=build_request_audit_context(request),
     )
     return JSONResponse(
         status_code=status.HTTP_200_OK,
-        content={"status": "updated", "organization_id": org_id},
+        content={
+            "status": "updated",
+            "organization_id": int(status_result["organization_id"]),
+            "is_active": bool(status_result["is_active"]),
+            "revoked_session_count": int(status_result["revoked_session_count"]),
+        },
+    )
+
+
+@router.put("/organizations/{org_id}/license", tags=["SuperAdmin B2B"])
+async def upsert_organizacion_license_endpoint(
+    org_id: int,
+    payload: UpsertOrganizationLicenseRequest,
+    request: Request = None,
+    refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY),
+    admin: UserTenantContext = Depends(require_superadmin_role),
+) -> JSONResponse:
+    """Create or update the persisted license metadata for a tenant."""
+    result = upsert_license_superadmin(
+        refresh_token=refresh_token_cookie,
+        organization_id=org_id,
+        plan_type=payload.plan_type,
+        max_lotes=payload.max_lotes,
+        max_volume_tons=payload.max_volume_tons,
+        max_batch_rows=payload.max_batch_rows,
+        valid_until=payload.valid_until,
+        is_active=payload.is_active,
+        audit_request_context=build_request_audit_context(request),
+    )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=result,
     )

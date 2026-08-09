@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.auth.rbac import Permission, require_permission
+from litoral_trace.config import get_settings
 from litoral_trace.services.audit import (
     AuditAction,
     AuditOutcome,
@@ -68,6 +69,12 @@ async def generar_invitacion_demo_endpoint(
     user: UserTenantContext = Depends(require_permission(Permission.SETTINGS_WRITE)),
 ) -> JSONResponse:
     """Genera credenciales de acceso demo comercial para un prospecto."""
+    if get_settings().is_production:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found.",
+        )
+
     demo_credentials = generar_invitacion_demo_prospecto(
         cuit_empresa=payload.cuit_empresa,
         nombre_contacto=payload.nombre_contacto,

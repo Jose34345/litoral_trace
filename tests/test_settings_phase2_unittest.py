@@ -2,17 +2,19 @@ import unittest
 import asyncio
 import sys
 import json
+import os
 from http.cookies import SimpleCookie
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from fastapi import HTTPException, Response, Request
 
 from litoral_trace.services.licenses import obtener_cuota_tenant, generar_invitacion_demo_prospecto
 from litoral_trace.api.auth import login_b2b, LoginRequest, get_current_tenant_user
 from litoral_trace.api.settings import consultar_licencia_tenant, generar_invitacion_demo_endpoint, InviteDemoUserRequest
 from litoral_trace.db.init_db import get_non_production_superadmin_seed
 from main import render_settings_view
-from fastapi import Response, Request
 
 class TestSettingsPhase2(unittest.TestCase):
     @staticmethod
@@ -37,7 +39,7 @@ class TestSettingsPhase2(unittest.TestCase):
 
     def test_obtener_cuota_tenant(self):
         status_obj = obtener_cuota_tenant(organization_id=1)
-        self.assertEqual(status_obj.monthly_lote_limit, 100)
+        self.assertEqual(status_obj.monthly_lote_limit, 1000)
         self.assertTrue(status_obj.quota_available)
 
     def test_generar_invitacion_demo_prospecto(self):
@@ -53,7 +55,7 @@ class TestSettingsPhase2(unittest.TestCase):
         res = asyncio.run(consultar_licencia_tenant(user=self.tenant_user))
         self.assertEqual(res.status_code, 200)
         body = json.loads(res.body.decode('utf-8'))
-        self.assertEqual(body["monthly_lote_limit"], 100)
+        self.assertEqual(body["monthly_lote_limit"], 1000)
 
     def test_generar_invitacion_demo_endpoint(self):
         payload = InviteDemoUserRequest(
@@ -66,6 +68,47 @@ class TestSettingsPhase2(unittest.TestCase):
         self.assertEqual(res.status_code, 201)
         body = json.loads(res.body.decode('utf-8'))
         self.assertEqual(body["status"], "success")
+
+    def test_generar_invitacion_demo_prospecto_disabled_in_production(self):
+        previous_environment = os.environ.get("ENVIRONMENT")
+        os.environ["ENVIRONMENT"] = "production"
+        try:
+            with self.assertRaises(RuntimeError):
+                generar_invitacion_demo_prospecto(
+                    cuit_empresa="30-71234567-8",
+                    nombre_contacto="Mario DarÃ­o BenÃ­tez",
+                    email_contacto="mario.benitez@despachantes.com"
+                )
+        finally:
+            if previous_environment is None:
+                os.environ.pop("ENVIRONMENT", None)
+            else:
+                os.environ["ENVIRONMENT"] = previous_environment
+
+    def test_generar_invitacion_demo_endpoint_disabled_in_production(self):
+        previous_environment = os.environ.get("ENVIRONMENT")
+        os.environ["ENVIRONMENT"] = "production"
+        payload = InviteDemoUserRequest(
+            cuit_empresa="30-71234567-8",
+            nombre_contacto="Mario DarÃ­o BenÃ­tez",
+            email_contacto="mario.benitez@despachantes.com",
+            especie_principal="Madera Aserrada (Pino)"
+        )
+        try:
+            with self.assertRaises(HTTPException) as exc_info:
+                asyncio.run(
+                    generar_invitacion_demo_endpoint(
+                        payload,
+                        user=self.tenant_user,
+                    )
+                )
+        finally:
+            if previous_environment is None:
+                os.environ.pop("ENVIRONMENT", None)
+            else:
+                os.environ["ENVIRONMENT"] = previous_environment
+
+        self.assertEqual(exc_info.exception.status_code, 404)
 
     def test_render_settings_view(self):
         cookie_header = "; ".join(

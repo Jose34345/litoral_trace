@@ -14,7 +14,12 @@ class License(Base, TimestampMixin):
     __tablename__ = "licenses"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        unique=True,
+    )
     
     plan_type: Mapped[str] = mapped_column(String(50), nullable=False, default="pro")  # pro, enterprise, custom
     max_lotes: Mapped[int] = mapped_column(Integer, nullable=False, default=100)

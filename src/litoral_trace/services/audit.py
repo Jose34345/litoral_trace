@@ -36,6 +36,9 @@ class AuditAction(StrEnum):
     SETTINGS_INVITE_DEMO = "settings.invite_demo_user"
     PLATFORM_ORGANIZATION_CREATE = "platform.organization.create"
     PLATFORM_ORGANIZATION_STATUS_CHANGE = "platform.organization.status_change"
+    PLATFORM_ORGANIZATION_ADMIN_CREATE = "platform.organization_admin.create"
+    PLATFORM_LICENSE_CREATE = "platform.license.create"
+    PLATFORM_LICENSE_UPDATE = "platform.license.update"
 
 
 SENSITIVE_METADATA_KEYS = frozenset(
@@ -45,6 +48,8 @@ SENSITIVE_METADATA_KEYS = frozenset(
         "token",
         "access_token",
         "refresh_token",
+        "token_hash",
+        "refresh_token_hash",
         "authorization",
         "cookie",
         "set-cookie",

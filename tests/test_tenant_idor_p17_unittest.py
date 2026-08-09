@@ -35,7 +35,7 @@ from litoral_trace.api.vault import descargar_documento_boveda
 from litoral_trace.auth.passwords import hash_password
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.init_db import get_non_production_superadmin_seed
-from litoral_trace.db.models import Lote, Organization, User
+from litoral_trace.db.models import License, Lote, Organization, User
 
 
 def _extract_cookies(response: Response) -> dict[str, str]:
@@ -78,6 +78,16 @@ def tenant_fixture():
         is_active=True,
     )
     db_session.add(user_b)
+
+    license_b = License(
+        organization_id=organization_b.id,
+        plan_type="pro",
+        max_lotes=100,
+        max_volume_tons=5000.0,
+        max_batch_rows=500,
+        is_active=True,
+    )
+    db_session.add(license_b)
 
     lote_b = Lote(
         organization_id=organization_b.id,
