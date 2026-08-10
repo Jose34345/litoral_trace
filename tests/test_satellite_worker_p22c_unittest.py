@@ -175,6 +175,7 @@ def _create_running_claimed_job(
     *,
     polygon_wkt_snapshot: str | None = None,
     algorithm_version: str = ALGORITHM_VERSION,
+    worker_id: str = "worker-test",
 ) -> ClaimedSatelliteJob:
     session = get_db_session()
     suffix = uuid4().hex[:8]
@@ -238,7 +239,7 @@ def _create_running_claimed_job(
         algorithm_version=algorithm_version,
         polygon_wkt_snapshot=snapshot,
         locked_at=datetime.now(timezone.utc),
-        locked_by="worker-claim",
+        locked_by=worker_id,
         heartbeat_at=datetime.now(timezone.utc),
         lease_token=str(uuid4()),
         started_at=datetime.now(timezone.utc),
@@ -256,7 +257,7 @@ def _create_running_claimed_job(
         attempt_count=job.attempt_count,
         max_attempts=job.max_attempts,
         next_attempt_at=job.next_attempt_at,
-        locked_by=job.locked_by or "worker-claim",
+        locked_by=job.locked_by or worker_id,
         locked_at=job.locked_at,
         heartbeat_at=job.heartbeat_at,
         lease_token=(
@@ -701,6 +702,8 @@ def test_persistence_reentry_for_same_job_does_not_create_duplicate_rows():
         session,
         organization_id=claimed_job.organization_id,
         job_id=claimed_job.id,
+        worker_id=claimed_job.locked_by,
+        lease_token=claimed_job.lease_token,
     )
 
     session.commit()

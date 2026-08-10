@@ -249,6 +249,8 @@ def _worker_fixture():
     owner_engine = _owner_engine()
     suffix = uuid4().hex[:8]
     now = datetime.now(timezone.utc)
+    job_a_locked_by = "worker-1"
+    job_a_lease_token = str(uuid4())
 
     with owner_engine.begin() as conn:
         org_a_id = conn.execute(
@@ -334,7 +336,7 @@ def _worker_fixture():
                 )
                 VALUES (
                     :organization_id, :lote_id, 'ndvi_timeseries', 'running', 1, 3,
-                    :next_attempt_at, :locked_at, 'worker-1', :heartbeat_at, :lease_token,
+                    :next_attempt_at, :locked_at, :locked_by, :heartbeat_at, :lease_token,
                     '2020-12-31', '2026-08-09', 20.0, :geometry_hash,
                     '2.4.0-gee-sentinel2-scl-v2', :polygon_wkt_snapshot, :started_at
                 )
@@ -346,8 +348,9 @@ def _worker_fixture():
                 "lote_id": lote_a_id,
                 "next_attempt_at": now - timedelta(minutes=10),
                 "locked_at": now - timedelta(minutes=2),
+                "locked_by": job_a_locked_by,
                 "heartbeat_at": now - timedelta(minutes=2),
-                "lease_token": str(uuid4()),
+                "lease_token": job_a_lease_token,
                 "geometry_hash": "a" * 64,
                 "polygon_wkt_snapshot": "POLYGON((-58.91 -27.46, -58.89 -27.46, -58.89 -27.44, -58.91 -27.44, -58.91 -27.46))",
                 "started_at": now - timedelta(minutes=2),
@@ -362,6 +365,8 @@ def _worker_fixture():
         "lote_a_id": int(lote_a_id),
         "lote_b_id": int(lote_b_id),
         "job_a_id": int(job_a_id),
+        "job_a_locked_by": job_a_locked_by,
+        "job_a_lease_token": job_a_lease_token,
     }
 
     try:
@@ -438,6 +443,8 @@ def test_worker_runtime_persistence_uses_runtime_session_and_links_satellite_job
                 runtime_session,
                 organization_id=fixture["org_a_id"],
                 job_id=fixture["job_a_id"],
+                worker_id=fixture["job_a_locked_by"],
+                lease_token=fixture["job_a_lease_token"],
             )
             runtime_session.commit()
         finally:
@@ -508,6 +515,8 @@ def test_worker_success_persistence_is_atomic_under_runtime_rollback():
                 runtime_session,
                 organization_id=fixture["org_a_id"],
                 job_id=fixture["job_a_id"],
+                worker_id=fixture["job_a_locked_by"],
+                lease_token=fixture["job_a_lease_token"],
             )
             raise RuntimeError("force rollback")
         except RuntimeError:

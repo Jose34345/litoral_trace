@@ -30,6 +30,7 @@ from litoral_trace.services.satellite_jobs import (
 )
 from litoral_trace.services.satellite_ndvi_processing import (
     NormalizedNdviExecutionResult,
+    SatelliteJobLeaseLostError,
     mark_satellite_job_failed,
     mark_satellite_job_succeeded,
     normalize_ndvi_execution_result,
@@ -68,6 +69,7 @@ class WorkerRunStatus(StrEnum):
     IDLE = "idle"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    LEASE_LOST = "lease_lost"
     STOPPED = "stopped"
 
 
@@ -526,6 +528,8 @@ class SatelliteWorker:
                 tenant_session,
                 organization_id=context.organization_id,
                 job_id=context.job_id,
+                worker_id=context.worker_id,
+                lease_token=context.lease_token,
             )
 
             tenant_session.commit()
@@ -562,6 +566,8 @@ class SatelliteWorker:
                 tenant_session,
                 organization_id=context.organization_id,
                 job_id=context.job_id,
+                worker_id=context.worker_id,
+                lease_token=context.lease_token,
                 error_code=error_code,
                 error_message=safe_error_message,
             )
@@ -638,12 +644,24 @@ class SatelliteWorker:
         except (KeyboardInterrupt, SystemExit):
             raise
 
-        except SatelliteWorkerExecutionError as exc:
-            self._persist_failure(
+        except SatelliteJobLeaseLostError:
+            return self._build_lease_lost_result(
                 context,
-                error_code=exc.error_code,
-                error_message=exc.safe_message,
+                start_monotonic=start_monotonic,
             )
+
+        except SatelliteWorkerExecutionError as exc:
+            try:
+                self._persist_failure(
+                    context,
+                    error_code=exc.error_code,
+                    error_message=exc.safe_message,
+                )
+            except SatelliteJobLeaseLostError:
+                return self._build_lease_lost_result(
+                    context,
+                    start_monotonic=start_monotonic,
+                )
 
             logger.warning(
                 "satellite_worker_job_failed",
@@ -675,11 +693,17 @@ class SatelliteWorker:
                 )
             )
 
-            self._persist_failure(
-                context,
-                error_code="worker_execution_failed",
-                error_message=sanitized_message,
-            )
+            try:
+                self._persist_failure(
+                    context,
+                    error_code="worker_execution_failed",
+                    error_message=sanitized_message,
+                )
+            except SatelliteJobLeaseLostError:
+                return self._build_lease_lost_result(
+                    context,
+                    start_monotonic=start_monotonic,
+                )
 
             logger.warning(
                 "satellite_worker_job_failed",
@@ -706,6 +730,35 @@ class SatelliteWorker:
                 job_type=context.job_type,
                 error_code="worker_execution_failed",
             )
+
+    def _build_lease_lost_result(
+        self,
+        context: WorkerExecutionContext,
+        *,
+        start_monotonic: float,
+    ) -> WorkerRunResult:
+        logger.warning(
+            "satellite_worker_job_lease_lost",
+            extra={
+                **_format_job_log_fields(context),
+                "error_code": "lease_lost",
+                "elapsed_ms": int(
+                    (
+                        time.monotonic()
+                        - start_monotonic
+                    )
+                    * 1000
+                ),
+            },
+        )
+
+        return WorkerRunResult(
+            status=WorkerRunStatus.LEASE_LOST,
+            job_id=context.job_id,
+            organization_id=context.organization_id,
+            job_type=context.job_type,
+            error_code="lease_lost",
+        )
 
     def run_forever(self) -> None:
         """Poll until shutdown without leaking raw exception tracebacks."""

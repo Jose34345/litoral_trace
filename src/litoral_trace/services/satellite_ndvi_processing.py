@@ -4,8 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import SatelliteJob, SatelliteNdviObservation
@@ -42,6 +43,26 @@ class PersistedNdviResult:
     observation_count: int
 
 
+class SatelliteJobLeaseLostError(RuntimeError):
+    """Raised when a worker no longer owns the running lease it is trying to finalize."""
+
+    def __init__(
+        self,
+        *,
+        job_id: int,
+        organization_id: int,
+        worker_id: str,
+        operation: str,
+    ):
+        super().__init__(
+            "Satellite job lease lost before terminal transition."
+        )
+        self.job_id = int(job_id)
+        self.organization_id = int(organization_id)
+        self.worker_id = str(worker_id).strip()
+        self.operation = str(operation).strip() or "terminal_transition"
+
+
 def _normalize_observation_date(value: str | date) -> date:
     if isinstance(value, date):
         return value
@@ -58,6 +79,110 @@ def _normalize_processing_date(value: str | datetime | None) -> datetime | None:
     if normalized_value.tzinfo is None:
         normalized_value = normalized_value.replace(tzinfo=timezone.utc)
     return normalized_value.astimezone(timezone.utc)
+
+
+def _normalize_worker_id(worker_id: str) -> str:
+    normalized_worker_id = str(worker_id or "").strip()
+    if not normalized_worker_id:
+        raise ValueError("worker_id no puede ser nulo, vacio o whitespace.")
+    if len(normalized_worker_id) > 255:
+        raise ValueError("worker_id no puede superar 255 caracteres.")
+    return normalized_worker_id
+
+
+def _normalize_lease_token(lease_token: str | UUID) -> str:
+    if isinstance(lease_token, UUID):
+        return str(lease_token)
+
+    normalized_lease_token = str(lease_token or "").strip()
+    if not normalized_lease_token:
+        raise ValueError("lease_token no puede ser nulo, vacio o whitespace.")
+    return str(UUID(normalized_lease_token))
+
+
+def _normalize_error_code(error_code: str) -> str:
+    return error_code.strip()[:100] or "worker_execution_failed"
+
+
+def _normalize_error_message(error_message: str) -> str:
+    return error_message.strip()[:1024] or "worker execution failed"
+
+
+def _load_satellite_job_for_tenant(
+    db_session: Session,
+    *,
+    organization_id: int,
+    job_id: int,
+) -> SatelliteJob:
+    return db_session.execute(
+        select(SatelliteJob).where(
+            SatelliteJob.id == int(job_id),
+            SatelliteJob.organization_id == int(organization_id),
+        )
+    ).scalar_one()
+
+
+def _raise_lease_lost(
+    *,
+    organization_id: int,
+    job_id: int,
+    worker_id: str,
+    operation: str,
+) -> None:
+    raise SatelliteJobLeaseLostError(
+        job_id=job_id,
+        organization_id=organization_id,
+        worker_id=worker_id,
+        operation=operation,
+    )
+
+
+def _finalize_satellite_job_with_lease_fencing(
+    db_session: Session,
+    *,
+    organization_id: int,
+    job_id: int,
+    worker_id: str,
+    lease_token: str | UUID,
+    operation: str,
+    values: dict[str, Any],
+) -> SatelliteJob:
+    normalized_organization_id = int(organization_id)
+    normalized_job_id = int(job_id)
+    normalized_worker_id = _normalize_worker_id(worker_id)
+    normalized_lease_token = _normalize_lease_token(lease_token)
+
+    set_tenant_db_context(
+        db_session,
+        normalized_organization_id,
+    )
+
+    result = db_session.execute(
+        update(SatelliteJob)
+        .where(
+            SatelliteJob.id == normalized_job_id,
+            SatelliteJob.organization_id == normalized_organization_id,
+            SatelliteJob.status == "running",
+            SatelliteJob.locked_by == normalized_worker_id,
+            SatelliteJob.lease_token == normalized_lease_token,
+        )
+        .values(**values)
+    )
+
+    if result.rowcount != 1:
+        _raise_lease_lost(
+            organization_id=normalized_organization_id,
+            job_id=normalized_job_id,
+            worker_id=normalized_worker_id,
+            operation=operation,
+        )
+
+    db_session.flush()
+    return _load_satellite_job_for_tenant(
+        db_session,
+        organization_id=normalized_organization_id,
+        job_id=normalized_job_id,
+    )
 
 
 def normalize_ndvi_execution_result(
@@ -236,23 +361,28 @@ def mark_satellite_job_succeeded(
     *,
     organization_id: int,
     job_id: int,
+    worker_id: str,
+    lease_token: str | UUID,
 ) -> SatelliteJob:
-    set_tenant_db_context(db_session, organization_id)
-    job = db_session.execute(
-        select(SatelliteJob).where(
-            SatelliteJob.id == int(job_id),
-            SatelliteJob.organization_id == int(organization_id),
-        )
-    ).scalar_one()
-    job.status = "succeeded"
-    job.finished_at = datetime.now(timezone.utc)
-    job.locked_at = None
-    job.locked_by = None
-    job.heartbeat_at = None
-    job.error_code = None
-    job.error_message = None
-    db_session.flush()
-    return job
+    now = datetime.now(timezone.utc)
+    return _finalize_satellite_job_with_lease_fencing(
+        db_session,
+        organization_id=organization_id,
+        job_id=job_id,
+        worker_id=worker_id,
+        lease_token=lease_token,
+        operation="succeeded",
+        values={
+            "status": "succeeded",
+            "finished_at": now,
+            "locked_at": None,
+            "locked_by": None,
+            "heartbeat_at": None,
+            "error_code": None,
+            "error_message": None,
+            "updated_at": now,
+        },
+    )
 
 
 def mark_satellite_job_failed(
@@ -260,22 +390,27 @@ def mark_satellite_job_failed(
     *,
     organization_id: int,
     job_id: int,
+    worker_id: str,
+    lease_token: str | UUID,
     error_code: str,
     error_message: str,
 ) -> SatelliteJob:
-    set_tenant_db_context(db_session, organization_id)
-    job = db_session.execute(
-        select(SatelliteJob).where(
-            SatelliteJob.id == int(job_id),
-            SatelliteJob.organization_id == int(organization_id),
-        )
-    ).scalar_one()
-    job.status = "failed"
-    job.finished_at = datetime.now(timezone.utc)
-    job.locked_at = None
-    job.locked_by = None
-    job.heartbeat_at = None
-    job.error_code = error_code.strip()[:100] or "worker_execution_failed"
-    job.error_message = error_message.strip()[:1024] or "worker execution failed"
-    db_session.flush()
-    return job
+    now = datetime.now(timezone.utc)
+    return _finalize_satellite_job_with_lease_fencing(
+        db_session,
+        organization_id=organization_id,
+        job_id=job_id,
+        worker_id=worker_id,
+        lease_token=lease_token,
+        operation="failed",
+        values={
+            "status": "failed",
+            "finished_at": now,
+            "locked_at": None,
+            "locked_by": None,
+            "heartbeat_at": None,
+            "error_code": _normalize_error_code(error_code),
+            "error_message": _normalize_error_message(error_message),
+            "updated_at": now,
+        },
+    )
