@@ -414,3 +414,49 @@ def mark_satellite_job_failed(
             "updated_at": now,
         },
     )
+
+
+def update_satellite_job_heartbeat(
+    db_session: Session,
+    *,
+    organization_id: int,
+    job_id: int,
+    worker_id: str,
+    lease_token: str | UUID,
+) -> datetime:
+    now = datetime.now(timezone.utc)
+    normalized_organization_id = int(organization_id)
+    normalized_job_id = int(job_id)
+    normalized_worker_id = _normalize_worker_id(worker_id)
+    normalized_lease_token = _normalize_lease_token(lease_token)
+
+    set_tenant_db_context(
+        db_session,
+        normalized_organization_id,
+    )
+
+    result = db_session.execute(
+        update(SatelliteJob)
+        .where(
+            SatelliteJob.id == normalized_job_id,
+            SatelliteJob.organization_id == normalized_organization_id,
+            SatelliteJob.status == "running",
+            SatelliteJob.locked_by == normalized_worker_id,
+            SatelliteJob.lease_token == normalized_lease_token,
+        )
+        .values(
+            heartbeat_at=now,
+            updated_at=now,
+        )
+    )
+
+    if result.rowcount != 1:
+        _raise_lease_lost(
+            organization_id=normalized_organization_id,
+            job_id=normalized_job_id,
+            worker_id=normalized_worker_id,
+            operation="heartbeat",
+        )
+
+    db_session.flush()
+    return now

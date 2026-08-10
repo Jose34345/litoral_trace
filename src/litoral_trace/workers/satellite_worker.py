@@ -8,6 +8,7 @@ import random
 import re
 import signal
 import socket
+import threading
 import time
 from dataclasses import dataclass
 from enum import StrEnum
@@ -35,12 +36,14 @@ from litoral_trace.services.satellite_ndvi_processing import (
     mark_satellite_job_succeeded,
     normalize_ndvi_execution_result,
     persist_ndvi_execution_result,
+    update_satellite_job_heartbeat,
 )
 
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_POLL_SECONDS = 5
+_DEFAULT_HEARTBEAT_SECONDS = 15
 
 _SENSITIVE_TEXT_PATTERNS = (
     re.compile(
@@ -256,6 +259,20 @@ def resolve_satellite_worker_poll_seconds() -> int:
     return configured_poll_seconds
 
 
+def resolve_satellite_worker_heartbeat_seconds() -> int:
+    configured_heartbeat_seconds = int(
+        get_settings().workers.satellite_worker_heartbeat_seconds
+        or _DEFAULT_HEARTBEAT_SECONDS
+    )
+
+    if configured_heartbeat_seconds <= 0:
+        raise RuntimeError(
+            "SATELLITE_WORKER_HEARTBEAT_SECONDS debe ser positivo."
+        )
+
+    return configured_heartbeat_seconds
+
+
 def _format_job_log_fields(
     context: WorkerExecutionContext,
 ) -> dict[str, Any]:
@@ -267,6 +284,106 @@ def _format_job_log_fields(
         "job_type": context.job_type,
         "worker_id": context.worker_id,
     }
+
+
+class _SatelliteJobHeartbeatController:
+    """Periodic tenant-runtime heartbeat loop for one active durable job."""
+
+    def __init__(
+        self,
+        *,
+        organization_id: int,
+        job_id: int,
+        job_type: str,
+        worker_id: str,
+        lease_token: str,
+        heartbeat_seconds: int,
+        tenant_session_factory: Callable[[], Session],
+    ):
+        self.organization_id = int(organization_id)
+        self.job_id = int(job_id)
+        self.job_type = str(job_type)
+        self.worker_id = str(worker_id)
+        self._lease_token = str(lease_token)
+        self._heartbeat_seconds = int(heartbeat_seconds)
+        self._tenant_session_factory = tenant_session_factory
+        self._stop_event = threading.Event()
+        self._lease_lost_event = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"satellite-heartbeat-{self.job_id}",
+            daemon=True,
+        )
+        self._started = False
+
+    def start(self) -> None:
+        if self._started:
+            return
+        self._thread.start()
+        self._started = True
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+    def join(self) -> None:
+        if self._started:
+            self._thread.join()
+
+    def is_alive(self) -> bool:
+        return self._thread.is_alive() if self._started else False
+
+    def has_lease_lost(self) -> bool:
+        return self._lease_lost_event.is_set()
+
+    def _run(self) -> None:
+        while not self._stop_event.wait(self._heartbeat_seconds):
+            tenant_session = self._tenant_session_factory()
+
+            if tenant_session is None:
+                self._log_generic_error(
+                    RuntimeError(
+                        "Servicio de base de datos tenant no disponible."
+                    )
+                )
+                continue
+
+            try:
+                update_satellite_job_heartbeat(
+                    tenant_session,
+                    organization_id=self.organization_id,
+                    job_id=self.job_id,
+                    worker_id=self.worker_id,
+                    lease_token=self._lease_token,
+                )
+                tenant_session.commit()
+
+            except SatelliteJobLeaseLostError:
+                tenant_session.rollback()
+                self._lease_lost_event.set()
+                self._stop_event.set()
+                break
+
+            except Exception as exc:
+                tenant_session.rollback()
+                self._log_generic_error(exc)
+
+            finally:
+                tenant_session.close()
+
+    def _log_generic_error(self, exc: Exception) -> None:
+        logger.warning(
+            "satellite_worker_heartbeat_error",
+            extra={
+                "job_id": self.job_id,
+                "organization_id": self.organization_id,
+                "job_type": self.job_type,
+                "worker_id": self.worker_id,
+                "error_type": type(exc).__name__,
+                "error_message": sanitize_worker_error_message(
+                    str(exc)
+                ),
+            },
+        )
 
 
 class SatelliteWorker:
@@ -281,7 +398,8 @@ class SatelliteWorker:
     - commit observations and terminal job state atomically;
     - fail deterministically without implementing retries/recovery.
 
-    Lease fencing, heartbeat and stale-job recovery belong to P2.2D.
+    Lease fencing and periodic heartbeat belong to P2.2D.
+    Stale-job recovery remains future work.
     """
 
     def __init__(
@@ -289,6 +407,7 @@ class SatelliteWorker:
         *,
         worker_id: str,
         poll_seconds: int = _DEFAULT_POLL_SECONDS,
+        heartbeat_seconds: int = _DEFAULT_HEARTBEAT_SECONDS,
         claim_session_factory: Callable[[], Session] = (
             get_worker_db_session
         ),
@@ -308,6 +427,12 @@ class SatelliteWorker:
         if self.poll_seconds <= 0:
             raise RuntimeError(
                 "poll_seconds debe ser positivo."
+            )
+
+        self.heartbeat_seconds = int(heartbeat_seconds)
+        if self.heartbeat_seconds <= 0:
+            raise RuntimeError(
+                "heartbeat_seconds debe ser positivo."
             )
 
         self._claim_session_factory = claim_session_factory
@@ -382,6 +507,28 @@ class SatelliteWorker:
 
         finally:
             claim_session.close()
+
+    def _create_heartbeat_controller(
+        self,
+        context: WorkerExecutionContext,
+    ) -> _SatelliteJobHeartbeatController:
+        return _SatelliteJobHeartbeatController(
+            organization_id=context.organization_id,
+            job_id=context.job_id,
+            job_type=context.job_type,
+            worker_id=context.worker_id,
+            lease_token=context.lease_token,
+            heartbeat_seconds=self.heartbeat_seconds,
+            tenant_session_factory=self._tenant_session_factory,
+        )
+
+    def _stop_heartbeat_controller(
+        self,
+        heartbeat_controller: _SatelliteJobHeartbeatController,
+    ) -> bool:
+        heartbeat_controller.stop()
+        heartbeat_controller.join()
+        return heartbeat_controller.has_lease_lost()
 
     def _build_ndvi_request(
         self,
@@ -597,9 +744,12 @@ class SatelliteWorker:
             )
 
         context = self._build_context(claimed_job)
+        heartbeat_controller = self._create_heartbeat_controller(context)
         start_monotonic = time.monotonic()
 
         try:
+            heartbeat_controller.start()
+
             handler = self._handlers.get(
                 context.job_type
             )
@@ -614,6 +764,12 @@ class SatelliteWorker:
                 )
 
             result = handler(context)
+
+            if self._stop_heartbeat_controller(heartbeat_controller):
+                return self._build_lease_lost_result(
+                    context,
+                    start_monotonic=start_monotonic,
+                )
 
             self._persist_success(
                 context,
@@ -642,15 +798,23 @@ class SatelliteWorker:
             )
 
         except (KeyboardInterrupt, SystemExit):
+            self._stop_heartbeat_controller(heartbeat_controller)
             raise
 
         except SatelliteJobLeaseLostError:
+            self._stop_heartbeat_controller(heartbeat_controller)
             return self._build_lease_lost_result(
                 context,
                 start_monotonic=start_monotonic,
             )
 
         except SatelliteWorkerExecutionError as exc:
+            if self._stop_heartbeat_controller(heartbeat_controller):
+                return self._build_lease_lost_result(
+                    context,
+                    start_monotonic=start_monotonic,
+                )
+
             try:
                 self._persist_failure(
                     context,
@@ -692,6 +856,12 @@ class SatelliteWorker:
                     str(exc)
                 )
             )
+
+            if self._stop_heartbeat_controller(heartbeat_controller):
+                return self._build_lease_lost_result(
+                    context,
+                    start_monotonic=start_monotonic,
+                )
 
             try:
                 self._persist_failure(
@@ -816,6 +986,7 @@ def build_satellite_worker() -> SatelliteWorker:
     return SatelliteWorker(
         worker_id=resolve_satellite_worker_id(),
         poll_seconds=resolve_satellite_worker_poll_seconds(),
+        heartbeat_seconds=resolve_satellite_worker_heartbeat_seconds(),
     )
 
 

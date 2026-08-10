@@ -209,6 +209,7 @@ class WorkersSettings(BaseModel):
     result_backend_url: str | None = None
     satellite_worker_id: str | None = None
     satellite_worker_poll_seconds: int = Field(default=5, ge=1, le=300)
+    satellite_worker_heartbeat_seconds: int = Field(default=15, ge=1, le=300)
 
 
 class Settings(BaseModel):
@@ -308,6 +309,10 @@ class Settings(BaseModel):
                 satellite_worker_poll_seconds=_read_int_env(
                     "SATELLITE_WORKER_POLL_SECONDS",
                     default=5,
+                ),
+                satellite_worker_heartbeat_seconds=_read_int_env(
+                    "SATELLITE_WORKER_HEARTBEAT_SECONDS",
+                    default=15,
                 ),
             ),
         )
