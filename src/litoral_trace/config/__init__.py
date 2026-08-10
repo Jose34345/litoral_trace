@@ -14,6 +14,7 @@ from .settings import (
     get_settings,
     resolve_migration_database_url,
     resolve_runtime_database_url,
+    resolve_worker_database_url,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "get_settings",
     "resolve_migration_database_url",
     "resolve_runtime_database_url",
+    "resolve_worker_database_url",
 ]

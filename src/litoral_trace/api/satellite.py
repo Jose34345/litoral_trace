@@ -30,6 +30,10 @@ from litoral_trace.services.gee import (
     consultar_serie_temporal_ndvi_gee,
     generate_geometry_hash,
 )
+from litoral_trace.services.satellite_ndvi_processing import (
+    normalize_ndvi_execution_result,
+    persist_ndvi_execution_result,
+)
 from litoral_trace.services.ndvi import (
     calcular_ndvi_simulado,
     evaluar_indicador_variacion_biomasa,
@@ -197,40 +201,22 @@ async def consultar_ndvi_satelital_lote_endpoint(
         t_db_start = time.time()
         db_write_ms = 0
         try:
-            from litoral_trace.db.models import SatelliteNdviObservation
-
             session = get_tenant_scoped_db_session(user.organization_id)
             if session:
                 try:
-                    for obs in obs_list:
-                        obs_date = datetime.strptime(
-                            obs["observation_date"],
-                            "%Y-%m-%d",
-                        ).date()
-                        existing = session.query(SatelliteNdviObservation).filter_by(
-                            organization_id=user.organization_id,
-                            lote_id=payload.lote_id,
-                            observation_date=obs_date,
-                            geometry_hash=geom_hash,
-                        ).first()
-
-                        if not existing:
-                            db_obs = SatelliteNdviObservation(
-                                organization_id=user.organization_id,
-                                lote_id=payload.lote_id,
-                                observation_date=obs_date,
-                                ndvi_mean=obs["ndvi_mean"],
-                                ndvi_min=obs.get("ndvi_min"),
-                                ndvi_max=obs.get("ndvi_max"),
-                                ndvi_std=obs.get("ndvi_std"),
-                                cloud_percentage=obs.get("scene_cloud_percentage", 0.0),
-                                valid_pixel_percentage=obs.get("valid_pixel_percentage", 100.0),
-                                satellite=obs.get("satellite", "Sentinel-2"),
-                                collection=obs.get("collection", "COPERNICUS/S2_SR_HARMONIZED"),
-                                geometry_hash=geom_hash,
-                                algorithm_version=ALGORITHM_VERSION,
-                            )
-                            session.add(db_obs)
+                    persist_ndvi_execution_result(
+                        session,
+                        organization_id=user.organization_id,
+                        lote_id=payload.lote_id,
+                        satellite_job_id=None,
+                        result=normalize_ndvi_execution_result(
+                            {
+                                "geometry_hash": geom_hash,
+                                "algorithm_version": ALGORITHM_VERSION,
+                                "observations": obs_list,
+                            }
+                        ),
+                    )
                     session.commit()
                     db_write_ms = int((time.time() - t_db_start) * 1000)
                 except Exception:

@@ -204,8 +204,11 @@ class WorkersSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     enabled: bool = False
+    worker_database_url: str | None = Field(default=None, repr=False)
     broker_url: str | None = None
     result_backend_url: str | None = None
+    satellite_worker_id: str | None = None
+    satellite_worker_poll_seconds: int = Field(default=5, ge=1, le=300)
 
 
 class Settings(BaseModel):
@@ -298,8 +301,14 @@ class Settings(BaseModel):
             ),
             workers=WorkersSettings(
                 enabled=_read_bool_env("WORKERS_ENABLED", default=False),
+                worker_database_url=_read_optional_env("WORKER_DATABASE_URL"),
                 broker_url=_read_optional_env("WORKER_BROKER_URL"),
                 result_backend_url=_read_optional_env("WORKER_RESULT_BACKEND_URL"),
+                satellite_worker_id=_read_optional_env("SATELLITE_WORKER_ID"),
+                satellite_worker_poll_seconds=_read_int_env(
+                    "SATELLITE_WORKER_POLL_SECONDS",
+                    default=5,
+                ),
             ),
         )
 
@@ -317,3 +326,11 @@ def resolve_runtime_database_url(settings: Settings | None = None) -> str | None
 def resolve_migration_database_url(settings: Settings | None = None) -> str | None:
     active_settings = settings or get_settings()
     return active_settings.database.resolved_migration_database_url
+
+
+def resolve_worker_database_url(settings: Settings | None = None) -> str | None:
+    active_settings = settings or get_settings()
+    worker_database_url = active_settings.workers.worker_database_url
+    if worker_database_url:
+        return normalize_database_url(worker_database_url)
+    return None

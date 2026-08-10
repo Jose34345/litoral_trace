@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
+from datetime import date
 from uuid import uuid4
 
 import pytest
@@ -9,6 +10,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from litoral_trace.config.settings import normalize_database_url
+from litoral_trace.db.engine import reset_engine_state
+from litoral_trace.services.satellite_jobs import enqueue_satellite_ndvi_job
 
 
 def _truthy(value: str | None) -> bool:
@@ -55,6 +58,36 @@ def _set_tenant_context(conn, organization_id: int) -> None:
         ),
         {"organization_id": str(organization_id)},
     )
+
+
+@contextmanager
+def _postgres_runtime_service_environment():
+    original_values = {
+        "ENVIRONMENT": os.environ.get("ENVIRONMENT"),
+        "DATABASE_URL": os.environ.get("DATABASE_URL"),
+        "MIGRATION_DATABASE_URL": os.environ.get("MIGRATION_DATABASE_URL"),
+        "TEST_DATABASE_URL": os.environ.get("TEST_DATABASE_URL"),
+    }
+
+    os.environ["ENVIRONMENT"] = "development"
+    os.environ["DATABASE_URL"] = RUNTIME_TEST_DATABASE_URL or ""
+    os.environ["MIGRATION_DATABASE_URL"] = (
+        "postgresql://blocked_migration_guard:blocked_guard@127.0.0.1:1/"
+        "blocked_migration_guard"
+    )
+    os.environ.pop("TEST_DATABASE_URL", None)
+    reset_engine_state()
+
+    try:
+        yield
+    finally:
+        reset_engine_state()
+        for variable_name, original_value in original_values.items():
+            if original_value is None:
+                os.environ.pop(variable_name, None)
+            else:
+                os.environ[variable_name] = original_value
+        reset_engine_state()
 
 
 @contextmanager
@@ -350,3 +383,88 @@ def test_satellite_observation_job_link_is_tenant_safe():
                         "geometry_hash": "e" * 64,
                     },
                 )
+
+
+def test_enqueue_satellite_job_materializes_detached_job_inside_tenant_transaction():
+    with _fixture_entities() as fixture:
+        idempotency_key = f"p22a-postgres-enqueue-{uuid4().hex}"
+
+        with _postgres_runtime_service_environment():
+            created_job, created = enqueue_satellite_ndvi_job(
+                organization_id=fixture["org_a_id"],
+                lote_id=fixture["lote_a_id"],
+                start_date=date(2026, 7, 1),
+                end_date=date(2026, 8, 1),
+                max_cloud_pct=20.0,
+                idempotency_key=idempotency_key,
+            )
+
+        assert created is True
+        assert created_job.id is not None
+        assert created_job.organization_id == fixture["org_a_id"]
+        assert created_job.lote_id == fixture["lote_a_id"]
+        assert created_job.job_type == "ndvi_timeseries"
+        assert created_job.status == "queued"
+        assert created_job.attempt_count == 0
+        assert created_job.max_attempts == 3
+        assert created_job.next_attempt_at is not None
+        assert created_job.request_start_date == date(2026, 7, 1)
+        assert created_job.request_end_date == date(2026, 8, 1)
+        assert created_job.max_cloud_pct == 20.0
+        assert created_job.geometry_hash
+        assert created_job.algorithm_version
+        assert created_job.polygon_wkt_snapshot
+        assert created_job.created_at is not None
+        assert created_job.updated_at is not None
+
+        with fixture["runtime_engine"].begin() as conn:
+            no_context_rows = conn.execute(
+                text("SELECT id FROM satellite_jobs WHERE id = :job_id"),
+                {"job_id": created_job.id},
+            ).scalars().all()
+            _set_tenant_context(conn, fixture["org_a_id"])
+            tenant_a_rows = conn.execute(
+                text(
+                    """
+                    SELECT id, organization_id, lote_id, status, geometry_hash, created_at
+                    FROM satellite_jobs
+                    WHERE id = :job_id
+                    """
+                ),
+                {"job_id": created_job.id},
+            ).mappings().all()
+
+        with fixture["runtime_engine"].begin() as conn:
+            _set_tenant_context(conn, fixture["org_b_id"])
+            tenant_b_rows = conn.execute(
+                text("SELECT id FROM satellite_jobs WHERE id = :job_id"),
+                {"job_id": created_job.id},
+            ).scalars().all()
+
+        assert no_context_rows == []
+        assert len(tenant_a_rows) == 1
+        assert tenant_a_rows[0]["id"] == created_job.id
+        assert tenant_a_rows[0]["organization_id"] == fixture["org_a_id"]
+        assert tenant_a_rows[0]["lote_id"] == fixture["lote_a_id"]
+        assert tenant_a_rows[0]["status"] == "queued"
+        assert tenant_a_rows[0]["geometry_hash"] == created_job.geometry_hash
+        assert tenant_a_rows[0]["created_at"] is not None
+        assert tenant_b_rows == []
+
+        with _postgres_runtime_service_environment():
+            existing_job, created_again = enqueue_satellite_ndvi_job(
+                organization_id=fixture["org_a_id"],
+                lote_id=fixture["lote_a_id"],
+                start_date=date(2026, 7, 1),
+                end_date=date(2026, 8, 1),
+                max_cloud_pct=20.0,
+                idempotency_key=idempotency_key,
+            )
+
+        assert created_again is False
+        assert existing_job.id == created_job.id
+        assert existing_job.organization_id == fixture["org_a_id"]
+        assert existing_job.lote_id == fixture["lote_a_id"]
+        assert existing_job.status == "queued"
+        assert existing_job.geometry_hash == created_job.geometry_hash
+        assert existing_job.created_at is not None

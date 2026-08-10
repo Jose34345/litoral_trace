@@ -351,9 +351,10 @@ def enqueue_satellite_ndvi_job(
             polygon_wkt_snapshot=polygon_wkt_snapshot,
         )
         session.add(job)
-        session.commit()
+        session.flush()
         session.refresh(job)
         session.expunge(job)
+        session.commit()
         return job, True
     except Exception:
         session.rollback()
