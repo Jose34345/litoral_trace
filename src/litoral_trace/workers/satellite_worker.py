@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import os
 import random
 import re
@@ -21,6 +22,7 @@ from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.worker import get_worker_db_session
 from litoral_trace.services.gee import (
     ALGORITHM_VERSION,
+    GeeFailureCategory,
     consultar_serie_temporal_ndvi_gee,
     generate_geometry_hash,
 )
@@ -33,11 +35,13 @@ from litoral_trace.services.satellite_jobs import (
 )
 from litoral_trace.services.satellite_ndvi_processing import (
     NormalizedNdviExecutionResult,
+    RetryScheduleResult,
     SatelliteJobLeaseLostError,
     mark_satellite_job_failed,
     mark_satellite_job_succeeded,
     normalize_ndvi_execution_result,
     persist_ndvi_execution_result,
+    schedule_satellite_job_retry,
     update_satellite_job_heartbeat,
 )
 
@@ -48,6 +52,8 @@ _DEFAULT_POLL_SECONDS = 5
 _DEFAULT_HEARTBEAT_SECONDS = 15
 _DEFAULT_STALE_RECOVERY_INTERVAL_SECONDS = 30
 _DEFAULT_STALE_RECOVERY_BATCH_SIZE = 10
+_DEFAULT_RETRY_BASE_SECONDS = 30
+_DEFAULT_RETRY_MAX_SECONDS = 900
 
 _SENSITIVE_TEXT_PATTERNS = (
     re.compile(
@@ -75,6 +81,7 @@ _SENSITIVE_TEXT_PATTERNS = (
 class WorkerRunStatus(StrEnum):
     IDLE = "idle"
     SUCCEEDED = "succeeded"
+    RETRY_SCHEDULED = "retry_scheduled"
     FAILED = "failed"
     LEASE_LOST = "lease_lost"
     STOPPED = "stopped"
@@ -109,16 +116,28 @@ class WorkerExecutionContext:
     claimed_job: ClaimedSatelliteJob
 
 
+class RetryDisposition(StrEnum):
+    RETRYABLE = "retryable"
+    NON_RETRYABLE = "non_retryable"
+
+
 class SatelliteWorkerExecutionError(RuntimeError):
     """Expected, sanitized worker execution failure."""
 
-    def __init__(self, error_code: str, message: str):
+    def __init__(
+        self,
+        error_code: str,
+        message: str,
+        *,
+        retry_disposition: RetryDisposition = RetryDisposition.NON_RETRYABLE,
+    ):
         super().__init__(message)
         self.error_code = (
             error_code.strip()[:100]
             or "worker_execution_failed"
         )
         self.safe_message = sanitize_worker_error_message(message)
+        self.retry_disposition = RetryDisposition(retry_disposition)
 
 
 class GeeNdviAdapter(Protocol):
@@ -146,8 +165,23 @@ class EarthEngineGeeNdviAdapter:
         )
 
         if result.get("status") != "success":
+            error_category = str(
+                result.get("error_category")
+                or GeeFailureCategory.UNKNOWN.value
+            )
+            retry_disposition = (
+                RetryDisposition.RETRYABLE
+                if error_category
+                in {
+                    GeeFailureCategory.TIMEOUT.value,
+                    GeeFailureCategory.TEMPORARY_NETWORK.value,
+                    GeeFailureCategory.TEMPORARY_SERVICE.value,
+                    GeeFailureCategory.TEMPORARY_RATE_LIMIT.value,
+                }
+                else RetryDisposition.NON_RETRYABLE
+            )
             raise SatelliteWorkerExecutionError(
-                "gee_execution_failed",
+                str(result.get("error_code") or "gee_execution_failed"),
                 str(
                     result.get("error_detail")
                     or (
@@ -155,6 +189,7 @@ class EarthEngineGeeNdviAdapter:
                         "un resultado exitoso."
                     )
                 ),
+                retry_disposition=retry_disposition,
             )
 
         # Critical production invariant:
@@ -172,6 +207,7 @@ class EarthEngineGeeNdviAdapter:
                     "El worker requiere una ejecucion real de "
                     "Google Earth Engine."
                 ),
+                retry_disposition=RetryDisposition.NON_RETRYABLE,
             )
 
         normalized = normalize_ndvi_execution_result(result)
@@ -292,6 +328,30 @@ def resolve_satellite_worker_stale_recovery_interval_seconds() -> int:
         )
 
     return configured_interval_seconds
+
+
+def resolve_satellite_worker_retry_base_seconds() -> int:
+    configured_base_seconds = int(
+        get_settings().workers.satellite_worker_retry_base_seconds
+        or _DEFAULT_RETRY_BASE_SECONDS
+    )
+    if configured_base_seconds <= 0:
+        raise RuntimeError(
+            "SATELLITE_WORKER_RETRY_BASE_SECONDS debe ser positivo."
+        )
+    return configured_base_seconds
+
+
+def resolve_satellite_worker_retry_max_seconds() -> int:
+    configured_max_seconds = int(
+        get_settings().workers.satellite_worker_retry_max_seconds
+        or _DEFAULT_RETRY_MAX_SECONDS
+    )
+    if configured_max_seconds <= 0:
+        raise RuntimeError(
+            "SATELLITE_WORKER_RETRY_MAX_SECONDS debe ser positivo."
+        )
+    return configured_max_seconds
 
 
 def _format_job_log_fields(
@@ -419,8 +479,8 @@ class SatelliteWorker:
     - commit observations and terminal job state atomically;
     - fail deterministically without implementing retries/recovery.
 
-    Lease fencing, periodic heartbeat and stale-job recovery belong to P2.2D.
-    Retry/backoff policy remains future work.
+    Lease fencing, periodic heartbeat, stale-job recovery and bounded retry
+    scheduling belong to P2.2D.
     """
 
     def __init__(
@@ -430,6 +490,8 @@ class SatelliteWorker:
         poll_seconds: int = _DEFAULT_POLL_SECONDS,
         heartbeat_seconds: int = _DEFAULT_HEARTBEAT_SECONDS,
         stale_recovery_interval_seconds: int | None = None,
+        retry_base_seconds: int = _DEFAULT_RETRY_BASE_SECONDS,
+        retry_max_seconds: int = _DEFAULT_RETRY_MAX_SECONDS,
         claim_session_factory: Callable[[], Session] = (
             get_worker_db_session
         ),
@@ -476,6 +538,20 @@ class SatelliteWorker:
             )
 
         self.stale_recovery_batch_size = _DEFAULT_STALE_RECOVERY_BATCH_SIZE
+        self.retry_base_seconds = int(retry_base_seconds)
+        self.retry_max_seconds = int(retry_max_seconds)
+        if self.retry_base_seconds <= 0:
+            raise RuntimeError(
+                "retry_base_seconds debe ser positivo."
+            )
+        if self.retry_max_seconds <= 0:
+            raise RuntimeError(
+                "retry_max_seconds debe ser positivo."
+            )
+        if self.retry_max_seconds < self.retry_base_seconds:
+            raise RuntimeError(
+                "retry_max_seconds debe ser mayor o igual a retry_base_seconds."
+            )
         self._claim_session_factory = claim_session_factory
         self._tenant_session_factory = tenant_session_factory
         self._claim_job_func = claim_job_func
@@ -506,6 +582,60 @@ class SatelliteWorker:
         """Prevent new claims after the current execution finishes."""
 
         self._stop_requested = True
+
+    def _calculate_retry_delay_seconds(
+        self,
+        *,
+        attempt_count: int,
+    ) -> int:
+        # Residual risk P2.2D4:
+        # deterministic backoff intentionally ships without jitter in phase 1
+        # to keep scheduling and tests predictable.
+        normalized_attempt_count = max(int(attempt_count), 0)
+        attempt_index = max(normalized_attempt_count - 1, 0)
+        if self.retry_base_seconds >= self.retry_max_seconds:
+            return self.retry_max_seconds
+
+        max_exponent = int(
+            math.ceil(
+                math.log2(
+                self.retry_max_seconds / self.retry_base_seconds
+                )
+            )
+        )
+        effective_exponent = min(attempt_index, max_exponent)
+        delay_seconds = self.retry_base_seconds * (2 ** effective_exponent)
+        return min(delay_seconds, self.retry_max_seconds)
+
+    def _schedule_retry(
+        self,
+        context: WorkerExecutionContext,
+        *,
+        retry_delay_seconds: int,
+    ) -> RetryScheduleResult:
+        tenant_session = self._tenant_session_factory()
+
+        if tenant_session is None:
+            raise RuntimeError(
+                "Servicio de base de datos tenant no disponible."
+            )
+
+        try:
+            result = schedule_satellite_job_retry(
+                tenant_session,
+                organization_id=context.organization_id,
+                job_id=context.job_id,
+                worker_id=context.worker_id,
+                lease_token=context.lease_token,
+                retry_delay_seconds=retry_delay_seconds,
+            )
+            tenant_session.commit()
+            return result
+        except Exception:
+            tenant_session.rollback()
+            raise
+        finally:
+            tenant_session.close()
 
     def _build_context(
         self,
@@ -845,6 +975,56 @@ class SatelliteWorker:
         finally:
             tenant_session.close()
 
+    def _log_retry_scheduled(
+        self,
+        context: WorkerExecutionContext,
+        *,
+        error_code: str,
+        retry_delay_seconds: int,
+        start_monotonic: float,
+    ) -> None:
+        logger.info(
+            "satellite_worker_retry_scheduled",
+            extra={
+                **_format_job_log_fields(context),
+                "attempt_count": context.claimed_job.attempt_count,
+                "max_attempts": context.claimed_job.max_attempts,
+                "retry_delay_seconds": retry_delay_seconds,
+                "error_code": error_code,
+                "elapsed_ms": int(
+                    (
+                        self._monotonic()
+                        - start_monotonic
+                    )
+                    * 1000
+                ),
+            },
+        )
+
+    def _log_retry_exhausted(
+        self,
+        context: WorkerExecutionContext,
+        *,
+        error_code: str,
+        start_monotonic: float,
+    ) -> None:
+        logger.warning(
+            "satellite_worker_retry_exhausted",
+            extra={
+                **_format_job_log_fields(context),
+                "attempt_count": context.claimed_job.attempt_count,
+                "max_attempts": context.claimed_job.max_attempts,
+                "error_code": error_code,
+                "elapsed_ms": int(
+                    (
+                        self._monotonic()
+                        - start_monotonic
+                    )
+                    * 1000
+                ),
+            },
+        )
+
     def run_once(self) -> WorkerRunResult:
         """Claim and execute at most one durable satellite job."""
 
@@ -933,6 +1113,41 @@ class SatelliteWorker:
                     start_monotonic=start_monotonic,
                 )
 
+            if (
+                exc.retry_disposition
+                == RetryDisposition.RETRYABLE
+                and context.claimed_job.attempt_count
+                < context.claimed_job.max_attempts
+            ):
+                retry_delay_seconds = self._calculate_retry_delay_seconds(
+                    attempt_count=context.claimed_job.attempt_count
+                )
+                try:
+                    self._schedule_retry(
+                        context,
+                        retry_delay_seconds=retry_delay_seconds,
+                    )
+                except SatelliteJobLeaseLostError:
+                    return self._build_lease_lost_result(
+                        context,
+                        start_monotonic=start_monotonic,
+                    )
+
+                self._log_retry_scheduled(
+                    context,
+                    error_code=exc.error_code,
+                    retry_delay_seconds=retry_delay_seconds,
+                    start_monotonic=start_monotonic,
+                )
+
+                return WorkerRunResult(
+                    status=WorkerRunStatus.RETRY_SCHEDULED,
+                    job_id=context.job_id,
+                    organization_id=context.organization_id,
+                    job_type=context.job_type,
+                    error_code=exc.error_code,
+                )
+
             try:
                 self._persist_failure(
                     context,
@@ -945,20 +1160,27 @@ class SatelliteWorker:
                     start_monotonic=start_monotonic,
                 )
 
-            logger.warning(
-                "satellite_worker_job_failed",
-                extra={
-                    **_format_job_log_fields(context),
-                    "error_code": exc.error_code,
-                    "elapsed_ms": int(
-                        (
-                            self._monotonic()
-                            - start_monotonic
-                        )
-                        * 1000
-                    ),
-                },
-            )
+            if exc.retry_disposition == RetryDisposition.RETRYABLE:
+                self._log_retry_exhausted(
+                    context,
+                    error_code=exc.error_code,
+                    start_monotonic=start_monotonic,
+                )
+            else:
+                logger.warning(
+                    "satellite_worker_job_failed",
+                    extra={
+                        **_format_job_log_fields(context),
+                        "error_code": exc.error_code,
+                        "elapsed_ms": int(
+                            (
+                                self._monotonic()
+                                - start_monotonic
+                            )
+                            * 1000
+                        ),
+                    },
+                )
 
             return WorkerRunResult(
                 status=WorkerRunStatus.FAILED,
@@ -1041,7 +1263,7 @@ class SatelliteWorker:
         )
 
         return WorkerRunResult(
-        status=WorkerRunStatus.LEASE_LOST,
+            status=WorkerRunStatus.LEASE_LOST,
             job_id=context.job_id,
             organization_id=context.organization_id,
             job_type=context.job_type,
@@ -1108,6 +1330,8 @@ def build_satellite_worker() -> SatelliteWorker:
         stale_recovery_interval_seconds=(
             resolve_satellite_worker_stale_recovery_interval_seconds()
         ),
+        retry_base_seconds=resolve_satellite_worker_retry_base_seconds(),
+        retry_max_seconds=resolve_satellite_worker_retry_max_seconds(),
     )
 
 
@@ -1190,6 +1414,7 @@ def main(
             in {
                 WorkerRunStatus.IDLE,
                 WorkerRunStatus.SUCCEEDED,
+                WorkerRunStatus.RETRY_SCHEDULED,
             }
             else 1
         )

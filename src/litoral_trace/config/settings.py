@@ -215,6 +215,16 @@ class WorkersSettings(BaseModel):
         ge=5,
         le=300,
     )
+    satellite_worker_retry_base_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=300,
+    )
+    satellite_worker_retry_max_seconds: int = Field(
+        default=900,
+        ge=30,
+        le=86400,
+    )
 
 
 class Settings(BaseModel):
@@ -322,6 +332,14 @@ class Settings(BaseModel):
                 satellite_worker_stale_recovery_interval_seconds=_read_int_env(
                     "SATELLITE_WORKER_STALE_RECOVERY_INTERVAL_SECONDS",
                     default=30,
+                ),
+                satellite_worker_retry_base_seconds=_read_int_env(
+                    "SATELLITE_WORKER_RETRY_BASE_SECONDS",
+                    default=30,
+                ),
+                satellite_worker_retry_max_seconds=_read_int_env(
+                    "SATELLITE_WORKER_RETRY_MAX_SECONDS",
+                    default=900,
                 ),
             ),
         )

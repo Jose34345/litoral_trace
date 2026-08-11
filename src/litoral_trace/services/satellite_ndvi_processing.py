@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import Integer, bindparam, select, text, update
 from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import SatelliteJob, SatelliteNdviObservation
@@ -41,6 +41,11 @@ class NormalizedNdviExecutionResult:
 @dataclass(frozen=True)
 class PersistedNdviResult:
     observation_count: int
+
+
+@dataclass(frozen=True)
+class RetryScheduleResult:
+    next_attempt_at: datetime
 
 
 class SatelliteJobLeaseLostError(RuntimeError):
@@ -414,6 +419,63 @@ def mark_satellite_job_failed(
             "updated_at": now,
         },
     )
+
+
+def schedule_satellite_job_retry(
+    db_session: Session,
+    *,
+    organization_id: int,
+    job_id: int,
+    worker_id: str,
+    lease_token: str | UUID,
+    retry_delay_seconds: int,
+) -> RetryScheduleResult:
+    normalized_retry_delay_seconds = int(retry_delay_seconds)
+    if normalized_retry_delay_seconds <= 0:
+        raise ValueError("retry_delay_seconds debe ser positivo.")
+
+    bind = db_session.get_bind()
+    dialect_name = bind.dialect.name if bind is not None else ""
+
+    if dialect_name == "postgresql":
+        updated_at_value = text("statement_timestamp()")
+        next_attempt_at_value = text(
+            "statement_timestamp() + make_interval(secs => :retry_delay_seconds)"
+        ).bindparams(
+            bindparam(
+                "retry_delay_seconds",
+                value=normalized_retry_delay_seconds,
+                type_=Integer(),
+            )
+        )
+    else:
+        fallback_now = datetime.now(timezone.utc)
+        next_attempt_at_value = fallback_now + timedelta(
+            seconds=normalized_retry_delay_seconds
+        )
+        updated_at_value = fallback_now
+
+    job = _finalize_satellite_job_with_lease_fencing(
+        db_session,
+        organization_id=organization_id,
+        job_id=job_id,
+        worker_id=worker_id,
+        lease_token=lease_token,
+        operation="retry_scheduled",
+        values={
+            "status": "queued",
+            "locked_at": None,
+            "locked_by": None,
+            "heartbeat_at": None,
+            "lease_token": None,
+            "finished_at": None,
+            "next_attempt_at": next_attempt_at_value,
+            "error_code": None,
+            "error_message": None,
+            "updated_at": updated_at_value,
+        },
+    )
+    return RetryScheduleResult(next_attempt_at=job.next_attempt_at)
 
 
 def update_satellite_job_heartbeat(

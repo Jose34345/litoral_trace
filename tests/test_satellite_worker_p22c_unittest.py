@@ -35,6 +35,7 @@ from litoral_trace.services.satellite_ndvi_processing import (
 from litoral_trace.workers.satellite_worker import (
     EarthEngineGeeNdviAdapter,
     NdviExecutionRequest,
+    RetryDisposition,
     SatelliteWorker,
     SatelliteWorkerExecutionError,
     WorkerRunStatus,
@@ -391,6 +392,10 @@ def test_real_gee_adapter_rejects_simulated_fallback(
     assert (
         exc_info.value.error_code
         == "gee_execution_failed"
+    )
+    assert (
+        exc_info.value.retry_disposition
+        == RetryDisposition.NON_RETRYABLE
     )
 
     assert exc_info.value.safe_message == (
