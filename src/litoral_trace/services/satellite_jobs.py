@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from litoral_trace.db.models import Lote, SatelliteJob
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.tenant import get_tenant_scoped_db_session
+from litoral_trace.db.worker import get_worker_db_session
 from litoral_trace.services.gee import ALGORITHM_VERSION, generate_geometry_hash
 
 
@@ -28,6 +29,7 @@ class SatelliteJobStatus(StrEnum):
 
 
 WORKER_CLAIM_NEXT_FUNCTION = "public.worker_claim_next_satellite_job"
+WORKER_RECOVER_STALE_FUNCTION = "public.worker_recover_stale_satellite_jobs"
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,12 @@ class ClaimedSatelliteJob:
     geometry_hash: str | None
     algorithm_version: str | None
     polygon_wkt_snapshot: str | None
+
+
+@dataclass(frozen=True)
+class StaleRecoveryResult:
+    requeued_count: int
+    failed_count: int
 
 
 def _utc_now() -> datetime:
@@ -96,6 +104,18 @@ def _normalize_worker_id(worker_id: str) -> str:
     if len(normalized_worker_id) > 255:
         raise ValueError("worker_id no puede superar 255 caracteres.")
     return normalized_worker_id
+
+
+def _normalize_requested_batch_size(requested_batch_size: int | None) -> int:
+    if requested_batch_size is None:
+        return 10
+
+    normalized_batch_size = int(requested_batch_size)
+    if normalized_batch_size <= 0:
+        return 1
+    if normalized_batch_size > 100:
+        return 100
+    return normalized_batch_size
 
 
 def _parse_iso_date(value: str | date) -> date:
@@ -244,6 +264,57 @@ def claim_next_satellite_job(
         if owns_session:
             session.commit()
         return claimed_job
+    except Exception:
+        if owns_session:
+            session.rollback()
+        raise
+    finally:
+        if owns_session:
+            session.close()
+
+
+def recover_stale_satellite_jobs(
+    *,
+    requested_batch_size: int = 10,
+    db_session: Session | None = None,
+) -> StaleRecoveryResult:
+    normalized_batch_size = _normalize_requested_batch_size(
+        requested_batch_size
+    )
+    owns_session = db_session is None
+    session = db_session or get_worker_db_session()
+    if session is None:
+        raise RuntimeError("Servicio de base de datos no disponible.")
+
+    try:
+        if not _supports_postgresql_worker_claim_function(session):
+            raise RuntimeError(
+                "Atomic stale recovery requires PostgreSQL worker SQL support."
+            )
+
+        row = session.execute(
+            text(
+                """
+                SELECT requeued_count, failed_count
+                FROM public.worker_recover_stale_satellite_jobs(
+                    :requested_batch_size
+                )
+                """
+            ),
+            {
+                "requested_batch_size": normalized_batch_size,
+            },
+        ).mappings().one()
+
+        result = StaleRecoveryResult(
+            requeued_count=int(row["requeued_count"]),
+            failed_count=int(row["failed_count"]),
+        )
+
+        if owns_session:
+            session.commit()
+
+        return result
     except Exception:
         if owns_session:
             session.rollback()

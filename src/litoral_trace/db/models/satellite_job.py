@@ -203,6 +203,14 @@ class SatelliteJob(Base):
             "created_at",
         ),
         Index(
+            "ix_satellite_jobs_running_heartbeat_at",
+            "heartbeat_at",
+            "id",
+            postgresql_where=text(
+                "status = 'running' AND heartbeat_at IS NOT NULL"
+            ),
+        ),
+        Index(
             "uq_satellite_jobs_lease_token_non_null",
             "lease_token",
             unique=True,

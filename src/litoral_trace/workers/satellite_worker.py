@@ -28,6 +28,8 @@ from litoral_trace.services.satellite_jobs import (
     ClaimedSatelliteJob,
     SatelliteJobType,
     claim_next_satellite_job,
+    recover_stale_satellite_jobs,
+    StaleRecoveryResult,
 )
 from litoral_trace.services.satellite_ndvi_processing import (
     NormalizedNdviExecutionResult,
@@ -44,6 +46,8 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_POLL_SECONDS = 5
 _DEFAULT_HEARTBEAT_SECONDS = 15
+_DEFAULT_STALE_RECOVERY_INTERVAL_SECONDS = 30
+_DEFAULT_STALE_RECOVERY_BATCH_SIZE = 10
 
 _SENSITIVE_TEXT_PATTERNS = (
     re.compile(
@@ -273,6 +277,23 @@ def resolve_satellite_worker_heartbeat_seconds() -> int:
     return configured_heartbeat_seconds
 
 
+def resolve_satellite_worker_stale_recovery_interval_seconds() -> int:
+    configured_interval_seconds = int(
+        get_settings().workers.satellite_worker_stale_recovery_interval_seconds
+        or _DEFAULT_STALE_RECOVERY_INTERVAL_SECONDS
+    )
+
+    if configured_interval_seconds <= 0:
+        raise RuntimeError(
+            (
+                "SATELLITE_WORKER_STALE_RECOVERY_INTERVAL_SECONDS "
+                "debe ser positivo."
+            )
+        )
+
+    return configured_interval_seconds
+
+
 def _format_job_log_fields(
     context: WorkerExecutionContext,
 ) -> dict[str, Any]:
@@ -398,8 +419,8 @@ class SatelliteWorker:
     - commit observations and terminal job state atomically;
     - fail deterministically without implementing retries/recovery.
 
-    Lease fencing and periodic heartbeat belong to P2.2D.
-    Stale-job recovery remains future work.
+    Lease fencing, periodic heartbeat and stale-job recovery belong to P2.2D.
+    Retry/backoff policy remains future work.
     """
 
     def __init__(
@@ -408,6 +429,7 @@ class SatelliteWorker:
         worker_id: str,
         poll_seconds: int = _DEFAULT_POLL_SECONDS,
         heartbeat_seconds: int = _DEFAULT_HEARTBEAT_SECONDS,
+        stale_recovery_interval_seconds: int | None = None,
         claim_session_factory: Callable[[], Session] = (
             get_worker_db_session
         ),
@@ -418,8 +440,13 @@ class SatelliteWorker:
             ...,
             ClaimedSatelliteJob | None,
         ] = claim_next_satellite_job,
+        recover_stale_jobs_func: Callable[
+            ...,
+            StaleRecoveryResult,
+        ] = recover_stale_satellite_jobs,
         gee_ndvi_adapter: GeeNdviAdapter | None = None,
         sleep_func: Callable[[float], None] = time.sleep,
+        monotonic_func: Callable[[], float] = time.monotonic,
     ):
         self.worker_id = _normalize_worker_id(worker_id)
         self.poll_seconds = int(poll_seconds)
@@ -435,15 +462,32 @@ class SatelliteWorker:
                 "heartbeat_seconds debe ser positivo."
             )
 
+        self.stale_recovery_interval_seconds = (
+            None
+            if stale_recovery_interval_seconds is None
+            else int(stale_recovery_interval_seconds)
+        )
+        if (
+            self.stale_recovery_interval_seconds is not None
+            and self.stale_recovery_interval_seconds <= 0
+        ):
+            raise RuntimeError(
+                "stale_recovery_interval_seconds debe ser positivo."
+            )
+
+        self.stale_recovery_batch_size = _DEFAULT_STALE_RECOVERY_BATCH_SIZE
         self._claim_session_factory = claim_session_factory
         self._tenant_session_factory = tenant_session_factory
         self._claim_job_func = claim_job_func
+        self._recover_stale_jobs_func = recover_stale_jobs_func
         self._gee_ndvi_adapter = (
             gee_ndvi_adapter
             or EarthEngineGeeNdviAdapter()
         )
         self._sleep = sleep_func
+        self._monotonic = monotonic_func
         self._stop_requested = False
+        self._last_stale_recovery_attempt_monotonic: float | None = None
 
         # Explicit code-defined dispatch only.
         # No dynamic imports, eval or arbitrary handler names from DB data.
@@ -507,6 +551,79 @@ class SatelliteWorker:
 
         finally:
             claim_session.close()
+
+    def _should_attempt_stale_recovery(
+        self,
+        current_monotonic: float,
+    ) -> bool:
+        if self.stale_recovery_interval_seconds is None:
+            return False
+
+        if self._last_stale_recovery_attempt_monotonic is None:
+            return True
+
+        return (
+            current_monotonic
+            - self._last_stale_recovery_attempt_monotonic
+        ) >= self.stale_recovery_interval_seconds
+
+    def _maybe_recover_stale_jobs(self) -> None:
+        current_monotonic = self._monotonic()
+        if not self._should_attempt_stale_recovery(current_monotonic):
+            return
+
+        self._last_stale_recovery_attempt_monotonic = current_monotonic
+        recovery_session = self._claim_session_factory()
+        if recovery_session is None:
+            logger.warning(
+                "satellite_worker_stale_recovery_error",
+                extra={
+                    "worker_id": self.worker_id,
+                    "error_type": "RuntimeError",
+                    "error_message": sanitize_worker_error_message(
+                        "Servicio de recovery satelital no disponible."
+                    ),
+                },
+            )
+            return
+
+        start_monotonic = self._monotonic()
+
+        try:
+            result = self._recover_stale_jobs_func(
+                requested_batch_size=self.stale_recovery_batch_size,
+                db_session=recovery_session,
+            )
+            recovery_session.commit()
+            logger.info(
+                "satellite_worker_stale_recovery",
+                extra={
+                    "worker_id": self.worker_id,
+                    "requeued_count": result.requeued_count,
+                    "failed_count": result.failed_count,
+                    "elapsed_ms": int(
+                        (
+                            self._monotonic()
+                            - start_monotonic
+                        )
+                        * 1000
+                    ),
+                },
+            )
+        except Exception as exc:
+            recovery_session.rollback()
+            logger.warning(
+                "satellite_worker_stale_recovery_error",
+                extra={
+                    "worker_id": self.worker_id,
+                    "error_type": type(exc).__name__,
+                    "error_message": sanitize_worker_error_message(
+                        str(exc)
+                    ),
+                },
+            )
+        finally:
+            recovery_session.close()
 
     def _create_heartbeat_controller(
         self,
@@ -736,6 +853,7 @@ class SatelliteWorker:
                 status=WorkerRunStatus.STOPPED
             )
 
+        self._maybe_recover_stale_jobs()
         claimed_job = self._claim_next_job()
 
         if claimed_job is None:
@@ -745,7 +863,7 @@ class SatelliteWorker:
 
         context = self._build_context(claimed_job)
         heartbeat_controller = self._create_heartbeat_controller(context)
-        start_monotonic = time.monotonic()
+        start_monotonic = self._monotonic()
 
         try:
             heartbeat_controller.start()
@@ -782,7 +900,7 @@ class SatelliteWorker:
                     **_format_job_log_fields(context),
                     "elapsed_ms": int(
                         (
-                            time.monotonic()
+                            self._monotonic()
                             - start_monotonic
                         )
                         * 1000
@@ -834,7 +952,7 @@ class SatelliteWorker:
                     "error_code": exc.error_code,
                     "elapsed_ms": int(
                         (
-                            time.monotonic()
+                            self._monotonic()
                             - start_monotonic
                         )
                         * 1000
@@ -885,7 +1003,7 @@ class SatelliteWorker:
                         type(exc).__name__,
                     "elapsed_ms": int(
                         (
-                            time.monotonic()
+                            self._monotonic()
                             - start_monotonic
                         )
                         * 1000
@@ -914,7 +1032,7 @@ class SatelliteWorker:
                 "error_code": "lease_lost",
                 "elapsed_ms": int(
                     (
-                        time.monotonic()
+                        self._monotonic()
                         - start_monotonic
                     )
                     * 1000
@@ -923,7 +1041,7 @@ class SatelliteWorker:
         )
 
         return WorkerRunResult(
-            status=WorkerRunStatus.LEASE_LOST,
+        status=WorkerRunStatus.LEASE_LOST,
             job_id=context.job_id,
             organization_id=context.organization_id,
             job_type=context.job_type,
@@ -987,6 +1105,9 @@ def build_satellite_worker() -> SatelliteWorker:
         worker_id=resolve_satellite_worker_id(),
         poll_seconds=resolve_satellite_worker_poll_seconds(),
         heartbeat_seconds=resolve_satellite_worker_heartbeat_seconds(),
+        stale_recovery_interval_seconds=(
+            resolve_satellite_worker_stale_recovery_interval_seconds()
+        ),
     )
 
 

@@ -210,6 +210,11 @@ class WorkersSettings(BaseModel):
     satellite_worker_id: str | None = None
     satellite_worker_poll_seconds: int = Field(default=5, ge=1, le=300)
     satellite_worker_heartbeat_seconds: int = Field(default=15, ge=1, le=300)
+    satellite_worker_stale_recovery_interval_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=300,
+    )
 
 
 class Settings(BaseModel):
@@ -313,6 +318,10 @@ class Settings(BaseModel):
                 satellite_worker_heartbeat_seconds=_read_int_env(
                     "SATELLITE_WORKER_HEARTBEAT_SECONDS",
                     default=15,
+                ),
+                satellite_worker_stale_recovery_interval_seconds=_read_int_env(
+                    "SATELLITE_WORKER_STALE_RECOVERY_INTERVAL_SECONDS",
+                    default=30,
                 ),
             ),
         )
