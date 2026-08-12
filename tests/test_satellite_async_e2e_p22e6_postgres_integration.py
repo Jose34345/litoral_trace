@@ -895,4 +895,3 @@ def test_e2e_retryable_failure_requeues_then_succeeds_on_actual_reclaim():
     assert final_result["status_code"] == 200
     _assert_public_result(final_result["body"])
     assert final_result["body"]["total_observations"] == 2
-
