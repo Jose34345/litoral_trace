@@ -4,7 +4,7 @@ from __future__ import annotations
 import time
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
@@ -45,7 +45,9 @@ from litoral_trace.services.ndvi import (
 from litoral_trace.services.satellite_jobs import (
     SatelliteJobIdempotencyConflictError,
     SatelliteJobLoteNotFoundError,
+    build_satellite_job_status_view,
     enqueue_satellite_ndvi_job_in_session,
+    get_satellite_job,
 )
 
 router = APIRouter(prefix="/api/v1/satellite", tags=["Telemetria Satelital GEE"])
@@ -107,6 +109,21 @@ class SatelliteJobSubmitResponse(BaseModel):
     next_attempt_at: datetime
 
 
+class SatelliteJobStatusResponse(BaseModel):
+    job_id: int
+    lote_id: int
+    job_type: str
+    status: str
+    attempt_count: int
+    max_attempts: int
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    next_attempt_at: datetime
+    error_code: str | None
+
+
 def _build_satellite_job_submit_response(
     *,
     job_id: int,
@@ -121,6 +138,26 @@ def _build_satellite_job_submit_response(
         status=status_value,
         created_at=created_at,
         next_attempt_at=next_attempt_at,
+    )
+
+
+def _build_satellite_job_status_response(
+    job,
+) -> SatelliteJobStatusResponse:
+    view = build_satellite_job_status_view(job)
+    return SatelliteJobStatusResponse(
+        job_id=view.job_id,
+        lote_id=view.lote_id,
+        job_type=view.job_type,
+        status=view.status,
+        attempt_count=view.attempt_count,
+        max_attempts=view.max_attempts,
+        created_at=view.created_at,
+        updated_at=view.updated_at,
+        started_at=view.started_at,
+        finished_at=view.finished_at,
+        next_attempt_at=view.next_attempt_at,
+        error_code=view.error_code,
     )
 
 
@@ -319,6 +356,49 @@ async def submit_satellite_job_endpoint(
         )
     finally:
         session.close()
+
+
+@router.get(
+    "/jobs/{job_id}",
+    response_model=SatelliteJobStatusResponse,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "description": "Authentication required or invalid session."
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Authenticated user lacks satellite run capability."
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Satellite job no encontrado."
+        },
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Invalid satellite job identifier."
+        },
+    },
+)
+async def get_satellite_job_status_endpoint(
+    job_id: int = Path(gt=0),
+    user: UserTenantContext = Depends(require_permission(Permission.SATELLITE_RUN)),
+) -> SatelliteJobStatusResponse:
+    """Return the authenticated tenant's public-safe durable job status."""
+    try:
+        job = get_satellite_job(
+            organization_id=user.organization_id,
+            job_id=job_id,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio de base de datos no disponible.",
+        ) from exc
+
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Satellite job no encontrado.",
+        )
+
+    return _build_satellite_job_status_response(job)
 
 
 def _get_tenant_lote_geometry(

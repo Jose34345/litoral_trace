@@ -32,6 +32,24 @@ class SatelliteJobStatus(StrEnum):
     FAILED = "failed"
 
 
+@dataclass(frozen=True)
+class SatelliteJobStatusView:
+    """Explicit public-safe projection for the satellite job status API."""
+
+    job_id: int
+    lote_id: int
+    job_type: str
+    status: str
+    attempt_count: int
+    max_attempts: int
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    next_attempt_at: datetime
+    error_code: str | None
+
+
 WORKER_CLAIM_NEXT_FUNCTION = "public.worker_claim_next_satellite_job"
 WORKER_RECOVER_STALE_FUNCTION = "public.worker_recover_stale_satellite_jobs"
 
@@ -206,8 +224,50 @@ def _serialize_date(value: date | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def _as_utc_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def build_satellite_job_status_view(
+    job: SatelliteJob,
+) -> SatelliteJobStatusView:
+    """Map a tenant-scoped job to the fixed, public status contract."""
+    if job.lote_id is None:
+        raise ValueError("Satellite job sin lote asociado.")
+
+    created_at = _as_utc_datetime(job.created_at)
+    updated_at = _as_utc_datetime(job.updated_at)
+    next_attempt_at = _as_utc_datetime(job.next_attempt_at)
+    if created_at is None or updated_at is None or next_attempt_at is None:
+        raise ValueError("Satellite job sin timestamps requeridos.")
+
+    return SatelliteJobStatusView(
+        job_id=int(job.id),
+        lote_id=int(job.lote_id),
+        job_type=str(job.job_type),
+        status=str(job.status),
+        attempt_count=int(job.attempt_count),
+        max_attempts=int(job.max_attempts),
+        created_at=created_at,
+        updated_at=updated_at,
+        started_at=_as_utc_datetime(job.started_at),
+        finished_at=_as_utc_datetime(job.finished_at),
+        next_attempt_at=next_attempt_at,
+        error_code=(
+            str(job.error_code)
+            if job.status == SatelliteJobStatus.FAILED.value
+            and job.error_code is not None
+            else None
+        ),
+    )
+
+
 def serialize_satellite_job(job: SatelliteJob) -> dict[str, Any]:
-    """Render a tenant-safe job representation without internal geometry payload."""
+    """Render an internal diagnostic representation, never a public API response."""
     return {
         "id": job.id,
         "organization_id": job.organization_id,
