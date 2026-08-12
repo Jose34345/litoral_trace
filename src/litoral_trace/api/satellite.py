@@ -6,7 +6,14 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from sqlalchemy import select
 
 from litoral_trace.api.auth import UserTenantContext
@@ -49,6 +56,7 @@ from litoral_trace.services.satellite_jobs import (
     enqueue_satellite_ndvi_job_in_session,
     get_satellite_job,
 )
+from litoral_trace.services.satellite_job_results import get_satellite_job_result
 
 router = APIRouter(prefix="/api/v1/satellite", tags=["Telemetria Satelital GEE"])
 
@@ -124,6 +132,56 @@ class SatelliteJobStatusResponse(BaseModel):
     error_code: str | None
 
 
+class SatelliteJobResultObservationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observation_date: date
+    ndvi_mean: float
+    ndvi_min: float | None
+    ndvi_max: float | None
+    ndvi_std: float | None
+    scene_cloud_percentage: float
+    aoi_cloud_percentage: float | None
+    valid_pixel_count: int | None
+    valid_pixel_percentage: float | None
+    satellite: str
+    collection: str
+    processing_date: datetime | None
+
+
+class SatelliteJobResultResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    job_id: int
+    lote_id: int
+    geometry_hash: str
+    algorithm_version: str
+    total_observations: int = Field(ge=0)
+    observations: list[SatelliteJobResultObservationResponse]
+    created_at: datetime
+
+    @model_validator(mode="after")
+    def _validate_observation_count(self) -> "SatelliteJobResultResponse":
+        if self.total_observations != len(self.observations):
+            raise ValueError("total_observations no coincide con observations.")
+        return self
+
+
+class SatelliteJobResultPendingResponse(BaseModel):
+    job_id: int
+    status: str
+    detail: str
+    next_attempt_at: datetime
+
+
+class SatelliteJobResultFailedResponse(BaseModel):
+    job_id: int
+    status: str
+    error_code: str
+    detail: str
+
+
 def _build_satellite_job_submit_response(
     *,
     job_id: int,
@@ -159,6 +217,28 @@ def _build_satellite_job_status_response(
         next_attempt_at=view.next_attempt_at,
         error_code=view.error_code,
     )
+
+
+def _build_satellite_job_result_response(
+    *,
+    job,
+    result_row,
+) -> SatelliteJobResultResponse:
+    payload = SatelliteJobResultResponse.model_validate(
+        {
+            **result_row.result_payload,
+            "created_at": result_row.created_at,
+        }
+    )
+    if (
+        payload.job_id != int(job.id)
+        or payload.lote_id != int(job.lote_id)
+        or payload.schema_version != result_row.result_schema_version
+        or payload.geometry_hash != result_row.geometry_hash
+        or payload.algorithm_version != result_row.algorithm_version
+    ):
+        raise ValueError("Snapshot satelital inconsistente.")
+    return payload
 
 
 def _record_satellite_job_submit_failure_audit(
@@ -399,6 +479,105 @@ async def get_satellite_job_status_endpoint(
         )
 
     return _build_satellite_job_status_response(job)
+
+
+@router.get(
+    "/jobs/{job_id}/result",
+    response_model=SatelliteJobResultResponse,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "description": "Authentication required or invalid session."
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Authenticated user lacks satellite run capability."
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Satellite job no encontrado."
+        },
+        status.HTTP_409_CONFLICT: {
+            "description": (
+                "Satellite job result is not yet available because the job is "
+                "queued or running, or the job failed with a safe error code."
+            ),
+            "model": (
+                SatelliteJobResultPendingResponse
+                | SatelliteJobResultFailedResponse
+            ),
+        },
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Invalid satellite job identifier."
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "Persisted satellite result is missing or inconsistent."
+        },
+    },
+)
+async def get_satellite_job_result_endpoint(
+    job_id: int = Path(gt=0),
+    user: UserTenantContext = Depends(require_permission(Permission.SATELLITE_RUN)),
+):
+    """Return a validated immutable result for the authenticated tenant."""
+    try:
+        job = get_satellite_job(
+            organization_id=user.organization_id,
+            job_id=job_id,
+        )
+        if job is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Satellite job no encontrado.",
+            )
+
+        if job.status in {"queued", "running"}:
+            pending = SatelliteJobResultPendingResponse(
+                job_id=int(job.id),
+                status=str(job.status),
+                detail="El resultado del satellite job aun no esta disponible.",
+                next_attempt_at=job.next_attempt_at,
+            )
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content=pending.model_dump(mode="json"),
+            )
+
+        if job.status == "failed":
+            failed = SatelliteJobResultFailedResponse(
+                job_id=int(job.id),
+                status="failed",
+                error_code=(job.error_code or "satellite_job_failed"),
+                detail="El satellite job finalizo sin un resultado disponible.",
+            )
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content=failed.model_dump(mode="json"),
+            )
+
+        if job.status != "succeeded":
+            raise ValueError("Estado persistido de satellite job no soportado.")
+
+        result_row = get_satellite_job_result(
+            organization_id=user.organization_id,
+            job_id=job_id,
+        )
+        if result_row is None:
+            raise ValueError("Satellite job succeeded sin snapshot persistido.")
+
+        return _build_satellite_job_result_response(
+            job=job,
+            result_row=result_row,
+        )
+    except HTTPException:
+        raise
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio de base de datos no disponible.",
+        ) from exc
+    except (ValidationError, ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="El resultado persistido del satellite job no esta disponible.",
+        ) from exc
 
 
 def _get_tenant_lote_geometry(
