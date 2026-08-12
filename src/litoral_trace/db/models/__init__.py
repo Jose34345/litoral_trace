@@ -6,6 +6,7 @@ from litoral_trace.db.models.audit_log import AuditLog
 from litoral_trace.db.models.api_key import ApiKey
 from litoral_trace.db.models.license import License
 from litoral_trace.db.models.satellite_job import SatelliteJob
+from litoral_trace.db.models.satellite_job_result import SatelliteJobResult
 from litoral_trace.db.models.satellite_ndvi import SatelliteNdviObservation
 from litoral_trace.db.models.user_session import UserSession
 
@@ -17,6 +18,7 @@ __all__ = [
     "ApiKey",
     "License",
     "SatelliteJob",
+    "SatelliteJobResult",
     "SatelliteNdviObservation",
     "UserSession",
 ]

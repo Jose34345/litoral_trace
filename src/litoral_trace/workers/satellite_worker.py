@@ -33,6 +33,10 @@ from litoral_trace.services.satellite_jobs import (
     recover_stale_satellite_jobs,
     StaleRecoveryResult,
 )
+from litoral_trace.services.satellite_job_results import (
+    build_satellite_job_result_snapshot,
+    persist_satellite_job_result,
+)
 from litoral_trace.services.satellite_ndvi_processing import (
     NormalizedNdviExecutionResult,
     RetryScheduleResult,
@@ -898,7 +902,7 @@ class SatelliteWorker:
         context: WorkerExecutionContext,
         result: NormalizedNdviExecutionResult,
     ) -> None:
-        """Persist observations and SUCCEEDED in one tenant transaction."""
+        """Persist canonical data, immutable snapshot and SUCCEEDED atomically."""
 
         tenant_session = self._tenant_session_factory()
 
@@ -916,6 +920,16 @@ class SatelliteWorker:
                 ),
                 satellite_job_id=context.job_id,
                 result=result,
+            )
+
+            persist_satellite_job_result(
+                tenant_session,
+                snapshot=build_satellite_job_result_snapshot(
+                    satellite_job_id=context.job_id,
+                    organization_id=context.organization_id,
+                    lote_id=int(context.claimed_job.lote_id),
+                    result=result,
+                ),
             )
 
             mark_satellite_job_succeeded(

@@ -12,6 +12,7 @@ from litoral_trace.db.models import (
     Lote,
     Organization,
     SatelliteJob,
+    SatelliteJobResult,
     SatelliteNdviObservation,
 )
 from litoral_trace.db.worker import (
@@ -135,6 +136,14 @@ def _cleanup_worker_entities() -> None:
     ).scalars().all()
 
     if worker_org_ids:
+        session.execute(
+            delete(SatelliteJobResult).where(
+                SatelliteJobResult.organization_id.in_(
+                    worker_org_ids
+                )
+            )
+        )
+
         session.execute(
             delete(SatelliteNdviObservation).where(
                 SatelliteNdviObservation.organization_id.in_(
@@ -307,6 +316,7 @@ def _normalized_result_from_claimed_job(
                 algorithm_version=str(
                     claimed_job.algorithm_version
                 ),
+                aoi_cloud_percentage=1.0,
                 processing_date=datetime.now(
                     timezone.utc
                 ),
@@ -660,6 +670,12 @@ def test_successful_adapter_output_persists_observations_linked_to_satellite_job
             == claimed_job.id
         )
     ).scalars().all()
+    result_snapshot = session.execute(
+        select(SatelliteJobResult).where(
+            SatelliteJobResult.satellite_job_id
+            == claimed_job.id
+        )
+    ).scalar_one()
 
     job = session.execute(
         select(SatelliteJob).where(
@@ -680,6 +696,17 @@ def test_successful_adapter_output_persists_observations_linked_to_satellite_job
     assert (
         observations[0].lote_id
         == claimed_job.lote_id
+    )
+
+    assert result_snapshot.organization_id == claimed_job.organization_id
+    assert result_snapshot.lote_id == claimed_job.lote_id
+    assert (
+        result_snapshot.result_schema_version
+        == "ndvi_timeseries.v1"
+    )
+    assert (
+        result_snapshot.result_payload["observations"][0]["aoi_cloud_percentage"]
+        == 1.0
     )
 
     assert job.status == "succeeded"
@@ -811,12 +838,25 @@ def test_successful_persistence_uses_one_tenant_transaction_for_result_and_statu
             ("succeed", session)
         )
 
+    def _record_snapshot(session, **kwargs):
+        calls.append(
+            ("snapshot", session)
+        )
+
     monkeypatch.setattr(
         (
             "litoral_trace.workers.satellite_worker."
             "persist_ndvi_execution_result"
         ),
         _record_persist,
+    )
+
+    monkeypatch.setattr(
+        (
+            "litoral_trace.workers.satellite_worker."
+            "persist_satellite_job_result"
+        ),
+        _record_snapshot,
     )
 
     monkeypatch.setattr(
@@ -844,6 +884,10 @@ def test_successful_persistence_uses_one_tenant_transaction_for_result_and_statu
     assert calls == [
         (
             "persist",
+            recording_tenant_session,
+        ),
+        (
+            "snapshot",
             recording_tenant_session,
         ),
         (

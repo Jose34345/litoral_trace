@@ -554,7 +554,6 @@ class _PausableObservingSatelliteWorker(_ObservingSatelliteWorker):
         self.last_heartbeat_controller = controller
         return controller
 
-
 @contextmanager
 def _lease_fixture():
     runtime_engine = _runtime_engine()
@@ -611,6 +610,13 @@ def _lease_fixture():
         yield fixture
     finally:
         with owner_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM satellite_job_results "
+                    "WHERE organization_id = :organization_id"
+                ),
+                {"organization_id": org_id},
+            )
             conn.execute(
                 text(
                     "DELETE FROM satellite_ndvi_observations "

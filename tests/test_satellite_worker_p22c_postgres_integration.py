@@ -375,6 +375,13 @@ def _worker_fixture():
         with owner_engine.begin() as conn:
             conn.execute(
                 text(
+                    "DELETE FROM satellite_job_results "
+                    "WHERE organization_id IN (:org_a_id, :org_b_id)"
+                ),
+                {"org_a_id": org_a_id, "org_b_id": org_b_id},
+            )
+            conn.execute(
+                text(
                     "DELETE FROM satellite_ndvi_observations "
                     "WHERE organization_id IN (:org_a_id, :org_b_id)"
                 ),

@@ -28,6 +28,7 @@ class NdviObservationRecord:
     collection: str
     geometry_hash: str
     algorithm_version: str
+    aoi_cloud_percentage: float | None = None
     processing_date: datetime | None = None
 
 
@@ -239,6 +240,11 @@ def normalize_ndvi_execution_result(
                 geometry_hash=str(raw_observation["geometry_hash"]),
                 algorithm_version=str(
                     raw_observation.get("algorithm_version", ALGORITHM_VERSION)
+                ),
+                aoi_cloud_percentage=(
+                    float(raw_observation["aoi_cloud_percentage"])
+                    if raw_observation.get("aoi_cloud_percentage") is not None
+                    else None
                 ),
                 processing_date=_normalize_processing_date(
                     raw_observation.get("processing_date")

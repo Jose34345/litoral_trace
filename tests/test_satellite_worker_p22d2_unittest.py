@@ -11,7 +11,12 @@ from sqlalchemy import delete, select
 
 import litoral_trace.workers.satellite_worker as satellite_worker_module
 from litoral_trace.db.engine import get_db_session
-from litoral_trace.db.models import Lote, Organization, SatelliteJob
+from litoral_trace.db.models import (
+    Lote,
+    Organization,
+    SatelliteJob,
+    SatelliteJobResult,
+)
 from litoral_trace.services.gee import ALGORITHM_VERSION, generate_geometry_hash
 from litoral_trace.services.satellite_jobs import ClaimedSatelliteJob, SatelliteJobType
 from litoral_trace.services.satellite_ndvi_processing import (
@@ -190,6 +195,11 @@ def _cleanup_p22d2_entities() -> None:
     ).scalars().all()
 
     if d2_org_ids:
+        session.execute(
+            delete(SatelliteJobResult).where(
+                SatelliteJobResult.organization_id.in_(d2_org_ids)
+            )
+        )
         session.execute(
             delete(SatelliteJob).where(
                 SatelliteJob.organization_id.in_(d2_org_ids)

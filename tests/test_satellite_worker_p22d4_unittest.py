@@ -19,6 +19,7 @@ from litoral_trace.db.models import (
     Lote,
     Organization,
     SatelliteJob,
+    SatelliteJobResult,
     SatelliteNdviObservation,
 )
 from litoral_trace.services.gee import ALGORITHM_VERSION, generate_geometry_hash
@@ -142,6 +143,11 @@ def _cleanup_p22d4_entities() -> None:
     ).scalars().all()
 
     if org_ids:
+        session.execute(
+            delete(SatelliteJobResult).where(
+                SatelliteJobResult.organization_id.in_(org_ids)
+            )
+        )
         session.execute(
             delete(SatelliteNdviObservation).where(
                 SatelliteNdviObservation.organization_id.in_(org_ids)

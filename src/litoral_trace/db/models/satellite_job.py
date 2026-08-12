@@ -27,6 +27,7 @@ from litoral_trace.db.base import Base
 if TYPE_CHECKING:
     from litoral_trace.db.models.lote import Lote
     from litoral_trace.db.models.organization import Organization
+    from litoral_trace.db.models.satellite_job_result import SatelliteJobResult
     from litoral_trace.db.models.satellite_ndvi import SatelliteNdviObservation
 
 
@@ -108,6 +109,11 @@ class SatelliteJob(Base):
         "SatelliteNdviObservation",
         back_populates="satellite_job",
         overlaps="organization,satellite_job",
+    )
+    result_snapshot: Mapped[SatelliteJobResult | None] = relationship(
+        "SatelliteJobResult",
+        back_populates="satellite_job",
+        uselist=False,
     )
 
     __table_args__ = (

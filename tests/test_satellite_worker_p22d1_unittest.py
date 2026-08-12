@@ -14,6 +14,7 @@ from litoral_trace.db.models import (
     Lote,
     Organization,
     SatelliteJob,
+    SatelliteJobResult,
     SatelliteNdviObservation,
 )
 from litoral_trace.services.gee import ALGORITHM_VERSION, generate_geometry_hash
@@ -100,6 +101,11 @@ def _cleanup_p22d1_entities() -> None:
     ).scalars().all()
 
     if d1_org_ids:
+        session.execute(
+            delete(SatelliteJobResult).where(
+                SatelliteJobResult.organization_id.in_(d1_org_ids)
+            )
+        )
         session.execute(
             delete(SatelliteNdviObservation).where(
                 SatelliteNdviObservation.organization_id.in_(d1_org_ids)
@@ -272,6 +278,17 @@ def _load_observations(job_id: int) -> list[SatelliteNdviObservation]:
     return rows
 
 
+def _load_result_snapshot(job_id: int) -> SatelliteJobResult | None:
+    session = get_db_session()
+    row = session.execute(
+        select(SatelliteJobResult).where(
+            SatelliteJobResult.satellite_job_id == job_id
+        )
+    ).scalar_one_or_none()
+    session.close()
+    return row
+
+
 def _normalized_result_from_fixture(
     fixture: _JobFixture,
 ) -> NormalizedNdviExecutionResult:
@@ -292,6 +309,7 @@ def _normalized_result_from_fixture(
                 collection="COPERNICUS/S2_SR_HARMONIZED",
                 geometry_hash=fixture.claimed_job.geometry_hash or "",
                 algorithm_version=fixture.claimed_job.algorithm_version or ALGORITHM_VERSION,
+                aoi_cloud_percentage=1.0,
                 processing_date=datetime.now(timezone.utc),
             ),
         ),
@@ -498,11 +516,13 @@ def test_worker_lease_loss_during_success_rolls_back_observations_and_skips_fail
 
     job = _load_job(fixture.job_id)
     observations = _load_observations(fixture.job_id)
+    result_snapshot = _load_result_snapshot(fixture.job_id)
 
     assert result.status is WorkerRunStatus.LEASE_LOST
     assert result.error_code == "lease_lost"
     assert worker.persist_failure_calls == 0
     assert observations == []
+    assert result_snapshot is None
     assert job.status == "running"
 
 
