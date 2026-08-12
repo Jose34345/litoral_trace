@@ -2,22 +2,26 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.config import get_settings
-from litoral_trace.db.tenant import get_tenant_scoped_db_session
+from litoral_trace.db.tenant import (
+    get_tenant_scoped_db_session,
+    set_tenant_db_context,
+)
 from litoral_trace.services.audit import (
     AuditAction,
     AuditOutcome,
     build_audit_actor_from_user,
     build_request_audit_context,
+    record_audit_event,
     record_audit_event_now,
 )
 from litoral_trace.services.cache import (
@@ -37,6 +41,11 @@ from litoral_trace.services.satellite_ndvi_processing import (
 from litoral_trace.services.ndvi import (
     calcular_ndvi_simulado,
     evaluar_indicador_variacion_biomasa,
+)
+from litoral_trace.services.satellite_jobs import (
+    SatelliteJobIdempotencyConflictError,
+    SatelliteJobLoteNotFoundError,
+    enqueue_satellite_ndvi_job_in_session,
 )
 
 router = APIRouter(prefix="/api/v1/satellite", tags=["Telemetria Satelital GEE"])
@@ -58,6 +67,258 @@ class SatelliteQueryByLoteRequest(BaseModel):
     )
     max_cloud_pct: float = Field(default=20.0, ge=0.0, le=100.0)
     force_refresh: bool = Field(default=False)
+
+
+class SatelliteJobSubmitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lote_id: int = Field(gt=0)
+    start_date: date
+    end_date: date
+    max_cloud_pct: float = Field(default=20.0, ge=0.0, le=100.0)
+    idempotency_key: str | None = Field(default=None, max_length=255)
+
+    @field_validator("idempotency_key", mode="before")
+    @classmethod
+    def _normalize_idempotency_key(cls, value: object) -> object:
+        if value is None:
+            return None
+        normalized_value = str(value).strip()
+        if not normalized_value:
+            raise ValueError(
+                "idempotency_key no puede ser vacio si se proporciona."
+            )
+        return normalized_value
+
+    @model_validator(mode="after")
+    def _validate_date_range(self) -> "SatelliteJobSubmitRequest":
+        if self.start_date > self.end_date:
+            raise ValueError(
+                "start_date no puede ser posterior a end_date."
+            )
+        return self
+
+
+class SatelliteJobSubmitResponse(BaseModel):
+    job_id: int
+    job_type: str
+    status: str
+    created_at: datetime
+    next_attempt_at: datetime
+
+
+def _build_satellite_job_submit_response(
+    *,
+    job_id: int,
+    job_type: str,
+    status_value: str,
+    created_at: datetime,
+    next_attempt_at: datetime,
+) -> SatelliteJobSubmitResponse:
+    return SatelliteJobSubmitResponse(
+        job_id=job_id,
+        job_type=job_type,
+        status=status_value,
+        created_at=created_at,
+        next_attempt_at=next_attempt_at,
+    )
+
+
+def _record_satellite_job_submit_failure_audit(
+    *,
+    user: UserTenantContext,
+    request_context,
+    lote_id: int,
+    start_date: date,
+    end_date: date,
+    max_cloud_pct: float,
+    outcome: AuditOutcome,
+    detail: str,
+    entity_id: int | None = None,
+) -> None:
+    record_audit_event_now(
+        actor=build_audit_actor_from_user(user),
+        action=AuditAction.SATELLITE_JOB_SUBMIT,
+        entity_type="satellite_job",
+        entity_id=entity_id,
+        outcome=outcome,
+        request_context=request_context,
+        metadata={
+            "lote_id": lote_id,
+            "job_type": "ndvi_timeseries",
+            "created": False,
+            "replayed": False,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "max_cloud_pct": max_cloud_pct,
+        },
+        detail=detail,
+        best_effort=True,
+    )
+
+
+@router.post(
+    "/jobs",
+    response_model=SatelliteJobSubmitResponse,
+    responses={
+        status.HTTP_200_OK: {
+            "description": "Idempotent replay of an existing durable job.",
+            "headers": {
+                "Location": {
+                    "description": "Canonical resource path for the durable satellite job.",
+                    "schema": {"type": "string"},
+                }
+            },
+        },
+        status.HTTP_202_ACCEPTED: {
+            "description": "New durable satellite job accepted.",
+            "model": SatelliteJobSubmitResponse,
+            "headers": {
+                "Location": {
+                    "description": "Canonical resource path for the durable satellite job.",
+                    "schema": {"type": "string"},
+                }
+            },
+        },
+        status.HTTP_401_UNAUTHORIZED: {
+            "description": "Authentication required or invalid session."
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Authenticated user lacks satellite run capability."
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Lote no encontrado."
+        },
+        status.HTTP_409_CONFLICT: {
+            "description": "The idempotency key was already used for a different effective payload."
+        },
+    },
+)
+async def submit_satellite_job_endpoint(
+    payload: SatelliteJobSubmitRequest,
+    request: Request = None,
+    user: UserTenantContext = Depends(require_permission(Permission.SATELLITE_RUN)),
+) -> JSONResponse:
+    request_context = build_request_audit_context(request)
+    session = get_tenant_scoped_db_session(user.organization_id)
+
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio de base de datos no disponible.",
+        )
+
+    try:
+        job, created = enqueue_satellite_ndvi_job_in_session(
+            session,
+            organization_id=user.organization_id,
+            lote_id=payload.lote_id,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            max_cloud_pct=payload.max_cloud_pct,
+            idempotency_key=payload.idempotency_key,
+        )
+        record_audit_event(
+            session,
+            actor=build_audit_actor_from_user(user),
+            action=AuditAction.SATELLITE_JOB_SUBMIT,
+            entity_type="satellite_job",
+            entity_id=job.id,
+            outcome=AuditOutcome.SUCCESS,
+            request_context=request_context,
+            metadata={
+                "lote_id": payload.lote_id,
+                "job_type": job.job_type,
+                "created": created,
+                "replayed": not created,
+                "start_date": payload.start_date.isoformat(),
+                "end_date": payload.end_date.isoformat(),
+                "max_cloud_pct": payload.max_cloud_pct,
+            },
+        )
+        session.commit()
+        set_tenant_db_context(session, user.organization_id)
+        session.refresh(job)
+
+        response_payload = _build_satellite_job_submit_response(
+            job_id=int(job.id),
+            job_type=str(job.job_type),
+            status_value=str(job.status),
+            created_at=job.created_at,
+            next_attempt_at=job.next_attempt_at,
+        )
+        response = JSONResponse(
+            status_code=(
+                status.HTTP_202_ACCEPTED
+                if created
+                else status.HTTP_200_OK
+            ),
+            content=response_payload.model_dump(mode="json"),
+        )
+        response.headers["Location"] = (
+            f"/api/v1/satellite/jobs/{job.id}"
+        )
+        return response
+    except SatelliteJobLoteNotFoundError as exc:
+        session.rollback()
+        _record_satellite_job_submit_failure_audit(
+            user=user,
+            request_context=request_context,
+            lote_id=payload.lote_id,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            max_cloud_pct=payload.max_cloud_pct,
+            outcome=AuditOutcome.DENIED,
+            detail="Lote no encontrado.",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lote no encontrado.",
+        ) from exc
+    except SatelliteJobIdempotencyConflictError as exc:
+        session.rollback()
+        _record_satellite_job_submit_failure_audit(
+            user=user,
+            request_context=request_context,
+            lote_id=payload.lote_id,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            max_cloud_pct=payload.max_cloud_pct,
+            outcome=AuditOutcome.FAILURE,
+            detail="Conflicto de idempotencia satelital.",
+            entity_id=exc.existing_job_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except HTTPException:
+        session.rollback()
+        raise
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except Exception:
+        session.rollback()
+        _record_satellite_job_submit_failure_audit(
+            user=user,
+            request_context=request_context,
+            lote_id=payload.lote_id,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            max_cloud_pct=payload.max_cloud_pct,
+            outcome=AuditOutcome.FAILURE,
+            detail="No fue posible registrar el satellite job.",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible registrar el satellite job.",
+        )
+    finally:
+        session.close()
 
 
 def _get_tenant_lote_geometry(

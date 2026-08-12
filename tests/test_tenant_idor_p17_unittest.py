@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException, Response
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from litoral_trace.api.admin import require_superadmin_role
@@ -27,7 +28,9 @@ from litoral_trace.api.lotes import (
     obtener_lote,
 )
 from litoral_trace.api.satellite import (
+    SatelliteJobSubmitRequest,
     SatelliteQueryByLoteRequest,
+    submit_satellite_job_endpoint,
     consultar_ndvi_satelital_lote_endpoint,
 )
 from litoral_trace.api.settings import consultar_licencia_tenant
@@ -286,6 +289,35 @@ def test_satellite_cross_tenant_rejected_before_external_call(monkeypatch, tenan
 
     assert exc_info.value.status_code == 404
     assert external_call_triggered is False
+
+
+def test_satellite_job_submit_cross_tenant_lote_returns_404(tenant_fixture):
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            submit_satellite_job_endpoint(
+                SatelliteJobSubmitRequest(
+                    lote_id=101,
+                    start_date="2026-07-01",
+                    end_date="2026-08-01",
+                ),
+                user=tenant_fixture["context_b"],
+            )
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+def test_satellite_job_submit_rejects_forged_organization_id_field():
+    with pytest.raises(ValidationError):
+        SatelliteJobSubmitRequest.model_validate(
+            {
+                "organization_id": 999,
+                "lote_id": 101,
+                "start_date": "2026-07-01",
+                "end_date": "2026-08-01",
+                "max_cloud_pct": 20.0,
+            }
+        )
 
 
 def test_vault_download_cross_tenant_rejected(tenant_fixture):

@@ -4,14 +4,18 @@ from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
+import litoral_trace.services.satellite_jobs as satellite_jobs_module
 from litoral_trace.db.models import Lote, Organization, SatelliteJob
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.services.satellite_jobs import (
+    SatelliteJobEffectivePayload,
+    SatelliteJobIdempotencyConflictError,
     SatelliteJobStatus,
     claim_next_satellite_job,
+    enqueue_satellite_ndvi_job_in_session,
     enqueue_satellite_ndvi_job,
     get_satellite_job,
     serialize_satellite_job,
@@ -98,6 +102,53 @@ class _FakeDialect:
 class _FakeBind:
     def __init__(self, dialect_name: str):
         self.dialect = _FakeDialect(dialect_name)
+
+
+class _FakeNestedTransaction:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _RaceAwareSession:
+    def __init__(self, *, fail_with_integrity_error: bool):
+        self.fail_with_integrity_error = fail_with_integrity_error
+        self.added: list[object] = []
+        self.flush_calls = 0
+        self.expunged: list[object] = []
+
+    def begin_nested(self):
+        return _FakeNestedTransaction()
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    def flush(self):
+        self.flush_calls += 1
+        if self.fail_with_integrity_error:
+            self.fail_with_integrity_error = False
+            raise IntegrityError(
+                "INSERT INTO satellite_jobs ...",
+                {},
+                Exception(
+                    "UNIQUE constraint failed: "
+                    "satellite_jobs.organization_id, "
+                    "satellite_jobs.idempotency_key"
+                ),
+            )
+
+    def expunge(self, obj):
+        self.expunged.append(obj)
+        if obj in self.added:
+            self.added.remove(obj)
+
+    def get_bind(self):
+        return _FakeBind("sqlite")
+
+    def __contains__(self, obj):
+        return obj in self.added
 
 
 class _RecordingClaimSession:
@@ -228,6 +279,217 @@ def test_enqueue_satellite_job_rejects_idempotency_key_payload_drift():
             end_date="2026-08-09",
             idempotency_key=idempotency_key,
         )
+
+
+def test_enqueue_satellite_job_rejects_idempotency_key_when_geometry_snapshot_changes():
+    organization_id, lote_id = _create_tenant_lote(
+        slug_prefix="sat-job-geom-drift"
+    )
+    idempotency_key = f"dedupe-geometry-{uuid4().hex}"
+
+    enqueue_satellite_ndvi_job(
+        organization_id=organization_id,
+        lote_id=lote_id,
+        start_date="2020-12-31",
+        end_date="2026-08-09",
+        idempotency_key=idempotency_key,
+    )
+
+    db_session = get_db_session()
+    try:
+        lote = db_session.execute(
+            select(Lote).where(
+                Lote.id == lote_id,
+                Lote.organization_id == organization_id,
+            )
+        ).scalar_one()
+        lote.polygon_wkt = (
+            "POLYGON(("
+            "-58.95 -27.50, -58.93 -27.50, "
+            "-58.93 -27.48, -58.95 -27.48, "
+            "-58.95 -27.50"
+            "))"
+        )
+        db_session.commit()
+    finally:
+        db_session.close()
+
+    with pytest.raises(SatelliteJobIdempotencyConflictError):
+        enqueue_satellite_ndvi_job(
+            organization_id=organization_id,
+            lote_id=lote_id,
+            start_date="2020-12-31",
+            end_date="2026-08-09",
+            idempotency_key=idempotency_key,
+        )
+
+
+def test_enqueue_satellite_job_rejects_idempotency_key_when_algorithm_version_changes(monkeypatch):
+    organization_id, lote_id = _create_tenant_lote(
+        slug_prefix="sat-job-algo-drift"
+    )
+    idempotency_key = f"dedupe-algorithm-{uuid4().hex}"
+
+    first_job, created = enqueue_satellite_ndvi_job(
+        organization_id=organization_id,
+        lote_id=lote_id,
+        start_date="2020-12-31",
+        end_date="2026-08-09",
+        idempotency_key=idempotency_key,
+    )
+
+    assert created is True
+    assert first_job.algorithm_version == satellite_jobs_module.ALGORITHM_VERSION
+
+    monkeypatch.setattr(
+        satellite_jobs_module,
+        "ALGORITHM_VERSION",
+        "algo-v-next",
+    )
+
+    with pytest.raises(SatelliteJobIdempotencyConflictError):
+        enqueue_satellite_ndvi_job(
+            organization_id=organization_id,
+            lote_id=lote_id,
+            start_date="2020-12-31",
+            end_date="2026-08-09",
+            idempotency_key=idempotency_key,
+        )
+
+
+def test_enqueue_in_session_replays_matching_existing_job_after_nested_integrity_race(monkeypatch):
+    session = _RaceAwareSession(fail_with_integrity_error=True)
+    fake_lote = type("FakeLote", (), {"id": 101})()
+    payload = SatelliteJobEffectivePayload(
+        organization_id=1,
+        lote_id=101,
+        job_type="ndvi_timeseries",
+        request_start_date=date(2020, 12, 31),
+        request_end_date=date(2026, 8, 9),
+        max_cloud_pct=20.0,
+        geometry_hash="a" * 64,
+        algorithm_version="algo-v1",
+        polygon_wkt_snapshot="POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))",
+    )
+    replay_job = SatelliteJob(
+        id=99,
+        organization_id=1,
+        lote_id=101,
+        job_type="ndvi_timeseries",
+        status="queued",
+        attempt_count=0,
+        max_attempts=3,
+        next_attempt_at=datetime.now(timezone.utc),
+        idempotency_key="race-key",
+        request_start_date=payload.request_start_date,
+        request_end_date=payload.request_end_date,
+        max_cloud_pct=payload.max_cloud_pct,
+        geometry_hash=payload.geometry_hash,
+        algorithm_version=payload.algorithm_version,
+        polygon_wkt_snapshot=payload.polygon_wkt_snapshot,
+    )
+    lookup_calls = {"count": 0}
+
+    monkeypatch.setattr(
+        satellite_jobs_module,
+        "_load_satellite_lote_for_submission",
+        lambda *_args, **_kwargs: fake_lote,
+    )
+    monkeypatch.setattr(
+        satellite_jobs_module,
+        "_build_satellite_job_effective_payload",
+        lambda **_kwargs: payload,
+    )
+    monkeypatch.setattr(
+        satellite_jobs_module,
+        "_load_existing_job_by_idempotency_key",
+        lambda *_args, **_kwargs: (
+            None
+            if (lookup_calls.__setitem__("count", lookup_calls["count"] + 1) or lookup_calls["count"] == 1)
+            else replay_job
+        ),
+    )
+
+    job, created = enqueue_satellite_ndvi_job_in_session(
+        session,
+        organization_id=1,
+        lote_id=101,
+        start_date=date(2020, 12, 31),
+        end_date=date(2026, 8, 9),
+        idempotency_key="race-key",
+    )
+
+    assert created is False
+    assert job is replay_job
+    assert session.flush_calls == 1
+    assert len(session.expunged) == 1
+
+
+def test_enqueue_in_session_rejects_payload_drift_after_nested_integrity_race(monkeypatch):
+    session = _RaceAwareSession(fail_with_integrity_error=True)
+    fake_lote = type("FakeLote", (), {"id": 101})()
+    requested_payload = SatelliteJobEffectivePayload(
+        organization_id=1,
+        lote_id=101,
+        job_type="ndvi_timeseries",
+        request_start_date=date(2020, 12, 31),
+        request_end_date=date(2026, 8, 9),
+        max_cloud_pct=20.0,
+        geometry_hash="a" * 64,
+        algorithm_version="algo-v1",
+        polygon_wkt_snapshot="POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))",
+    )
+    conflicting_job = SatelliteJob(
+        id=100,
+        organization_id=1,
+        lote_id=101,
+        job_type="ndvi_timeseries",
+        status="queued",
+        attempt_count=0,
+        max_attempts=3,
+        next_attempt_at=datetime.now(timezone.utc),
+        idempotency_key="race-key-conflict",
+        request_start_date=requested_payload.request_start_date,
+        request_end_date=requested_payload.request_end_date,
+        max_cloud_pct=requested_payload.max_cloud_pct,
+        geometry_hash="b" * 64,
+        algorithm_version=requested_payload.algorithm_version,
+        polygon_wkt_snapshot=requested_payload.polygon_wkt_snapshot,
+    )
+    lookup_calls = {"count": 0}
+
+    monkeypatch.setattr(
+        satellite_jobs_module,
+        "_load_satellite_lote_for_submission",
+        lambda *_args, **_kwargs: fake_lote,
+    )
+    monkeypatch.setattr(
+        satellite_jobs_module,
+        "_build_satellite_job_effective_payload",
+        lambda **_kwargs: requested_payload,
+    )
+    monkeypatch.setattr(
+        satellite_jobs_module,
+        "_load_existing_job_by_idempotency_key",
+        lambda *_args, **_kwargs: (
+            None
+            if (lookup_calls.__setitem__("count", lookup_calls["count"] + 1) or lookup_calls["count"] == 1)
+            else conflicting_job
+        ),
+    )
+
+    with pytest.raises(SatelliteJobIdempotencyConflictError):
+        enqueue_satellite_ndvi_job_in_session(
+            session,
+            organization_id=1,
+            lote_id=101,
+            start_date=date(2020, 12, 31),
+            end_date=date(2026, 8, 9),
+            idempotency_key="race-key-conflict",
+        )
+
+    assert session.flush_calls == 1
+    assert len(session.expunged) == 1
 
 
 def test_enqueue_satellite_job_rejects_invalid_retry_values():

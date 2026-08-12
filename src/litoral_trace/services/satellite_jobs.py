@@ -7,12 +7,16 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import Lote, SatelliteJob
 from litoral_trace.db.engine import get_db_session
-from litoral_trace.db.tenant import get_tenant_scoped_db_session
+from litoral_trace.db.tenant import (
+    get_tenant_scoped_db_session,
+    set_tenant_db_context,
+)
 from litoral_trace.db.worker import get_worker_db_session
 from litoral_trace.services.gee import ALGORITHM_VERSION, generate_geometry_hash
 
@@ -61,6 +65,40 @@ class StaleRecoveryResult:
     failed_count: int
 
 
+@dataclass(frozen=True)
+class SatelliteJobEffectivePayload:
+    organization_id: int
+    lote_id: int
+    job_type: str
+    request_start_date: date
+    request_end_date: date
+    max_cloud_pct: float
+    geometry_hash: str
+    algorithm_version: str
+    polygon_wkt_snapshot: str
+
+
+class SatelliteJobSubmissionError(ValueError):
+    """Base domain error for durable satellite job submission."""
+
+
+class SatelliteJobLoteNotFoundError(SatelliteJobSubmissionError):
+    """Raised when the lote is not visible inside the authoritative tenant scope."""
+
+
+class SatelliteJobIdempotencyConflictError(SatelliteJobSubmissionError):
+    """Raised when an idempotency key is reused with a different effective payload."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        existing_job_id: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.existing_job_id = existing_job_id
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -77,6 +115,13 @@ def _normalize_max_attempts(max_attempts: int) -> int:
     if normalized_max_attempts <= 0:
         raise ValueError("max_attempts debe ser mayor que cero.")
     return normalized_max_attempts
+
+
+def _normalize_lote_id(lote_id: int | str) -> int:
+    normalized_lote_id = int(lote_id)
+    if normalized_lote_id <= 0:
+        raise ValueError("lote_id debe ser mayor que cero.")
+    return normalized_lote_id
 
 
 def _normalize_max_cloud_pct(max_cloud_pct: float) -> float:
@@ -122,6 +167,17 @@ def _parse_iso_date(value: str | date) -> date:
     if isinstance(value, date):
         return value
     return date.fromisoformat(str(value).strip())
+
+
+def _normalize_idempotency_key(
+    idempotency_key: str | None,
+) -> str | None:
+    normalized_idempotency_key = (idempotency_key or "").strip() or None
+    if normalized_idempotency_key is None:
+        return None
+    if len(normalized_idempotency_key) > 255:
+        raise ValueError("idempotency_key no puede superar 255 caracteres.")
+    return normalized_idempotency_key
 
 
 def _build_lote_polygon_snapshot(lote: Lote) -> str:
@@ -221,6 +277,142 @@ def _map_claimed_job_row(row: Any) -> ClaimedSatelliteJob:
             if row["polygon_wkt_snapshot"] is not None
             else None
         ),
+    )
+
+
+def _build_satellite_job_effective_payload(
+    *,
+    organization_id: int,
+    lote: Lote,
+    request_start_date: date,
+    request_end_date: date,
+    max_cloud_pct: float,
+) -> SatelliteJobEffectivePayload:
+    polygon_wkt_snapshot = _build_lote_polygon_snapshot(lote)
+    geometry_hash = generate_geometry_hash(polygon_wkt_snapshot)
+
+    return SatelliteJobEffectivePayload(
+        organization_id=organization_id,
+        lote_id=int(lote.id),
+        job_type=SatelliteJobType.NDVI_TIMESERIES.value,
+        request_start_date=request_start_date,
+        request_end_date=request_end_date,
+        max_cloud_pct=max_cloud_pct,
+        geometry_hash=geometry_hash,
+        algorithm_version=ALGORITHM_VERSION,
+        polygon_wkt_snapshot=polygon_wkt_snapshot,
+    )
+
+
+def _load_satellite_lote_for_submission(
+    db_session: Session,
+    *,
+    organization_id: int,
+    lote_id: int,
+) -> Lote:
+    lote = db_session.execute(
+        select(Lote).where(
+            Lote.id == lote_id,
+            Lote.organization_id == organization_id,
+        )
+    ).scalar_one_or_none()
+    if lote is None:
+        raise SatelliteJobLoteNotFoundError(
+            "El lote indicado no existe para esa organizacion."
+        )
+    return lote
+
+
+def _load_existing_job_by_idempotency_key(
+    db_session: Session,
+    *,
+    organization_id: int,
+    idempotency_key: str,
+) -> SatelliteJob | None:
+    return db_session.execute(
+        select(SatelliteJob).where(
+            SatelliteJob.organization_id == organization_id,
+            SatelliteJob.idempotency_key == idempotency_key,
+        )
+    ).scalar_one_or_none()
+
+
+def _job_matches_effective_payload(
+    job: SatelliteJob,
+    payload: SatelliteJobEffectivePayload,
+) -> bool:
+    return (
+        job.organization_id == payload.organization_id
+        and job.job_type == payload.job_type
+        and job.lote_id == payload.lote_id
+        and job.request_start_date == payload.request_start_date
+        and job.request_end_date == payload.request_end_date
+        and job.max_cloud_pct == payload.max_cloud_pct
+        and job.geometry_hash == payload.geometry_hash
+        and job.algorithm_version == payload.algorithm_version
+        and job.polygon_wkt_snapshot == payload.polygon_wkt_snapshot
+    )
+
+
+def _assert_same_idempotent_payload(
+    job: SatelliteJob,
+    payload: SatelliteJobEffectivePayload,
+) -> None:
+    if _job_matches_effective_payload(job, payload):
+        return
+
+    raise SatelliteJobIdempotencyConflictError(
+        "El idempotency_key ya fue utilizado para un payload satelital diferente.",
+        existing_job_id=int(job.id) if job.id is not None else None,
+    )
+
+
+def _build_satellite_job_record(
+    *,
+    payload: SatelliteJobEffectivePayload,
+    idempotency_key: str | None,
+    max_attempts: int,
+) -> SatelliteJob:
+    return SatelliteJob(
+        organization_id=payload.organization_id,
+        lote_id=payload.lote_id,
+        job_type=payload.job_type,
+        status=SatelliteJobStatus.QUEUED.value,
+        attempt_count=0,
+        max_attempts=max_attempts,
+        next_attempt_at=_utc_now(),
+        idempotency_key=idempotency_key,
+        request_start_date=payload.request_start_date,
+        request_end_date=payload.request_end_date,
+        max_cloud_pct=payload.max_cloud_pct,
+        geometry_hash=payload.geometry_hash,
+        algorithm_version=payload.algorithm_version,
+        polygon_wkt_snapshot=payload.polygon_wkt_snapshot,
+    )
+
+
+def _is_tenant_idempotency_integrity_error(
+    db_session: Session,
+    exc: IntegrityError,
+) -> bool:
+    constraint_name = getattr(
+        getattr(exc.orig, "diag", None),
+        "constraint_name",
+        None,
+    )
+    if constraint_name == "uq_satellite_jobs_tenant_idempotency_key":
+        return True
+
+    bind = db_session.get_bind()
+    dialect_name = bind.dialect.name if bind is not None else None
+    if dialect_name != "sqlite":
+        return False
+
+    error_message = str(exc.orig).lower()
+    return (
+        "unique constraint failed" in error_message
+        and "satellite_jobs.organization_id" in error_message
+        and "satellite_jobs.idempotency_key" in error_message
     )
 
 
@@ -324,27 +516,92 @@ def recover_stale_satellite_jobs(
             session.close()
 
 
-def _assert_same_idempotent_payload(
-    job: SatelliteJob,
+def enqueue_satellite_ndvi_job_in_session(
+    db_session: Session,
     *,
+    organization_id: int | str,
     lote_id: int,
-    request_start_date: date,
-    request_end_date: date,
-    max_cloud_pct: float,
-    polygon_wkt_snapshot: str,
-) -> None:
-    expected_payload = (
-        job.job_type == SatelliteJobType.NDVI_TIMESERIES.value
-        and job.lote_id == lote_id
-        and job.request_start_date == request_start_date
-        and job.request_end_date == request_end_date
-        and job.max_cloud_pct == max_cloud_pct
-        and job.polygon_wkt_snapshot == polygon_wkt_snapshot
+    start_date: str | date,
+    end_date: str | date,
+    max_cloud_pct: float = 20.0,
+    idempotency_key: str | None = None,
+    max_attempts: int = 3,
+) -> tuple[SatelliteJob, bool]:
+    """Create or replay a durable NDVI job inside an externally owned session."""
+    normalized_organization_id = _normalize_organization_id(organization_id)
+    normalized_lote_id = _normalize_lote_id(lote_id)
+    normalized_start_date = _parse_iso_date(start_date)
+    normalized_end_date = _parse_iso_date(end_date)
+    normalized_max_cloud_pct = _normalize_max_cloud_pct(max_cloud_pct)
+    normalized_max_attempts = _normalize_max_attempts(max_attempts)
+    normalized_idempotency_key = _normalize_idempotency_key(idempotency_key)
+
+    if normalized_start_date > normalized_end_date:
+        raise ValueError("start_date no puede ser posterior a end_date.")
+
+    lote = _load_satellite_lote_for_submission(
+        db_session,
+        organization_id=normalized_organization_id,
+        lote_id=normalized_lote_id,
     )
-    if not expected_payload:
-        raise ValueError(
-            "El idempotency_key ya fue utilizado para un payload satelital diferente."
+    payload = _build_satellite_job_effective_payload(
+        organization_id=normalized_organization_id,
+        lote=lote,
+        request_start_date=normalized_start_date,
+        request_end_date=normalized_end_date,
+        max_cloud_pct=normalized_max_cloud_pct,
+    )
+
+    if normalized_idempotency_key is not None:
+        existing_job = _load_existing_job_by_idempotency_key(
+            db_session,
+            organization_id=normalized_organization_id,
+            idempotency_key=normalized_idempotency_key,
         )
+        if existing_job is not None:
+            _assert_same_idempotent_payload(existing_job, payload)
+            return existing_job, False
+
+    if normalized_idempotency_key is None:
+        job = _build_satellite_job_record(
+            payload=payload,
+            idempotency_key=None,
+            max_attempts=normalized_max_attempts,
+        )
+        db_session.add(job)
+        db_session.flush()
+        return job, True
+
+    job: SatelliteJob | None = None
+    try:
+        with db_session.begin_nested():
+            job = _build_satellite_job_record(
+                payload=payload,
+                idempotency_key=normalized_idempotency_key,
+                max_attempts=normalized_max_attempts,
+            )
+            db_session.add(job)
+            db_session.flush()
+    except IntegrityError as exc:
+        if job is not None and job in db_session:
+            db_session.expunge(job)
+
+        if not _is_tenant_idempotency_integrity_error(db_session, exc):
+            raise
+
+        existing_job = _load_existing_job_by_idempotency_key(
+            db_session,
+            organization_id=normalized_organization_id,
+            idempotency_key=normalized_idempotency_key,
+        )
+        if existing_job is None:
+            raise
+
+        _assert_same_idempotent_payload(existing_job, payload)
+        return existing_job, False
+
+    assert job is not None
+    return job, True
 
 
 def enqueue_satellite_ndvi_job(
@@ -359,74 +616,26 @@ def enqueue_satellite_ndvi_job(
 ) -> tuple[SatelliteJob, bool]:
     """Create or reuse a durable NDVI job for a tenant-scoped lote."""
     normalized_organization_id = _normalize_organization_id(organization_id)
-    normalized_lote_id = int(lote_id)
-    normalized_start_date = _parse_iso_date(start_date)
-    normalized_end_date = _parse_iso_date(end_date)
-    normalized_max_cloud_pct = _normalize_max_cloud_pct(max_cloud_pct)
-    normalized_max_attempts = _normalize_max_attempts(max_attempts)
-    normalized_idempotency_key = (idempotency_key or "").strip() or None
-
-    if normalized_start_date > normalized_end_date:
-        raise ValueError("start_date no puede ser posterior a end_date.")
-
     session = get_tenant_scoped_db_session(normalized_organization_id)
     if session is None:
         raise RuntimeError("Servicio de base de datos no disponible.")
 
     try:
-        lote = session.execute(
-            select(Lote).where(
-                Lote.id == normalized_lote_id,
-                Lote.organization_id == normalized_organization_id,
-            )
-        ).scalar_one_or_none()
-        if lote is None:
-            raise ValueError("El lote indicado no existe para esa organizacion.")
-
-        polygon_wkt_snapshot = _build_lote_polygon_snapshot(lote)
-        geometry_hash = generate_geometry_hash(polygon_wkt_snapshot)
-
-        if normalized_idempotency_key is not None:
-            existing_job = session.execute(
-                select(SatelliteJob).where(
-                    SatelliteJob.organization_id == normalized_organization_id,
-                    SatelliteJob.idempotency_key == normalized_idempotency_key,
-                )
-            ).scalar_one_or_none()
-            if existing_job is not None:
-                _assert_same_idempotent_payload(
-                    existing_job,
-                    lote_id=normalized_lote_id,
-                    request_start_date=normalized_start_date,
-                    request_end_date=normalized_end_date,
-                    max_cloud_pct=normalized_max_cloud_pct,
-                    polygon_wkt_snapshot=polygon_wkt_snapshot,
-                )
-                session.expunge(existing_job)
-                return existing_job, False
-
-        job = SatelliteJob(
+        job, created = enqueue_satellite_ndvi_job_in_session(
+            session,
             organization_id=normalized_organization_id,
-            lote_id=normalized_lote_id,
-            job_type=SatelliteJobType.NDVI_TIMESERIES.value,
-            status=SatelliteJobStatus.QUEUED.value,
-            attempt_count=0,
-            max_attempts=normalized_max_attempts,
-            next_attempt_at=_utc_now(),
-            idempotency_key=normalized_idempotency_key,
-            request_start_date=normalized_start_date,
-            request_end_date=normalized_end_date,
-            max_cloud_pct=normalized_max_cloud_pct,
-            geometry_hash=geometry_hash,
-            algorithm_version=ALGORITHM_VERSION,
-            polygon_wkt_snapshot=polygon_wkt_snapshot,
+            lote_id=lote_id,
+            start_date=start_date,
+            end_date=end_date,
+            max_cloud_pct=max_cloud_pct,
+            idempotency_key=idempotency_key,
+            max_attempts=max_attempts,
         )
-        session.add(job)
-        session.flush()
+        session.commit()
+        set_tenant_db_context(session, normalized_organization_id)
         session.refresh(job)
         session.expunge(job)
-        session.commit()
-        return job, True
+        return job, created
     except Exception:
         session.rollback()
         raise

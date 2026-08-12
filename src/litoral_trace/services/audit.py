@@ -32,6 +32,7 @@ class AuditAction(StrEnum):
     LOTE_DELETE = "lote.delete"
     LOTE_BATCH_UPLOAD = "lote.batch_upload"
     SATELLITE_NDVI_RUN = "satellite.ndvi.run"
+    SATELLITE_JOB_SUBMIT = "satellite.job.submit"
     VAULT_DOWNLOAD = "vault.download"
     SETTINGS_INVITE_DEMO = "settings.invite_demo_user"
     PLATFORM_ORGANIZATION_CREATE = "platform.organization.create"

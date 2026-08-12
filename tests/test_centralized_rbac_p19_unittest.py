@@ -24,7 +24,9 @@ from litoral_trace.api.lotes import (
     listar_lotes_tenant,
 )
 from litoral_trace.api.satellite import (
+    SatelliteJobSubmitRequest,
     SatelliteQueryByLoteRequest,
+    submit_satellite_job_endpoint,
     consultar_ndvi_satelital_lote_endpoint,
 )
 from litoral_trace.api.settings import (
@@ -453,3 +455,35 @@ def test_satellite_endpoint_still_runs_for_manager():
     )
 
     assert response.status_code == 200
+
+
+def test_satellite_job_submit_requires_capability():
+    account = _create_tenant_account(role="cliente")
+    user = _authenticated_context(
+        username=str(account["username"]),
+        password=str(account["password"]),
+    )
+
+    with pytest.raises(HTTPException) as satellite_exc:
+        _run_guard(Permission.SATELLITE_RUN, user)
+    assert satellite_exc.value.status_code == 403
+
+    manager_account = _create_tenant_account(role="manager")
+    manager_user = _authenticated_context(
+        username=str(manager_account["username"]),
+        password=str(manager_account["password"]),
+    )
+    _run_guard(Permission.SATELLITE_RUN, manager_user)
+
+    response = asyncio.run(
+        submit_satellite_job_endpoint(
+            SatelliteJobSubmitRequest(
+                lote_id=int(manager_account["lote_id"]),
+                start_date="2026-07-01",
+                end_date="2026-08-01",
+            ),
+            user=manager_user,
+        )
+    )
+
+    assert response.status_code == 202
