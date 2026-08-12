@@ -489,6 +489,25 @@ def _assert_no_fields(body: dict[str, object], forbidden: set[str]) -> None:
         assert f'"{field}"' not in serialized
 
 
+def _sanitized_response_diagnostic(
+    responses: list[dict[str, object]],
+) -> dict[str, object]:
+    bodies = [item.get("body") for item in responses]
+    return {
+        "statuses": [item.get("status_code") for item in responses],
+        "body_keys": [
+            sorted(body.keys()) if isinstance(body, dict) else []
+            for body in bodies
+        ],
+        "details": [
+            body.get("detail")
+            if isinstance(body, dict) and isinstance(body.get("detail"), str)
+            else None
+            for body in bodies
+        ],
+    }
+
+
 def test_postgres_cross_endpoint_auth_rbac_and_public_leakage_matrix(
     owner_engine,
     runtime_environment,
@@ -525,11 +544,19 @@ def test_postgres_cross_endpoint_auth_rbac_and_public_leakage_matrix(
             asyncio.run(_asgi_request(method, path, token=token_a, payload=payload))
             for method, path, payload in routes
         ]
-        fixture["job_ids"].append(int(allowed[0]["body"]["job_id"]))
-
-    assert [item["status_code"] for item in unauthenticated] == [401, 401, 401]
-    assert [item["status_code"] for item in denied] == [403, 403, 403]
-    assert [item["status_code"] for item in allowed] == [202, 200, 200]
+        assert [item["status_code"] for item in unauthenticated] == [401, 401, 401], (
+            _sanitized_response_diagnostic(unauthenticated)
+        )
+        assert [item["status_code"] for item in denied] == [403, 403, 403], (
+            _sanitized_response_diagnostic(denied)
+        )
+        assert [item["status_code"] for item in allowed] == [202, 200, 200], (
+            _sanitized_response_diagnostic(allowed)
+        )
+        created_job_id = allowed[0]["body"].get("job_id")
+        assert isinstance(created_job_id, int) and not isinstance(created_job_id, bool)
+        assert created_job_id > 0
+        fixture["job_ids"].append(created_job_id)
 
     common_forbidden = {
         "organization_id", "idempotency_key", "polygon_wkt_snapshot",
