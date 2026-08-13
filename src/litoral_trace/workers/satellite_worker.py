@@ -20,6 +20,12 @@ from sqlalchemy.orm import Session
 from litoral_trace.config import get_settings
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.worker import get_worker_db_session
+from litoral_trace.observability.satellite_worker import (
+    SatelliteQueueSnapshotCache,
+    SatelliteWorkerMetrics,
+    configure_satellite_worker_json_logging,
+    start_satellite_metrics_server,
+)
 from litoral_trace.services.gee import (
     ALGORITHM_VERSION,
     GeeFailureCategory,
@@ -433,6 +439,7 @@ class _SatelliteJobHeartbeatController:
         lease_token: str,
         heartbeat_seconds: int,
         tenant_session_factory: Callable[[], Session],
+        metrics: SatelliteWorkerMetrics | None = None,
     ):
         self.organization_id = int(organization_id)
         self.job_id = int(job_id)
@@ -441,6 +448,7 @@ class _SatelliteJobHeartbeatController:
         self._lease_token = str(lease_token)
         self._heartbeat_seconds = int(heartbeat_seconds)
         self._tenant_session_factory = tenant_session_factory
+        self._metrics = metrics
         self._stop_event = threading.Event()
         self._lease_lost_event = threading.Event()
         self._thread = threading.Thread(
@@ -474,6 +482,7 @@ class _SatelliteJobHeartbeatController:
             tenant_session = self._tenant_session_factory()
 
             if tenant_session is None:
+                self._record_heartbeat_failure()
                 self._log_generic_error(
                     RuntimeError(
                         "Servicio de base de datos tenant no disponible."
@@ -493,16 +502,26 @@ class _SatelliteJobHeartbeatController:
 
             except SatelliteJobLeaseLostError:
                 tenant_session.rollback()
+                self._record_heartbeat_failure()
                 self._lease_lost_event.set()
                 self._stop_event.set()
                 break
 
             except Exception as exc:
                 tenant_session.rollback()
+                self._record_heartbeat_failure()
                 self._log_generic_error(exc)
 
             finally:
                 tenant_session.close()
+
+    def _record_heartbeat_failure(self) -> None:
+        if self._metrics is None:
+            return
+        try:
+            self._metrics.record_heartbeat_failure()
+        except Exception:
+            pass
 
     def _log_generic_error(self, exc: Exception) -> None:
         logger.warning(
@@ -560,8 +579,11 @@ class SatelliteWorker:
             StaleRecoveryResult,
         ] = recover_stale_satellite_jobs,
         gee_ndvi_adapter: GeeNdviAdapter | None = None,
+        metrics: SatelliteWorkerMetrics | None = None,
+        queue_snapshot_cache: SatelliteQueueSnapshotCache | None = None,
         sleep_func: Callable[[float], None] = time.sleep,
         monotonic_func: Callable[[], float] = time.monotonic,
+        metrics_monotonic_func: Callable[[], float] = time.monotonic,
     ):
         self.worker_id = _normalize_worker_id(worker_id)
         self.poll_seconds = int(poll_seconds)
@@ -613,8 +635,11 @@ class SatelliteWorker:
             gee_ndvi_adapter
             or EarthEngineGeeNdviAdapter()
         )
+        self.metrics = metrics or SatelliteWorkerMetrics()
+        self._queue_snapshot_cache = queue_snapshot_cache
         self._sleep = sleep_func
         self._monotonic = monotonic_func
+        self._metrics_monotonic = metrics_monotonic_func
         self._stop_requested = False
         self._last_stale_recovery_attempt_monotonic: float | None = None
 
@@ -635,6 +660,33 @@ class SatelliteWorker:
         """Prevent new claims after the current execution finishes."""
 
         self._stop_requested = True
+
+    def _record_metric(
+        self,
+        method_name: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        try:
+            getattr(self.metrics, method_name)(*args, **kwargs)
+        except Exception:
+            # Optional telemetry must never affect durable job correctness.
+            pass
+
+    def _refresh_queue_metrics(self) -> None:
+        if self._queue_snapshot_cache is None:
+            return
+        try:
+            snapshot = self._queue_snapshot_cache.get()
+            self.metrics.update_queue_snapshot(
+                snapshot,
+                last_success_timestamp_seconds=(
+                    self._queue_snapshot_cache
+                    .last_success_timestamp_seconds
+                ),
+            )
+        except Exception:
+            pass
 
     def _calculate_retry_delay_seconds(
         self,
@@ -708,6 +760,7 @@ class SatelliteWorker:
     ) -> ClaimedSatelliteJob | None:
         """Claim and commit before any external GEE execution."""
 
+        start_monotonic = self._metrics_monotonic()
         claim_session = self._claim_session_factory()
 
         if claim_session is None:
@@ -734,6 +787,10 @@ class SatelliteWorker:
 
         finally:
             claim_session.close()
+            self._record_metric(
+                "observe_claim_duration",
+                self._metrics_monotonic() - start_monotonic,
+            )
 
     def _should_attempt_stale_recovery(
         self,
@@ -778,6 +835,11 @@ class SatelliteWorker:
                 db_session=recovery_session,
             )
             recovery_session.commit()
+            self._record_metric(
+                "record_stale_recoveries",
+                result.requeued_count,
+                result.failed_count,
+            )
             logger.info(
                 "satellite_worker_stale_recovery",
                 extra={
@@ -820,6 +882,7 @@ class SatelliteWorker:
             lease_token=context.lease_token,
             heartbeat_seconds=self.heartbeat_seconds,
             tenant_session_factory=self._tenant_session_factory,
+            metrics=self.metrics,
         )
 
     def _stop_heartbeat_controller(
@@ -921,7 +984,15 @@ class SatelliteWorker:
     ) -> NormalizedNdviExecutionResult:
         request = self._build_ndvi_request(context)
 
-        result = self._gee_ndvi_adapter.execute(request)
+        start_monotonic = self._metrics_monotonic()
+        try:
+            result = self._gee_ndvi_adapter.execute(request)
+        finally:
+            self._record_metric(
+                "observe_gee_duration",
+                context.job_type,
+                self._metrics_monotonic() - start_monotonic,
+            )
 
         if result.geometry_hash != request.geometry_hash:
             raise SatelliteWorkerExecutionError(
@@ -1128,6 +1199,7 @@ class SatelliteWorker:
                 status=WorkerRunStatus.STOPPED
             )
 
+        self._refresh_queue_metrics()
         self._maybe_recover_stale_jobs()
         claimed_job = self._claim_next_job()
 
@@ -1135,6 +1207,8 @@ class SatelliteWorker:
             return WorkerRunResult(
                 status=WorkerRunStatus.IDLE
             )
+
+        self._record_metric("record_claimed", claimed_job.job_type)
 
         try:
             logger.info(
@@ -1155,6 +1229,7 @@ class SatelliteWorker:
         context = self._build_context(claimed_job)
         heartbeat_controller = self._create_heartbeat_controller(context)
         start_monotonic = self._monotonic()
+        metrics_start_monotonic = self._metrics_monotonic()
 
         try:
             heartbeat_controller.start()
@@ -1178,11 +1253,18 @@ class SatelliteWorker:
                 return self._build_lease_lost_result(
                     context,
                     start_monotonic=start_monotonic,
+                    metrics_start_monotonic=metrics_start_monotonic,
                 )
 
             self._persist_success(
                 context,
                 result,
+            )
+            self._record_metric("record_succeeded", context.job_type)
+            self._record_metric(
+                "observe_execution_duration",
+                context.job_type,
+                self._metrics_monotonic() - metrics_start_monotonic,
             )
 
             logger.info(
@@ -1217,6 +1299,7 @@ class SatelliteWorker:
             return self._build_lease_lost_result(
                 context,
                 start_monotonic=start_monotonic,
+                metrics_start_monotonic=metrics_start_monotonic,
             )
 
         except SatelliteWorkerExecutionError as exc:
@@ -1224,6 +1307,7 @@ class SatelliteWorker:
                 return self._build_lease_lost_result(
                     context,
                     start_monotonic=start_monotonic,
+                    metrics_start_monotonic=metrics_start_monotonic,
                 )
 
             if (
@@ -1244,6 +1328,7 @@ class SatelliteWorker:
                     return self._build_lease_lost_result(
                         context,
                         start_monotonic=start_monotonic,
+                        metrics_start_monotonic=metrics_start_monotonic,
                     )
 
                 self._log_retry_scheduled(
@@ -1251,6 +1336,17 @@ class SatelliteWorker:
                     error_code=exc.error_code,
                     retry_delay_seconds=retry_delay_seconds,
                     start_monotonic=start_monotonic,
+                )
+                self._record_metric(
+                    "record_retry_scheduled",
+                    context.job_type,
+                    exc.error_code,
+                    retry_delay_seconds,
+                )
+                self._record_metric(
+                    "observe_execution_duration",
+                    context.job_type,
+                    self._metrics_monotonic() - metrics_start_monotonic,
                 )
 
                 return WorkerRunResult(
@@ -1271,6 +1367,7 @@ class SatelliteWorker:
                 return self._build_lease_lost_result(
                     context,
                     start_monotonic=start_monotonic,
+                    metrics_start_monotonic=metrics_start_monotonic,
                 )
 
             if exc.retry_disposition == RetryDisposition.RETRYABLE:
@@ -1297,6 +1394,17 @@ class SatelliteWorker:
                     },
                 )
 
+            self._record_metric(
+                "record_failed",
+                context.job_type,
+                exc.error_code,
+            )
+            self._record_metric(
+                "observe_execution_duration",
+                context.job_type,
+                self._metrics_monotonic() - metrics_start_monotonic,
+            )
+
             return WorkerRunResult(
                 status=WorkerRunStatus.FAILED,
                 job_id=context.job_id,
@@ -1316,6 +1424,7 @@ class SatelliteWorker:
                 return self._build_lease_lost_result(
                     context,
                     start_monotonic=start_monotonic,
+                    metrics_start_monotonic=metrics_start_monotonic,
                 )
 
             try:
@@ -1328,6 +1437,7 @@ class SatelliteWorker:
                 return self._build_lease_lost_result(
                     context,
                     start_monotonic=start_monotonic,
+                    metrics_start_monotonic=metrics_start_monotonic,
                 )
 
             logger.warning(
@@ -1350,6 +1460,17 @@ class SatelliteWorker:
                 },
             )
 
+            self._record_metric(
+                "record_failed",
+                context.job_type,
+                "worker_execution_failed",
+            )
+            self._record_metric(
+                "observe_execution_duration",
+                context.job_type,
+                self._metrics_monotonic() - metrics_start_monotonic,
+            )
+
             return WorkerRunResult(
                 status=WorkerRunStatus.FAILED,
                 job_id=context.job_id,
@@ -1363,7 +1484,14 @@ class SatelliteWorker:
         context: WorkerExecutionContext,
         *,
         start_monotonic: float,
+        metrics_start_monotonic: float,
     ) -> WorkerRunResult:
+        self._record_metric("record_lease_lost", context.job_type)
+        self._record_metric(
+            "observe_execution_duration",
+            context.job_type,
+            self._metrics_monotonic() - metrics_start_monotonic,
+        )
         logger.warning(
             "satellite_worker_job_lease_lost",
             extra={
@@ -1440,6 +1568,19 @@ class SatelliteWorker:
 def build_satellite_worker() -> SatelliteWorker:
     """Build the default production satellite worker."""
 
+    settings = get_settings()
+    metrics = SatelliteWorkerMetrics()
+    queue_snapshot_cache = None
+    if settings.workers.satellite_metrics_enabled:
+        queue_snapshot_cache = SatelliteQueueSnapshotCache(
+            refresh_seconds=(
+                settings.workers
+                .satellite_queue_metrics_refresh_seconds
+            ),
+            on_error=metrics.record_snapshot_error,
+        )
+        metrics.bind_queue_snapshot_cache(queue_snapshot_cache)
+
     return SatelliteWorker(
         worker_id=resolve_satellite_worker_id(),
         poll_seconds=resolve_satellite_worker_poll_seconds(),
@@ -1449,6 +1590,8 @@ def build_satellite_worker() -> SatelliteWorker:
         ),
         retry_base_seconds=resolve_satellite_worker_retry_base_seconds(),
         retry_max_seconds=resolve_satellite_worker_retry_max_seconds(),
+        metrics=metrics,
+        queue_snapshot_cache=queue_snapshot_cache,
     )
 
 
@@ -1511,15 +1654,21 @@ def main(
         .upper()
     )
 
-    logging.basicConfig(
-        level=getattr(
+    log_level = getattr(
             logging,
             configured_log_level,
             logging.INFO,
-        )
     )
+    configure_satellite_worker_json_logging(log_level)
 
     worker = build_satellite_worker()
+    settings = get_settings()
+    if settings.workers.satellite_metrics_enabled:
+        start_satellite_metrics_server(
+            host=settings.workers.satellite_metrics_host,
+            port=settings.workers.satellite_metrics_port,
+            registry=worker.metrics.registry,
+        )
     _install_signal_handlers(worker)
 
     if args.once:

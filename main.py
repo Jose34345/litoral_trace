@@ -14,6 +14,7 @@ sys.path.insert(0, str(base_dir))
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import text
 
 from litoral_trace.api.admin import router as admin_router
 from litoral_trace.api.auth import (
@@ -30,6 +31,7 @@ from litoral_trace.api.settings import router as settings_router
 from litoral_trace.api.vault import router as vault_router
 from litoral_trace.auth.rbac import Permission, ensure_permission
 from litoral_trace.auth.sessions import ACCESS_TOKEN_COOKIE_KEY, REFRESH_TOKEN_COOKIE_KEY
+from litoral_trace.db.engine import get_db_session
 from litoral_trace.services.admin import listar_empresas_superadmin
 
 app = FastAPI(
@@ -387,6 +389,45 @@ async def health_check() -> JSONResponse:
             "version": app.version,
         },
     )
+
+
+@app.get(
+    "/ready",
+    tags=["Infraestructura"],
+)
+async def readiness_check() -> JSONResponse:
+    """Check only the API runtime PostgreSQL dependency."""
+
+    try:
+        session = get_db_session()
+    except Exception:
+        session = None
+    if session is None:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "unavailable"},
+        )
+
+    try:
+        session.execute(text("SELECT 1"))
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"status": "ready"},
+        )
+    except Exception:
+        try:
+            session.rollback()
+        except Exception:
+            pass
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "unavailable"},
+        )
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
 
 
 @app.get(

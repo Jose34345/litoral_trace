@@ -217,6 +217,13 @@ class SatelliteJob(Base):
             ),
         ),
         Index(
+            "ix_satellite_jobs_running_locked_at",
+            "locked_at",
+            postgresql_where=text(
+                "status = 'running' AND finished_at IS NULL"
+            ),
+        ),
+        Index(
             "uq_satellite_jobs_lease_token_non_null",
             "lease_token",
             unique=True,

@@ -225,6 +225,20 @@ class WorkersSettings(BaseModel):
         ge=30,
         le=86400,
     )
+    satellite_metrics_enabled: bool = False
+    satellite_metrics_host: str = "127.0.0.1"
+    satellite_metrics_port: int = Field(default=9108, ge=1, le=65535)
+    satellite_queue_metrics_refresh_seconds: int = Field(
+        default=30,
+        ge=1,
+        le=3600,
+    )
+
+    def model_post_init(self, __context: object) -> None:
+        if self.satellite_metrics_enabled and not self.satellite_metrics_host.strip():
+            raise ValueError(
+                "SATELLITE_METRICS_HOST no puede ser vacio cuando metrics esta habilitado."
+            )
 
 
 class Settings(BaseModel):
@@ -340,6 +354,22 @@ class Settings(BaseModel):
                 satellite_worker_retry_max_seconds=_read_int_env(
                     "SATELLITE_WORKER_RETRY_MAX_SECONDS",
                     default=900,
+                ),
+                satellite_metrics_enabled=_read_bool_env(
+                    "SATELLITE_METRICS_ENABLED",
+                    default=False,
+                ),
+                satellite_metrics_host=(
+                    _read_optional_env("SATELLITE_METRICS_HOST")
+                    or "127.0.0.1"
+                ),
+                satellite_metrics_port=_read_int_env(
+                    "SATELLITE_METRICS_PORT",
+                    default=9108,
+                ),
+                satellite_queue_metrics_refresh_seconds=_read_int_env(
+                    "SATELLITE_QUEUE_METRICS_REFRESH_SECONDS",
+                    default=30,
                 ),
             ),
         )

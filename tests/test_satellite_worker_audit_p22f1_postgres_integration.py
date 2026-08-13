@@ -403,7 +403,7 @@ def test_migration_head_privileges_rls_and_maintenance_authority():
                 )
             ).mappings().one()
 
-    assert revision == "014_harden_audit_log_runtime_privileges"
+    assert revision == "015_add_satellite_queue_metrics"
     assert dict(runtime) == {
         "can_select": True,
         "can_insert": True,
