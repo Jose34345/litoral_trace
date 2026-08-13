@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -33,6 +34,8 @@ class AuditAction(StrEnum):
     LOTE_BATCH_UPLOAD = "lote.batch_upload"
     SATELLITE_NDVI_RUN = "satellite.ndvi.run"
     SATELLITE_JOB_SUBMIT = "satellite.job.submit"
+    SATELLITE_JOB_SUCCEEDED = "satellite.job.succeeded"
+    SATELLITE_JOB_FAILED = "satellite.job.failed"
     VAULT_DOWNLOAD = "vault.download"
     SETTINGS_INVITE_DEMO = "settings.invite_demo_user"
     PLATFORM_ORGANIZATION_CREATE = "platform.organization.create"
@@ -51,6 +54,7 @@ SENSITIVE_METADATA_KEYS = frozenset(
         "refresh_token",
         "token_hash",
         "refresh_token_hash",
+        "lease_token",
         "authorization",
         "cookie",
         "set-cookie",
@@ -59,8 +63,47 @@ SENSITIVE_METADATA_KEYS = frozenset(
         "secret",
         "database_url",
         "migration_database_url",
+        "worker_database_url",
+        "private_key",
+        "private_key_id",
+        "service_account",
+        "service_account_json",
+        "credentials",
+        "google_application_credentials",
+        "polygon_wkt",
+        "polygon_wkt_snapshot",
+        "idempotency_key",
         "jwt",
     }
+)
+
+
+_MAX_AUDIT_DETAIL_LENGTH = 2048
+_SENSITIVE_DETAIL_PATTERNS = (
+    re.compile(
+        r"postgres(?:ql)?(?:\+[a-z0-9_]+)?://[^\s]+",
+        re.IGNORECASE,
+    ),
+    re.compile(r"Bearer\s+[A-Za-z0-9._~+\-/=]+", re.IGNORECASE),
+    re.compile(
+        (
+            r"\b(?:access_token|refresh_token|lease_token|authorization|"
+            r"password|api_key|client_secret|private_key|credentials)"
+            r"\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"
+        ),
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----",
+        re.IGNORECASE | re.DOTALL,
+    ),
+)
+_TRACEBACK_PATTERN = re.compile(
+    r"Traceback\s*\(most recent call last\):",
+    re.IGNORECASE,
+)
+_EXCEPTION_REPR_PATTERN = re.compile(
+    r"\b[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)\s*\(",
 )
 
 
@@ -159,6 +202,25 @@ def sanitize_audit_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] |
     return sanitized or None
 
 
+def sanitize_audit_detail(detail: str | None) -> str | None:
+    """Bound audit detail and remove common secret-bearing representations."""
+
+    normalized_detail = str(detail or "").strip()
+    if not normalized_detail:
+        return None
+
+    if (
+        _TRACEBACK_PATTERN.search(normalized_detail)
+        or _EXCEPTION_REPR_PATTERN.search(normalized_detail)
+    ):
+        return "[REDACTED_EXCEPTION_DETAIL]"
+
+    for pattern in _SENSITIVE_DETAIL_PATTERNS:
+        normalized_detail = pattern.sub("[REDACTED]", normalized_detail)
+
+    return normalized_detail.strip()[:_MAX_AUDIT_DETAIL_LENGTH] or None
+
+
 def record_audit_event(
     db_session: Session,
     *,
@@ -221,7 +283,7 @@ def record_audit_event(
         entity_id=entity_id,
         before_data=sanitize_audit_metadata(before_data),
         after_data=envelope,
-        detail=(detail or "").strip() or None,
+        detail=sanitize_audit_detail(detail),
         ip_address=request_payload.ip_address,
     )
     db_session.add(audit_log)

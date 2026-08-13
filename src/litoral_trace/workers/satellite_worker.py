@@ -26,6 +26,12 @@ from litoral_trace.services.gee import (
     consultar_serie_temporal_ndvi_gee,
     generate_geometry_hash,
 )
+from litoral_trace.services.audit import (
+    AuditAction,
+    AuditActor,
+    AuditOutcome,
+    record_audit_event,
+)
 from litoral_trace.services.satellite_jobs import (
     ClaimedSatelliteJob,
     SatelliteJobType,
@@ -368,6 +374,49 @@ def _format_job_log_fields(
         "organization_id": context.organization_id,
         "job_type": context.job_type,
         "worker_id": context.worker_id,
+    }
+
+
+def build_satellite_worker_audit_actor(
+    organization_id: int,
+) -> AuditActor:
+    """Return the stable machine identity used for durable worker events."""
+
+    return AuditActor(
+        organization_id=int(organization_id),
+        user_id=None,
+        username="satellite-worker",
+        role="system_worker",
+    )
+
+
+def build_satellite_job_success_audit_metadata(
+    context: WorkerExecutionContext,
+    result: NormalizedNdviExecutionResult,
+) -> dict[str, Any]:
+    """Build the explicit non-secret success metadata contract."""
+
+    return {
+        "job_type": context.job_type,
+        "attempt_count": context.claimed_job.attempt_count,
+        "max_attempts": context.claimed_job.max_attempts,
+        "observation_count": len(result.observations),
+    }
+
+
+def build_satellite_job_failure_audit_metadata(
+    context: WorkerExecutionContext,
+    *,
+    error_code: str,
+) -> dict[str, Any]:
+    """Build the explicit non-secret failure metadata contract."""
+
+    return {
+        "job_type": context.job_type,
+        "attempt_count": context.claimed_job.attempt_count,
+        "max_attempts": context.claimed_job.max_attempts,
+        "error_code": str(error_code).strip()[:100]
+        or "worker_execution_failed",
     }
 
 
@@ -940,6 +989,22 @@ class SatelliteWorker:
                 lease_token=context.lease_token,
             )
 
+            record_audit_event(
+                tenant_session,
+                actor=build_satellite_worker_audit_actor(
+                    context.organization_id
+                ),
+                action=AuditAction.SATELLITE_JOB_SUCCEEDED,
+                entity_type="satellite_job",
+                entity_id=context.job_id,
+                outcome=AuditOutcome.SUCCESS,
+                metadata=build_satellite_job_success_audit_metadata(
+                    context,
+                    result,
+                ),
+                detail="Satellite job completed successfully.",
+            )
+
             tenant_session.commit()
 
         except Exception:
@@ -978,6 +1043,22 @@ class SatelliteWorker:
                 lease_token=context.lease_token,
                 error_code=error_code,
                 error_message=safe_error_message,
+            )
+
+            record_audit_event(
+                tenant_session,
+                actor=build_satellite_worker_audit_actor(
+                    context.organization_id
+                ),
+                action=AuditAction.SATELLITE_JOB_FAILED,
+                entity_type="satellite_job",
+                entity_id=context.job_id,
+                outcome=AuditOutcome.FAILURE,
+                metadata=build_satellite_job_failure_audit_metadata(
+                    context,
+                    error_code=error_code,
+                ),
+                detail="Satellite job failed.",
             )
 
             tenant_session.commit()
@@ -1055,6 +1136,22 @@ class SatelliteWorker:
                 status=WorkerRunStatus.IDLE
             )
 
+        try:
+            logger.info(
+                "satellite_worker_job_claimed",
+                extra={
+                    "job_id": claimed_job.id,
+                    "organization_id": claimed_job.organization_id,
+                    "job_type": claimed_job.job_type,
+                    "worker_id": self.worker_id,
+                    "attempt_count": claimed_job.attempt_count,
+                    "max_attempts": claimed_job.max_attempts,
+                },
+            )
+        except Exception:
+            # A committed claim must never depend on optional telemetry.
+            pass
+
         context = self._build_context(claimed_job)
         heartbeat_controller = self._create_heartbeat_controller(context)
         start_monotonic = self._monotonic()
@@ -1092,6 +1189,8 @@ class SatelliteWorker:
                 "satellite_worker_job_succeeded",
                 extra={
                     **_format_job_log_fields(context),
+                    "attempt_count": context.claimed_job.attempt_count,
+                    "max_attempts": context.claimed_job.max_attempts,
                     "elapsed_ms": int(
                         (
                             self._monotonic()
@@ -1185,6 +1284,8 @@ class SatelliteWorker:
                     "satellite_worker_job_failed",
                     extra={
                         **_format_job_log_fields(context),
+                        "attempt_count": context.claimed_job.attempt_count,
+                        "max_attempts": context.claimed_job.max_attempts,
                         "error_code": exc.error_code,
                         "elapsed_ms": int(
                             (
@@ -1233,6 +1334,8 @@ class SatelliteWorker:
                 "satellite_worker_job_failed",
                 extra={
                     **_format_job_log_fields(context),
+                    "attempt_count": context.claimed_job.attempt_count,
+                    "max_attempts": context.claimed_job.max_attempts,
                     "error_code":
                         "worker_execution_failed",
                     "error_type":

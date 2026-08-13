@@ -843,6 +843,11 @@ def test_successful_persistence_uses_one_tenant_transaction_for_result_and_statu
             ("snapshot", session)
         )
 
+    def _record_audit(session, **kwargs):
+        calls.append(
+            ("audit", session)
+        )
+
     monkeypatch.setattr(
         (
             "litoral_trace.workers.satellite_worker."
@@ -865,6 +870,14 @@ def test_successful_persistence_uses_one_tenant_transaction_for_result_and_statu
             "mark_satellite_job_succeeded"
         ),
         _record_success,
+    )
+
+    monkeypatch.setattr(
+        (
+            "litoral_trace.workers.satellite_worker."
+            "record_audit_event"
+        ),
+        _record_audit,
     )
 
     worker = SatelliteWorker(
@@ -892,6 +905,10 @@ def test_successful_persistence_uses_one_tenant_transaction_for_result_and_statu
         ),
         (
             "succeed",
+            recording_tenant_session,
+        ),
+        (
+            "audit",
             recording_tenant_session,
         ),
     ]
