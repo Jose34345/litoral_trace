@@ -9,6 +9,7 @@ from litoral_trace.db.models.satellite_job import SatelliteJob
 from litoral_trace.db.models.satellite_job_result import SatelliteJobResult
 from litoral_trace.db.models.satellite_ndvi import SatelliteNdviObservation
 from litoral_trace.db.models.user_session import UserSession
+from litoral_trace.db.models.vault_document import VaultDocument
 
 __all__ = [
     "Organization",
@@ -21,4 +22,5 @@ __all__ = [
     "SatelliteJobResult",
     "SatelliteNdviObservation",
     "UserSession",
+    "VaultDocument",
 ]
