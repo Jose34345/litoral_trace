@@ -1,10 +1,18 @@
-"""Configuracion tipada y centralizada para Litoral Trace."""
+"Configuracion tipada y centralizada para Litoral Trace."
 from __future__ import annotations
 
 import os
 from enum import Enum
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+DEFAULT_STORAGE_ALLOWED_CONTENT_TYPES = (
+    "application/pdf",
+    "application/json",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+)
 
 
 class Environment(str, Enum):
@@ -186,11 +194,178 @@ class GeeSettings(BaseModel):
 
 
 class StorageSettings(BaseModel):
+    """Private S3-compatible object-storage configuration."""
+
     model_config = ConfigDict(frozen=True)
 
     backend: str | None = None
     bucket_name: str | None = None
+    region: str = "us-east-1"
     endpoint_url: str | None = None
+
+    access_key_id: str | None = Field(default=None, repr=False)
+    secret_access_key: str | None = Field(default=None, repr=False)
+    session_token: str | None = Field(default=None, repr=False)
+
+    force_path_style: bool = False
+    use_tls: bool = True
+    verify_tls: bool = True
+    ca_bundle_path: str | None = None
+
+    connect_timeout_seconds: int = Field(default=5, ge=1, le=120)
+    read_timeout_seconds: int = Field(default=60, ge=1, le=3600)
+    max_retries: int = Field(default=3, ge=0, le=20)
+
+    key_prefix: str = "vault"
+    max_upload_bytes: int = Field(
+        default=25 * 1024 * 1024,
+        ge=1,
+        le=5 * 1024 * 1024 * 1024,
+    )
+    allowed_content_types: tuple[str, ...] = (
+        DEFAULT_STORAGE_ALLOWED_CONTENT_TYPES
+    )
+
+    def model_post_init(self, __context: object) -> None:
+        backend = self.normalized_backend
+
+        explicit_storage_values = (
+            self.bucket_name,
+            self.endpoint_url,
+            self.access_key_id,
+            self.secret_access_key,
+            self.session_token,
+        )
+        if backend is None:
+            if any(value for value in explicit_storage_values):
+                raise ValueError(
+                    "STORAGE_BACKEND es obligatorio cuando se configura storage."
+                )
+            return
+
+        if backend != "s3":
+            raise ValueError(
+                "STORAGE_BACKEND soportado en P2.3: 's3'."
+            )
+
+        if not self.bucket_name or not self.bucket_name.strip():
+            raise ValueError(
+                "STORAGE_BUCKET_NAME es obligatorio cuando STORAGE_BACKEND=s3."
+            )
+
+        if any(ord(character) < 32 for character in self.bucket_name):
+            raise ValueError(
+                "STORAGE_BUCKET_NAME contiene caracteres de control."
+            )
+
+        has_access_key = bool(self.access_key_id)
+        has_secret_key = bool(self.secret_access_key)
+        if has_access_key != has_secret_key:
+            raise ValueError(
+                "STORAGE_ACCESS_KEY_ID y STORAGE_SECRET_ACCESS_KEY "
+                "deben configurarse juntos."
+            )
+
+        if self.session_token and not (has_access_key and has_secret_key):
+            raise ValueError(
+                "STORAGE_SESSION_TOKEN requiere credenciales estaticas completas."
+            )
+
+        if self.endpoint_url:
+            parsed_endpoint = urlsplit(self.endpoint_url)
+            if parsed_endpoint.scheme not in {"http", "https"}:
+                raise ValueError(
+                    "STORAGE_ENDPOINT_URL debe usar esquema http o https."
+                )
+            if not parsed_endpoint.netloc:
+                raise ValueError(
+                    "STORAGE_ENDPOINT_URL debe incluir un host."
+                )
+            if parsed_endpoint.username or parsed_endpoint.password:
+                raise ValueError(
+                    "STORAGE_ENDPOINT_URL no debe contener credenciales."
+                )
+
+            endpoint_uses_tls = parsed_endpoint.scheme == "https"
+            if endpoint_uses_tls != self.use_tls:
+                raise ValueError(
+                    "STORAGE_USE_TLS debe coincidir con el esquema "
+                    "de STORAGE_ENDPOINT_URL."
+                )
+
+        if self.ca_bundle_path and not self.use_tls:
+            raise ValueError(
+                "STORAGE_CA_BUNDLE_PATH requiere STORAGE_USE_TLS=true."
+            )
+        if self.ca_bundle_path and not self.verify_tls:
+            raise ValueError(
+                "STORAGE_CA_BUNDLE_PATH requiere STORAGE_VERIFY_TLS=true."
+            )
+
+        normalized_prefix = self.normalized_key_prefix
+        if not normalized_prefix:
+            raise ValueError(
+                "STORAGE_KEY_PREFIX no puede ser vacio."
+            )
+        if "\\" in normalized_prefix:
+            raise ValueError(
+                "STORAGE_KEY_PREFIX no puede contener backslashes."
+            )
+        if any(ord(character) < 32 for character in normalized_prefix):
+            raise ValueError(
+                "STORAGE_KEY_PREFIX contiene caracteres de control."
+            )
+        if any(
+            part in {"", ".", ".."}
+            for part in normalized_prefix.split("/")
+        ):
+            raise ValueError(
+                "STORAGE_KEY_PREFIX contiene segmentos no permitidos."
+            )
+
+        if not self.allowed_content_types:
+            raise ValueError(
+                "STORAGE_ALLOWED_CONTENT_TYPES no puede ser vacio."
+            )
+        if any(
+            not content_type
+            or "/" not in content_type
+            or content_type != content_type.strip()
+            for content_type in self.allowed_content_types
+        ):
+            raise ValueError(
+                "STORAGE_ALLOWED_CONTENT_TYPES contiene un MIME invalido."
+            )
+
+    @property
+    def normalized_backend(self) -> str | None:
+        if self.backend is None:
+            return None
+        normalized = self.backend.strip().lower()
+        return normalized or None
+
+    @property
+    def normalized_key_prefix(self) -> str:
+        return self.key_prefix.strip().strip("/")
+
+    @property
+    def is_configured(self) -> bool:
+        return (
+            self.normalized_backend == "s3"
+            and bool(self.bucket_name and self.bucket_name.strip())
+        )
+
+    @property
+    def tls_verify_value(self) -> bool | str:
+        if self.ca_bundle_path:
+            return self.ca_bundle_path
+        return self.verify_tls
+
+    def require_configured(self) -> None:
+        if not self.is_configured:
+            raise RuntimeError(
+                "Object storage S3 no esta configurado."
+            )
 
 
 class ObservabilitySettings(BaseModel):
@@ -254,6 +429,28 @@ class Settings(BaseModel):
     observability: ObservabilitySettings
     workers: WorkersSettings
 
+    def model_post_init(self, __context: object) -> None:
+        if not self.is_production or not self.storage.is_configured:
+            return
+
+        if not self.storage.use_tls:
+            raise ValueError(
+                "Produccion requiere STORAGE_USE_TLS=true."
+            )
+        if not self.storage.verify_tls:
+            raise ValueError(
+                "Produccion requiere STORAGE_VERIFY_TLS=true."
+            )
+
+        if self.storage.endpoint_url:
+            endpoint_scheme = urlsplit(
+                self.storage.endpoint_url
+            ).scheme
+            if endpoint_scheme != "https":
+                raise ValueError(
+                    "Produccion requiere STORAGE_ENDPOINT_URL con https."
+                )
+
     @property
     def is_test(self) -> bool:
         return self.environment == Environment.TEST
@@ -273,6 +470,11 @@ class Settings(BaseModel):
             or Environment.DEVELOPMENT.value
         )
         environment = Environment(raw_environment.lower())
+
+        storage_allowed_content_types = (
+            _read_csv_env("STORAGE_ALLOWED_CONTENT_TYPES")
+            or DEFAULT_STORAGE_ALLOWED_CONTENT_TYPES
+        )
 
         return cls(
             environment=environment,
@@ -323,7 +525,54 @@ class Settings(BaseModel):
             storage=StorageSettings(
                 backend=_read_optional_env("STORAGE_BACKEND"),
                 bucket_name=_read_optional_env("STORAGE_BUCKET_NAME"),
+                region=_read_optional_env("STORAGE_REGION")
+                or "us-east-1",
                 endpoint_url=_read_optional_env("STORAGE_ENDPOINT_URL"),
+                access_key_id=_read_optional_env(
+                    "STORAGE_ACCESS_KEY_ID"
+                ),
+                secret_access_key=_read_optional_env(
+                    "STORAGE_SECRET_ACCESS_KEY"
+                ),
+                session_token=_read_optional_env(
+                    "STORAGE_SESSION_TOKEN"
+                ),
+                force_path_style=_read_bool_env(
+                    "STORAGE_FORCE_PATH_STYLE",
+                    default=False,
+                ),
+                use_tls=_read_bool_env(
+                    "STORAGE_USE_TLS",
+                    default=True,
+                ),
+                verify_tls=_read_bool_env(
+                    "STORAGE_VERIFY_TLS",
+                    default=True,
+                ),
+                ca_bundle_path=_read_optional_env(
+                    "STORAGE_CA_BUNDLE_PATH"
+                ),
+                connect_timeout_seconds=_read_int_env(
+                    "STORAGE_CONNECT_TIMEOUT_SECONDS",
+                    default=5,
+                ),
+                read_timeout_seconds=_read_int_env(
+                    "STORAGE_READ_TIMEOUT_SECONDS",
+                    default=60,
+                ),
+                max_retries=_read_int_env(
+                    "STORAGE_MAX_RETRIES",
+                    default=3,
+                ),
+                key_prefix=_read_optional_env(
+                    "STORAGE_KEY_PREFIX"
+                )
+                or "vault",
+                max_upload_bytes=_read_int_env(
+                    "STORAGE_MAX_UPLOAD_BYTES",
+                    default=25 * 1024 * 1024,
+                ),
+                allowed_content_types=storage_allowed_content_types,
             ),
             observability=ObservabilitySettings(
                 log_level=_read_optional_env("LOG_LEVEL") or "INFO",
