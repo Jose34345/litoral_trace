@@ -29,8 +29,9 @@ from litoral_trace.api.lotes import router as lotes_router
 from litoral_trace.api.satellite import router as satellite_router
 from litoral_trace.api.settings import router as settings_router
 from litoral_trace.api.vault import router as vault_router
-from litoral_trace.auth.rbac import Permission, ensure_permission
+from litoral_trace.auth.rbac import Permission, ensure_permission, has_permission
 from litoral_trace.auth.sessions import ACCESS_TOKEN_COOKIE_KEY, REFRESH_TOKEN_COOKIE_KEY
+from litoral_trace.config import get_settings
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.services.admin import listar_empresas_superadmin
 
@@ -256,7 +257,7 @@ async def render_dashboard_view(request: Request):
     tags=["Frontend B2B"],
 )
 async def render_vault_view(request: Request):
-    """Render the vault page for authenticated users."""
+    """Render the tenant Vault with server-derived UI capabilities."""
     user, denied_response = _get_html_route_user(
         request,
         required_permission=Permission.VAULT_READ,
@@ -264,10 +265,27 @@ async def render_vault_view(request: Request):
     if denied_response is not None:
         return denied_response
 
+    storage_settings = get_settings().storage
+
     return render_template(
         request,
         "vault.html",
-        {"user": user},
+        {
+            "user": user,
+            "vault_can_upload": has_permission(
+                user,
+                Permission.VAULT_UPLOAD,
+            ),
+            "vault_can_delete": has_permission(
+                user,
+                Permission.VAULT_DELETE,
+            ),
+            "vault_max_upload_bytes": storage_settings.max_upload_bytes,
+            "vault_max_upload_mb": round(
+                storage_settings.max_upload_bytes / (1024 * 1024),
+                1,
+            ),
+        },
     )
 
 
