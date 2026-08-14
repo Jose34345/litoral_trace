@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Callable, Protocol
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from litoral_trace.config import get_settings
@@ -24,6 +25,7 @@ from litoral_trace.observability.satellite_worker import (
     SatelliteQueueSnapshotCache,
     SatelliteWorkerMetrics,
     configure_satellite_worker_json_logging,
+    get_satellite_queue_snapshot,
     start_satellite_metrics_server,
 )
 from litoral_trace.services.gee import (
@@ -73,7 +75,7 @@ _DEFAULT_RETRY_MAX_SECONDS = 900
 
 _SENSITIVE_TEXT_PATTERNS = (
     re.compile(
-        r"postgres(?:ql\+psycopg)?://\S+",
+        r"postgres(?:ql(?:\+psycopg)?)?://\S+",
         re.IGNORECASE,
     ),
     re.compile(
@@ -1625,6 +1627,94 @@ def _install_signal_handlers(
             continue
 
 
+def _rollback_and_close_readiness_session(
+    session: Session | None,
+) -> None:
+    """Close a read-only readiness session without leaking cleanup failures."""
+
+    if session is None:
+        return
+
+    try:
+        session.rollback()
+    except Exception:
+        pass
+
+    try:
+        session.close()
+    except Exception:
+        pass
+
+
+def check_satellite_worker_readiness(
+    *,
+    worker_session_factory: Callable[[], Session | None] | None = None,
+    runtime_session_factory: Callable[[], Session | None] | None = None,
+) -> bool:
+    """Check worker dependencies without claiming or mutating durable jobs."""
+
+    worker_factory = worker_session_factory or get_worker_db_session
+    runtime_factory = runtime_session_factory or get_db_session
+
+    worker_session: Session | None = None
+
+    try:
+        worker_session = worker_factory()
+
+        if worker_session is None:
+            raise RuntimeError(
+                "Worker database session is unavailable."
+            )
+
+        # Read-only SECURITY DEFINER aggregate added by P2.2F2.
+        # This must never claim, recover or mutate a satellite job.
+        get_satellite_queue_snapshot(worker_session)
+
+    except Exception as exc:
+        logger.warning(
+            "satellite_worker_readiness_worker_db_unavailable",
+            extra={
+                "error_type": type(exc).__name__,
+                "error_message": sanitize_worker_error_message(
+                    str(exc)
+                ),
+            },
+        )
+        return False
+
+    finally:
+        _rollback_and_close_readiness_session(worker_session)
+
+    runtime_session: Session | None = None
+
+    try:
+        runtime_session = runtime_factory()
+
+        if runtime_session is None:
+            raise RuntimeError(
+                "Runtime database session is unavailable."
+            )
+
+        runtime_session.execute(text("SELECT 1"))
+
+    except Exception as exc:
+        logger.warning(
+            "satellite_worker_readiness_runtime_db_unavailable",
+            extra={
+                "error_type": type(exc).__name__,
+                "error_message": sanitize_worker_error_message(
+                    str(exc)
+                ),
+            },
+        )
+        return False
+
+    finally:
+        _rollback_and_close_readiness_session(runtime_session)
+
+    return True
+
+
 def main(
     argv: list[str] | None = None,
 ) -> int:
@@ -1636,12 +1726,23 @@ def main(
         )
     )
 
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group()
+
+    mode_group.add_argument(
         "--once",
         action="store_true",
         help=(
             "Claim and execute at most one "
             "durable satellite job."
+        ),
+    )
+
+    mode_group.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Check worker database readiness "
+            "without claiming or mutating jobs."
         ),
     )
 
@@ -1660,6 +1761,13 @@ def main(
             logging.INFO,
     )
     configure_satellite_worker_json_logging(log_level)
+
+    if args.check:
+        return (
+            0
+            if check_satellite_worker_readiness()
+            else 1
+        )
 
     worker = build_satellite_worker()
     settings = get_settings()

@@ -1,34 +1,126 @@
-#!/bin/bash
-# Script de Despliegue Automático en Producción — Litoral Trace (FastAPI)
-set -e
+#!/usr/bin/env bash
+# Litoral Trace - controlled production deployment
+set -Eeuo pipefail
 
-echo "=========================================================="
-echo "🚀 Iniciando Despliegue de Producción: litoraltrace.com"
-echo "=========================================================="
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
+APP_DIR="${APP_DIR:-/opt/litoral_trace}"
 
-APP_DIR="/opt/litoral_trace"
+log() {
+    printf '%s\n' "$*"
+}
 
-if [ ! -d "$APP_DIR" ]; then
-    echo "📁 Creando directorio de aplicación en $APP_DIR..."
-    mkdir -p "$APP_DIR"
-fi
+fail() {
+    printf 'ERROR: %s\n' "$*" >&2
+    exit 1
+}
 
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
+}
+
+require_nonempty_env() {
+    local name="$1"
+    if [ -z "${!name:-}" ]; then
+        fail "Required environment variable is not set: $name"
+    fi
+}
+
+wait_for_service_health() {
+    local service="$1"
+    local timeout_seconds="${2:-120}"
+    local elapsed=0
+    local container_id=""
+    local health=""
+
+    while [ "$elapsed" -lt "$timeout_seconds" ]; do
+        container_id="$(docker compose -f "$COMPOSE_FILE" ps -q "$service" 2>/dev/null || true)"
+
+        if [ -n "$container_id" ]; then
+            health="$(
+                docker inspect \
+                    --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+                    "$container_id" 2>/dev/null || true
+            )"
+
+            case "$health" in
+                healthy)
+                    log "OK: service '$service' is healthy."
+                    return 0
+                    ;;
+                unhealthy|exited|dead)
+                    docker compose -f "$COMPOSE_FILE" logs --tail=100 "$service" || true
+                    fail "Service '$service' entered state: $health"
+                    ;;
+            esac
+        fi
+
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    docker compose -f "$COMPOSE_FILE" ps || true
+    docker compose -f "$COMPOSE_FILE" logs --tail=100 "$service" || true
+    fail "Timed out waiting for service '$service' to become healthy."
+}
+
+log "=========================================================="
+log "Litoral Trace - production deployment"
+log "=========================================================="
+
+require_command docker
+
+docker compose version >/dev/null 2>&1 \
+    || fail "Docker Compose v2 ('docker compose') is required."
+
+[ -d "$APP_DIR" ] || fail "Application directory does not exist: $APP_DIR"
 cd "$APP_DIR"
 
-echo "🛑 Deteniendo contenedores de producción anteriores..."
-docker-compose -f docker-compose.prod.yml down || true
+[ -f "$COMPOSE_FILE" ] || fail "Compose file not found: $COMPOSE_FILE"
 
-echo "🔨 Reconstruyendo e iniciando contenedores FastAPI + PostGIS + Nginx..."
-docker-compose -f docker-compose.prod.yml up -d --build
+# Docker Compose may read runtime values from an untracked .env or from the
+# deployment environment. We only validate the migration owner credential here
+# because it is deliberately NOT part of either long-lived service environment.
+require_nonempty_env MIGRATION_DATABASE_URL
 
-echo "⏳ Esperando inicio saludable de la base de datos PostgreSQL/PostGIS..."
-sleep 5
+log "Validating Compose configuration..."
+docker compose -f "$COMPOSE_FILE" config --quiet
 
-echo "🏥 Verificando salud de la API FastAPI..."
-curl -s -f http://localhost:8000/health || (echo "❌ Error: El servicio FastAPI no respondió en http://localhost:8000/health" && exit 1)
+log "Building shared API/worker image..."
+docker compose -f "$COMPOSE_FILE" build app worker
 
-echo "=========================================================="
-echo "✅ Despliegue Exitoso. La plataforma B2B está activa en:"
-echo "🌐 https://litoraltrace.com"
-echo "🌐 https://litoraltrace.com/docs (OpenAPI Documentation)"
-echo "=========================================================="
+log "Applying Alembic migrations with an ephemeral owner credential..."
+docker compose -f "$COMPOSE_FILE" run \
+    --rm \
+    --no-deps \
+    -e MIGRATION_DATABASE_URL="$MIGRATION_DATABASE_URL" \
+    app \
+    python -m alembic upgrade head
+
+# Reduce accidental owner-credential persistence in the deployment shell after
+# the only operation that requires it.
+unset MIGRATION_DATABASE_URL
+
+log "Starting production services..."
+docker compose -f "$COMPOSE_FILE" up -d db app worker proxy
+
+log "Waiting for API readiness..."
+wait_for_service_health app 180
+
+log "Waiting for satellite worker readiness..."
+wait_for_service_health worker 180
+
+log "Verifying API readiness from inside the API container..."
+docker compose -f "$COMPOSE_FILE" exec -T app \
+    curl -fsS http://127.0.0.1:8000/ready >/dev/null
+
+log "Verifying worker readiness without claiming a job..."
+docker compose -f "$COMPOSE_FILE" exec -T worker \
+    python -m litoral_trace.workers.satellite_worker --check
+
+log "Current service state:"
+docker compose -f "$COMPOSE_FILE" ps
+
+log "=========================================================="
+log "Deployment completed successfully."
+log "API and satellite worker are healthy."
+log "=========================================================="
