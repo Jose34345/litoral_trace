@@ -15,6 +15,8 @@ class Permission(StrEnum):
     LOTE_DELETE = "lote:delete"
     SATELLITE_RUN = "satellite:run"
     VAULT_READ = "vault:read"
+    VAULT_UPLOAD = "vault:upload"
+    VAULT_DELETE = "vault:delete"
     LICENSE_READ = "license:read"
     SETTINGS_WRITE = "settings:write"
     PLATFORM_ADMIN = "platform:admin"
@@ -32,6 +34,8 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
             Permission.LOTE_DELETE,
             Permission.SATELLITE_RUN,
             Permission.VAULT_READ,
+            Permission.VAULT_UPLOAD,
+            Permission.VAULT_DELETE,
             Permission.LICENSE_READ,
             Permission.SETTINGS_WRITE,
         }
@@ -44,6 +48,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
             Permission.LOTE_DELETE,
             Permission.SATELLITE_RUN,
             Permission.VAULT_READ,
+            Permission.VAULT_UPLOAD,
             Permission.LICENSE_READ,
         }
     ),

@@ -1,76 +1,140 @@
-import unittest
+from __future__ import annotations
+
 import asyncio
-import sys
+import io
 import json
-from http.cookies import SimpleCookie
-from pathlib import Path
+from datetime import datetime, timezone
+from uuid import uuid4
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import pytest
+from fastapi import Response
+from starlette.datastructures import UploadFile
 
-from litoral_trace.services.vault import listar_documentos_boveda_tenant
-from litoral_trace.api.auth import login_b2b, LoginRequest, get_current_tenant_user
-from litoral_trace.api.vault import consultar_documentos_boveda, descargar_documento_boveda
-from litoral_trace.db.init_db import get_non_production_superadmin_seed
-from main import render_vault_view
-from fastapi import Response, Request
+import litoral_trace.api.vault as vault_api
+from litoral_trace.api.auth import UserTenantContext
+from litoral_trace.services.vault import (
+    VaultDocumentView,
+    VaultNotFoundError,
+    VerifiedVaultDownload,
+)
 
-class TestVaultPhase1(unittest.TestCase):
-    @staticmethod
-    def _extract_cookies(response: Response) -> dict[str, str]:
-        parsed_cookie = SimpleCookie()
-        for set_cookie_header in response.headers.getlist("set-cookie"):
-            parsed_cookie.load(set_cookie_header)
-        return {
-            cookie_name: morsel.value
-            for cookie_name, morsel in parsed_cookie.items()
-        }
 
-    def setUp(self):
-        req = LoginRequest(
-            username="admin",
-            password=get_non_production_superadmin_seed()[1],
+def _user(*, organization_id: int = 1, role: str = "admin") -> UserTenantContext:
+    return UserTenantContext(
+        user_id=11,
+        username="vault_phase1_user",
+        organization_id=organization_id,
+        organization_name=f"Org {organization_id}",
+        organization_slug=f"org-{organization_id}",
+        role=role,
+        email="vault-phase1@example.com",
+    )
+
+
+def _document(*, organization_id: int = 1) -> VaultDocumentView:
+    del organization_id
+    now = datetime.now(timezone.utc)
+    return VaultDocumentView(
+        internal_id=501,
+        public_id=uuid4(),
+        filename="evidence.json",
+        document_type="DDS_JSON_TRACES",
+        content_type="application/json",
+        size_bytes=2,
+        sha256=("a" * 64),
+        status="available",
+        created_at=now,
+        updated_at=now,
+        deleted_at=None,
+    )
+
+
+class FakeVaultService:
+    def __init__(self, document: VaultDocumentView):
+        self.document = document
+
+    def list_documents(self, **kwargs):
+        return [self.document]
+
+    def materialize_verified_download(self, **kwargs):
+        if str(kwargs["document_id"]) != str(self.document.public_id):
+            raise VaultNotFoundError("not found")
+        return VerifiedVaultDownload(
+            document=self.document,
+            fileobj=io.BytesIO(b"{}"),
         )
-        self.login_response = Response()
-        token_res = asyncio.run(login_b2b(req, self.login_response))
-        bearer_hdr = f"Bearer {token_res.access_token}"
-        self.tenant_user = get_current_tenant_user(authorization=bearer_hdr)
 
-    def test_listar_documentos_boveda_tenant_isolation(self):
-        docs_org1 = listar_documentos_boveda_tenant(organization_id=1)
-        self.assertGreater(len(docs_org1), 0)
-        for doc in docs_org1:
-            self.assertEqual(doc["organization_id"], 1)
 
-        docs_org2 = listar_documentos_boveda_tenant(organization_id=999)
-        self.assertEqual(len(docs_org2), 0)
+def test_consultar_documentos_boveda_uses_persistent_service_contract(monkeypatch):
+    document = _document()
+    monkeypatch.setattr(
+        vault_api,
+        "_new_vault_service",
+        lambda: FakeVaultService(document),
+    )
 
-    def test_consultar_documentos_boveda_endpoint(self):
-        res = asyncio.run(consultar_documentos_boveda(q="Rodal", type=None, user=self.tenant_user))
-        self.assertEqual(res.status_code, 200)
-        body = json.loads(res.body.decode('utf-8'))
-        self.assertIn("documents", body)
-        self.assertGreater(body["total_documents"], 0)
-
-    def test_descargar_documento_boveda_endpoint(self):
-        res = asyncio.run(descargar_documento_boveda(doc_id="DOC-DDS-2026-001", user=self.tenant_user))
-        self.assertEqual(res.media_type, "application/json")
-
-    def test_render_vault_view(self):
-        cookie_header = "; ".join(
-            f"{cookie_name}={cookie_value}"
-            for cookie_name, cookie_value in self._extract_cookies(self.login_response).items()
-        ).encode("utf-8")
-        req = Request(
-            scope={
-                "type": "http",
-                "method": "GET",
-                "path": "/vault",
-                "headers": [(b"cookie", cookie_header)],
-            }
+    response = asyncio.run(
+        vault_api.consultar_documentos_boveda(
+            q=None,
+            type=None,
+            user=_user(),
         )
-        res = asyncio.run(render_vault_view(req))
-        self.assertEqual(res.status_code, 200)
-        self.assertIn("BÓVEDA PRIVADA", res.body.decode('utf-8'))
+    )
+    body = json.loads(response.body.decode("utf-8"))
 
-if __name__ == "__main__":
-    unittest.main()
+    assert response.status_code == 200
+    assert body["total_documents"] == 1
+    assert body["documents"][0]["public_id"] == str(document.public_id)
+    assert body["documents"][0]["download_url"].endswith("/download")
+
+
+def test_descargar_documento_boveda_legacy_alias_streams_real_service(monkeypatch):
+    document = _document()
+    monkeypatch.setattr(
+        vault_api,
+        "_new_vault_service",
+        lambda: FakeVaultService(document),
+    )
+    monkeypatch.setattr(
+        vault_api,
+        "record_audit_event_now",
+        lambda **kwargs: True,
+    )
+
+    response = asyncio.run(
+        vault_api.descargar_documento_boveda(
+            doc_id=str(document.public_id),
+            user=_user(),
+        )
+    )
+
+    assert response.status_code == 200
+    assert response.media_type == "application/json"
+    assert response.headers["cache-control"] == "private, no-store"
+
+
+def test_descargar_documento_boveda_invalid_or_unknown_id_returns_404(monkeypatch):
+    document = _document()
+    monkeypatch.setattr(
+        vault_api,
+        "_new_vault_service",
+        lambda: FakeVaultService(document),
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        asyncio.run(
+            vault_api.descargar_documento_boveda(
+                doc_id=str(uuid4()),
+                user=_user(),
+            )
+        )
+
+    assert getattr(exc_info.value, "status_code", None) == 404
+
+
+def test_phase1_no_longer_depends_on_synthetic_document_ids():
+    assert "DOC-DDS-2026-001" not in open(
+        vault_api.__file__,
+        "r",
+        encoding="utf-8",
+    ).read()

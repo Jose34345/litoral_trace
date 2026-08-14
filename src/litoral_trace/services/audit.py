@@ -36,7 +36,10 @@ class AuditAction(StrEnum):
     SATELLITE_JOB_SUBMIT = "satellite.job.submit"
     SATELLITE_JOB_SUCCEEDED = "satellite.job.succeeded"
     SATELLITE_JOB_FAILED = "satellite.job.failed"
+    VAULT_UPLOAD = "vault.upload"
     VAULT_DOWNLOAD = "vault.download"
+    VAULT_DELETE = "vault.delete"
+    VAULT_INTEGRITY_FAILURE = "vault.integrity_failure"
     SETTINGS_INVITE_DEMO = "settings.invite_demo_user"
     PLATFORM_ORGANIZATION_CREATE = "platform.organization.create"
     PLATFORM_ORGANIZATION_STATUS_CHANGE = "platform.organization.status_change"
@@ -74,6 +77,14 @@ SENSITIVE_METADATA_KEYS = frozenset(
         "polygon_wkt_snapshot",
         "idempotency_key",
         "jwt",
+        "object_key",
+        "storage_key",
+        "storage_bucket",
+        "bucket_name",
+        "access_key_id",
+        "secret_access_key",
+        "session_token",
+        "presigned_url",
     }
 )
 
@@ -88,7 +99,8 @@ _SENSITIVE_DETAIL_PATTERNS = (
     re.compile(
         (
             r"\b(?:access_token|refresh_token|lease_token|authorization|"
-            r"password|api_key|client_secret|private_key|credentials)"
+            r"password|api_key|client_secret|private_key|credentials|"
+            r"secret_access_key|session_token|object_key|presigned_url)"
             r"\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"
         ),
         re.IGNORECASE,
