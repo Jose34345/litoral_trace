@@ -10,7 +10,10 @@ from sqlalchemy import delete, select
 from starlette.requests import Request
 
 import main
-from main import logout_submit_view, logout_view
+from litoral_trace.web.router import (
+    logout_submit_view,
+    logout_view,
+)
 from litoral_trace.api.auth import (
     LoginRequest,
     LogoutRequest,
@@ -26,6 +29,13 @@ from litoral_trace.auth.sessions import (
     utc_now,
 )
 from litoral_trace.auth.tokens import verify_jwt_token
+from litoral_trace.web.csrf import (
+    CSRF_BROWSER_COOKIE_KEY,
+    CSRF_HEADER_NAME,
+    create_csrf_browser_nonce,
+    create_csrf_token,
+    csrf_subject_from_access_payload,
+)
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.init_db import get_non_production_superadmin_seed
 from litoral_trace.db.models import User, UserSession
@@ -103,14 +113,31 @@ def _build_request(
     method: str,
     path: str,
     cookies: dict[str, str] | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> Request:
     headers: list[tuple[bytes, bytes]] = []
+
     if cookies:
         cookie_header = "; ".join(
             f"{cookie_name}={cookie_value}"
             for cookie_name, cookie_value in cookies.items()
         )
-        headers.append((b"cookie", cookie_header.encode("utf-8")))
+        headers.append(
+            (
+                b"cookie",
+                cookie_header.encode("utf-8"),
+            )
+        )
+
+    if extra_headers:
+        headers.extend(
+            (
+                header_name.lower().encode("utf-8"),
+                header_value.encode("utf-8"),
+            )
+            for header_name, header_value
+            in extra_headers.items()
+        )
 
     scope = {
         "type": "http",
@@ -124,7 +151,10 @@ def _build_request(
         "client": ("testclient", 50000),
         "server": ("testserver", 80),
         "root_path": "",
+        "app": main.app,
+        "router": main.app.router,
     }
+
     return Request(scope)
 
 
@@ -318,16 +348,46 @@ def test_web_get_logout_does_not_revoke_session_or_clear_cookies():
                 method="GET",
                 path="/logout",
                 cookies={
-                    ACCESS_TOKEN_COOKIE_KEY: cookies[ACCESS_TOKEN_COOKIE_KEY],
-                    REFRESH_TOKEN_COOKIE_KEY: cookies[REFRESH_TOKEN_COOKIE_KEY],
+                    ACCESS_TOKEN_COOKIE_KEY:
+                        cookies[ACCESS_TOKEN_COOKIE_KEY],
+                    REFRESH_TOKEN_COOKIE_KEY:
+                        cookies[REFRESH_TOKEN_COOKIE_KEY],
                 },
             )
         )
     )
 
     assert response.status_code == 200
-    assert "set-cookie" not in response.headers
-    untouched_session = _get_session_by_id(stored_session.id)
+
+    set_cookie_headers = response.headers.getlist(
+        "set-cookie"
+    )
+
+    assert any(
+        f"{CSRF_BROWSER_COOKIE_KEY}=" in header
+        for header in set_cookie_headers
+    )
+
+    assert not any(
+        (
+            f"{ACCESS_TOKEN_COOKIE_KEY}=" in header
+            and "Max-Age=0" in header
+        )
+        for header in set_cookie_headers
+    )
+
+    assert not any(
+        (
+            f"{REFRESH_TOKEN_COOKIE_KEY}=" in header
+            and "Max-Age=0" in header
+        )
+        for header in set_cookie_headers
+    )
+
+    untouched_session = _get_session_by_id(
+        stored_session.id
+    )
+
     assert untouched_session.revoked_at is None
 
 
@@ -335,14 +395,36 @@ def test_web_post_logout_revokes_session_and_redirects_to_login():
     _, _, cookies = _login()
     stored_session = _get_all_sessions()[0]
 
+    access_payload = verify_jwt_token(
+        cookies[ACCESS_TOKEN_COOKIE_KEY]
+    )
+
+    assert access_payload is not None
+
+    browser_nonce = create_csrf_browser_nonce()
+
+    csrf_token = create_csrf_token(
+        subject=csrf_subject_from_access_payload(
+            access_payload
+        ),
+        browser_nonce=browser_nonce,
+    )
+
     response = asyncio.run(
         logout_submit_view(
             _build_request(
                 method="POST",
                 path="/logout",
                 cookies={
-                    ACCESS_TOKEN_COOKIE_KEY: cookies[ACCESS_TOKEN_COOKIE_KEY],
-                    REFRESH_TOKEN_COOKIE_KEY: cookies[REFRESH_TOKEN_COOKIE_KEY],
+                    ACCESS_TOKEN_COOKIE_KEY:
+                        cookies[ACCESS_TOKEN_COOKIE_KEY],
+                    REFRESH_TOKEN_COOKIE_KEY:
+                        cookies[REFRESH_TOKEN_COOKIE_KEY],
+                    CSRF_BROWSER_COOKIE_KEY:
+                        browser_nonce,
+                },
+                extra_headers={
+                    CSRF_HEADER_NAME: csrf_token,
                 },
             )
         )
@@ -350,11 +432,39 @@ def test_web_post_logout_revokes_session_and_redirects_to_login():
 
     assert response.status_code == 303
     assert response.headers["location"] == "/"
-    cleared_cookie_headers = response.headers.getlist("set-cookie")
-    assert any(f"{REFRESH_TOKEN_COOKIE_KEY}=" in header for header in cleared_cookie_headers)
-    assert any("Max-Age=0" in header for header in cleared_cookie_headers)
 
-    revoked_session = _get_session_by_id(stored_session.id)
+    cleared_cookie_headers = (
+        response.headers.getlist("set-cookie")
+    )
+
+    assert any(
+        (
+            f"{ACCESS_TOKEN_COOKIE_KEY}=" in header
+            and "Max-Age=0" in header
+        )
+        for header in cleared_cookie_headers
+    )
+
+    assert any(
+        (
+            f"{REFRESH_TOKEN_COOKIE_KEY}=" in header
+            and "Max-Age=0" in header
+        )
+        for header in cleared_cookie_headers
+    )
+
+    assert any(
+        (
+            f"{CSRF_BROWSER_COOKIE_KEY}=" in header
+            and "Max-Age=0" in header
+        )
+        for header in cleared_cookie_headers
+    )
+
+    revoked_session = _get_session_by_id(
+        stored_session.id
+    )
+
     assert revoked_session.revoked_at is not None
 
 

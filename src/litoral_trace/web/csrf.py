@@ -1,4 +1,4 @@
-"""Stateless CSRF tokens for server-rendered and HTMX frontend mutations."""
+"""CSRF primitives for server-rendered, HTMX and cookie-authenticated requests."""
 from __future__ import annotations
 
 import base64
@@ -6,21 +6,26 @@ from dataclasses import dataclass
 import hashlib
 import hmac
 import json
+import re
 import secrets
 import time
 from typing import Any
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, Response, status
 
 from litoral_trace.config import get_settings
 
 
 CSRF_HEADER_NAME = "X-CSRF-Token"
 CSRF_FORM_FIELD = "csrf_token"
-CSRF_TOKEN_VERSION = 1
+CSRF_BROWSER_COOKIE_KEY = "lt_csrf_browser"
+CSRF_TOKEN_VERSION = 2
 CSRF_MAX_AGE_SECONDS = 60 * 60
+CSRF_BROWSER_COOKIE_MAX_AGE_SECONDS = 8 * 60 * 60
 CSRF_CLOCK_SKEW_SECONDS = 60
-_CSRF_KEY_CONTEXT = b"litoral-trace:csrf:v1"
+
+_CSRF_KEY_CONTEXT = b"litoral-trace:csrf:v2"
+_BROWSER_NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 
 
 class CsrfConfigurationError(RuntimeError):
@@ -40,13 +45,56 @@ def csrf_subject_from_user(user: Any) -> CsrfSubject:
     username = str(getattr(user, "username", "") or "").strip()
 
     try:
-        organization_id = int(getattr(user, "organization_id", 0) or 0)
-        session_id = int(getattr(user, "session_id", 0) or 0)
+        organization_id = int(
+            getattr(user, "organization_id", 0) or 0
+        )
+        session_id = int(
+            getattr(user, "session_id", 0) or 0
+        )
     except (TypeError, ValueError) as exc:
-        raise ValueError("Invalid authenticated CSRF subject.") from exc
+        raise ValueError(
+            "Invalid authenticated CSRF subject."
+        ) from exc
 
-    if not username or organization_id <= 0 or session_id <= 0:
-        raise ValueError("Authenticated CSRF subject is incomplete.")
+    if (
+        not username
+        or organization_id <= 0
+        or session_id <= 0
+    ):
+        raise ValueError(
+            "Authenticated CSRF subject is incomplete."
+        )
+
+    return CsrfSubject(
+        username=username,
+        organization_id=organization_id,
+        session_id=session_id,
+    )
+
+
+def csrf_subject_from_access_payload(
+    payload: dict[str, Any],
+) -> CsrfSubject:
+    """Build the CSRF subject from a previously verified access-token payload."""
+
+    username = str(payload.get("sub", "") or "").strip()
+
+    try:
+        organization_id = int(payload.get("org_id"))
+        session_id = int(payload.get("sid"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "Access-token CSRF subject is incomplete."
+        ) from exc
+
+    if (
+        not username
+        or organization_id <= 0
+        or session_id <= 0
+    ):
+        raise ValueError(
+            "Access-token CSRF subject is incomplete."
+        )
 
     return CsrfSubject(
         username=username,
@@ -56,12 +104,17 @@ def csrf_subject_from_user(user: Any) -> CsrfSubject:
 
 
 def _resolve_secret(secret_key: str | None = None) -> bytes:
-    raw_secret = (secret_key or get_settings().jwt.secret_key or "").strip()
+    raw_secret = (
+        secret_key
+        or get_settings().jwt.secret_key
+        or ""
+    ).strip()
 
     if not raw_secret:
         raise CsrfConfigurationError(
             "JWT_SECRET_KEY is required for CSRF signing."
         )
+
     if len(raw_secret) < 32:
         raise CsrfConfigurationError(
             "JWT_SECRET_KEY must contain at least 32 characters."
@@ -75,17 +128,29 @@ def _resolve_secret(secret_key: str | None = None) -> bytes:
 
 
 def _b64url_encode(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+    return (
+        base64.urlsafe_b64encode(data)
+        .rstrip(b"=")
+        .decode("ascii")
+    )
 
 
 def _b64url_decode(data: str) -> bytes:
     padding = "=" * (-len(data) % 4)
-    return base64.urlsafe_b64decode((data + padding).encode("ascii"))
+    return base64.urlsafe_b64decode(
+        (data + padding).encode("ascii")
+    )
 
 
-def _subject_payload(subject: CsrfSubject | None) -> dict[str, object]:
+def _subject_payload(
+    subject: CsrfSubject | None,
+) -> dict[str, object]:
     if subject is None:
-        return {"sub": "anonymous", "org": 0, "sid": 0}
+        return {
+            "sub": "anonymous",
+            "org": 0,
+            "sid": 0,
+        }
 
     return {
         "sub": subject.username,
@@ -94,22 +159,132 @@ def _subject_payload(subject: CsrfSubject | None) -> dict[str, object]:
     }
 
 
+def create_csrf_browser_nonce() -> str:
+    """Create the host-only browser secret used to bind rendered CSRF tokens."""
+
+    return secrets.token_urlsafe(32)
+
+
+def is_valid_csrf_browser_nonce(
+    browser_nonce: str | None,
+) -> bool:
+    if not isinstance(browser_nonce, str):
+        return False
+
+    return bool(
+        _BROWSER_NONCE_RE.fullmatch(
+            browser_nonce.strip()
+        )
+    )
+
+
+def get_csrf_browser_nonce(
+    request: Request,
+) -> str | None:
+    value = request.cookies.get(
+        CSRF_BROWSER_COOKIE_KEY
+    )
+
+    if not is_valid_csrf_browser_nonce(value):
+        return None
+
+    return str(value).strip()
+
+
+def get_or_create_csrf_browser_nonce(
+    request: Request,
+) -> tuple[str, bool]:
+    existing = get_csrf_browser_nonce(request)
+    if existing is not None:
+        return existing, False
+
+    return create_csrf_browser_nonce(), True
+
+
+def set_csrf_browser_cookie(
+    response: Response,
+    browser_nonce: str,
+) -> None:
+    """Set a host-only HttpOnly browser-binding cookie."""
+
+    if not is_valid_csrf_browser_nonce(browser_nonce):
+        raise ValueError(
+            "Invalid CSRF browser nonce."
+        )
+
+    settings = get_settings()
+
+    response.set_cookie(
+        key=CSRF_BROWSER_COOKIE_KEY,
+        value=browser_nonce,
+        httponly=True,
+        samesite="lax",
+        secure=settings.is_production,
+        max_age=CSRF_BROWSER_COOKIE_MAX_AGE_SECONDS,
+        path="/",
+    )
+
+
+def clear_csrf_browser_cookie(
+    response: Response,
+) -> None:
+    settings = get_settings()
+
+    response.delete_cookie(
+        CSRF_BROWSER_COOKIE_KEY,
+        httponly=True,
+        samesite="lax",
+        secure=settings.is_production,
+        path="/",
+    )
+
+
+def _browser_binding(
+    browser_nonce: str | None,
+) -> str | None:
+    """Return a one-way browser binding without exposing the HttpOnly nonce."""
+
+    if browser_nonce is None:
+        return None
+
+    if not is_valid_csrf_browser_nonce(browser_nonce):
+        raise ValueError(
+            "Invalid CSRF browser nonce."
+        )
+
+    digest = hashlib.sha256(
+        browser_nonce.encode("utf-8")
+    ).digest()
+
+    return _b64url_encode(digest)
+
+
 def create_csrf_token(
     *,
     subject: CsrfSubject | None = None,
+    browser_nonce: str | None = None,
     now_epoch: int | None = None,
     nonce: str | None = None,
     secret_key: str | None = None,
 ) -> str:
-    """Create a short-lived token bound to the current authenticated session."""
+    """Create a signed token bound to session identity and, at runtime, browser."""
 
-    now = int(time.time()) if now_epoch is None else int(now_epoch)
-    resolved_nonce = nonce or secrets.token_urlsafe(24)
+    now = (
+        int(time.time())
+        if now_epoch is None
+        else int(now_epoch)
+    )
+
+    resolved_nonce = (
+        nonce
+        or secrets.token_urlsafe(24)
+    )
 
     payload = {
         "v": CSRF_TOKEN_VERSION,
         "iat": now,
         "nonce": resolved_nonce,
+        "browser": _browser_binding(browser_nonce),
         **_subject_payload(subject),
     }
 
@@ -127,79 +302,217 @@ def create_csrf_token(
         hashlib.sha256,
     ).digest()
 
-    return f"{encoded_payload}.{_b64url_encode(signature)}"
+    return (
+        f"{encoded_payload}."
+        f"{_b64url_encode(signature)}"
+    )
 
 
-def verify_csrf_token(
+def _decode_verified_csrf_payload(
     token: str,
     *,
-    subject: CsrfSubject | None = None,
     now_epoch: int | None = None,
     max_age_seconds: int = CSRF_MAX_AGE_SECONDS,
     secret_key: str | None = None,
-) -> bool:
-    """Verify signature, expiry and exact session/tenant binding."""
-
+) -> dict[str, Any] | None:
     try:
         if max_age_seconds <= 0:
-            return False
+            return None
 
-        encoded_payload, encoded_signature = token.split(".", 1)
+        encoded_payload, encoded_signature = token.split(
+            ".",
+            1,
+        )
 
         expected_signature = hmac.new(
             _resolve_secret(secret_key),
             encoded_payload.encode("ascii"),
             hashlib.sha256,
         ).digest()
-        actual_signature = _b64url_decode(encoded_signature)
 
-        if not hmac.compare_digest(expected_signature, actual_signature):
-            return False
+        actual_signature = _b64url_decode(
+            encoded_signature
+        )
 
-        payload = json.loads(_b64url_decode(encoded_payload).decode("utf-8"))
+        if not hmac.compare_digest(
+            expected_signature,
+            actual_signature,
+        ):
+            return None
+
+        payload = json.loads(
+            _b64url_decode(encoded_payload)
+            .decode("utf-8")
+        )
+
         if not isinstance(payload, dict):
-            return False
+            return None
+
         if payload.get("v") != CSRF_TOKEN_VERSION:
-            return False
+            return None
 
         issued_at = int(payload.get("iat"))
-        now = int(time.time()) if now_epoch is None else int(now_epoch)
+
+        now = (
+            int(time.time())
+            if now_epoch is None
+            else int(now_epoch)
+        )
 
         if issued_at > now + CSRF_CLOCK_SKEW_SECONDS:
-            return False
+            return None
+
         if now - issued_at > max_age_seconds:
-            return False
+            return None
 
-        nonce = str(payload.get("nonce", "") or "")
-        if len(nonce) < 16:
-            return False
+        token_nonce = str(
+            payload.get("nonce", "")
+            or ""
+        )
 
-        expected_subject = _subject_payload(subject)
+        if len(token_nonce) < 16:
+            return None
+
+        return payload
+    except Exception:
+        return None
+
+
+def _payload_matches_browser(
+    payload: dict[str, Any],
+    browser_nonce: str | None,
+) -> bool:
+    expected_binding = _browser_binding(
+        browser_nonce
+    )
+    actual_binding = payload.get("browser")
+
+    if (
+        expected_binding is None
+        or actual_binding is None
+    ):
         return (
-            payload.get("sub") == expected_subject["sub"]
-            and int(payload.get("org", -1)) == expected_subject["org"]
-            and int(payload.get("sid", -1)) == expected_subject["sid"]
+            expected_binding is None
+            and actual_binding is None
+        )
+
+    return hmac.compare_digest(
+        str(actual_binding),
+        expected_binding,
+    )
+
+
+def verify_csrf_browser_binding(
+    token: str,
+    *,
+    browser_nonce: str,
+    now_epoch: int | None = None,
+    max_age_seconds: int = CSRF_MAX_AGE_SECONDS,
+    secret_key: str | None = None,
+) -> bool:
+    """Verify signature, expiry and browser binding without requiring access JWT."""
+
+    if not is_valid_csrf_browser_nonce(
+        browser_nonce
+    ):
+        return False
+
+    payload = _decode_verified_csrf_payload(
+        token,
+        now_epoch=now_epoch,
+        max_age_seconds=max_age_seconds,
+        secret_key=secret_key,
+    )
+
+    if payload is None:
+        return False
+
+    try:
+        return _payload_matches_browser(
+            payload,
+            browser_nonce,
+        )
+    except ValueError:
+        return False
+
+
+def verify_csrf_token(
+    token: str,
+    *,
+    subject: CsrfSubject | None = None,
+    browser_nonce: str | None = None,
+    now_epoch: int | None = None,
+    max_age_seconds: int = CSRF_MAX_AGE_SECONDS,
+    secret_key: str | None = None,
+) -> bool:
+    """Verify signature, expiry, exact subject and optional browser binding."""
+
+    payload = _decode_verified_csrf_payload(
+        token,
+        now_epoch=now_epoch,
+        max_age_seconds=max_age_seconds,
+        secret_key=secret_key,
+    )
+
+    if payload is None:
+        return False
+
+    try:
+        if not _payload_matches_browser(
+            payload,
+            browser_nonce,
+        ):
+            return False
+
+        expected_subject = _subject_payload(
+            subject
+        )
+
+        return (
+            payload.get("sub")
+            == expected_subject["sub"]
+            and int(payload.get("org", -1))
+            == expected_subject["org"]
+            and int(payload.get("sid", -1))
+            == expected_subject["sid"]
         )
     except Exception:
         return False
 
 
-async def extract_csrf_token(request: Request) -> str | None:
-    """Read CSRF from the HTMX header, then from a regular HTML form."""
+async def extract_csrf_token(
+    request: Request,
+) -> str | None:
+    """Read CSRF from request header, then regular HTML form."""
 
-    header_token = (request.headers.get(CSRF_HEADER_NAME) or "").strip()
+    header_token = (
+        request.headers.get(CSRF_HEADER_NAME)
+        or ""
+    ).strip()
+
     if header_token:
         return header_token
 
-    content_type = (request.headers.get("content-type") or "").lower()
+    content_type = (
+        request.headers.get("content-type")
+        or ""
+    ).lower()
+
     if (
-        "application/x-www-form-urlencoded" not in content_type
-        and "multipart/form-data" not in content_type
+        "application/x-www-form-urlencoded"
+        not in content_type
+        and "multipart/form-data"
+        not in content_type
     ):
         return None
 
     form = await request.form()
-    form_token = str(form.get(CSRF_FORM_FIELD, "") or "").strip()
+
+    form_token = str(
+        form.get(CSRF_FORM_FIELD, "")
+        or ""
+    ).strip()
+
     return form_token or None
 
 
@@ -207,22 +520,40 @@ async def enforce_csrf(
     request: Request,
     *,
     user: Any | None = None,
+    browser_nonce: str | None = None,
+    require_browser_binding: bool = True,
     secret_key: str | None = None,
 ) -> None:
-    """Fail closed for missing, invalid, expired or cross-session CSRF."""
+    """Fail closed for missing, invalid, expired or replayed CSRF tokens."""
 
     token = await extract_csrf_token(request)
 
+    if (
+        require_browser_binding
+        and not is_valid_csrf_browser_nonce(
+            browser_nonce
+        )
+    ):
+        token = None
+
     try:
-        subject = csrf_subject_from_user(user) if user is not None else None
+        subject = (
+            csrf_subject_from_user(user)
+            if user is not None
+            else None
+        )
     except ValueError:
         subject = None
         token = None
 
-    if token is None or not verify_csrf_token(
-        token,
-        subject=subject,
-        secret_key=secret_key,
+    if (
+        token is None
+        or not verify_csrf_token(
+            token,
+            subject=subject,
+            browser_nonce=browser_nonce,
+            secret_key=secret_key,
+        )
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
