@@ -78,8 +78,8 @@ cd "$APP_DIR"
 [ -f "$COMPOSE_FILE" ] || fail "Compose file not found: $COMPOSE_FILE"
 
 # Docker Compose may read runtime values from an untracked .env or from the
-# deployment environment. We only validate the migration owner credential here
-# because it is deliberately NOT part of either long-lived service environment.
+# deployment environment. MIGRATION_DATABASE_URL is deliberately not part of
+# either long-lived service environment.
 require_nonempty_env MIGRATION_DATABASE_URL
 
 log "Validating Compose configuration..."
@@ -87,6 +87,15 @@ docker compose -f "$COMPOSE_FILE" config --quiet
 
 log "Building shared API/worker image..."
 docker compose -f "$COMPOSE_FILE" build app worker
+
+# Fail before touching the database when the production Vault storage contract
+# is missing, invalid, unreachable, or unauthorized.
+log "Verifying private Vault object storage before migration..."
+docker compose -f "$COMPOSE_FILE" run \
+    --rm \
+    --no-deps \
+    app \
+    python -m litoral_trace.storage.readiness
 
 log "Applying Alembic migrations with an ephemeral owner credential..."
 docker compose -f "$COMPOSE_FILE" run \
@@ -113,6 +122,10 @@ log "Verifying API readiness from inside the API container..."
 docker compose -f "$COMPOSE_FILE" exec -T app \
     curl -fsS http://127.0.0.1:8000/ready >/dev/null
 
+log "Verifying Vault storage readiness from inside the API container..."
+docker compose -f "$COMPOSE_FILE" exec -T app \
+    python -m litoral_trace.storage.readiness
+
 log "Verifying worker readiness without claiming a job..."
 docker compose -f "$COMPOSE_FILE" exec -T worker \
     python -m litoral_trace.workers.satellite_worker --check
@@ -122,5 +135,5 @@ docker compose -f "$COMPOSE_FILE" ps
 
 log "=========================================================="
 log "Deployment completed successfully."
-log "API and satellite worker are healthy."
+log "API, Vault storage, and satellite worker are healthy."
 log "=========================================================="

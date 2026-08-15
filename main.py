@@ -33,6 +33,7 @@ from litoral_trace.auth.rbac import Permission, ensure_permission, has_permissio
 from litoral_trace.auth.sessions import ACCESS_TOKEN_COOKIE_KEY, REFRESH_TOKEN_COOKIE_KEY
 from litoral_trace.config import get_settings
 from litoral_trace.db.engine import get_db_session
+from litoral_trace.storage.readiness import is_vault_storage_ready
 from litoral_trace.services.admin import listar_empresas_superadmin
 
 app = FastAPI(
@@ -414,12 +415,13 @@ async def health_check() -> JSONResponse:
     tags=["Infraestructura"],
 )
 async def readiness_check() -> JSONResponse:
-    """Check only the API runtime PostgreSQL dependency."""
+    """Fail closed when a required runtime dependency is unavailable."""
 
     try:
         session = get_db_session()
     except Exception:
         session = None
+
     if session is None:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -428,10 +430,6 @@ async def readiness_check() -> JSONResponse:
 
     try:
         session.execute(text("SELECT 1"))
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={"status": "ready"},
-        )
     except Exception:
         try:
             session.rollback()
@@ -446,6 +444,17 @@ async def readiness_check() -> JSONResponse:
             session.close()
         except Exception:
             pass
+
+    if not is_vault_storage_ready():
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "unavailable"},
+        )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"status": "ready"},
+    )
 
 
 @app.get(
