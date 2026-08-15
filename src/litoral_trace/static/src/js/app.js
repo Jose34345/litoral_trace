@@ -438,6 +438,100 @@ function installMobileDrawer() {
   );
 }
 
+function installPublicNavigation() {
+  const trigger = document.querySelector(
+    "[data-public-nav-trigger]",
+  );
+
+  const panel = document.querySelector(
+    "[data-public-nav-panel]",
+  );
+
+  if (!trigger || !panel) {
+    return;
+  }
+
+  const isOpen = () => (
+    trigger.getAttribute(
+      "aria-expanded",
+    ) === "true"
+  );
+
+  const setOpen = (open) => {
+    trigger.setAttribute(
+      "aria-expanded",
+      String(open),
+    );
+
+    trigger.setAttribute(
+      "aria-label",
+      (
+        open
+          ? "Close navigation"
+          : "Open navigation"
+      ),
+    );
+
+    panel.hidden = !open;
+  };
+
+  trigger.addEventListener(
+    "click",
+    () => {
+      setOpen(!isOpen());
+    },
+  );
+
+  panel.querySelectorAll(
+    "a[href]",
+  ).forEach(
+    (link) => {
+      link.addEventListener(
+        "click",
+        () => setOpen(false),
+      );
+    },
+  );
+
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        event.key === "Escape"
+        && isOpen()
+      ) {
+        event.preventDefault();
+        setOpen(false);
+        trigger.focus({
+          preventScroll: true,
+        });
+      }
+    },
+  );
+
+  const desktopMedia = window.matchMedia(
+    "(min-width: 640px)",
+  );
+
+  const syncViewport = (event) => {
+    if (event.matches) {
+      setOpen(false);
+    }
+  };
+
+  if (
+    typeof desktopMedia.addEventListener
+    === "function"
+  ) {
+    desktopMedia.addEventListener(
+      "change",
+      syncViewport,
+    );
+  }
+
+  setOpen(false);
+}
+
 function installDisclosureMenus() {
   document.addEventListener(
     "click",
@@ -487,6 +581,7 @@ function boot() {
   installHtmxCsrfBridge();
   installFetchCsrfBridge();
   installMobileDrawer();
+  installPublicNavigation();
   installDisclosureMenus();
 }
 

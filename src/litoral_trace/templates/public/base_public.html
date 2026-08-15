@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 
 {% block shell %}
+
+<a
+    href="#main-content"
+    class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-slate-950 focus:shadow-lg"
+>
+    Skip to main content
+</a>
+
 <div class="min-h-full flex flex-col bg-white">
 
     <header
@@ -69,7 +77,9 @@
                 </a>
             </nav>
 
-            <div class="ml-auto flex items-center gap-2 lg:ml-8">
+            <div
+                class="ml-auto hidden items-center gap-2 sm:flex lg:ml-8"
+            >
                 <a
                     href="/login"
                     class="rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950"
@@ -79,7 +89,79 @@
 
                 <a
                     href="mailto:comercial@litoraltrace.com"
-                    class="hidden rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 sm:inline-flex"
+                    class="rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+                >
+                    Request demo
+                </a>
+            </div>
+
+            <button
+                type="button"
+                data-public-nav-trigger
+                class="ml-auto flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 sm:hidden"
+                aria-label="Open navigation"
+                aria-controls="public-mobile-navigation"
+                aria-expanded="false"
+            >
+                <i
+                    class="fa-solid fa-bars"
+                    aria-hidden="true"
+                ></i>
+            </button>
+        </div>
+
+        <div
+            id="public-mobile-navigation"
+            data-public-nav-panel
+            hidden
+            class="border-t border-slate-200 bg-white px-4 py-4 shadow-lg sm:hidden"
+        >
+            <nav
+                class="space-y-1"
+                aria-label="Mobile public navigation"
+            >
+                <a
+                    href="/#platform"
+                    class="block rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                    Platform
+                </a>
+
+                <a
+                    href="/#eudr"
+                    class="block rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                    EUDR
+                </a>
+
+                <a
+                    href="/#regional-intelligence"
+                    class="block rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                    Regional Intelligence
+                </a>
+
+                <a
+                    href="/#security"
+                    class="block rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                    Auditability
+                </a>
+            </nav>
+
+            <div
+                class="mt-4 grid grid-cols-2 gap-2 border-t border-slate-200 pt-4"
+            >
+                <a
+                    href="/login"
+                    class="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-800"
+                >
+                    Sign in
+                </a>
+
+                <a
+                    href="mailto:comercial@litoraltrace.com"
+                    class="inline-flex items-center justify-center rounded-lg bg-slate-950 px-3 py-2.5 text-sm font-semibold text-white"
                 >
                     Request demo
                 </a>
@@ -89,16 +171,17 @@
 
     <main
         id="main-content"
+        tabindex="-1"
         class="flex-1"
     >
         {% block content %}{% endblock %}
     </main>
 
     <footer
-        class="border-t border-slate-200 bg-slate-950 text-slate-400"
+        class="border-t border-slate-800 bg-slate-950 text-slate-400"
     >
         <div
-            class="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 md:grid-cols-2 lg:px-8"
+            class="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-2 lg:px-8"
         >
             <div>
                 <div class="flex items-center gap-3">
@@ -133,7 +216,7 @@
 
             <div class="md:text-right">
                 <p class="text-sm font-semibold text-slate-200">
-                    Argentina ? South America ? EUDR
+                    Argentina &middot; South America &middot; EUDR
                 </p>
 
                 <p class="mt-2 text-xs text-slate-500">
@@ -142,8 +225,22 @@
                 </p>
 
                 <div
-                    class="mt-4 flex gap-4 md:justify-end"
+                    class="mt-5 flex flex-wrap gap-4 md:justify-end"
                 >
+                    <a
+                        href="/#platform"
+                        class="text-xs font-semibold text-slate-400 hover:text-white"
+                    >
+                        Platform
+                    </a>
+
+                    <a
+                        href="/#regional-intelligence"
+                        class="text-xs font-semibold text-slate-400 hover:text-white"
+                    >
+                        Regional Intelligence
+                    </a>
+
                     <a
                         href="/login"
                         class="text-xs font-semibold text-slate-300 hover:text-white"
