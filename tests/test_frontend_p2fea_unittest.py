@@ -156,8 +156,10 @@ def test_frontend_toolchain_is_pinned_and_cdn_free_at_source():
     package = json.loads((root / "package.json").read_text(encoding="utf-8"))
 
     assert package["devDependencies"] == {
+        "@fortawesome/fontawesome-free": "6.5.1",
         "@tailwindcss/cli": "4.3.1",
         "htmx.org": "2.0.10",
+        "leaflet": "1.9.4",
         "tailwindcss": "4.3.1",
     }
 

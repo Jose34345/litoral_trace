@@ -10,38 +10,28 @@
 
     <title>{% block title %}Litoral Trace | Compliance Intelligence EUDR{% endblock %}</title>
 
-    <!-- P2.FE-B1/B2: legacy visual dependencies stay in place until B3/B4. -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- P2.FE-B3: pinned runtime assets served locally. -->
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', path='/dist/app.css') }}"
+    >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', path='/vendor/fontawesome/css/all.min.css') }}"
+    >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', path='/vendor/leaflet/leaflet.css') }}"
+    >
 
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        forest: {
-                            50: '#f0fdf4',
-                            100: '#dcfce7',
-                            600: '#16a34a',
-                            700: '#15803d',
-                            800: '#166534',
-                            900: '#064e3b',
-                        },
-                        timber: {
-                            600: '#d97706',
-                            700: '#b45309',
-                            800: '#92400e',
-                            900: '#78350f',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
-
+    <script
+        src="{{ url_for('static', path='/vendor/htmx/htmx.min.js') }}"
+        defer
+    ></script>
+    <script
+        src="{{ url_for('static', path='/vendor/leaflet/leaflet.js') }}"
+        defer
+    ></script>
     <script
         type="module"
         src="{{ url_for('static', path='/src/js/app.js') }}"
