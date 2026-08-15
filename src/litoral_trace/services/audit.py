@@ -32,6 +32,8 @@ class AuditAction(StrEnum):
     LOTE_UPDATE = "lote.update"
     LOTE_DELETE = "lote.delete"
     LOTE_BATCH_UPLOAD = "lote.batch_upload"
+    LOTE_BATCH_EVIDENCE_LINK = "lote.batch_evidence.link"
+    LOTE_BATCH_EVIDENCE_UNLINK = "lote.batch_evidence.unlink"
     SATELLITE_NDVI_RUN = "satellite.ndvi.run"
     SATELLITE_JOB_SUBMIT = "satellite.job.submit"
     SATELLITE_JOB_SUCCEEDED = "satellite.job.succeeded"

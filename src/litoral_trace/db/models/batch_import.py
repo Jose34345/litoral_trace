@@ -133,6 +133,11 @@ class BatchImport(Base):
             "idempotency_key",
             name="uq_batch_imports_tenant_idempotency_key",
         ),
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_batch_imports_id_organization_id",
+        ),
         CheckConstraint(
             "length(trim(idempotency_key)) > 0",
             name="ck_batch_imports_idempotency_key_not_blank",

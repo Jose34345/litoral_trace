@@ -25,6 +25,7 @@ from litoral_trace.api.auth import (
     logout_b2b_session,
     router as auth_router,
 )
+from litoral_trace.api.batch_evidence import router as batch_evidence_router
 from litoral_trace.api.lotes import router as lotes_router
 from litoral_trace.api.satellite import router as satellite_router
 from litoral_trace.api.settings import router as settings_router
@@ -49,6 +50,7 @@ app = FastAPI(
 
 app.include_router(auth_router)
 app.include_router(lotes_router)
+app.include_router(batch_evidence_router)
 app.include_router(vault_router)
 app.include_router(settings_router)
 app.include_router(admin_router)

@@ -42,7 +42,11 @@ VAULT_DOCUMENT_STATUSES: Final[frozenset[str]] = frozenset(
     }
 )
 
-VAULT_STORAGE_BACKENDS: Final[frozenset[str]] = frozenset({"s3"})
+VAULT_STORAGE_BACKENDS: Final[frozenset[str]] = frozenset(
+    {
+        "s3",
+    }
+)
 
 
 class VaultDocument(Base):
@@ -172,6 +176,11 @@ class VaultDocument(Base):
             "organization_id",
             "idempotency_key",
             name="uq_vault_documents_tenant_idempotency_key",
+        ),
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_vault_documents_id_organization_id",
         ),
         CheckConstraint(
             "size_bytes > 0",
