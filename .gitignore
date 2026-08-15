@@ -25,6 +25,14 @@ pytest_*.txt
 *.sqlite
 *.sqlite3
 
+# Frontend dependencies / caches
+node_modules/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
 # IDE
 .vscode/
 .idea/
@@ -34,8 +42,8 @@ pytest_*.txt
 Thumbs.db
 
 # Build / packaging
-build/
-dist/
+/build/
+/dist/
 *.egg-info/
 
 # Temporary files

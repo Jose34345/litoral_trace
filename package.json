@@ -1,0 +1,18 @@
+{
+  "name": "litoral-trace-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Build-only frontend toolchain for Litoral Trace server-rendered Jinja2 + HTMX UI.",
+  "type": "module",
+  "scripts": {
+    "build": "npm run build:css && npm run build:vendor",
+    "build:css": "npx @tailwindcss/cli -i ./src/litoral_trace/static/src/app.css -o ./src/litoral_trace/static/dist/app.css --minify",
+    "build:vendor": "node ./scripts/copy_frontend_vendor.mjs",
+    "watch:css": "npx @tailwindcss/cli -i ./src/litoral_trace/static/src/app.css -o ./src/litoral_trace/static/dist/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.1",
+    "htmx.org": "2.0.10",
+    "tailwindcss": "4.3.1"
+  }
+}
