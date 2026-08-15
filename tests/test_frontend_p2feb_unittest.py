@@ -405,6 +405,13 @@ def test_templates_wire_browser_csrf_without_changing_visual_phase():
         encoding="utf-8"
     )
 
+    app_base = (
+        root
+        / "src/litoral_trace/templates/app/base_app.html"
+    ).read_text(
+        encoding="utf-8"
+    )
+
     login = (
         root
         / "src/litoral_trace/templates/login.html"
@@ -419,13 +426,17 @@ def test_templates_wire_browser_csrf_without_changing_visual_phase():
         encoding="utf-8"
     )
 
-    assert 'meta name="csrf-token"' in base
+    assert 'name="csrf-token"' in base
     assert (
         "url_for('static', path='/src/js/app.js')"
         in base
     )
-    assert 'action="/logout"' in base
-    assert 'name="{{ csrf_form_field }}"' in base
+
+    assert 'action="/logout"' in app_base
+    assert (
+        'name="{{ csrf_form_field }}"'
+        in app_base
+    )
 
     assert 'action="/login"' in login
     assert 'name="{{ csrf_form_field }}"' in login
