@@ -10,6 +10,7 @@ from litoral_trace.db.models.satellite_job_result import SatelliteJobResult
 from litoral_trace.db.models.satellite_ndvi import SatelliteNdviObservation
 from litoral_trace.db.models.user_session import UserSession
 from litoral_trace.db.models.vault_document import VaultDocument
+from litoral_trace.db.models.batch_import import BatchImport
 
 __all__ = [
     "Organization",
@@ -23,4 +24,5 @@ __all__ = [
     "SatelliteNdviObservation",
     "UserSession",
     "VaultDocument",
+    "BatchImport",
 ]

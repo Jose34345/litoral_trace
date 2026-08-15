@@ -17,6 +17,7 @@ from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import (
     ApiKey,
     AuditLog,
+    BatchImport,
     License,
     Lote,
     SatelliteJob,
@@ -27,8 +28,26 @@ from litoral_trace.db.models import (
 
 TENANT_CONTEXT_GUC = "app.current_organization_id"
 
-TenantModel = type[Lote | User | AuditLog | ApiKey | License | SatelliteJob | SatelliteNdviObservation]
-TenantEntity = Lote | User | AuditLog | ApiKey | License | SatelliteJob | SatelliteNdviObservation
+TenantModel = type[
+    Lote
+    | User
+    | AuditLog
+    | ApiKey
+    | License
+    | SatelliteJob
+    | SatelliteNdviObservation
+    | BatchImport
+]
+TenantEntity = (
+    Lote
+    | User
+    | AuditLog
+    | ApiKey
+    | License
+    | SatelliteJob
+    | SatelliteNdviObservation
+    | BatchImport
+)
 
 
 def _normalize_organization_id(organization_id: int | str) -> int:
@@ -126,19 +145,7 @@ def apply_tenant_filter(
     model: TenantModel,
     organization_id: int | None = None,
 ) -> Select[Any]:
-    """Aplica aislamiento multi-tenant a una consulta SQL.
-
-    Args:
-        query: Consulta SELECT base.
-        model: Modelo que contiene organization_id.
-        organization_id: ID de organización autorizado.
-
-    Returns:
-        Consulta con filtro organization_id.
-
-    Raises:
-        ValueError: Si no se proporciona un organization_id válido.
-    """
+    """Aplica aislamiento multi-tenant a una consulta SQL."""
     if organization_id is None:
         organization_id = require_tenant_context()
 
@@ -149,16 +156,7 @@ def verify_tenant_access(
     entity: TenantEntity,
     organization_id: int | None = None,
 ) -> bool:
-    """Verifica que una entidad pertenezca al tenant autorizado.
-
-    Args:
-        entity: Entidad que se desea verificar.
-        organization_id: ID de organización autorizado.
-
-    Returns:
-        True si la entidad pertenece al tenant indicado.
-        False en cualquier otro caso.
-    """
+    """Verifica que una entidad pertenezca al tenant autorizado."""
     if entity is None or organization_id is None:
         return False
 

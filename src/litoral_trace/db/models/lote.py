@@ -5,7 +5,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from geoalchemy2 import Geometry
-from sqlalchemy import Float, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from litoral_trace.db.base import Base, TimestampMixin
@@ -79,22 +87,11 @@ class Lote(Base, TimestampMixin):
         nullable=False,
     )
 
-    # WKT original conservado por compatibilidad.
     polygon_wkt: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
 
-    # Geometría PostGIS real.
-    #
-    # POLYGON:
-    #   El lote se representa como un polígono.
-    #
-    # SRID 4326:
-    #   WGS84, coordenadas geográficas latitud/longitud.
-    #
-    # nullable=True:
-    #   Permite lotes que todavía no tengan geometría.
     geom: Mapped[object | None] = mapped_column(
         GEOM_COLUMN_TYPE,
         nullable=True,
@@ -138,7 +135,7 @@ class Lote(Base, TimestampMixin):
     )
 
     # ============================================================
-    # Índices
+    # Índices / unicidad
     # ============================================================
 
     __table_args__ = (
@@ -151,6 +148,12 @@ class Lote(Base, TimestampMixin):
             "ix_lotes_geom_gist",
             "geom",
             postgresql_using="gist",
+        ),
+        Index(
+            "uq_lotes_tenant_identificador_ci",
+            "organization_id",
+            func.lower(identificador),
+            unique=True,
         ),
     )
 

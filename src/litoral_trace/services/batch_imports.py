@@ -1,17 +1,21 @@
-"""Tenant-safe atomic PostgreSQL batch import for validated lotes."""
+"""Tenant-safe atomic PostgreSQL batch import with persistent idempotency."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import re
+import unicodedata
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import func, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from litoral_trace.db.engine import get_db_session
-from litoral_trace.db.models import Lote
+from litoral_trace.db.models import BatchImport, Lote
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.services.audit import (
     AuditAction,
@@ -25,8 +29,18 @@ from litoral_trace.services.batch import (
     BatchSemanticValidationError,
     BatchValidationResult,
     BatchWorkbook,
+    normalizar_nombre_archivo_batch,
     validar_filas_lotes,
 )
+
+
+IDEMPOTENCY_KEY_MAX_LENGTH = 255
+LOTE_TENANT_IDENTIFIER_CONSTRAINT = "uq_lotes_tenant_identificador_ci"
+BATCH_IMPORT_IDEMPOTENCY_CONSTRAINT = (
+    "uq_batch_imports_tenant_idempotency_key"
+)
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_CONTROL_CHARACTER_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 class BatchImportError(RuntimeError):
@@ -50,19 +64,34 @@ class BatchImportConflictError(BatchImportError):
         )
 
 
+class BatchImportIdempotencyConflictError(BatchImportError):
+    """Raised when one tenant reuses a key for a different source workbook."""
+
+    def __init__(
+        self,
+        import_public_id: UUID | None = None,
+    ) -> None:
+        self.import_public_id = import_public_id
+        super().__init__(
+            "La clave de idempotencia ya fue utilizada para otro archivo."
+        )
+
+
 class BatchImportPersistenceError(BatchImportError):
     """Sanitized persistence failure; never exposes raw DB exception details."""
 
 
 @dataclass(frozen=True)
 class BatchImportResult:
-    """Committed import result."""
+    """Committed or replayed import result."""
 
     organization_id: int
     total_rows: int
     inserted_rows: int
     lote_ids: tuple[int, ...]
     identifiers: tuple[str, ...]
+    import_public_id: UUID | None = None
+    replayed: bool = False
 
 
 SessionFactory = Callable[[], Session | None]
@@ -86,17 +115,61 @@ def _normalize_organization_id(
     return normalized
 
 
+def normalize_idempotency_key(
+    idempotency_key: str | None,
+) -> str | None:
+    """Normalize an optional idempotency key without ever logging it."""
+
+    if idempotency_key is None:
+        return None
+
+    if not isinstance(idempotency_key, str):
+        raise BatchImportIdempotencyConflictError()
+
+    normalized = unicodedata.normalize(
+        "NFKC",
+        idempotency_key,
+    ).strip()
+
+    if (
+        not normalized
+        or len(normalized) > IDEMPOTENCY_KEY_MAX_LENGTH
+        or _CONTROL_CHARACTER_RE.search(normalized)
+    ):
+        raise BatchImportIdempotencyConflictError()
+
+    return normalized
+
+
+def _normalize_source_identity(
+    *,
+    source_filename: str | None,
+    source_sha256: str | None,
+) -> tuple[str, str]:
+    if not source_filename or not source_sha256:
+        raise BatchImportPersistenceError(
+            "La importación idempotente requiere identidad de archivo."
+        )
+
+    safe_filename = normalizar_nombre_archivo_batch(
+        source_filename
+    )
+    normalized_sha = str(source_sha256).strip().lower()
+
+    if not _SHA256_RE.fullmatch(normalized_sha):
+        raise BatchImportPersistenceError(
+            "La huella SHA-256 de la importación no es válida."
+        )
+
+    return safe_filename, normalized_sha
+
+
 def _default_polygon_wkt(
     *,
     latitud: float,
     longitud: float,
 ) -> str:
-    """
-    Build the deterministic compatibility polygon from validated coordinates.
-
-    Coordinates are never defaulted here. The caller receives only canonical
-    P2.4B rows whose latitude/longitude already passed semantic validation.
-    """
+    """Build the deterministic compatibility polygon from validated coordinates."""
 
     delta = 0.01
 
@@ -146,12 +219,27 @@ def _build_lote(
     )
 
 
+def _constraint_name(
+    exc: IntegrityError,
+) -> str | None:
+    original = getattr(exc, "orig", None)
+    diagnostic = getattr(original, "diag", None)
+    name = getattr(diagnostic, "constraint_name", None)
+
+    if not name:
+        return None
+
+    return str(name)
+
+
 class BatchImportService:
     """
-    Persist a fully validated workbook atomically inside one tenant transaction.
+    Persist validated XLSX rows atomically with optional persistent idempotency.
 
-    P2.4C intentionally does not implement persistent idempotency. P2.4D owns
-    that contract. This service performs no generic DB retries.
+    A keyed request first claims `(organization_id, idempotency_key)` inside the
+    same transaction as all lote inserts and audit rows. Competing requests do
+    not use generic retries: a unique-key collision performs one targeted read
+    of the winner and either replays that committed result or returns conflict.
     """
 
     def __init__(
@@ -179,14 +267,6 @@ class BatchImportService:
         organization_id: int,
         rows: tuple[BatchCanonicalRow, ...],
     ) -> tuple[str, ...]:
-        """
-        Detect existing identifiers inside the active tenant before inserts.
-
-        Case-insensitive lookup matches P2.4B's in-file duplicate policy. A
-        database-level uniqueness constraint is deliberately deferred to P2.4D,
-        where it will be introduced together with persistent import identity.
-        """
-
         if not rows:
             return ()
 
@@ -204,15 +284,124 @@ class BatchImportService:
             )
         )
 
-        existing = sorted(
-            {
-                str(value)
-                for value in result.scalars().all()
-            },
-            key=str.casefold,
+        return tuple(
+            sorted(
+                {
+                    str(value)
+                    for value in result.scalars().all()
+                },
+                key=str.casefold,
+            )
         )
 
-        return tuple(existing)
+    def _get_existing_import(
+        self,
+        session: Session,
+        *,
+        organization_id: int,
+        idempotency_key: str,
+    ) -> BatchImport | None:
+        return session.execute(
+            select(BatchImport).where(
+                BatchImport.organization_id == organization_id,
+                BatchImport.idempotency_key == idempotency_key,
+            )
+        ).scalar_one_or_none()
+
+    def _result_from_existing(
+        self,
+        record: BatchImport,
+        *,
+        source_sha256: str,
+    ) -> BatchImportResult:
+        if record.source_sha256 != source_sha256:
+            raise BatchImportIdempotencyConflictError(
+                record.public_id
+            )
+
+        if (
+            record.status != "completed"
+            or record.completed_at is None
+            or record.inserted_rows != record.total_rows
+        ):
+            raise BatchImportPersistenceError(
+                "La importación idempotente no está en un estado recuperable."
+            )
+
+        raw_lote_ids = record.lote_ids
+        raw_identifiers = record.identifiers
+
+        if (
+            not isinstance(raw_lote_ids, list)
+            or not isinstance(raw_identifiers, list)
+            or len(raw_lote_ids) != record.inserted_rows
+            or len(raw_identifiers) != record.inserted_rows
+        ):
+            raise BatchImportPersistenceError(
+                "El resultado persistido de la importación no es válido."
+            )
+
+        try:
+            lote_ids = tuple(
+                int(value)
+                for value in raw_lote_ids
+            )
+        except (TypeError, ValueError) as exc:
+            raise BatchImportPersistenceError(
+                "El resultado persistido de la importación no es válido."
+            ) from exc
+
+        identifiers = tuple(
+            str(value)
+            for value in raw_identifiers
+        )
+
+        return BatchImportResult(
+            organization_id=int(record.organization_id),
+            total_rows=int(record.total_rows),
+            inserted_rows=int(record.inserted_rows),
+            lote_ids=lote_ids,
+            identifiers=identifiers,
+            import_public_id=record.public_id,
+            replayed=True,
+        )
+
+    def _recover_claim_collision(
+        self,
+        session: Session,
+        *,
+        organization_id: int,
+        idempotency_key: str,
+        source_sha256: str,
+    ) -> BatchImportResult:
+        """
+        Targeted concurrency recovery after one unique idempotency collision.
+
+        PostgreSQL only reports the unique collision after the competing
+        transaction resolves, so the committed winner is visible in this new
+        transaction under the normal READ COMMITTED isolation level.
+        """
+
+        set_tenant_db_context(
+            session,
+            organization_id,
+        )
+
+        existing = self._get_existing_import(
+            session,
+            organization_id=organization_id,
+            idempotency_key=idempotency_key,
+        )
+
+        if existing is None:
+            raise BatchImportPersistenceError(
+                "No fue posible recuperar la importación idempotente."
+            )
+
+        return self._result_from_existing(
+            existing,
+            source_sha256=source_sha256,
+        )
 
     def import_workbook(
         self,
@@ -221,18 +410,8 @@ class BatchImportService:
         organization_id: int | str,
         actor: AuditActor,
         request_context: AuditRequestContext | None = None,
+        idempotency_key: str | None = None,
     ) -> BatchImportResult:
-        """
-        Validate and atomically persist every row of a safe workbook.
-
-        Invariants:
-        - semantic validation occurs before any DB session/write;
-        - organization_id never comes from workbook data;
-        - one transaction contains duplicate preflight, all INSERTs and audit;
-        - any DB/audit failure rolls the whole transaction back;
-        - no partial successful import is returned.
-        """
-
         normalized_org_id = _normalize_organization_id(
             organization_id
         )
@@ -257,6 +436,7 @@ class BatchImportService:
             request_context=request_context,
             source_filename=workbook.filename,
             source_sha256=workbook.sha256,
+            idempotency_key=idempotency_key,
         )
 
     def import_validated(
@@ -268,14 +448,8 @@ class BatchImportService:
         request_context: AuditRequestContext | None = None,
         source_filename: str | None = None,
         source_sha256: str | None = None,
+        idempotency_key: str | None = None,
     ) -> BatchImportResult:
-        """
-        Persist an already validated result atomically.
-
-        This method is useful for the later preview/import API, but still fails
-        closed if the supplied validation result is not globally valid.
-        """
-
         normalized_org_id = _normalize_organization_id(
             organization_id
         )
@@ -300,17 +474,95 @@ class BatchImportService:
                 "La importación validada no contiene todas sus filas canónicas."
             )
 
+        normalized_key = normalize_idempotency_key(
+            idempotency_key
+        )
+
+        safe_filename: str | None = None
+        normalized_sha: str | None = None
+
+        if normalized_key is not None:
+            safe_filename, normalized_sha = _normalize_source_identity(
+                source_filename=source_filename,
+                source_sha256=source_sha256,
+            )
+
         session = self._session_factory()
         if session is None:
             raise BatchImportPersistenceError(
                 "Servicio de base de datos no disponible."
             )
 
+        import_record: BatchImport | None = None
+
         try:
             set_tenant_db_context(
                 session,
                 normalized_org_id,
             )
+
+            if normalized_key is not None:
+                assert safe_filename is not None
+                assert normalized_sha is not None
+
+                existing_import = self._get_existing_import(
+                    session,
+                    organization_id=normalized_org_id,
+                    idempotency_key=normalized_key,
+                )
+
+                if existing_import is not None:
+                    return self._result_from_existing(
+                        existing_import,
+                        source_sha256=normalized_sha,
+                    )
+
+                import_record = BatchImport(
+                    organization_id=normalized_org_id,
+                    created_by_user_id=actor.user_id,
+                    idempotency_key=normalized_key,
+                    source_sha256=normalized_sha,
+                    source_filename=safe_filename,
+                    status="processing",
+                    total_rows=validation.total_rows,
+                    inserted_rows=0,
+                    lote_ids=[],
+                    identifiers=[
+                        row.identificador
+                        for row in canonical_rows
+                    ],
+                )
+                session.add(
+                    import_record
+                )
+
+                try:
+                    session.flush(
+                        [import_record]
+                    )
+                except IntegrityError as exc:
+                    constraint = _constraint_name(
+                        exc
+                    )
+                    session.rollback()
+
+                    if (
+                        constraint
+                        not in {
+                            None,
+                            BATCH_IMPORT_IDEMPOTENCY_CONSTRAINT,
+                        }
+                    ):
+                        raise BatchImportPersistenceError(
+                            "No fue posible reservar la importación idempotente."
+                        ) from exc
+
+                    return self._recover_claim_collision(
+                        session,
+                        organization_id=normalized_org_id,
+                        idempotency_key=normalized_key,
+                        source_sha256=normalized_sha,
+                    )
 
             existing = self._find_existing_identifiers(
                 session,
@@ -319,7 +571,6 @@ class BatchImportService:
             )
 
             if existing:
-                session.rollback()
                 raise BatchImportConflictError(
                     existing
                 )
@@ -335,46 +586,26 @@ class BatchImportService:
             session.add_all(
                 lotes
             )
-            session.flush()
 
-            for row, lote in zip(
-                canonical_rows,
-                lotes,
-                strict=True,
-            ):
-                record_audit_event(
-                    session,
-                    actor=actor,
-                    action=AuditAction.LOTE_CREATE,
-                    entity_type="lote",
-                    entity_id=lote.id,
-                    outcome=AuditOutcome.SUCCESS,
-                    request_context=request_context,
-                    metadata={
-                        "source": "batch_import",
-                        "source_row": row.source_row,
-                    },
-                    after_data=_lote_audit_state(
-                        lote
-                    ),
+            try:
+                session.flush()
+            except IntegrityError as exc:
+                constraint = _constraint_name(
+                    exc
                 )
+                session.rollback()
 
-            record_audit_event(
-                session,
-                actor=actor,
-                action=AuditAction.LOTE_BATCH_UPLOAD,
-                entity_type="lote_batch_import",
-                outcome=AuditOutcome.SUCCESS,
-                request_context=request_context,
-                metadata={
-                    "source_filename": source_filename,
-                    "source_sha256": source_sha256,
-                    "row_count": validation.total_rows,
-                    "inserted_rows": len(lotes),
-                },
-            )
+                if constraint == LOTE_TENANT_IDENTIFIER_CONSTRAINT:
+                    raise BatchImportConflictError(
+                        tuple(
+                            row.identificador
+                            for row in canonical_rows
+                        )
+                    ) from exc
 
-            session.commit()
+                raise BatchImportPersistenceError(
+                    "No fue posible persistir la importación de lotes."
+                ) from exc
 
             lote_ids = tuple(
                 int(lote.id)
@@ -384,6 +615,79 @@ class BatchImportService:
                 lote.identificador
                 for lote in lotes
             )
+            import_public_id: UUID | None = None
+
+            if import_record is not None:
+                import_record.status = "completed"
+                import_record.inserted_rows = len(lotes)
+                import_record.lote_ids = list(
+                    lote_ids
+                )
+                import_record.identifiers = list(
+                    identifiers
+                )
+                import_record.completed_at = datetime.now(
+                    timezone.utc
+                )
+                import_public_id = import_record.public_id
+
+            for row, lote in zip(
+                canonical_rows,
+                lotes,
+                strict=True,
+            ):
+                metadata: dict[str, Any] = {
+                    "source": "batch_import",
+                    "source_row": row.source_row,
+                }
+
+                if import_public_id is not None:
+                    metadata[
+                        "batch_import_public_id"
+                    ] = str(import_public_id)
+
+                record_audit_event(
+                    session,
+                    actor=actor,
+                    action=AuditAction.LOTE_CREATE,
+                    entity_type="lote",
+                    entity_id=lote.id,
+                    outcome=AuditOutcome.SUCCESS,
+                    request_context=request_context,
+                    metadata=metadata,
+                    after_data=_lote_audit_state(
+                        lote
+                    ),
+                )
+
+            summary_metadata: dict[str, Any] = {
+                "source_filename": source_filename,
+                "source_sha256": source_sha256,
+                "row_count": validation.total_rows,
+                "inserted_rows": len(lotes),
+            }
+
+            if import_public_id is not None:
+                summary_metadata[
+                    "batch_import_public_id"
+                ] = str(import_public_id)
+
+            record_audit_event(
+                session,
+                actor=actor,
+                action=AuditAction.LOTE_BATCH_UPLOAD,
+                entity_type="lote_batch_import",
+                entity_id=(
+                    import_record.id
+                    if import_record is not None
+                    else None
+                ),
+                outcome=AuditOutcome.SUCCESS,
+                request_context=request_context,
+                metadata=summary_metadata,
+            )
+
+            session.commit()
 
             return BatchImportResult(
                 organization_id=normalized_org_id,
@@ -391,12 +695,15 @@ class BatchImportService:
                 inserted_rows=len(lotes),
                 lote_ids=lote_ids,
                 identifiers=identifiers,
+                import_public_id=import_public_id,
+                replayed=False,
             )
 
-        except (
-            BatchImportConflictError,
-            BatchSemanticValidationError,
-        ):
+        except BatchImportError:
+            session.rollback()
+            raise
+
+        except BatchSemanticValidationError:
             session.rollback()
             raise
 
