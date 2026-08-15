@@ -431,7 +431,7 @@ def test_web_post_logout_revokes_session_and_redirects_to_login():
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/"
+    assert response.headers["location"] == "/login"
 
     cleared_cookie_headers = (
         response.headers.getlist("set-cookie")

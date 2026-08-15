@@ -52,7 +52,7 @@ def redirect_to_login(
     clear_cookies: bool,
 ) -> RedirectResponse:
     response = RedirectResponse(
-        url="/",
+        url="/login",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 

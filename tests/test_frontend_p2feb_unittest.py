@@ -342,6 +342,7 @@ def test_html_routes_live_in_dedicated_web_router():
         )
 
     assert has_route("/", "GET")
+    assert has_route("/login", "GET")
     assert has_route("/login", "POST")
     assert has_route("/dashboard", "GET")
     assert has_route("/vault", "GET")

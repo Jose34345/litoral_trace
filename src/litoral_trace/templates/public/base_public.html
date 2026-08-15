@@ -1,91 +1,163 @@
 {% extends "base.html" %}
 
 {% block shell %}
-<div class="min-h-full flex flex-col bg-slate-50">
+<div class="min-h-full flex flex-col bg-white">
 
     <header
-        class="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-50"
+        class="sticky top-0 z-50 border-b border-slate-200 bg-white/95"
     >
         <div
-            class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
+            class="mx-auto flex h-18 max-w-7xl items-center px-4 sm:px-6 lg:px-8"
         >
-            <div
-                class="flex items-center justify-between h-16"
+            <a
+                href="/"
+                class="flex shrink-0 items-center gap-3"
+                aria-label="Litoral Trace home"
             >
-                <div class="flex items-center space-x-3">
+                <span
+                    class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm"
+                    aria-hidden="true"
+                >
+                    <i class="fa-solid fa-tree"></i>
+                </span>
+
+                <span>
                     <span
-                        class="text-2xl"
-                        aria-hidden="true"
+                        class="block text-base font-bold tracking-tight text-slate-950"
                     >
-                        🌲
+                        Litoral Trace
                     </span>
 
-                    <div>
-                        <a
-                            href="/"
-                            class="font-bold text-xl tracking-tight text-white flex items-center gap-2"
-                        >
-                            Litoral Trace
-
-                            <span
-                                class="bg-forest-800 text-forest-100 text-xs px-2 py-0.5 rounded font-medium border border-forest-600"
-                            >
-                                EUDR B2B
-                            </span>
-                        </a>
-
-                        <p class="text-xs text-slate-400">
-                            Trazabilidad Forestal & Exportación a la Unión Europea
-                        </p>
-                    </div>
-                </div>
-
-                <span
-                    class="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800"
-                >
-                    <i
-                        class="fa-solid fa-earth-europe"
-                        aria-hidden="true"
-                    ></i>
-                    Mercado Objetivo: UE 2023/1115
+                    <span
+                        class="block text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700"
+                    >
+                        Compliance Intelligence
+                    </span>
                 </span>
+            </a>
+
+            <nav
+                class="ml-auto hidden items-center gap-7 lg:flex"
+                aria-label="Public navigation"
+            >
+                <a
+                    href="/#platform"
+                    class="text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
+                >
+                    Platform
+                </a>
+
+                <a
+                    href="/#eudr"
+                    class="text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
+                >
+                    EUDR
+                </a>
+
+                <a
+                    href="/#regional-intelligence"
+                    class="text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
+                >
+                    Regional Intelligence
+                </a>
+
+                <a
+                    href="/#security"
+                    class="text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
+                >
+                    Auditability
+                </a>
+            </nav>
+
+            <div class="ml-auto flex items-center gap-2 lg:ml-8">
+                <a
+                    href="/login"
+                    class="rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950"
+                >
+                    Sign in
+                </a>
+
+                <a
+                    href="mailto:comercial@litoraltrace.com"
+                    class="hidden rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 sm:inline-flex"
+                >
+                    Request demo
+                </a>
             </div>
         </div>
     </header>
 
     <main
         id="main-content"
-        class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6"
+        class="flex-1"
     >
         {% block content %}{% endblock %}
     </main>
 
     <footer
-        class="bg-slate-900 border-t border-slate-800 text-slate-400 py-6 text-xs mt-auto"
+        class="border-t border-slate-200 bg-slate-950 text-slate-400"
     >
         <div
-            class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4"
+            class="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 md:grid-cols-2 lg:px-8"
         >
             <div>
-                <p class="font-semibold text-slate-300">
-                    Litoral Trace Compliance Intelligence v2.4
-                </p>
+                <div class="flex items-center gap-3">
+                    <span
+                        class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white"
+                        aria-hidden="true"
+                    >
+                        <i class="fa-solid fa-tree"></i>
+                    </span>
 
-                <p>
-                    Monitoreo Satelital (Copernicus Sentinel-2),
-                    Balance de Masas & Declaraciones TRACES NT
-                    para Madera, Tanino y Carbón Vegetal.
+                    <div>
+                        <p class="font-bold text-white">
+                            Litoral Trace
+                        </p>
+
+                        <p
+                            class="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-400"
+                        >
+                            Compliance Intelligence
+                        </p>
+                    </div>
+                </div>
+
+                <p
+                    class="mt-4 max-w-xl text-sm leading-6 text-slate-400"
+                >
+                    Origin traceability, geospatial risk and
+                    audit-ready evidence for deforestation-free
+                    supply chains.
                 </p>
             </div>
 
-            <div class="text-right">
-                <p>
-                    📍 Resistencia, Chaco | Gran Chaco - Argentina
+            <div class="md:text-right">
+                <p class="text-sm font-semibold text-slate-200">
+                    Argentina ? South America ? EUDR
                 </p>
 
-                <p>
-                    Reglamento (UE) 2023/1115 Libre de Deforestación
+                <p class="mt-2 text-xs text-slate-500">
+                    Built for international trade and local
+                    supply-chain evidence.
                 </p>
+
+                <div
+                    class="mt-4 flex gap-4 md:justify-end"
+                >
+                    <a
+                        href="/login"
+                        class="text-xs font-semibold text-slate-300 hover:text-white"
+                    >
+                        Corporate access
+                    </a>
+
+                    <a
+                        href="mailto:comercial@litoraltrace.com"
+                        class="text-xs font-semibold text-emerald-400 hover:text-emerald-300"
+                    >
+                        Request demo
+                    </a>
+                </div>
             </div>
         </div>
     </footer>

@@ -73,10 +73,26 @@ def _render_login_error(
     "/",
     response_class=HTMLResponse,
 )
+async def render_home_view(
+    request: Request,
+):
+    """Render the public Litoral Trace corporate homepage."""
+
+    return render_web_template(
+        request,
+        "public/home.html",
+        user=None,
+    )
+
+
+@router.get(
+    "/login",
+    response_class=HTMLResponse,
+)
 async def render_login_view(
     request: Request,
 ):
-    """Render the public HTML login page with browser-bound CSRF."""
+    """Render the browser login page with browser-bound CSRF."""
 
     return render_web_template(
         request,
@@ -376,7 +392,7 @@ async def logout_submit_view(
     )
 
     response = RedirectResponse(
-        url="/",
+        url="/login",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 

@@ -139,13 +139,13 @@ def test_shell_copy_preserves_utf8_content():
         "app/base_app.html"
     )
 
+    # B3.2 protects encoding integrity and the identity of
+    # each shell. Marketing copy belongs to later public phases.
     public_copy = (
-        "\U0001F332",
-        "Exportaci\u00f3n",
-        "Uni\u00f3n Europea",
-        "Carb\u00f3n Vegetal",
-        "\U0001F4CD Resistencia",
-        "Deforestaci\u00f3n",
+        "Litoral Trace",
+        "Compliance Intelligence",
+        "Corporate access",
+        "Request demo",
     )
 
     for expected in public_copy:
@@ -167,4 +167,7 @@ def test_shell_copy_preserves_utf8_content():
         app_shell,
     ):
         assert "\ufffd" not in template
-        assert "sesi?n" not in template
+
+        # Typical UTF-8 mojibake sentinels.
+        assert "\u00c3" not in template
+        assert "\u00c2" not in template
