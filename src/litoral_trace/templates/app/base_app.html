@@ -1,73 +1,234 @@
 {% extends "base.html" %}
 
-{% block shell %}
-<div class="min-h-full flex flex-col bg-slate-50">
+{% block body_class %}min-h-screen bg-slate-50 font-sans text-slate-900 antialiased{% endblock %}
 
-    <header
-        class="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-50"
+{% block shell %}
+
+<a
+    href="#main-content"
+    class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-slate-950 focus:shadow-lg"
+>
+    Ir al contenido principal
+</a>
+
+<div class="min-h-screen bg-slate-50">
+
+    <div
+        data-app-drawer-overlay
+        class="fixed inset-0 z-40 hidden bg-slate-950/60 lg:hidden"
+        aria-hidden="true"
+    ></div>
+
+    <aside
+        id="app-navigation"
+        data-app-drawer
+        data-open="false"
+        class="fixed inset-y-0 left-0 z-50 flex w-72 -translate-x-full flex-col border-r border-slate-800 bg-slate-950 text-slate-200 shadow-2xl transition-transform duration-200 ease-out lg:translate-x-0"
     >
         <div
-            class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
+            class="flex h-20 shrink-0 items-center gap-3 border-b border-slate-800 px-5"
         >
-            <div
-                class="flex items-center justify-between h-16"
+            <a
+                href="/dashboard"
+                class="flex min-w-0 flex-1 items-center gap-3"
+                aria-label="Litoral Trace Dashboard"
             >
-                <div class="flex items-center space-x-3">
+                <span
+                    class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm shadow-emerald-950"
+                    aria-hidden="true"
+                >
+                    <i class="fa-solid fa-tree"></i>
+                </span>
+
+                <span class="min-w-0">
                     <span
-                        class="text-2xl"
+                        class="block truncate text-base font-bold tracking-tight text-white"
+                    >
+                        Litoral Trace
+                    </span>
+
+                    <span
+                        class="block truncate text-[11px] font-medium uppercase tracking-[0.16em] text-emerald-400"
+                    >
+                        Compliance Intelligence
+                    </span>
+                </span>
+            </a>
+
+            <button
+                type="button"
+                data-app-drawer-close
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden"
+                aria-label="Cerrar navegación"
+            >
+                <i
+                    class="fa-solid fa-xmark"
+                    aria-hidden="true"
+                ></i>
+            </button>
+        </div>
+
+        <nav
+            class="flex-1 overflow-y-auto px-3 py-5"
+            aria-label="Navegación principal"
+        >
+            {% set nav_sections = [
+                ("operacion", "Operación"),
+                ("compliance", "Compliance"),
+                ("administracion", "Administración")
+            ] %}
+
+            {% for section_key, section_label in nav_sections %}
+
+                {% set section_items = (
+                    navigation
+                    | selectattr(
+                        "section",
+                        "equalto",
+                        section_key
+                    )
+                    | list
+                ) %}
+
+                {% if section_items %}
+                <section class="mb-6">
+                    <p
+                        class="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500"
+                    >
+                        {{ section_label }}
+                    </p>
+
+                    <div class="space-y-1">
+                        {% for item in section_items %}
+                        <a
+                            href="{{ item.href }}"
+                            {% if item.active %}
+                            aria-current="page"
+                            {% endif %}
+                            class="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
+                                {% if item.active %}
+                                bg-emerald-950 text-emerald-100 ring-1 ring-inset ring-emerald-800
+                                {% else %}
+                                text-slate-300 hover:bg-slate-900 hover:text-white
+                                {% endif %}
+                            "
+                        >
+                            <span
+                                class="flex h-6 w-6 shrink-0 items-center justify-center text-sm
+                                    {% if item.active %}
+                                    text-emerald-400
+                                    {% else %}
+                                    text-slate-500 group-hover:text-slate-300
+                                    {% endif %}
+                                "
+                                aria-hidden="true"
+                            >
+                                {% if item.key == "dashboard" %}
+                                <i class="fa-solid fa-chart-line"></i>
+
+                                {% elif item.key == "vault" %}
+                                <i class="fa-solid fa-box-archive"></i>
+
+                                {% elif item.key == "settings" %}
+                                <i class="fa-solid fa-sliders"></i>
+
+                                {% elif item.key == "platform" %}
+                                <i class="fa-solid fa-server"></i>
+
+                                {% else %}
+                                <i class="fa-solid fa-circle"></i>
+                                {% endif %}
+                            </span>
+
+                            <span class="min-w-0 flex-1 truncate">
+                                {{ item.label }}
+                            </span>
+
+                            {% if item.active %}
+                            <span
+                                class="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400"
+                                aria-hidden="true"
+                            ></span>
+                            {% endif %}
+                        </a>
+                        {% endfor %}
+                    </div>
+                </section>
+                {% endif %}
+
+            {% endfor %}
+        </nav>
+
+        <div class="shrink-0 px-3 pb-3">
+            <div
+                class="mb-3 rounded-xl border border-emerald-900 bg-emerald-950/50 p-3"
+            >
+                <div class="flex items-start gap-2.5">
+                    <span
+                        class="mt-0.5 text-emerald-400"
                         aria-hidden="true"
                     >
-                        🌲
+                        <i class="fa-solid fa-earth-europe"></i>
                     </span>
 
                     <div>
-                        <a
-                            href="/dashboard"
-                            class="font-bold text-xl tracking-tight text-white flex items-center gap-2"
+                        <p
+                            class="text-xs font-semibold text-emerald-200"
                         >
-                            Litoral Trace
+                            EUDR EU 2023/1115
+                        </p>
 
-                            <span
-                                class="bg-forest-800 text-forest-100 text-xs px-2 py-0.5 rounded font-medium border border-forest-600"
-                            >
-                                EUDR B2B
-                            </span>
-                        </a>
-
-                        <p class="text-xs text-slate-400">
-                            Trazabilidad Forestal & Exportación a la Unión Europea
+                        <p
+                            class="mt-0.5 text-[11px] leading-4 text-emerald-500"
+                        >
+                            Compliance workspace
                         </p>
                     </div>
                 </div>
+            </div>
 
-                <div class="flex items-center space-x-4">
-                    <span
-                        class="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800"
-                    >
-                        <i
-                            class="fa-solid fa-earth-europe"
-                            aria-hidden="true"
-                        ></i>
-                        Mercado Objetivo: UE 2023/1115
-                    </span>
+            <div
+                class="border-t border-slate-800 pt-3"
+            >
+                <p
+                    class="mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500"
+                >
+                    Organización
+                </p>
 
-                    <div class="text-right text-xs">
+                <div
+                    class="rounded-xl border border-slate-800 bg-slate-900 p-3"
+                >
+                    <div class="flex items-start gap-3">
                         <span
-                            class="block font-semibold text-slate-200"
+                            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-slate-300"
+                            aria-hidden="true"
                         >
-                            {{ user.organization_name }}
+                            <i class="fa-solid fa-building"></i>
                         </span>
 
-                        <span class="text-slate-400">
-                            {{ user.username }}
-                            ({{ user.role|upper }})
-                        </span>
+                        <div class="min-w-0 flex-1">
+                            <p
+                                class="truncate text-xs font-semibold text-slate-100"
+                                title="{{ user.organization_name }}"
+                            >
+                                {{ user.organization_name }}
+                            </p>
+
+                            <p
+                                class="mt-0.5 truncate text-[11px] text-slate-500"
+                            >
+                                {{ user.username }}
+                                &middot;
+                                {{ user.role|upper }}
+                            </p>
+                        </div>
                     </div>
 
                     <form
                         method="post"
                         action="/logout"
-                        class="inline"
+                        class="mt-3"
                     >
                         <input
                             type="hidden"
@@ -77,56 +238,121 @@
 
                         <button
                             type="submit"
-                            class="text-slate-400 hover:text-white text-sm p-2"
-                            aria-label="Cerrar sesi?n"
+                            class="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition-colors hover:border-slate-600 hover:bg-slate-800 hover:text-white"
+                            aria-label="Cerrar sesión"
                         >
                             <i
                                 class="fa-solid fa-right-from-bracket"
                                 aria-hidden="true"
                             ></i>
+
+                            Cerrar sesión
                         </button>
                     </form>
                 </div>
             </div>
         </div>
-    </header>
+    </aside>
 
-    <main
-        id="main-content"
-        class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6"
-    >
-        {% block content %}{% endblock %}
-    </main>
+    <div class="min-h-screen lg:pl-72">
 
-    <footer
-        class="bg-slate-900 border-t border-slate-800 text-slate-400 py-6 text-xs mt-auto"
-    >
-        <div
-            class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4"
+        {% set current_page = namespace(
+            label="Workspace"
+        ) %}
+
+        {% for item in navigation %}
+            {% if item.active %}
+                {% set current_page.label = item.label %}
+            {% endif %}
+        {% endfor %}
+
+        <header
+            class="sticky top-0 z-30 border-b border-slate-200 bg-white/95"
         >
-            <div>
-                <p class="font-semibold text-slate-300">
-                    Litoral Trace Compliance Intelligence v2.4
-                </p>
+            <div
+                class="flex h-16 items-center gap-4 px-4 sm:px-6 lg:px-8"
+            >
+                <button
+                    type="button"
+                    data-app-drawer-open
+                    class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 lg:hidden"
+                    aria-label="Abrir navegación"
+                    aria-controls="app-navigation"
+                    aria-expanded="false"
+                >
+                    <i
+                        class="fa-solid fa-bars"
+                        aria-hidden="true"
+                    ></i>
+                </button>
 
-                <p>
-                    Monitoreo Satelital (Copernicus Sentinel-2),
-                    Balance de Masas & Declaraciones TRACES NT
-                    para Madera, Tanino y Carbón Vegetal.
-                </p>
+                <div class="min-w-0 flex-1">
+                    <p
+                        class="truncate text-sm font-semibold text-slate-950"
+                    >
+                        {{ current_page.label }}
+                    </p>
+
+                    <p
+                        class="hidden truncate text-xs text-slate-500 sm:block"
+                    >
+                        Litoral Trace Compliance Workspace
+                    </p>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <span
+                        class="hidden items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 md:inline-flex"
+                    >
+                        <span
+                            class="h-2 w-2 rounded-full bg-emerald-500"
+                            aria-hidden="true"
+                        ></span>
+
+                        UE 2023/1115
+                    </span>
+
+                    <div
+                        class="hidden max-w-64 text-right xl:block"
+                    >
+                        <p
+                            class="truncate text-xs font-semibold text-slate-800"
+                            title="{{ user.organization_name }}"
+                        >
+                            {{ user.organization_name }}
+                        </p>
+
+                        <p
+                            class="truncate text-[11px] text-slate-500"
+                        >
+                            {{ user.username }}
+                            &middot;
+                            {{ user.role|upper }}
+                        </p>
+                    </div>
+
+                    <div
+                        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white"
+                        aria-hidden="true"
+                    >
+                        {{ user.username[:1]|upper }}
+                    </div>
+                </div>
             </div>
+        </header>
 
-            <div class="text-right">
-                <p>
-                    📍 Resistencia, Chaco | Gran Chaco - Argentina
-                </p>
-
-                <p>
-                    Reglamento (UE) 2023/1115 Libre de Deforestación
-                </p>
+        <main
+            id="main-content"
+            tabindex="-1"
+            class="px-4 py-6 sm:px-6 lg:px-8"
+        >
+            <div
+                class="mx-auto w-full max-w-[1536px]"
+            >
+                {% block content %}{% endblock %}
             </div>
-        </div>
-    </footer>
-
+        </main>
+    </div>
 </div>
+
 {% endblock %}

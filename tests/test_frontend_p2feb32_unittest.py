@@ -131,12 +131,15 @@ def test_no_leaf_template_inherits_common_base_directly():
         ), template_name
 
 def test_shell_copy_preserves_utf8_content():
-    shell_templates = (
-        "public/base_public.html",
-        "app/base_app.html",
+    public_shell = _read(
+        "public/base_public.html"
     )
 
-    required_copy = (
+    app_shell = _read(
+        "app/base_app.html"
+    )
+
+    public_copy = (
         "\U0001F332",
         "Exportaci\u00f3n",
         "Uni\u00f3n Europea",
@@ -145,15 +148,23 @@ def test_shell_copy_preserves_utf8_content():
         "Deforestaci\u00f3n",
     )
 
-    for template_name in shell_templates:
-        template = _read(
-            template_name
-        )
+    for expected in public_copy:
+        assert expected in public_shell
 
-        for expected in required_copy:
-            assert expected in template, (
-                template_name,
-                expected,
-            )
+    app_copy = (
+        "Operaci\u00f3n",
+        "Administraci\u00f3n",
+        "Organizaci\u00f3n",
+        "Navegaci\u00f3n",
+        "Cerrar sesi\u00f3n",
+    )
 
+    for expected in app_copy:
+        assert expected in app_shell
+
+    for template in (
+        public_shell,
+        app_shell,
+    ):
         assert "\ufffd" not in template
+        assert "sesi?n" not in template

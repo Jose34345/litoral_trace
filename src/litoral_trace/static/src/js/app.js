@@ -151,11 +151,37 @@ function installFetchCsrfBridge() {
   window.fetch = csrfFetch;
 }
 
+function getDrawerFocusableElements(drawer) {
+  const selector = [
+    "a[href]",
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(",");
+
+  return Array.from(
+    drawer.querySelectorAll(selector),
+  ).filter(
+    (element) => (
+      !element.hasAttribute("hidden")
+      && element.getAttribute("aria-hidden")
+        !== "true"
+    ),
+  );
+}
+
 function setDrawerState(
   drawer,
   overlay,
+  openButton,
   isOpen,
 ) {
+  const isDesktop = window.matchMedia(
+    "(min-width: 1024px)",
+  ).matches;
+
   drawer.dataset.open = (
     isOpen
       ? "true"
@@ -172,9 +198,28 @@ function setDrawerState(
     !isOpen,
   );
 
+  overlay.setAttribute(
+    "aria-hidden",
+    String(!isOpen),
+  );
+
+  openButton.setAttribute(
+    "aria-expanded",
+    String(isOpen),
+  );
+
+  drawer.setAttribute(
+    "aria-hidden",
+    (
+      isDesktop || isOpen
+        ? "false"
+        : "true"
+    ),
+  );
+
   document.documentElement.classList.toggle(
     "overflow-hidden",
-    isOpen,
+    isOpen && !isDesktop,
   );
 }
 
@@ -204,17 +249,54 @@ function installMobileDrawer() {
     return;
   }
 
-  const close = () => setDrawerState(
-    drawer,
-    overlay,
-    false,
+  let previouslyFocused = null;
+
+  const isOpen = () => (
+    drawer.dataset.open === "true"
   );
 
-  const open = () => setDrawerState(
-    drawer,
-    overlay,
-    true,
-  );
+  const close = (
+    restoreFocus = true,
+  ) => {
+    const wasOpen = isOpen();
+
+    setDrawerState(
+      drawer,
+      overlay,
+      openButton,
+      false,
+    );
+
+    if (
+      wasOpen
+      && restoreFocus
+      && previouslyFocused
+      instanceof HTMLElement
+    ) {
+      previouslyFocused.focus({
+        preventScroll: true,
+      });
+    }
+
+    previouslyFocused = null;
+  };
+
+  const open = () => {
+    previouslyFocused = (
+      document.activeElement
+    );
+
+    setDrawerState(
+      drawer,
+      overlay,
+      openButton,
+      true,
+    );
+
+    closeButton.focus({
+      preventScroll: true,
+    });
+  };
 
   openButton.addEventListener(
     "click",
@@ -223,21 +305,136 @@ function installMobileDrawer() {
 
   closeButton.addEventListener(
     "click",
-    close,
+    () => close(),
   );
 
   overlay.addEventListener(
     "click",
-    close,
+    () => close(),
+  );
+
+  drawer.querySelectorAll(
+    "a[href]",
+  ).forEach(
+    (link) => {
+      link.addEventListener(
+        "click",
+        () => {
+          if (
+            window.matchMedia(
+              "(max-width: 1023px)",
+            ).matches
+          ) {
+            close(false);
+          }
+        },
+      );
+    },
   );
 
   document.addEventListener(
     "keydown",
     (event) => {
+      if (!isOpen()) {
+        return;
+      }
+
       if (event.key === "Escape") {
+        event.preventDefault();
         close();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const focusable = (
+        getDrawerFocusableElements(
+          drawer,
+        )
+      );
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        closeButton.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = (
+        focusable[
+          focusable.length - 1
+        ]
+      );
+
+      if (
+        event.shiftKey
+        && (
+          document.activeElement
+            === first
+          || !drawer.contains(
+            document.activeElement,
+          )
+        )
+      ) {
+        event.preventDefault();
+        last.focus();
+        return;
+      }
+
+      if (
+        !event.shiftKey
+        && document.activeElement
+          === last
+      ) {
+        event.preventDefault();
+        first.focus();
       }
     },
+  );
+
+  const desktopMedia = (
+    window.matchMedia(
+      "(min-width: 1024px)",
+    )
+  );
+
+  const syncDesktopState = (
+    event,
+  ) => {
+    if (
+      event.matches
+      && isOpen()
+    ) {
+      close(false);
+    }
+
+    drawer.setAttribute(
+      "aria-hidden",
+      (
+        event.matches
+          ? "false"
+          : String(!isOpen())
+      ),
+    );
+  };
+
+  if (
+    typeof desktopMedia.addEventListener
+    === "function"
+  ) {
+    desktopMedia.addEventListener(
+      "change",
+      syncDesktopState,
+    );
+  }
+
+  setDrawerState(
+    drawer,
+    overlay,
+    openButton,
+    false,
   );
 }
 
