@@ -46,6 +46,12 @@ from litoral_trace.web.runtime import (
     rotate_csrf_browser_cookie,
 )
 
+from litoral_trace.web.regional_intelligence import (
+    get_regional_profile,
+    list_regional_profiles,
+)
+
+
 
 router = APIRouter(
     tags=["Frontend B2B"],
@@ -82,6 +88,57 @@ async def render_home_view(
         request,
         "public/home.html",
         user=None,
+    )
+
+
+@router.get(
+    "/regional-intelligence",
+    response_class=HTMLResponse,
+)
+async def render_regional_intelligence_index_view(
+    request: Request,
+):
+    """Render the public Regional Intelligence catalog."""
+
+    return render_web_template(
+        request,
+        "public/regional_index.html",
+        user=None,
+        context={
+            "regional_profiles": (
+                list_regional_profiles()
+            ),
+        },
+    )
+
+
+@router.get(
+    "/regional-intelligence/{region_slug}",
+    response_class=HTMLResponse,
+)
+async def render_regional_intelligence_detail_view(
+    request: Request,
+    region_slug: str,
+):
+    """Render one reusable public regional profile."""
+
+    profile = get_regional_profile(
+        region_slug
+    )
+
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Regional profile not found.",
+        )
+
+    return render_web_template(
+        request,
+        "public/regional_detail.html",
+        user=None,
+        context={
+            "profile": profile,
+        },
     )
 
 
