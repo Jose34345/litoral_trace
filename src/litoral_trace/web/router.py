@@ -45,12 +45,15 @@ from litoral_trace.web.runtime import (
     render_web_template,
     rotate_csrf_browser_cookie,
 )
-
 from litoral_trace.web.regional_intelligence import (
     get_regional_profile,
     list_regional_profiles,
 )
-
+from litoral_trace.web.regional_map import (
+    REGIONAL_MAP_DATASET,
+    get_regional_map_scope,
+    list_regional_map_scopes,
+)
 
 
 router = APIRouter(
@@ -100,6 +103,10 @@ async def render_regional_intelligence_index_view(
 ):
     """Render the public Regional Intelligence catalog."""
 
+    map_scopes = (
+        list_regional_map_scopes()
+    )
+
     return render_web_template(
         request,
         "public/regional_index.html",
@@ -108,6 +115,16 @@ async def render_regional_intelligence_index_view(
             "regional_profiles": (
                 list_regional_profiles()
             ),
+            "regional_map_dataset": (
+                REGIONAL_MAP_DATASET
+            ),
+            "regional_map_scopes": (
+                map_scopes
+            ),
+            "regional_map_scope_by_region_id": {
+                scope.region_id: scope
+                for scope in map_scopes
+            },
         },
     )
 
@@ -132,12 +149,29 @@ async def render_regional_intelligence_detail_view(
             detail="Regional profile not found.",
         )
 
+    map_scope = get_regional_map_scope(
+        profile.region_id
+    )
+
+    if map_scope is None:
+        raise RuntimeError(
+            "Regional map configuration missing "
+            f"for canonical region "
+            f"{profile.region_id!r}."
+        )
+
     return render_web_template(
         request,
         "public/regional_detail.html",
         user=None,
         context={
             "profile": profile,
+            "regional_map_dataset": (
+                REGIONAL_MAP_DATASET
+            ),
+            "regional_map_scope": (
+                map_scope
+            ),
         },
     )
 
