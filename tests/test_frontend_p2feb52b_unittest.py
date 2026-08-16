@@ -156,6 +156,23 @@ def test_login_matches_current_public_brand():
     )
 
 
+
+
+def test_login_back_link_is_encoding_safe():
+    login = _read(
+        "login.html"
+    )
+
+    assert (
+        "&larr; Back to public site"
+        in login
+    )
+
+    assert (
+        "? Back to public site"
+        not in login
+    )
+
 def test_login_preserves_security_contract():
     login = _read(
         "login.html"
