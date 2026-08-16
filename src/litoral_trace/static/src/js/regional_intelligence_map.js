@@ -139,16 +139,38 @@ function installRegionalIntelligenceMap() {
     ),
   );
 
+  function showMapStatus(message) {
+    if (!status) {
+      return;
+    }
+
+    status.textContent = message;
+    status.hidden = false;
+  }
+
+
+  function hideMapStatus() {
+    if (!status) {
+      return;
+    }
+
+    status.hidden = true;
+  }
+
+
+  showMapStatus(
+    "Loading territorial reference…",
+  );
+
+
   if (
     typeof window.L !== "object"
     || typeof window.L.map !== "function"
   ) {
-    if (status) {
-      status.textContent = (
-        "Territorial visualization is unavailable. "
-        + "Regional profile content remains accessible."
-      );
-    }
+    showMapStatus(
+      "Territorial visualization is unavailable. "
+      + "Regional profile content remains accessible.",
+    );
 
     return;
   }
@@ -169,11 +191,10 @@ function installRegionalIntelligenceMap() {
   ).trim();
 
   if (!geojsonUrl) {
-    if (status) {
-      status.textContent = (
-        "Territorial dataset is not configured."
-      );
-    }
+    showMapStatus(
+      "Territorial dataset is not configured. "
+      + "Regional profile content remains accessible.",
+    );
 
     return;
   }
@@ -713,9 +734,7 @@ function installRegionalIntelligenceMap() {
         controlsPanel.hidden = false;
       }
 
-      if (status) {
-        status.hidden = true;
-      }
+      hideMapStatus();
 
       const initialRegionId = (
         scopes.has(
@@ -750,16 +769,12 @@ function installRegionalIntelligenceMap() {
         error,
       );
 
-      if (status) {
-        status.hidden = false;
-
-        status.textContent = (
-          "Territorial visualization "
-          + "could not be loaded. "
-          + "Regional profile content "
-          + "remains available."
-        );
-      }
+      showMapStatus(
+        "Territorial visualization "
+        + "could not be loaded. "
+        + "Regional profile content "
+        + "remains accessible.",
+      );
 
       map.remove();
     }

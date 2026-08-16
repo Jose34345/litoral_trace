@@ -320,8 +320,28 @@ def test_invalid_access_cookie_variants_do_not_render_protected_html():
     valid_payload = verify_jwt_token(valid_access_token)
     assert valid_payload is not None
 
-    tampered_last_char = "a" if valid_access_token[-1] != "a" else "b"
-    tampered_token = valid_access_token[:-1] + tampered_last_char
+    (
+        encoded_header,
+        encoded_payload,
+        encoded_signature,
+    ) = valid_access_token.split(".")
+
+    tampered_first_char = (
+        "A"
+        if encoded_signature[0] != "A"
+        else "B"
+    )
+
+    tampered_signature = (
+        tampered_first_char
+        + encoded_signature[1:]
+    )
+
+    tampered_token = (
+        f"{encoded_header}."
+        f"{encoded_payload}."
+        f"{tampered_signature}"
+    )
     expired_token = create_jwt_token(
         {
             "sub": valid_payload["sub"],
