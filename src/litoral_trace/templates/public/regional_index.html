@@ -36,9 +36,10 @@ Regional Intelligence | Litoral Trace
         <p
             class="mt-6 max-w-3xl text-base leading-7 text-slate-300 sm:text-lg"
         >
-            Explore Litoral Trace regional profiles for
-            Argentine forestry origins and supply-chain
-            evidence.
+            Explore structured regional context for
+            Argentine forest origins while keeping
+            regional information separated from
+            transaction-specific compliance conclusions.
         </p>
     </div>
 </section>
@@ -48,13 +49,37 @@ Regional Intelligence | Litoral Trace
     <div
         class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"
     >
+        <div class="max-w-3xl">
+            <p
+                class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
+            >
+                Compliance context
+            </p>
+
+            <h2
+                class="mt-3 text-3xl font-bold tracking-tight text-slate-950"
+            >
+                One evidence architecture across origins
+            </h2>
+
+            <p
+                class="mt-4 text-base leading-7 text-slate-600"
+            >
+                Regional profiles organize origin,
+                documentary, geospatial, supply-chain,
+                compliance, and auditability context
+                through a shared canonical model.
+            </p>
+        </div>
+
         <div
-            class="grid gap-5 md:grid-cols-2 lg:grid-cols-3"
+            class="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3"
         >
             {% for profile in regional_profiles %}
             <a
                 href="/regional-intelligence/{{ profile.slug }}"
                 data-regional-link="{{ profile.slug }}"
+                data-region-id="{{ profile.region_id }}"
                 class="group flex min-h-64 flex-col rounded-2xl border border-slate-200 bg-slate-50 p-6 transition duration-200 hover:-translate-y-1 hover:border-emerald-300 hover:bg-white hover:shadow-lg"
             >
                 <div
@@ -94,6 +119,22 @@ Regional Intelligence | Litoral Trace
                     {{ profile.summary }}
                 </p>
 
+                <div
+                    class="mt-6 flex flex-wrap gap-3"
+                >
+                    <span
+                        class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500"
+                    >
+                        {{ profile.risk_context.label }}
+                    </span>
+
+                    <span
+                        class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500"
+                    >
+                        {{ profile.provenance.label }}
+                    </span>
+                </div>
+
                 <span
                     class="mt-6 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-emerald-700"
                 >
@@ -129,19 +170,53 @@ Regional Intelligence | Litoral Trace
                     <h2
                         class="mt-2 text-xl font-bold"
                     >
-                        One methodology across regions
+                        Context without unsupported conclusions
                     </h2>
 
                     <p
                         class="mt-3 text-sm leading-6 text-emerald-100/80"
                     >
-                        Each profile uses the same evidence-first
-                        structure so regional context remains
-                        comparable and auditable.
+                        Regional Intelligence contributes context
+                        to compliance workflows while keeping
+                        transaction-specific assessment separate.
                     </p>
                 </div>
             </div>
         </div>
+    </div>
+</section>
+
+
+<section
+    class="border-y border-slate-200 bg-slate-50"
+>
+    <div
+        class="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[0.75fr_1.25fr] lg:px-8"
+    >
+        <div>
+            <p
+                class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
+            >
+                Forest Compliance OS
+            </p>
+
+            <h2
+                class="mt-3 text-2xl font-bold tracking-tight text-slate-950"
+            >
+                Regional intelligence is one input,
+                not the final decision
+            </h2>
+        </div>
+
+        <p
+            class="text-sm leading-7 text-slate-600"
+        >
+            Litoral Trace keeps regional context separate
+            from supplier, plot, shipment, and due-diligence
+            conclusions. This allows the same evidence model
+            to support future operational workspaces,
+            portals, integrations, and APIs.
+        </p>
     </div>
 </section>
 

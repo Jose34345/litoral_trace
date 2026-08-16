@@ -118,82 +118,119 @@
             <p
                 class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
             >
-                Regional intelligence framework
+                Compliance context
             </p>
 
             <h2
                 class="mt-3 text-3xl font-bold tracking-tight text-slate-950"
             >
-                Evidence closer to origin
+                Canonical regional identity
             </h2>
 
             <p
                 class="mt-4 text-base leading-7 text-slate-600"
             >
-                Litoral Trace structures each regional profile
-                around the evidence domains that matter when
-                reviewing origin and supply-chain context.
+                The regional profile provides reusable
+                origin and evidence context without asserting
+                a transaction-specific compliance decision.
             </p>
         </div>
 
         <div
-            class="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3"
+            class="mt-10 grid gap-5 md:grid-cols-2"
         >
-            {% for icon, title, copy in [
-                (
-                    "fa-location-dot",
-                    "Origin context",
-                    "Structure information around the declared geographic origin."
-                ),
-                (
-                    "fa-file-shield",
-                    "Documentary evidence",
-                    "Connect supporting records to the origin and compliance workflow."
-                ),
-                (
-                    "fa-satellite",
-                    "Geospatial context",
-                    "Organize geospatial observations alongside the evidence chain."
-                ),
-                (
-                    "fa-route",
-                    "Supply-chain context",
-                    "Preserve context as material moves through operational workflows."
-                ),
-                (
-                    "fa-scale-balanced",
-                    "Compliance context",
-                    "Keep relevant compliance requirements connected to reviewable evidence."
-                ),
-                (
-                    "fa-box-archive",
-                    "Auditability",
-                    "Maintain evidence in an organization-aware, reviewable structure."
-                )
-            ] %}
             <article
                 class="rounded-2xl border border-slate-200 bg-slate-50 p-6"
             >
-                <span
-                    class="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm"
-                    aria-hidden="true"
+                <p
+                    class="text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
                 >
-                    <i class="fa-solid {{ icon }}"></i>
-                </span>
+                    Region identity
+                </p>
 
-                <h3
-                    class="mt-5 text-base font-bold text-slate-950"
+                <p
+                    class="mt-3 text-xl font-bold text-slate-950"
                 >
-                    {{ title }}
-                </h3>
+                    {{ profile.region_id }}
+                </p>
 
                 <p
                     class="mt-2 text-sm leading-6 text-slate-600"
                 >
-                    {{ copy }}
+                    Stable internal identity independent
+                    from the public URL slug.
                 </p>
             </article>
-            {% endfor %}
+
+            <article
+                class="rounded-2xl border border-slate-200 bg-slate-50 p-6"
+            >
+                <p
+                    class="text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
+                >
+                    Jurisdiction
+                </p>
+
+                <p
+                    class="mt-3 text-xl font-bold text-slate-950"
+                >
+                    {{ profile.jurisdiction_code }}
+                </p>
+
+                <p
+                    class="mt-2 text-sm leading-6 text-slate-600"
+                >
+                    Country:
+                    {{ profile.country_code }}
+                </p>
+            </article>
+
+            <article
+                class="rounded-2xl border border-slate-200 bg-slate-50 p-6"
+            >
+                <p
+                    class="text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
+                >
+                    Assessment status
+                </p>
+
+                <p
+                    class="mt-3 text-xl font-bold text-slate-950"
+                    data-assessment-status="{{ profile.risk_context.status }}"
+                >
+                    {{ profile.risk_context.label }}
+                </p>
+
+                <p
+                    class="mt-2 text-sm leading-6 text-slate-600"
+                >
+                    Regional context remains separate
+                    from operational compliance decisions.
+                </p>
+            </article>
+
+            <article
+                class="rounded-2xl border border-slate-200 bg-slate-50 p-6"
+            >
+                <p
+                    class="text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
+                >
+                    Evidence status
+                </p>
+
+                <p
+                    class="mt-3 text-xl font-bold text-slate-950"
+                    data-provenance-status="{{ profile.provenance.status }}"
+                >
+                    {{ profile.provenance.label }}
+                </p>
+
+                <p
+                    class="mt-2 text-sm leading-6 text-slate-600"
+                >
+                    {{ profile.provenance.freshness_label }}
+                </p>
+            </article>
         </div>
     </div>
 </section>
@@ -203,31 +240,138 @@
     class="border-y border-slate-200 bg-slate-50"
 >
     <div
-        class="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[0.75fr_1.25fr] lg:px-8"
+        class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"
     >
-        <div>
+        <div class="max-w-3xl">
             <p
                 class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
             >
-                Methodology
+                Evidence domains
             </p>
 
             <h2
-                class="mt-3 text-2xl font-bold tracking-tight text-slate-950"
+                class="mt-3 text-3xl font-bold tracking-tight text-slate-950"
             >
-                Source-backed intelligence by design
+                Structured for reuse across compliance workflows
             </h2>
+
+            <p
+                class="mt-4 text-base leading-7 text-slate-600"
+            >
+                Evidence domains are defined by the
+                Litoral Trace compliance model rather than
+                hardcoded into this presentation layer.
+            </p>
         </div>
 
-        <p
-            class="text-sm leading-7 text-slate-600"
+        <div
+            class="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3"
         >
-            Regional profiles separate sourced regional
-            information from Litoral Trace methodology.
-            Detailed jurisdiction-specific evidence and sources
-            are added profile by profile without changing the
-            underlying information architecture.
-        </p>
+            {% for domain in profile.evidence_domains %}
+            <article
+                class="rounded-2xl border border-slate-200 bg-white p-6"
+                data-evidence-domain="{{ domain.key }}"
+            >
+                <span
+                    class="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-emerald-700 shadow-sm"
+                    aria-hidden="true"
+                >
+                    <i
+                        class="fa-solid {{ domain.icon }}"
+                    ></i>
+                </span>
+
+                <h3
+                    class="mt-5 text-base font-bold text-slate-950"
+                >
+                    {{ domain.title }}
+                </h3>
+
+                <p
+                    class="mt-2 text-sm leading-6 text-slate-600"
+                >
+                    {{ domain.description }}
+                </p>
+            </article>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+
+<section class="bg-white">
+    <div
+        class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"
+    >
+        <div
+            class="grid gap-8 lg:grid-cols-[0.75fr_1.25fr]"
+        >
+            <div>
+                <p
+                    class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
+                >
+                    Assessment boundary
+                </p>
+
+                <h2
+                    class="mt-3 text-2xl font-bold tracking-tight text-slate-950"
+                >
+                    Context is not a compliance conclusion
+                </h2>
+            </div>
+
+            <div>
+                <p
+                    class="text-sm leading-7 text-slate-600"
+                >
+                    {{ profile.risk_context.rationale }}
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<section
+    class="border-y border-slate-200 bg-slate-50"
+>
+    <div
+        class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"
+    >
+        <div
+            class="grid gap-8 lg:grid-cols-[0.75fr_1.25fr]"
+        >
+            <div>
+                <p
+                    class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
+                >
+                    Data & methodology
+                </p>
+
+                <h2
+                    class="mt-3 text-2xl font-bold tracking-tight text-slate-950"
+                >
+                    Source-backed intelligence by design
+                </h2>
+            </div>
+
+            <div>
+                <p
+                    class="text-sm leading-7 text-slate-600"
+                >
+                    {{ profile.provenance.source_scope }}
+                </p>
+
+                <p
+                    class="mt-4 text-sm leading-7 text-slate-600"
+                >
+                    Data status:
+                    <strong>
+                        {{ profile.provenance.freshness_label }}
+                    </strong>
+                </p>
+            </div>
+        </div>
     </div>
 </section>
 
@@ -248,8 +392,8 @@
             <h2
                 class="mt-3 text-3xl font-bold tracking-tight text-white"
             >
-                Connect regional context to your
-                compliance evidence
+                Connect this origin to a
+                compliance evidence workflow
             </h2>
         </div>
 
