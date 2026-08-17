@@ -27,7 +27,7 @@ from litoral_trace.services.batch_imports import (
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 INTEGRATION_ENV_PATH = ROOT_DIR / ".env.integration"
-EXPECTED_REVISION = "017_add_batch_import_idempotency"
+EXPECTED_REVISION = "018_add_batch_evidence_links"
 
 
 def _truthy(value: str | None) -> bool:

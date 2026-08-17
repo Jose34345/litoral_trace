@@ -459,6 +459,55 @@ def test_validate_rejects_oversized_file_before_parser(
     )
 
 
+def test_request_content_length_over_limit_fails_closed(
+    monkeypatch,
+):
+    parser_called = {"value": False}
+
+    def _fail_if_parser_reached(*args, **kwargs):
+        parser_called["value"] = True
+        raise AssertionError(
+            "parse_batch_upload_bytes must not be reached"
+        )
+
+    monkeypatch.setattr(
+        batch_api,
+        "parse_batch_upload_bytes",
+        _fail_if_parser_reached,
+    )
+
+    with pytest.raises(
+        HTTPException
+    ) as exc_info:
+        asyncio.run(
+            batch_api.validar_batch_excel_endpoint(
+                file=_upload(
+                    _xlsx_bytes(
+                        _row()
+                    )
+                ),
+                request=_request(
+                    "/api/v1/batch/validate",
+                    content_length=(
+                        batch_api.BATCH_HTTP_MAX_REQUEST_BYTES
+                        + 1
+                    ),
+                ),
+                user=_user(),
+            )
+        )
+
+    assert exc_info.value.status_code == 413
+    assert (
+        exc_info.value.detail["code"]
+        == "REQUEST_TOO_LARGE"
+    )
+    assert parser_called["value"] is False
+    assert "Traceback" not in str(
+        exc_info.value.detail
+    )
+
+
 def test_import_requires_idempotency_key():
     with pytest.raises(
         HTTPException

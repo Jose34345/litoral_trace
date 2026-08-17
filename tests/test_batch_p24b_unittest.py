@@ -8,6 +8,7 @@ import pytest
 
 from litoral_trace.services.batch import (
     BATCH_COLUMNAS,
+    BATCH_MAX_TEXT_LENGTH,
     BATCH_SHEET_NAME,
     BatchExcelValidationError,
     BatchSemanticValidationError,
@@ -124,6 +125,40 @@ def test_valid_row_is_normalized_into_canonical_payload():
     assert canonical.as_lote_payload()["latitud"] == -27.45
 
 
+def test_semantic_unicode_and_boundary_inputs_are_handled_as_intended():
+    exact_text = "Á" * BATCH_MAX_TEXT_LENGTH
+    result = validar_dataframe_lotes(
+        _df(
+            _row(
+                identificador="Ｒｏｄａｌ　Ｎｏｒｔｅ　０１",
+                proveedor=exact_text,
+                producto="Madera Aserrada (Ñandú)",
+                hectareas=1.0,
+                latitud=-90.0,
+                longitud=-180.0,
+            ),
+            _row(
+                identificador="Rodal Sur",
+                proveedor="30-12345678-8",
+                producto="Madera Aserrada (Pino)",
+                hectareas=1.0,
+                latitud=90.0,
+                longitud=180.0,
+            ),
+        )
+    )
+
+    assert result.valid is True
+    assert result.invalid_rows == 0
+    assert result.canonical_rows[0].identificador == "Rodal Norte 01"
+    assert result.canonical_rows[0].productor_id == exact_text
+    assert result.canonical_rows[0].producto_forestal == "Madera Aserrada (Ñandú)"
+    assert result.canonical_rows[0].latitud == -90.0
+    assert result.canonical_rows[0].longitud == -180.0
+    assert result.canonical_rows[1].latitud == 90.0
+    assert result.canonical_rows[1].longitud == 180.0
+
+
 def test_secure_parser_preserves_original_excel_row_numbers_across_blank_rows():
     payload = _workbook_bytes(
         [
@@ -168,6 +203,22 @@ def test_required_text_fields_report_field_level_errors():
     }
 
 
+def test_required_numeric_missing_reports_required():
+    result = validar_dataframe_lotes(
+        _df(
+            _row(
+                hectareas=None,
+            )
+        )
+    )
+
+    assert (
+        2,
+        "Hectareas",
+        "REQUIRED",
+    ) in _codes(result)
+
+
 def test_text_length_limit_matches_lote_model_contract():
     result = validar_dataframe_lotes(
         _df(
@@ -197,6 +248,22 @@ def test_control_characters_are_rejected_in_text_fields():
         2,
         "ID_Proveedor",
         "CONTROL_CHARACTERS",
+    ) in _codes(result)
+
+
+def test_text_fields_reject_non_string_types():
+    result = validar_dataframe_lotes(
+        _df(
+            _row(
+                proveedor=30123456789,
+            )
+        )
+    )
+
+    assert (
+        2,
+        "ID_Proveedor",
+        "INVALID_TYPE",
     ) in _codes(result)
 
 
@@ -346,7 +413,7 @@ def test_duplicate_identifiers_are_rejected_case_insensitively_for_all_rows():
                 identificador="Rodal Norte",
             ),
             _row(
-                identificador="  RODAL   NORTE  ",
+                identificador="ＲＯＤＡＬ　ＮＯＲＴＥ",
                 proveedor="30-22222222-2",
             ),
         )

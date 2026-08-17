@@ -200,6 +200,13 @@ def _raise_batch_error(code: str, detail: str) -> None:
     raise BatchExcelValidationError(code=code, detail=detail)
 
 
+def _raise_invalid_workbook() -> None:
+    _raise_batch_error(
+        "INVALID_WORKBOOK",
+        "No fue posible interpretar la planilla XLSX.",
+    )
+
+
 def normalizar_nombre_archivo_batch(filename: str | None) -> str:
     """Return a safe basename and require the modern XLSX container format."""
 
@@ -304,6 +311,10 @@ def _preflight_xlsx_container(payload: bytes) -> None:
         ]
 
         if not infos:
+            if isinstance(exc, BatchExcelValidationError):
+                raise
+            if not isinstance(exc, StopIteration):
+                _raise_invalid_workbook()
             _raise_batch_error(
                 "INVALID_XLSX_CONTAINER",
                 "El archivo XLSX no contiene datos internos.",
@@ -466,10 +477,7 @@ def parsear_excel_lotes(
             keep_links=False,
         )
     except Exception:
-        _raise_batch_error(
-            "INVALID_WORKBOOK",
-            "No fue posible interpretar la planilla XLSX.",
-        )
+        _raise_invalid_workbook()
 
     try:
         if len(workbook.sheetnames) > BATCH_MAX_SHEETS:
@@ -489,21 +497,31 @@ def parsear_excel_lotes(
 
         worksheet = workbook[BATCH_SHEET_NAME]
 
-        if (
-            worksheet.max_column is None
-            or worksheet.max_row is None
-        ):
-            worksheet.calculate_dimension(
-                force=True
-            )
+        max_column = worksheet.max_column
+        max_row = worksheet.max_row
 
-        if worksheet.max_column > len(BATCH_COLUMNAS):
+        try:
+            if (
+                max_column is None
+                or max_row is None
+            ):
+                worksheet.calculate_dimension(
+                    force=True
+                )
+                max_column = worksheet.max_column
+                max_row = worksheet.max_row
+        except BatchExcelValidationError:
+            raise
+        except Exception:
+            _raise_invalid_workbook()
+
+        if max_column > len(BATCH_COLUMNAS):
             _raise_batch_error(
                 "TOO_MANY_COLUMNS",
                 "La hoja de importación contiene columnas adicionales.",
             )
 
-        if worksheet.max_row > BATCH_MAX_ROWS + 1:
+        if max_row > BATCH_MAX_ROWS + 1:
             _raise_batch_error(
                 "TOO_MANY_ROWS",
                 (
@@ -519,16 +537,36 @@ def parsear_excel_lotes(
         )
 
         try:
-            header_cells = next(row_iterator)
-        except StopIteration:
+            header_cells = tuple(
+                (cell.data_type, cell.value)
+                for cell in next(row_iterator)
+            )
+            parsed_rows = [
+                (
+                    excel_row_number,
+                    tuple(
+                        (cell.data_type, cell.value)
+                        for cell in cells
+                    ),
+                )
+                for excel_row_number, cells in enumerate(
+                    row_iterator,
+                    start=2,
+                )
+            ]
+        except Exception as exc:
+            if isinstance(exc, BatchExcelValidationError):
+                raise
+            if not isinstance(exc, StopIteration):
+                _raise_invalid_workbook()
             _raise_batch_error(
                 "MISSING_HEADER",
                 "La hoja de importación no contiene encabezados.",
             )
 
         if any(
-            cell.data_type == "f"
-            for cell in header_cells
+            cell_data_type == "f"
+            for cell_data_type, _ in header_cells
         ):
             _raise_batch_error(
                 "FORMULA_NOT_ALLOWED",
@@ -536,8 +574,8 @@ def parsear_excel_lotes(
             )
 
         headers = [
-            _normalize_header(cell.value)
-            for cell in header_cells
+            _normalize_header(cell_value)
+            for _, cell_value in header_cells
         ]
 
         if len(set(headers)) != len(headers):
@@ -558,14 +596,11 @@ def parsear_excel_lotes(
         rows: list[dict[str, object]] = []
         source_row_numbers: list[int] = []
 
-        for excel_row_number, cells in enumerate(
-            row_iterator,
-            start=2,
-        ):
+        for excel_row_number, parsed_cells in parsed_rows:
             if excel_row_number > BATCH_MAX_ROWS + 1:
                 if any(
-                    not _cell_is_blank(cell.value)
-                    for cell in cells
+                    not _cell_is_blank(cell_value)
+                    for _, cell_value in parsed_cells
                 ):
                     _raise_batch_error(
                         "TOO_MANY_ROWS",
@@ -577,8 +612,8 @@ def parsear_excel_lotes(
                 continue
 
             if any(
-                cell.data_type == "f"
-                for cell in cells
+                cell_data_type == "f"
+                for cell_data_type, _ in parsed_cells
             ):
                 _raise_batch_error(
                     "FORMULA_NOT_ALLOWED",
@@ -589,8 +624,8 @@ def parsear_excel_lotes(
                 )
 
             if any(
-                cell.data_type == "e"
-                for cell in cells
+                cell_data_type == "e"
+                for cell_data_type, _ in parsed_cells
             ):
                 _raise_batch_error(
                     "CELL_ERROR",
@@ -601,8 +636,8 @@ def parsear_excel_lotes(
                 )
 
             values = [
-                cell.value
-                for cell in cells
+                cell_value
+                for _, cell_value in parsed_cells
             ]
 
             if all(

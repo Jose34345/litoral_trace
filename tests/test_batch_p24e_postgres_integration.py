@@ -41,7 +41,7 @@ INTEGRATION_ENV_PATH = (
     ROOT_DIR / ".env.integration"
 )
 EXPECTED_REVISION = (
-    "017_add_batch_import_idempotency"
+    "018_add_batch_evidence_links"
 )
 
 

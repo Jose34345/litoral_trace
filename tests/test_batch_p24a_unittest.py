@@ -8,6 +8,7 @@ import zipfile
 from openpyxl import Workbook, load_workbook
 import pytest
 
+import litoral_trace.services.batch as batch_service
 from litoral_trace.services.batch import (
     BATCH_COLUMNAS,
     BATCH_MAX_FILE_BYTES,
@@ -108,6 +109,32 @@ def _remove_sheet_dimension(
     return buffer.getvalue()
 
 
+def _rewrite_member(
+    payload: bytes,
+    *,
+    name: str,
+    transform,
+) -> bytes:
+    source = zipfile.ZipFile(io.BytesIO(payload), "r")
+    buffer = io.BytesIO()
+
+    with source, zipfile.ZipFile(
+        buffer,
+        "w",
+        zipfile.ZIP_DEFLATED,
+    ) as target:
+        for info in source.infolist():
+            body = source.read(info.filename)
+            if info.filename == name:
+                body = transform(body)
+            target.writestr(
+                info,
+                body,
+            )
+
+    return buffer.getvalue()
+
+
 def _assert_code(
     exc_info: pytest.ExceptionInfo[BatchExcelValidationError],
     expected: str,
@@ -150,6 +177,24 @@ def test_filename_is_reduced_to_safe_basename_and_xlsx_only():
         normalizar_nombre_archivo_batch("legacy.xls")
 
     _assert_code(exc_info, "UNSUPPORTED_FILE_TYPE")
+
+
+def test_filename_nfkc_and_control_characters_fail_closed_or_normalize_safely():
+    assert (
+        normalizar_nombre_archivo_batch(
+            "Ｆｏｌｄｅｒ／Importación_Árbol.xlsx"
+        )
+        == "Importación_Árbol.xlsx"
+    )
+
+    with pytest.raises(
+        BatchExcelValidationError
+    ) as exc_info:
+        normalizar_nombre_archivo_batch(
+            "bad\nname.xlsx"
+        )
+
+    _assert_code(exc_info, "INVALID_FILENAME")
 
 
 def test_empty_and_oversized_files_fail_closed():
@@ -315,6 +360,85 @@ def test_doctype_and_entity_declarations_are_rejected():
     _assert_code(exc_info, "UNSAFE_XML")
 
 
+@pytest.mark.parametrize(
+    ("code", "configure_payload"),
+    [
+        (
+            "TOO_MANY_XLSX_PARTS",
+            lambda monkeypatch, payload: (
+                monkeypatch.setattr(
+                    batch_service,
+                    "BATCH_MAX_ZIP_MEMBERS",
+                    4,
+                ),
+                _with_extra_zip_member(
+                    payload,
+                    name="customXml/item1.xml",
+                    body=b"<x/>",
+                ),
+            )[1],
+        ),
+        (
+            "XLSX_EXPANDED_TOO_LARGE",
+            lambda monkeypatch, payload: (
+                monkeypatch.setattr(
+                    batch_service,
+                    "BATCH_MAX_UNCOMPRESSED_BYTES",
+                    256,
+                ),
+                _with_extra_zip_member(
+                    payload,
+                    name="customXml/item1.bin",
+                    body=b"x" * 180,
+                ),
+            )[1],
+        ),
+        (
+            "XLSX_MEMBER_TOO_LARGE",
+            lambda monkeypatch, payload: (
+                monkeypatch.setattr(
+                    batch_service,
+                    "BATCH_MAX_MEMBER_BYTES",
+                    64,
+                ),
+                _with_extra_zip_member(
+                    payload,
+                    name="customXml/item1.bin",
+                    body=b"x" * 65,
+                ),
+            )[1],
+        ),
+        (
+            "UNSAFE_XLSX_PATH",
+            lambda monkeypatch, payload: _with_extra_zip_member(
+                payload,
+                name="../escape.xml",
+                body=b"<x/>",
+            ),
+        ),
+    ],
+)
+def test_zip_container_hard_limits_fail_closed(
+    monkeypatch,
+    code: str,
+    configure_payload,
+):
+    payload = configure_payload(
+        monkeypatch,
+        _workbook_bytes(),
+    )
+
+    with pytest.raises(
+        BatchExcelValidationError
+    ) as exc_info:
+        parsear_excel_lotes(
+            payload,
+            filename="batch.xlsx",
+        )
+
+    _assert_code(exc_info, code)
+
+
 def test_row_count_is_bounded_before_business_processing():
     rows = [
         _valid_row(index)
@@ -394,6 +518,91 @@ def test_dimensionless_workbook_still_enforces_too_many_rows():
         )
 
     _assert_code(exc_info, "TOO_MANY_ROWS")
+
+
+def test_too_many_sheets_are_rejected():
+    workbook = Workbook()
+    workbook.active.title = BATCH_SHEET_NAME
+    workbook.active.append(BATCH_COLUMNAS)
+    workbook.active.append(_valid_row(1))
+
+    for index in range(2, 6):
+        worksheet = workbook.create_sheet(
+            title=f"Extra_{index}"
+        )
+        worksheet.append(BATCH_COLUMNAS)
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    workbook.close()
+
+    with pytest.raises(
+        BatchExcelValidationError
+    ) as exc_info:
+        parsear_excel_lotes(
+            buffer.getvalue(),
+            filename="batch.xlsx",
+        )
+
+    _assert_code(exc_info, "TOO_MANY_SHEETS")
+
+
+def test_header_formula_is_rejected():
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = BATCH_SHEET_NAME
+    worksheet.append(
+        [
+            "=A1",
+            *BATCH_COLUMNAS[1:],
+        ]
+    )
+    worksheet.append(_valid_row(1))
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    workbook.close()
+
+    with pytest.raises(
+        BatchExcelValidationError
+    ) as exc_info:
+        parsear_excel_lotes(
+            buffer.getvalue(),
+            filename="batch.xlsx",
+        )
+
+    _assert_code(exc_info, "FORMULA_NOT_ALLOWED")
+
+
+def test_lazy_malformed_worksheet_xml_fails_closed_without_raw_openpyxl_exception():
+    payload = _rewrite_member(
+        _workbook_bytes(
+            rows=[
+                _valid_row(1),
+                _valid_row(2),
+            ]
+        ),
+        name="xl/worksheets/sheet1.xml",
+        transform=lambda body: body.replace(
+            b"</sheetData>",
+            b"",
+            1,
+        ),
+    )
+
+    with pytest.raises(
+        BatchExcelValidationError
+    ) as exc_info:
+        parsear_excel_lotes(
+            payload,
+            filename="malformed.xlsx",
+        )
+
+    assert exc_info.value.code in {
+        "INVALID_WORKBOOK",
+        "INVALID_XLSX_STRUCTURE",
+    }
+    assert "Traceback" not in exc_info.value.detail
 
 
 def test_blank_rows_are_ignored_without_inventing_records():
