@@ -6,9 +6,8 @@ import io
 import json
 from datetime import datetime, timezone
 from http.cookies import SimpleCookie
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-import pandas as pd
 import pytest
 from fastapi import HTTPException, Response, status
 from sqlalchemy import delete, select
@@ -32,13 +31,15 @@ from litoral_trace.api.auth import (
     logout_b2b_session,
     refresh_b2b_session,
 )
+from litoral_trace.api.batch import (
+    importar_batch_excel_endpoint,
+)
 from litoral_trace.api.lotes import (
     LoteCreateRequest,
     LoteUpdateRequest,
     actualizar_lote,
     crear_lote,
     eliminar_lote,
-    procesar_batch_excel_endpoint,
 )
 from litoral_trace.api.satellite import (
     SatelliteQueryByLoteRequest,
@@ -58,6 +59,7 @@ from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.init_db import get_non_production_superadmin_seed
 from litoral_trace.db.models import (
     AuditLog,
+    BatchImport,
     Lote,
     Organization,
     User,
@@ -70,6 +72,12 @@ from litoral_trace.services.audit import (
     build_audit_actor,
     record_audit_event,
     sanitize_audit_metadata,
+)
+from litoral_trace.services.batch import (
+    BatchCanonicalRow,
+    BatchRowValidation,
+    BatchValidationResult,
+    BatchWorkbook,
 )
 from litoral_trace.services.vault import (
     VaultDocumentView,
@@ -906,77 +914,155 @@ def test_batch_upload_and_vault_download_emit_audit_events(
     monkeypatch,
 ):
     user = _authenticated_context()
-
-    monkeypatch.setattr(
-        "litoral_trace.api.lotes.pd.read_excel",
-        lambda *_args, **_kwargs: pd.DataFrame(
-            [
-                {
-                    "identificador": "A",
-                },
-                {
-                    "identificador": "B",
-                },
-            ]
-        ),
+    batch_identifiers = (
+        f"AUDIT-BATCH-{uuid4().hex[:8]}-A",
+        f"AUDIT-BATCH-{uuid4().hex[:8]}-B",
     )
-    monkeypatch.setattr(
-        (
-            "litoral_trace.api.lotes."
-            "procesar_lote_masivo"
-        ),
-        lambda df: (
-            df.to_dict(
-                orient="records"
-            ),
-            b"zip-bytes",
-        ),
-    )
+    batch_import_public_id: UUID | None = None
 
-    upload = UploadFile(
-        filename="audit_batch.xlsx",
-        file=io.BytesIO(
-            b"excel-content"
-        ),
-    )
-
-    batch_response = asyncio.run(
-        procesar_batch_excel_endpoint(
-            file=upload,
-            request=_build_request(
-                method="POST",
-                path="/api/v1/batch/upload",
-                request_id=(
-                    "batch-upload-request"
+    try:
+        workbook = BatchWorkbook(
+            filename="audit_batch.xlsx",
+            sha256="a" * 64,
+            sheet_name="Plantilla_LitoralTrace",
+            row_count=2,
+            dataframe=None,
+            source_row_numbers=(2, 3),
+        )
+        validation = BatchValidationResult(
+            valid=True,
+            total_rows=2,
+            valid_rows=2,
+            invalid_rows=0,
+            rows=(
+                BatchRowValidation(
+                    row=2,
+                    valid=True,
+                    data=BatchCanonicalRow(
+                        source_row=2,
+                        identificador=batch_identifiers[0],
+                        productor_id="20-11111111-1",
+                        producto_forestal="Madera Aserrada (Pino)",
+                        hectareas=10.0,
+                        latitud=-27.4,
+                        longitud=-58.8,
+                        volumen_ingresado_ton=11.0,
+                        volumen_exportar_ton=4.0,
+                    ),
+                    errors=(),
+                ),
+                BatchRowValidation(
+                    row=3,
+                    valid=True,
+                    data=BatchCanonicalRow(
+                        source_row=3,
+                        identificador=batch_identifiers[1],
+                        productor_id="20-22222222-2",
+                        producto_forestal="Madera Aserrada (Pino)",
+                        hectareas=12.0,
+                        latitud=-27.5,
+                        longitud=-58.9,
+                        volumen_ingresado_ton=13.0,
+                        volumen_exportar_ton=5.0,
+                    ),
+                    errors=(),
                 ),
             ),
-            user=user,
         )
-    )
 
-    assert (
-        batch_response.headers[
-            "content-disposition"
-        ].startswith("attachment;")
-    )
+        async def _fake_parse_upload(*_args, **_kwargs):
+            return workbook
 
-    batch_event = _latest_audit(
-        AuditAction.LOTE_BATCH_UPLOAD.value
-    )
+        monkeypatch.setattr(
+            "litoral_trace.api.batch._parse_upload",
+            _fake_parse_upload,
+        )
+        monkeypatch.setattr(
+            "litoral_trace.api.batch.validar_filas_lotes",
+            lambda _workbook: validation,
+        )
 
-    assert (
-        batch_event.after_data["outcome"]
-        == AuditOutcome.SUCCESS.value
-    )
-    assert (
-        batch_event.after_data["metadata"]
-        == {
-            "filename": (
-                "audit_batch.xlsx"
+        upload = UploadFile(
+            filename="audit_batch.xlsx",
+            file=io.BytesIO(
+                b"excel-content"
             ),
-            "row_count": 2,
-        }
-    )
+        )
+
+        batch_response = asyncio.run(
+            importar_batch_excel_endpoint(
+                file=upload,
+                request=_build_request(
+                    method="POST",
+                    path="/api/v1/batch/import",
+                    request_id=(
+                        "batch-upload-request"
+                    ),
+                ),
+                idempotency_key=(
+                    f"audit-batch-{uuid4().hex}"
+                ),
+                user=user,
+            )
+        )
+
+        assert (
+            batch_response.status_code
+            == status.HTTP_201_CREATED
+        )
+        batch_payload = json.loads(
+            batch_response.body.decode("utf-8")
+        )
+        batch_import_public_id = UUID(
+            batch_payload["import_id"]
+        )
+
+        batch_event = _latest_audit(
+            AuditAction.LOTE_BATCH_UPLOAD.value
+        )
+
+        assert (
+            batch_event.after_data["outcome"]
+            == AuditOutcome.SUCCESS.value
+        )
+        assert (
+            batch_event.after_data["metadata"]
+            == {
+                "source_filename": (
+                    "audit_batch.xlsx"
+                ),
+                "source_sha256": "a" * 64,
+                "row_count": 2,
+                "inserted_rows": 2,
+                "batch_import_public_id": (
+                    str(batch_import_public_id)
+                ),
+            }
+        )
+    finally:
+        cleanup_session = get_db_session()
+        try:
+            cleanup_session.execute(
+                delete(Lote).where(
+                    Lote.organization_id
+                    == user.organization_id,
+                    Lote.identificador.in_(
+                        batch_identifiers
+                    ),
+                )
+            )
+            if batch_import_public_id is not None:
+                cleanup_session.execute(
+                    delete(BatchImport).where(
+                        BatchImport.organization_id
+                        == user.organization_id,
+                        BatchImport.public_id
+                        == batch_import_public_id,
+                    )
+                )
+            cleanup_session.commit()
+        finally:
+            cleanup_session.close()
 
     vault_payload = (
         b'{"reference_number":"P110-AUDIT-REAL",'

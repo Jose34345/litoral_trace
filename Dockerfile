@@ -55,13 +55,4 @@ EXPOSE 8000 9108
 
 # API remains the default image command.
 # The worker service overrides this command in docker-compose.prod.yml.
-CMD [
-    "uvicorn",
-    "main:app",
-    "--host",
-    "0.0.0.0",
-    "--port",
-    "8000",
-    "--workers",
-    "4"
-]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

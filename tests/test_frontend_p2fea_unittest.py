@@ -135,6 +135,7 @@ def test_navigation_is_server_side_rbac_derived():
     )
     assert [item.key for item in admin_nav] == [
         "dashboard",
+        "imports",
         "vault",
         "settings",
     ]
@@ -145,6 +146,7 @@ def test_navigation_is_server_side_rbac_derived():
     )
     assert [item.key for item in superadmin_nav] == [
         "dashboard",
+        "imports",
         "vault",
         "settings",
         "platform",

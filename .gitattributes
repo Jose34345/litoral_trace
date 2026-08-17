@@ -1,0 +1,4 @@
+src/litoral_trace/static/vendor/**/*.css text eol=lf
+src/litoral_trace/static/vendor/**/*.js text eol=lf
+src/litoral_trace/static/dist/**/*.css text eol=lf
+src/litoral_trace/static/dist/**/*.js text eol=lf

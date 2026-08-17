@@ -56,6 +56,14 @@ class TestDeployPhase3(unittest.TestCase):
         self.assertIn("main:app", content)
         self.assertIn("PYTHONPATH=/app/src", content)
         self.assertIn("EXPOSE 8000 9108", content)
+        self.assertIn(
+            'CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]',
+            content,
+        )
+        self.assertNotIn(
+            'CMD [\n    "uvicorn",',
+            content,
+        )
 
         self.assertNotIn("HEALTHCHECK", content)
 
