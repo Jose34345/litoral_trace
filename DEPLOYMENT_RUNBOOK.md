@@ -234,6 +234,20 @@ P2.6A does not deploy automatically.
 
 Production deployment remains a controlled/manual action through the reviewed deployment process until a later protected CD gate exists.
 
+6B. Disaster recovery pre-migration gate
+
+See DISASTER_RECOVERY_RUNBOOK.md.
+
+Schema-changing production deployments require a verified recovery point before migration.
+
+Go-live PITR/history target is >= 7 days, and current provider settings must be checked against that target before release approval.
+
+Successful isolated restore testing is required.
+
+Independent pg_dump fallback and Vault recovery are covered by the disaster recovery program.
+
+Blind production database downgrade/restore is prohibited.
+
 7. Vault storage preflight
 
 Before any database migration, validate the exact runtime storage contract through the built application image:
