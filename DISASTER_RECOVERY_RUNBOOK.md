@@ -50,7 +50,37 @@ Planned implementation:
 
 P2.7A3
 
-This independent pg_dump / pg_restore layer is required in addition to Neon PITR, provider history, and provider snapshots. It is not complete yet and must not be represented as already operational.
+This independent pg_dump / pg_restore layer is required in addition to Neon PITR, provider history, and provider snapshots.
+
+P2.7A3A status:
+
+tooling implemented and real isolated logical recovery drill passed on 2026-08-17
+
+Application schema/data logical recovery is proven for the recorded recovery point.
+
+Provider IAM / ownership / ACL reconciliation is NOT claimed by this logical restore.
+
+pg_restore portability/atomicity is required:
+
+- direct/unpooled target only
+- isolated target must be empty before restore
+- credentials only through libpq environment
+- portable restore flags must exclude source ownership/ACL replay
+- restore must run in a single transaction
+
+Production was not overwritten or swapped during the drill.
+
+P2.7A3 is NOT CLOSED yet.
+
+P2.7A3C - scheduled independent logical backup + durable off-platform retention remains required to operationally support the <= 24 hours logical backup RPO target.
+
+P2.7A3 requires direct/unpooled connections.
+
+PostgreSQL client/server major versions must match.
+
+Backup artifacts must never be committed.
+
+Backup integrity is SHA-256 verified before restore.
 
 4. Recovery layers and domains
 
@@ -205,3 +235,89 @@ It does not prove:
 - <= 4 hours RTO under full production conditions
 - independent pg_dump recovery
 - Vault object recovery
+
+11. Historical evidence: P2.7A3B real logical backup/restore drill
+
+Date:
+
+2026-08-17
+
+Mechanism:
+
+portable atomic pg_dump / pg_restore isolated logical recovery drill
+
+Source:
+
+production
+
+source release 894f5d3
+
+source database neondb
+
+Backup artifacts:
+
+- dump: 20260817T181632Z_production.dump
+- manifest: 20260817T181632Z_production.manifest.json
+- SHA-256: df4b805a64f3bd8e0b88430a54cbf71e06dfd0a250df344d2dd24817327ca122
+- size: 91895 bytes
+- pg_dump: PostgreSQL 17.11
+
+Verified source metadata:
+
+- PostgreSQL 17.10
+- PostGIS 3.5.0
+- Alembic 008_add_platform_control_plane_functions
+- critical row-count parity: organizations 4, users 4, lotes 1, audit_logs 6
+- application table inventory:
+  api_keys, audit_logs, licenses, lotes, organizations, satellite_ndvi_observations, user_sessions, users
+
+Isolated restore target:
+
+- enterprise-integration
+- database p27a3_restore
+- PostgreSQL 17.10
+
+Final restore report:
+
+- format_version: p27a3.restore.v1
+- result: PASS
+- started_at_utc: 2026-08-17T18:41:43Z
+- completed_at_utc: 2026-08-17T18:42:32Z
+- elapsed_seconds: 48.862
+- PostgreSQL 17.10
+- PostGIS 3.5.0
+- source Alembic 008_add_platform_control_plane_functions
+- table_inventory_match: true
+- critical_row_counts_match: true
+
+Security/portability semantics:
+
+- manifest contained no database URL
+- manifest contained no password token
+- manifest contained no pooler hostname
+- restore report contained no database URL
+- restore report contained no password token
+- restore report contained no pooler hostname
+- application schema/data logical recovery is proven
+- provider IAM / ownership / ACL reconciliation is NOT claimed by this restore
+- pg_restore is portable and atomic
+- restore target must be isolated and empty
+- production overwritten/swapped: NO
+
+Hardening evidence before final PASS:
+
+1. SQLAlchemy-style postgresql+psycopg URLs were normalized to libpq-compatible psycopg URLs and CLI errors were made secret-safe.
+2. Empty-target preflight was separated from post-restore Alembic/PostGIS/application verification.
+3. pg_restore was fixed to pass --dbname while keeping credentials exclusively in libpq environment.
+4. pg_restore was hardened with --no-owner, --no-privileges, and --single-transaction so provider-managed ACL metadata does not break portability and failed restores do not leave partial state.
+
+Historical pre-pass status now superseded by this evidence:
+
+- tooling implemented/tested locally
+- REAL pg_dump / pg_restore DRILL STILL REQUIRED
+
+Open gap retained:
+
+P2.7A3C - scheduled independent logical backup + durable off-platform retention is still required to operationally support the <= 24 hours logical backup RPO target.
+
+This does not close P2.7A3 overall and does not replace P2.7A4 Vault object-storage recovery.

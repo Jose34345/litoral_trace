@@ -118,10 +118,66 @@ def test_p27a_dr_runbook_does_not_claim_future_layers_are_complete():
 
     assert "P2.7A3" in dr
     assert "It does not prove:" in dr
-    assert "independent pg_dump recovery" in dr
+    assert "P2.7A3 is NOT CLOSED yet." in dr
+    assert "Application schema/data logical recovery is proven" in dr
+    assert "provider IAM / ownership / ACL reconciliation is NOT claimed" in dr
+    assert "P2.7A3C - scheduled independent logical backup + durable off-platform retention remains required" in dr
+    assert "<= 24 hours logical backup RPO target" in dr
     assert "Vault object recovery" in dr
     assert "P2.7A3 complete" not in dr
     assert "Vault recovery complete" not in dr
+
+
+def test_p27a_dr_runbook_records_real_logical_recovery_drill_pass():
+    dr = _dr_text()
+
+    for token in (
+        "Historical evidence: P2.7A3B real logical backup/restore drill",
+        "portable atomic pg_dump / pg_restore isolated logical recovery drill",
+        "source release 894f5d3",
+        "source database neondb",
+        "20260817T181632Z_production.dump",
+        "20260817T181632Z_production.manifest.json",
+        "df4b805a64f3bd8e0b88430a54cbf71e06dfd0a250df344d2dd24817327ca122",
+        "database p27a3_restore",
+        "enterprise-integration",
+        "result: PASS",
+        "table_inventory_match: true",
+        "critical_row_counts_match: true",
+        "organizations 4, users 4, lotes 1, audit_logs 6",
+        "api_keys, audit_logs, licenses, lotes, organizations, satellite_ndvi_observations, user_sessions, users",
+        "production overwritten/swapped: NO",
+    ):
+        assert token in dr
+
+
+def test_p27a_dr_runbook_records_portable_atomic_restore_semantics():
+    dr = _dr_text()
+
+    for token in (
+        "pg_restore portability/atomicity is required:",
+        "direct/unpooled target only",
+        "isolated target must be empty before restore",
+        "credentials only through libpq environment",
+        "portable restore flags must exclude source ownership/ACL replay",
+        "restore must run in a single transaction",
+        "pg_restore is portable and atomic",
+    ):
+        assert token in dr
+
+
+def test_p27a_dr_runbook_records_real_drill_security_evidence():
+    dr = _dr_text()
+
+    for token in (
+        "manifest contained no database URL",
+        "manifest contained no password token",
+        "manifest contained no pooler hostname",
+        "restore report contained no database URL",
+        "restore report contained no password token",
+        "restore report contained no pooler hostname",
+    ):
+        assert token in dr
 
 
 def test_p27a_deployment_runbook_references_dr_and_pre_migration_recovery():

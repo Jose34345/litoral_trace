@@ -49,3 +49,6 @@ Thumbs.db
 # Temporary files
 tmp_*
 *.tmp
+
+# Disaster recovery artifacts
+/backups/postgres/
