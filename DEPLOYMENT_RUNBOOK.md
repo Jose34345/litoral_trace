@@ -16,6 +16,14 @@ db: optional self-hosted PostgreSQL/PostGIS service.
 
 proxy: Nginx public ingress for ports 80/443.
 
+Nginx is the canonical TLS termination point. Port 80 only redirects to HTTPS. Port 443 serves the application with:
+
+/etc/nginx/certs/fullchain.pem
+
+/etc/nginx/certs/privkey.pem
+
+Certificates and private keys must not be committed. They must be provisioned before deployment, private-key permissions must remain restricted, and certificate renewal/rotation is an operational responsibility.
+
 Vault object storage: external/private S3-compatible bucket. It is not created by the application.
 
 The worker metrics port is internal only. Do not publish 9108:9108.
@@ -265,6 +273,14 @@ rechecks Vault storage from inside the live API container;
 executes worker --check.
 
 Never run Alembic by manually pointing the runtime role at DDL.
+
+Production disables FastAPI schema/documentation endpoints:
+
+/docs
+
+/redoc
+
+/openapi.json
 
 9. Readiness and liveness
 

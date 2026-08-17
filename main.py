@@ -35,6 +35,9 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
+from litoral_trace.config import (
+    get_settings,
+)
 from litoral_trace.api.admin import (
     router as admin_router,
 )
@@ -92,6 +95,9 @@ from litoral_trace.web.templates import (
 )
 
 
+settings = get_settings()
+
+
 app = FastAPI(
     title=(
         "Litoral Trace | "
@@ -104,8 +110,9 @@ app = FastAPI(
         "(EUDR)."
     ),
     version="2.4.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
 )
 
 
