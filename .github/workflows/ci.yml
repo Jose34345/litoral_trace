@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - p2-enterprise-production
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ENVIRONMENT: test
+      ENABLE_POSTGRES_TESTS: "0"
+      TEST_DATABASE_URL: sqlite:///litoral_trace_test.db
+      JWT_SECRET_KEY: ci-only-jwt-secret-key-1234567890
+      LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD: CiBootstrap-Password-1234567890!
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest alembic
+
+      - name: Python syntax gate
+        run: python -m compileall main.py src tests
+
+      - name: Alembic canonical head gate
+        shell: bash
+        run: |
+          alembic heads | tee alembic-heads.txt
+          if [ "$(wc -l < alembic-heads.txt)" -ne 1 ]; then
+            echo "Expected exactly one Alembic head."
+            exit 1
+          fi
+          grep -Fx "018_add_batch_evidence_links (head)" alembic-heads.txt
+
+      - name: Run pytest suite
+        run: python -m pytest -q -rs
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend assets
+        run: npm run build
+
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+
+      - name: Verify tracked assets are reproducible
+        run: git diff --exit-code
+
+  production-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build production image
+        run: docker build -f Dockerfile -t litoral-trace-ci .
+
+      - name: Validate production Compose syntax
+        env:
+          DATABASE_URL: postgresql+psycopg://runtime_user:ci-placeholder@db/appdb
+          WORKER_DATABASE_URL: postgresql+psycopg://worker_user:ci-placeholder@db/appdb
+          JWT_SECRET_KEY: ci-placeholder-jwt-secret-key
+          STORAGE_BACKEND: s3
+          STORAGE_BUCKET_NAME: ci-private-bucket
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-placeholder-postgres-password
+          POSTGRES_DB: appdb
+        run: docker compose -f docker-compose.prod.yml config --quiet

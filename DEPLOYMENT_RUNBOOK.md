@@ -212,6 +212,28 @@ docker compose -f docker-compose.prod.yml build app worker
 
 Do not deploy if either command fails.
 
+6A. CI release gate
+
+Before a release candidate is eligible for production deployment:
+
+GitHub CI must be green.
+
+Python tests must be green.
+
+The Alembic single canonical head check must pass.
+
+The frontend build must be reproducible.
+
+npm high-severity audit must pass.
+
+The production Docker image must build.
+
+Production Compose configuration validation must pass.
+
+P2.6A does not deploy automatically.
+
+Production deployment remains a controlled/manual action through the reviewed deployment process until a later protected CD gate exists.
+
 7. Vault storage preflight
 
 Before any database migration, validate the exact runtime storage contract through the built application image:
