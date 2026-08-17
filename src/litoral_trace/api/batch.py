@@ -32,8 +32,13 @@ from litoral_trace.services.batch import (
     BatchValidationResult,
     BatchWorkbook,
     generar_plantilla_excel,
-    parsear_excel_lotes,
     validar_filas_lotes,
+)
+from litoral_trace.services.batch_upload import (
+    validate_batch_upload_content_length,
+    BATCH_HTTP_MAX_REQUEST_BYTES,
+    BatchUploadEnvelopeError,
+    parse_batch_upload_bytes,
 )
 from litoral_trace.services.batch_imports import (
     BatchImportConflictError,
@@ -55,14 +60,9 @@ router = APIRouter(
     tags=["Procesamiento Batch"],
 )
 
-BATCH_HTTP_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
-BATCH_HTTP_MAX_REQUEST_BYTES = (
-    BATCH_MAX_FILE_BYTES
-    + BATCH_HTTP_MULTIPART_OVERHEAD_BYTES
-)
-
 _SIZE_ERROR_CODES = frozenset(
     {
+        "REQUEST_TOO_LARGE",
         "FILE_TOO_LARGE",
         "XLSX_MEMBER_TOO_LARGE",
         "XLSX_EXPANDED_TOO_LARGE",
@@ -115,7 +115,10 @@ def _raise_api_error(
 
 
 def _map_structural_error(
-    exc: BatchExcelValidationError,
+    exc: (
+        BatchExcelValidationError
+        | BatchUploadEnvelopeError
+    ),
 ) -> None:
     if exc.code in _SIZE_ERROR_CODES:
         status_code = status.HTTP_413_CONTENT_TOO_LARGE
@@ -294,11 +297,14 @@ async def _parse_upload(
     )
 
     try:
-        return parsear_excel_lotes(
+        return parse_batch_upload_bytes(
             payload,
             filename=filename,
         )
-    except BatchExcelValidationError as exc:
+    except (
+        BatchExcelValidationError,
+        BatchUploadEnvelopeError,
+    ) as exc:
         _map_structural_error(exc)
 
     raise AssertionError(

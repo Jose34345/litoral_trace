@@ -489,6 +489,14 @@ def parsear_excel_lotes(
 
         worksheet = workbook[BATCH_SHEET_NAME]
 
+        if (
+            worksheet.max_column is None
+            or worksheet.max_row is None
+        ):
+            worksheet.calculate_dimension(
+                force=True
+            )
+
         if worksheet.max_column > len(BATCH_COLUMNAS):
             _raise_batch_error(
                 "TOO_MANY_COLUMNS",

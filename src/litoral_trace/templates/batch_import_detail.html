@@ -1,0 +1,244 @@
+{% extends "app/base_app.html" %}
+
+{% block title %}Detalle de importacion | Litoral Trace{% endblock %}
+
+{% block content %}
+{% set page = batch_import_detail_view %}
+<section class="space-y-6" aria-labelledby="batch-import-detail-title">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div class="min-w-0">
+            <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Importaciones</p>
+            <h1 id="batch-import-detail-title" class="mt-1 text-2xl font-bold tracking-tight text-slate-950">
+                Detalle de importacion
+            </h1>
+        </div>
+        <a
+            href="/imports"
+            class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
+        >
+            Volver a Importaciones
+        </a>
+    </div>
+
+    {% if page.evidence_error %}
+    <section class="rounded-2xl border border-amber-200 bg-amber-50 p-5" aria-labelledby="detail-alert-title">
+        <h2 id="detail-alert-title" class="text-sm font-semibold text-amber-950">{{ page.evidence_error.title }}</h2>
+        <p class="mt-1 text-sm text-amber-900">{{ page.evidence_error.message }}</p>
+        <p class="mt-2 text-xs font-medium text-amber-800">Codigo: {{ page.evidence_error.code }}</p>
+    </section>
+    {% endif %}
+
+    {% if page.page_message %}
+    <section
+        class="rounded-2xl p-5 {% if page.page_message.level == 'success' %}border border-emerald-200 bg-emerald-50{% elif page.page_message.level == 'info' %}border border-sky-200 bg-sky-50{% elif page.page_message.level == 'warning' %}border border-amber-200 bg-amber-50{% else %}border border-rose-200 bg-rose-50{% endif %}"
+        aria-labelledby="detail-message-title"
+    >
+        <h2
+            id="detail-message-title"
+            class="text-sm font-semibold {% if page.page_message.level == 'success' %}text-emerald-950{% elif page.page_message.level == 'info' %}text-sky-950{% elif page.page_message.level == 'warning' %}text-amber-950{% else %}text-rose-950{% endif %}"
+        >
+            {{ page.page_message.title }}
+        </h2>
+        <p class="mt-1 text-sm {% if page.page_message.level == 'success' %}text-emerald-900{% elif page.page_message.level == 'info' %}text-sky-900{% elif page.page_message.level == 'warning' %}text-amber-900{% else %}text-rose-900{% endif %}">
+            {{ page.page_message.message }}
+        </p>
+        <p class="mt-2 text-xs font-medium {% if page.page_message.level == 'success' %}text-emerald-800{% elif page.page_message.level == 'info' %}text-sky-800{% elif page.page_message.level == 'warning' %}text-amber-800{% else %}text-rose-800{% endif %}">
+            Codigo: {{ page.page_message.code }}
+        </p>
+    </section>
+    {% endif %}
+
+    {% if page.not_found %}
+    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="text-lg font-bold text-slate-950">Importacion no disponible</h2>
+        <p class="mt-2 text-sm text-slate-600">
+            La importacion solicitada no existe o no esta disponible para la organizacion actual.
+        </p>
+    </section>
+    {% elif page.detail %}
+    <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <article class="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
+            <section class="space-y-4">
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Import public ID</p>
+                        <p class="mt-1 break-all text-sm font-semibold text-slate-950">{{ page.detail.public_id }}</p>
+                    </div>
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</p>
+                        <p class="mt-1 text-sm font-semibold text-slate-950">{{ page.detail.status }}</p>
+                    </div>
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Archivo origen</p>
+                        <p class="mt-1 break-all text-sm font-semibold text-slate-950">{{ page.detail.source_filename }}</p>
+                    </div>
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Filas</p>
+                        <p class="mt-1 text-sm font-semibold text-slate-950">{{ page.detail.inserted_rows }} / {{ page.detail.total_rows }}</p>
+                    </div>
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Creada</p>
+                        <p class="mt-1 text-sm font-semibold text-slate-950">{{ page.detail.created_at }}</p>
+                    </div>
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Completada</p>
+                        <p class="mt-1 text-sm font-semibold text-slate-950">{{ page.detail.completed_at or "Pendiente" }}</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="space-y-3">
+                <h2 class="text-lg font-bold text-slate-950">Identificadores importados</h2>
+                <div class="flex flex-wrap gap-2">
+                    {% for identifier in page.detail.identifiers %}
+                    <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-800">
+                        {{ identifier }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </section>
+        </article>
+
+        <aside class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" aria-labelledby="evidence-title">
+            <div>
+                <h2 id="evidence-title" class="text-lg font-bold text-slate-950">Evidencia</h2>
+                <p class="mt-1 text-sm text-slate-600">
+                    Metadatos auditables de los documentos actualmente vinculados a esta importacion.
+                </p>
+            </div>
+
+            {% if not page.can_view_evidence %}
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-sm text-slate-700">
+                    La cuenta autenticada puede ver el detalle de la importacion, pero no posee acceso a metadatos de Vault.
+                </p>
+            </div>
+            {% elif page.can_manage_evidence and page.evidence_form %}
+            <section class="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div>
+                    <h3 class="text-sm font-semibold text-slate-950">Vincular evidencia</h3>
+                    <p class="mt-1 text-sm text-slate-600">
+                        Selecciona un documento Vault existente y el tipo de evidencia correspondiente a esta importacion.
+                    </p>
+                </div>
+
+                {% if page.evidence_form.document_choices %}
+                <form action="{{ page.evidence_form.action }}" method="{{ page.evidence_form.method }}" class="space-y-4">
+                    <input type="hidden" name="{{ csrf_form_field }}" value="{{ csrf_token }}">
+
+                    <div class="space-y-2">
+                        <label for="document_id" class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Documento Vault
+                        </label>
+                        <select
+                            id="document_id"
+                            name="{{ page.evidence_form.document_field_name }}"
+                            class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                            required
+                        >
+                            <option value="">Selecciona un documento disponible</option>
+                            {% for document in page.evidence_form.document_choices %}
+                            <option value="{{ document.public_id }}">
+                                {{ document.filename }} - {{ document.document_type }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label for="evidence_type" class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Tipo de evidencia
+                        </label>
+                        <select
+                            id="evidence_type"
+                            name="{{ page.evidence_form.evidence_type_field_name }}"
+                            class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                            required
+                        >
+                            {% for evidence_type in page.evidence_form.evidence_type_choices %}
+                            <option value="{{ evidence_type.value }}">{{ evidence_type.label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                    >
+                        Vincular evidencia
+                    </button>
+                </form>
+                {% else %}
+                <div class="rounded-xl border border-dashed border-slate-300 bg-white p-4">
+                    <p class="text-sm text-slate-700">{{ page.evidence_form.empty_documents_message }}</p>
+                    <a href="/vault" class="mt-3 inline-flex text-sm font-semibold text-slate-900 underline underline-offset-4">
+                        Ir a Vault
+                    </a>
+                </div>
+                {% endif %}
+            </section>
+            {% endif %}
+
+            {% if page.can_view_evidence and page.evidence_items %}
+            <div class="space-y-3">
+                {% for evidence in page.evidence_items %}
+                <article class="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ evidence.evidence_type_label }}</p>
+                            <p class="mt-1 break-all text-sm font-semibold text-slate-950">{{ evidence.document_filename }}</p>
+                        </div>
+                        <span class="rounded-full px-2.5 py-1 text-xs font-semibold {% if evidence.document_available %}border border-emerald-200 bg-emerald-50 text-emerald-800{% else %}border border-amber-200 bg-amber-50 text-amber-800{% endif %}">
+                            {% if evidence.document_available %}Disponible{% else %}Documento no disponible{% endif %}
+                        </span>
+                    </div>
+                    <dl class="grid grid-cols-1 gap-3 text-sm text-slate-700">
+                        <div>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo</dt>
+                            <dd class="mt-1">{{ evidence.document_type }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Content type</dt>
+                            <dd class="mt-1 break-all">{{ evidence.document_content_type }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Vinculada</dt>
+                            <dd class="mt-1">{{ evidence.linked_at }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Estado</dt>
+                            <dd class="mt-1">{{ evidence.document_status }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tamano</dt>
+                            <dd class="mt-1">{{ evidence.document_size_bytes }} bytes</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">SHA-256</dt>
+                            <dd class="mt-1 break-all font-mono text-xs">{{ evidence.document_sha256 }}</dd>
+                        </div>
+                    </dl>
+                    {% if page.can_manage_evidence and evidence.can_unlink %}
+                    <form action="{{ evidence.unlink_action }}" method="post" class="pt-1">
+                        <input type="hidden" name="{{ csrf_form_field }}" value="{{ csrf_token }}">
+                        <button
+                            type="submit"
+                            class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100"
+                        >
+                            Desvincular evidencia
+                        </button>
+                    </form>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+            {% elif page.can_view_evidence %}
+            <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                <p class="text-sm text-slate-700">No hay evidencias vinculadas a esta importacion.</p>
+            </div>
+            {% endif %}
+        </aside>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

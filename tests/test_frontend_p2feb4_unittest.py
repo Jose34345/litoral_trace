@@ -169,6 +169,7 @@ def test_superadmin_navigation_contains_only_live_routes():
         for item in navigation
     ] == [
         ("dashboard", "/dashboard"),
+        ("imports", "/imports"),
         ("vault", "/vault"),
         ("settings", "/settings"),
         ("platform", "/admin"),

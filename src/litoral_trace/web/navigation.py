@@ -36,6 +36,14 @@ _NAVIGATION = (
         active_prefixes=("/dashboard",),
     ),
     NavigationItem(
+        key="imports",
+        label="Importaciones",
+        href="/imports",
+        section="operacion",
+        permission=Permission.LOTE_CREATE,
+        active_prefixes=("/imports",),
+    ),
+    NavigationItem(
         key="vault",
         label="Vault / Evidencias",
         href="/vault",

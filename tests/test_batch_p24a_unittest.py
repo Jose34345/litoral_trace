@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import io
+import re
 import zipfile
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 import pytest
 
 from litoral_trace.services.batch import (
@@ -73,6 +74,36 @@ def _with_extra_zip_member(
                 source.read(info.filename),
             )
         target.writestr(name, body)
+
+    return buffer.getvalue()
+
+
+def _remove_sheet_dimension(
+    payload: bytes,
+) -> bytes:
+    source = zipfile.ZipFile(io.BytesIO(payload), "r")
+    buffer = io.BytesIO()
+    dimension_pattern = re.compile(
+        rb"<dimension[^>]*/>"
+    )
+
+    with source, zipfile.ZipFile(
+        buffer,
+        "w",
+        zipfile.ZIP_DEFLATED,
+    ) as target:
+        for info in source.infolist():
+            body = source.read(info.filename)
+            if info.filename == "xl/worksheets/sheet1.xml":
+                body = dimension_pattern.sub(
+                    b"",
+                    body,
+                    count=1,
+                )
+            target.writestr(
+                info,
+                body,
+            )
 
     return buffer.getvalue()
 
@@ -297,6 +328,69 @@ def test_row_count_is_bounded_before_business_processing():
         parsear_excel_lotes(
             payload,
             filename="batch.xlsx",
+        )
+
+    _assert_code(exc_info, "TOO_MANY_ROWS")
+
+
+def test_dimensionless_valid_workbook_is_parsed_without_raw_type_errors():
+    payload = _remove_sheet_dimension(
+        _workbook_bytes(
+            rows=[
+                _valid_row(1),
+                _valid_row(2),
+            ]
+        )
+    )
+
+    workbook = load_workbook(
+        io.BytesIO(payload),
+        read_only=True,
+        data_only=False,
+        keep_links=False,
+    )
+    try:
+        worksheet = workbook[BATCH_SHEET_NAME]
+        assert worksheet.max_column is None
+        assert worksheet.max_row is None
+        assert worksheet.calculate_dimension(force=True) == "A1:H3"
+        assert worksheet.max_column == len(BATCH_COLUMNAS)
+        assert worksheet.max_row == 3
+    finally:
+        workbook.close()
+
+    parsed = parsear_excel_lotes(
+        payload,
+        filename="dimensionless.xlsx",
+    )
+
+    assert parsed.sheet_name == BATCH_SHEET_NAME
+    assert parsed.row_count == 2
+    assert list(parsed.dataframe.columns) == BATCH_COLUMNAS
+    assert list(
+        parsed.dataframe["Identificador_Lote"]
+    ) == [
+        "RODAL-001",
+        "RODAL-002",
+    ]
+
+
+def test_dimensionless_workbook_still_enforces_too_many_rows():
+    payload = _remove_sheet_dimension(
+        _workbook_bytes(
+            rows=[
+                _valid_row(index)
+                for index in range(1, BATCH_MAX_ROWS + 2)
+            ]
+        )
+    )
+
+    with pytest.raises(
+        BatchExcelValidationError
+    ) as exc_info:
+        parsear_excel_lotes(
+            payload,
+            filename="dimensionless.xlsx",
         )
 
     _assert_code(exc_info, "TOO_MANY_ROWS")
