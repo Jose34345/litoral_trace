@@ -813,13 +813,147 @@ Credentials remain environment/secret-store inputs only.
 
 TLS and certificate verification are mandatory for the operational CLI path.
 
-P2.7A6B acceptance requirement
+P2.7A6B provider-loss recovery drill
 
 P2.7A6B must prove recovery while treating the primary Vault provider as unavailable.
 
-The recovery candidate must come from the independent replica, not from a same-provider primary version.
+P2.7A6B code status:
 
-The drill must use an isolated recovery target first and must verify:
+IMPLEMENTED - provider-loss recovery verifier/materializer is present and unit-tested.
+
+Operational provider-loss execution against a real independent storage provider remains required before P2.7A6B can be operationally closed.
+
+Provider-loss execution boundary
+
+The drill deliberately does not instantiate, query, HEAD, GET, PUT, or DELETE the primary Vault provider.
+
+The CLI requires:
+
+--primary-unavailable
+
+The execution environment must not contain VAULT_PRIMARY_* configuration.
+
+Only VAULT_REPLICA_* read credentials are required.
+
+This makes the independent replica the sole source of recovered object bytes during the drill.
+
+Recovery evidence binding
+
+The operator pins:
+
+- complete.json object key
+- complete.json SHA-256
+- complete.json version ID when the provider exposes one
+- expected snapshot ID
+- expected source label
+- expected release commit
+- expected Alembic revision
+- replica provider ID
+- replica failure domain
+- replica bucket/prefix
+
+complete.json binds manifest.json by:
+
+- manifest_key
+- manifest_sha256
+- manifest_version_id when present
+- source identity
+- release commit
+- Alembic revision
+- lifecycle/object counts
+
+The drill then verifies manifest.json and every recovery-eligible object before materialization.
+
+Isolated recovery target
+
+The recovery target is a new local filesystem directory created solely for the drill.
+
+The final target path MUST NOT already exist.
+
+Recovery occurs first in a hidden partial directory.
+
+The partial directory is atomically promoted to the requested final target only after the complete snapshot passes verification.
+
+Any failed recovery removes the partial target and does not emit a PASS recovery directory.
+
+Recovered layout:
+
+<target>/tenants/<organization_id>/documents/<public_id>/metadata.json
+
+For available documents:
+
+<target>/tenants/<organization_id>/documents/<public_id>/payload.<verified-extension>
+
+For non-available lifecycle states, metadata.json is materialized but no payload is created.
+
+This preserves lifecycle semantics and prevents deleted/pending/failed documents from being resurrected automatically.
+
+Replica payload verification
+
+For each available document the drill verifies:
+
+- tenant-scoped content-addressed replica key
+- public_id uniqueness
+- exact replica version when the manifest contains one
+- object size
+- content type
+- organization-id object metadata
+- SHA-256 object metadata
+- full streamed SHA-256
+- recovered byte count
+
+Application compatibility
+
+After cryptographic recovery, the recovered payload is re-opened through the canonical Vault upload validator using its persisted content type.
+
+PDF, JSON, and XLSX structural validation therefore execute again against the recovered bytes.
+
+A byte-identical object that is no longer valid Vault evidence fails the drill.
+
+Read-only recovery property
+
+The drill uses only HEAD/GET operations against the independent replica.
+
+No replica PUT or DELETE operation is part of the recovery path.
+
+The primary provider is not configured.
+
+PostgreSQL is not contacted.
+
+Production is not modified.
+
+Successful output
+
+A successful isolated recovery emits:
+
+recovery_index.json
+
+and a sanitized result containing:
+
+- result: PASS
+- verification_status: PASS
+- provider_loss_mode: primary_unavailable
+- primary_access_attempted: false
+- replica_read_only: true
+- production_modified: false
+- snapshot ID
+- release commit
+- Alembic revision
+- complete SHA-256
+- manifest SHA-256
+- recovered document count
+- state-only document count
+- recovered bytes
+- elapsed_seconds
+- recovery_index_sha256
+
+Operational acceptance requirement
+
+P2.7A6B must still prove recovery while treating the real primary Vault provider as unavailable.
+
+The operational recovery candidate must come from the independent provider provisioned for P2.7A6A, not from a same-provider primary version.
+
+The real drill requires at least one recovery-eligible object and must verify:
 
 - tenant binding
 - public document binding
@@ -831,6 +965,8 @@ The drill must use an isolated recovery target first and must verify:
 - complete-marker binding
 - application-compatible recovered bytes
 - elapsed recovery/verification time
+- primary access attempted: NO
+- replica writes performed: NO
 - production modified: NO
 
 P2.7A6C acceptance requirement
