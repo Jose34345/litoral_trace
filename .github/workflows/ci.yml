@@ -84,7 +84,7 @@ jobs:
 
   production-build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -102,6 +102,7 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ci-placeholder-postgres-password
           POSTGRES_DB: appdb
+          OPS_ALERT_GITHUB_TOKEN: ci-placeholder-ops-token
         run: docker compose -f docker-compose.prod.yml config --quiet
 
       - name: Validate production Nginx configuration
@@ -125,3 +126,29 @@ jobs:
             -v "$CERT_DIR:/etc/nginx/certs:ro" \
             nginx:1.25-alpine \
             nginx -t
+
+      - name: Validate Prometheus configuration and alert rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --entrypoint /bin/promtool \
+            -v "$PWD/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+            -v "$PWD/monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro" \
+            prom/prometheus:v3.13.1 \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm \
+            --entrypoint /bin/promtool \
+            -v "$PWD/monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro" \
+            prom/prometheus:v3.13.1 \
+            check rules /etc/prometheus/alert_rules.yml
+
+      - name: Validate Alertmanager configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --entrypoint /bin/amtool \
+            -v "$PWD/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
+            prom/alertmanager:v0.33.1 \
+            check-config /etc/alertmanager/alertmanager.yml

@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 60s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  - job_name: litoral-trace-app
+    metrics_path: /internal/metrics
+    static_configs:
+      - targets:
+          - app:8000
+
+  - job_name: litoral-trace-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - worker:9108

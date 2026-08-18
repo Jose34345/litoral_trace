@@ -1,0 +1,16 @@
+route:
+  receiver: litoral-trace-ops
+  group_by:
+    - alertname
+    - service
+    - component
+  group_wait: 15s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: litoral-trace-ops
+    webhook_configs:
+      - url: http://ops-alert-receiver:9110/alertmanager
+        send_resolved: true
+        timeout: 10s
