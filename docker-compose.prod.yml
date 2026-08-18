@@ -116,6 +116,81 @@ services:
       retries: 3
     stop_grace_period: 60s
 
+  ops-alert-receiver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    command:
+      [
+        "uvicorn",
+        "litoral_trace.observability.ops_alert_receiver:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "9110",
+      ]
+    environment:
+      OPS_ALERT_GITHUB_TOKEN: ${OPS_ALERT_GITHUB_TOKEN:?OPS_ALERT_GITHUB_TOKEN is required}
+      OPS_ALERT_GITHUB_REPOSITORY: ${OPS_ALERT_GITHUB_REPOSITORY:-Jose34345/litoral_trace}
+      OPS_ALERT_GITHUB_ASSIGNEE: ${OPS_ALERT_GITHUB_ASSIGNEE:-Jose34345}
+    networks:
+      - litoral_prod_network
+    expose:
+      - "9110"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://127.0.0.1:9110/health",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+  alertmanager:
+    image: prom/alertmanager:v0.33.1
+    restart: always
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    depends_on:
+      ops-alert-receiver:
+        condition: service_healthy
+    networks:
+      - litoral_prod_network
+    expose:
+      - "9093"
+
+  prometheus:
+    image: prom/prometheus:v3.13.1
+    restart: always
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      app:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+      alertmanager:
+        condition: service_started
+    networks:
+      - litoral_prod_network
+    expose:
+      - "9090"
+
   db:
     image: postgis/postgis:15-3.3-alpine
     container_name: litoral_trace_db
@@ -156,6 +231,8 @@ services:
 
 volumes:
   postgres_prod_data:
+  prometheus_data:
+  alertmanager_data:
 
 networks:
   litoral_prod_network:
