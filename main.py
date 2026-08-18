@@ -628,7 +628,12 @@ async def logout_submit_view(
 # ---------------------------------------------------------------------------
 
 
-def _runtime_dependency_readiness() -> dict[str, bool]:
+def _runtime_dependency_readiness(
+    *,
+    probe_vault_if_database_unavailable: bool = False,
+) -> dict[str, bool]:
+    """Probe required dependencies while preserving /ready short-circuiting."""
+
     database_ready = False
     vault_ready = False
 
@@ -652,10 +657,11 @@ def _runtime_dependency_readiness() -> dict[str, bool]:
             except Exception:
                 pass
 
-    try:
-        vault_ready = bool(is_vault_storage_ready())
-    except Exception:
-        vault_ready = False
+    if database_ready or probe_vault_if_database_unavailable:
+        try:
+            vault_ready = bool(is_vault_storage_ready())
+        except Exception:
+            vault_ready = False
 
     return {
         "database": database_ready,
@@ -717,7 +723,9 @@ async def readiness_check() -> JSONResponse:
 async def internal_metrics() -> Response:
     """Expose sanitized Prometheus metrics only to the private service network."""
 
-    dependencies = _runtime_dependency_readiness()
+    dependencies = _runtime_dependency_readiness(
+        probe_vault_if_database_unavailable=True,
+    )
     api_metrics.set_dependency_readiness(
         database=dependencies["database"],
         vault=dependencies["vault"],
