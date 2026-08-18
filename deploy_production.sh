@@ -68,6 +68,7 @@ log "Litoral Trace - production deployment"
 log "=========================================================="
 
 require_command docker
+require_command realpath
 
 docker compose version >/dev/null 2>&1 \
     || fail "Docker Compose v2 ('docker compose') is required."
@@ -81,6 +82,32 @@ cd "$APP_DIR"
 # deployment environment. MIGRATION_DATABASE_URL is deliberately not part of
 # either long-lived service environment.
 require_nonempty_env MIGRATION_DATABASE_URL
+
+# P2.7A5 requires recovery evidence materialized from the immutable
+# off-platform backup domain before any migration attempt.
+require_nonempty_env PRE_MIGRATION_RECOVERY_MANIFEST
+require_nonempty_env PRE_MIGRATION_RECOVERY_COMPLETE
+require_nonempty_env PRE_MIGRATION_SOURCE_RELEASE_COMMIT
+require_nonempty_env PRE_MIGRATION_OPERATOR
+
+PRE_MIGRATION_TARGET_ENV="${PRE_MIGRATION_TARGET_ENV:-production}"
+PRE_MIGRATION_MAX_AGE_MINUTES="${PRE_MIGRATION_MAX_AGE_MINUTES:-120}"
+
+[ "$PRE_MIGRATION_TARGET_ENV" = "production" ] \
+    || fail "PRE_MIGRATION_TARGET_ENV must be production."
+
+[ -f "$PRE_MIGRATION_RECOVERY_MANIFEST" ] \
+    || fail "Pre-migration recovery manifest does not exist."
+
+[ -f "$PRE_MIGRATION_RECOVERY_COMPLETE" ] \
+    || fail "Pre-migration recovery complete marker does not exist."
+
+RECOVERY_MANIFEST_PATH="$(
+    realpath "$PRE_MIGRATION_RECOVERY_MANIFEST"
+)"
+RECOVERY_COMPLETE_PATH="$(
+    realpath "$PRE_MIGRATION_RECOVERY_COMPLETE"
+)"
 
 log "Validating Compose configuration..."
 docker compose -f "$COMPOSE_FILE" config --quiet
@@ -97,11 +124,31 @@ docker compose -f "$COMPOSE_FILE" run \
     app \
     python -m litoral_trace.storage.readiness
 
+# P2.7A5 fail-closed gate. Recovery evidence is mounted read-only and the
+# database owner credential is passed through the environment without being
+# persisted in the service definition.
+log "Verifying pre-migration recovery point..."
+docker compose -f "$COMPOSE_FILE" run \
+    --rm \
+    --no-deps \
+    -e MIGRATION_DATABASE_URL \
+    -e PRE_MIGRATION_SOURCE_RELEASE_COMMIT \
+    -e PRE_MIGRATION_OPERATOR \
+    -e PRE_MIGRATION_TARGET_ENV \
+    -e PRE_MIGRATION_MAX_AGE_MINUTES \
+    -v "${RECOVERY_MANIFEST_PATH}:/run/litoral-recovery/manifest.json:ro" \
+    -v "${RECOVERY_COMPLETE_PATH}:/run/litoral-recovery/complete.json:ro" \
+    app \
+    python -m scripts.pre_migration_recovery_gate \
+        --manifest /run/litoral-recovery/manifest.json \
+        --complete-marker /run/litoral-recovery/complete.json \
+        --source-label production
+
 log "Applying Alembic migrations with an ephemeral owner credential..."
 docker compose -f "$COMPOSE_FILE" run \
     --rm \
     --no-deps \
-    -e MIGRATION_DATABASE_URL="$MIGRATION_DATABASE_URL" \
+    -e MIGRATION_DATABASE_URL \
     app \
     python -m alembic upgrade head
 

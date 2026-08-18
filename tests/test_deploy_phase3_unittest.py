@@ -367,6 +367,63 @@ class TestDeployPhase3(unittest.TestCase):
             content,
         )
 
+    def test_deploy_script_enforces_pre_migration_recovery_gate_before_alembic(
+        self,
+    ):
+        content = self._read(
+            "deploy_production.sh"
+        )
+
+        for variable_name in (
+            "PRE_MIGRATION_RECOVERY_MANIFEST",
+            "PRE_MIGRATION_RECOVERY_COMPLETE",
+            "PRE_MIGRATION_SOURCE_RELEASE_COMMIT",
+            "PRE_MIGRATION_OPERATOR",
+            "PRE_MIGRATION_TARGET_ENV",
+            "PRE_MIGRATION_MAX_AGE_MINUTES",
+        ):
+            self.assertIn(
+                variable_name,
+                content,
+            )
+
+        self.assertIn(
+            "python -m scripts.pre_migration_recovery_gate",
+            content,
+        )
+        self.assertIn(
+            "/run/litoral-recovery/manifest.json:ro",
+            content,
+        )
+        self.assertIn(
+            "/run/litoral-recovery/complete.json:ro",
+            content,
+        )
+
+        gate_position = content.index(
+            "python -m scripts.pre_migration_recovery_gate"
+        )
+        migration_position = content.index(
+            "python -m alembic upgrade head"
+        )
+
+        self.assertLess(
+            gate_position,
+            migration_position,
+        )
+
+        self.assertGreaterEqual(
+            content.count(
+                "-e MIGRATION_DATABASE_URL"
+            ),
+            2,
+        )
+        self.assertNotIn(
+            '-e MIGRATION_DATABASE_URL="$MIGRATION_DATABASE_URL"',
+            content,
+        )
+
+
     def test_runbook_documents_private_bucket_iam_and_fail_closed_readiness(self):
         content = self._read(
             "DEPLOYMENT_RUNBOOK.md"
