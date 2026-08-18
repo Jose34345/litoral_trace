@@ -33,6 +33,7 @@ from fastapi.responses import (
     RedirectResponse,
 )
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST
 from sqlalchemy import text
 
 from litoral_trace.config import (
@@ -68,6 +69,10 @@ from litoral_trace.auth.sessions import (
 )
 from litoral_trace.db.engine import (
     get_db_session,
+)
+from litoral_trace.observability.api_metrics import (
+    ApiMetricsMiddleware,
+    api_metrics,
 )
 from litoral_trace.storage.readiness import (
     is_vault_storage_ready,
@@ -118,6 +123,9 @@ app = FastAPI(
 
 app.add_middleware(
     CookieApiCsrfMiddleware
+)
+app.add_middleware(
+    ApiMetricsMiddleware
 )
 
 
@@ -620,6 +628,47 @@ async def logout_submit_view(
 # ---------------------------------------------------------------------------
 
 
+def _runtime_dependency_readiness(
+    *,
+    probe_vault_if_database_unavailable: bool = False,
+) -> dict[str, bool]:
+    """Probe required dependencies while preserving /ready short-circuiting."""
+
+    database_ready = False
+    vault_ready = False
+
+    try:
+        session = get_db_session()
+    except Exception:
+        session = None
+
+    if session is not None:
+        try:
+            session.execute(text("SELECT 1"))
+            database_ready = True
+        except Exception:
+            try:
+                session.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
+
+    if database_ready or probe_vault_if_database_unavailable:
+        try:
+            vault_ready = bool(is_vault_storage_ready())
+        except Exception:
+            vault_ready = False
+
+    return {
+        "database": database_ready,
+        "vault": vault_ready,
+    }
+
+
 @app.get(
     "/health",
     tags=["Infraestructura"],
@@ -646,50 +695,8 @@ async def health_check() -> JSONResponse:
 async def readiness_check() -> JSONResponse:
     """Fail closed when a required runtime dependency is unavailable."""
 
-    try:
-        session = get_db_session()
-    except Exception:
-        session = None
-
-    if session is None:
-        return JSONResponse(
-            status_code=(
-                status.HTTP_503_SERVICE_UNAVAILABLE
-            ),
-            content={
-                "status": "unavailable"
-            },
-        )
-
-    try:
-        session.execute(
-            text(
-                "SELECT 1"
-            )
-        )
-
-    except Exception:
-        try:
-            session.rollback()
-        except Exception:
-            pass
-
-        return JSONResponse(
-            status_code=(
-                status.HTTP_503_SERVICE_UNAVAILABLE
-            ),
-            content={
-                "status": "unavailable"
-            },
-        )
-
-    finally:
-        try:
-            session.close()
-        except Exception:
-            pass
-
-    if not is_vault_storage_ready():
+    dependencies = _runtime_dependency_readiness()
+    if not all(dependencies.values()):
         return JSONResponse(
             status_code=(
                 status.HTTP_503_SERVICE_UNAVAILABLE
@@ -706,6 +713,27 @@ async def readiness_check() -> JSONResponse:
         content={
             "status": "ready"
         },
+    )
+
+
+@app.get(
+    "/internal/metrics",
+    include_in_schema=False,
+)
+async def internal_metrics() -> Response:
+    """Expose sanitized Prometheus metrics only to the private service network."""
+
+    dependencies = _runtime_dependency_readiness(
+        probe_vault_if_database_unavailable=True,
+    )
+    api_metrics.set_dependency_readiness(
+        database=dependencies["database"],
+        vault=dependencies["vault"],
+    )
+    return Response(
+        content=api_metrics.render(),
+        status_code=status.HTTP_200_OK,
+        headers={"Content-Type": CONTENT_TYPE_LATEST},
     )
 
 

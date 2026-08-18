@@ -1,0 +1,119 @@
+groups:
+  - name: litoral-trace-v1-runtime
+    rules:
+      - alert: LitoralTraceAppMetricsDown
+        expr: up{job="litoral-trace-app"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: litoral-trace
+          component: app
+        annotations:
+          summary: Litoral Trace application metrics are unreachable
+          description: The application metrics endpoint has been unreachable for at least two minutes.
+
+      - alert: LitoralTraceReadinessUnavailable
+        expr: min(litoral_trace_dependency_ready) < 1
+        for: 2m
+        labels:
+          severity: critical
+          service: litoral-trace
+          component: readiness
+        annotations:
+          summary: Litoral Trace runtime readiness is unavailable
+          description: At least one required runtime dependency is not ready.
+
+      - alert: LitoralTraceVaultUnavailable
+        expr: litoral_trace_dependency_ready{dependency="vault"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: litoral-trace
+          component: vault
+        annotations:
+          summary: Litoral Trace Vault storage is unavailable
+          description: The private Vault object-storage readiness probe is failing.
+
+      - alert: LitoralTraceDatabaseUnavailable
+        expr: litoral_trace_dependency_ready{dependency="database"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: litoral-trace
+          component: database
+        annotations:
+          summary: Litoral Trace PostgreSQL is unavailable
+          description: The application database readiness probe is failing.
+
+      - alert: LitoralTraceSatelliteWorkerDown
+        expr: up{job="litoral-trace-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: litoral-trace
+          component: satellite-worker
+        annotations:
+          summary: Satellite worker metrics are unreachable
+          description: The satellite worker metrics endpoint has been unreachable for at least two minutes.
+
+      - alert: LitoralTraceSatelliteQueueBacklog
+        expr: litoral_trace_satellite_jobs_oldest_ready_age_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+          service: litoral-trace
+          component: satellite-queue
+        annotations:
+          summary: Satellite queue has an old ready job
+          description: The oldest ready satellite job has waited more than five minutes.
+
+      - alert: LitoralTraceSatelliteStaleJobs
+        expr: (litoral_trace_satellite_jobs_running_stale > 0) or (litoral_trace_satellite_jobs_running_invalid > 0)
+        for: 2m
+        labels:
+          severity: critical
+          service: litoral-trace
+          component: satellite-queue
+        annotations:
+          summary: Satellite queue contains stale or invalid running jobs
+          description: One or more running jobs are stale or violate the active lease contract.
+
+      - alert: LitoralTraceSatelliteHeartbeatFailure
+        expr: sum(increase(litoral_trace_satellite_heartbeat_failures_total[5m])) > 0
+        labels:
+          severity: critical
+          service: litoral-trace
+          component: satellite-worker
+        annotations:
+          summary: Satellite worker heartbeat failure detected
+          description: At least one worker heartbeat failure occurred during the last five minutes.
+
+      - alert: LitoralTraceSatelliteLeaseLost
+        expr: sum(increase(litoral_trace_satellite_jobs_lease_lost_total[5m])) > 0
+        labels:
+          severity: critical
+          service: litoral-trace
+          component: satellite-worker
+        annotations:
+          summary: Satellite worker lease loss detected
+          description: At least one satellite job lost its execution lease during the last five minutes.
+
+      - alert: LitoralTraceApi5xxSpike
+        expr: sum(increase(litoral_trace_http_requests_total{status_class="5xx"}[5m])) >= 3
+        labels:
+          severity: critical
+          service: litoral-trace
+          component: api
+        annotations:
+          summary: Litoral Trace API is returning repeated 5xx responses
+          description: Three or more server-error responses were observed during the last five minutes.
+
+      - alert: LitoralTraceAuthAnomalySpike
+        expr: sum(increase(litoral_trace_auth_anomalies_total[5m])) >= 10
+        labels:
+          severity: warning
+          service: litoral-trace
+          component: authentication
+        annotations:
+          summary: Authentication anomaly rate is elevated
+          description: Ten or more rejected login or refresh responses occurred during the last five minutes.
