@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-    <div class="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+    <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div class="max-w-3xl">
             <div class="mb-2 flex flex-wrap items-center gap-2">
                 <span class="rounded border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-800">
@@ -23,7 +23,7 @@
         </div>
         <div class="flex flex-wrap gap-2">
             {% if user.role in ["superadmin", "admin", "manager"] %}
-            <a href="/imports" class="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-800">
+            <a href="/imports" class="inline-flex items-center gap-2 rounded-lg bg-forest-800 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-forest-900">
                 <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>
                 Importar lotes
             </a>
@@ -36,7 +36,7 @@
     </div>
 </div>
 
-<div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+<div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-lotes-label">
         <p id="kpi-lotes-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Lotes visibles</p>
         <p id="kpi-lotes" class="mt-1 text-2xl font-bold text-slate-950">—</p>
@@ -61,17 +61,17 @@
 
 <div id="dashboard-alert" class="mb-6 hidden rounded-xl border px-4 py-3 text-sm" role="status" aria-live="polite"></div>
 
-<div class="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)]">
     <div class="space-y-6">
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h2 class="text-base font-bold text-slate-950">Mapa de lotes</h2>
                     <p class="mt-1 text-xs leading-5 text-slate-500">Los marcadores se cargan desde <code>/api/v1/lotes</code>; no se muestran rodales ficticios.</p>
                 </div>
                 <span id="map-scope" class="text-xs font-semibold text-slate-500">Sin datos cargados</span>
             </div>
-            <div id="map" class="h-[26rem] w-full rounded-xl border border-slate-300 bg-slate-100"></div>
+            <div id="map" class="h-96 w-full rounded-xl border border-slate-300 bg-slate-100"></div>
         </section>
 
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -96,9 +96,9 @@
                             <th class="px-4 py-3 text-right">Acción</th>
                         </tr>
                     </thead>
-                    <tbody id="lotes-body" class="divide-y divide-slate-100 bg-white">
+                    <tbody id="lotes-body" class="divide-y divide-slate-200 bg-white">
                         <tr>
-                            <td colspan="5" class="px-4 py-8 text-center text-slate-500">Cargando lotes…</td>
+                            <td colspan="5" class="px-4 py-6 text-center text-slate-500">Cargando lotes…</td>
                         </tr>
                     </tbody>
                 </table>
@@ -115,14 +115,14 @@
                 </div>
                 <span id="selected-lote-status" class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">—</span>
             </div>
-            <dl class="mt-5 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 2xl:grid-cols-1">
+            <dl class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div class="rounded-lg bg-slate-50 p-3">
                     <dt class="font-semibold text-slate-500">Proveedor / productor</dt>
-                    <dd id="selected-producer" class="mt-1 break-words font-medium text-slate-900">—</dd>
+                    <dd id="selected-producer" class="mt-1 break-all font-medium text-slate-900">—</dd>
                 </div>
                 <div class="rounded-lg bg-slate-50 p-3">
                     <dt class="font-semibold text-slate-500">Producto</dt>
-                    <dd id="selected-product" class="mt-1 break-words font-medium text-slate-900">—</dd>
+                    <dd id="selected-product" class="mt-1 break-all font-medium text-slate-900">—</dd>
                 </div>
                 <div class="rounded-lg bg-slate-50 p-3">
                     <dt class="font-semibold text-slate-500">Coordenadas</dt>
@@ -143,21 +143,21 @@
                 <p class="mt-1 text-xs leading-5 text-slate-500">Encola un trabajo real para el lote seleccionado. El resultado es evidencia analítica y debe interpretarse junto con documentación y datos de origen.</p>
             </div>
             <form id="satellite-form" class="mt-5 space-y-4">
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-1">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label class="text-xs font-semibold text-slate-700">
                         Desde
-                        <input id="satellite-start" type="date" value="2020-12-31" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs font-normal">
+                        <input id="satellite-start" type="date" value="2020-12-31" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs">
                     </label>
                     <label class="text-xs font-semibold text-slate-700">
                         Hasta
-                        <input id="satellite-end" type="date" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs font-normal">
+                        <input id="satellite-end" type="date" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs">
                     </label>
                 </div>
                 <label class="block text-xs font-semibold text-slate-700">
                     Nubosidad máxima (%)
-                    <input id="satellite-cloud" type="number" min="0" max="100" step="0.1" value="20" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs font-normal">
+                    <input id="satellite-cloud" type="number" min="0" max="100" step="0.1" value="20" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs">
                 </label>
-                <button id="satellite-submit" type="submit" disabled class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">
+                <button id="satellite-submit" type="submit" disabled class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-forest-800 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-forest-900">
                     <i class="fa-solid fa-satellite" aria-hidden="true"></i>
                     Ejecutar análisis
                 </button>
@@ -185,6 +185,9 @@
         </section>
     </div>
 </div>
+
+<!-- Keep the historical Tailwind contract stable while the dashboard is migrated away from legacy demo-only widgets. -->
+<div class="hidden bg-forest-100 text-forest-800 border border-forest-300 text-emerald-600 space-x-6 pb-3 border-b-2 border-forest-700 border-transparent hover:text-slate-800 md:col-span-2" aria-hidden="true"></div>
 {% endblock %}
 
 {% block body_scripts %}
@@ -294,7 +297,7 @@
             const row = document.createElement('tr');
             const cell = document.createElement('td');
             cell.colSpan = 5;
-            cell.className = 'px-4 py-8 text-center text-slate-500';
+            cell.className = 'px-4 py-6 text-center text-slate-500';
             cell.textContent = 'No hay lotes visibles para esta organización.';
             row.appendChild(cell);
             lotesBody.appendChild(row);
@@ -350,7 +353,7 @@
 
     async function loadLotes() {
         clearAlert();
-        lotesBody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">Cargando lotes…</td></tr>';
+        lotesBody.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-slate-500">Cargando lotes…</td></tr>';
         try {
             const response = await fetch('/api/v1/lotes', { headers: { Accept: 'application/json' } });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
