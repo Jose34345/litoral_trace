@@ -15,7 +15,7 @@
                 </span>
             </div>
             <h1 class="text-2xl font-bold tracking-tight text-slate-950">
-                Workspace de origen, geolocalización y evidencia
+                Trazabilidad Forestal: origen, geolocalización y evidencia
             </h1>
             <p class="mt-2 text-sm leading-6 text-slate-600">
                 Esta vista usa los lotes reales visibles para tu organización. Los análisis satelitales son evidencia técnica de apoyo y no constituyen certificación ni una garantía automática de cumplimiento legal.
@@ -28,6 +28,10 @@
                 Importar lotes
             </a>
             {% endif %}
+            <a href="/api/v1/batch/template" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg border border-slate-300 transition-colors inline-flex items-center gap-2">
+                <i class="fa-solid fa-file-excel text-emerald-600" aria-hidden="true"></i>
+                Plantilla Excel
+            </a>
             <a href="/vault" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                 <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
                 Ver evidencias
@@ -187,7 +191,7 @@
 </div>
 
 <!-- Keep the historical Tailwind contract stable while the dashboard is migrated away from legacy demo-only widgets. -->
-<div class="hidden bg-forest-100 text-forest-800 border border-forest-300 text-emerald-600 space-x-6 pb-3 border-b-2 border-forest-700 border-transparent hover:text-slate-800 md:col-span-2" aria-hidden="true"></div>
+<div class="hidden bg-forest-100 text-forest-800 border border-forest-300 text-emerald-600 space-x-6 pb-3 border-b-2 border-forest-700 border-transparent hover:text-slate-800 md:col-span-2 mb-8 pt-2" aria-hidden="true"></div>
 {% endblock %}
 
 {% block body_scripts %}
