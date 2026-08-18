@@ -120,6 +120,7 @@ jobs:
             -days 1 \
             >/dev/null 2>&1
           docker run --rm \
+            --add-host app:127.0.0.1 \
             -v "$PWD/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
             -v "$CERT_DIR:/etc/nginx/certs:ro" \
             nginx:1.25-alpine \
