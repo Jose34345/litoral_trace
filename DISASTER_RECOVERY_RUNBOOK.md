@@ -477,9 +477,25 @@ P2.7A6 remains responsible for final production disaster-recovery acceptance, in
 
 P2.7A5 status:
 
-IMPLEMENTED - executable fail-closed gate is present and unit-tested.
+CLOSED on 2026-08-18 after real production pre-migration recovery-gate acceptance.
 
-Operational execution against real production recovery evidence is still required before P2.7A5 is declared fully accepted. Final disaster-recovery acceptance remains P2.7A6.
+Acceptance evidence:
+
+- stale recovery point 20260818T021501Z_production.manifest.json was rejected because it exceeded the 120-minute migration freshness limit
+- stale-evidence result: NO MIGRATION
+- fresh production logical-backup workflow run 32155184817: PASS
+- fresh manifest: 20260818T153402Z_production.manifest.json
+- source release: 0c94022ad7ffdae781b85b8dac38f18e64de0e05
+- source Alembic revision: 008_add_platform_control_plane_functions
+- gate format: p27a5.gate.v1
+- manifest SHA-256: 109026eaf5c421b5051f26c882f60cc35a18650e0f47f99d30a4be0804bf9190
+- source identity SHA-256: d0f40f7dbfdb29812fe6aafd8f7e7c8bec7393a91342775fffde5eba6931a383
+- backup age at verification: 915 seconds
+- verification timestamp: 2026-08-18T15:49:17Z
+- verification status: PASS
+- production migration executed during acceptance: NO
+
+The operational test therefore proves both fail-closed stale-evidence rejection and successful fresh-evidence validation against the real production database.
 
 Purpose
 
@@ -614,8 +630,13 @@ The executable gate does not weaken the separate Vault recovery contract.
 
 Acceptance boundary
 
-P2.7A5 code completeness is not equivalent to operational acceptance.
+P2.7A5 operational acceptance is complete.
 
-A real execution against production recovery evidence must PASS before this gate is considered operationally accepted.
+The gate has demonstrated both required production behaviors:
+
+- stale recovery evidence fails closed with NO MIGRATION
+- fresh, correctly bound production recovery evidence returns PASS
+
+No Alembic migration was executed during either acceptance test.
 
 P2.7A6 remains responsible for final DR acceptance and go-live sign-off.

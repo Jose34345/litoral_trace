@@ -196,3 +196,32 @@ def test_p27a_deployment_runbook_references_dr_and_pre_migration_recovery():
     assert "Successful isolated restore testing is required." in deployment
     assert "Independent pg_dump fallback and Vault recovery are covered by the disaster recovery program." in deployment
     assert "Blind production database downgrade/restore is prohibited." in deployment
+
+
+def test_p27a_dr_runbook_records_p27a5_operational_acceptance():
+    dr = _dr_text()
+
+    for token in (
+        "CLOSED on 2026-08-18 after real production pre-migration recovery-gate acceptance.",
+        "20260818T021501Z_production.manifest.json",
+        "stale-evidence result: NO MIGRATION",
+        "fresh production logical-backup workflow run 32155184817: PASS",
+        "20260818T153402Z_production.manifest.json",
+        "0c94022ad7ffdae781b85b8dac38f18e64de0e05",
+        "008_add_platform_control_plane_functions",
+        "p27a5.gate.v1",
+        "109026eaf5c421b5051f26c882f60cc35a18650e0f47f99d30a4be0804bf9190",
+        "d0f40f7dbfdb29812fe6aafd8f7e7c8bec7393a91342775fffde5eba6931a383",
+        "backup age at verification: 915 seconds",
+        "2026-08-18T15:49:17Z",
+        "verification status: PASS",
+        "production migration executed during acceptance: NO",
+        "P2.7A5 operational acceptance is complete.",
+    ):
+        assert token in dr
+
+    assert (
+        "Operational execution against real production recovery evidence "
+        "is still required"
+        not in dr
+    )
