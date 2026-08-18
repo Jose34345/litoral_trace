@@ -1,0 +1,299 @@
+name: Release Integration Gates
+
+on:
+  pull_request:
+    branches:
+      - p2-enterprise-production
+  push:
+    branches:
+      - p2-enterprise-production
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-integration-gates:
+    name: postgres-integration-gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_owner_password_2026
+          POSTGRES_DB: litoral_trace_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d litoral_trace_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      ENVIRONMENT: development
+      ENABLE_POSTGRES_TESTS: "1"
+      JWT_SECRET_KEY: ci-only-integration-jwt-secret-key-2026
+      LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD: CiIntegrationBootstrapPassword2026
+      TEST_POSTGRES_MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:ci_owner_password_2026@127.0.0.1:5432/litoral_trace_ci
+      MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:ci_owner_password_2026@127.0.0.1:5432/litoral_trace_ci
+      TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:ci_runtime_password_2026@127.0.0.1:5432/litoral_trace_ci
+      DATABASE_URL: postgresql+psycopg://litoral_trace_app:ci_runtime_password_2026@127.0.0.1:5432/litoral_trace_ci
+      TEST_POSTGRES_WORKER_DATABASE_URL: postgresql+psycopg://litoral_trace_worker_integration:ci_worker_password_2026@127.0.0.1:5432/litoral_trace_ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install integration dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest alembic
+
+      - name: Provision isolated PostgreSQL principals
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine
+
+          engine = create_engine(
+              os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+
+          statements = [
+              """
+              CREATE ROLE litoral_trace_app
+                LOGIN
+                PASSWORD 'ci_runtime_password_2026'
+                NOSUPERUSER
+                NOCREATEDB
+                NOCREATEROLE
+                NOINHERIT
+                NOBYPASSRLS
+              """,
+              """
+              CREATE ROLE litoral_trace_worker_integration
+                LOGIN
+                PASSWORD 'ci_worker_password_2026'
+                NOSUPERUSER
+                NOCREATEDB
+                NOCREATEROLE
+                INHERIT
+                NOBYPASSRLS
+              """,
+              "GRANT CONNECT ON DATABASE litoral_trace_ci TO litoral_trace_app",
+              "GRANT CONNECT ON DATABASE litoral_trace_ci TO litoral_trace_worker_integration",
+              "GRANT USAGE ON SCHEMA public TO litoral_trace_app",
+              "GRANT USAGE ON SCHEMA public TO litoral_trace_worker_integration",
+          ]
+
+          with engine.connect() as connection:
+              for statement in statements:
+                  connection.exec_driver_sql(statement)
+
+          engine.dispose()
+          PY
+
+      - name: Write ignored PostgreSQL integration contract
+        shell: bash
+        run: |
+          cat > .env.integration <<'EOF'
+          ENABLE_POSTGRES_TESTS=1
+          TEST_POSTGRES_DATABASE_URL=postgresql+psycopg://litoral_trace_app:ci_runtime_password_2026@127.0.0.1:5432/litoral_trace_ci
+          TEST_POSTGRES_MIGRATION_DATABASE_URL=postgresql+psycopg://postgres:ci_owner_password_2026@127.0.0.1:5432/litoral_trace_ci
+          TEST_POSTGRES_WORKER_DATABASE_URL=postgresql+psycopg://litoral_trace_worker_integration:ci_worker_password_2026@127.0.0.1:5432/litoral_trace_ci
+          EOF
+
+      - name: Migrate isolated database through Satellite acceptance revision
+        run: python -m alembic upgrade 015_add_satellite_queue_metrics
+
+      - name: Provision reviewed runtime grants and worker capability membership
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine
+
+          engine = create_engine(
+              os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+
+          core_tables = (
+              "organizations",
+              "users",
+              "user_sessions",
+              "lotes",
+              "satellite_ndvi_observations",
+              "api_keys",
+              "licenses",
+          )
+
+          with engine.connect() as connection:
+              for table_name in core_tables:
+                  connection.exec_driver_sql(
+                      "GRANT SELECT, INSERT, UPDATE, DELETE "
+                      f"ON TABLE public.{table_name} TO litoral_trace_app"
+                  )
+
+              connection.exec_driver_sql(
+                  "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public "
+                  "TO litoral_trace_app"
+              )
+              connection.exec_driver_sql(
+                  "GRANT litoral_trace_worker_executor "
+                  "TO litoral_trace_worker_integration"
+              )
+
+          engine.dispose()
+          PY
+
+      - name: Gate 09 - Auth PostgreSQL RLS and refresh serialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            --junitxml=gate09-auth.xml \
+            tests/test_auth_tenant_rls_p18c_postgres_integration.py \
+            tests/test_auth_refresh_concurrency_p1_postgres_integration.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("gate09-auth.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          if skipped:
+              raise SystemExit(f"Gate 09 is fail-closed: {skipped} test(s) skipped")
+          PY
+
+      - name: Gate 10 - Satellite PostgreSQL concurrency and recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            --junitxml=gate10-satellite.xml \
+            tests/test_satellite_concurrency_p22g_postgres_acceptance.py \
+            tests/test_satellite_failure_recovery_p22h_postgres_acceptance.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("gate10-satellite.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          if skipped:
+              raise SystemExit(f"Gate 10 is fail-closed: {skipped} test(s) skipped")
+          PY
+
+      - name: Start loopback-only MinIO for Vault acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker rm -f litoral-trace-ci-minio >/dev/null 2>&1 || true
+          docker run \
+            -d \
+            --rm \
+            --name litoral-trace-ci-minio \
+            -p 127.0.0.1:9000:9000 \
+            -e MINIO_ROOT_USER=p23g-ci-root \
+            -e MINIO_ROOT_PASSWORD=ci_minio_password_2026 \
+            -e MINIO_BROWSER=off \
+            quay.io/minio/minio \
+            server /data \
+            --address 0.0.0.0:9000 >/dev/null
+
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            docker logs litoral-trace-ci-minio || true
+            echo "MinIO did not become healthy."
+            exit 1
+          fi
+
+      - name: Write ignored MinIO integration contract
+        shell: bash
+        run: |
+          cat > .env.minio.integration <<'EOF'
+          ENABLE_MINIO_TESTS=1
+          TEST_MINIO_ENDPOINT_URL=http://127.0.0.1:9000
+          TEST_MINIO_ACCESS_KEY_ID=p23g-ci-root
+          TEST_MINIO_SECRET_ACCESS_KEY=ci_minio_password_2026
+          TEST_MINIO_BUCKET_NAME=litoral-trace-p23g-ci
+          TEST_MINIO_REGION=us-east-1
+          EOF
+
+      - name: Migrate isolated database through Vault acceptance revision
+        run: python -m alembic upgrade 016_add_vault_documents
+
+      - name: Gate 11 - Vault PostgreSQL and MinIO acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            --junitxml=gate11-vault.xml \
+            tests/test_vault_p23g_minio_integration.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("gate11-vault.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          if skipped:
+              raise SystemExit(f"Gate 11 is fail-closed: {skipped} test(s) skipped")
+          PY
+
+      - name: Migrate isolated database to canonical head
+        run: python -m alembic upgrade head
+
+      - name: Gate 12 - Batch PostgreSQL acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            --junitxml=gate12-batch.xml \
+            tests/test_batch_p24h_postgres_integration.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("gate12-batch.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          if skipped:
+              raise SystemExit(f"Gate 12 is fail-closed: {skipped} test(s) skipped")
+          PY
+
+      - name: Verify canonical database head
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m alembic current | tee alembic-current.txt
+          grep -F "018_add_batch_evidence_links" alembic-current.txt
+
+      - name: Cleanup ephemeral integration files and MinIO
+        if: always()
+        shell: bash
+        run: |
+          rm -f .env.integration .env.minio.integration
+          docker rm -f litoral-trace-ci-minio >/dev/null 2>&1 || true
