@@ -113,18 +113,24 @@ def test_p27a_dr_runbook_records_p27a1_restore_drill():
         assert token in dr
 
 
-def test_p27a_dr_runbook_does_not_claim_future_layers_are_complete():
+def test_p27a_dr_runbook_records_p27a3_closed_and_vault_remains_separate():
     dr = _dr_text()
 
-    assert "P2.7A3" in dr
-    assert "It does not prove:" in dr
-    assert "P2.7A3 is NOT CLOSED yet." in dr
-    assert "Application schema/data logical recovery is proven" in dr
-    assert "provider IAM / ownership / ACL reconciliation is NOT claimed" in dr
-    assert "P2.7A3C - scheduled independent logical backup + durable off-platform retention remains required" in dr
-    assert "<= 24 hours logical backup RPO target" in dr
-    assert "Vault object recovery" in dr
-    assert "P2.7A3 complete" not in dr
+    for token in (
+        "P2.7A3 status:",
+        "CLOSED on 2026-08-17 after scheduled off-platform backup acceptance.",
+        "GitHub Actions workflow run 32086976028: PASS",
+        "PostgreSQL client: 17.11",
+        "AWS authentication: OIDC assumed role",
+        "server-side encryption: SSE-S3",
+        "Object Lock: Governance",
+        "default retention: 35 days",
+        "<= 24 hours independent logical backup RPO target",
+        "P2.7A4 Vault object-storage recovery contract",
+    ):
+        assert token in dr
+
+    assert "P2.7A3 is NOT CLOSED yet." not in dr
     assert "Vault recovery complete" not in dr
 
 
