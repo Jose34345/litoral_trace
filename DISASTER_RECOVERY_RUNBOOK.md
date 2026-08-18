@@ -640,3 +640,216 @@ The gate has demonstrated both required production behaviors:
 No Alembic migration was executed during either acceptance test.
 
 P2.7A6 remains responsible for final DR acceptance and go-live sign-off.
+
+14. P2.7A6 final disaster-recovery acceptance
+
+P2.7A6 status:
+
+ACTIVE - final go-live disaster-recovery acceptance is not yet closed.
+
+P2.7A6 decomposition:
+
+- P2.7A6A independent Vault recovery replica tooling
+- P2.7A6B real Vault provider-loss recovery drill
+- P2.7A6C >= 7-day provider history/PITR acceptance
+- P2.7A6D final DR evidence and go-live sign-off
+
+P2.7A6A status:
+
+IMPLEMENTED - independent S3-compatible Vault recovery replica tooling is present and unit-tested.
+
+Operational provisioning of the independent provider and a real provider-loss drill remain required before P2.7A6A/A6B can be accepted operationally.
+
+Independent-provider requirement
+
+The recovery replica MUST NOT be represented as independent when it shares the same storage provider or the same declared failure domain as the primary Vault.
+
+The tooling therefore fails closed unless:
+
+- VAULT_PRIMARY_PROVIDER_ID differs from VAULT_REPLICA_PROVIDER_ID
+- VAULT_PRIMARY_FAILURE_DOMAIN differs from VAULT_REPLICA_FAILURE_DOMAIN
+- primary and replica do not resolve to the same endpoint/bucket location
+
+A second bucket, object version, or replication rule inside the same declared provider/failure domain is not sufficient evidence for the P2.7A6 provider-loss requirement.
+
+Source database contract
+
+The replica operator uses:
+
+VAULT_BACKUP_DATABASE_URL
+
+This credential is a recovery/backup read capability and must use a direct/unpooled PostgreSQL connection.
+
+The operator reads Vault metadata in a repeatable-read, read-only transaction.
+
+The operational target must contain the P2 Vault schema and vault_documents table.
+
+vault_documents is protected by enabled and forced tenant RLS. A cross-tenant recovery snapshot therefore MUST NOT use an ordinary tenant runtime role.
+
+Before reading any Vault rows, the replica tooling verifies:
+
+- row-level security is enabled on public.vault_documents
+- FORCE ROW LEVEL SECURITY is enabled
+- the connected recovery role has BYPASSRLS capability, or is a controlled superuser used only for an exceptional bootstrap/drill
+
+If those conditions are not satisfied, publication fails closed before a snapshot can be emitted. This prevents an RLS-filtered zero-row result from being misrepresented as a complete recovery snapshot.
+
+For steady-state scheduled operation, use a dedicated recovery/backup role with BYPASSRLS plus only the minimum database/schema/table SELECT grants required for recovery. Do not reuse the application runtime role. Do not use a superuser for recurring backup automation.
+
+The application runtime and migration credentials are not required for normal replica publication.
+
+Authoritative Vault binding
+
+Each manifest records the PostgreSQL recovery tuple:
+
+- organization_id
+- public_id
+- status
+- storage_backend
+- storage_bucket
+- object_key
+- storage_version_id when present
+- size_bytes
+- content_type
+- sha256
+
+Only documents whose authoritative status is available are copied automatically into the recovery replica.
+
+Other lifecycle states are recorded in the snapshot manifest as state_only_not_auto_recoverable.
+
+This prevents backup automation from implicitly resurrecting deleted documents or silently resolving pending/failed deletion states.
+
+Primary verification before replication
+
+For every available document:
+
+1. verify the configured primary bucket matches PostgreSQL
+2. verify tenant-scoped object-key binding
+3. request the exact storage_version_id when PostgreSQL contains one
+4. verify returned version identity when exact versioning is available
+5. verify size
+6. verify content type
+7. stream the entire source object
+8. recompute full SHA-256
+9. compare SHA-256 with PostgreSQL
+
+No object is copied merely because an ETag or size matches.
+
+Replica object layout
+
+Verified replica bytes use tenant-scoped content-addressed keys:
+
+<replica-prefix>/tenants/<organization_id>/objects/sha256/<first-two-sha-chars>/<sha256>
+
+This preserves tenant separation while allowing safe deduplication of identical content within one tenant.
+
+An existing content-addressed replica object is reused only after full verification.
+
+A mismatching existing replica object causes the operation to fail closed.
+
+The publisher MUST NOT overwrite an unexplained corrupt recovery object merely to make a backup run pass.
+
+Replica verification
+
+After write or verified reuse, the replica object is checked again for:
+
+- size
+- content type
+- tenant metadata
+- SHA-256 metadata
+- full streamed SHA-256
+- version binding when the replica provider returns a version ID
+
+Snapshot evidence
+
+Each successful replica run writes:
+
+- manifest.json
+- complete.json
+
+The manifest contains source database identity, Alembic revision, provider/failure-domain identities, document lifecycle state, primary object/version binding, replica key/version binding, and counts.
+
+complete.json is published LAST.
+
+A complete marker is valid only after every available source object has passed source verification, every copied/reused recovery object has passed replica verification, and manifest.json has been remotely verified.
+
+Primary and replica credentials, endpoints, database URLs, and passwords are not written to the result payload.
+
+Operator configuration
+
+Primary S3-compatible storage:
+
+- VAULT_PRIMARY_PROVIDER_ID
+- VAULT_PRIMARY_FAILURE_DOMAIN
+- VAULT_PRIMARY_BUCKET_NAME
+- VAULT_PRIMARY_REGION
+- VAULT_PRIMARY_ENDPOINT_URL when required
+- VAULT_PRIMARY_ACCESS_KEY_ID when required
+- VAULT_PRIMARY_SECRET_ACCESS_KEY when required
+- VAULT_PRIMARY_SESSION_TOKEN when required
+- VAULT_PRIMARY_FORCE_PATH_STYLE
+- VAULT_PRIMARY_USE_TLS
+- VAULT_PRIMARY_VERIFY_TLS
+- VAULT_PRIMARY_CA_BUNDLE_PATH when required
+- VAULT_PRIMARY_KEY_PREFIX
+
+Independent S3-compatible recovery storage:
+
+- VAULT_REPLICA_PROVIDER_ID
+- VAULT_REPLICA_FAILURE_DOMAIN
+- VAULT_REPLICA_BUCKET_NAME
+- VAULT_REPLICA_REGION
+- VAULT_REPLICA_ENDPOINT_URL when required
+- VAULT_REPLICA_ACCESS_KEY_ID when required
+- VAULT_REPLICA_SECRET_ACCESS_KEY when required
+- VAULT_REPLICA_SESSION_TOKEN when required
+- VAULT_REPLICA_FORCE_PATH_STYLE
+- VAULT_REPLICA_USE_TLS
+- VAULT_REPLICA_VERIFY_TLS
+- VAULT_REPLICA_CA_BUNDLE_PATH when required
+- VAULT_REPLICA_KEY_PREFIX
+
+Credentials remain environment/secret-store inputs only.
+
+TLS and certificate verification are mandatory for the operational CLI path.
+
+P2.7A6B acceptance requirement
+
+P2.7A6B must prove recovery while treating the primary Vault provider as unavailable.
+
+The recovery candidate must come from the independent replica, not from a same-provider primary version.
+
+The drill must use an isolated recovery target first and must verify:
+
+- tenant binding
+- public document binding
+- expected lifecycle state
+- size
+- content type
+- SHA-256
+- replica manifest binding
+- complete-marker binding
+- application-compatible recovered bytes
+- elapsed recovery/verification time
+- production modified: NO
+
+P2.7A6C acceptance requirement
+
+The current DR contract requires >= 7 days of provider history/PITR for go-live.
+
+P2.7A6 cannot be signed off while the actual production provider capability remains below this target.
+
+P2.7A6D final sign-off
+
+Final DR acceptance requires all of the following:
+
+- P2.7A1 provider restore evidence
+- P2.7A3 independent PostgreSQL logical recovery evidence
+- P2.7A4 Vault recovery semantics
+- P2.7A5 operational pre-migration gate acceptance
+- P2.7A6B independent Vault provider-loss recovery PASS
+- P2.7A6C >= 7-day provider history/PITR PASS
+- measured recovery evidence
+- no unresolved go-live DR blocker
+
+P2.7A6 remains OPEN until those conditions are satisfied.

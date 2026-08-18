@@ -225,3 +225,48 @@ def test_p27a_dr_runbook_records_p27a5_operational_acceptance():
         "is still required"
         not in dr
     )
+
+
+def test_p27a6_dr_runbook_defines_independent_vault_replica_contract():
+    dr = _dr_text()
+
+    for token in (
+        "14. P2.7A6 final disaster-recovery acceptance",
+        "P2.7A6A independent Vault recovery replica tooling",
+        "P2.7A6B real Vault provider-loss recovery drill",
+        "P2.7A6C >= 7-day provider history/PITR acceptance",
+        "P2.7A6D final DR evidence and go-live sign-off",
+        "VAULT_PRIMARY_PROVIDER_ID differs from VAULT_REPLICA_PROVIDER_ID",
+        "VAULT_PRIMARY_FAILURE_DOMAIN differs from VAULT_REPLICA_FAILURE_DOMAIN",
+        "VAULT_BACKUP_DATABASE_URL",
+        "repeatable-read, read-only transaction",
+        "state_only_not_auto_recoverable",
+        "<replica-prefix>/tenants/<organization_id>/objects/sha256/",
+        "complete.json is published LAST",
+        "full streamed SHA-256",
+        "treating the primary Vault provider as unavailable",
+        "production modified: NO",
+        ">= 7 days of provider history/PITR for go-live",
+        "P2.7A6 remains OPEN",
+    ):
+        assert token in dr
+
+
+def test_p27a6_dr_runbook_does_not_claim_operational_provider_loss_pass():
+    dr = _dr_text()
+
+    assert (
+        "Operational provisioning of the independent provider "
+        "and a real provider-loss drill remain required"
+        in dr
+    )
+
+    assert (
+        "P2.7A6B independent Vault provider-loss recovery PASS"
+        in dr
+    )
+
+    assert (
+        "P2.7A6 status:\n\nCLOSED"
+        not in dr
+    )
