@@ -52,7 +52,12 @@ jobs:
       - name: Install PostgreSQL 17 client
         run: |
           sudo install -d -m 0755 /usr/share/postgresql-common/pgdg
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+          key_asc="$RUNNER_TEMP/postgresql-pgdg.asc"
+          key_gpg="$RUNNER_TEMP/postgresql-pgdg.gpg"
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o "$key_asc"
+          gpg --batch --yes --dearmor --output "$key_gpg" "$key_asc"
+          sudo install -m 0644 "$key_gpg" /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+          rm -f "$key_asc" "$key_gpg"
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
