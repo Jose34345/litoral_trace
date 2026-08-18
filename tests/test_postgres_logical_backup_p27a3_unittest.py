@@ -1111,16 +1111,21 @@ def test_gitignore_ignores_backups_postgres():
     assert "/backups/postgres/" in gitignore
 
 
-def test_dr_runbook_says_real_drill_is_still_pending():
+def test_dr_runbook_preserves_historical_prepass_and_records_p27a3_closure():
     runbook = DR_RUNBOOK_PATH.read_text(encoding="utf-8")
 
     for token in (
         "tooling implemented/tested locally",
         "REAL pg_dump / pg_restore DRILL STILL REQUIRED",
-        "P2.7A3 is NOT CLOSED",
+        "P2.7A3 status:",
+        "CLOSED on 2026-08-17 after scheduled off-platform backup acceptance.",
+        "GitHub Actions workflow run 32086976028: PASS",
         "direct/unpooled connections",
         "client/server major versions must match",
         "Backup artifacts must never be committed",
         "SHA-256 verified before restore",
+        "This closes P2.7A3 overall.",
     ):
         assert token in runbook
+
+    assert "P2.7A3 is NOT CLOSED" not in runbook

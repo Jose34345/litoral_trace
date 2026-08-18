@@ -240,6 +240,64 @@ See DISASTER_RECOVERY_RUNBOOK.md.
 
 Schema-changing production deployments require a verified recovery point before migration.
 
+P2.7A5 makes this requirement executable and fail-closed.
+
+Immediately before a schema-changing deployment:
+
+1. trigger or verify a fresh PostgreSQL Logical Backup for production;
+2. wait for successful off-platform publication;
+3. retrieve the exact manifest and complete.json from the immutable backup bucket using an authorized read-only/operator identity;
+4. do not edit, rename, regenerate, or hand-author either evidence file;
+5. identify the currently deployed production release commit before checking out/cutting over the candidate release.
+
+Export only for the controlled deployment shell:
+
+PRE_MIGRATION_RECOVERY_MANIFEST=/secure/temp/<exact-production-manifest>.json
+
+PRE_MIGRATION_RECOVERY_COMPLETE=/secure/temp/complete.json
+
+PRE_MIGRATION_SOURCE_RELEASE_COMMIT=<currently deployed production release commit>
+
+PRE_MIGRATION_OPERATOR=<operator identity>
+
+PRE_MIGRATION_TARGET_ENV=production
+
+PRE_MIGRATION_MAX_AGE_MINUTES=120
+
+MIGRATION_DATABASE_URL=<load-from-secret-manager>
+
+PRE_MIGRATION_SOURCE_RELEASE_COMMIT refers to the release serving production before the candidate migration. It is not the candidate release commit.
+
+deploy_production.sh mounts the manifest and complete marker read-only and executes:
+
+python -m scripts.pre_migration_recovery_gate
+
+The gate must PASS before Alembic is invoked.
+
+The executable gate verifies:
+
+- manifest SHA-256 against complete.json;
+- manifest/dump binding recorded by complete.json;
+- production source label;
+- the currently deployed production release;
+- recovery-point age no greater than 120 minutes by default;
+- no invalid future timestamps;
+- exact database identity through source_identity_sha256;
+- production database name;
+- current Alembic revision;
+- PostgreSQL major-version compatibility;
+- PostGIS major.minor compatibility.
+
+The complete marker is accepted as publication evidence only because the P2.7A3 publisher writes it after successful remote verification of the dump and manifest.
+
+If any check fails the result is NO MIGRATION.
+
+Do not bypass the gate merely because a backup file exists.
+
+Do not substitute a locally generated manifest/complete marker for evidence retrieved from the protected off-platform backup domain.
+
+After a successful production cutover, update the scheduled-backup release metadata so future backups identify the newly deployed production release.
+
 Go-live PITR/history target is >= 7 days, and current provider settings must be checked against that target before release approval.
 
 Successful isolated restore testing is required.

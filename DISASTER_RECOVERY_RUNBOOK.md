@@ -472,3 +472,150 @@ Operational acceptance boundary
 P2.7A4 proves and documents recovery semantics.
 
 P2.7A6 remains responsible for final production disaster-recovery acceptance, including any provider-loss scenario, independent Vault recovery copy/replica requirement, measured recovery evidence, and go-live sign-off.
+
+13. P2.7A5 executable pre-migration recovery gate
+
+P2.7A5 status:
+
+IMPLEMENTED - executable fail-closed gate is present and unit-tested.
+
+Operational execution against real production recovery evidence is still required before P2.7A5 is declared fully accepted. Final disaster-recovery acceptance remains P2.7A6.
+
+Purpose
+
+Every production migration must have a recovery point that is demonstrably bound to the production state immediately before the migration.
+
+A backup file existing somewhere is insufficient.
+
+The gate runs before Alembic.
+
+If validation fails, the required result is:
+
+NO MIGRATION
+
+Recovery evidence
+
+The gate consumes two P2.7A3 artifacts obtained from the protected off-platform backup domain:
+
+- the exact production manifest
+- its complete.json publication marker
+
+The manifest must not be renamed or modified after retrieval.
+
+The complete marker must not be regenerated locally.
+
+The operator does not need to download the full PostgreSQL dump for this gate.
+
+Publication-chain verification
+
+The gate verifies:
+
+- manifest format
+- complete-marker format
+- manifest_sha256
+- manifest filename binding
+- dump filename binding
+- dump SHA-256 binding
+- dump size binding
+- source label
+- release commit
+- backup timestamp
+- publication timestamp
+
+The P2.7A3 complete marker is meaningful because it is published only after the remote dump and manifest have been verified.
+
+Database binding
+
+The recovery point is compared to the database referenced by the ephemeral MIGRATION_DATABASE_URL.
+
+The gate verifies:
+
+- database name
+- source_identity_sha256
+- current Alembic revision
+- PostgreSQL major version
+- PostGIS major.minor version
+
+source_identity_sha256 binds the recovery point to the host/port/database identity without writing the database URL or hostname into the gate result.
+
+Release binding
+
+PRE_MIGRATION_SOURCE_RELEASE_COMMIT must identify the currently deployed production release before migration.
+
+It must match both the recovery manifest and complete marker.
+
+It is deliberately not the candidate release commit.
+
+Freshness
+
+The default maximum recovery-point age for a schema-changing production migration is:
+
+120 minutes
+
+The backup creation timestamp is authoritative for freshness.
+
+A future timestamp beyond the allowed clock-skew tolerance is invalid.
+
+A normal <= 24 hour logical-backup RPO is not, by itself, sufficient for the stricter pre-migration gate.
+
+Operator evidence
+
+The deployment supplies:
+
+- PRE_MIGRATION_SOURCE_RELEASE_COMMIT
+- PRE_MIGRATION_OPERATOR
+- PRE_MIGRATION_TARGET_ENV=production
+- PRE_MIGRATION_MAX_AGE_MINUTES
+- PRE_MIGRATION_RECOVERY_MANIFEST
+- PRE_MIGRATION_RECOVERY_COMPLETE
+
+A successful gate emits a sanitized PASS record containing:
+
+- verification status
+- verification timestamp
+- operator
+- source production release
+- backup timestamp
+- backup age
+- Alembic revision
+- source_identity_sha256
+- manifest_sha256
+
+The record does not contain a database URL, password, storage credential, or provider endpoint.
+
+Fail-closed rules
+
+NO MIGRATION is required when any of the following is true:
+
+- recovery evidence is missing or invalid
+- manifest_sha256 does not match
+- manifest and complete marker disagree
+- dump SHA-256 or size bindings disagree
+- source label is not production
+- recovery release does not match the currently deployed production release
+- recovery point is older than the configured pre-migration limit
+- evidence timestamps are invalid
+- database name differs
+- source_identity_sha256 differs
+- Alembic revision differs
+- PostgreSQL major version differs
+- PostGIS major.minor version differs
+- target environment is not production
+
+Security boundary
+
+The evidence files must be retrieved from the protected off-platform recovery domain using an authorized operator/read-only identity.
+
+The deployment mounts them read-only.
+
+MIGRATION_DATABASE_URL remains ephemeral and is not written into the evidence.
+
+The executable gate does not weaken the separate Vault recovery contract.
+
+Acceptance boundary
+
+P2.7A5 code completeness is not equivalent to operational acceptance.
+
+A real execution against production recovery evidence must PASS before this gate is considered operationally accepted.
+
+P2.7A6 remains responsible for final DR acceptance and go-live sign-off.
