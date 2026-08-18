@@ -27,7 +27,6 @@ jobs:
       BACKUP_S3_REGION: ${{ vars.BACKUP_S3_REGION }}
       BACKUP_S3_SSE: ${{ vars.BACKUP_S3_SSE }}
       BACKUP_RELEASE_COMMIT: ${{ vars.BACKUP_RELEASE_COMMIT }}
-      BACKUP_WORKDIR: ${{ runner.temp }}/litoral-trace-postgres-backup
     steps:
       - name: Checkout
         # actions/checkout@v4
@@ -79,6 +78,11 @@ jobs:
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
+
+      - name: Initialize backup workdir
+        shell: bash
+        run: |
+          echo "BACKUP_WORKDIR=$RUNNER_TEMP/litoral-trace-postgres-backup" >> "$GITHUB_ENV"
 
       - name: Create logical backup
         shell: bash
