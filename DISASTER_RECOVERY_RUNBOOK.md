@@ -70,9 +70,23 @@ pg_restore portability/atomicity is required:
 
 Production was not overwritten or swapped during the drill.
 
-P2.7A3 is NOT CLOSED yet.
+P2.7A3 status:
 
-P2.7A3C - scheduled independent logical backup + durable off-platform retention remains required to operationally support the <= 24 hours logical backup RPO target.
+CLOSED on 2026-08-17 after scheduled off-platform backup acceptance.
+
+P2.7A3C operational evidence:
+
+- GitHub Actions workflow run 32086976028: PASS
+- PostgreSQL client: 17.11
+- logical backup created from production
+- AWS authentication: OIDC assumed role
+- durable off-platform publication: PASS
+- server-side encryption: SSE-S3
+- Object Lock: Governance
+- default retention: 35 days
+- dump, manifest, and complete marker remotely verified by size and SHA-256
+
+The configured twice-daily schedule operationally supports the <= 24 hours independent logical backup RPO target.
 
 P2.7A3 requires direct/unpooled connections.
 
@@ -316,8 +330,145 @@ Historical pre-pass status now superseded by this evidence:
 - tooling implemented/tested locally
 - REAL pg_dump / pg_restore DRILL STILL REQUIRED
 
-Open gap retained:
+P2.7A3C operational gap was closed by the successful scheduled-workflow acceptance run and durable off-platform S3 publication.
 
-P2.7A3C - scheduled independent logical backup + durable off-platform retention is still required to operationally support the <= 24 hours logical backup RPO target.
+This closes P2.7A3 overall.
 
-This does not close P2.7A3 overall and does not replace P2.7A4 Vault object-storage recovery.
+It does not replace P2.7A4 Vault object-storage recovery.
+
+12. P2.7A4 Vault object-storage recovery contract
+
+P2.7A4 status:
+
+CLOSED - recovery contract defined and bound to existing code-level recovery primitives.
+
+This status defines the recovery contract. It does NOT claim that a production Vault provider-loss drill or an independent Vault replica has already been proven. Final operational disaster-recovery acceptance remains P2.7A6.
+
+Recovery domain
+
+Vault recovery is a coordinated recovery of two distinct data domains:
+
+- PostgreSQL Vault metadata
+- private object-storage bytes
+
+A PostgreSQL restore alone is insufficient when Vault documents exist.
+
+The active primary object store is not an independent backup merely because versioning is enabled. Versioning inside the same provider/failure domain is a recovery primitive, not by itself a provider-independent backup.
+
+Authoritative recovery tuple
+
+For an available Vault document, recovery evidence is identified by the coordinated tuple:
+
+- organization_id
+- public_id
+- status
+- storage_backend
+- storage_bucket
+- object_key
+- storage_version_id when present
+- size_bytes
+- content_type
+- sha256
+
+ETag is not accepted as recovery integrity proof.
+
+SHA-256 stored in PostgreSQL is the canonical content-integrity value.
+
+Exact-version rule
+
+When storage_version_id is present, verification and recovery MUST address that exact object version.
+
+A recovery operation that silently falls back from a recorded storage_version_id to an unversioned/current object is invalid.
+
+When storage_version_id is absent, the operator MUST NOT claim exact-version recoverability. The candidate current object or an independently identified recovery copy must instead be verified against the PostgreSQL size, content type, and SHA-256 before it is accepted.
+
+Tenant boundary rule
+
+Vault object keys are tenant-scoped.
+
+The expected active key namespace is:
+
+<key_prefix>/tenants/<organization_id>/objects/<opaque_object_id>
+
+Recovery MUST reject a candidate whose object binding is inconsistent with the document organization.
+
+Recovery tooling must never use an object from one organization to repair metadata belonging to another organization.
+
+Integrity verification
+
+Before recovered bytes are accepted:
+
+1. verify expected storage bucket or explicitly approved recovery bucket
+2. verify exact storage version when storage_version_id exists
+3. verify size_bytes
+4. verify content_type when the provider returns it
+5. stream the complete object
+6. recompute SHA-256 over the complete byte stream
+7. compare the computed SHA-256 with PostgreSQL metadata
+
+A matching ETag alone is never sufficient.
+
+A size-only match is never sufficient.
+
+Restore and cutover procedure
+
+If the active Vault object is missing or corrupt:
+
+1. declare the affected document and tenant
+2. preserve the existing PostgreSQL metadata
+3. locate an independently justified recovery candidate
+4. recover bytes into an isolated recovery bucket/key or other non-destructive target first
+5. verify the candidate using the full integrity contract
+6. verify tenant binding
+7. only after successful verification perform a controlled metadata repoint/cutover
+8. validate the application download path after cutover
+9. preserve the previous binding until recovery acceptance when technically possible
+10. record the recovery evidence
+
+Blind in-place overwrite of the current Vault object is prohibited when an isolated recovery target is available.
+
+Database metadata must not be repointed before recovered bytes have passed integrity verification.
+
+Deletion semantics
+
+Documents whose authoritative PostgreSQL status is deleted MUST NOT be automatically resurrected by a database or object-storage recovery.
+
+Historical object versions or recovery copies belonging to a logically deleted document are not, by themselves, authorization to make the document available again.
+
+delete_pending and delete_failed states require incident-specific reconciliation; recovery must not silently convert them to available.
+
+Fail-closed conditions
+
+Vault recovery fails closed when any of the following is true:
+
+- PostgreSQL metadata for the document cannot be identified
+- tenant binding is inconsistent
+- storage bucket/key binding is unexplained
+- a recorded storage_version_id cannot be retrieved
+- object bytes are missing
+- size verification fails
+- content-type verification fails when available
+- SHA-256 verification fails
+- a deleted document would be resurrected implicitly
+- recovery requires a blind production overwrite without an approved emergency reason
+- a same-provider version is incorrectly represented as an independent backup
+- recovery evidence is incomplete
+
+Existing code-level recovery primitives
+
+The current Vault implementation already provides the primitives required by this contract:
+
+- storage_version_id is persisted with Vault document metadata when supplied by storage
+- S3-compatible head/get operations accept a version_id
+- verified Vault download requests the persisted storage_version_id
+- verified download checks size and content type
+- verified download recomputes SHA-256 over the complete object before exposing bytes
+- Vault object keys are tenant-scoped
+
+P2.7A4 therefore does not change normal Vault upload/delete semantics.
+
+Operational acceptance boundary
+
+P2.7A4 proves and documents recovery semantics.
+
+P2.7A6 remains responsible for final production disaster-recovery acceptance, including any provider-loss scenario, independent Vault recovery copy/replica requirement, measured recovery evidence, and go-live sign-off.
