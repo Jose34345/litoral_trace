@@ -270,3 +270,46 @@ def test_p27a6_dr_runbook_does_not_claim_operational_provider_loss_pass():
         "P2.7A6 status:\n\nCLOSED"
         not in dr
     )
+
+
+def test_p27a6b_dr_runbook_defines_provider_loss_execution_contract():
+    dr = _dr_text()
+
+    for token in (
+        "P2.7A6B provider-loss recovery drill",
+        "P2.7A6B code status:",
+        "IMPLEMENTED - provider-loss recovery verifier/materializer is present and unit-tested.",
+        "--primary-unavailable",
+        "must not contain VAULT_PRIMARY_* configuration",
+        "Only VAULT_REPLICA_* read credentials are required.",
+        "complete.json SHA-256",
+        "manifest_version_id when present",
+        "hidden partial directory",
+        "atomically promoted",
+        "<target>/tenants/<organization_id>/documents/<public_id>/metadata.json",
+        "no payload is created",
+        "full streamed SHA-256",
+        "canonical Vault upload validator",
+        "The drill uses only HEAD/GET operations",
+        "PostgreSQL is not contacted.",
+        "production_modified: false",
+        "primary access attempted: NO",
+        "replica writes performed: NO",
+        "production modified: NO",
+    ):
+        assert token in dr
+
+
+def test_p27a6b_dr_runbook_does_not_claim_operational_provider_loss_closed():
+    dr = _dr_text()
+
+    assert (
+        "Operational provider-loss execution against a real "
+        "independent storage provider remains required"
+        in dr
+    )
+
+    assert (
+        "P2.7A6B is CLOSED"
+        not in dr
+    )
