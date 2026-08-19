@@ -6,11 +6,13 @@
 
 ## 1. Proveedor y aceptación
 
-Litoral Trace es un servicio B2B operado por **José David Lezcano**, Argentina. Contacto comercial y operativo: **comercial@litoraltrace.com**.
+**Litoral Trace es un nombre comercial operado por José David Lezcano, persona humana domiciliada en la República Argentina.** Mientras no exista una persona jurídica constituida que asuma expresamente la relación mediante un instrumento posterior, el proveedor contractual es José David Lezcano actuando en nombre propio bajo el nombre comercial Litoral Trace.
+
+Contacto comercial y operativo: **comercial@litoraltrace.com**.
 
 Estos Términos se incorporan a la propuesta, orden de servicio, piloto o acuerdo comercial que los referencie. Si existe contradicción, prevalece el documento firmado más específico para el cliente.
 
-El domicilio contractual, datos fiscales y condiciones de facturación aplicables deberán constar en la propuesta u orden de servicio antes de una contratación de producción.
+La identificación fiscal (CUIT), condición tributaria, domicilio contractual y condiciones de facturación aplicables deberán constar en la propuesta, factura u orden de servicio correspondiente antes de comenzar una prestación remunerada que requiera facturación. La ausencia actual de una sociedad no impide utilizar estos Términos como base contractual con una persona humana identificada.
 
 ## 2. Servicio
 
@@ -65,7 +67,7 @@ Podemos realizar mantenimiento, correcciones de seguridad y cambios razonables n
 
 Los precios, moneda, impuestos, vencimientos, duración, límites de uso y condiciones de renovación se determinan en la propuesta, orden de servicio o plan contratado.
 
-Un piloto controlado tiene el alcance y duración definidos en su oferta. Su continuidad como servicio de producción requiere acuerdo expreso y no se presume automáticamente.
+Antes de emitir la primera factura, el proveedor deberá contar con la inscripción tributaria y punto de venta que correspondan. Un piloto controlado tiene el alcance y duración definidos en su oferta. Su continuidad como servicio de producción requiere acuerdo expreso y no se presume automáticamente.
 
 ## 9. Propiedad intelectual
 
@@ -134,11 +136,13 @@ Salvo dolo, culpa grave o responsabilidades que legalmente no puedan limitarse, 
 
 Ninguna parte será responsable por demoras causadas por eventos fuera de su control razonable en la medida en que adopte medidas razonables de mitigación y comunique el impacto cuando corresponda.
 
-## 19. Ley aplicable y jurisdicción
+## 19. Ley aplicable, domicilio contractual y jurisdicción
 
 Salvo acuerdo escrito diferente, la relación se rige por las leyes de la República Argentina.
 
-La jurisdicción y domicilio contractual específicos deberán quedar establecidos en la propuesta u orden de servicio antes de la contratación de producción. Para demos y pilotos no remunerados, cualquier controversia se intentará resolver primero de buena fe por el canal comercial.
+Las partes pueden constituir en cada propuesta u orden de servicio un domicilio especial y, cuando corresponda, un domicilio electrónico para comunicaciones contractuales. La jurisdicción específica también deberá constar en ese instrumento antes de una contratación de producción remunerada.
+
+Para demos y pilotos no remunerados, cualquier controversia se intentará resolver primero de buena fe por el canal comercial.
 
 ## 20. Modificaciones
 
@@ -146,4 +150,4 @@ Los Términos pueden actualizarse para reflejar cambios legales, técnicos o com
 
 ## 21. Condición de cierre V1
 
-Estos Términos son aptos como base para demo y piloto controlado. **Antes del primer cliente de producción deben completarse los datos fiscales, domicilio contractual y jurisdicción específica del proveedor/cliente en la propuesta u orden de servicio firmada, y revisar el paquete con asesoramiento legal si el valor o riesgo contractual lo justifica.**
+Estos Términos quedan **operativamente completos como base contractual B2B para un proveedor persona humana**. Antes de la primera prestación remunerada se completarán la identificación fiscal y condición tributaria; y antes del primer contrato de producción se fijarán domicilio contractual y jurisdicción específica en la propuesta u orden de servicio firmada.
