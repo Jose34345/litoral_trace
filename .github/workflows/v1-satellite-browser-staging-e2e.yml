@@ -40,6 +40,7 @@ jobs:
     env:
       ENVIRONMENT: development
       ENABLE_STAGING_BROWSER_E2E: "1"
+      PYTHONPATH: src
       JWT_SECRET_KEY: ci-only-browser-staging-jwt-secret-key-2026
       LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD: CiBrowserStagingBootstrapPassword2026
       TEST_POSTGRES_MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:ci_owner_password_2026@127.0.0.1:5432/litoral_trace_browser_staging
@@ -150,7 +151,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q \
+          # This staging gate intentionally bypasses tests/conftest.py because that
+          # global fixture forces ENVIRONMENT=test + SQLite for the ordinary suite.
+          # Here the real app must remain on the isolated PostgreSQL runtime above.
+          python -m pytest -q --noconftest \
             --junitxml=v1-satellite-browser-staging.xml \
             tests/test_v1_satellite_browser_staging_e2e.py
           python - <<'PY'
