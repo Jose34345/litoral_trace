@@ -161,12 +161,21 @@ jobs:
           import xml.etree.ElementTree as ET
 
           root = ET.parse("v1-satellite-browser-staging.xml").getroot()
-          skipped = int(root.attrib.get("skipped", "0"))
-          failures = int(root.attrib.get("failures", "0"))
-          errors = int(root.attrib.get("errors", "0"))
-          if skipped or failures or errors:
+          suites = (
+              [root]
+              if root.tag == "testsuite"
+              else list(root.iter("testsuite"))
+          )
+          if not suites:
+              raise SystemExit("V1 satellite browser staging gate produced no testsuite.")
+
+          tests = sum(int(suite.attrib.get("tests", "0")) for suite in suites)
+          skipped = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)
+          failures = sum(int(suite.attrib.get("failures", "0")) for suite in suites)
+          errors = sum(int(suite.attrib.get("errors", "0")) for suite in suites)
+          if tests != 1 or skipped or failures or errors:
               raise SystemExit(
                   "V1 satellite browser staging gate is fail-closed: "
-                  f"skipped={skipped}, failures={failures}, errors={errors}"
+                  f"tests={tests}, skipped={skipped}, failures={failures}, errors={errors}"
               )
           PY
