@@ -10,7 +10,7 @@
 
 Contacto para privacidad y ejercicio de derechos: **comercial@litoraltrace.com**.
 
-**Domicilio físico del responsable:** debe informarse al titular de los datos antes o al momento de la recolección, y debe quedar consignado en la versión del aviso utilizada para producción o en el instrumento de onboarding/contratación que acompañe esa recolección. Este documento de repositorio no publica ni inventa un domicilio particular.
+**Domicilio físico del responsable:** el operador ya definió y proporcionó el domicilio físico que debe utilizarse para esta finalidad. Por tratarse de un domicilio particular, el repositorio público no publica su valor exacto. La versión del aviso entregada al titular o el instrumento de onboarding/contratación que acompañe la recolección debe consignar el domicilio completo **antes o al momento de recabar datos personales**.
 
 La identificación fiscal (CUIT) y el alta tributaria que correspondan se incorporarán al paquete comercial/fiscal antes de comenzar facturación. La falta actual de una persona jurídica no impide identificar al operador: el proveedor previsto para la etapa inicial es José David Lezcano como persona humana.
 
@@ -52,11 +52,15 @@ Litoral Trace utiliza proveedores de infraestructura y servicios técnicos neces
 
 El acceso de proveedores debe limitarse a lo necesario para prestar el servicio. No se debe compartir material sensible por canales de soporte ordinarios cuando exista un canal seguro previsto para provisioning, Vault o incidentes.
 
-La lista material de subprocesadores/proveedores aplicable a un cliente de producción debe quedar documentada en el paquete contractual o de seguridad vigente.
+La lista material de subprocesadores/proveedores aplicable a un entorno que trate datos personales debe mantenerse documentada junto con la finalidad, categoría de datos y ubicación/jurisdicción relevante del tratamiento.
 
 ## 6. Transferencias y ubicación
 
-La infraestructura técnica puede involucrar proveedores que procesen o almacenen información fuera de Argentina. Antes de un cliente de producción, las transferencias internacionales relevantes deben documentarse y gestionarse conforme a la normativa aplicable y a los términos acordados con el cliente.
+La infraestructura técnica puede involucrar proveedores que procesen o almacenen información fuera de Argentina.
+
+**Antes de habilitar cualquier demo, piloto o entorno de producción que trate datos personales**, debe revisarse la ubicación de los proveedores/subprocesadores y documentarse la base o garantía aplicable a cada transferencia internacional. Cuando el país de destino tenga un nivel de protección reconocido como adecuado por la autoridad argentina, se documentará esa condición; cuando no lo tenga, deberá existir una excepción legal o una garantía apropiada conforme al artículo 12 de la Ley 25.326 y su normativa complementaria, incluyendo cuando corresponda cláusulas contractuales de transferencia internacional.
+
+No debe iniciarse un entorno con datos personales reales si esta revisión de transferencias aplicable a sus proveedores materiales está pendiente.
 
 ## 7. Conservación
 
@@ -96,4 +100,4 @@ Podemos actualizar este aviso cuando cambie el servicio, la infraestructura, la 
 
 ## 13. Condición de cierre V1
 
-Este aviso queda como **plantilla operativa lista para completar**. Antes de utilizarlo como aviso final en una recolección de datos personales debe incorporarse el domicilio físico del responsable, porque la normativa argentina exige informar identidad y domicilio del responsable al titular. Antes de facturar también se incorporará la identificación fiscal que corresponda.
+Este aviso queda como **plantilla operativa V1 con responsable, canal, finalidades, derechos y requisitos de transferencias definidos**. El domicilio físico real ya fue proporcionado por el operador fuera del repositorio público y debe insertarse en la copia customer-facing antes o al momento de toda recolección de datos personales. Antes de facturar también se incorporará la identificación fiscal que corresponda.
