@@ -292,10 +292,31 @@ def test_browser_lot_to_satellite_worker_success_result() -> None:
                 response = page.goto(f"{base_url}/login", wait_until="domcontentloaded")
                 assert response is not None and response.ok
 
+                login_response_status: dict[str, int] = {}
+
+                def remember_login_response(response) -> None:
+                    if (
+                        response.request.method == "POST"
+                        and response.url.rstrip("/").endswith("/login")
+                    ):
+                        login_response_status["status"] = int(response.status)
+
+                page.on("response", remember_login_response)
                 page.locator("#loginUsername").fill(username)
                 page.locator("#loginPassword").fill(password)
                 page.locator('form[action="/login"] button[type="submit"]').click()
-                page.wait_for_url("**/dashboard", timeout=15_000)
+                try:
+                    page.wait_for_url("**/dashboard", timeout=10_000)
+                except Exception as exc:
+                    alert = page.locator('[role="alert"]')
+                    alert_text = alert.first.inner_text() if alert.count() else ""
+                    body_excerpt = page.locator("body").inner_text()[:800]
+                    raise AssertionError(
+                        "Browser login did not reach dashboard; "
+                        f"post_status={login_response_status.get('status')!r}; "
+                        f"url={page.url!r}; alert={alert_text!r}; "
+                        f"body={body_excerpt!r}"
+                    ) from exc
 
                 expect(page.locator("#selected-lote-name")).to_contain_text(
                     f"STAGING-LOT-{suffix}",
