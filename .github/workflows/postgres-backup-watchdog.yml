@@ -1,0 +1,197 @@
+name: PostgreSQL Backup Watchdog
+
+on:
+  schedule:
+    - cron: "23 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      synthetic_alert:
+        description: Optional synthetic incident used to validate the alert channel
+        required: false
+        default: none
+        type: choice
+        options:
+          - none
+          - backup_failed
+          - backup_stale
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: postgres-backup-watchdog
+  cancel-in-progress: true
+
+jobs:
+  postgres-backup-watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      WATCHDOG_REPOSITORY: ${{ github.repository }}
+      WATCHDOG_STALE_HOURS: "14"
+      WATCHDOG_SYNTHETIC_ALERT: ${{ inputs.synthetic_alert || 'none' }}
+    steps:
+      - name: Evaluate backup health and reconcile incidents
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          from datetime import datetime, timezone
+          from urllib import error as urlerror
+          from urllib import parse as urlparse
+          from urllib import request as urlrequest
+
+
+          token = os.environ["GH_TOKEN"].strip()
+          repository = os.environ["WATCHDOG_REPOSITORY"].strip()
+          stale_hours = int(os.environ.get("WATCHDOG_STALE_HOURS", "14"))
+          synthetic = os.environ.get("WATCHDOG_SYNTHETIC_ALERT", "none").strip()
+          owner = repository.split("/", 1)[0]
+
+
+          def github(method: str, path: str, payload=None):
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              request = urlrequest.Request(
+                  f"https://api.github.com{path}",
+                  data=data,
+                  method=method,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "Content-Type": "application/json",
+                      "User-Agent": "litoral-trace-backup-watchdog",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              try:
+                  with urlrequest.urlopen(request, timeout=15) as response:
+                      raw = response.read()
+              except (urlerror.URLError, TimeoutError, OSError) as exc:
+                  raise SystemExit("Backup watchdog GitHub API request failed.") from exc
+              return None if not raw else json.loads(raw.decode("utf-8"))
+
+
+          def parse_time(value: str | None):
+              if not value:
+                  return None
+              return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+          runs_payload = github(
+              "GET",
+              f"/repos/{repository}/actions/workflows/postgres-logical-backup.yml/runs?per_page=20",
+          )
+          runs = list((runs_payload or {}).get("workflow_runs") or [])
+          completed = [run for run in runs if run.get("status") == "completed"]
+          successful = [run for run in completed if run.get("conclusion") == "success"]
+
+          latest_completed = completed[0] if completed else None
+          latest_success = successful[0] if successful else None
+          now = datetime.now(timezone.utc)
+
+          latest_conclusion = (
+              str(latest_completed.get("conclusion") or "unknown")
+              if latest_completed
+              else "missing"
+          )
+          latest_completed_at = parse_time(
+              (latest_completed or {}).get("updated_at")
+          )
+          latest_success_at = parse_time(
+              (latest_success or {}).get("updated_at")
+          )
+
+          backup_failed = latest_completed is None or latest_conclusion != "success"
+          backup_stale = (
+              latest_success_at is None
+              or (now - latest_success_at).total_seconds() > stale_hours * 3600
+          )
+
+          if synthetic == "backup_failed":
+              backup_failed = True
+          elif synthetic == "backup_stale":
+              backup_stale = True
+
+          open_issues = github(
+              "GET",
+              f"/repos/{repository}/issues?state=open&per_page=100",
+          ) or []
+
+
+          def find_issue(marker: str):
+              for issue in open_issues:
+                  if "pull_request" in issue:
+                      continue
+                  if marker in str(issue.get("body") or ""):
+                      return issue
+              return None
+
+
+          def reconcile(key: str, firing: bool, title: str, detail_lines: list[str]):
+              marker = f"<!-- litoral-trace-backup-watchdog:{key} -->"
+              existing = find_issue(marker)
+              if firing and existing is None:
+                  body = "\n".join(
+                      [
+                          marker,
+                          "Automated Litoral Trace backup watchdog incident.",
+                          "",
+                          *detail_lines,
+                          "",
+                          "No database URL, credentials, object keys, or customer data are included.",
+                      ]
+                  )
+                  github(
+                      "POST",
+                      f"/repos/{repository}/issues",
+                      {
+                          "title": title,
+                          "body": body,
+                          "assignees": [owner],
+                      },
+                  )
+                  print(f"Opened incident: {key}")
+              elif not firing and existing is not None:
+                  github(
+                      "PATCH",
+                      f"/repos/{repository}/issues/{int(existing['number'])}",
+                      {"state": "closed", "state_reason": "completed"},
+                  )
+                  print(f"Resolved incident: {key}")
+              else:
+                  print(f"Incident unchanged: {key}")
+
+
+          completed_text = latest_completed_at.isoformat() if latest_completed_at else "none"
+          success_text = latest_success_at.isoformat() if latest_success_at else "none"
+
+          reconcile(
+              "backup_failed",
+              backup_failed,
+              "[OPS] CRITICAL PostgreSQL logical backup failed",
+              [
+                  f"Latest completed conclusion: {latest_conclusion}",
+                  f"Latest completed timestamp: {completed_text}",
+              ],
+          )
+          reconcile(
+              "backup_stale",
+              backup_stale,
+              "[OPS] CRITICAL PostgreSQL logical backup stale",
+              [
+                  f"Latest successful timestamp: {success_text}",
+                  f"Freshness objective: <= {stale_hours} hours",
+              ],
+          )
+
+          if backup_failed or backup_stale:
+              raise SystemExit("Backup watchdog detected an active incident.")
+
+          print("Backup watchdog: healthy")
+          PY
