@@ -6,11 +6,13 @@
 
 ## 1. Responsable y contacto
 
-Litoral Trace es operado por **José David Lezcano**, Argentina, como responsable del tratamiento correspondiente a la cuenta, relación comercial y operación de la plataforma cuando actúa como responsable.
+**Litoral Trace es un nombre comercial operado por José David Lezcano, persona humana domiciliada en la República Argentina.** Mientras no exista una persona jurídica constituida que asuma expresamente la relación, José David Lezcano es el operador y, cuando corresponda, el responsable del tratamiento respecto de la cuenta, relación comercial y operación de la plataforma.
 
 Contacto para privacidad y ejercicio de derechos: **comercial@litoraltrace.com**.
 
-**Domicilio del responsable:** deberá consignarse en la propuesta, orden de servicio o instrumento contractual aplicable antes del alta de un cliente de producción. Este documento no inventa ni sustituye ese dato contractual.
+**Domicilio físico del responsable:** debe informarse al titular de los datos antes o al momento de la recolección, y debe quedar consignado en la versión del aviso utilizada para producción o en el instrumento de onboarding/contratación que acompañe esa recolección. Este documento de repositorio no publica ni inventa un domicilio particular.
+
+La identificación fiscal (CUIT) y el alta tributaria que correspondan se incorporarán al paquete comercial/fiscal antes de comenzar facturación. La falta actual de una persona jurídica no impide identificar al operador: el proveedor previsto para la etapa inicial es José David Lezcano como persona humana.
 
 Cuando un cliente carga información de terceros en su tenant para sus propios fines, el cliente puede actuar como responsable de esos datos y Litoral Trace como proveedor/encargado de tratamiento, según corresponda a la relación y al contrato aplicable.
 
@@ -94,4 +96,4 @@ Podemos actualizar este aviso cuando cambie el servicio, la infraestructura, la 
 
 ## 13. Condición de cierre V1
 
-Este aviso queda apto para demo y piloto controlado. **Antes del primer cliente de producción debe completarse y validar el domicilio del responsable y cualquier información fiscal/contractual que deba figurar en el paquete legal aplicable.**
+Este aviso queda como **plantilla operativa lista para completar**. Antes de utilizarlo como aviso final en una recolección de datos personales debe incorporarse el domicilio físico del responsable, porque la normativa argentina exige informar identidad y domicilio del responsable al titular. Antes de facturar también se incorporará la identificación fiscal que corresponda.
