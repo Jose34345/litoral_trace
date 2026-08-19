@@ -20,6 +20,14 @@ def test_dashboard_uses_real_tenant_lotes_and_satellite_api() -> None:
     assert "No emite un certificado oficial EUDR" in content
 
 
+def test_dashboard_treats_poll_timeout_as_pending_not_failure() -> None:
+    content = _read(DASHBOARD)
+
+    assert "return { pending: true, job_id: jobId };" in content
+    assert "sigue en proceso. Podés continuar usando la plataforma" in content
+    assert "throw new Error('El trabajo sigue en proceso." not in content
+
+
 def test_dashboard_does_not_present_fabricated_compliance_success() -> None:
     content = _read(DASHBOARD).lower()
 
