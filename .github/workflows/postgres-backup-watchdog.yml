@@ -14,6 +14,7 @@ on:
           - none
           - backup_failed
           - backup_stale
+          - healthy
 
 permissions:
   contents: read
@@ -31,6 +32,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       WATCHDOG_REPOSITORY: ${{ github.repository }}
+      WATCHDOG_BRANCH: ${{ github.event.repository.default_branch }}
       WATCHDOG_STALE_HOURS: "14"
       WATCHDOG_SYNTHETIC_ALERT: ${{ inputs.synthetic_alert || 'none' }}
     steps:
@@ -50,6 +52,7 @@ jobs:
 
           token = os.environ["GH_TOKEN"].strip()
           repository = os.environ["WATCHDOG_REPOSITORY"].strip()
+          branch = os.environ.get("WATCHDOG_BRANCH", "main").strip() or "main"
           stale_hours = int(os.environ.get("WATCHDOG_STALE_HOURS", "14"))
           synthetic = os.environ.get("WATCHDOG_SYNTHETIC_ALERT", "none").strip()
           owner = repository.split("/", 1)[0]
@@ -85,7 +88,10 @@ jobs:
 
           runs_payload = github(
               "GET",
-              f"/repos/{repository}/actions/workflows/postgres-logical-backup.yml/runs?per_page=20",
+              (
+                  f"/repos/{repository}/actions/workflows/postgres-logical-backup.yml/runs"
+                  f"?branch={urlparse.quote(branch)}&per_page=20"
+              ),
           )
           runs = list((runs_payload or {}).get("workflow_runs") or [])
           completed = [run for run in runs if run.get("status") == "completed"]
@@ -107,16 +113,25 @@ jobs:
               (latest_success or {}).get("updated_at")
           )
 
-          backup_failed = latest_completed is None or latest_conclusion != "success"
+          # "Never ran" is a freshness problem, not a failed-backup event.
+          backup_failed = (
+              latest_completed is not None and latest_conclusion != "success"
+          )
           backup_stale = (
               latest_success_at is None
               or (now - latest_success_at).total_seconds() > stale_hours * 3600
           )
 
+          # Manual drills are deterministic and isolated from real backup state.
           if synthetic == "backup_failed":
               backup_failed = True
+              backup_stale = False
           elif synthetic == "backup_stale":
+              backup_failed = False
               backup_stale = True
+          elif synthetic == "healthy":
+              backup_failed = False
+              backup_stale = False
 
           open_issues = github(
               "GET",
@@ -176,6 +191,7 @@ jobs:
               backup_failed,
               "[OPS] CRITICAL PostgreSQL logical backup failed",
               [
+                  f"Monitored branch: {branch}",
                   f"Latest completed conclusion: {latest_conclusion}",
                   f"Latest completed timestamp: {completed_text}",
               ],
@@ -185,6 +201,7 @@ jobs:
               backup_stale,
               "[OPS] CRITICAL PostgreSQL logical backup stale",
               [
+                  f"Monitored branch: {branch}",
                   f"Latest successful timestamp: {success_text}",
                   f"Freshness objective: <= {stale_hours} hours",
               ],
