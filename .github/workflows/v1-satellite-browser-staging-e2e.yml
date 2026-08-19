@@ -1,0 +1,168 @@
+name: V1 Satellite Browser Staging E2E
+
+on:
+  pull_request:
+    branches:
+      - p2-enterprise-production
+  push:
+    branches:
+      - p2-enterprise-production
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v1-satellite-browser-staging-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  satellite-browser-staging-e2e:
+    name: satellite-browser-staging-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_owner_password_2026
+          POSTGRES_DB: litoral_trace_browser_staging
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d litoral_trace_browser_staging"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      ENVIRONMENT: development
+      ENABLE_STAGING_BROWSER_E2E: "1"
+      JWT_SECRET_KEY: ci-only-browser-staging-jwt-secret-key-2026
+      LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD: CiBrowserStagingBootstrapPassword2026
+      TEST_POSTGRES_MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:ci_owner_password_2026@127.0.0.1:5432/litoral_trace_browser_staging
+      MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:ci_owner_password_2026@127.0.0.1:5432/litoral_trace_browser_staging
+      TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:ci_runtime_password_2026@127.0.0.1:5432/litoral_trace_browser_staging
+      DATABASE_URL: postgresql+psycopg://litoral_trace_app:ci_runtime_password_2026@127.0.0.1:5432/litoral_trace_browser_staging
+      TEST_POSTGRES_WORKER_DATABASE_URL: postgresql+psycopg://litoral_trace_worker_browser:ci_worker_password_2026@127.0.0.1:5432/litoral_trace_browser_staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install application and browser-test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest alembic playwright
+
+      - name: Install Chromium for Playwright
+        run: python -m playwright install --with-deps chromium
+
+      - name: Provision isolated PostgreSQL principals
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine
+
+          engine = create_engine(
+              os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+
+          statements = [
+              """
+              CREATE ROLE litoral_trace_app
+                LOGIN
+                PASSWORD 'ci_runtime_password_2026'
+                NOSUPERUSER
+                NOCREATEDB
+                NOCREATEROLE
+                NOINHERIT
+                NOBYPASSRLS
+              """,
+              """
+              CREATE ROLE litoral_trace_worker_browser
+                LOGIN
+                PASSWORD 'ci_worker_password_2026'
+                NOSUPERUSER
+                NOCREATEDB
+                NOCREATEROLE
+                INHERIT
+                NOBYPASSRLS
+              """,
+              "GRANT CONNECT ON DATABASE litoral_trace_browser_staging TO litoral_trace_app",
+              "GRANT CONNECT ON DATABASE litoral_trace_browser_staging TO litoral_trace_worker_browser",
+              "GRANT USAGE ON SCHEMA public TO litoral_trace_app",
+              "GRANT USAGE ON SCHEMA public TO litoral_trace_worker_browser",
+          ]
+
+          with engine.connect() as connection:
+              for statement in statements:
+                  connection.exec_driver_sql(statement)
+
+          engine.dispose()
+          PY
+
+      - name: Migrate isolated staging database to canonical head
+        run: python -m alembic upgrade head
+
+      - name: Provision reviewed runtime and worker capabilities
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine
+
+          engine = create_engine(
+              os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+
+          with engine.connect() as connection:
+              connection.exec_driver_sql(
+                  "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO litoral_trace_app"
+              )
+              connection.exec_driver_sql(
+                  "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO litoral_trace_app"
+              )
+              connection.exec_driver_sql(
+                  "GRANT litoral_trace_worker_executor TO litoral_trace_worker_browser"
+              )
+
+          engine.dispose()
+          PY
+
+      - name: Browser acceptance - lot to durable satellite result
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            --junitxml=v1-satellite-browser-staging.xml \
+            tests/test_v1_satellite_browser_staging_e2e.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("v1-satellite-browser-staging.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          failures = int(root.attrib.get("failures", "0"))
+          errors = int(root.attrib.get("errors", "0"))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  "V1 satellite browser staging gate is fail-closed: "
+                  f"skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
