@@ -401,7 +401,7 @@
             }
             await new Promise((resolve) => window.setTimeout(resolve, 2000));
         }
-        throw new Error('El trabajo sigue en proceso. Podés volver a consultar su estado más tarde.');
+        return { pending: true, job_id: jobId };
     }
 
     async function submitSatellite(event) {
@@ -438,6 +438,10 @@
             });
             satelliteResult.textContent = `Job #${job.job_id} aceptado. Esperando procesamiento…`;
             const result = await pollSatelliteJob(job.job_id);
+            if (result?.pending) {
+                satelliteResult.textContent = `Job #${job.job_id} sigue en proceso. Podés continuar usando la plataforma y consultar su estado más tarde.`;
+                return;
+            }
             const observations = Array.isArray(result.observations) ? result.observations : [];
             const latest = observations.length ? observations[observations.length - 1] : null;
             satelliteResult.replaceChildren();
