@@ -267,8 +267,9 @@ def test_corrientes_flow_reconciles_two_origins_transformation_and_dispatch(ledg
     raw_b = env["service"].get_batch_balance(
         organization_id=env["org_id"], batch_id=_batch_id(env["SessionLocal"], "REC-B-001")
     )
+    finished_batch_id = _batch_id(env["SessionLocal"], "ASERRADO-001")
     finished = env["service"].get_batch_balance(
-        organization_id=env["org_id"], batch_id=_batch_id(env["SessionLocal"], "ASERRADO-001")
+        organization_id=env["org_id"], batch_id=finished_batch_id
     )
     assert raw_a.available == Decimal("30.000000")
     assert raw_b.available == Decimal("50.000000")
@@ -290,7 +291,7 @@ def test_corrientes_flow_reconciles_two_origins_transformation_and_dispatch(ledg
             ShipmentItem(
                 organization_id=env["org_id"],
                 shipment_id=shipment.id,
-                batch_id=_batch_id(env["SessionLocal"], "ASERRADO-001"),
+                batch_id=finished_batch_id,
                 quantity=Decimal("60.000000"),
                 unit="M3",
             )
@@ -306,7 +307,7 @@ def test_corrientes_flow_reconciles_two_origins_transformation_and_dispatch(ledg
     assert dispatch.status == "DISPATCHED"
 
     finished_after = env["service"].get_batch_balance(
-        organization_id=env["org_id"], batch_id=_batch_id(env["SessionLocal"], "ASERRADO-001")
+        organization_id=env["org_id"], batch_id=finished_batch_id
     )
     assert finished_after.produced == Decimal("65.000000")
     assert finished_after.dispatched == Decimal("60.000000")
@@ -391,14 +392,6 @@ def test_p1b_event_can_only_be_posted_once(ledger_env):
 
 def test_p1b_actor_cannot_post_for_another_tenant(ledger_env):
     env = ledger_env
-    with pytest.raises(TraceabilityAuthorizationError):
-        env["service"].get_batch_balance(
-            organization_id=env["org_id"],
-            batch_id=_batch_id(env["SessionLocal"], "REC-A-001"),
-        )
-        # get_batch_balance has no actor by design; posting is the protected write.
-
-    # Explicitly exercise the write scope check.
     event_id = _create_event(
         env["SessionLocal"],
         org_id=env["org_id"],
