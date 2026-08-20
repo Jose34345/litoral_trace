@@ -87,15 +87,18 @@ def _revoke_runtime_access(table_name: str) -> None:
 
 
 def upgrade() -> None:
-    # Required by the source-lot composite FK and reconciles ORM/schema drift.
-    op.create_unique_constraint(
-        "uq_lotes_id_organization_id", "lotes", ["id", "organization_id"]
-    )
-
+    # Revision 018 already owns uq_lotes_id_organization_id. P1A reuses that
+    # tenant-safe composite key for source-lot references instead of creating
+    # a duplicate constraint.
     op.create_table(
         "traceability_batches",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("public_id", sa.Uuid(), nullable=False, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "public_id",
+            sa.Uuid(),
+            nullable=False,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("organization_id", sa.Integer(), nullable=False),
         sa.Column("code", sa.String(length=120), nullable=False),
         sa.Column("product_name", sa.String(length=160), nullable=False),
@@ -104,48 +107,85 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=16), nullable=False, server_default="ACTIVE"),
         sa.Column("source_lote_id", sa.Integer(), nullable=True),
         sa.Column("created_by_user_id", sa.Integer(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.CheckConstraint(
             "stage IN ('RECEIPT','RAW_MATERIAL','INTERMEDIATE','FINISHED_GOOD')",
             name="ck_traceability_batches_stage",
         ),
-        sa.CheckConstraint("unit IN ('TON','KG','M3')", name="ck_traceability_batches_unit"),
-        sa.CheckConstraint("status IN ('ACTIVE','CLOSED','VOID')", name="ck_traceability_batches_status"),
+        sa.CheckConstraint(
+            "unit IN ('TON','KG','M3')",
+            name="ck_traceability_batches_unit",
+        ),
+        sa.CheckConstraint(
+            "status IN ('ACTIVE','CLOSED','VOID')",
+            name="ck_traceability_batches_status",
+        ),
         sa.ForeignKeyConstraint(
-            ["organization_id"], ["organizations.id"],
-            name="fk_traceability_batches_organization_id", ondelete="RESTRICT"
+            ["organization_id"],
+            ["organizations.id"],
+            name="fk_traceability_batches_organization_id",
+            ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["source_lote_id", "organization_id"],
             ["lotes.id", "lotes.organization_id"],
-            name="fk_traceability_batches_source_lote_tenant", ondelete="RESTRICT"
+            name="fk_traceability_batches_source_lote_tenant",
+            ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["created_by_user_id"], ["users.id"],
-            name="fk_traceability_batches_created_by_user_id", ondelete="SET NULL"
+            ["created_by_user_id"],
+            ["users.id"],
+            name="fk_traceability_batches_created_by_user_id",
+            ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_traceability_batches"),
-        sa.UniqueConstraint("id", "organization_id", name="uq_traceability_batches_id_org"),
-        sa.UniqueConstraint("public_id", name="uq_traceability_batches_public_id"),
+        sa.UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_traceability_batches_id_org",
+        ),
+        sa.UniqueConstraint(
+            "public_id",
+            name="uq_traceability_batches_public_id",
+        ),
     )
     op.create_index(
-        "uq_traceability_batches_tenant_code_ci", "traceability_batches",
-        ["organization_id", sa.text("lower(code)")], unique=True
+        "uq_traceability_batches_tenant_code_ci",
+        "traceability_batches",
+        ["organization_id", sa.text("lower(code)")],
+        unique=True,
     )
     op.create_index(
-        "ix_traceability_batches_tenant_stage_status", "traceability_batches",
-        ["organization_id", "stage", "status"]
+        "ix_traceability_batches_tenant_stage_status",
+        "traceability_batches",
+        ["organization_id", "stage", "status"],
     )
     op.create_index(
-        "ix_traceability_batches_tenant_source_lote", "traceability_batches",
-        ["organization_id", "source_lote_id"]
+        "ix_traceability_batches_tenant_source_lote",
+        "traceability_batches",
+        ["organization_id", "source_lote_id"],
     )
 
     op.create_table(
         "traceability_events",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("public_id", sa.Uuid(), nullable=False, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "public_id",
+            sa.Uuid(),
+            nullable=False,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("organization_id", sa.Integer(), nullable=False),
         sa.Column("event_code", sa.String(length=120), nullable=False),
         sa.Column("event_type", sa.String(length=32), nullable=False),
@@ -154,36 +194,64 @@ def upgrade() -> None:
         sa.Column("facility_reference", sa.String(length=160), nullable=True),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column("created_by_user_id", sa.Integer(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.CheckConstraint(
             "event_type IN ('RECEIPT','TRANSFORMATION','MIX','SPLIT','REPACK','ADJUSTMENT')",
             name="ck_traceability_events_type",
         ),
-        sa.CheckConstraint("status IN ('DRAFT','POSTED','VOID')", name="ck_traceability_events_status"),
-        sa.ForeignKeyConstraint(
-            ["organization_id"], ["organizations.id"],
-            name="fk_traceability_events_organization_id", ondelete="RESTRICT"
+        sa.CheckConstraint(
+            "status IN ('DRAFT','POSTED','VOID')",
+            name="ck_traceability_events_status",
         ),
         sa.ForeignKeyConstraint(
-            ["created_by_user_id"], ["users.id"],
-            name="fk_traceability_events_created_by_user_id", ondelete="SET NULL"
+            ["organization_id"],
+            ["organizations.id"],
+            name="fk_traceability_events_organization_id",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["created_by_user_id"],
+            ["users.id"],
+            name="fk_traceability_events_created_by_user_id",
+            ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_traceability_events"),
-        sa.UniqueConstraint("id", "organization_id", name="uq_traceability_events_id_org"),
-        sa.UniqueConstraint("public_id", name="uq_traceability_events_public_id"),
+        sa.UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_traceability_events_id_org",
+        ),
+        sa.UniqueConstraint(
+            "public_id",
+            name="uq_traceability_events_public_id",
+        ),
     )
     op.create_index(
-        "uq_traceability_events_tenant_code_ci", "traceability_events",
-        ["organization_id", sa.text("lower(event_code)")], unique=True
+        "uq_traceability_events_tenant_code_ci",
+        "traceability_events",
+        ["organization_id", sa.text("lower(event_code)")],
+        unique=True,
     )
     op.create_index(
-        "ix_traceability_events_tenant_occurred_at", "traceability_events",
-        ["organization_id", "occurred_at"]
+        "ix_traceability_events_tenant_occurred_at",
+        "traceability_events",
+        ["organization_id", "occurred_at"],
     )
     op.create_index(
-        "ix_traceability_events_tenant_type_status", "traceability_events",
-        ["organization_id", "event_type", "status"]
+        "ix_traceability_events_tenant_type_status",
+        "traceability_events",
+        ["organization_id", "event_type", "status"],
     )
 
     for table_name, direction in (
@@ -196,73 +264,131 @@ def upgrade() -> None:
             sa.Column("organization_id", sa.Integer(), nullable=False),
             sa.Column("event_id", sa.Integer(), nullable=False),
             sa.Column("batch_id", sa.Integer(), nullable=False),
-            sa.Column("quantity", sa.Numeric(precision=18, scale=6), nullable=False),
+            sa.Column(
+                "quantity",
+                sa.Numeric(precision=18, scale=6),
+                nullable=False,
+            ),
             sa.Column("unit", sa.String(length=16), nullable=False),
-            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-            sa.CheckConstraint("quantity > 0", name=f"ck_traceability_event_{direction}_quantity"),
-            sa.CheckConstraint("unit IN ('TON','KG','M3')", name=f"ck_traceability_event_{direction}_unit"),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.text("CURRENT_TIMESTAMP"),
+            ),
+            sa.CheckConstraint(
+                "quantity > 0",
+                name=f"ck_traceability_event_{direction}_quantity",
+            ),
+            sa.CheckConstraint(
+                "unit IN ('TON','KG','M3')",
+                name=f"ck_traceability_event_{direction}_unit",
+            ),
             sa.ForeignKeyConstraint(
                 ["event_id", "organization_id"],
                 ["traceability_events.id", "traceability_events.organization_id"],
-                name=f"fk_traceability_event_{direction}_event_tenant", ondelete="RESTRICT"
+                name=f"fk_traceability_event_{direction}_event_tenant",
+                ondelete="RESTRICT",
             ),
             sa.ForeignKeyConstraint(
                 ["batch_id", "organization_id"],
                 ["traceability_batches.id", "traceability_batches.organization_id"],
-                name=f"fk_traceability_event_{direction}_batch_tenant", ondelete="RESTRICT"
+                name=f"fk_traceability_event_{direction}_batch_tenant",
+                ondelete="RESTRICT",
             ),
-            sa.PrimaryKeyConstraint("id", name=f"pk_traceability_event_{direction}"),
-            sa.UniqueConstraint("event_id", "batch_id", name=f"uq_traceability_event_{direction}_event_batch"),
+            sa.PrimaryKeyConstraint(
+                "id",
+                name=f"pk_traceability_event_{direction}",
+            ),
+            sa.UniqueConstraint(
+                "event_id",
+                "batch_id",
+                name=f"uq_traceability_event_{direction}_event_batch",
+            ),
         )
         op.create_index(
-            f"ix_traceability_event_{direction}_tenant_batch", table_name,
-            ["organization_id", "batch_id"]
+            f"ix_traceability_event_{direction}_tenant_batch",
+            table_name,
+            ["organization_id", "batch_id"],
         )
 
     op.create_table(
         "shipments",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("public_id", sa.Uuid(), nullable=False, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "public_id",
+            sa.Uuid(),
+            nullable=False,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("organization_id", sa.Integer(), nullable=False),
         sa.Column("shipment_code", sa.String(length=120), nullable=False),
         sa.Column("sale_reference", sa.String(length=160), nullable=True),
         sa.Column("buyer_reference", sa.String(length=160), nullable=True),
         sa.Column("destination_country", sa.String(length=2), nullable=True),
         sa.Column("shipped_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("status", sa.String(length=16), nullable=False, server_default="DRAFT"),
+        sa.Column(
+            "status",
+            sa.String(length=16),
+            nullable=False,
+            server_default="DRAFT",
+        ),
         sa.Column("created_by_user_id", sa.Integer(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.CheckConstraint(
             "status IN ('DRAFT','CONFIRMED','DISPATCHED','CANCELLED')",
-            name="ck_shipments_status"
+            name="ck_shipments_status",
         ),
         sa.CheckConstraint(
             "destination_country IS NULL OR length(destination_country) = 2",
-            name="ck_shipments_destination_country"
+            name="ck_shipments_destination_country",
         ),
         sa.ForeignKeyConstraint(
-            ["organization_id"], ["organizations.id"],
-            name="fk_shipments_organization_id", ondelete="RESTRICT"
+            ["organization_id"],
+            ["organizations.id"],
+            name="fk_shipments_organization_id",
+            ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["created_by_user_id"], ["users.id"],
-            name="fk_shipments_created_by_user_id", ondelete="SET NULL"
+            ["created_by_user_id"],
+            ["users.id"],
+            name="fk_shipments_created_by_user_id",
+            ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_shipments"),
-        sa.UniqueConstraint("id", "organization_id", name="uq_shipments_id_org"),
+        sa.UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_shipments_id_org",
+        ),
         sa.UniqueConstraint("public_id", name="uq_shipments_public_id"),
     )
     op.create_index(
-        "uq_shipments_tenant_code_ci", "shipments",
-        ["organization_id", sa.text("lower(shipment_code)")], unique=True
+        "uq_shipments_tenant_code_ci",
+        "shipments",
+        ["organization_id", sa.text("lower(shipment_code)")],
+        unique=True,
     )
     op.create_index(
-        "ix_shipments_tenant_shipped_at", "shipments",
-        ["organization_id", "shipped_at"]
+        "ix_shipments_tenant_shipped_at",
+        "shipments",
+        ["organization_id", "shipped_at"],
     )
     op.create_index(
-        "ix_shipments_tenant_status", "shipments", ["organization_id", "status"]
+        "ix_shipments_tenant_status",
+        "shipments",
+        ["organization_id", "status"],
     )
 
     op.create_table(
@@ -271,26 +397,49 @@ def upgrade() -> None:
         sa.Column("organization_id", sa.Integer(), nullable=False),
         sa.Column("shipment_id", sa.Integer(), nullable=False),
         sa.Column("batch_id", sa.Integer(), nullable=False),
-        sa.Column("quantity", sa.Numeric(precision=18, scale=6), nullable=False),
+        sa.Column(
+            "quantity",
+            sa.Numeric(precision=18, scale=6),
+            nullable=False,
+        ),
         sa.Column("unit", sa.String(length=16), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.CheckConstraint("quantity > 0", name="ck_shipment_items_quantity"),
-        sa.CheckConstraint("unit IN ('TON','KG','M3')", name="ck_shipment_items_unit"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.CheckConstraint(
+            "quantity > 0",
+            name="ck_shipment_items_quantity",
+        ),
+        sa.CheckConstraint(
+            "unit IN ('TON','KG','M3')",
+            name="ck_shipment_items_unit",
+        ),
         sa.ForeignKeyConstraint(
             ["shipment_id", "organization_id"],
             ["shipments.id", "shipments.organization_id"],
-            name="fk_shipment_items_shipment_tenant", ondelete="RESTRICT"
+            name="fk_shipment_items_shipment_tenant",
+            ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["batch_id", "organization_id"],
             ["traceability_batches.id", "traceability_batches.organization_id"],
-            name="fk_shipment_items_batch_tenant", ondelete="RESTRICT"
+            name="fk_shipment_items_batch_tenant",
+            ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_shipment_items"),
-        sa.UniqueConstraint("shipment_id", "batch_id", name="uq_shipment_items_shipment_batch"),
+        sa.UniqueConstraint(
+            "shipment_id",
+            "batch_id",
+            name="uq_shipment_items_shipment_batch",
+        ),
     )
     op.create_index(
-        "ix_shipment_items_tenant_batch", "shipment_items", ["organization_id", "batch_id"]
+        "ix_shipment_items_tenant_batch",
+        "shipment_items",
+        ["organization_id", "batch_id"],
     )
 
     for table_name in TENANT_TABLES:
@@ -303,22 +452,48 @@ def downgrade() -> None:
         _revoke_runtime_access(table_name)
         _drop_rls(table_name)
 
-    op.drop_index("ix_shipment_items_tenant_batch", table_name="shipment_items")
+    op.drop_index(
+        "ix_shipment_items_tenant_batch",
+        table_name="shipment_items",
+    )
     op.drop_table("shipment_items")
     op.drop_index("ix_shipments_tenant_status", table_name="shipments")
     op.drop_index("ix_shipments_tenant_shipped_at", table_name="shipments")
     op.drop_index("uq_shipments_tenant_code_ci", table_name="shipments")
     op.drop_table("shipments")
-    op.drop_index("ix_traceability_event_outputs_tenant_batch", table_name="traceability_event_outputs")
+    op.drop_index(
+        "ix_traceability_event_outputs_tenant_batch",
+        table_name="traceability_event_outputs",
+    )
     op.drop_table("traceability_event_outputs")
-    op.drop_index("ix_traceability_event_inputs_tenant_batch", table_name="traceability_event_inputs")
+    op.drop_index(
+        "ix_traceability_event_inputs_tenant_batch",
+        table_name="traceability_event_inputs",
+    )
     op.drop_table("traceability_event_inputs")
-    op.drop_index("ix_traceability_events_tenant_type_status", table_name="traceability_events")
-    op.drop_index("ix_traceability_events_tenant_occurred_at", table_name="traceability_events")
-    op.drop_index("uq_traceability_events_tenant_code_ci", table_name="traceability_events")
+    op.drop_index(
+        "ix_traceability_events_tenant_type_status",
+        table_name="traceability_events",
+    )
+    op.drop_index(
+        "ix_traceability_events_tenant_occurred_at",
+        table_name="traceability_events",
+    )
+    op.drop_index(
+        "uq_traceability_events_tenant_code_ci",
+        table_name="traceability_events",
+    )
     op.drop_table("traceability_events")
-    op.drop_index("ix_traceability_batches_tenant_source_lote", table_name="traceability_batches")
-    op.drop_index("ix_traceability_batches_tenant_stage_status", table_name="traceability_batches")
-    op.drop_index("uq_traceability_batches_tenant_code_ci", table_name="traceability_batches")
+    op.drop_index(
+        "ix_traceability_batches_tenant_source_lote",
+        table_name="traceability_batches",
+    )
+    op.drop_index(
+        "ix_traceability_batches_tenant_stage_status",
+        table_name="traceability_batches",
+    )
+    op.drop_index(
+        "uq_traceability_batches_tenant_code_ci",
+        table_name="traceability_batches",
+    )
     op.drop_table("traceability_batches")
-    op.drop_constraint("uq_lotes_id_organization_id", "lotes", type_="unique")
