@@ -22,6 +22,9 @@ from litoral_trace.db.models import (
     Lote,
     SatelliteJob,
     SatelliteNdviObservation,
+    Shipment,
+    TraceabilityBatch,
+    TraceabilityEvent,
     User,
 )
 
@@ -37,6 +40,9 @@ TenantModel = type[
     | SatelliteJob
     | SatelliteNdviObservation
     | BatchImport
+    | TraceabilityBatch
+    | TraceabilityEvent
+    | Shipment
 ]
 TenantEntity = (
     Lote
@@ -47,6 +53,9 @@ TenantEntity = (
     | SatelliteJob
     | SatelliteNdviObservation
     | BatchImport
+    | TraceabilityBatch
+    | TraceabilityEvent
+    | Shipment
 )
 
 
