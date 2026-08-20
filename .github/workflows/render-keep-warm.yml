@@ -1,0 +1,36 @@
+name: Render Keep Warm
+
+on:
+  schedule:
+    # Offset from the top of the hour to reduce GitHub schedule congestion.
+    - cron: "2-57/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-keep-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    name: ping-litoraltrace-health
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Wake and verify public health endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 90 \
+            --retry 2 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            https://litoraltrace.com/health \
+            >/dev/null
