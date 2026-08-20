@@ -53,9 +53,6 @@ ZERO = Decimal("0.000000")
 LEDGER_EVENT_TYPES = frozenset(
     {"RECEIPT", "TRANSFORMATION", "MIX", "SPLIT", "REPACK", "ADJUSTMENT"}
 )
-TRANSFORMING_EVENT_TYPES = frozenset(
-    {"TRANSFORMATION", "MIX", "SPLIT", "REPACK"}
-)
 
 
 class TraceabilityLedgerError(RuntimeError):
@@ -157,6 +154,13 @@ def _normalize_organization_id(value: int | str) -> int:
             "El tenant de trazabilidad no es válido."
         )
     return organization_id
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Normalize SQLite-naive and PostgreSQL-aware timestamps for comparison."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _sum_scalar(session: Session, statement) -> Decimal:
@@ -584,7 +588,10 @@ class TraceabilityLedgerService:
                     organization_id=org_id,
                     batch_id=batch.id,
                 )
-                if produced_at is not None and event.occurred_at < produced_at:
+                if (
+                    produced_at is not None
+                    and _as_utc(event.occurred_at) < _as_utc(produced_at)
+                ):
                     raise TraceabilityValidationError(
                         "EVENT_BEFORE_INPUT_PRODUCTION",
                         "El evento no puede ocurrir antes de la producción de una de sus entradas.",
@@ -638,9 +645,8 @@ class TraceabilityLedgerService:
                 before_data={"status": "DRAFT"},
                 after_data={"status": "POSTED"},
             )
-            session.commit()
 
-            return EventPostingResult(
+            result = EventPostingResult(
                 organization_id=org_id,
                 event_id=int(event.id),
                 event_public_id=event.public_id,
@@ -649,6 +655,8 @@ class TraceabilityLedgerService:
                 status="POSTED",
                 unit_balances=summaries,
             )
+            session.commit()
+            return result
         except TraceabilityLedgerError:
             session.rollback()
             raise
@@ -721,7 +729,9 @@ class TraceabilityLedgerService:
                 organization_id=org_id,
                 batch_ids=[item.batch_id for item in items],
             )
-            dispatch_time = shipment.shipped_at or datetime.now(timezone.utc)
+            dispatch_time = _as_utc(
+                shipment.shipped_at or datetime.now(timezone.utc)
+            )
             quantities_by_unit = _line_totals(items)
 
             for item in items:
@@ -768,7 +778,7 @@ class TraceabilityLedgerService:
                         "SHIPMENT_WITHOUT_POSTED_ORIGIN",
                         "No se puede despachar material sin un evento productor contabilizado.",
                     )
-                if dispatch_time < produced_at:
+                if dispatch_time < _as_utc(produced_at):
                     raise TraceabilityValidationError(
                         "SHIPMENT_BEFORE_PRODUCTION",
                         "El despacho no puede ocurrir antes de la producción del material.",
@@ -803,9 +813,8 @@ class TraceabilityLedgerService:
                     "shipped_at": dispatch_time.isoformat(),
                 },
             )
-            session.commit()
 
-            return ShipmentDispatchResult(
+            result = ShipmentDispatchResult(
                 organization_id=org_id,
                 shipment_id=int(shipment.id),
                 shipment_public_id=shipment.public_id,
@@ -814,6 +823,8 @@ class TraceabilityLedgerService:
                 shipped_at=dispatch_time,
                 quantities_by_unit=tuple(sorted(quantities_by_unit.items())),
             )
+            session.commit()
+            return result
         except TraceabilityLedgerError:
             session.rollback()
             raise
