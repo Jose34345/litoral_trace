@@ -82,12 +82,12 @@ def test_public_shell_footer_is_encoding_safe():
 
     assert (
         "Argentina &middot; "
-        "South America &middot; EUDR"
+        "Sudamérica &middot; EUDR"
         in shell
     )
 
     assert (
-        "Argentina ? South America ? EUDR"
+        "Argentina ? Sudamérica ? EUDR"
         not in shell
     )
 
