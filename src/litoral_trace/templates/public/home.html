@@ -1,130 +1,185 @@
 {% extends "public/base_public.html" %}
 
-{% block title %}
-Litoral Trace | EUDR Compliance Intelligence
-{% endblock %}
+{% block title %}Litoral Trace | Trazabilidad y evidencia para EUDR{% endblock %}
 
 {% block content %}
-
-<section
-    class="relative overflow-hidden border-b border-slate-200 bg-slate-950 text-white"
->
-    <div
-        class="absolute inset-0 bg-gradient-to-br from-emerald-950/70 via-slate-950 to-slate-950"
-        aria-hidden="true"
-    ></div>
-
-    <div
-        class="relative mx-auto grid max-w-7xl gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[1.08fr_0.92fr] lg:px-8 lg:py-28"
-    >
+<section class="relative overflow-hidden border-b border-slate-800 bg-slate-950 text-white">
+    <div class="absolute inset-0 bg-gradient-to-br from-emerald-950/75 via-slate-950 to-slate-950" aria-hidden="true"></div>
+    <div class="relative mx-auto grid max-w-7xl gap-14 px-4 py-20 sm:px-6 lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:px-8 lg:py-28">
         <div>
-            <div
-                class="inline-flex items-center gap-2 rounded-full border border-emerald-800 bg-emerald-950/70 px-3 py-1.5 text-xs font-semibold text-emerald-300"
-            >
-                <span
-                    class="h-2 w-2 rounded-full bg-emerald-400"
-                    aria-hidden="true"
-                ></span>
-                EUDR &middot; Argentina &middot; South America
+            <div class="inline-flex items-center gap-2 rounded-full border border-emerald-800 bg-emerald-950/70 px-3 py-1.5 text-xs font-semibold text-emerald-300">
+                <span class="h-2 w-2 rounded-full bg-emerald-400" aria-hidden="true"></span>
+                EUDR · Argentina · Cadenas de suministro
             </div>
 
-            <h1
-                class="mt-6 max-w-4xl text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl"
-            >
-                Compliance Intelligence for
-                Deforestation-Free Supply Chains
+            <h1 class="mt-6 max-w-4xl text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
+                Evidencia trazable para decisiones de debida diligencia EUDR
             </h1>
 
-            <p
-                class="mt-6 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg"
-            >
-                Trace origin, review geospatial risk and organize
-                audit-ready evidence for EUDR due diligence.
+            <p class="mt-6 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
+                Conectá origen, geolocalización, revisión satelital y documentación en un mismo flujo auditable para operaciones forestales y de comercio exterior.
             </p>
 
             <div class="mt-8 flex flex-wrap gap-3">
-                <a
-                    href="#platform"
-                    class="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-3 text-sm font-bold text-slate-950 transition-colors hover:bg-emerald-400"
-                >
-                    Explore platform
-                    <i
-                        class="fa-solid fa-arrow-right"
-                        aria-hidden="true"
-                    ></i>
+                <a href="mailto:comercial@litoraltrace.com?subject=Solicitud%20de%20demo%20Litoral%20Trace" class="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 transition-colors hover:bg-emerald-300">
+                    Solicitar demostración
+                    <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
                 </a>
+                <a href="#platform" class="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition-colors hover:border-slate-500 hover:bg-slate-800">
+                    Ver plataforma
+                </a>
+            </div>
 
-                <a
-                    href="mailto:comercial@litoraltrace.com"
-                    class="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition-colors hover:border-slate-500 hover:bg-slate-800"
-                >
-                    Request demo
-                </a>
+            <div class="mt-10 grid max-w-2xl grid-cols-2 gap-x-6 gap-y-4 border-t border-slate-800 pt-6 sm:grid-cols-4">
+                {% for icon, label in [
+                    ("fa-building-shield", "Aislamiento por tenant"),
+                    ("fa-clock-rotate-left", "Trazas de auditoría"),
+                    ("fa-fingerprint", "Integridad SHA-256"),
+                    ("fa-satellite", "Análisis geoespacial")
+                ] %}
+                <div class="flex items-center gap-2 text-xs font-semibold text-slate-400">
+                    <i class="fa-solid {{ icon }} text-emerald-400" aria-hidden="true"></i>
+                    <span>{{ label }}</span>
+                </div>
+                {% endfor %}
             </div>
         </div>
 
-        <div
-            class="rounded-2xl border border-slate-700 bg-slate-900/80 p-5 shadow-2xl"
-        >
-            <div
-                class="flex items-center justify-between border-b border-slate-700 pb-4"
-            >
-                <div>
-                    <p class="text-sm font-bold text-white">
-                        Compliance Workspace
-                    </p>
-                    <p class="mt-1 text-xs text-slate-400">
-                        Origin &rarr; Risk &rarr; Evidence
-                    </p>
+        <div class="relative">
+            <div class="absolute -inset-8 rounded-full bg-emerald-500/10 blur-3xl" aria-hidden="true"></div>
+            <div class="relative overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl shadow-slate-950/60">
+                <div class="flex items-center justify-between border-b border-slate-700 px-5 py-4">
+                    <div>
+                        <p class="text-sm font-bold text-white">Workspace de cumplimiento</p>
+                        <p class="mt-1 text-xs text-slate-400">Origen → Análisis → Evidencia</p>
+                    </div>
+                    <span class="rounded-full border border-emerald-800 bg-emerald-950 px-3 py-1 text-xs font-semibold text-emerald-300">UE 2023/1115</span>
                 </div>
 
-                <span
-                    class="rounded-full border border-emerald-800 bg-emerald-950 px-3 py-1 text-xs font-semibold text-emerald-300"
-                >
-                    EU 2023/1115
-                </span>
+                <div class="grid gap-4 p-5 sm:grid-cols-[1.2fr_0.8fr]">
+                    <div class="rounded-xl border border-slate-700 bg-slate-950/80 p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Lote seleccionado</p>
+                                <p class="mt-1 text-sm font-bold text-white">AR-CH-0028</p>
+                            </div>
+                            <span class="rounded-full bg-emerald-950 px-2.5 py-1 text-[10px] font-semibold text-emerald-300">Georreferenciado</span>
+                        </div>
+
+                        <div class="relative mt-4 h-44 overflow-hidden rounded-lg border border-slate-700 bg-slate-800">
+                            <div class="absolute inset-0 opacity-40" style="background-image: linear-gradient(rgba(148,163,184,.12) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.12) 1px, transparent 1px); background-size: 24px 24px;"></div>
+                            <div class="absolute left-[22%] top-[28%] h-[44%] w-[52%] rotate-[-6deg] rounded-[38%_44%_32%_42%] border-2 border-emerald-400 bg-emerald-400/15 shadow-[0_0_35px_rgba(52,211,153,.16)]"></div>
+                            <div class="absolute bottom-3 left-3 rounded-md bg-slate-950/90 px-2 py-1 text-[10px] font-semibold text-slate-300">Origen geoespacial</div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="rounded-xl border border-slate-700 bg-slate-950/80 p-4">
+                            <p class="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Revisión satelital</p>
+                            <div class="mt-3 flex items-end justify-between">
+                                <div>
+                                    <p class="text-xs text-slate-400">NDVI medio</p>
+                                    <p class="mt-1 text-2xl font-bold text-white">0.73</p>
+                                </div>
+                                <i class="fa-solid fa-satellite text-xl text-emerald-400" aria-hidden="true"></i>
+                            </div>
+                            <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-800"><div class="h-full w-[73%] rounded-full bg-emerald-400"></div></div>
+                        </div>
+
+                        <div class="rounded-xl border border-slate-700 bg-slate-950/80 p-4">
+                            <p class="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Evidencia</p>
+                            <p class="mt-2 text-sm font-bold text-white">12 documentos</p>
+                            <p class="mt-1 text-xs text-slate-400">Integridad y vínculo con origen</p>
+                        </div>
+
+                        <div class="rounded-xl border border-slate-700 bg-slate-950/80 p-4">
+                            <div class="flex items-center gap-2 text-xs font-semibold text-emerald-300">
+                                <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                                Trazabilidad auditable
+                            </div>
+                            <p class="mt-2 text-[11px] leading-5 text-slate-500">Vista ilustrativa del flujo de producto; no representa una certificación automática.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="platform" class="scroll-mt-24 bg-white">
+    <div class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+        <div class="max-w-3xl">
+            <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Plataforma</p>
+            <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Una cadena de evidencia desde el origen hasta la revisión</h2>
+            <p class="mt-4 text-base leading-7 text-slate-600">Litoral Trace reúne datos operativos, contexto geoespacial y documentación en un workspace diseñado para revisión humana y trazabilidad B2B.</p>
+        </div>
+
+        <div class="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {% for icon, title, copy in [
+                ("fa-map-location-dot", "Origen y lotes", "Registrá lotes, productores, superficies y geometrías vinculadas a cada origen."),
+                ("fa-satellite-dish", "Inteligencia satelital", "Ejecutá revisiones geoespaciales y conservá resultados asociados al lote analizado."),
+                ("fa-box-archive", "Evidence Vault", "Organizá documentación con separación por organización, metadata e integridad verificable."),
+                ("fa-file-shield", "Controles de integridad", "Mantené hashes, estados y vínculos que permitan reconstruir el historial de la evidencia."),
+                ("fa-layer-group", "Importaciones por lote", "Procesá información operativa en batch con validaciones e idempotencia."),
+                ("fa-earth-americas", "Inteligencia regional", "Sumá contexto de las principales regiones forestales argentinas al análisis de origen.")
+            ] %}
+            <article class="group flex min-h-56 flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-300 hover:shadow-lg">
+                <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 transition-colors group-hover:bg-emerald-100" aria-hidden="true"><i class="fa-solid {{ icon }}"></i></span>
+                <h3 class="mt-5 text-base font-bold text-slate-950">{{ title }}</h3>
+                <p class="mt-2 text-sm leading-6 text-slate-600">{{ copy }}</p>
+            </article>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<section id="eudr" class="scroll-mt-24 border-y border-slate-200 bg-slate-50">
+    <div class="mx-auto grid max-w-7xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
+        <div>
+            <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Flujo EUDR</p>
+            <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950">La conclusión debe poder volver a su evidencia</h2>
+            <p class="mt-4 text-base leading-7 text-slate-600">El producto está orientado a mantener conectados los registros de origen, la revisión técnica y los documentos que respaldan el proceso de debida diligencia.</p>
+            <div class="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+                <strong>Límite claro:</strong> Litoral Trace no emite certificaciones EUDR ni garantiza por sí solo la aceptación de una operación por una autoridad o contraparte.
+            </div>
+        </div>
+
+        <ol class="space-y-4">
+            {% for number, title, copy in [
+                ("01", "Recolectar", "Registrar origen, lote, proveedor y documentación operativa."),
+                ("02", "Validar", "Controlar estructura, identidad, consistencia e integridad de la evidencia."),
+                ("03", "Analizar", "Revisar señales geoespaciales y contexto relevante para el proceso."),
+                ("04", "Evidenciar", "Conservar un historial revisable y auditable para el operador.")
+            ] %}
+            <li class="flex gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <span class="text-sm font-bold text-emerald-700">{{ number }}</span>
+                <div><h3 class="font-bold text-slate-950">{{ title }}</h3><p class="mt-1 text-sm leading-6 text-slate-600">{{ copy }}</p></div>
+            </li>
+            {% endfor %}
+        </ol>
+    </div>
+</section>
+
+<section id="security" class="scroll-mt-24 bg-slate-950 text-white">
+    <div class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+        <div class="grid gap-10 lg:grid-cols-[0.85fr_1.15fr]">
+            <div>
+                <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-400">Seguridad y auditabilidad</p>
+                <h2 class="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">Diseñado para que la evidencia sea revisable</h2>
+                <p class="mt-5 max-w-xl text-base leading-7 text-slate-400">La plataforma prioriza separación entre organizaciones, permisos explícitos y trazas que permitan explicar qué ocurrió con cada registro o documento.</p>
             </div>
 
-            <div class="mt-5 grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-4 sm:grid-cols-2">
                 {% for icon, title, copy in [
-                    (
-                        "fa-location-dot",
-                        "Origin Traceability",
-                        "Plot and organization-aware origin records."
-                    ),
-                    (
-                        "fa-satellite",
-                        "Geospatial Risk",
-                        "Satellite-backed environmental evidence."
-                    ),
-                    (
-                        "fa-box-archive",
-                        "Evidence Vault",
-                        "Tenant-isolated documentary evidence."
-                    ),
-                    (
-                        "fa-shield-halved",
-                        "Audit Controls",
-                        "RBAC, integrity checks and audit trails."
-                    )
+                    ("fa-building-shield", "Aislamiento organizacional", "Controles por tenant para separar información y operaciones entre clientes."),
+                    ("fa-user-shield", "Acceso por rol", "Permisos diferenciados para lectura, operación y administración."),
+                    ("fa-fingerprint", "Integridad documental", "SHA-256 y metadata para verificar evidencia almacenada."),
+                    ("fa-clock-rotate-left", "Historial auditable", "Eventos y cambios relevantes quedan disponibles para reconstrucción y revisión.")
                 ] %}
-                <div
-                    class="rounded-xl border border-slate-700 bg-slate-950/80 p-4"
-                >
-                    <span
-                        class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-950 text-emerald-400"
-                        aria-hidden="true"
-                    >
-                        <i class="fa-solid {{ icon }}"></i>
-                    </span>
-
-                    <p class="mt-3 text-sm font-bold text-white">
-                        {{ title }}
-                    </p>
-
-                    <p class="mt-1 text-xs leading-5 text-slate-400">
-                        {{ copy }}
-                    </p>
+                <div class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+                    <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-950 text-emerald-400" aria-hidden="true"><i class="fa-solid {{ icon }}"></i></span>
+                    <h3 class="mt-4 text-sm font-bold text-white">{{ title }}</h3>
+                    <p class="mt-2 text-xs leading-5 text-slate-400">{{ copy }}</p>
                 </div>
                 {% endfor %}
             </div>
@@ -132,514 +187,50 @@ Litoral Trace | EUDR Compliance Intelligence
     </div>
 </section>
 
-
-<section
-    id="platform"
-    class="scroll-mt-24 bg-white"
->
-    <div
-        class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"
-    >
-        <div class="max-w-3xl">
-            <p
-                class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
-            >
-                Platform
-            </p>
-
-            <h2
-                class="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl"
-            >
-                One evidence chain from origin to audit
-            </h2>
-
-            <p
-                class="mt-4 text-base leading-7 text-slate-600"
-            >
-                Litoral Trace connects origin records,
-                geospatial review, documentary integrity
-                and organization-aware compliance workflows.
-            </p>
-        </div>
-
-        <div
-            class="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3"
-        >
-            {% for icon, title, copy, target in [
-                (
-                    "fa-map-location-dot",
-                    "Origin & Plot Traceability",
-                    "Structure sourcing evidence around georeferenced origins.",
-                    "#eudr"
-                ),
-                (
-                    "fa-satellite-dish",
-                    "Satellite Intelligence",
-                    "Support environmental review with geospatial observations.",
-                    "#eudr"
-                ),
-                (
-                    "fa-box-archive",
-                    "Evidence Vault",
-                    "Keep documentary evidence isolated by organization.",
-                    "#security"
-                ),
-                (
-                    "fa-file-shield",
-                    "Integrity Controls",
-                    "Use SHA-256 verification and auditable document handling.",
-                    "#security"
-                ),
-                (
-                    "fa-layer-group",
-                    "Batch Workflows",
-                    "Connect imported operational evidence with compliance records.",
-                    "#eudr"
-                ),
-                (
-                    "fa-earth-americas",
-                    "Regional Intelligence",
-                    "Add Argentine supply-chain context to global compliance.",
-                    "#regional-intelligence"
-                )
-            ] %}
-            <a
-                href="{{ target }}"
-                class="group flex min-h-64 flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-300 hover:shadow-lg"
-            >
-                <span
-                    class="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 transition-colors group-hover:bg-emerald-100"
-                    aria-hidden="true"
-                >
-                    <i class="fa-solid {{ icon }}"></i>
-                </span>
-
-                <h3
-                    class="mt-5 text-base font-bold text-slate-950"
-                >
-                    {{ title }}
-                </h3>
-
-                <p
-                    class="mt-2 flex-1 text-sm leading-6 text-slate-600"
-                >
-                    {{ copy }}
-                </p>
-
-                <span
-                    class="mt-6 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-emerald-700"
-                >
-                    Explore capability
-
-                    <i
-                        class="fa-solid fa-arrow-right transition-transform group-hover:translate-x-1"
-                        aria-hidden="true"
-                    ></i>
-                </span>
-            </a>
-            {% endfor %}
-        </div>
-    </div>
-</section>
-
-<section
-    id="eudr"
-    class="scroll-mt-24 border-y border-slate-200 bg-slate-50"
->
-    <div
-        class="mx-auto grid max-w-7xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-2 lg:px-8"
-    >
-        <div>
-            <p
-                class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
-            >
-                EUDR workflow
-            </p>
-
-            <h2
-                class="mt-3 text-3xl font-bold tracking-tight text-slate-950"
-            >
-                Evidence should remain connected to its origin
-            </h2>
-
-            <p class="mt-4 text-base leading-7 text-slate-600">
-                The platform is designed around traceable
-                transitions between sourcing records, risk review
-                and documentary evidence.
-            </p>
-        </div>
-
-        <ol class="space-y-4">
-            {% for number, title, copy in [
-                (
-                    "01",
-                    "Collect",
-                    "Register origin and operational evidence."
-                ),
-                (
-                    "02",
-                    "Validate",
-                    "Check identity, structure and evidence integrity."
-                ),
-                (
-                    "03",
-                    "Analyze",
-                    "Review geospatial and compliance-relevant signals."
-                ),
-                (
-                    "04",
-                    "Evidence",
-                    "Preserve an audit-ready documentary trail."
-                )
-            ] %}
-            <li
-                class="flex gap-4 rounded-xl border border-slate-200 bg-white p-5"
-            >
-                <span
-                    class="text-sm font-bold text-emerald-700"
-                >
-                    {{ number }}
-                </span>
-
-                <div>
-                    <h3 class="font-bold text-slate-950">
-                        {{ title }}
-                    </h3>
-
-                    <p
-                        class="mt-1 text-sm leading-6 text-slate-600"
-                    >
-                        {{ copy }}
-                    </p>
-                </div>
-            </li>
-            {% endfor %}
-        </ol>
-    </div>
-</section>
-
-
-<section
-    id="evidence-first"
-    class="border-b border-slate-800 bg-slate-950 text-white"
->
-    <div
-        class="mx-auto grid max-w-7xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8"
-    >
-        <div>
-            <p
-                class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-400"
-            >
-                Evidence-first compliance
-            </p>
-
-            <h2
-                class="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl"
-            >
-                Built for evidence,
-                not black-box scoring
-            </h2>
-
-            <p
-                class="mt-5 max-w-xl text-base leading-7 text-slate-400"
-            >
-                Compliance conclusions should remain connected
-                to the records, documents and observations that
-                support them.
-            </p>
-        </div>
-
-        <div class="grid gap-4 sm:grid-cols-3">
-            {% for icon, title, copy in [
-                (
-                    "fa-link",
-                    "Traceable evidence",
-                    "Preserve the connection between evidence and origin."
-                ),
-                (
-                    "fa-eye",
-                    "Reviewable by design",
-                    "Keep relevant evidence accessible for human review."
-                ),
-                (
-                    "fa-clipboard-check",
-                    "Audit-ready structure",
-                    "Organize evidence into repeatable compliance workflows."
-                )
-            ] %}
-            <div
-                class="rounded-2xl border border-slate-800 bg-slate-900 p-5"
-            >
-                <span
-                    class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-950 text-emerald-400"
-                    aria-hidden="true"
-                >
-                    <i class="fa-solid {{ icon }}"></i>
-                </span>
-
-                <h3
-                    class="mt-4 text-sm font-bold text-white"
-                >
-                    {{ title }}
-                </h3>
-
-                <p
-                    class="mt-2 text-xs leading-5 text-slate-400"
-                >
-                    {{ copy }}
-                </p>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-</section>
-
-
-<section
-    id="regional-intelligence"
-    class="scroll-mt-24 bg-white"
->
-    <div
-        class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"
-    >
-        <div
-            class="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-end"
-        >
+<section id="regional-intelligence" class="scroll-mt-24 bg-white">
+    <div class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+        <div class="grid gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-end">
             <div>
-                <p
-                    class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
-                >
-                    Regional Intelligence
-                </p>
-
-                <h2
-                    class="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl"
-                >
-                    Local evidence.
-                    Regional context.
-                    Global compliance.
-                </h2>
+                <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Inteligencia regional</p>
+                <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Evidencia local. Contexto regional. Comercio global.</h2>
             </div>
-
-            <p
-                class="max-w-2xl text-base leading-7 text-slate-600 lg:justify-self-end"
-            >
-                Build compliance decisions with context from
-                Argentine forestry origins, regional supply
-                chains and local documentary evidence.
-            </p>
+            <p class="max-w-2xl text-base leading-7 text-slate-600 lg:justify-self-end">El foco inicial combina conocimiento del NEA argentino con requisitos de trazabilidad aplicables a cadenas que comercializan con la Unión Europea.</p>
         </div>
 
-        <div
-            class="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-3"
-        >
+        <div class="mt-10 grid gap-5 md:grid-cols-3">
             {% for icon, region, title, copy in [
-                (
-                    "fa-tree",
-                    "Chaco",
-                    "Native forest & origin",
-                    "Origin context for forest supply chains in the Gran Chaco."
-                ),
-                (
-                    "fa-seedling",
-                    "Corrientes",
-                    "Plantation forestry",
-                    "Regional context for plantation-based forestry supply chains."
-                ),
-                (
-                    "fa-industry",
-                    "Misiones",
-                    "Forestry & industry",
-                    "Origin and industrial context for a major forestry province."
-                ),
-                (
-                    "fa-route",
-                    "NEA",
-                    "Regional supply chain",
-                    "Cross-provincial context for Northeast Argentina."
-                ),
-                (
-                    "fa-flag",
-                    "Argentina",
-                    "National framework",
-                    "National compliance and export context for Argentine origins."
-                )
+                ("fa-tree", "Chaco", "Bosque nativo y origen", "Contexto de suministro forestal y georreferenciación para el Gran Chaco."),
+                ("fa-seedling", "Corrientes", "Forestal implantado", "Contexto regional para cadenas forestales basadas en plantaciones."),
+                ("fa-industry", "Misiones", "Forestal e industria", "Origen, transformación y contexto productivo de una provincia forestal clave.")
             ] %}
-            <article
-                data-regional-profile="{{ region|lower }}"
-                class="group relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-6 transition duration-200 hover:border-emerald-300 hover:bg-white hover:shadow-lg"
-            >
-                <div
-                    class="flex items-start justify-between gap-4"
-                >
-                    <span
-                        class="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm"
-                        aria-hidden="true"
-                    >
-                        <i class="fa-solid {{ icon }}"></i>
-                    </span>
-
-                    <span
-                        class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500"
-                    >
-                        Regional profile
-                    </span>
-                </div>
-
-                <p
-                    class="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
-                >
-                    {{ region }}
-                </p>
-
-                <h3
-                    class="mt-2 text-lg font-bold text-slate-950"
-                >
-                    {{ title }}
-                </h3>
-
-                <p
-                    class="mt-3 text-sm leading-6 text-slate-600"
-                >
-                    {{ copy }}
-                </p>
+            <article class="rounded-2xl border border-slate-200 bg-slate-50 p-6 transition hover:border-emerald-300 hover:bg-white hover:shadow-lg">
+                <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm" aria-hidden="true"><i class="fa-solid {{ icon }}"></i></span>
+                <p class="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">{{ region }}</p>
+                <h3 class="mt-2 text-lg font-bold text-slate-950">{{ title }}</h3>
+                <p class="mt-3 text-sm leading-6 text-slate-600">{{ copy }}</p>
             </article>
             {% endfor %}
+        </div>
 
-            <div
-                class="flex flex-col justify-between rounded-2xl bg-emerald-950 p-6 text-white"
-            >
-                <div>
-                    <span
-                        class="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-900 text-emerald-300"
-                        aria-hidden="true"
-                    >
-                        <i class="fa-solid fa-earth-americas"></i>
-                    </span>
-
-                    <p
-                        class="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-emerald-400"
-                    >
-                        Regional Intelligence
-                    </p>
-
-                    <h3
-                        class="mt-2 text-lg font-bold"
-                    >
-                        Evidence closer to origin
-                    </h3>
-
-                    <p
-                        class="mt-3 text-sm leading-6 text-emerald-100/80"
-                    >
-                        Detailed regional profiles are the next
-                        layer of the Litoral Trace public
-                        intelligence experience.
-                    </p>
-                </div>
-            </div>
+        <div class="mt-8">
+            <a href="/regional-intelligence" class="inline-flex items-center gap-2 text-sm font-bold text-emerald-700 hover:text-emerald-800">Explorar inteligencia regional <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
         </div>
     </div>
 </section>
 
-<section
-    id="security"
-    class="scroll-mt-24 bg-slate-950 text-white"
->
-    <div
-        class="mx-auto grid max-w-7xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-2 lg:px-8"
-    >
-        <div>
-            <p
-                class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-400"
-            >
-                Auditability
-            </p>
-
-            <h2
-                class="mt-3 text-3xl font-bold tracking-tight text-white"
-            >
-                Compliance infrastructure built around evidence
-            </h2>
-        </div>
-
-        <div class="grid gap-3 sm:grid-cols-2">
-            {% for title in [
-                "Tenant-aware access",
-                "Role-based permissions",
-                "SHA-256 document integrity",
-                "Audit trail architecture"
-            ] %}
-            <div
-                class="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-4"
-            >
-                <i
-                    class="fa-solid fa-check text-emerald-400"
-                    aria-hidden="true"
-                ></i>
-
-                <span class="text-sm font-semibold text-slate-200">
-                    {{ title }}
-                </span>
+<section class="border-t border-slate-200 bg-slate-50">
+    <div class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div class="flex flex-col gap-6 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm md:flex-row md:items-center md:justify-between lg:p-10">
+            <div class="max-w-2xl">
+                <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Próximo paso</p>
+                <h2 class="mt-3 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Probá Litoral Trace con una muestra real de tu operación</h2>
+                <p class="mt-3 text-sm leading-6 text-slate-600">Una demo o piloto controlado permite revisar lotes, geometrías, evidencia y flujo operativo antes de una adopción mayor.</p>
             </div>
-            {% endfor %}
-        </div>
-    </div>
-</section>
-
-
-<section
-    id="commercial-cta"
-    class="border-t border-emerald-900 bg-emerald-950 text-white"
->
-    <div
-        class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"
-    >
-        <div
-            class="rounded-3xl border border-emerald-800 bg-slate-950 px-6 py-12 sm:px-10 lg:flex lg:items-center lg:justify-between lg:gap-12"
-        >
-            <div class="max-w-3xl">
-                <p
-                    class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-400"
-                >
-                    Litoral Trace
-                </p>
-
-                <h2
-                    class="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl"
-                >
-                    Prepare Argentine origin evidence
-                    for EUDR due diligence
-                </h2>
-
-                <p
-                    class="mt-5 text-base leading-7 text-slate-400"
-                >
-                    Connect origin records, geospatial review
-                    and documentary evidence in one
-                    compliance workspace.
-                </p>
-            </div>
-
-            <div
-                class="mt-8 flex shrink-0 flex-wrap gap-3 lg:mt-0"
-            >
-                <a
-                    href="mailto:comercial@litoraltrace.com"
-                    class="inline-flex items-center justify-center rounded-lg bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 transition-colors hover:bg-emerald-300"
-                >
-                    Request a demo
-                </a>
-
-                <a
-                    href="/login"
-                    class="inline-flex items-center justify-center rounded-lg border border-slate-700 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-900"
-                >
-                    Corporate access
-                </a>
+            <div class="flex shrink-0 flex-wrap gap-3">
+                <a href="mailto:comercial@litoraltrace.com?subject=Solicitud%20de%20demo%20Litoral%20Trace" class="rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800">Solicitar demo</a>
+                <a href="/login" class="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Acceso clientes</a>
             </div>
         </div>
     </div>
 </section>
-
 {% endblock %}
