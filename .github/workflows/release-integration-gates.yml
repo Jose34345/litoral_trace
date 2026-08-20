@@ -284,6 +284,22 @@ jobs:
               raise SystemExit(f"Gate 12 is fail-closed: {skipped} test(s) skipped")
           PY
 
+      - name: Gate 13 - P1A traceability PostgreSQL acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            --junitxml=gate13-traceability.xml \
+            tests/test_traceability_p1a_postgres_integration.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("gate13-traceability.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          if skipped:
+              raise SystemExit(f"Gate 13 is fail-closed: {skipped} test(s) skipped")
+          PY
+
       - name: Verify canonical database head
         shell: bash
         run: |
