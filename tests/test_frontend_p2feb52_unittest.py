@@ -74,6 +74,11 @@ def test_public_navigation_runtime_supports_close_behaviors():
         in js
     )
 
+    assert '"Abrir navegación"' in js
+    assert '"Cerrar navegación"' in js
+    assert '"Open navigation"' not in js
+    assert '"Close navigation"' not in js
+
 
 def test_public_shell_footer_is_encoding_safe():
     shell = PUBLIC_BASE.read_text(
@@ -82,12 +87,12 @@ def test_public_shell_footer_is_encoding_safe():
 
     assert (
         "Argentina &middot; "
-        "South America &middot; EUDR"
+        "Sudamérica &middot; EUDR"
         in shell
     )
 
     assert (
-        "Argentina ? South America ? EUDR"
+        "Argentina ? Sudamérica ? EUDR"
         not in shell
     )
 

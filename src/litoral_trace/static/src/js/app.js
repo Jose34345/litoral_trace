@@ -467,8 +467,8 @@ function installPublicNavigation() {
       "aria-label",
       (
         open
-          ? "Close navigation"
-          : "Open navigation"
+          ? "Cerrar navegación"
+          : "Abrir navegación"
       ),
     );
 

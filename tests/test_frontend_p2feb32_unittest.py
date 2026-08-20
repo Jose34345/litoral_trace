@@ -130,6 +130,7 @@ def test_no_leaf_template_inherits_common_base_directly():
             '{% extends "base.html" %}'
         ), template_name
 
+
 def test_shell_copy_preserves_utf8_content():
     public_shell = _read(
         "public/base_public.html"
@@ -139,13 +140,13 @@ def test_shell_copy_preserves_utf8_content():
         "app/base_app.html"
     )
 
-    # B3.2 protects encoding integrity and the identity of
-    # each shell. Marketing copy belongs to later public phases.
+    # Protect encoding integrity and the identity of each shell.
+    # Public copy is Spanish-first for the initial Argentine launch.
     public_copy = (
         "Litoral Trace",
         "Compliance Intelligence",
-        "Corporate access",
-        "Request demo",
+        "Acceso clientes",
+        "Solicitar demo",
     )
 
     for expected in public_copy:

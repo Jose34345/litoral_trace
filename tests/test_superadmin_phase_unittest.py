@@ -127,12 +127,12 @@ class TestSuperAdminPhase(unittest.TestCase):
         )
 
         self.assertIn(
-            "Corporate access",
+            "Acceso clientes",
             body,
         )
 
         self.assertIn(
-            "Sign in to your workspace",
+            "Ingresá a tu workspace",
             body,
         )
 
