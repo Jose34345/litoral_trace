@@ -45,15 +45,13 @@ def test_platform_cards_only_target_live_home_sections():
 
     allowed_targets = (
         "#eudr",
+        "#evidence-first",
         "#security",
         "#regional-intelligence",
     )
 
     for target in allowed_targets:
-        assert (
-            f'"{target}"'
-            in home
-        )
+        assert f'"{target}"' in home
 
     forbidden = (
         'href="/origins"',
@@ -72,18 +70,13 @@ def test_homepage_has_evidence_first_positioning():
     )
 
     assert (
-        "Built for evidence,"
+        "Diseñado para evidencia, no para un puntaje de caja negra"
         in home
     )
 
-    assert (
-        "not black-box scoring"
-        in home
-    )
-
-    assert "Traceable evidence" in home
-    assert "Reviewable by design" in home
-    assert "Audit-ready structure" in home
+    assert "Evidencia trazable" in home
+    assert "Revisable por diseño" in home
+    assert "Estructura auditable" in home
 
 
 def test_homepage_keeps_five_regional_profiles():
@@ -123,7 +116,7 @@ def test_homepage_has_final_commercial_cta():
     )
 
     assert (
-        "Prepare Argentine origin evidence"
+        "Probá Litoral Trace con una muestra real de tu operación"
         in home
     )
 
@@ -145,9 +138,9 @@ def test_login_matches_current_public_brand():
         in login
     )
 
-    assert "Corporate workspace" in login
-    assert "Sign in to your workspace" in login
-    assert "Sign in to workspace" in login
+    assert "Workspace corporativo" in login
+    assert "Ingresá a tu workspace" in login
+    assert "Ingresar de forma segura" in login
 
     assert "🪵" not in login
     assert (
@@ -156,22 +149,21 @@ def test_login_matches_current_public_brand():
     )
 
 
-
-
 def test_login_back_link_is_encoding_safe():
     login = _read(
         "login.html"
     )
 
     assert (
-        "&larr; Back to public site"
+        "&larr; Volver al sitio público"
         in login
     )
 
     assert (
-        "? Back to public site"
+        "? Volver al sitio público"
         not in login
     )
+
 
 def test_login_preserves_security_contract():
     login = _read(
