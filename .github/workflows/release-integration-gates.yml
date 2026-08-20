@@ -303,6 +303,27 @@ jobs:
               raise SystemExit(f"Gate 13 is fail-closed: {skipped} test(s) skipped")
           PY
 
+      - name: Gate 14 - P1B ledger concurrency acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            --junitxml=gate14-ledger.xml \
+            tests/test_traceability_p1b_postgres_integration.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("gate14-ledger.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          failures = int(root.attrib.get("failures", "0"))
+          errors = int(root.attrib.get("errors", "0"))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  "Gate 14 is fail-closed: "
+                  f"skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
+
       - name: Verify canonical database head
         shell: bash
         run: |
