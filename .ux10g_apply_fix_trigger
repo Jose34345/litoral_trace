@@ -1,0 +1,1 @@
+Trigger the one-shot UX10-G post-commit/RLS patch after the regression reproduced the failure.
