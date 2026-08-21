@@ -652,8 +652,8 @@ def test_dashboard_template_no_longer_exposes_retired_batch_upload_ui():
     assert "btn-tab-batch" not in dashboard
     assert 'id="tab-batch"' not in dashboard
     assert "Plantilla Excel" in dashboard
-    assert "Mapa Geoespacial de Rodales" in dashboard
-    assert "Evaluacion Individual de Rodal" in dashboard
+    assert "Mapa geoespacial de rodales" in dashboard
+    assert "Evaluación individual del rodal" in dashboard
 
 
 def test_web_batch_import_module_no_longer_imports_api_batch():
@@ -1229,7 +1229,7 @@ def test_detail_template_hides_storage_coordinates_and_has_html_forms_only():
     assert "storage_bucket" not in detail_template
     assert "storage_backend" not in detail_template
     assert "/api/v1/batch/" not in detail_template
-    assert "Vincular evidencia" in detail_template
+    assert "Vincular documento" in detail_template
     assert "Desvincular evidencia" in detail_template
     assert 'method="post"' in detail_template
     assert "<script" not in detail_template.lower()
