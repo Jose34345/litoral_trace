@@ -1,0 +1,162 @@
+{% set graph = result %}
+<section class="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-labelledby="lineage-graph-heading" data-lineage-graph>
+    <div class="border-b border-slate-200 bg-slate-50 px-5 py-4 sm:px-6">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+                <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Lectura visual de la cadena</p>
+                <h2 id="lineage-graph-heading" class="mt-1 text-lg font-bold tracking-tight text-slate-950">Mapa de genealogía del despacho</h2>
+                <p class="mt-1 max-w-3xl text-xs leading-5 text-slate-600">Resume los orígenes atribuidos, los procesos industriales documentados, los lotes comerciales y el despacho. Cada bloque deriva de la misma genealogía usada por la vista detallada.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                <span class="rounded-full border {% if graph.complete %}border-emerald-200 bg-emerald-50 text-emerald-800{% else %}border-amber-200 bg-amber-50 text-amber-800{% endif %} px-3 py-1.5">{{ graph.state_label }}</span>
+                {% if graph.allocation_method == "PROPORTIONAL_INPUT_ALLOCATION" %}
+                <span class="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-slate-600">Atribución proporcional documentada</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="p-5 sm:p-6">
+        <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_3rem_minmax(0,1.1fr)_3rem_minmax(0,1fr)] xl:items-stretch" aria-label="Flujo de genealogía desde origen hasta despacho">
+            <section class="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4" aria-labelledby="lineage-origins-heading">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">Etapa 1</p>
+                        <h3 id="lineage-origins-heading" class="mt-1 text-sm font-bold text-slate-950">Origen atribuido</h3>
+                    </div>
+                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm" aria-hidden="true"><i class="fa-solid fa-location-dot"></i></span>
+                </div>
+                <div class="mt-4 space-y-3">
+                    {% for source in graph.sources %}
+                    <article class="rounded-xl border border-emerald-100 bg-white p-3 shadow-sm" data-lineage-source>
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="break-all text-sm font-bold text-slate-950">{{ source.identifier }}</p>
+                                <p class="mt-0.5 break-all text-[11px] text-slate-500">{{ source.producer }}</p>
+                            </div>
+                            <span class="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-800">{{ source.share }}</span>
+                        </div>
+                        <p class="mt-2 text-xs font-semibold text-emerald-800">{{ source.quantity }}</p>
+                        <p class="mt-1 text-[11px] text-slate-500">{{ source.product }}</p>
+                        <div class="mt-2 flex flex-wrap gap-2 text-[10px] font-medium text-slate-500">
+                            <span><i class="fa-solid fa-map-pin mr-1" aria-hidden="true"></i>{{ source.coordinates }}</span>
+                            {% if source.has_polygon %}<span class="text-emerald-700">Polígono disponible</span>{% endif %}
+                        </div>
+                    </article>
+                    {% else %}
+                    <div class="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-xs text-amber-900" data-lineage-gap>
+                        <p class="font-bold">Origen no resuelto</p>
+                        <p class="mt-1 leading-5">La genealogía no contiene parcelas atribuibles suficientes para cerrar esta etapa.</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <div class="hidden items-center justify-center xl:flex" aria-hidden="true">
+                <span class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm"><i class="fa-solid fa-arrow-right"></i></span>
+            </div>
+
+            <section class="rounded-2xl border border-slate-200 bg-slate-50 p-4" aria-labelledby="lineage-process-heading">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Etapa 2</p>
+                        <h3 id="lineage-process-heading" class="mt-1 text-sm font-bold text-slate-950">Cadena industrial documentada</h3>
+                    </div>
+                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 shadow-sm" aria-hidden="true"><i class="fa-solid fa-industry"></i></span>
+                </div>
+
+                <div class="mt-4 space-y-4">
+                    {% for event in graph.events %}
+                    <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" data-lineage-event>
+                        <div class="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                                <p class="text-sm font-bold text-slate-950">{{ event.type_label }}</p>
+                                <p class="mt-0.5 font-mono text-[10px] text-slate-500">{{ event.code }}</p>
+                            </div>
+                            <span class="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">{{ event.occurred_at }}</span>
+                        </div>
+
+                        <div class="mt-4 grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-center">
+                            <div>
+                                <p class="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">Entradas</p>
+                                <div class="space-y-1.5">{% for edge in event.inputs %}<div class="rounded-lg bg-slate-50 px-3 py-2"><p class="break-all text-[11px] font-semibold text-slate-800">{{ edge.batch_code }}</p><p class="mt-0.5 text-[10px] text-slate-500">{{ edge.quantity }}</p></div>{% else %}<p class="text-[11px] text-slate-400">Sin entradas registradas</p>{% endfor %}</div>
+                            </div>
+                            <span class="hidden text-slate-300 md:block" aria-hidden="true"><i class="fa-solid fa-arrow-right-long"></i></span>
+                            <div>
+                                <p class="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">Salidas</p>
+                                <div class="space-y-1.5">{% for edge in event.outputs %}<div class="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2"><p class="break-all text-[11px] font-semibold text-emerald-900">{{ edge.batch_code }}</p><p class="mt-0.5 text-[10px] text-emerald-700">{{ edge.quantity }}</p></div>{% else %}<p class="text-[11px] text-slate-400">Sin salidas registradas</p>{% endfor %}</div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 text-[11px] sm:grid-cols-4">
+                            <div><p class="text-slate-400">Entrada</p><p class="mt-0.5 font-semibold text-slate-800">{{ event.input_quantity }}</p></div>
+                            <div><p class="text-slate-400">Salida</p><p class="mt-0.5 font-semibold text-slate-800">{{ event.output_quantity }}</p></div>
+                            <div><p class="text-slate-400">Pérdida</p><p class="mt-0.5 font-semibold text-amber-700">{{ event.loss_quantity }}</p></div>
+                            <div><p class="text-slate-400">Rendimiento</p><p class="mt-0.5 font-semibold text-emerald-700">{{ event.yield }}</p></div>
+                        </div>
+                    </article>
+                    {% else %}
+                    <div class="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-xs text-slate-600">
+                        No hay procesos industriales intermedios documentados para este despacho.
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <div class="hidden items-center justify-center xl:flex" aria-hidden="true">
+                <span class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm"><i class="fa-solid fa-arrow-right"></i></span>
+            </div>
+
+            <section class="rounded-2xl border border-sky-200 bg-sky-50/60 p-4" aria-labelledby="lineage-shipment-heading">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Etapas 3–4</p>
+                        <h3 id="lineage-shipment-heading" class="mt-1 text-sm font-bold text-slate-950">Lotes, despacho y expediente</h3>
+                    </div>
+                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sky-700 shadow-sm" aria-hidden="true"><i class="fa-solid fa-truck-fast"></i></span>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                    {% for item in graph.items %}
+                    <article class="rounded-xl border {% if item.complete %}border-sky-100{% else %}border-amber-300{% endif %} bg-white p-3 shadow-sm" data-lineage-item>
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0"><p class="break-all text-sm font-bold text-slate-950">{{ item.batch_code }}</p><p class="mt-0.5 text-[11px] text-slate-500">{{ item.product }}</p></div>
+                            <span class="shrink-0 rounded-full {% if item.complete %}bg-sky-100 text-sky-800{% else %}bg-amber-100 text-amber-800{% endif %} px-2 py-1 text-[10px] font-bold">{% if item.complete %}Resuelto{% else %}Revisar{% endif %}</span>
+                        </div>
+                        <div class="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                            <div><p class="text-slate-400">Despachado</p><p class="mt-0.5 font-semibold text-slate-800">{{ item.shipped_quantity }}</p></div>
+                            <div><p class="text-slate-400">Atribuido</p><p class="mt-0.5 font-semibold text-emerald-700">{{ item.attributed_quantity }}</p></div>
+                        </div>
+                        {% if not item.complete %}<p class="mt-2 text-[11px] font-semibold text-amber-800">Sin resolver: {{ item.unresolved_quantity }}</p>{% endif %}
+                        {% if item.contributions %}<div class="mt-3 border-t border-slate-100 pt-2"><p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Composición atribuida</p>{% for contribution in item.contributions %}<div class="mt-1.5 flex items-center justify-between gap-3 text-[10px]"><span class="min-w-0 truncate text-slate-600">{{ contribution.identifier }}</span><span class="shrink-0 font-semibold text-slate-800">{{ contribution.quantity }} · {{ contribution.share }}</span></div>{% endfor %}</div>{% endif %}
+                    </article>
+                    {% endfor %}
+                </div>
+
+                <div class="mt-4 rounded-xl bg-slate-950 p-4 text-white shadow-sm" data-lineage-shipment>
+                    <div class="flex items-start justify-between gap-3"><div><p class="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-300">Despacho</p><p class="mt-1 break-all text-sm font-bold">{{ graph.shipment.code }}</p></div><i class="fa-solid fa-arrow-up-right-from-square text-slate-500" aria-hidden="true"></i></div>
+                    <p class="mt-2 text-xs text-slate-300">{% if graph.primary_total %}{{ graph.primary_total.shipped }} despachados · {{ graph.primary_total.attributed }} atribuidos{% else %}Volúmenes en múltiples unidades{% endif %}</p>
+                    {% if graph.dossier %}<a href="{{ graph.dossier.bundle_href }}" class="mt-3 inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-[11px] font-bold text-slate-950"><i class="fa-solid fa-file-shield text-emerald-700" aria-hidden="true"></i>Descargar expediente</a>{% endif %}
+                </div>
+            </section>
+        </div>
+
+        {% if not graph.complete %}
+        <section class="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4" role="status" aria-labelledby="lineage-gap-heading" data-lineage-gap>
+            <div class="flex items-start gap-3">
+                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800" aria-hidden="true"><i class="fa-solid fa-link-slash"></i></span>
+                <div>
+                    <h3 id="lineage-gap-heading" class="text-sm font-bold text-amber-950">La cadena visual contiene una brecha documentada</h3>
+                    <p class="mt-1 text-xs leading-5 text-amber-900">No se dibuja una conexión cerrada cuando existe volumen sin resolver o falta evidencia. Revisá las incidencias antes de usar el expediente como genealogía cerrada.</p>
+                    {% if graph.primary_total %}<p class="mt-2 text-xs font-bold text-amber-950">Volumen sin resolver: {{ graph.primary_total.unresolved }}</p>{% endif %}
+                    {% if graph.issues %}<ul class="mt-2 space-y-1 text-[11px] text-amber-900">{% for issue in graph.issues %}<li><span class="font-mono font-bold">{{ issue.code }}</span> · {{ issue.message }}</li>{% endfor %}</ul>{% endif %}
+                </div>
+            </div>
+        </section>
+        {% endif %}
+
+        {% if graph.allocation_method == "PROPORTIONAL_INPUT_ALLOCATION" %}
+        <p class="mt-4 text-[11px] leading-5 text-slate-500"><strong class="text-slate-700">Cómo leer las participaciones:</strong> la atribución proporcional distribuye el volumen despachado según las entradas homogéneas documentadas. Es una convención contable de trazabilidad y no identifica físicamente fibras individuales después de una mezcla.</p>
+        {% endif %}
+    </div>
+</section>
