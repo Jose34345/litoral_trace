@@ -13,17 +13,38 @@ def test_p1c_origin_endpoint_is_registered_once() -> None:
     """Validate registration in a new Python process like a fresh ASGI worker."""
     root_dir = Path(__file__).resolve().parents[1]
     probe = f"""
+import fastapi
 import main
+from litoral_trace.api.traceability import router as traceability_router
 expected = {EXPECTED_PATH!r}
 paths = [
     route.path
     for route in main.app.routes
     if getattr(route, 'path', None) == expected
 ]
-assert paths == [expected], [
-    getattr(route, 'path', None)
-    for route in main.app.routes
-]
+if paths != [expected]:
+    diagnostics = {{
+        'fastapi_version': fastapi.__version__,
+        'router_type': f'{{type(traceability_router).__module__}}.{{type(traceability_router).__name__}}',
+        'router_routes': [
+            {{
+                'type': f'{{type(route).__module__}}.{{type(route).__name__}}',
+                'path': getattr(route, 'path', None),
+                'repr': repr(route),
+            }}
+            for route in traceability_router.routes
+        ],
+        'main_router_is_same': main.traceability_router is traceability_router,
+        'app_routes': [
+            {{
+                'type': f'{{type(route).__module__}}.{{type(route).__name__}}',
+                'path': getattr(route, 'path', None),
+                'repr': repr(route),
+            }}
+            for route in main.app.routes
+        ],
+    }}
+    raise AssertionError(diagnostics)
 """
     completed = subprocess.run(
         [sys.executable, "-c", probe],
