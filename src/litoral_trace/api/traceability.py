@@ -1,7 +1,8 @@
 """Industrial traceability API and read-only browser composition.
 
-Operational UX10-D writes belong to ``litoral_trace.web.router`` so this API
-module never imports the write workspace back through the HTML runtime layer.
+Operational UX10-D writes are registered by the application from the web
+layer, so this API module never imports the write workspace back through the
+HTML runtime layer.
 """
 from __future__ import annotations
 
@@ -88,9 +89,9 @@ async def obtener_origen_despacho_endpoint(
 
 # ``main.py`` includes one traceability-domain router for the origin API,
 # P1E dossier downloads and the P1D read-only traceability workspace. UX10-D
-# operational HTML routes are registered through ``litoral_trace.web.router``
-# instead, avoiding an API<->web import cycle while P1C remains the lineage
-# source of truth and P1B remains the only stock ledger.
+# operational HTML routes stay outside this API composition and are registered
+# from the application's web layer. P1C remains the lineage source of truth and
+# P1B remains the only stock ledger.
 router = APIRouter()
 router.include_router(api_router)
 router.include_router(dossier_router)
