@@ -1,0 +1,57 @@
+name: UX10B Dashboard Compose Temp
+
+on:
+  push:
+    branches:
+      - ux10-b-operational-dashboard
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ux10-b-operational-dashboard
+          fetch-depth: 0
+
+      - name: Promote traceability cockpit above origin evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/litoral_trace/templates/dashboard.html')
+          text = path.read_text(encoding='utf-8')
+          start_marker = '<div class="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">'
+          next_marker = '<div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">'
+
+          start = text.find(start_marker)
+          next_start = text.find(next_marker)
+          if start < 0 or next_start < 0 or next_start <= start:
+              raise SystemExit('Dashboard hero markers not found or ambiguous')
+
+          replacement = '{% include "app/_dashboard_traceability_cockpit.html" %}\n\n'
+          updated = text[:start] + replacement + text[next_start:]
+
+          if 'Origen forestal, geolocalización y evidencia' in updated:
+              raise SystemExit('Legacy dashboard hero survived composition')
+          if '{% include "app/_dashboard_traceability_cockpit.html" %}' not in updated:
+              raise SystemExit('Traceability cockpit include missing')
+
+          path.write_text(updated, encoding='utf-8')
+          PY
+
+      - name: Commit dashboard composition
+        shell: bash
+        run: |
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/litoral_trace/templates/dashboard.html
+          git commit -m 'feat(ux10b): promote traceability as dashboard primary workflow'
+          git push origin HEAD:ux10-b-operational-dashboard
