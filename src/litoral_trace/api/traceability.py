@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from litoral_trace.api.auth import UserTenantContext
+from litoral_trace.api.traceability_dossier import router as dossier_router
 from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.db.tenant import get_tenant_scoped_db_session
 from litoral_trace.services.traceability_lineage import (
@@ -81,10 +82,11 @@ async def obtener_origen_despacho_endpoint(
         session.close()
 
 
-# ``main.py`` includes one traceability-domain router. Keeping both the API
-# contract and the P1D browser workspace beneath this composition avoids a
-# second registration path while leaving the P1C service as the single source
-# of lineage truth.
+# ``main.py`` includes one traceability-domain router. Keeping the origin API,
+# P1E dossier downloads, and the P1D browser workspace beneath this composition
+# avoids duplicate registration paths while leaving P1C as the single source of
+# lineage truth.
 router = APIRouter()
 router.include_router(api_router)
+router.include_router(dossier_router)
 router.include_router(traceability_web_router)
