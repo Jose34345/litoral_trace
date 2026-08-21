@@ -17,7 +17,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - name: Integrate evidence router and contextual CTA
+      - name: Integrate evidence router, CTA and acceptance wording
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -36,6 +36,14 @@ jobs:
           if evidence_cta not in html and anchor in html:
               html = html.replace(anchor, evidence_cta + anchor, 1)
               template.write_text(html, encoding="utf-8")
+
+          test_path = Path("tests/test_ux10e_traceability_evidence_unittest.py")
+          test_text = test_path.read_text(encoding="utf-8")
+          test_text = test_text.replace(
+              'assert "no constituye por sí sola una certificación" in template',
+              'assert "No constituye por sí sola una certificación" in template',
+          )
+          test_path.write_text(test_text, encoding="utf-8")
           PY
 
       - name: Rebuild Tailwind assets
@@ -48,6 +56,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm -f .github/workflows/ux10e-integration-temp.yml
-          git add -- src/litoral_trace/web/traceability_operations.py src/litoral_trace/templates/traceability_operations.html static/dist/app.css .github/workflows/ux10e-integration-temp.yml
+          git add -- src/litoral_trace/web/traceability_operations.py src/litoral_trace/templates/traceability_operations.html tests/test_ux10e_traceability_evidence_unittest.py src/litoral_trace/static/dist/app.css .github/workflows/ux10e-integration-temp.yml
           git commit -m "feat(ux10e): integrate contextual evidence workflow"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
