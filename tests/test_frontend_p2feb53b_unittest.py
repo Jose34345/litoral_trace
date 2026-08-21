@@ -214,10 +214,8 @@ def test_no_profile_asserts_transaction_specific_risk():
             .lower()
         )
 
-        assert (
-            "does not constitute"
-            in rationale
-        )
+        assert "no determina por sí sola" in rationale
+        assert "debida diligencia" in rationale
 
 
 def test_regional_provenance_is_explicit():
@@ -246,16 +244,9 @@ def test_regional_index_exposes_canonical_metadata():
         'data-region-id="{{ profile.region_id }}"'
         in template
     )
-
-    assert (
-        "{{ profile.risk_context.label }}"
-        in template
-    )
-
-    assert (
-        "{{ profile.provenance.label }}"
-        in template
-    )
+    assert "{{ profile.headline }}" in template
+    assert "{{ profile.summary }}" in template
+    assert "Contexto regional de origen" in template
 
 
 def test_regional_detail_uses_domain_driven_evidence():
