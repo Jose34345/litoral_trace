@@ -1,107 +1,33 @@
 {% extends "public/base_public.html" %}
 
-{% block title %}
-{{ profile.name }} Regional Intelligence | Litoral Trace
-{% endblock %}
+{% block title %}{{ profile.name }} · Contexto regional de origen | Litoral Trace{% endblock %}
 
 {% block content %}
-
-<section
-    class="border-b border-slate-800 bg-slate-950 text-white"
->
-    <div
-        class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-24"
-    >
-        <nav
-            aria-label="Breadcrumb"
-            class="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-400"
-        >
-            <a
-                href="/"
-                class="hover:text-white"
-            >
-                Litoral Trace
-            </a>
-
-            <span aria-hidden="true">
-                /
-            </span>
-
-            <a
-                href="/regional-intelligence"
-                class="hover:text-white"
-            >
-                Regional Intelligence
-            </a>
-
-            <span aria-hidden="true">
-                /
-            </span>
-
-            <span class="text-emerald-400">
-                {{ profile.name }}
-            </span>
+<section class="relative overflow-hidden border-b border-slate-800 bg-slate-950 text-white">
+    <div class="absolute inset-0 bg-gradient-to-br from-emerald-950/80 via-slate-950 to-slate-950" aria-hidden="true"></div>
+    <div class="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+        <nav aria-label="Ruta de navegación" class="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-400">
+            <a href="/" class="hover:text-white">Litoral Trace</a>
+            <span aria-hidden="true">/</span>
+            <a href="/regional-intelligence" class="hover:text-white">Contexto regional</a>
+            <span aria-hidden="true">/</span>
+            <span class="text-emerald-400">{{ profile.name }}</span>
         </nav>
 
-        <div
-            class="mt-10 grid gap-10 lg:grid-cols-[1fr_0.72fr] lg:items-end"
-        >
+        <div class="mt-10 grid gap-10 lg:grid-cols-[1fr_0.72fr] lg:items-end">
             <div>
-                <div
-                    class="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-900 text-emerald-300"
-                    aria-hidden="true"
-                >
-                    <i
-                        class="fa-solid {{ profile.icon }}"
-                    ></i>
-                </div>
-
-                <p
-                    class="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-emerald-400"
-                >
-                    {{ profile.geographic_scope }}
-                </p>
-
-                <h1
-                    class="mt-3 text-4xl font-bold tracking-tight text-white sm:text-5xl"
-                >
-                    {{ profile.name }}
-                </h1>
-
-                <p
-                    class="mt-3 text-2xl font-bold text-slate-200"
-                >
-                    {{ profile.headline }}
-                </p>
-
-                <p
-                    class="mt-6 max-w-3xl text-base leading-7 text-slate-300"
-                >
-                    {{ profile.summary }}
-                </p>
+                <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-900 text-emerald-300" aria-hidden="true"><i class="fa-solid {{ profile.icon }}"></i></span>
+                <p class="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-emerald-400">{{ profile.geographic_scope }}</p>
+                <h1 class="mt-3 text-4xl font-bold tracking-tight text-white sm:text-5xl">{{ profile.name }}</h1>
+                <p class="mt-3 text-2xl font-bold text-slate-200">{{ profile.headline }}</p>
+                <p class="mt-6 max-w-3xl text-base leading-7 text-slate-300">{{ profile.summary }}</p>
             </div>
 
-            <div
-                class="rounded-2xl border border-slate-800 bg-slate-900 p-6"
-            >
-                <p
-                    class="text-xs font-bold uppercase tracking-[0.16em] text-slate-400"
-                >
-                    Intelligence focus
-                </p>
-
+            <div class="rounded-3xl border border-slate-800 bg-slate-900/85 p-6 shadow-xl shadow-slate-950/30">
+                <p class="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Foco del perfil</p>
                 <ul class="mt-5 space-y-3">
                     {% for focus in profile.focus_areas %}
-                    <li
-                        class="flex items-center gap-3 text-sm font-semibold text-slate-200"
-                    >
-                        <i
-                            class="fa-solid fa-check text-emerald-400"
-                            aria-hidden="true"
-                        ></i>
-
-                        {{ focus }}
-                    </li>
+                    <li class="flex items-center gap-3 text-sm font-semibold text-slate-200"><i class="fa-solid fa-check text-emerald-400" aria-hidden="true"></i>{{ focus }}</li>
                     {% endfor %}
                 </ul>
             </div>
@@ -109,479 +35,112 @@
     </div>
 </section>
 
-
 <section class="bg-slate-50">
-    <div
-        class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20"
-    >
-        <div
-            class="grid gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)] lg:items-start"
-        >
-            <div
-                class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm"
-            >
-                <div
-                    class="flex flex-col gap-3 border-b border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
-                >
+    <div class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+        <div class="grid gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)] lg:items-start">
+            <div class="overflow-hidden rounded-3xl border border-slate-200 bg-slate-100 shadow-lg shadow-slate-200/50">
+                <div class="flex flex-col gap-3 border-b border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <p
-                            class="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700"
-                        >
-                            Territorial context
-                        </p>
-
-                        <p
-                            class="mt-1 text-base font-bold text-slate-950"
-                        >
-                            {{ profile.name }}
-                        </p>
+                        <p class="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">Contexto territorial</p>
+                        <p class="mt-1 text-base font-bold text-slate-950">{{ profile.name }}</p>
                     </div>
-
-                    <span
-                        class="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600"
-                    >
-                        <i
-                            class="fa-solid fa-map-location-dot text-emerald-700"
-                            aria-hidden="true"
-                        ></i>
-
-                        Geography, not risk
-                    </span>
+                    <span class="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800"><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i>Geografía, no riesgo</span>
                 </div>
 
                 <div class="relative">
-                    <div
-                        data-regional-map
-                        data-initial-region-id="{{ regional_map_scope.region_id }}"
-                        data-region-id="{{ regional_map_scope.region_id }}"
-                        data-region-slug="{{ regional_map_scope.slug }}"
-                        data-region-name="{{ regional_map_scope.name }}"
-                        data-geographic-scope="{{ regional_map_scope.geographic_scope }}"
-                        data-scope-kind="{{ regional_map_scope.scope_kind }}"
-                        data-georef-names="{{ regional_map_scope.georef_names | join('|') }}"
-                        data-all-provinces="{{ 'true' if regional_map_scope.includes_all_provinces else 'false' }}"
-                        data-geojson-url="{{ regional_map_dataset.static_path }}"
-                        data-feature-name-property="{{ regional_map_dataset.feature_name_property }}"
-                        class="h-80 w-full bg-slate-100 sm:h-96 lg:h-[28rem]"
-                        role="region"
-                        aria-label="Territorial context map for {{ profile.name }}"
-                    ></div>
-
-                    <div
-                        data-regional-map-status
-                        hidden
-                        class="absolute inset-x-4 top-4 z-[400] rounded-xl border border-slate-200 bg-white/95 px-4 py-3 text-sm font-medium text-slate-700 shadow-sm"
-                        role="status"
-                        aria-live="polite"
-                        aria-atomic="true"
-                    >
-                        Loading territorial reference…
-                    </div>
-
-                    <noscript>
-                        <div
-                            class="absolute inset-x-4 top-4 z-[400] rounded-xl border border-slate-200 bg-white/95 px-4 py-3 text-sm font-medium leading-6 text-slate-700 shadow-sm"
-                        >
-                            Interactive territorial visualization requires JavaScript.
-                            Regional profiles and evidence context remain available.
-                        </div>
-                    </noscript>
+                    <div data-regional-map data-initial-region-id="{{ regional_map_scope.region_id }}" data-region-id="{{ regional_map_scope.region_id }}" data-region-slug="{{ regional_map_scope.slug }}" data-region-name="{{ regional_map_scope.name }}" data-geographic-scope="{{ regional_map_scope.geographic_scope }}" data-scope-kind="{{ regional_map_scope.scope_kind }}" data-georef-names="{{ regional_map_scope.georef_names | join('|') }}" data-all-provinces="{{ 'true' if regional_map_scope.includes_all_provinces else 'false' }}" data-geojson-url="{{ regional_map_dataset.static_path }}" data-feature-name-property="{{ regional_map_dataset.feature_name_property }}" class="h-80 w-full bg-slate-100 sm:h-96 lg:h-[28rem]" role="region" aria-label="Mapa territorial de {{ profile.name }}"></div>
+                    <div data-regional-map-status hidden class="absolute inset-x-4 top-4 z-[400] rounded-xl border border-slate-200 bg-white/95 px-4 py-3 text-sm font-medium text-slate-700 shadow-sm" role="status" aria-live="polite" aria-atomic="true">Cargando referencia territorial…</div>
+                    <noscript><div class="absolute inset-x-4 top-4 z-[400] rounded-xl border border-slate-200 bg-white/95 px-4 py-3 text-sm font-medium leading-6 text-slate-700 shadow-sm">La visualización interactiva requiere JavaScript. El contenido del perfil continúa disponible.</div></noscript>
                 </div>
 
-                <div
-                    class="grid gap-3 border-t border-slate-200 bg-white px-5 py-4 text-xs text-slate-500 sm:grid-cols-2"
-                >
-                    <p>
-                        Source:
-                        <strong class="font-semibold text-slate-700">
-                            {{ regional_map_dataset.source_name }}
-                        </strong>
-                    </p>
-
-                    <p class="sm:text-right">
-                        Snapshot:
-                        <strong class="font-semibold text-slate-700">
-                            {{ regional_map_dataset.snapshot_date }}
-                        </strong>
-                    </p>
+                <div class="grid gap-3 border-t border-slate-200 bg-white px-5 py-4 text-xs text-slate-500 sm:grid-cols-2">
+                    <p>Fuente: <strong class="font-semibold text-slate-700">{{ regional_map_dataset.source_name }}</strong></p>
+                    <p class="sm:text-right">Corte de datos: <strong class="font-semibold text-slate-700">{{ regional_map_dataset.snapshot_date }}</strong></p>
                 </div>
             </div>
 
-            <aside
-                class="rounded-2xl border border-slate-200 bg-white p-6"
-            >
-                <p
-                    class="text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
-                >
-                    Map scope
-                </p>
-
-                <p
-                    class="mt-3 text-2xl font-bold tracking-tight text-slate-950"
-                >
-                    {{ regional_map_scope.name }}
-                </p>
-
-                <p
-                    class="mt-1 text-sm font-semibold text-slate-500"
-                >
-                    {{ regional_map_scope.geographic_scope }}
-                </p>
-
-                <div
-                    class="mt-6 border-t border-slate-200 pt-5"
-                >
-                    <p
-                        class="text-xs font-bold uppercase tracking-[0.14em] text-slate-500"
-                    >
-                        Visualization boundary
-                    </p>
-
-                    <p
-                        class="mt-3 text-sm leading-6 text-slate-600"
-                    >
-                        Highlighting indicates only the
-                        geographic scope represented by
-                        this Regional Intelligence profile.
-                    </p>
-
-                    <p
-                        class="mt-3 text-sm leading-6 text-slate-600"
-                    >
-                        It does not represent supplier,
-                        plot, shipment, deforestation,
-                        DDS, or compliance risk.
-                    </p>
+            <aside class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <p class="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Ámbito cartográfico</p>
+                <p class="mt-3 text-2xl font-bold tracking-tight text-slate-950">{{ regional_map_scope.name }}</p>
+                <p class="mt-1 text-sm font-semibold text-slate-500">{{ regional_map_scope.geographic_scope }}</p>
+                <div class="mt-6 border-t border-slate-200 pt-5">
+                    <p class="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Cómo interpretar el mapa</p>
+                    <p class="mt-3 text-sm leading-6 text-slate-600">El resaltado identifica únicamente el territorio representado por este perfil.</p>
+                    <p class="mt-3 text-sm leading-6 text-slate-600">No representa riesgo del proveedor, deforestación, estado de un despacho, DDS ni cumplimiento regulatorio.</p>
                 </div>
-
-                <a
-                    href="/regional-intelligence"
-                    class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-emerald-700 hover:text-emerald-800"
-                >
-                    Explore all regions
-
-                    <i
-                        class="fa-solid fa-arrow-right"
-                        aria-hidden="true"
-                    ></i>
-                </a>
+                <a href="/regional-intelligence" class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-emerald-700 hover:text-emerald-800">Ver todas las regiones <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
             </aside>
         </div>
     </div>
 </section>
 
-
 <section class="bg-white">
-    <div
-        class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"
-    >
-        <div class="max-w-3xl">
-            <p
-                class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
-            >
-                Compliance context
-            </p>
-
-            <h2
-                class="mt-3 text-3xl font-bold tracking-tight text-slate-950"
-            >
-                Canonical regional identity
-            </h2>
-
-            <p
-                class="mt-4 text-base leading-7 text-slate-600"
-            >
-                The regional profile provides reusable
-                origin and evidence context without asserting
-                a transaction-specific compliance decision.
-            </p>
-        </div>
-
-        <div
-            class="mt-10 grid gap-5 md:grid-cols-2"
-        >
-            <article
-                class="rounded-2xl border border-slate-200 bg-slate-50 p-6"
-            >
-                <p
-                    class="text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
-                >
-                    Region identity
-                </p>
-
-                <p
-                    class="mt-3 text-xl font-bold text-slate-950"
-                >
-                    {{ profile.region_id }}
-                </p>
-
-                <p
-                    class="mt-2 text-sm leading-6 text-slate-600"
-                >
-                    Stable internal identity independent
-                    from the public URL slug.
-                </p>
-            </article>
-
-            <article
-                class="rounded-2xl border border-slate-200 bg-slate-50 p-6"
-            >
-                <p
-                    class="text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
-                >
-                    Jurisdiction
-                </p>
-
-                <p
-                    class="mt-3 text-xl font-bold text-slate-950"
-                >
-                    {{ profile.jurisdiction_code }}
-                </p>
-
-                <p
-                    class="mt-2 text-sm leading-6 text-slate-600"
-                >
-                    Country:
-                    {{ profile.country_code }}
-                </p>
-            </article>
-
-            <article
-                class="rounded-2xl border border-slate-200 bg-slate-50 p-6"
-            >
-                <p
-                    class="text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
-                >
-                    Assessment status
-                </p>
-
-                <p
-                    class="mt-3 text-xl font-bold text-slate-950"
-                    data-assessment-status="{{ profile.risk_context.status }}"
-                >
-                    {{ profile.risk_context.label }}
-                </p>
-
-                <p
-                    class="mt-2 text-sm leading-6 text-slate-600"
-                >
-                    Regional context remains separate
-                    from operational compliance decisions.
-                </p>
-            </article>
-
-            <article
-                class="rounded-2xl border border-slate-200 bg-slate-50 p-6"
-            >
-                <p
-                    class="text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
-                >
-                    Evidence status
-                </p>
-
-                <p
-                    class="mt-3 text-xl font-bold text-slate-950"
-                    data-provenance-status="{{ profile.provenance.status }}"
-                >
-                    {{ profile.provenance.label }}
-                </p>
-
-                <p
-                    class="mt-2 text-sm leading-6 text-slate-600"
-                >
-                    {{ profile.provenance.freshness_label }}
-                </p>
-            </article>
+    <div class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+        <div class="grid gap-8 lg:grid-cols-[0.75fr_1.25fr]">
+            <div>
+                <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Identidad territorial</p>
+                <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950">Datos canónicos del perfil</h2>
+                <p class="mt-4 text-sm leading-6 text-slate-600">Estos identificadores sirven para mantener estable el vínculo entre territorio, evidencia y futuras integraciones.</p>
+            </div>
+            <div class="grid gap-4 sm:grid-cols-2">
+                <article class="rounded-2xl border border-slate-200 bg-slate-50 p-5"><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Identidad regional</p><p class="mt-3 text-xl font-bold text-slate-950">{{ profile.region_id }}</p><p class="mt-2 text-sm text-slate-600">Identificador interno estable.</p></article>
+                <article class="rounded-2xl border border-slate-200 bg-slate-50 p-5"><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Jurisdicción</p><p class="mt-3 text-xl font-bold text-slate-950">{{ profile.jurisdiction_code }}</p><p class="mt-2 text-sm text-slate-600">País: {{ profile.country_code }}</p></article>
+                <article class="rounded-2xl border border-amber-200 bg-amber-50 p-5"><p class="text-xs font-bold uppercase tracking-wide text-amber-700">Evaluación regional</p><p class="mt-3 text-base font-bold text-amber-950" data-assessment-status="{{ profile.risk_context.status }}">{{ profile.risk_context.label }}</p><p class="mt-2 text-sm leading-6 text-amber-900">La evaluación operativa se realiza sobre evidencia específica de la operación.</p></article>
+                <article class="rounded-2xl border border-slate-200 bg-slate-50 p-5"><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Estado de fuentes</p><p class="mt-3 text-base font-bold text-slate-950" data-provenance-status="{{ profile.provenance.status }}">{{ profile.provenance.label }}</p><p class="mt-2 text-sm leading-6 text-slate-600">{{ profile.provenance.freshness_label }}</p></article>
+            </div>
         </div>
     </div>
 </section>
 
-
-<section
-    class="border-y border-slate-200 bg-slate-50"
->
-    <div
-        class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"
-    >
+<section class="border-y border-slate-200 bg-slate-50">
+    <div class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
         <div class="max-w-3xl">
-            <p
-                class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
-            >
-                Evidence domains
-            </p>
-
-            <h2
-                class="mt-3 text-3xl font-bold tracking-tight text-slate-950"
-            >
-                Structured for reuse across compliance workflows
-            </h2>
-
-            <p
-                class="mt-4 text-base leading-7 text-slate-600"
-            >
-                Evidence domains are defined by the
-                Litoral Trace compliance model rather than
-                hardcoded into this presentation layer.
-            </p>
+            <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Dominios de evidencia</p>
+            <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950">Qué información puede acompañar este origen</h2>
+            <p class="mt-4 text-base leading-7 text-slate-600">Los mismos dominios se reutilizan en todas las regiones para mantener una arquitectura de evidencia consistente y comprensible.</p>
         </div>
 
-        <div
-            class="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3"
-        >
+        <div class="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {% for domain in profile.evidence_domains %}
-            <article
-                class="rounded-2xl border border-slate-200 bg-white p-6"
-                data-evidence-domain="{{ domain.key }}"
-            >
-                <span
-                    class="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-emerald-700 shadow-sm"
-                    aria-hidden="true"
-                >
-                    <i
-                        class="fa-solid {{ domain.icon }}"
-                    ></i>
-                </span>
-
-                <h3
-                    class="mt-5 text-base font-bold text-slate-950"
-                >
-                    {{ domain.title }}
-                </h3>
-
-                <p
-                    class="mt-2 text-sm leading-6 text-slate-600"
-                >
-                    {{ domain.description }}
-                </p>
+            <article class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm" data-evidence-domain="{{ domain.key }}">
+                <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700" aria-hidden="true"><i class="fa-solid {{ domain.icon }}"></i></span>
+                <h3 class="mt-5 text-base font-bold text-slate-950">{{ domain.title }}</h3>
+                <p class="mt-2 text-sm leading-6 text-slate-600">{{ domain.description }}</p>
             </article>
             {% endfor %}
         </div>
     </div>
 </section>
 
-
 <section class="bg-white">
-    <div
-        class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"
-    >
-        <div
-            class="grid gap-8 lg:grid-cols-[0.75fr_1.25fr]"
-        >
-            <div>
-                <p
-                    class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
-                >
-                    Assessment boundary
-                </p>
-
-                <h2
-                    class="mt-3 text-2xl font-bold tracking-tight text-slate-950"
-                >
-                    Context is not a compliance conclusion
-                </h2>
-            </div>
-
-            <div>
-                <p
-                    class="text-sm leading-7 text-slate-600"
-                >
-                    {{ profile.risk_context.rationale }}
-                </p>
-            </div>
-        </div>
+    <div class="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[0.75fr_1.25fr] lg:px-8">
+        <div><p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Límite de interpretación</p><h2 class="mt-3 text-2xl font-bold tracking-tight text-slate-950">El contexto regional no es una conclusión de cumplimiento.</h2></div>
+        <p class="text-sm leading-7 text-slate-600">{{ profile.risk_context.rationale }}</p>
     </div>
 </section>
 
-
-<section
-    class="border-y border-slate-200 bg-slate-50"
->
-    <div
-        class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"
-    >
-        <div
-            class="grid gap-8 lg:grid-cols-[0.75fr_1.25fr]"
-        >
-            <div>
-                <p
-                    class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700"
-                >
-                    Data & methodology
-                </p>
-
-                <h2
-                    class="mt-3 text-2xl font-bold tracking-tight text-slate-950"
-                >
-                    Source-backed intelligence by design
-                </h2>
-            </div>
-
-            <div>
-                <p
-                    class="text-sm leading-7 text-slate-600"
-                >
-                    {{ profile.provenance.source_scope }}
-                </p>
-
-                <p
-                    class="mt-4 text-sm leading-7 text-slate-600"
-                >
-                    Data status:
-                    <strong>
-                        {{ profile.provenance.freshness_label }}
-                    </strong>
-                </p>
-            </div>
-        </div>
+<section class="border-y border-slate-200 bg-slate-50">
+    <div class="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[0.75fr_1.25fr] lg:px-8">
+        <div><p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Datos y metodología</p><h2 class="mt-3 text-2xl font-bold tracking-tight text-slate-950">Fuentes explícitas y alcance verificable</h2></div>
+        <div><p class="text-sm leading-7 text-slate-600">{{ profile.provenance.source_scope }}</p><p class="mt-4 text-sm leading-7 text-slate-600">Estado de datos: <strong>{{ profile.provenance.freshness_label }}</strong></p></div>
     </div>
 </section>
 
-
-<section
-    class="bg-emerald-950 text-white"
->
-    <div
-        class="mx-auto flex max-w-7xl flex-col gap-7 px-4 py-16 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8"
-    >
+<section class="bg-emerald-950 text-white">
+    <div class="mx-auto flex max-w-7xl flex-col gap-7 px-4 py-16 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
         <div class="max-w-3xl">
-            <p
-                class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-400"
-            >
-                {{ profile.name }} &middot; Litoral Trace
-            </p>
-
-            <h2
-                class="mt-3 text-3xl font-bold tracking-tight text-white"
-            >
-                Connect this origin to a
-                compliance evidence workflow
-            </h2>
+            <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-400">{{ profile.name }} · Litoral Trace</p>
+            <h2 class="mt-3 text-3xl font-bold tracking-tight text-white">Conectá este origen con una cadena de custodia documentada.</h2>
+            <p class="mt-3 text-sm leading-6 text-emerald-100/80">La evidencia cobra valor cuando puede seguirse desde la parcela hasta el lote industrial, la transformación y el despacho.</p>
         </div>
-
         <div class="flex flex-wrap gap-3">
-            <a
-                href="/regional-intelligence"
-                class="inline-flex items-center justify-center rounded-lg border border-emerald-800 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-900"
-            >
-                All regions
-            </a>
-
-            <a
-                href="mailto:comercial@litoraltrace.com"
-                class="inline-flex items-center justify-center rounded-lg bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-300"
-            >
-                Request a demo
-            </a>
+            <a href="/regional-intelligence" class="inline-flex items-center justify-center rounded-lg border border-emerald-800 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-900">Todas las regiones</a>
+            <a href="mailto:comercial@litoraltrace.com" class="inline-flex items-center justify-center rounded-lg bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-300">Solicitar demostración</a>
         </div>
     </div>
 </section>
-
 {% endblock %}
 
-
 {% block body_scripts %}
-<script
-    type="module"
-    src="{{ url_for('static', path='/src/js/regional_intelligence_map.js') }}"
-></script>
+<script type="module" src="{{ url_for('static', path='/src/js/regional_intelligence_map.js') }}"></script>
 {% endblock %}
