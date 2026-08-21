@@ -411,13 +411,22 @@ def test_ux10d_rbac_separates_operation_from_read_only_roles():
 
 
 def test_ux10d_routes_and_template_keep_browser_as_presentation_layer():
+    from litoral_trace.web.traceability_operations import router as runtime_operations_router
+    from litoral_trace.web.router import router as runtime_web_router
+
+    declared_routes = {
+        (route.path, tuple(sorted(route.methods or set())))
+        for route in runtime_operations_router.routes
+        if getattr(route, "path", "").startswith("/operations")
+    }
     app = FastAPI()
-    app.include_router(operations_router)
+    app.include_router(runtime_web_router)
     routes = {
         (route.path, tuple(sorted(route.methods or set())))
         for route in app.routes
         if getattr(route, "path", "").startswith("/operations")
     }
+    assert declared_routes == routes
     assert ("/operations", ("GET",)) in routes
     assert ("/operations/receipts", ("POST",)) in routes
     assert ("/operations/processes", ("POST",)) in routes
