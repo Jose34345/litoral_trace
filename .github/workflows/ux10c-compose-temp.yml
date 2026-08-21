@@ -1,0 +1,54 @@
+name: UX10C Compose Temp
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    if: github.head_ref == 'ux10-c-lineage-graph' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout UX10-C head
+        uses: actions/checkout@v4
+        with:
+          ref: ux10-c-lineage-graph
+          fetch-depth: 0
+
+      - name: Mount lineage graph in traceability workspace
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/litoral_trace/templates/traceability.html')
+          text = path.read_text(encoding='utf-8')
+          marker = '</section>\n\n{% if result.dossier %}'
+          include = '</section>\n\n{% include "app/_traceability_lineage_graph.html" %}\n\n{% if result.dossier %}'
+          if marker not in text:
+              raise SystemExit('Traceability graph insertion marker not found')
+          if 'app/_traceability_lineage_graph.html' in text:
+              raise SystemExit('Traceability graph is already mounted')
+          path.write_text(text.replace(marker, include, 1), encoding='utf-8')
+          PY
+
+      - name: Synchronize frontend assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Remove temporary workflow and commit
+        shell: bash
+        run: |
+          rm -f .github/workflows/ux10c-compose-temp.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src/litoral_trace/templates/traceability.html src/litoral_trace/static/dist/app.css
+          git add -u -- .github/workflows/ux10c-compose-temp.yml
+          git commit -m 'feat(ux10c): mount visual lineage graph'
+          git push origin HEAD:ux10-c-lineage-graph
