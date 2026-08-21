@@ -112,12 +112,14 @@ def _pretty_json_bytes(value: Any) -> bytes:
     ).encode("utf-8")
 
 
-def _geometry_from_lote(lote: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+def _geometry_from_lote(
+    lote: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
     polygon_wkt = _text(lote.get("polygon_wkt"))
     if polygon_wkt:
         try:
-            from shapely.geometry import mapping
             from shapely import wkt
+            from shapely.geometry import mapping
 
             geometry = mapping(wkt.loads(polygon_wkt))
             geometry_type = str(geometry.get("type") or "")
@@ -125,14 +127,18 @@ def _geometry_from_lote(lote: dict[str, Any]) -> tuple[dict[str, Any] | None, st
                 return dict(geometry), None
             return dict(geometry), "SOURCE_GEOMETRY_NON_POLYGON"
         except Exception:
-            # A valid point fallback is still useful, but the warning remains
-            # visible in the dossier so polygon evidence is never fabricated.
+            # Keep a visible warning and use only a real point if coordinates
+            # exist. Never synthesize a polygon from invalid source evidence.
             pass
 
     latitude = _number(lote.get("latitud"))
     longitude = _number(lote.get("longitud"))
     if latitude is not None and longitude is not None:
-        warning = "SOURCE_GEOMETRY_POINT_FALLBACK" if polygon_wkt else "SOURCE_POLYGON_MISSING"
+        warning = (
+            "SOURCE_GEOMETRY_POINT_FALLBACK"
+            if polygon_wkt
+            else "SOURCE_POLYGON_MISSING"
+        )
         return {
             "type": "Point",
             "coordinates": [longitude, latitude],
@@ -257,8 +263,18 @@ def build_canonical_manifest(payload: dict[str, Any]) -> dict[str, Any]:
         reconciliation = event.get("reconciliation") or {}
         inputs = [_clean_edge(edge) for edge in event.get("inputs") or []]
         outputs = [_clean_edge(edge) for edge in event.get("outputs") or []]
-        inputs.sort(key=lambda value: (value.get("batch_code") or "", value.get("unit") or ""))
-        outputs.sort(key=lambda value: (value.get("batch_code") or "", value.get("unit") or ""))
+        inputs.sort(
+            key=lambda value: (
+                value.get("batch_code") or "",
+                value.get("unit") or "",
+            )
+        )
+        outputs.sort(
+            key=lambda value: (
+                value.get("batch_code") or "",
+                value.get("unit") or "",
+            )
+        )
         events.append(
             {
                 "event_public_id": _text(event.get("public_id")),
@@ -296,7 +312,12 @@ def build_canonical_manifest(payload: dict[str, Any]) -> dict[str, Any]:
             value.get("unit") or "",
         )
     )
-    items.sort(key=lambda value: (value.get("batch_code") or "", value.get("unit") or ""))
+    items.sort(
+        key=lambda value: (
+            value.get("batch_code") or "",
+            value.get("unit") or "",
+        )
+    )
     events.sort(
         key=lambda value: (
             value.get("occurred_at") or "",
@@ -311,7 +332,6 @@ def build_canonical_manifest(payload: dict[str, Any]) -> dict[str, Any]:
             value.get("origin_identifier") or "",
         )
     )
-
     lineage_issues = sorted(
         [_clean_issue(issue) for issue in payload.get("issues") or []],
         key=lambda value: (
@@ -410,16 +430,18 @@ def _unit_label(unit: Any) -> str:
 
 
 def build_pdf(manifest: dict[str, Any], digest: str) -> bytes:
+    """Render a readable projection without relying on fpdf cursor defaults."""
     try:
         from fpdf import FPDF
 
         class OriginDossierPDF(FPDF):
             def footer(self) -> None:
                 self.set_y(-14)
+                self.set_x(self.l_margin)
                 self.set_font("Helvetica", "", 7)
                 self.set_text_color(90, 90, 90)
                 self.cell(
-                    0,
+                    self.epw,
                     4,
                     _pdf_safe(
                         f"Litoral Trace | SHA-256 manifest: {digest[:24]}... | Página {self.page_no()}"
@@ -432,23 +454,55 @@ def build_pdf(manifest: dict[str, Any], digest: str) -> bytes:
         if hasattr(pdf, "set_creation_date"):
             pdf.set_creation_date(datetime(2000, 1, 1, tzinfo=timezone.utc))
         if hasattr(pdf, "set_title"):
-            pdf.set_title(_pdf_safe(f"Dossier de origen - {manifest['shipment']['shipment_code']}"))
+            pdf.set_title(
+                _pdf_safe(
+                    f"Dossier de origen - {manifest['shipment']['shipment_code']}"
+                )
+            )
         if hasattr(pdf, "set_author"):
             pdf.set_author("Litoral Trace")
         if hasattr(pdf, "set_producer"):
             pdf.set_producer("Litoral Trace")
 
+        def full_width_cell(
+            height: float,
+            text: Any,
+            *,
+            border: int = 0,
+            align: str = "L",
+        ) -> None:
+            pdf.set_x(pdf.l_margin)
+            pdf.cell(
+                pdf.epw,
+                height,
+                _pdf_safe(text),
+                border=border,
+                align=align,
+            )
+            pdf.ln(height)
+            pdf.set_x(pdf.l_margin)
+
+        def full_width_multicell(height: float, text: Any) -> None:
+            # fpdf2 2.8 defaults multi_cell new_x to RIGHT. Resetting before
+            # and after every block makes the dossier stable across versions.
+            pdf.set_x(pdf.l_margin)
+            pdf.multi_cell(pdf.epw, height, _pdf_safe(text))
+            pdf.set_x(pdf.l_margin)
+
         pdf.add_page()
         pdf.set_font("Helvetica", "B", 15)
         pdf.set_text_color(15, 23, 42)
-        pdf.cell(0, 9, "LITORAL TRACE - DOSSIER DE ORIGEN Y TRAZABILIDAD", align="C")
-        pdf.ln(12)
+        full_width_cell(
+            9,
+            "LITORAL TRACE - DOSSIER DE ORIGEN Y TRAZABILIDAD",
+            align="C",
+        )
+        pdf.ln(3)
 
         shipment = manifest["shipment"]
         lineage = manifest["lineage"]
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 7, _pdf_safe(f"Despacho: {shipment.get('shipment_code')}"))
-        pdf.ln(7)
+        full_width_cell(7, f"Despacho: {shipment.get('shipment_code')}")
         pdf.set_font("Helvetica", "", 9)
         for label, value in (
             ("Venta / referencia", shipment.get("sale_reference")),
@@ -456,130 +510,116 @@ def build_pdf(manifest: dict[str, Any], digest: str) -> bytes:
             ("País destino", shipment.get("destination_country")),
             ("Fecha despacho", shipment.get("shipped_at")),
             ("Estado despacho", shipment.get("status")),
-            ("Estado genealogía", "CERRADA" if lineage.get("complete") else "INCOMPLETA"),
+            (
+                "Estado genealogía",
+                "CERRADA" if lineage.get("complete") else "INCOMPLETA",
+            ),
             ("Método atribución", lineage.get("allocation_method")),
         ):
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(43, 5, _pdf_safe(f"{label}:"))
-            pdf.set_font("Helvetica", "", 9)
-            pdf.multi_cell(0, 5, _pdf_safe(value))
+            full_width_multicell(5, f"{label}: {_pdf_safe(value)}")
 
         pdf.ln(2)
         pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(0, 7, "1. RECONCILIACIÓN DE VOLUMEN", border=1)
-        pdf.ln(8)
+        full_width_cell(7, "1. RECONCILIACIÓN DE VOLUMEN", border=1)
         for total in manifest.get("unit_totals") or []:
             pdf.set_font("Helvetica", "", 9)
             unit = _unit_label(total.get("unit"))
-            pdf.multi_cell(
-                0,
+            full_width_multicell(
                 5,
-                _pdf_safe(
-                    "Unidad {unit} | Despachado {shipped} | Atribuido {attributed} | "
-                    "Sin resolver {unresolved}".format(
-                        unit=unit,
-                        shipped=total.get("shipped_quantity"),
-                        attributed=total.get("attributed_quantity"),
-                        unresolved=total.get("unresolved_quantity"),
-                    )
+                "Unidad {unit} | Despachado {shipped} | Atribuido {attributed} | "
+                "Sin resolver {unresolved}".format(
+                    unit=unit,
+                    shipped=total.get("shipped_quantity"),
+                    attributed=total.get("attributed_quantity"),
+                    unresolved=total.get("unresolved_quantity"),
                 ),
             )
 
         pdf.ln(2)
         pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(0, 7, "2. ORÍGENES ATRIBUIDOS", border=1)
-        pdf.ln(8)
+        full_width_cell(7, "2. ORÍGENES ATRIBUIDOS", border=1)
         origins = manifest.get("origins") or []
         if origins:
             for index, origin in enumerate(origins, start=1):
                 pdf.set_font("Helvetica", "B", 9)
-                pdf.multi_cell(
-                    0,
+                full_width_multicell(
                     5,
-                    _pdf_safe(
-                        f"{index}. {origin.get('identifier')} | Proveedor: "
-                        f"{origin.get('producer_reference')}"
-                    ),
+                    f"{index}. {origin.get('identifier')} | Proveedor: "
+                    f"{origin.get('producer_reference')}",
                 )
                 pdf.set_font("Helvetica", "", 8)
                 geometry = origin.get("geometry") or {}
-                pdf.multi_cell(
-                    0,
+                full_width_multicell(
                     4,
-                    _pdf_safe(
-                        "Producto: {product} | Superficie: {ha} ha | Atribución: {qty} {unit} | "
-                        "Participación: {share} | Geometría: {geometry_type}".format(
-                            product=origin.get("product"),
-                            ha=origin.get("hectares"),
-                            qty=origin.get("attributed_shipment_quantity"),
-                            unit=_unit_label(origin.get("unit")),
-                            share=origin.get("share_of_shipped_unit"),
-                            geometry_type=geometry.get("type") or "no disponible",
-                        )
+                    "Producto: {product} | Superficie: {ha} ha | Atribución: {qty} {unit} | "
+                    "Participación: {share} | Geometría: {geometry_type}".format(
+                        product=origin.get("product"),
+                        ha=origin.get("hectares"),
+                        qty=origin.get("attributed_shipment_quantity"),
+                        unit=_unit_label(origin.get("unit")),
+                        share=origin.get("share_of_shipped_unit"),
+                        geometry_type=geometry.get("type") or "no disponible",
                     ),
                 )
                 pdf.ln(1)
         else:
             pdf.set_font("Helvetica", "", 9)
-            pdf.multi_cell(0, 5, "No se pudieron atribuir orígenes a este despacho.")
+            full_width_multicell(
+                5,
+                "No se pudieron atribuir orígenes a este despacho.",
+            )
 
         pdf.ln(2)
         pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(0, 7, "3. CAMINO INDUSTRIAL", border=1)
-        pdf.ln(8)
+        full_width_cell(7, "3. CAMINO INDUSTRIAL", border=1)
         events = manifest.get("events") or []
         if events:
             for event in events:
                 pdf.set_font("Helvetica", "B", 8)
-                pdf.multi_cell(
-                    0,
+                full_width_multicell(
                     4,
-                    _pdf_safe(
-                        f"{event.get('event_code')} | {event.get('event_type')} | "
-                        f"{event.get('occurred_at')} | {event.get('facility_reference')}"
-                    ),
+                    f"{event.get('event_code')} | {event.get('event_type')} | "
+                    f"{event.get('occurred_at')} | {event.get('facility_reference')}",
                 )
                 reconciliation = event.get("reconciliation") or {}
                 pdf.set_font("Helvetica", "", 8)
-                pdf.multi_cell(
-                    0,
+                full_width_multicell(
                     4,
-                    _pdf_safe(
-                        "Input {input_q} {unit} | Output {output_q} {unit} | Merma/diferencia "
-                        "{loss_q} {unit} | Rendimiento {yield_ratio}".format(
-                            input_q=reconciliation.get("input_quantity"),
-                            output_q=reconciliation.get("output_quantity"),
-                            loss_q=reconciliation.get("loss_quantity"),
-                            unit=_unit_label(reconciliation.get("unit")),
-                            yield_ratio=reconciliation.get("yield_ratio"),
-                        )
+                    "Input {input_q} {unit} | Output {output_q} {unit} | Merma/diferencia "
+                    "{loss_q} {unit} | Rendimiento {yield_ratio}".format(
+                        input_q=reconciliation.get("input_quantity"),
+                        output_q=reconciliation.get("output_quantity"),
+                        loss_q=reconciliation.get("loss_quantity"),
+                        unit=_unit_label(reconciliation.get("unit")),
+                        yield_ratio=reconciliation.get("yield_ratio"),
                     ),
                 )
                 pdf.ln(1)
         else:
             pdf.set_font("Helvetica", "", 9)
-            pdf.multi_cell(0, 5, "No hay eventos industriales recorribles.")
+            full_width_multicell(5, "No hay eventos industriales recorribles.")
 
         issues = lineage.get("issues") or []
         warnings = manifest.get("artifact_warnings") or []
         if issues or warnings:
             pdf.ln(2)
             pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(0, 7, "4. INCIDENCIAS Y ADVERTENCIAS", border=1)
-            pdf.ln(8)
+            full_width_cell(7, "4. INCIDENCIAS Y ADVERTENCIAS", border=1)
             pdf.set_font("Helvetica", "", 8)
             for issue in [*issues, *warnings]:
-                pdf.multi_cell(
-                    0,
+                full_width_multicell(
                     4,
-                    _pdf_safe(f"[{issue.get('code')}] {issue.get('message')}"),
+                    f"[{issue.get('code')}] {issue.get('message')}",
                 )
 
         pdf.ln(4)
         pdf.set_font("Helvetica", "B", 9)
-        pdf.multi_cell(0, 5, _pdf_safe(f"SHA-256 del manifest canónico: {digest}"))
+        full_width_multicell(
+            5,
+            f"SHA-256 del manifest canónico: {digest}",
+        )
         pdf.set_font("Helvetica", "", 8)
-        pdf.multi_cell(0, 4, _pdf_safe(manifest.get("disclaimer")))
+        full_width_multicell(4, manifest.get("disclaimer"))
 
         return bytes(pdf.output())
     except OriginDossierError:
@@ -592,7 +632,10 @@ def build_pdf(manifest: dict[str, Any], digest: str) -> bytes:
 
 
 def _zip_entry(name: str, content: bytes) -> tuple[zipfile.ZipInfo, bytes]:
-    info = zipfile.ZipInfo(filename=name, date_time=(1980, 1, 1, 0, 0, 0))
+    info = zipfile.ZipInfo(
+        filename=name,
+        date_time=(1980, 1, 1, 0, 0, 0),
+    )
     info.compress_type = zipfile.ZIP_DEFLATED
     info.external_attr = 0o644 << 16
     return info, content
@@ -616,25 +659,36 @@ def build_zip(
     ).encode("utf-8")
 
     buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+    with zipfile.ZipFile(
+        buffer,
+        mode="w",
+        compression=zipfile.ZIP_DEFLATED,
+        compresslevel=9,
+    ) as archive:
         for name, content in (
             ("manifest.json", manifest_json_bytes),
             ("origins.geojson", geojson_bytes),
             ("dossier.pdf", pdf_bytes),
             ("README.txt", readme),
         ):
-            info, payload = _zip_entry(name, content)
-            archive.writestr(info, payload)
+            info, entry_payload = _zip_entry(name, content)
+            archive.writestr(info, entry_payload)
     return buffer.getvalue()
 
 
 def safe_artifact_stem(shipment_code: str) -> str:
-    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", shipment_code.strip())
+    normalized = re.sub(
+        r"[^A-Za-z0-9._-]+",
+        "-",
+        shipment_code.strip(),
+    )
     normalized = normalized.strip("-._")
     return normalized[:80] or "shipment"
 
 
-def build_origin_dossier_bundle(payload: dict[str, Any]) -> OriginDossierBundle:
+def build_origin_dossier_bundle(
+    payload: dict[str, Any],
+) -> OriginDossierBundle:
     manifest = build_canonical_manifest(payload)
     digest = manifest_sha256(manifest)
     manifest_document = {
