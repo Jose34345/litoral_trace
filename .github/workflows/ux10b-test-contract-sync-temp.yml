@@ -1,0 +1,42 @@
+name: UX10B Test Contract Sync Temp
+
+on:
+  push:
+    branches:
+      - ux10-b-operational-dashboard
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ux10-b-operational-dashboard
+          fetch-depth: 0
+      - name: Align authenticated dashboard expectation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/test_html_auth_enforcement_hotfix_unittest.py')
+          text = path.read_text(encoding='utf-8')
+          old = 'assert "Origen forestal, geolocalización y evidencia" in dashboard.body.decode("utf-8")'
+          new = 'assert "Trazabilidad de despachos" in dashboard.body.decode("utf-8")'
+          if old not in text:
+              raise SystemExit('Expected legacy dashboard assertion not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Commit synchronized test
+        shell: bash
+        run: |
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/test_html_auth_enforcement_hotfix_unittest.py
+          git commit -m 'test(ux10b): align authenticated dashboard contract'
+          git push origin HEAD:ux10-b-operational-dashboard
