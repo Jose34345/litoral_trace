@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ux10g-postgres-web-${{ github.workflow }}-${{ github.ref }}
@@ -45,25 +45,8 @@ jobs:
       DATABASE_URL: postgresql+psycopg://litoral_trace_app:ux10g_runtime_password_2026@127.0.0.1:5432/litoral_trace_ux10g_ci
 
     steps:
-      - name: Checkout feature branch
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ux10-g-postgres-web-stabilization
-          fetch-depth: 0
-
-      - name: Apply confirmed post-commit RLS fix
-        shell: bash
-        run: |
-          set -euo pipefail
-          python scripts/ux10g_patch_postcommit_rls.py
-          changed="$(git diff --name-only)"
-          test "$changed" = "src/litoral_trace/services/traceability_operations.py"
-          git diff --check
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/litoral_trace/services/traceability_operations.py
-          git commit -m "fix(ux10g): capture operation results before commit"
-          git push origin HEAD:ux10-g-postgres-web-stabilization
 
       - name: Setup Python
         uses: actions/setup-python@v5
