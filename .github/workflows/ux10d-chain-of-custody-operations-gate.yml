@@ -37,6 +37,15 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
 
+      - name: Inspect UX10-D route registration
+        run: |
+          python - <<'PY'
+          from litoral_trace.web.traceability_operations import router as operations_router
+          from litoral_trace.api.traceability import router as traceability_router
+          print("operations_router:", [(getattr(r, "path", None), sorted(getattr(r, "methods", set()) or set())) for r in operations_router.routes])
+          print("traceability_router:", [(getattr(r, "path", None), sorted(getattr(r, "methods", set()) or set())) for r in traceability_router.routes if str(getattr(r, "path", "")).startswith("/operations")])
+          PY
+
       - name: UX10-D operational acceptance
         run: |
           python -m pytest -q -rs \
