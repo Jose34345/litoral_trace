@@ -25,6 +25,10 @@
                     Abrir trazabilidad
                 </a>
                 {% if user.role in ["superadmin", "admin", "manager"] %}
+                <a href="/operations" class="inline-flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-4 py-2.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-400/15">
+                    <i class="fa-solid fa-industry" aria-hidden="true"></i>
+                    Registrar operación
+                </a>
                 <a href="/imports" class="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-xs font-semibold text-slate-200 transition hover:bg-white/10">
                     <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>
                     Carga masiva
