@@ -38,6 +38,50 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
 
+      - name: UX10-E cold-start route resolution
+        run: |
+          python - <<'PY'
+          import main
+          from litoral_trace.web.traceability_evidence import router as evidence_router
+
+          expected_declared = {
+              ("/evidence", ("GET",)),
+              ("/evidence/link", ("POST",)),
+              ("/evidence/upload-link", ("POST",)),
+              ("/evidence/{link_public_id}/unlink", ("POST",)),
+          }
+          declared = {
+              (route.path, tuple(sorted(route.methods or set())))
+              for route in evidence_router.routes
+          }
+          if declared != expected_declared:
+              raise SystemExit(
+                  f"UX10-E declared routes mismatch: expected={sorted(expected_declared)!r} actual={sorted(declared)!r}"
+              )
+
+          resolved = {
+              str(main.app.url_path_for("render_traceability_evidence")),
+              str(main.app.url_path_for("link_traceability_evidence")),
+              str(main.app.url_path_for("upload_and_link_traceability_evidence")),
+              str(
+                  main.app.url_path_for(
+                      "unlink_traceability_evidence",
+                      link_public_id="00000000-0000-0000-0000-000000000001",
+                  )
+              ),
+          }
+          expected_resolved = {
+              "/evidence",
+              "/evidence/link",
+              "/evidence/upload-link",
+              "/evidence/00000000-0000-0000-0000-000000000001/unlink",
+          }
+          if resolved != expected_resolved:
+              raise SystemExit(
+                  f"UX10-E cold-start URL mismatch: expected={sorted(expected_resolved)!r} actual={sorted(resolved)!r}"
+              )
+          PY
+
       - name: UX10-E evidence acceptance
         run: |
           python -m pytest -q -rs \
