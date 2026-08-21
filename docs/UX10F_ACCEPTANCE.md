@@ -15,3 +15,5 @@ La aceptación final exige sobre un único SHA:
 - frontend reproducible;
 - suite Python completa;
 - build e infraestructura de producción verdes.
+
+El candidato final debe conservar además el pulido visual: iconografía propia del Control de salida, botones de descarga visibles sólo con huella verificable y estados comunicados mediante texto + icono + color.
