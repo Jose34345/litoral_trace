@@ -1,0 +1,53 @@
+name: UX10E Integration Temp
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate-contextual-evidence:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Integrate evidence router and contextual CTA
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          operations = Path("src/litoral_trace/web/traceability_operations.py")
+          text = operations.read_text(encoding="utf-8")
+          marker = "from litoral_trace.web.traceability_evidence import router as traceability_evidence_router"
+          if marker not in text:
+              text = text.rstrip() + "\n\n\n# UX10-E evidence routes are fully initialized before this parent router is\n# copied into the FastAPI application by main.py.\nfrom litoral_trace.web.traceability_evidence import (\n    router as traceability_evidence_router,\n)\n\nrouter.include_router(traceability_evidence_router)\n"
+              operations.write_text(text, encoding="utf-8")
+
+          template = Path("src/litoral_trace/templates/traceability_operations.html")
+          html = template.read_text(encoding="utf-8")
+          anchor = '<a href="/vault" class="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10"><i class="fa-solid fa-box-archive" aria-hidden="true"></i>Documentos y evidencias</a>'
+          evidence_cta = '<a href="/evidence" class="inline-flex items-center gap-2 rounded-lg border border-emerald-300/25 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/15"><i class="fa-solid fa-paperclip" aria-hidden="true"></i>Vincular evidencia</a>'
+          if evidence_cta not in html and anchor in html:
+              html = html.replace(anchor, evidence_cta + anchor, 1)
+              template.write_text(html, encoding="utf-8")
+          PY
+
+      - name: Rebuild Tailwind assets
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit integration and self-delete
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/ux10e-integration-temp.yml
+          git add -- src/litoral_trace/web/traceability_operations.py src/litoral_trace/templates/traceability_operations.html static/dist/app.css .github/workflows/ux10e-integration-temp.yml
+          git commit -m "feat(ux10e): integrate contextual evidence workflow"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
