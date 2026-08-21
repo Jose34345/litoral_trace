@@ -1,0 +1,250 @@
+name: UX10E Dossier Integration Temp
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate-documentary-dossier:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Integrate evidence into buyer dossier
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          dossier_path = Path("src/litoral_trace/services/traceability_dossier.py")
+          dossier = dossier_path.read_text(encoding="utf-8")
+
+          helper_anchor = "def build_canonical_manifest(payload: dict[str, Any]) -> dict[str, Any]:\n"
+          helper = '''def _clean_documentary_evidence(items: Any) -> list[dict[str, Any]]:\n    """Canonicalize buyer-safe evidence references and fail closed on bad hashes."""\n\n    allowed_subjects = {\n        "SOURCE_LOTE",\n        "TRACEABILITY_EVENT",\n        "TRACEABILITY_BATCH",\n        "SHIPMENT",\n    }\n    cleaned: list[dict[str, Any]] = []\n    for raw in items or []:\n        item = raw or {}\n        document = item.get("document") or {}\n        subject_type = (_text(item.get("subject_type")) or "").upper()\n        subject_reference = _text(item.get("subject_reference"))\n        filename = _text(document.get("filename"))\n        sha256 = (_text(document.get("sha256")) or "").lower()\n        if subject_type not in allowed_subjects or not subject_reference:\n            raise OriginDossierValidationError(\n                "DOSSIER_EVIDENCE_SUBJECT_INVALID",\n                "La evidencia documental contiene un eslabón no válido.",\n            )\n        if not filename or not re.fullmatch(r"[0-9a-f]{64}", sha256):\n            raise OriginDossierValidationError(\n                "DOSSIER_EVIDENCE_INTEGRITY_INVALID",\n                "La evidencia documental no contiene un SHA-256 válido.",\n            )\n        cleaned.append(\n            {\n                "subject_type": subject_type,\n                "subject_reference": subject_reference,\n                "evidence_type": _text(item.get("evidence_type")),\n                "reference_number": _text(item.get("reference_number")),\n                "issuer": _text(item.get("issuer")),\n                "document_date": _text(item.get("document_date")),\n                "valid_from": _text(item.get("valid_from")),\n                "valid_until": _text(item.get("valid_until")),\n                "document": {\n                    "public_id": _text(document.get("public_id")),\n                    "filename": filename,\n                    "content_type": _text(document.get("content_type")),\n                    "size_bytes": document.get("size_bytes"),\n                    "sha256": sha256,\n                },\n            }\n        )\n    cleaned.sort(\n        key=lambda item: (\n            item.get("subject_type") or "",\n            item.get("subject_reference") or "",\n            item.get("evidence_type") or "",\n            (item.get("document") or {}).get("sha256") or "",\n            (item.get("document") or {}).get("filename") or "",\n        )\n    )\n    return cleaned\n\n\n'''
+          if "def _clean_documentary_evidence(" not in dossier:
+              if helper_anchor not in dossier:
+                  raise SystemExit("canonical manifest anchor not found")
+              dossier = dossier.replace(helper_anchor, helper + 'def build_canonical_manifest(\n    payload: dict[str, Any],\n    *,\n    documentary_evidence: Any = None,\n) -> dict[str, Any]:\n', 1)
+          elif helper_anchor in dossier:
+              dossier = dossier.replace(helper_anchor, 'def build_canonical_manifest(\n    payload: dict[str, Any],\n    *,\n    documentary_evidence: Any = None,\n) -> dict[str, Any]:\n', 1)
+
+          return_anchor = '        "artifact_warnings": artifact_warnings,\n        "disclaimer": DISCLAIMER,\n'
+          if '"documentary_evidence": _clean_documentary_evidence(documentary_evidence),' not in dossier:
+              if return_anchor not in dossier:
+                  raise SystemExit("manifest return anchor not found")
+              dossier = dossier.replace(
+                  return_anchor,
+                  '        "artifact_warnings": artifact_warnings,\n        "documentary_evidence": _clean_documentary_evidence(documentary_evidence),\n        "disclaimer": DISCLAIMER,\n',
+                  1,
+              )
+
+          issues_anchor = '        issues = lineage.get("issues") or []\n'
+          evidence_pdf = '''        evidence = manifest.get("documentary_evidence") or []\n        pdf.ln(2)\n        pdf.set_font("Helvetica", "B", 10)\n        full_width_cell(7, "4. HUELLA DOCUMENTAL LITORAL TRACE", border=1)\n        pdf.set_font("Helvetica", "", 8)\n        if evidence:\n            subject_labels = {\n                "SOURCE_LOTE": "Origen",\n                "TRACEABILITY_EVENT": "Movimiento",\n                "TRACEABILITY_BATCH": "Lote industrial",\n                "SHIPMENT": "Despacho",\n            }\n            for item in evidence:\n                document = item.get("document") or {}\n                full_width_multicell(\n                    4,\n                    "{subject} {reference} | {kind} | Ref. {doc_ref} | Emisor {issuer}".format(\n                        subject=subject_labels.get(item.get("subject_type"), item.get("subject_type")),\n                        reference=item.get("subject_reference"),\n                        kind=item.get("evidence_type"),\n                        doc_ref=item.get("reference_number") or "—",\n                        issuer=item.get("issuer") or "—",\n                    ),\n                )\n                full_width_multicell(\n                    4,\n                    "Archivo: {filename} | Fecha: {date} | SHA-256: {sha}".format(\n                        filename=document.get("filename"),\n                        date=item.get("document_date") or "—",\n                        sha=document.get("sha256"),\n                    ),\n                )\n                pdf.ln(1)\n        else:\n            full_width_multicell(\n                4,\n                "No hay evidencia documental vinculada a los eslabones de esta genealogía.",\n            )\n        pdf.set_font("Helvetica", "I", 7)\n        full_width_multicell(\n            4,\n            "La huella documental registra referencias y hashes verificables. Su ausencia no modifica por sí sola el estado de genealogía ni constituye una conclusión regulatoria.",\n        )\n\n'''
+          if "4. HUELLA DOCUMENTAL LITORAL TRACE" not in dossier:
+              if issues_anchor not in dossier:
+                  raise SystemExit("PDF issues anchor not found")
+              dossier = dossier.replace(issues_anchor, evidence_pdf + issues_anchor, 1)
+              dossier = dossier.replace('full_width_cell(7, "4. INCIDENCIAS Y ADVERTENCIAS", border=1)', 'full_width_cell(7, "5. INCIDENCIAS Y ADVERTENCIAS", border=1)', 1)
+
+          bundle_sig = 'def build_origin_dossier_bundle(\n    payload: dict[str, Any],\n) -> OriginDossierBundle:\n    manifest = build_canonical_manifest(payload)\n'
+          if bundle_sig in dossier:
+              dossier = dossier.replace(
+                  bundle_sig,
+                  'def build_origin_dossier_bundle(\n    payload: dict[str, Any],\n    *,\n    documentary_evidence: Any = None,\n) -> OriginDossierBundle:\n    manifest = build_canonical_manifest(\n        payload,\n        documentary_evidence=documentary_evidence,\n    )\n',
+                  1,
+              )
+
+          readme_anchor = '        "The SHA-256 value anchors the canonical traceability manifest contained "\n        "in manifest.json. PDF and GeoJSON are projections of that manifest.\\n\\n"\n'
+          if "Private evidence binaries are not embedded" not in dossier and readme_anchor in dossier:
+              dossier = dossier.replace(
+                  readme_anchor,
+                  readme_anchor + '        "Documentary evidence is represented by buyer-safe references and content hashes. "\n        "Private evidence binaries are not embedded in this ZIP.\\n\\n"\n',
+                  1,
+              )
+
+          dossier_path.write_text(dossier, encoding="utf-8")
+
+          api_path = Path("src/litoral_trace/api/traceability_dossier.py")
+          api = api_path.read_text(encoding="utf-8")
+          import_anchor = 'from litoral_trace.services.traceability_lineage import (\n'
+          evidence_import = 'from litoral_trace.services.traceability_evidence_dossier import (\n    project_documentary_evidence,\n)\n'
+          if evidence_import not in api:
+              if import_anchor not in api:
+                  raise SystemExit("API import anchor not found")
+              api = api.replace(import_anchor, evidence_import + import_anchor, 1)
+          call_anchor = '        return build_origin_dossier_bundle(payload)\n'
+          if call_anchor in api:
+              api = api.replace(
+                  call_anchor,
+                  '        documentary_evidence = project_documentary_evidence(\n            session=session,\n            organization_id=user.organization_id,\n            lineage_payload=payload,\n        )\n        return build_origin_dossier_bundle(\n            payload,\n            documentary_evidence=documentary_evidence,\n        )\n',
+                  1,
+              )
+          api_path.write_text(api, encoding="utf-8")
+
+          ci_test = Path("tests/test_ci_p26a_unittest.py")
+          ci_text = ci_test.read_text(encoding="utf-8")
+          ci_text = ci_text.replace(
+              'assert "019_add_traceability_genealogy (head)" in workflow',
+              'assert "020_add_traceability_evidence_links (head)" in workflow',
+          )
+          ci_test.write_text(ci_text, encoding="utf-8")
+
+          evidence_template = Path("src/litoral_trace/templates/traceability_evidence.html")
+          html = evidence_template.read_text(encoding="utf-8")
+          html = html.replace(
+              '>Cobertura registrada</p><p class="mt-2 text-4xl font-bold">',
+              '>Huella documental Litoral Trace</p><p class="mt-2 text-4xl font-bold">',
+              1,
+          )
+          html = html.replace(
+              'La cobertura indica documentación vinculada en Litoral Trace. No constituye por sí sola una certificación ni una conclusión automática de cumplimiento regulatorio.',
+              'La Huella Documental muestra qué partes de la cadena ya tienen respaldo verificable en Litoral Trace. No constituye por sí sola una certificación ni una conclusión automática de cumplimiento regulatorio.',
+              1,
+          )
+          evidence_template.write_text(html, encoding="utf-8")
+
+          test_path = Path("tests/test_ux10e_dossier_evidence_unittest.py")
+          test_path.write_text(r'''"""UX10-E buyer-dossier documentary evidence acceptance."""
+from __future__ import annotations
+
+import io
+import json
+import zipfile
+
+import pytest
+
+from litoral_trace.services.traceability_dossier import (
+    OriginDossierValidationError,
+    build_origin_dossier_bundle,
+)
+
+
+PAYLOAD = {
+    "organization_id": 77,
+    "shipment": {
+        "id": 910,
+        "public_id": "8d4de42a-2283-48e4-996d-e47b19ae1001",
+        "shipment_code": "EXP-UE-2026-001",
+        "sale_reference": "FACTURA-E-001",
+        "buyer_reference": "BUYER-EU-001",
+        "destination_country": "DE",
+        "shipped_at": "2026-08-20T20:00:00+00:00",
+        "status": "DISPATCHED",
+        "lineage_state": "FINAL",
+    },
+    "allocation_method": "PROPORTIONAL_INPUT_ALLOCATION",
+    "complete": True,
+    "issues": [],
+    "unit_totals": [
+        {
+            "unit": "M3",
+            "shipped_quantity": "60.000000",
+            "attributed_quantity": "60.000000",
+            "unresolved_quantity": "0.000000",
+        }
+    ],
+    "items": [],
+    "events": [],
+    "source_lotes": [],
+}
+
+
+def _evidence(sha: str = "a" * 64):
+    return (
+        {
+            "subject_type": "SHIPMENT",
+            "subject_reference": "EXP-UE-2026-001",
+            "evidence_type": "INVOICE",
+            "reference_number": "FACTURA-E-001",
+            "issuer": "Exportadora Corrientes SA",
+            "document_date": "2026-08-20",
+            "valid_from": None,
+            "valid_until": None,
+            "notes": "nota interna que no debe salir al comprador",
+            "document": {
+                "public_id": "18c275a9-3d9f-4dc6-bcc5-ec55844f2ad5",
+                "filename": "factura-e-001.pdf",
+                "content_type": "application/pdf",
+                "size_bytes": 2048,
+                "sha256": sha,
+            },
+        },
+    )
+
+
+def test_documentary_evidence_is_part_of_canonical_manifest_and_integrity_hash():
+    first = build_origin_dossier_bundle(PAYLOAD, documentary_evidence=_evidence("a" * 64))
+    second = build_origin_dossier_bundle(PAYLOAD, documentary_evidence=_evidence("b" * 64))
+
+    evidence = first.canonical_manifest["documentary_evidence"]
+    assert len(evidence) == 1
+    assert evidence[0]["subject_type"] == "SHIPMENT"
+    assert evidence[0]["subject_reference"] == "EXP-UE-2026-001"
+    assert evidence[0]["document"]["sha256"] == "a" * 64
+    assert "notes" not in evidence[0]
+    assert first.manifest_sha256 != second.manifest_sha256
+
+
+def test_private_evidence_files_are_not_embedded_in_buyer_zip():
+    bundle = build_origin_dossier_bundle(PAYLOAD, documentary_evidence=_evidence())
+    assert bundle.pdf_bytes.startswith(b"%PDF")
+
+    with zipfile.ZipFile(io.BytesIO(bundle.zip_bytes)) as archive:
+        assert sorted(archive.namelist()) == [
+            "README.txt",
+            "dossier.pdf",
+            "manifest.json",
+            "origins.geojson",
+        ]
+        manifest = json.loads(archive.read("manifest.json"))["manifest"]
+        assert manifest["documentary_evidence"][0]["document"]["filename"] == "factura-e-001.pdf"
+        assert "factura-e-001.pdf" not in archive.namelist()
+        assert b"Private evidence binaries are not embedded" in archive.read("README.txt")
+
+
+def test_bad_document_hash_fails_closed():
+    with pytest.raises(OriginDossierValidationError) as exc_info:
+        build_origin_dossier_bundle(PAYLOAD, documentary_evidence=_evidence("not-a-hash"))
+    assert exc_info.value.code == "DOSSIER_EVIDENCE_INTEGRITY_INVALID"
+
+
+def test_api_load_bundle_projects_documentary_evidence_before_rendering():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "src/litoral_trace/api/traceability_dossier.py").read_text(encoding="utf-8")
+    dossier_source = (root / "src/litoral_trace/services/traceability_dossier.py").read_text(encoding="utf-8")
+
+    assert "project_documentary_evidence(" in source
+    assert "documentary_evidence=documentary_evidence" in source
+    assert "HUELLA DOCUMENTAL LITORAL TRACE" in dossier_source
+    assert "Private evidence binaries are not embedded" in dossier_source
+''', encoding="utf-8")
+          PY
+
+      - name: Rebuild frontend assets
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit integration and self-delete
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/ux10e-dossier-integration-temp.yml
+          git add -- \
+            src/litoral_trace/services/traceability_dossier.py \
+            src/litoral_trace/api/traceability_dossier.py \
+            src/litoral_trace/templates/traceability_evidence.html \
+            src/litoral_trace/static/dist/app.css \
+            tests/test_ci_p26a_unittest.py \
+            tests/test_ux10e_dossier_evidence_unittest.py \
+            .github/workflows/ux10e-dossier-integration-temp.yml
+          git commit -m "feat(ux10e): add Litoral documentary footprint to dossier"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
