@@ -13,6 +13,7 @@ La evidencia documental debe verse y gestionarse dentro del eslabón que respald
 5. **Integridad sin ruido.** SHA-256, MIME y tamaño permanecen visibles bajo detalles avanzados, no como información primaria.
 6. **Historial append-only.** Desvincular no elimina el archivo ni la relación histórica; registra `unlinked_at`.
 7. **Cobertura factual.** El porcentaje representa eslabones con al menos una evidencia registrada. No equivale a certificación ni a cumplimiento normativo automático.
+8. **Navegación corta.** `/operations`, `/evidence`, `/traceability` y `/vault` deben estar conectados mediante acciones visibles; el operador no debe volver al menú lateral para completar el ciclo documental.
 
 ## Sujetos
 
