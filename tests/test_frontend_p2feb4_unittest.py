@@ -171,6 +171,7 @@ def test_superadmin_navigation_contains_only_live_routes():
         ("dashboard", "/dashboard"),
         ("imports", "/imports"),
         ("traceability", "/traceability"),
+        ("release_control", "/release-control"),
         ("vault", "/vault"),
         ("settings", "/settings"),
         ("platform", "/admin"),

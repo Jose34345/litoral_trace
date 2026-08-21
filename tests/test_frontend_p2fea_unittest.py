@@ -129,6 +129,7 @@ def test_navigation_is_server_side_rbac_derived():
     assert [item.key for item in client_nav] == [
         "dashboard",
         "traceability",
+        "release_control",
         "vault",
     ]
     assert next(
@@ -143,6 +144,7 @@ def test_navigation_is_server_side_rbac_derived():
         "dashboard",
         "imports",
         "traceability",
+        "release_control",
         "vault",
         "settings",
     ]
@@ -155,6 +157,7 @@ def test_navigation_is_server_side_rbac_derived():
         "dashboard",
         "imports",
         "traceability",
+        "release_control",
         "vault",
         "settings",
         "platform",

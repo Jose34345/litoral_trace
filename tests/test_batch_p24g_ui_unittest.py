@@ -574,6 +574,7 @@ def test_navigation_keeps_existing_entries_and_superadmin_gets_imports():
         ("dashboard", "/dashboard"),
         ("imports", "/imports"),
         ("traceability", "/traceability"),
+        ("release_control", "/release-control"),
         ("vault", "/vault"),
         ("settings", "/settings"),
         ("platform", "/admin"),
