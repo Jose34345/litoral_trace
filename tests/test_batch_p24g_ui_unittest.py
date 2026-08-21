@@ -1230,7 +1230,7 @@ def test_detail_template_hides_storage_coordinates_and_has_html_forms_only():
     assert "storage_backend" not in detail_template
     assert "/api/v1/batch/" not in detail_template
     assert "Vincular documento" in detail_template
-    assert "Desvincular evidencia" in detail_template
+    assert "Desvincular documento" in detail_template
     assert 'method="post"' in detail_template
     assert "<script" not in detail_template.lower()
 
