@@ -1,0 +1,42 @@
+name: UX10-G One Shot Apply Fix
+
+on:
+  push:
+    branches:
+      - ux10-g-postgres-web-stabilization
+
+permissions:
+  contents: write
+
+jobs:
+  apply-confirmed-postcommit-rls-fix:
+    if: ${{ !contains(github.event.head_commit.message, 'fix(ux10g): capture operation results before commit') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: ux10-g-postgres-web-stabilization
+          fetch-depth: 0
+
+      - name: Apply fail-closed patch
+        run: python scripts/ux10g_patch_postcommit_rls.py
+
+      - name: Verify only expected service file changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only)"
+          test "$changed" = "src/litoral_trace/services/traceability_operations.py"
+          git diff --check
+
+      - name: Commit confirmed fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/litoral_trace/services/traceability_operations.py
+          git commit -m "fix(ux10g): capture operation results before commit"
+          git push origin HEAD:ux10-g-postgres-web-stabilization
