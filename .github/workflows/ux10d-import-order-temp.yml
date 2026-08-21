@@ -22,67 +22,43 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -r requirements.txt
-      - name: Trace FastAPI instance and route retention
+      - name: Inspect nested routes and URL resolution
         run: |
           python - <<'PY'
-          import builtins
-          import traceback
-          from fastapi import FastAPI
-
-          original_import = builtins.__import__
-          original_include = FastAPI.include_router
-          original_init = FastAPI.__init__
-
-          created = []
-
-          def traced_init(self, *args, **kwargs):
-              result = original_init(self, *args, **kwargs)
-              created.append(id(self))
-              print("=== FASTAPI INIT self=", id(self), "routes=", len(self.routes))
-              traceback.print_stack(limit=8)
-              return result
-
-          def traced_import(name, globals=None, locals=None, fromlist=(), level=0):
-              if "traceability_operations" in name:
-                  print("=== IMPORT", name, "fromlist=", fromlist, "level=", level)
-                  traceback.print_stack(limit=10)
-              return original_import(name, globals, locals, fromlist, level)
-
-          def traced_include(self, router, *args, **kwargs):
-              before = len(self.routes)
-              ops = [
-                  (getattr(r, "path", None), sorted(getattr(r, "methods", set()) or set()))
-                  for r in getattr(router, "routes", [])
-                  if str(getattr(r, "path", "")).startswith("/operations")
-              ]
-              result = original_include(self, router, *args, **kwargs)
-              after_ops = [
-                  (getattr(r, "path", None), sorted(getattr(r, "methods", set()) or set()))
-                  for r in self.routes
-                  if str(getattr(r, "path", "")).startswith("/operations")
-              ]
-              if ops or getattr(router, "tags", None) == ["Frontend B2B"]:
-                  print(
-                      "=== FASTAPI INCLUDE self=", id(self),
-                      "router=", id(router),
-                      "child_ops=", ops,
-                      "before=", before,
-                      "after=", len(self.routes),
-                      "app_ops_after=", after_ops,
-                  )
-                  traceback.print_stack(limit=8)
-              return result
-
-          builtins.__import__ = traced_import
-          FastAPI.__init__ = traced_init
-          FastAPI.include_router = traced_include
-
           import main
-          import litoral_trace.web.traceability_operations as ops
 
-          print("=== CREATED APPS", created)
-          print("=== FINAL MAIN APP ID", id(main.app), "routes=", len(main.app.routes))
-          print("=== FINAL OPS ROUTER", id(ops.router), [(r.path, sorted(r.methods or set())) for r in ops.router.routes])
-          print("=== FINAL APP OPS", [(r.path, sorted(r.methods or set())) for r in main.app.routes if getattr(r, "path", "").startswith("/operations")])
-          print("=== FINAL APP SAMPLE", [(r.path, sorted(r.methods or set())) for r in main.app.routes[:30]])
+          def walk(routes, depth=0):
+              found = []
+              for route in routes:
+                  path = getattr(route, "path", "")
+                  methods = tuple(sorted(getattr(route, "methods", set()) or set()))
+                  name = getattr(route, "name", None)
+                  route_type = type(route).__name__
+                  if "operations" in path or (name and "operation" in str(name)):
+                      found.append((depth, route_type, path, methods, name))
+                  children = getattr(route, "routes", None)
+                  if children:
+                      found.extend(walk(children, depth + 1))
+                  nested_app = getattr(route, "app", None)
+                  nested_routes = getattr(nested_app, "routes", None)
+                  if nested_routes and nested_routes is not children:
+                      found.extend(walk(nested_routes, depth + 1))
+              return found
+
+          print("TOP_LEVEL_COUNT", len(main.app.routes))
+          print("NESTED_OPERATION_ROUTES", walk(main.app.routes))
+
+          names = [
+              "render_traceability_operations",
+              "create_receipt_operation",
+              "create_process_operation",
+              "post_existing_event_operation",
+              "create_shipment_operation",
+              "dispatch_existing_shipment_operation",
+          ]
+          for name in names:
+              try:
+                  print("URL_PATH_FOR", name, str(main.app.url_path_for(name)))
+              except Exception as exc:
+                  print("URL_PATH_FOR_ERROR", name, type(exc).__name__, str(exc))
           PY
