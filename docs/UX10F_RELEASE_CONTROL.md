@@ -65,3 +65,10 @@ Muestra el SHA-256 del manifest canónico del dossier documental. La huella inte
 - copia del SHA-256 al portapapeles;
 - descarga directa de PDF y expediente ZIP cuando están disponibles;
 - funcionamiento server-rendered con mejora progresiva mediante JavaScript ligero.
+
+## Comportamiento visual final
+
+- **Control de salida** utiliza iconografía propia de tablero/pulso en la navegación para diferenciarlo de la genealogía.
+- Los botones PDF y expediente sólo se muestran cuando existe una huella verificable; un expediente bloqueado nunca ofrece una descarga engañosa.
+- Los colores rojo, ámbar y verde expresan exclusivamente estado operacional y siempre se acompañan de texto, icono y explicación para no depender sólo del color.
+- La vista conserva su lectura y sus acciones esenciales sin JavaScript; los filtros y la copia de huella son mejoras progresivas.
