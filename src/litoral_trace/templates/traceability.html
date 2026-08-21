@@ -1,0 +1,446 @@
+{% extends "app/base_app.html" %}
+
+{% block title %}Trazabilidad industrial | Litoral Trace{% endblock %}
+
+{% block content %}
+{% set view = traceability_view %}
+
+<section class="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div class="border-b border-slate-200 px-6 py-6">
+        <div class="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div class="max-w-3xl">
+                <div class="mb-2 flex flex-wrap items-center gap-2">
+                    <span class="rounded border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-800">
+                        Cadena de custodia
+                    </span>
+                    <span class="text-xs font-medium text-slate-500">
+                        Genealogía inversa de despacho
+                    </span>
+                </div>
+                <h1 class="text-2xl font-bold tracking-tight text-slate-950">
+                    Reconstruí el origen de una venta o despacho
+                </h1>
+                <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                    Partí del código de despacho y seguí el producto hacia atrás por lotes industriales, transformaciones y parcelas de origen. La vista usa el mismo motor P1C de la API y no modifica inventario ni eventos.
+                </p>
+            </div>
+
+            <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 xl:max-w-md">
+                <p class="font-semibold text-slate-800">
+                    Convención de mezclas
+                </p>
+                <p class="mt-1 leading-5">
+                    Cuando un proceso mezcla entradas homogéneas, la atribución usa la proporción documentada de inputs. Es una convención contable de trazabilidad, no identificación física de fibras individuales.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <form method="get" action="/traceability" class="bg-slate-50 px-6 py-5" role="search">
+        <label for="shipment-code" class="text-xs font-bold uppercase tracking-wider text-slate-600">
+            Código de despacho / venta
+        </label>
+        <div class="mt-2 flex flex-col gap-3 sm:flex-row">
+            <div class="relative min-w-0 flex-1">
+                <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400" aria-hidden="true">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                </span>
+                <input
+                    id="shipment-code"
+                    name="shipment_code"
+                    type="search"
+                    maxlength="120"
+                    value="{{ view.query }}"
+                    placeholder="Ej. EXP-UE-2026-001"
+                    autocomplete="off"
+                    class="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-sm font-medium text-slate-950 shadow-sm outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+                >
+            </div>
+            <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-lg bg-forest-800 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-forest-900">
+                <i class="fa-solid fa-route" aria-hidden="true"></i>
+                Reconstruir origen
+            </button>
+        </div>
+        <p class="mt-2 text-xs text-slate-500">
+            La búsqueda está limitada automáticamente a la organización autenticada.
+        </p>
+    </form>
+</section>
+
+{% if view.error %}
+<section class="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-5" role="alert">
+    <div class="flex items-start gap-3">
+        <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700" aria-hidden="true">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+        </span>
+        <div>
+            <p class="text-sm font-bold text-rose-950">{{ view.error.title }}</p>
+            <p class="mt-1 text-sm leading-6 text-rose-800">{{ view.error.message }}</p>
+            <p class="mt-2 font-mono text-[11px] text-rose-700">{{ view.error.code }}</p>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+{% if view.result %}
+{% set result = view.result %}
+
+<section class="mb-6 rounded-2xl border {% if result.complete %}border-emerald-200 bg-emerald-50{% else %}border-amber-200 bg-amber-50{% endif %} p-5 shadow-sm">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div class="flex items-start gap-3">
+            <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl {% if result.complete %}bg-emerald-600 text-white{% else %}bg-amber-500 text-white{% endif %}" aria-hidden="true">
+                <i class="fa-solid {% if result.complete %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i>
+            </span>
+            <div>
+                <p class="text-xs font-bold uppercase tracking-wider {% if result.complete %}text-emerald-700{% else %}text-amber-700{% endif %}">
+                    Estado de la genealogía
+                </p>
+                <h2 class="mt-0.5 text-xl font-bold {% if result.complete %}text-emerald-950{% else %}text-amber-950{% endif %}">
+                    {{ result.state_label }}
+                </h2>
+                <p class="mt-1 text-sm {% if result.complete %}text-emerald-800{% else %}text-amber-800{% endif %}">
+                    {{ result.state_description }}
+                </p>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 text-xs font-semibold">
+            <span class="rounded-full border border-white/70 bg-white/80 px-3 py-1.5 text-slate-700">
+                {{ result.shipment.lineage_state_label }}
+            </span>
+            <span class="rounded-full border border-white/70 bg-white/80 px-3 py-1.5 text-slate-700">
+                {{ result.shipment.status_label }}
+            </span>
+        </div>
+    </div>
+</section>
+
+<div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Despacho</p>
+        <p class="mt-1 break-all text-xl font-bold text-slate-950">{{ result.shipment.code }}</p>
+        <p class="mt-1 text-xs text-slate-500">{{ result.shipment.shipped_at }}</p>
+    </section>
+
+    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Volumen despachado</p>
+        <p class="mt-1 text-xl font-bold text-slate-950">
+            {% if result.primary_total %}{{ result.primary_total.shipped }}{% else %}Múltiples unidades{% endif %}
+        </p>
+        <p class="mt-1 text-xs text-slate-500">Según ítems del despacho</p>
+    </section>
+
+    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Origen atribuido</p>
+        <p class="mt-1 text-xl font-bold text-emerald-700">
+            {% if result.primary_total %}{{ result.primary_total.attributed }}{% else %}Ver detalle{% endif %}
+        </p>
+        <p class="mt-1 text-xs text-slate-500">{{ result.source_count }} parcela(s) de origen</p>
+    </section>
+
+    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Sin resolver</p>
+        <p class="mt-1 text-xl font-bold {% if result.complete %}text-slate-950{% else %}text-amber-700{% endif %}">
+            {% if result.primary_total %}{{ result.primary_total.unresolved }}{% else %}Ver detalle{% endif %}
+        </p>
+        <p class="mt-1 text-xs text-slate-500">{{ result.event_count }} evento(s) recorridos</p>
+    </section>
+</div>
+
+<div class="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
+    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="mb-4">
+            <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Referencia comercial</p>
+            <h2 class="mt-1 text-base font-bold text-slate-950">Despacho consultado</h2>
+        </div>
+        <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div class="rounded-lg bg-slate-50 p-3">
+                <dt class="text-xs font-semibold text-slate-500">Venta / factura</dt>
+                <dd class="mt-1 break-all text-sm font-semibold text-slate-900">{{ result.shipment.sale_reference }}</dd>
+            </div>
+            <div class="rounded-lg bg-slate-50 p-3">
+                <dt class="text-xs font-semibold text-slate-500">Comprador</dt>
+                <dd class="mt-1 break-all text-sm font-semibold text-slate-900">{{ result.shipment.buyer_reference }}</dd>
+            </div>
+            <div class="rounded-lg bg-slate-50 p-3">
+                <dt class="text-xs font-semibold text-slate-500">País destino</dt>
+                <dd class="mt-1 text-sm font-semibold text-slate-900">{{ result.shipment.destination_country }}</dd>
+            </div>
+            <div class="rounded-lg bg-slate-50 p-3">
+                <dt class="text-xs font-semibold text-slate-500">Método de atribución</dt>
+                <dd class="mt-1 break-all font-mono text-[11px] text-slate-900">{{ result.allocation_method }}</dd>
+            </div>
+        </dl>
+    </section>
+
+    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="mb-4 flex items-center justify-between gap-3">
+            <div>
+                <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Reconciliación</p>
+                <h2 class="mt-1 text-base font-bold text-slate-950">Volumen por unidad</h2>
+            </div>
+            <i class="fa-solid fa-scale-balanced text-slate-300" aria-hidden="true"></i>
+        </div>
+        <div class="overflow-x-auto rounded-xl border border-slate-200">
+            <table class="min-w-full divide-y divide-slate-200 text-left text-xs">
+                <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
+                        <th class="px-4 py-3">Unidad</th>
+                        <th class="px-4 py-3">Despachado</th>
+                        <th class="px-4 py-3">Atribuido</th>
+                        <th class="px-4 py-3">Sin resolver</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200 bg-white">
+                    {% for total in result.totals %}
+                    <tr>
+                        <td class="px-4 py-3 font-semibold text-slate-900">{{ total.unit }}</td>
+                        <td class="px-4 py-3 text-slate-700">{{ total.shipped }}</td>
+                        <td class="px-4 py-3 font-semibold text-emerald-700">{{ total.attributed }}</td>
+                        <td class="px-4 py-3 {% if result.complete %}text-slate-700{% else %}font-semibold text-amber-700{% endif %}">{{ total.unresolved }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="px-4 py-5 text-center text-slate-500">No hay volúmenes para mostrar.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<section class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+            <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Origen consolidado</p>
+            <h2 class="mt-1 text-base font-bold text-slate-950">Parcelas y proveedores atribuibles al despacho</h2>
+            <p class="mt-1 text-xs text-slate-500">La proporción se calcula sobre el volumen despachado de la misma unidad.</p>
+        </div>
+        <span class="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">{{ result.source_count }} origen(es)</span>
+    </div>
+
+    <div class="overflow-x-auto rounded-xl border border-slate-200">
+        <table class="min-w-full divide-y divide-slate-200 text-left text-xs">
+            <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                    <th class="px-4 py-3">Parcela / lote</th>
+                    <th class="px-4 py-3">Proveedor</th>
+                    <th class="px-4 py-3">Producto</th>
+                    <th class="px-4 py-3">Georreferencia</th>
+                    <th class="px-4 py-3">Volumen atribuido</th>
+                    <th class="px-4 py-3">Participación</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200 bg-white">
+                {% for source in result.sources %}
+                <tr class="align-top">
+                    <td class="px-4 py-3">
+                        <p class="font-bold text-slate-950">{{ source.identifier }}</p>
+                        <p class="mt-1 text-[11px] text-slate-500">{{ source.hectares }} · {{ source.status }}</p>
+                    </td>
+                    <td class="px-4 py-3 font-medium text-slate-800">{{ source.producer }}</td>
+                    <td class="px-4 py-3 text-slate-700">{{ source.product }}</td>
+                    <td class="px-4 py-3">
+                        <p class="font-mono text-[11px] text-slate-700">{{ source.coordinates }}</p>
+                        <p class="mt-1 text-[11px] {% if source.has_polygon %}text-emerald-700{% else %}text-amber-700{% endif %}">
+                            {% if source.has_polygon %}Polígono disponible{% else %}Sin polígono registrado{% endif %}
+                        </p>
+                    </td>
+                    <td class="px-4 py-3 font-bold text-slate-950">{{ source.quantity }}</td>
+                    <td class="px-4 py-3">
+                        <span class="rounded-full bg-emerald-50 px-2.5 py-1 font-bold text-emerald-800">{{ source.share }}</span>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="px-4 py-6 text-center text-slate-500">
+                        No se pudieron atribuir parcelas de origen a este despacho.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="mb-5">
+        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Camino industrial</p>
+        <h2 class="mt-1 text-base font-bold text-slate-950">Eventos recorridos hacia el origen</h2>
+        <p class="mt-1 text-xs leading-5 text-slate-500">
+            Cada bloque muestra las entradas registradas, el proceso y sus salidas. La reconciliación sólo compara cantidades cuando la unidad es homogénea.
+        </p>
+    </div>
+
+    <div class="space-y-4">
+        {% for event in result.events %}
+        <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="rounded bg-slate-900 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">{{ event.type_label }}</span>
+                        <span class="font-mono text-xs font-semibold text-slate-700">{{ event.code }}</span>
+                    </div>
+                    <p class="mt-2 text-xs text-slate-500">{{ event.occurred_at }} · {{ event.facility }}</p>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-right text-[11px]">
+                    <div class="rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200">
+                        <p class="text-slate-500">Rendimiento</p>
+                        <p class="mt-0.5 font-bold text-slate-900">{{ event.yield }}</p>
+                    </div>
+                    <div class="rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200">
+                        <p class="text-slate-500">Merma / diferencia</p>
+                        <p class="mt-0.5 font-bold text-slate-900">{{ event.loss_quantity }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+                <div class="rounded-lg border border-slate-200 bg-white p-3">
+                    <p class="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Entradas</p>
+                    <div class="space-y-2">
+                        {% for edge in event.inputs %}
+                        <div class="flex items-center justify-between gap-3 rounded bg-slate-50 px-3 py-2">
+                            <span class="min-w-0 truncate font-mono text-[11px] font-semibold text-slate-800">{{ edge.batch_code }}</span>
+                            <span class="shrink-0 text-xs font-bold text-slate-950">{{ edge.quantity }}</span>
+                        </div>
+                        {% else %}
+                        <p class="text-xs text-slate-500">Sin entradas industriales.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="hidden items-center justify-center px-1 text-slate-300 lg:flex" aria-hidden="true">
+                    <i class="fa-solid fa-arrow-right-long"></i>
+                </div>
+
+                <div class="rounded-lg border border-slate-200 bg-white p-3">
+                    <p class="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Salidas</p>
+                    <div class="space-y-2">
+                        {% for edge in event.outputs %}
+                        <div class="flex items-center justify-between gap-3 rounded bg-emerald-50 px-3 py-2">
+                            <span class="min-w-0 truncate font-mono text-[11px] font-semibold text-emerald-900">{{ edge.batch_code }}</span>
+                            <span class="shrink-0 text-xs font-bold text-emerald-950">{{ edge.quantity }}</span>
+                        </div>
+                        {% else %}
+                        <p class="text-xs text-slate-500">Sin salidas registradas.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500">
+                <span>Input total: <strong class="text-slate-700">{{ event.input_quantity }}</strong></span>
+                <span>Output total: <strong class="text-slate-700">{{ event.output_quantity }}</strong></span>
+                <span>Estado: <strong class="text-slate-700">{{ event.status }}</strong></span>
+            </div>
+        </article>
+        {% else %}
+        <div class="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+            No hay eventos industriales recorribles para este despacho.
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="mb-4">
+        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Producto despachado</p>
+        <h2 class="mt-1 text-base font-bold text-slate-950">Lotes comerciales y su composición</h2>
+    </div>
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {% for item in result.items %}
+        <article class="rounded-xl border {% if item.complete %}border-slate-200{% else %}border-amber-300{% endif %} bg-slate-50 p-4">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <p class="font-mono text-xs font-bold text-slate-950">{{ item.batch_code }}</p>
+                    <p class="mt-1 text-sm font-semibold text-slate-800">{{ item.product }}</p>
+                </div>
+                <span class="rounded-full {% if item.complete %}bg-emerald-100 text-emerald-800{% else %}bg-amber-100 text-amber-800{% endif %} px-2.5 py-1 text-[11px] font-bold">
+                    {% if item.complete %}Cerrado{% else %}Revisar{% endif %}
+                </span>
+            </div>
+            <dl class="mt-4 grid grid-cols-3 gap-2 text-xs">
+                <div class="rounded-lg bg-white p-2.5 ring-1 ring-slate-200">
+                    <dt class="text-slate-500">Despachado</dt>
+                    <dd class="mt-1 font-bold text-slate-900">{{ item.shipped_quantity }}</dd>
+                </div>
+                <div class="rounded-lg bg-white p-2.5 ring-1 ring-slate-200">
+                    <dt class="text-slate-500">Atribuido</dt>
+                    <dd class="mt-1 font-bold text-emerald-700">{{ item.attributed_quantity }}</dd>
+                </div>
+                <div class="rounded-lg bg-white p-2.5 ring-1 ring-slate-200">
+                    <dt class="text-slate-500">Pendiente</dt>
+                    <dd class="mt-1 font-bold {% if item.complete %}text-slate-900{% else %}text-amber-700{% endif %}">{{ item.unresolved_quantity }}</dd>
+                </div>
+            </dl>
+            {% if item.contributions %}
+            <div class="mt-4 space-y-2">
+                {% for contribution in item.contributions %}
+                <div class="flex flex-col gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="min-w-0">
+                        <p class="truncate text-xs font-bold text-slate-900">{{ contribution.identifier }}</p>
+                        <p class="truncate text-[11px] text-slate-500">{{ contribution.producer }}</p>
+                    </div>
+                    <div class="shrink-0 text-left sm:text-right">
+                        <p class="text-xs font-bold text-slate-900">{{ contribution.quantity }}</p>
+                        <p class="text-[11px] font-semibold text-emerald-700">{{ contribution.share }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </article>
+        {% else %}
+        <div class="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 lg:col-span-2">
+            El despacho no contiene lotes comerciales visibles.
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+{% if result.issues %}
+<section class="rounded-2xl border border-amber-200 bg-amber-50 p-5" aria-labelledby="lineage-issues-title">
+    <div class="flex items-start gap-3">
+        <span class="mt-0.5 text-amber-600" aria-hidden="true"><i class="fa-solid fa-list-check"></i></span>
+        <div class="min-w-0 flex-1">
+            <h2 id="lineage-issues-title" class="text-sm font-bold text-amber-950">Incidencias que impiden cerrar la genealogía</h2>
+            <div class="mt-3 space-y-2">
+                {% for issue in result.issues %}
+                <div class="rounded-lg border border-amber-200 bg-white/70 px-3 py-2">
+                    <p class="font-mono text-[11px] font-bold text-amber-800">{{ issue.code }}</p>
+                    <p class="mt-1 text-xs leading-5 text-amber-900">{{ issue.message }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+{% elif not view.searched %}
+<section class="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
+    <span class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-xl text-slate-500" aria-hidden="true">
+        <i class="fa-solid fa-diagram-project"></i>
+    </span>
+    <h2 class="mt-4 text-lg font-bold text-slate-950">Buscá un despacho para comenzar</h2>
+    <p class="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+        Litoral Trace reconstruirá la cadena desde el lote comercial hasta las parcelas de origen y marcará cualquier volumen o vínculo que no pueda resolverse.
+    </p>
+    <div class="mx-auto mt-6 grid max-w-3xl grid-cols-1 gap-3 text-left sm:grid-cols-3">
+        <div class="rounded-xl bg-slate-50 p-4">
+            <p class="text-xs font-bold text-slate-900">1. Despacho</p>
+            <p class="mt-1 text-xs leading-5 text-slate-500">Identifica la venta y sus lotes comerciales.</p>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-4">
+            <p class="text-xs font-bold text-slate-900">2. Procesos</p>
+            <p class="mt-1 text-xs leading-5 text-slate-500">Recorre transformaciones, mezclas y recepciones POSTED.</p>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-4">
+            <p class="text-xs font-bold text-slate-900">3. Orígenes</p>
+            <p class="mt-1 text-xs leading-5 text-slate-500">Consolida parcelas, proveedores y cantidades atribuibles.</p>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+{% endblock %}
