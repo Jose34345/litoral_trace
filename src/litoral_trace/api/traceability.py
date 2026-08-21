@@ -16,7 +16,6 @@ from litoral_trace.services.traceability_lineage import (
     TraceabilityLineageValidationError,
 )
 from litoral_trace.web.traceability import router as traceability_web_router
-from litoral_trace.web.traceability_operations import router as traceability_operations_router
 
 
 api_router = APIRouter(
@@ -83,12 +82,12 @@ async def obtener_origen_despacho_endpoint(
         session.close()
 
 
-# ``main.py`` includes one traceability-domain router. Keeping the origin API,
-# P1E dossier downloads, the P1D browser workspace, and UX10-D operational
-# forms beneath this composition avoids duplicate registration paths while P1C
-# remains the single source of lineage truth and P1B remains the stock ledger.
+# ``main.py`` includes one traceability-domain router for the origin API,
+# P1E dossier downloads and the P1D read-only traceability workspace. UX10-D
+# operational HTML routes are registered through ``litoral_trace.web.router``
+# instead, avoiding an API<->web import cycle while P1C remains the lineage
+# source of truth and P1B remains the only stock ledger.
 router = APIRouter()
 router.include_router(api_router)
 router.include_router(dossier_router)
 router.include_router(traceability_web_router)
-router.include_router(traceability_operations_router)
