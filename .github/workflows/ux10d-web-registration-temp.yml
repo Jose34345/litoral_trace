@@ -1,0 +1,50 @@
+name: UX10D Web Registration Temp
+
+on:
+  pull_request:
+    branches:
+      - ux10-c-lineage-graph
+
+permissions:
+  contents: write
+
+jobs:
+  register:
+    if: github.head_ref == 'ux10-d-chain-of-custody-operations' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout UX10-D head
+        uses: actions/checkout@v4
+        with:
+          ref: ux10-d-chain-of-custody-operations
+          fetch-depth: 0
+
+      - name: Register operational HTML router in web layer
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/litoral_trace/web/router.py')
+          text = path.read_text(encoding='utf-8')
+          marker = '# UX10-D_OPERATION_ROUTER_REGISTRATION\n'
+          if marker not in text:
+              text = text.rstrip() + '''\n\n\n# UX10-D_OPERATION_ROUTER_REGISTRATION\n# Keep operational HTML composition in the web layer. The late import avoids\n# coupling ``api.traceability`` back into server-rendered write workflows.\nfrom litoral_trace.web.traceability_operations import (\n    router as traceability_operations_router,\n)\n\nrouter.include_router(traceability_operations_router)\n'''
+              path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Remove temporary workflow
+        run: rm .github/workflows/ux10d-web-registration-temp.yml
+
+      - name: Commit web registration fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/litoral_trace/web/router.py .github/workflows/ux10d-web-registration-temp.yml
+          if git diff --cached --quiet; then
+            echo 'No web registration changes required.'
+            exit 0
+          fi
+          git commit -m 'fix(ux10d): register operations through web router'
+          git push origin HEAD:ux10-d-chain-of-custody-operations
