@@ -52,6 +52,14 @@ _NAVIGATION = (
         active_prefixes=("/traceability",),
     ),
     NavigationItem(
+        key="release_control",
+        label="Control de salida",
+        href="/release-control",
+        section="compliance",
+        permission=Permission.LOTE_READ,
+        active_prefixes=("/release-control",),
+    ),
+    NavigationItem(
         key="vault",
         label="Documentos y evidencias",
         href="/vault",
