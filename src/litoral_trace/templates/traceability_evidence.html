@@ -1,0 +1,143 @@
+{% extends "app/base_app.html" %}
+
+{% block title %}Evidencia de cadena de custodia | Litoral Trace{% endblock %}
+
+{% block content %}
+{% set view = evidence_view %}
+<section class="space-y-6" aria-labelledby="evidence-title">
+    <header class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-sm">
+        <div class="grid gap-6 p-6 lg:grid-cols-[1.25fr_0.75fr] lg:p-8">
+            <div>
+                <div class="flex flex-wrap gap-2">
+                    <span class="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">Evidencia contextual</span>
+                    <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-300">Vault único · vínculos auditables</span>
+                </div>
+                <h1 id="evidence-title" class="mt-4 text-3xl font-bold tracking-tight">Evidencia de la cadena de custodia</h1>
+                <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-300">Vinculá documentos reales al origen, movimiento, lote industrial o despacho que respaldan. El archivo permanece una sola vez en Documentos y evidencias; acá sólo registramos qué eslabón prueba.</p>
+                <div class="mt-5 flex flex-wrap gap-2">
+                    <a href="/operations" class="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15"><i class="fa-solid fa-industry" aria-hidden="true"></i>Volver a operaciones</a>
+                    <a href="/traceability" class="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i>Ver trazabilidad</a>
+                    <a href="/vault" class="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10"><i class="fa-solid fa-box-archive" aria-hidden="true"></i>Documentos y evidencias</a>
+                </div>
+            </div>
+            <aside class="rounded-2xl border border-white/10 bg-white/5 p-5">
+                <div class="flex items-end justify-between gap-4">
+                    <div><p class="text-xs font-bold uppercase tracking-wider text-emerald-300">Cobertura registrada</p><p class="mt-2 text-4xl font-bold">{{ view.coverage.percentage }}%</p></div>
+                    <p class="pb-1 text-sm font-semibold text-slate-300">{{ view.coverage.covered }} / {{ view.coverage.total }} eslabones</p>
+                </div>
+                <div class="mt-4 h-2 overflow-hidden rounded-full bg-white/10"><div class="h-full rounded-full bg-emerald-400" style="width: {{ view.coverage.percentage }}%"></div></div>
+                <p class="mt-4 text-xs leading-5 text-slate-400">La cobertura indica documentación vinculada en Litoral Trace. No constituye por sí sola una certificación ni una conclusión automática de cumplimiento regulatorio.</p>
+            </aside>
+        </div>
+    </header>
+
+    {% if view.message %}
+    <section class="rounded-2xl border {% if view.message.level == 'success' %}border-emerald-200 bg-emerald-50{% else %}border-sky-200 bg-sky-50{% endif %} p-5" role="status">
+        <p class="text-sm font-bold {% if view.message.level == 'success' %}text-emerald-950{% else %}text-sky-950{% endif %}">{{ view.message.title }}</p>
+        <p class="mt-1 text-sm {% if view.message.level == 'success' %}text-emerald-800{% else %}text-sky-800{% endif %}">{{ view.message.message }}</p>
+    </section>
+    {% endif %}
+
+    {% if view.error %}
+    <section class="rounded-2xl border border-rose-200 bg-rose-50 p-5" role="alert">
+        <div class="flex gap-3"><i class="fa-solid fa-triangle-exclamation mt-0.5 text-rose-700" aria-hidden="true"></i><div><p class="text-sm font-bold text-rose-950">{{ view.error.title }}</p><p class="mt-1 text-sm leading-6 text-rose-800">{{ view.error.message }}</p></div></div>
+    </section>
+    {% endif %}
+
+    <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Cobertura por tipo de eslabón">
+        {% for key, metric in view.coverage.by_type.items() %}
+        <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div class="flex items-center justify-between"><p class="text-xs font-bold uppercase tracking-wide text-slate-500">{{ metric.label }}</p><span class="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-700">{{ metric.covered }}/{{ metric.total }}</span></div>
+            <p class="mt-2 text-sm text-slate-600">{% if metric.total == 0 %}Sin registros{% elif metric.covered == metric.total %}Todos con evidencia{% else %}{{ metric.total - metric.covered }} sin evidencia vinculada{% endif %}</p>
+        </article>
+        {% endfor %}
+    </section>
+
+    <div class="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+        <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" aria-labelledby="subject-title">
+            <div class="flex items-start justify-between gap-3"><div><p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">01 · Contexto</p><h2 id="subject-title" class="mt-1 text-lg font-bold text-slate-950">Elegí un eslabón</h2></div><i class="fa-solid fa-link text-xl text-slate-400" aria-hidden="true"></i></div>
+            <p class="mt-2 text-sm leading-6 text-slate-600">Trabajá siempre dentro del objeto real de la cadena. Al cambiar de eslabón, la evidencia visible y los formularios se actualizan en el mismo contexto.</p>
+            {% if view.subjects %}
+            <form method="get" action="/evidence" class="mt-5">
+                <label for="subject-select" class="text-xs font-semibold text-slate-700">Origen, movimiento, lote o despacho</label>
+                <select id="subject-select" name="subject" onchange="this.form.submit()" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm" aria-label="Seleccionar eslabón de trazabilidad">
+                    {% for subject in view.subjects %}
+                    <option value="{{ subject.key }}" {% if subject.key == view.selected_key %}selected{% endif %}>{{ subject.type_label }} · {{ subject.label }} · {{ subject.secondary }}</option>
+                    {% endfor %}
+                </select>
+                <noscript><button class="mt-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Ver evidencia</button></noscript>
+            </form>
+            {% if view.selected_subject %}
+            <div class="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div class="flex flex-wrap items-center justify-between gap-2"><span class="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-800">{{ view.selected_subject.type_label }}</span><span class="text-xs font-semibold text-slate-500">{{ view.selected_subject.status }}</span></div>
+                <p class="mt-3 text-base font-bold text-slate-950">{{ view.selected_subject.label }}</p>
+                <p class="mt-1 text-sm text-slate-600">{{ view.selected_subject.secondary }}</p>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">Todavía no hay eslabones de trazabilidad disponibles. Registrá primero un origen u operación.</div>
+            {% endif %}
+        </section>
+
+        <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" aria-labelledby="documents-title">
+            <div class="flex flex-wrap items-start justify-between gap-3"><div><p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">02 · Prueba documental</p><h2 id="documents-title" class="mt-1 text-lg font-bold text-slate-950">Documentos del eslabón</h2></div><span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{{ view.evidence|length }} vinculados</span></div>
+            {% if view.evidence %}
+            <div class="mt-5 space-y-3">
+                {% for item in view.evidence %}
+                <article class="rounded-xl border border-slate-200 p-4">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="min-w-0"><div class="flex flex-wrap gap-2"><span class="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-800">{{ item.evidence_type_label }}</span><span class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">{{ item.document_type_label }}</span></div><p class="mt-2 truncate text-sm font-bold text-slate-950">{{ item.filename }}</p><p class="mt-1 text-xs text-slate-500">Referencia: {{ item.reference_number }} · Emisor: {{ item.issuer }} · Fecha: {{ item.document_date }}</p></div>
+                        <a href="{{ item.download_href }}" class="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"><i class="fa-solid fa-download" aria-hidden="true"></i>Descargar</a>
+                    </div>
+                    {% if item.validity != '—' or item.notes %}<div class="mt-3 border-t border-slate-100 pt-3 text-xs leading-5 text-slate-600">{% if item.validity != '—' %}<p><strong>Vigencia:</strong> {{ item.validity }}</p>{% endif %}{% if item.notes %}<p class="mt-1"><strong>Notas:</strong> {{ item.notes }}</p>{% endif %}</div>{% endif %}
+                    <details class="mt-3 text-xs"><summary class="cursor-pointer font-semibold text-slate-500">Detalles de integridad</summary><div class="mt-2 rounded-lg bg-slate-50 p-3 text-slate-600"><p>Estado: {{ item.status }} · Tamaño: {{ item.size_kb }} KB</p><p class="mt-1 break-all font-mono text-[10px]">SHA-256 {{ item.sha256 }}</p></div></details>
+                    {% if view.can_manage %}
+                    <form method="post" action="/evidence/{{ item.link_public_id }}/unlink" class="mt-3">
+                        <input type="hidden" name="{{ csrf_form_field }}" value="{{ csrf_token }}"><input type="hidden" name="subject" value="{{ view.selected_key }}">
+                        <button class="text-xs font-semibold text-rose-700 hover:text-rose-800">Desvincular del eslabón</button><span class="ml-2 text-[11px] text-slate-400">El archivo no se elimina de la bóveda.</span>
+                    </form>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="mt-5 rounded-xl border border-dashed border-amber-300 bg-amber-50 p-5"><div class="flex gap-3"><i class="fa-regular fa-folder-open mt-0.5 text-amber-700" aria-hidden="true"></i><div><p class="text-sm font-bold text-amber-950">Sin evidencia vinculada</p><p class="mt-1 text-sm leading-6 text-amber-800">Este eslabón existe en la cadena, pero todavía no tiene documentos asociados en Litoral Trace. Esto es una brecha documental visible, no una conclusión regulatoria.</p></div></div></div>
+            {% endif %}
+        </section>
+    </div>
+
+    {% if view.can_manage and view.selected_subject %}
+    <section class="grid gap-6 xl:grid-cols-2" aria-label="Vincular evidencia">
+        <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div><p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">03A · Reutilizar</p><h2 class="mt-1 text-lg font-bold text-slate-950">Vincular un documento existente</h2><p class="mt-2 text-sm leading-6 text-slate-600">Usá un archivo que ya está disponible en la bóveda. No se crea una copia.</p></div>
+            <form method="post" action="/evidence/link" class="mt-5 space-y-4">
+                <input type="hidden" name="{{ csrf_form_field }}" value="{{ csrf_token }}"><input type="hidden" name="subject" value="{{ view.selected_key }}">
+                <div><label class="text-xs font-semibold text-slate-700">Documento disponible</label><select name="document_id" required class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"><option value="">Seleccionar documento</option>{% for document in view.available_documents %}<option value="{{ document.public_id }}">{{ document.filename }} · {{ document.document_type_label }}</option>{% endfor %}</select>{% if not view.available_documents %}<p class="mt-1 text-xs text-slate-500">No hay documentos disponibles para reutilizar. Podés cargar uno nuevo en el panel contiguo.</p>{% endif %}</div>
+                <div><label class="text-xs font-semibold text-slate-700">Qué demuestra</label><select name="evidence_type" required class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm">{% for key, label in view.evidence_types.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+                <div class="grid gap-3 sm:grid-cols-2"><div><label class="text-xs font-semibold text-slate-700">Número / referencia</label><input name="reference_number" maxlength="160" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></div><div><label class="text-xs font-semibold text-slate-700">Emisor</label><input name="issuer" maxlength="200" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></div></div>
+                <div class="grid gap-3 sm:grid-cols-3"><div><label class="text-xs font-semibold text-slate-700">Fecha documento</label><input name="document_date" type="date" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></div><div><label class="text-xs font-semibold text-slate-700">Válido desde</label><input name="valid_from" type="date" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></div><div><label class="text-xs font-semibold text-slate-700">Válido hasta</label><input name="valid_until" type="date" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></div></div>
+                <div><label class="text-xs font-semibold text-slate-700">Notas</label><textarea name="notes" maxlength="2000" rows="2" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></textarea></div>
+                <button class="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">Vincular evidencia</button>
+            </form>
+        </article>
+
+        <article class="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-6 shadow-sm">
+            <div><p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">03B · Cargar y vincular</p><h2 class="mt-1 text-lg font-bold text-slate-950">Subir un documento sin salir del flujo</h2><p class="mt-2 text-sm leading-6 text-slate-600">El archivo se valida y guarda primero en la bóveda privada; después se vincula al eslabón seleccionado.</p></div>
+            {% if view.can_upload %}
+            <form method="post" action="/evidence/upload-link" enctype="multipart/form-data" class="mt-5 space-y-4">
+                <input type="hidden" name="{{ csrf_form_field }}" value="{{ csrf_token }}"><input type="hidden" name="subject" value="{{ view.selected_key }}">
+                <div><label class="text-xs font-semibold text-slate-700">Archivo</label><input name="file" type="file" required accept=".pdf,.xlsx" class="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"></div>
+                <div class="grid gap-3 sm:grid-cols-2"><div><label class="text-xs font-semibold text-slate-700">Formato documental</label><select name="document_type" required class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm">{% for key, label in view.document_types.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div><div><label class="text-xs font-semibold text-slate-700">Qué demuestra</label><select name="evidence_type" required class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm">{% for key, label in view.evidence_types.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div></div>
+                <div class="grid gap-3 sm:grid-cols-2"><div><label class="text-xs font-semibold text-slate-700">Número / referencia</label><input name="reference_number" maxlength="160" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"></div><div><label class="text-xs font-semibold text-slate-700">Emisor</label><input name="issuer" maxlength="200" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"></div></div>
+                <div class="grid gap-3 sm:grid-cols-3"><div><label class="text-xs font-semibold text-slate-700">Fecha documento</label><input name="document_date" type="date" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"></div><div><label class="text-xs font-semibold text-slate-700">Válido desde</label><input name="valid_from" type="date" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"></div><div><label class="text-xs font-semibold text-slate-700">Válido hasta</label><input name="valid_until" type="date" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"></div></div>
+                <div><label class="text-xs font-semibold text-slate-700">Notas</label><textarea name="notes" maxlength="2000" rows="2" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"></textarea></div>
+                <button class="rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"><i class="fa-solid fa-cloud-arrow-up mr-2" aria-hidden="true"></i>Guardar y vincular</button>
+            </form>
+            {% else %}
+            <div class="mt-5 rounded-xl border border-slate-200 bg-white p-5 text-sm leading-6 text-slate-600">Tu rol puede vincular documentos existentes, pero no cargar archivos nuevos. Usá Documentos y evidencias o solicitá la carga a un usuario autorizado.</div>
+            {% endif %}
+        </article>
+    </section>
+    {% endif %}
+</section>
+{% endblock %}
