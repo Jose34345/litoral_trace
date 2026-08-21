@@ -19,6 +19,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine, text
 
 from litoral_trace.auth.passwords import hash_password, verify_password
@@ -116,6 +117,9 @@ def test_operations_receipt_real_http_login_csrf_rls_and_posting() -> None:
 
     server = None
     server_thread = None
+    web_router_module = None
+    original_web_login = None
+    login_probe: dict[str, object] = {}
 
     try:
         with owner_engine.begin() as connection:
@@ -214,6 +218,25 @@ def test_operations_receipt_real_http_login_csrf_rls_and_posting() -> None:
 
         # Import only after the isolated environment and seed are ready.
         from main import app
+        import litoral_trace.web.router as web_router_module_import
+
+        web_router_module = web_router_module_import
+        original_web_login = web_router_module.login_b2b
+
+        async def observed_web_login(payload, response, request=None):
+            # Keep diagnostics non-sensitive: only equality booleans and safe HTTP detail.
+            login_probe["username_matches"] = payload.username == username
+            login_probe["password_matches"] = payload.password == password
+            try:
+                result = await original_web_login(payload, response, request)
+            except HTTPException as exc:
+                login_probe["exception_status"] = int(exc.status_code)
+                login_probe["exception_detail"] = str(exc.detail)
+                raise
+            login_probe["returned"] = True
+            return result
+
+        web_router_module.login_b2b = observed_web_login
 
         port = _free_port()
         config = uvicorn.Config(
@@ -255,7 +278,10 @@ def test_operations_receipt_real_http_login_csrf_rls_and_posting() -> None:
                 "password": password,
             },
         )
-        assert status_code == 303, login_result_html
+        assert status_code == 303, (
+            f"Sanitized login probe: {login_probe}; "
+            f"generic_error_rendered={'Usuario o contrasena incorrectos.' in login_result_html}"
+        )
         assert headers.get("location") == "/dashboard"
         assert ACCESS_TOKEN_COOKIE_KEY in cookies
         assert REFRESH_TOKEN_COOKIE_KEY in cookies
@@ -366,6 +392,8 @@ def test_operations_receipt_real_http_login_csrf_rls_and_posting() -> None:
             server.should_exit = True
         if server_thread is not None:
             server_thread.join(timeout=10)
+        if web_router_module is not None and original_web_login is not None:
+            web_router_module.login_b2b = original_web_login
 
         reset_engine_state()
         if organization_id is not None:
