@@ -1,16 +1,16 @@
 name: UX10D Hardening Temp
 
 on:
-  push:
+  pull_request:
     branches:
-      - ux10-d-chain-of-custody-operations
+      - ux10-c-lineage-graph
 
 permissions:
   contents: write
 
 jobs:
   harden:
-    if: github.actor != 'github-actions[bot]'
+    if: github.head_ref == 'ux10-d-chain-of-custody-operations' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout UX10-D head
