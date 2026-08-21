@@ -38,6 +38,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
 
+      # This is intentionally a clean application import, not a router-unit
+      # snapshot: production must expose every UX10-D write route at ASGI boot.
       - name: UX10-D cold-start route registration
         run: |
           python - <<'PY'
