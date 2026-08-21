@@ -2,64 +2,26 @@
 <html lang="es" class="h-full bg-slate-50">
 <head>
     <meta charset="UTF-8">
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     {% if csrf_token %}
-    <meta
-        name="csrf-token"
-        content="{{ csrf_token }}"
-    >
+    <meta name="csrf-token" content="{{ csrf_token }}">
     {% endif %}
 
-    <title>
-        {% block title %}
-        Litoral Trace | Compliance Intelligence EUDR
-        {% endblock %}
-    </title>
+    <title>{% block title %}Litoral Trace | Trazabilidad de origen y cadena de custodia{% endblock %}</title>
 
-    <!--
-        P2.FE-B3:
-        pinned frontend runtime served by Litoral Trace.
-    -->
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', path='/dist/app.css') }}"
-    >
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', path='/vendor/fontawesome/css/all.min.css') }}"
-    >
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', path='/vendor/leaflet/leaflet.css') }}"
-    >
+    <link rel="stylesheet" href="{{ url_for('static', path='/dist/app.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/vendor/fontawesome/css/all.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/vendor/leaflet/leaflet.css') }}">
 
-    <script
-        src="{{ url_for('static', path='/vendor/htmx/htmx.min.js') }}"
-        defer
-    ></script>
-
-    <script
-        src="{{ url_for('static', path='/vendor/leaflet/leaflet.js') }}"
-        defer
-    ></script>
-
-    <script
-        type="module"
-        src="{{ url_for('static', path='/src/js/app.js') }}"
-    ></script>
+    <script src="{{ url_for('static', path='/vendor/htmx/htmx.min.js') }}" defer></script>
+    <script src="{{ url_for('static', path='/vendor/leaflet/leaflet.js') }}" defer></script>
+    <script type="module" src="{{ url_for('static', path='/src/js/app.js') }}"></script>
 
     {% block head_extra %}{% endblock %}
 </head>
-
-<body
-    class="{% block body_class %}h-full font-sans text-slate-800 antialiased{% endblock %}"
->
+<body class="{% block body_class %}h-full font-sans text-slate-800 antialiased{% endblock %}">
     {% block shell %}{% endblock %}
-
     {% block body_scripts %}{% endblock %}
 </body>
 </html>
