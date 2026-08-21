@@ -347,7 +347,11 @@ def test_operations_receipt_real_http_login_csrf_rls_and_posting(
             row = connection.execute(
                 text(
                     """
-                    SELECT e.status, b.status, o.quantity, o.unit
+                    SELECT
+                        e.status AS event_status,
+                        b.status AS batch_status,
+                        o.quantity AS quantity,
+                        o.unit AS unit
                     FROM traceability_events AS e
                     JOIN traceability_event_outputs AS o
                       ON o.organization_id = e.organization_id
@@ -366,8 +370,8 @@ def test_operations_receipt_real_http_login_csrf_rls_and_posting(
                     "batch_code": batch_code,
                 },
             ).one()
-        assert row.status == "POSTED"
-        assert row[1] == "ACTIVE"
+        assert row.event_status == "POSTED"
+        assert row.batch_status == "ACTIVE"
         assert str(row.quantity) == "100.000000"
         assert row.unit == "M3"
     finally:
