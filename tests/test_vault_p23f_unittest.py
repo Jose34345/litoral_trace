@@ -163,8 +163,8 @@ def test_vault_upload_uses_idempotency_key_and_server_authoritative_validation()
     )
 
     assert (
-        "La validación de extensión, MIME, "
-        "estructura, tamaño y SHA-256"
+        "valida extensión, formato, estructura, tamaño "
+        "e integridad SHA-256"
         in template
     )
 
