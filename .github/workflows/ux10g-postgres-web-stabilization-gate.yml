@@ -138,6 +138,13 @@ jobs:
           python -m alembic current | tee alembic-current.txt
           grep -F "020_add_traceability_evidence_links" alembic-current.txt
 
+      - name: Auth RLS login preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs \
+            tests/test_auth_tenant_rls_p18c_postgres_integration.py::test_login_succeeds_under_users_rls
+
       - name: UX10-G expire-on-commit PostgreSQL regression
         shell: bash
         run: |
