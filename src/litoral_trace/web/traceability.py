@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request, status
 from fastapi.responses import HTMLResponse
@@ -224,6 +225,13 @@ def build_traceability_view(
         return view
 
     shipment = payload.get("shipment") or {}
+    shipment_code = str(shipment.get("shipment_code") or "").strip()
+    encoded_shipment_code = quote(shipment_code, safe="")
+    dossier_base = (
+        f"/api/v1/traceability/shipments/{encoded_shipment_code}/dossier"
+        if encoded_shipment_code
+        else None
+    )
     totals = payload.get("unit_totals") or []
     sources = [_present_source(source) for source in payload.get("source_lotes") or []]
     events = [_present_event(event) for event in payload.get("events") or []]
@@ -265,6 +273,16 @@ def build_traceability_view(
                 else "Previsualización"
             ),
         },
+        "dossier": (
+            {
+                "bundle_href": f"{dossier_base}/bundle",
+                "pdf_href": f"{dossier_base}/pdf",
+                "geojson_href": f"{dossier_base}/geojson",
+                "manifest_href": f"{dossier_base}/manifest",
+            }
+            if dossier_base is not None
+            else None
+        ),
         "allocation_method": _text(payload.get("allocation_method")),
         "totals": [
             {
