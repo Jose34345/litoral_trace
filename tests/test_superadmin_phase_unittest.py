@@ -127,12 +127,12 @@ class TestSuperAdminPhase(unittest.TestCase):
         )
 
         self.assertIn(
-            "Acceso clientes",
+            "Acceso de clientes",
             body,
         )
 
         self.assertIn(
-            "Ingresá a tu workspace",
+            "Acceso seguro a Litoral Trace",
             body,
         )
 
@@ -320,12 +320,12 @@ class TestSuperAdminPhase(unittest.TestCase):
         )
 
         self.assertIn(
-            "PANEL SUPERADMIN",
+            "Administración global",
             body,
         )
 
         self.assertIn(
-            "Organizaciones Persistidas",
+            "Organizaciones de la plataforma",
             body,
         )
 
