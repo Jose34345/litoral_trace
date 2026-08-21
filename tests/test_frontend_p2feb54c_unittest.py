@@ -125,37 +125,17 @@ def test_regional_map_status_is_accessible_live_region():
 
 
 def test_regional_maps_have_explicit_no_javascript_fallback():
-    expected_message = (
-        "Interactive territorial visualization "
-        "requires JavaScript."
-    )
-
     for path in (
         REGIONAL_INDEX,
         REGIONAL_DETAIL,
     ):
         template = _read(path)
 
-        assert (
-            "<noscript>"
-            in template
-        )
-
-        assert (
-            "</noscript>"
-            in template
-        )
-
-        assert (
-            expected_message
-            in template
-        )
-
-        assert (
-            "Regional profiles and evidence "
-            "context remain available."
-            in template
-        )
+        assert "<noscript>" in template
+        assert "</noscript>" in template
+        assert "La visualización interactiva requiere JavaScript." in template
+        assert "continúa" in template
+        assert "disponible" in template
 
 
 def test_no_javascript_fallback_does_not_claim_risk():
@@ -286,25 +266,10 @@ def test_map_runtime_has_explicit_status_show_hide_contract():
         REGIONAL_MAP_JS
     )
 
-    assert (
-        "function showMapStatus"
-        in javascript
-    )
-
-    assert (
-        "function hideMapStatus"
-        in javascript
-    )
-
-    assert (
-        "status.hidden = false"
-        in javascript
-    )
-
-    assert (
-        "status.hidden = true"
-        in javascript
-    )
+    assert "const showStatus =" in javascript
+    assert "const hideStatus =" in javascript
+    assert "status.hidden = false" in javascript
+    assert "status.hidden = true" in javascript
 
 
 def test_map_runtime_reports_loading_and_fail_safe_states():
@@ -312,30 +277,11 @@ def test_map_runtime_reports_loading_and_fail_safe_states():
         REGIONAL_MAP_JS
     )
 
-    assert (
-        "Loading territorial reference"
-        in javascript
-    )
-
-    assert (
-        "Territorial visualization is unavailable."
-        in javascript
-    )
-
-    assert (
-        "Territorial visualization "
-        in javascript
-    )
-
-    assert (
-        "Regional profile content "
-        in javascript
-    )
-
-    assert (
-        "remains accessible."
-        in javascript
-    )
+    assert "Cargando referencia territorial" in javascript
+    assert "El mapa territorial no está disponible" in javascript
+    assert "No hay un dataset territorial configurado" in javascript
+    assert "No fue posible cargar la visualización territorial" in javascript
+    assert "continúa" in javascript or "continúan" in javascript
 
 
 def test_map_runtime_respects_reduced_motion():
