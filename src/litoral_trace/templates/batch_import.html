@@ -1,322 +1,99 @@
 {% extends "app/base_app.html" %}
 
-{% block title %}Importaciones | Litoral Trace{% endblock %}
+{% block title %}Carga masiva de lotes | Litoral Trace{% endblock %}
 
 {% block content %}
 {% set workspace = batch_import_view %}
 <section class="space-y-6" aria-labelledby="imports-page-title">
-    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div class="p-6 lg:p-7 flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
-            <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2 mb-2">
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold">
-                        <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>
-                        Workspace autenticado
-                    </span>
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold">
-                        <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
-                        Ingesta controlada
-                    </span>
+    <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div class="flex flex-col gap-5 p-6 lg:flex-row lg:items-start lg:justify-between lg:p-7">
+            <div class="min-w-0 max-w-3xl">
+                <div class="mb-2 flex flex-wrap items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800"><i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>Carga controlada</span>
+                    <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>Validación previa</span>
                 </div>
-                <h1 id="imports-page-title" class="text-2xl lg:text-3xl font-bold tracking-tight text-slate-950">
-                    Importaciones
-                </h1>
-                <p class="mt-2 text-sm text-slate-600 max-w-3xl">
-                    Importación masiva de lotes mediante un workflow browser seguro, con validación server-side,
-                    idempotencia emitida por el servidor y persistencia atómica por tenant.
-                </p>
+                <h1 id="imports-page-title" class="text-2xl font-bold tracking-tight text-slate-950 lg:text-3xl">Importación masiva de lotes</h1>
+                <p class="mt-2 text-sm leading-6 text-slate-600">Cargá una planilla Excel con parcelas o rodales de origen. Litoral Trace controla la estructura y la consistencia de los datos antes de incorporarlos a tu organización.</p>
             </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0 min-w-full lg:min-w-[24rem]">
-                <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Formato soportado</p>
-                    <p class="mt-1 text-sm font-semibold text-slate-950">Excel `.xlsx` solamente</p>
-                </div>
-                <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Persistencia</p>
-                    <p class="mt-1 text-sm font-semibold text-slate-950">Atómica e idempotente</p>
-                </div>
+            <div class="grid min-w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:min-w-[24rem]">
+                <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Formato admitido</p><p class="mt-1 text-sm font-semibold text-slate-950">Excel `.xlsx`</p></div>
+                <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Límite por archivo</p><p class="mt-1 text-sm font-semibold text-slate-950">{{ workspace.limits.max_rows }} filas · {{ workspace.limits.max_file_mb }} MB</p></div>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 border-t border-slate-200">
-            <div class="p-5 border-b sm:border-r xl:border-b-0 border-slate-200">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Procesamiento XLSX</p>
-                <p class="mt-2 text-sm text-slate-700">
-                    La estructura del workbook se verifica en el servidor antes de cualquier validación semántica.
-                </p>
-            </div>
-            <div class="p-5 border-b xl:border-b-0 xl:border-r border-slate-200">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Validación</p>
-                <p class="mt-2 text-sm text-slate-700">
-                    La validación no persiste lotes ni crea identidad de importación.
-                </p>
-            </div>
-            <div class="p-5 border-b sm:border-b-0 sm:border-r border-slate-200">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Aislamiento</p>
-                <p class="mt-2 text-sm text-slate-700">
-                    Tenant y permisos se derivan exclusivamente del contexto autenticado y RBAC.
-                </p>
-            </div>
-            <div class="p-5">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Evidencia</p>
-                <p class="mt-2 text-sm text-slate-700">
-                    El resultado puede convivir con evidencia operativa sin exponer secretos ni internals.
-                </p>
-            </div>
+        <div class="grid grid-cols-1 border-t border-slate-200 sm:grid-cols-3">
+            <div class="border-b border-slate-200 p-5 sm:border-b-0 sm:border-r"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">1. Cargar</p><p class="mt-2 text-sm text-slate-700">Seleccioná la planilla con los lotes de origen.</p></div>
+            <div class="border-b border-slate-200 p-5 sm:border-b-0 sm:border-r"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">2. Validar</p><p class="mt-2 text-sm text-slate-700">Revisá errores de estructura o datos antes de guardar.</p></div>
+            <div class="p-5"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">3. Incorporar</p><p class="mt-2 text-sm text-slate-700">Sólo una planilla válida se incorpora a la organización.</p></div>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <article class="xl:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 lg:p-7">
-            <h2 class="text-lg font-bold text-slate-950">Importación masiva de lotes</h2>
-            <p class="mt-2 text-sm text-slate-600">
-                Cargá una planilla `.xlsx`, validala sin persistencia y, cuando quede correcta,
-                ejecutá la importación autoritativa con el mismo flujo browser.
-            </p>
+    <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2 lg:p-7">
+            <h2 class="text-lg font-bold text-slate-950">Cargar planilla de lotes</h2>
+            <p class="mt-2 text-sm text-slate-600">Podés validar primero sin guardar información. Cuando la planilla esté correcta, volvé a seleccionarla y elegí “Importar lotes”.</p>
 
-            <dl class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <dt class="text-sm font-semibold text-slate-900">Validación controlada</dt>
-                    <dd class="mt-1 text-sm text-slate-600">
-                        El navegador no decide la validez. El parser seguro y la validación semántica corren del lado servidor.
-                    </dd>
-                </div>
-                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <dt class="text-sm font-semibold text-slate-900">Persistencia auditable</dt>
-                    <dd class="mt-1 text-sm text-slate-600">
-                        La importación válida persiste en una sola operación atómica con comportamiento idempotente.
-                    </dd>
-                </div>
-                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <dt class="text-sm font-semibold text-slate-900">Aislamiento multi-tenant</dt>
-                    <dd class="mt-1 text-sm text-slate-600">
-                        No existen campos autoritativos de `organization_id`, `tenant_id` ni `user_id` en el formulario.
-                    </dd>
-                </div>
-                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <dt class="text-sm font-semibold text-slate-900">Límites reales</dt>
-                    <dd class="mt-1 text-sm text-slate-600">
-                        Máximo {{ workspace.limits.max_rows }} filas de datos, {{ workspace.limits.max_sheets }} hojas y {{ workspace.limits.max_file_mb }} MB por archivo.
-                    </dd>
-                </div>
-            </dl>
-
-            <form
-                method="{{ workspace.form.method }}"
-                enctype="{{ workspace.form.enctype }}"
-                action="{{ workspace.form.validate_action }}"
-                class="mt-6 space-y-5"
-            >
+            <form method="{{ workspace.form.method }}" enctype="{{ workspace.form.enctype }}" action="{{ workspace.form.validate_action }}" class="mt-6 space-y-5">
                 <input type="hidden" name="{{ csrf_form_field }}" value="{{ csrf_token }}">
-                <input
-                    type="hidden"
-                    name="{{ workspace.form.idempotency_field_name }}"
-                    value="{{ workspace.form.idempotency_key }}"
-                >
+                <input type="hidden" name="{{ workspace.form.idempotency_field_name }}" value="{{ workspace.form.idempotency_key }}">
 
-                <div class="rounded-2xl border border-slate-200 p-5 bg-white">
-                    <label for="batch-file" class="block text-sm font-semibold text-slate-900">
-                        XLSX de lotes
-                    </label>
-                    <p class="mt-1 text-sm text-slate-600">
-                        La validación es server-side y no persiste lotes. La importación usa el mismo backend seguro
-                        y sólo continúa si la planilla es semánticamente válida.
-                    </p>
-                    <input
-                        id="batch-file"
-                        name="{{ workspace.form.file_field_name }}"
-                        type="file"
-                        accept="{{ workspace.form.file_accept }}"
-                        required
-                        class="mt-4 block w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-800"
-                    >
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                    <label for="batch-file" class="block text-sm font-semibold text-slate-900">Archivo Excel de lotes</label>
+                    <p class="mt-1 text-sm leading-6 text-slate-600">Usá la plantilla de Litoral Trace para reducir errores de columnas y formatos.</p>
+                    <input id="batch-file" name="{{ workspace.form.file_field_name }}" type="file" accept="{{ workspace.form.file_accept }}" required class="mt-4 block w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-800">
                     <div class="mt-4 flex flex-wrap gap-3">
-                        <button
-                            type="submit"
-                            class="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
-                        >
-                            Validar planilla
-                        </button>
-                        <button
-                            type="submit"
-                            formaction="{{ workspace.form.import_action }}"
-                            class="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
-                        >
-                            Importar
-                        </button>
+                        <button type="submit" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50">Validar planilla</button>
+                        <button type="submit" formaction="{{ workspace.form.import_action }}" class="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500">Importar lotes</button>
                     </div>
-                    {% if workspace.form.requires_reupload %}
-                    <p class="mt-3 text-xs font-medium text-amber-700">
-                        Volvé a seleccionar el mismo archivo antes de importar o reintentar: el navegador no conserva
-                        el contenido del input file después del POST.
-                    </p>
-                    {% endif %}
+                    {% if workspace.form.requires_reupload %}<p class="mt-3 text-xs font-medium text-amber-700">Por seguridad, el navegador no conserva el archivo después de enviar el formulario. Volvé a seleccionarlo antes de importar o reintentar.</p>{% endif %}
                 </div>
             </form>
 
             {% if workspace.alert %}
-            <section class="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5" aria-labelledby="batch-alert-title">
-                <div class="flex items-start gap-3">
-                    <div class="mt-0.5 text-amber-700" aria-hidden="true">
-                        <i class="fa-solid fa-triangle-exclamation"></i>
-                    </div>
-                    <div>
-                        <h3 id="batch-alert-title" class="text-sm font-semibold text-amber-950">{{ workspace.alert.title }}</h3>
-                        <p class="mt-1 text-sm text-amber-900">{{ workspace.alert.message }}</p>
-                        <p class="mt-2 text-xs font-medium text-amber-800">Código: {{ workspace.alert.code }}</p>
-                    </div>
-                </div>
-            </section>
+            <section class="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5" aria-labelledby="batch-alert-title"><div class="flex items-start gap-3"><div class="mt-0.5 text-amber-700" aria-hidden="true"><i class="fa-solid fa-triangle-exclamation"></i></div><div><h3 id="batch-alert-title" class="text-sm font-semibold text-amber-950">{{ workspace.alert.title }}</h3><p class="mt-1 text-sm text-amber-900">{{ workspace.alert.message }}</p><p class="mt-2 text-xs font-medium text-amber-800">Código técnico: {{ workspace.alert.code }}</p></div></div></section>
             {% endif %}
 
             {% if workspace.validation %}
             <section class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5" aria-labelledby="batch-validation-title">
-                <div class="flex flex-col gap-2">
-                    <h3 id="batch-validation-title" class="text-base font-bold text-slate-950">{{ workspace.validation.title }}</h3>
-                    <p class="text-sm text-slate-700">{{ workspace.validation.message }}</p>
+                <h3 id="batch-validation-title" class="text-base font-bold text-slate-950">{{ workspace.validation.title }}</h3><p class="mt-1 text-sm text-slate-700">{{ workspace.validation.message }}</p>
+                <div class="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+                    <div class="rounded-xl border border-slate-200 bg-white p-3"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Archivo</p><p class="mt-1 break-all text-sm font-semibold text-slate-900">{{ workspace.validation.filename }}</p></div>
+                    <div class="rounded-xl border border-slate-200 bg-white p-3"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Hoja</p><p class="mt-1 text-sm font-semibold text-slate-900">{{ workspace.validation.sheet_name }}</p></div>
+                    <div class="rounded-xl border border-slate-200 bg-white p-3"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Filas</p><p class="mt-1 text-sm font-semibold text-slate-900">{{ workspace.validation.total_rows }}</p></div>
+                    <div class="rounded-xl border border-slate-200 bg-white p-3"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Válidas</p><p class="mt-1 text-sm font-semibold text-emerald-700">{{ workspace.validation.valid_rows }}</p></div>
+                    <div class="rounded-xl border border-slate-200 bg-white p-3"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Con error</p><p class="mt-1 text-sm font-semibold text-rose-700">{{ workspace.validation.invalid_rows }}</p></div>
                 </div>
-
-                <div class="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
-                    <div class="rounded-xl border border-slate-200 bg-white p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Archivo</p>
-                        <p class="mt-1 text-sm font-semibold text-slate-900 break-all">{{ workspace.validation.filename }}</p>
-                    </div>
-                    <div class="rounded-xl border border-slate-200 bg-white p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Hoja</p>
-                        <p class="mt-1 text-sm font-semibold text-slate-900">{{ workspace.validation.sheet_name }}</p>
-                    </div>
-                    <div class="rounded-xl border border-slate-200 bg-white p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Filas</p>
-                        <p class="mt-1 text-sm font-semibold text-slate-900">{{ workspace.validation.total_rows }}</p>
-                    </div>
-                    <div class="rounded-xl border border-slate-200 bg-white p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Válidas</p>
-                        <p class="mt-1 text-sm font-semibold text-emerald-700">{{ workspace.validation.valid_rows }}</p>
-                    </div>
-                    <div class="rounded-xl border border-slate-200 bg-white p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Con error</p>
-                        <p class="mt-1 text-sm font-semibold text-rose-700">{{ workspace.validation.invalid_rows }}</p>
-                    </div>
-                </div>
-
                 {% if workspace.validation.row_errors %}
-                <div class="mt-5 overflow-x-auto">
-                    <table class="min-w-full divide-y divide-slate-200 text-sm">
-                        <thead class="bg-slate-100">
-                            <tr>
-                                <th scope="col" class="px-3 py-2 text-left font-semibold text-slate-700">Fila</th>
-                                <th scope="col" class="px-3 py-2 text-left font-semibold text-slate-700">Campo</th>
-                                <th scope="col" class="px-3 py-2 text-left font-semibold text-slate-700">Código</th>
-                                <th scope="col" class="px-3 py-2 text-left font-semibold text-slate-700">Mensaje</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-200 bg-white">
-                            {% for error in workspace.validation.row_errors %}
-                            <tr>
-                                <td class="px-3 py-2 text-slate-700">{{ error.row }}</td>
-                                <td class="px-3 py-2 text-slate-700">{{ error.field }}</td>
-                                <td class="px-3 py-2 font-mono text-xs text-slate-700">{{ error.code }}</td>
-                                <td class="px-3 py-2 text-slate-700">{{ error.message }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+                <div class="mt-5 overflow-x-auto"><table class="min-w-full divide-y divide-slate-200 text-sm"><thead class="bg-slate-100"><tr><th class="px-3 py-2 text-left font-semibold text-slate-700">Fila</th><th class="px-3 py-2 text-left font-semibold text-slate-700">Campo</th><th class="px-3 py-2 text-left font-semibold text-slate-700">Código</th><th class="px-3 py-2 text-left font-semibold text-slate-700">Mensaje</th></tr></thead><tbody class="divide-y divide-slate-200 bg-white">{% for error in workspace.validation.row_errors %}<tr><td class="px-3 py-2 text-slate-700">{{ error.row }}</td><td class="px-3 py-2 text-slate-700">{{ error.field }}</td><td class="px-3 py-2 font-mono text-xs text-slate-700">{{ error.code }}</td><td class="px-3 py-2 text-slate-700">{{ error.message }}</td></tr>{% endfor %}</tbody></table></div>
                 {% endif %}
             </section>
             {% endif %}
 
             {% if workspace.result %}
             <section class="mt-6 rounded-2xl border border-slate-200 bg-white p-5" aria-labelledby="batch-result-title">
-                <h3 id="batch-result-title" class="text-base font-bold text-slate-950">{{ workspace.result.title }}</h3>
-                <p class="mt-1 text-sm text-slate-700">{{ workspace.result.message }}</p>
-                <div class="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Código</p>
-                        <p class="mt-1 text-sm font-semibold text-slate-900">{{ workspace.result.code }}</p>
-                    </div>
-                    {% if workspace.result.import_id %}
-                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Import public ID</p>
-                        <p class="mt-1 text-sm font-semibold text-slate-900 break-all">{{ workspace.result.import_id }}</p>
-                    </div>
-                    {% endif %}
-                    {% if workspace.result.status %}
-                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</p>
-                        <p class="mt-1 text-sm font-semibold text-slate-900">{{ workspace.result.status }}</p>
-                    </div>
-                    {% endif %}
-                    {% if workspace.result.inserted_rows is not none %}
-                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Filas insertadas</p>
-                        <p class="mt-1 text-sm font-semibold text-slate-900">{{ workspace.result.inserted_rows }}</p>
-                    </div>
-                    {% endif %}
-                    {% if workspace.result.source_filename %}
-                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Archivo origen</p>
-                        <p class="mt-1 text-sm font-semibold text-slate-900 break-all">{{ workspace.result.source_filename }}</p>
-                    </div>
-                    {% endif %}
+                <h3 id="batch-result-title" class="text-base font-bold text-slate-950">{{ workspace.result.title }}</h3><p class="mt-1 text-sm text-slate-700">{{ workspace.result.message }}</p>
+                <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Código técnico</p><p class="mt-1 text-sm font-semibold text-slate-900">{{ workspace.result.code }}</p></div>
+                    {% if workspace.result.import_id %}<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Identificador de importación</p><p class="mt-1 break-all text-sm font-semibold text-slate-900">{{ workspace.result.import_id }}</p></div>{% endif %}
+                    {% if workspace.result.status %}<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Estado</p><p class="mt-1 text-sm font-semibold text-slate-900">{{ workspace.result.status }}</p></div>{% endif %}
+                    {% if workspace.result.inserted_rows is not none %}<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Filas incorporadas</p><p class="mt-1 text-sm font-semibold text-slate-900">{{ workspace.result.inserted_rows }}</p></div>{% endif %}
+                    {% if workspace.result.source_filename %}<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Archivo de origen</p><p class="mt-1 break-all text-sm font-semibold text-slate-900">{{ workspace.result.source_filename }}</p></div>{% endif %}
                 </div>
-
-                {% if workspace.result.detail_href %}
-                <div class="mt-4">
-                    <a
-                        href="{{ workspace.result.detail_href }}"
-                        class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
-                    >
-                        Ver detalle
-                    </a>
-                </div>
-                {% endif %}
-
-                {% if workspace.result.duplicate_identifiers %}
-                <div class="mt-4">
-                    <h4 class="text-sm font-semibold text-slate-900">Identificadores duplicados</h4>
-                    <ul class="mt-2 flex flex-wrap gap-2">
-                        {% for identifier in workspace.result.duplicate_identifiers %}
-                        <li class="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-800">
-                            {{ identifier }}
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
+                {% if workspace.result.detail_href %}<div class="mt-4"><a href="{{ workspace.result.detail_href }}" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50">Ver detalle de la importación</a></div>{% endif %}
+                {% if workspace.result.duplicate_identifiers %}<div class="mt-4"><h4 class="text-sm font-semibold text-slate-900">Identificadores duplicados</h4><ul class="mt-2 flex flex-wrap gap-2">{% for identifier in workspace.result.duplicate_identifiers %}<li class="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-800">{{ identifier }}</li>{% endfor %}</ul></div>{% endif %}
             </section>
             {% endif %}
         </article>
 
-        <aside class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 lg:p-7" aria-labelledby="imports-readiness-title">
-            <h2 id="imports-readiness-title" class="text-lg font-bold text-slate-950">Controles operativos</h2>
-            <ul class="mt-4 space-y-3 text-sm text-slate-600">
-                <li class="flex gap-3">
-                    <span class="mt-0.5 text-emerald-700" aria-hidden="true">
-                        <i class="fa-solid fa-check"></i>
-                    </span>
-                    <span>CSRF browser-bound reutilizado desde el stack HTML existente.</span>
-                </li>
-                <li class="flex gap-3">
-                    <span class="mt-0.5 text-emerald-700" aria-hidden="true">
-                        <i class="fa-solid fa-check"></i>
-                    </span>
-                    <span>Parser XLSX seguro, validación semántica e importación idempotente reutilizados sin self-HTTP.</span>
-                </li>
-                <li class="flex gap-3">
-                    <span class="mt-0.5 text-emerald-700" aria-hidden="true">
-                        <i class="fa-solid fa-check"></i>
-                    </span>
-                    <span>Sin `organization_id`, `tenant_id` ni `user_id` como input autoritativo del operador.</span>
-                </li>
-                <li class="flex gap-3">
-                    <span class="mt-0.5 text-emerald-700" aria-hidden="true">
-                        <i class="fa-solid fa-check"></i>
-                    </span>
-                    <span>Sin JavaScript crítico: el flujo completo funciona con formularios `multipart/form-data` tradicionales.</span>
-                </li>
+        <aside class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:p-7" aria-labelledby="imports-readiness-title">
+            <h2 id="imports-readiness-title" class="text-lg font-bold text-slate-950">Qué controla Litoral Trace</h2>
+            <ul class="mt-4 space-y-4 text-sm text-slate-600">
+                <li class="flex gap-3"><span class="mt-0.5 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-check"></i></span><span>Formato, columnas obligatorias y límites del archivo.</span></li>
+                <li class="flex gap-3"><span class="mt-0.5 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-check"></i></span><span>Consistencia de los datos antes de incorporarlos.</span></li>
+                <li class="flex gap-3"><span class="mt-0.5 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-check"></i></span><span>Separación de la información por organización y permisos de usuario.</span></li>
+                <li class="flex gap-3"><span class="mt-0.5 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-check"></i></span><span>Reintentos seguros para evitar duplicar una misma importación.</span></li>
             </ul>
+            <div class="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Consejo</p><p class="mt-2 text-sm leading-6 text-slate-600">Usá “Validar planilla” antes de importar cuando recibas información nueva de proveedores o establecimientos.</p></div>
         </aside>
     </div>
 </section>
