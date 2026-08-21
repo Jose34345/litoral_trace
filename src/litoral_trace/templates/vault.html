@@ -1,951 +1,122 @@
 {% extends "app/base_app.html" %}
 
-{% block title %}Bóveda Documental | Litoral Trace EUDR{% endblock %}
+{% block title %}Documentos y evidencias | Litoral Trace{% endblock %}
 
 {% block content %}
 <section class="space-y-6" aria-labelledby="vault-page-title">
-    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div class="p-6 lg:p-7 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-            <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2 mb-2">
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold">
-                        <i class="fa-solid fa-lock" aria-hidden="true"></i>
-                        Bóveda privada por organización
-                    </span>
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold">
-                        <i class="fa-solid fa-fingerprint" aria-hidden="true"></i>
-                        SHA-256 verificado
-                    </span>
-                </div>
-                <h1 id="vault-page-title" class="text-2xl lg:text-3xl font-bold tracking-tight text-slate-950">
-                    Evidencia documental EUDR
-                </h1>
-                <p class="mt-2 text-sm text-slate-600 max-w-3xl">
-                    Repositorio privado de certificados, declaraciones JSON y remitos Excel.
-                    Los documentos se aíslan por organización y las descargas verifican integridad antes de entregar bytes.
-                </p>
+    <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div class="flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between lg:p-7">
+            <div class="min-w-0 max-w-3xl">
+                <div class="mb-2 flex flex-wrap items-center gap-2"><span class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800"><i class="fa-solid fa-lock" aria-hidden="true"></i>Repositorio privado de la organización</span><span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700"><i class="fa-solid fa-fingerprint" aria-hidden="true"></i>Integridad SHA-256</span></div>
+                <h1 id="vault-page-title" class="text-2xl font-bold tracking-tight text-slate-950 lg:text-3xl">Documentos y evidencias</h1>
+                <p class="mt-2 text-sm leading-6 text-slate-600">Conservá certificados, remitos, archivos estructurados y otra documentación de respaldo. Los documentos permanecen separados por organización y las descargas verifican su integridad.</p>
             </div>
-
-            <div class="flex flex-wrap gap-2 shrink-0">
-                {% if vault_can_upload %}
-                <button
-                    id="openUploadModalButton"
-                    type="button"
-                    class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-forest-700 hover:bg-forest-800 text-white text-sm font-semibold shadow-sm transition-colors"
-                >
-                    <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
-                    Subir evidencia
-                </button>
-                {% endif %}
-                <button
-                    id="refreshVaultButton"
-                    type="button"
-                    class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-sm font-semibold transition-colors"
-                >
-                    <i class="fa-solid fa-rotate" aria-hidden="true"></i>
-                    Actualizar
-                </button>
-                <a
-                    href="/dashboard"
-                    class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-950 text-white text-sm font-semibold transition-colors"
-                >
-                    <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
-                    Dashboard
-                </a>
+            <div class="flex shrink-0 flex-wrap gap-2">
+                {% if vault_can_upload %}<button id="openUploadModalButton" type="button" class="inline-flex items-center gap-2 rounded-lg bg-forest-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-forest-800"><i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>Subir documento</button>{% endif %}
+                <button id="refreshVaultButton" type="button" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"><i class="fa-solid fa-rotate" aria-hidden="true"></i>Actualizar</button>
+                <a href="/dashboard" class="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-950"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>Volver al inicio</a>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 border-t border-slate-200">
-            <div class="p-5 border-b sm:border-r xl:border-b-0 border-slate-200">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Documentos</p>
-                <p id="metricDocuments" class="mt-1 text-2xl font-bold text-slate-950">—</p>
-                <p class="mt-1 text-xs text-slate-500">Registros visibles del tenant</p>
-            </div>
-            <div class="p-5 border-b xl:border-b-0 xl:border-r border-slate-200">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Almacenamiento</p>
-                <p id="metricStorage" class="mt-1 text-2xl font-bold text-slate-950">—</p>
-                <p class="mt-1 text-xs text-slate-500">Bytes disponibles en bóveda</p>
-            </div>
-            <div class="p-5 border-b sm:border-b-0 sm:border-r border-slate-200">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">JSON TRACES</p>
-                <p id="metricJson" class="mt-1 text-2xl font-bold text-slate-950">—</p>
-                <p class="mt-1 text-xs text-slate-500">Declaraciones estructuradas</p>
-            </div>
-            <div class="p-5">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">PDF certificados</p>
-                <p id="metricPdf" class="mt-1 text-2xl font-bold text-slate-950">—</p>
-                <p class="mt-1 text-xs text-slate-500">Evidencia documental PDF</p>
-            </div>
+        <div class="grid grid-cols-1 border-t border-slate-200 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="border-b border-slate-200 p-5 sm:border-r xl:border-b-0"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Documentos disponibles</p><p id="metricDocuments" class="mt-1 text-2xl font-bold text-slate-950">—</p><p class="mt-1 text-xs text-slate-500">Registros visibles de la organización</p></div>
+            <div class="border-b border-slate-200 p-5 xl:border-b-0 xl:border-r"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Almacenamiento</p><p id="metricStorage" class="mt-1 text-2xl font-bold text-slate-950">—</p><p class="mt-1 text-xs text-slate-500">Tamaño total de archivos disponibles</p></div>
+            <div class="border-b border-slate-200 p-5 sm:border-b-0 sm:border-r"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Archivos estructurados</p><p id="metricJson" class="mt-1 text-2xl font-bold text-slate-950">—</p><p class="mt-1 text-xs text-slate-500">Declaraciones JSON almacenadas</p></div>
+            <div class="p-5"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Certificados PDF</p><p id="metricPdf" class="mt-1 text-2xl font-bold text-slate-950">—</p><p class="mt-1 text-xs text-slate-500">Documentación en formato PDF</p></div>
         </div>
     </div>
 
     <div id="vaultAlert" class="hidden rounded-xl border px-4 py-3 text-sm" role="status" aria-live="polite"></div>
 
-    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm">
-        <div class="p-5 lg:p-6 border-b border-slate-200">
-            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                <div class="relative flex-1 max-w-2xl">
-                    <label for="vaultSearch" class="sr-only">Buscar documento</label>
-                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true"></i>
-                    <input
-                        id="vaultSearch"
-                        type="search"
-                        autocomplete="off"
-                        placeholder="Buscar por nombre de archivo..."
-                        class="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 bg-white text-sm outline-none focus:ring-2 focus:ring-forest-600 focus:border-forest-600"
-                    >
-                </div>
+    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div class="border-b border-slate-200 p-5 lg:p-6"><div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div class="relative max-w-2xl flex-1"><label for="vaultSearch" class="sr-only">Buscar documento</label><i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true"></i><input id="vaultSearch" type="search" autocomplete="off" placeholder="Buscar por nombre de archivo..." class="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-10 pr-4 text-sm outline-none focus:border-forest-600 focus:ring-2 focus:ring-forest-600"></div><div class="flex flex-col gap-3 sm:flex-row"><select id="vaultTypeFilter" class="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-forest-600 sm:w-auto" aria-label="Filtrar por tipo"><option value="">Todos los tipos</option><option value="DDS_JSON_TRACES">Declaración JSON estructurada</option><option value="PDF_CERTIFICADO">Certificado PDF</option><option value="REMITO_EXCEL">Remito Excel</option><option value="OTHER_EVIDENCE">Otra evidencia</option></select><select id="vaultStatusFilter" class="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-forest-600 sm:w-auto" aria-label="Filtrar por estado"><option value="">Todos los estados</option><option value="available">Disponible</option><option value="pending_upload">Pendiente</option><option value="upload_failed">Carga fallida</option><option value="delete_pending">Eliminación pendiente</option><option value="delete_failed">Eliminación fallida</option></select></div></div></div>
 
-                <div class="flex flex-col sm:flex-row gap-3">
-                    <div>
-                        <label for="vaultTypeFilter" class="sr-only">Filtrar por tipo</label>
-                        <select
-                            id="vaultTypeFilter"
-                            class="w-full sm:w-auto px-3.5 py-2.5 rounded-lg border border-slate-300 bg-white text-sm outline-none focus:ring-2 focus:ring-forest-600"
-                        >
-                            <option value="">Todos los tipos</option>
-                            <option value="DDS_JSON_TRACES">JSON TRACES</option>
-                            <option value="PDF_CERTIFICADO">Certificado PDF</option>
-                            <option value="REMITO_EXCEL">Remito Excel</option>
-                            <option value="OTHER_EVIDENCE">Otra evidencia</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="vaultStatusFilter" class="sr-only">Filtrar por estado</label>
-                        <select
-                            id="vaultStatusFilter"
-                            class="w-full sm:w-auto px-3.5 py-2.5 rounded-lg border border-slate-300 bg-white text-sm outline-none focus:ring-2 focus:ring-forest-600"
-                        >
-                            <option value="">Todos los estados</option>
-                            <option value="available">Disponible</option>
-                            <option value="pending_upload">Pendiente</option>
-                            <option value="upload_failed">Carga fallida</option>
-                            <option value="delete_pending">Eliminación pendiente</option>
-                            <option value="delete_failed">Eliminación fallida</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div id="vaultLoadingState" class="p-10 text-center">
-            <div class="inline-flex items-center gap-3 text-sm font-medium text-slate-600">
-                <i class="fa-solid fa-circle-notch fa-spin text-forest-700" aria-hidden="true"></i>
-                Cargando documentos...
-            </div>
-        </div>
-
-        <div id="vaultEmptyState" class="hidden p-10 text-center">
-            <div class="mx-auto w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
-                <i class="fa-regular fa-folder-open text-xl" aria-hidden="true"></i>
-            </div>
-            <h2 class="mt-3 text-sm font-semibold text-slate-900">No hay documentos para mostrar</h2>
-            <p class="mt-1 text-sm text-slate-500">
-                Ajustá los filtros o cargá la primera evidencia disponible para esta organización.
-            </p>
-        </div>
-
-        <div id="vaultTableContainer" class="hidden overflow-x-auto">
-            <table class="w-full text-left text-sm">
-                <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-600 border-b border-slate-200">
-                    <tr>
-                        <th scope="col" class="px-5 py-3.5 font-semibold">Documento</th>
-                        <th scope="col" class="px-5 py-3.5 font-semibold">Tipo</th>
-                        <th scope="col" class="px-5 py-3.5 font-semibold">Tamaño</th>
-                        <th scope="col" class="px-5 py-3.5 font-semibold">Estado</th>
-                        <th scope="col" class="px-5 py-3.5 font-semibold">Creado</th>
-                        <th scope="col" class="px-5 py-3.5 font-semibold">Integridad</th>
-                        <th scope="col" class="px-5 py-3.5 font-semibold text-right">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody id="vaultTableBody" class="divide-y divide-slate-200"></tbody>
-            </table>
-        </div>
+        <div id="vaultLoadingState" class="p-10 text-center"><div class="inline-flex items-center gap-3 text-sm font-medium text-slate-600"><i class="fa-solid fa-circle-notch fa-spin text-forest-700" aria-hidden="true"></i>Cargando documentos...</div></div>
+        <div id="vaultEmptyState" class="hidden p-10 text-center"><div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500"><i class="fa-regular fa-folder-open text-xl" aria-hidden="true"></i></div><h2 class="mt-3 text-sm font-semibold text-slate-900">No hay documentos para mostrar</h2><p class="mt-1 text-sm text-slate-500">Ajustá los filtros o cargá la primera evidencia disponible para esta organización.</p></div>
+        <div id="vaultTableContainer" class="hidden overflow-x-auto"><table class="w-full text-left text-sm"><thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-600"><tr><th class="px-5 py-3.5 font-semibold">Documento</th><th class="px-5 py-3.5 font-semibold">Tipo</th><th class="px-5 py-3.5 font-semibold">Tamaño</th><th class="px-5 py-3.5 font-semibold">Estado</th><th class="px-5 py-3.5 font-semibold">Creado</th><th class="px-5 py-3.5 font-semibold">Integridad</th><th class="px-5 py-3.5 text-right font-semibold">Acciones</th></tr></thead><tbody id="vaultTableBody" class="divide-y divide-slate-200"></tbody></table></div>
     </div>
 </section>
 
 {% if vault_can_upload %}
-<div id="uploadModal" class="hidden fixed inset-0 z-[70] bg-slate-950/55 p-4" role="dialog" aria-modal="true" aria-labelledby="uploadModalTitle">
-    <div class="min-h-full flex items-center justify-center">
-        <div class="w-full max-w-xl rounded-2xl bg-white shadow-2xl border border-slate-200">
-            <div class="p-5 border-b border-slate-200 flex items-start justify-between gap-4">
-                <div>
-                    <h2 id="uploadModalTitle" class="text-lg font-bold text-slate-950">Subir evidencia</h2>
-                    <p class="mt-1 text-sm text-slate-500">
-                        PDF, JSON o XLSX. Máximo {{ vault_max_upload_mb }} MiB por documento.
-                    </p>
-                </div>
-                <button type="button" data-close-upload class="p-2 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Cerrar">
-                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-                </button>
-            </div>
-
-            <form id="vaultUploadForm" class="p-5 space-y-5">
-                <div>
-                    <label for="uploadDocumentType" class="block text-sm font-semibold text-slate-800 mb-1.5">Tipo documental</label>
-                    <select
-                        id="uploadDocumentType"
-                        name="document_type"
-                        required
-                        class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 bg-white text-sm focus:ring-2 focus:ring-forest-600 outline-none"
-                    >
-                        <option value="DDS_JSON_TRACES">JSON TRACES</option>
-                        <option value="PDF_CERTIFICADO">Certificado PDF</option>
-                        <option value="REMITO_EXCEL">Remito Excel</option>
-                        <option value="OTHER_EVIDENCE">Otra evidencia</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label for="uploadFile" class="block text-sm font-semibold text-slate-800 mb-1.5">Archivo</label>
-                    <input
-                        id="uploadFile"
-                        name="file"
-                        type="file"
-                        required
-                        accept=".pdf,.json,.xlsx,application/pdf,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        class="block w-full text-sm text-slate-600 border border-slate-300 rounded-lg cursor-pointer bg-slate-50 file:mr-4 file:py-2.5 file:px-4 file:border-0 file:border-r file:border-slate-300 file:bg-white file:text-sm file:font-semibold file:text-slate-700 hover:file:bg-slate-50"
-                    >
-                    <p id="uploadFileHelp" class="mt-1.5 text-xs text-slate-500">
-                        La validación de extensión, MIME, estructura, tamaño y SHA-256 se realiza nuevamente en el servidor.
-                    </p>
-                </div>
-
-                <div id="uploadProgress" class="hidden rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm text-slate-600" aria-live="polite">
-                    <i class="fa-solid fa-circle-notch fa-spin mr-2 text-forest-700" aria-hidden="true"></i>
-                    Validando y almacenando documento...
-                </div>
-
-                <div class="flex justify-end gap-2 pt-1">
-                    <button type="button" data-close-upload class="px-4 py-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-sm font-semibold text-slate-700">
-                        Cancelar
-                    </button>
-                    <button id="submitUploadButton" type="submit" class="px-4 py-2.5 rounded-lg bg-forest-700 hover:bg-forest-800 text-white text-sm font-semibold shadow-sm">
-                        Subir documento
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+<div id="uploadModal" class="hidden fixed inset-0 z-[70] bg-slate-950/55 p-4" role="dialog" aria-modal="true" aria-labelledby="uploadModalTitle"><div class="flex min-h-full items-center justify-center"><div class="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl"><div class="flex items-start justify-between gap-4 border-b border-slate-200 p-5"><div><h2 id="uploadModalTitle" class="text-lg font-bold text-slate-950">Subir documento</h2><p class="mt-1 text-sm text-slate-500">PDF, JSON o XLSX. Máximo {{ vault_max_upload_mb }} MiB por documento.</p></div><button type="button" data-close-upload class="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div><form id="vaultUploadForm" class="space-y-5 p-5"><div><label for="uploadDocumentType" class="mb-1.5 block text-sm font-semibold text-slate-800">Tipo documental</label><select id="uploadDocumentType" name="document_type" required class="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-forest-600"><option value="DDS_JSON_TRACES">Declaración JSON estructurada</option><option value="PDF_CERTIFICADO">Certificado PDF</option><option value="REMITO_EXCEL">Remito Excel</option><option value="OTHER_EVIDENCE">Otra evidencia</option></select></div><div><label for="uploadFile" class="mb-1.5 block text-sm font-semibold text-slate-800">Archivo</label><input id="uploadFile" name="file" type="file" required accept=".pdf,.json,.xlsx,application/pdf,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="block w-full cursor-pointer rounded-lg border border-slate-300 bg-slate-50 text-sm text-slate-600 file:mr-4 file:border-0 file:border-r file:border-slate-300 file:bg-white file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-slate-700 hover:file:bg-slate-50"><p class="mt-1.5 text-xs text-slate-500">Litoral Trace valida extensión, formato, estructura, tamaño e integridad SHA-256 antes de almacenar el archivo.</p></div><div id="uploadProgress" class="hidden rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600" aria-live="polite"><i class="fa-solid fa-circle-notch fa-spin mr-2 text-forest-700" aria-hidden="true"></i>Validando y almacenando documento...</div><div class="flex justify-end gap-2 pt-1"><button type="button" data-close-upload class="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancelar</button><button id="submitUploadButton" type="submit" class="rounded-lg bg-forest-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-forest-800">Subir documento</button></div></form></div></div></div>
 {% endif %}
 
-<div id="detailModal" class="hidden fixed inset-0 z-[70] bg-slate-950/55 p-4" role="dialog" aria-modal="true" aria-labelledby="detailModalTitle">
-    <div class="min-h-full flex items-center justify-center">
-        <div class="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200">
-            <div class="p-5 border-b border-slate-200 flex items-start justify-between gap-4">
-                <div class="min-w-0">
-                    <h2 id="detailModalTitle" class="text-lg font-bold text-slate-950">Detalle del documento</h2>
-                    <p id="detailFilename" class="mt-1 text-sm text-slate-500 truncate"></p>
-                </div>
-                <button id="closeDetailModalButton" type="button" class="p-2 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Cerrar">
-                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-                </button>
-            </div>
-            <dl id="detailGrid" class="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4"></dl>
-        </div>
-    </div>
-</div>
+<div id="detailModal" class="hidden fixed inset-0 z-[70] bg-slate-950/55 p-4" role="dialog" aria-modal="true" aria-labelledby="detailModalTitle"><div class="flex min-h-full items-center justify-center"><div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl"><div class="flex items-start justify-between gap-4 border-b border-slate-200 p-5"><div class="min-w-0"><h2 id="detailModalTitle" class="text-lg font-bold text-slate-950">Detalle técnico del documento</h2><p id="detailFilename" class="mt-1 truncate text-sm text-slate-500"></p></div><button id="closeDetailModalButton" type="button" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div><dl id="detailGrid" class="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2"></dl></div></div></div>
 
 {% if vault_can_delete %}
-<div id="deleteModal" class="hidden fixed inset-0 z-[70] bg-slate-950/55 p-4" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
-    <div class="min-h-full flex items-center justify-center">
-        <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200">
-            <div class="p-5">
-                <div class="w-11 h-11 rounded-full bg-red-50 text-red-700 flex items-center justify-center">
-                    <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
-                </div>
-                <h2 id="deleteModalTitle" class="mt-4 text-lg font-bold text-slate-950">Eliminar documento</h2>
-                <p class="mt-2 text-sm text-slate-600">
-                    El documento se marcará como eliminado y dejará de estar disponible para descarga.
-                </p>
-                <p id="deleteFilename" class="mt-3 text-sm font-semibold text-slate-900 break-all"></p>
-
-                <div class="mt-5 flex justify-end gap-2">
-                    <button id="cancelDeleteButton" type="button" class="px-4 py-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-sm font-semibold text-slate-700">
-                        Cancelar
-                    </button>
-                    <button id="confirmDeleteButton" type="button" class="px-4 py-2.5 rounded-lg bg-red-700 hover:bg-red-800 text-white text-sm font-semibold shadow-sm">
-                        Confirmar eliminación
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+<div id="deleteModal" class="hidden fixed inset-0 z-[70] bg-slate-950/55 p-4" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle"><div class="flex min-h-full items-center justify-center"><div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl"><div class="p-5"><div class="flex h-11 w-11 items-center justify-center rounded-full bg-red-50 text-red-700"><i class="fa-solid fa-trash-can" aria-hidden="true"></i></div><h2 id="deleteModalTitle" class="mt-4 text-lg font-bold text-slate-950">Eliminar documento</h2><p class="mt-2 text-sm text-slate-600">El documento dejará de estar disponible para descarga. El historial de auditoría se conserva.</p><p id="deleteFilename" class="mt-3 break-all text-sm font-semibold text-slate-900"></p><div class="mt-5 flex justify-end gap-2"><button id="cancelDeleteButton" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancelar</button><button id="confirmDeleteButton" type="button" class="rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-800">Confirmar eliminación</button></div></div></div></div></div>
 {% endif %}
 
 <script>
 (() => {
     "use strict";
-
-    const VAULT_CONFIG = Object.freeze({
-        canUpload: {{ "true" if vault_can_upload else "false" }},
-        canDelete: {{ "true" if vault_can_delete else "false" }},
-        maxUploadBytes: {{ vault_max_upload_bytes }},
-        listUrl: "/api/v1/vault/documents",
-    });
-
-    const state = {
-        documents: [],
-        visibleDocuments: [],
-        pendingDelete: null,
-        requestSequence: 0,
-    };
-
+    const VAULT_CONFIG = Object.freeze({ canUpload: {{ "true" if vault_can_upload else "false" }}, canDelete: {{ "true" if vault_can_delete else "false" }}, maxUploadBytes: {{ vault_max_upload_bytes }}, listUrl: "/api/v1/vault/documents" });
+    const state = { documents: [], visibleDocuments: [], pendingDelete: null, requestSequence: 0 };
     const elements = {
-        alert: document.getElementById("vaultAlert"),
-        loading: document.getElementById("vaultLoadingState"),
-        empty: document.getElementById("vaultEmptyState"),
-        tableContainer: document.getElementById("vaultTableContainer"),
-        tableBody: document.getElementById("vaultTableBody"),
-        search: document.getElementById("vaultSearch"),
-        typeFilter: document.getElementById("vaultTypeFilter"),
-        statusFilter: document.getElementById("vaultStatusFilter"),
-        refreshButton: document.getElementById("refreshVaultButton"),
-        metricDocuments: document.getElementById("metricDocuments"),
-        metricStorage: document.getElementById("metricStorage"),
-        metricJson: document.getElementById("metricJson"),
-        metricPdf: document.getElementById("metricPdf"),
-        detailModal: document.getElementById("detailModal"),
-        detailFilename: document.getElementById("detailFilename"),
-        detailGrid: document.getElementById("detailGrid"),
-        closeDetailButton: document.getElementById("closeDetailModalButton"),
-        uploadModal: document.getElementById("uploadModal"),
-        openUploadButton: document.getElementById("openUploadModalButton"),
-        uploadForm: document.getElementById("vaultUploadForm"),
-        uploadFile: document.getElementById("uploadFile"),
-        uploadDocumentType: document.getElementById("uploadDocumentType"),
-        uploadProgress: document.getElementById("uploadProgress"),
-        submitUploadButton: document.getElementById("submitUploadButton"),
-        deleteModal: document.getElementById("deleteModal"),
-        deleteFilename: document.getElementById("deleteFilename"),
-        cancelDeleteButton: document.getElementById("cancelDeleteButton"),
-        confirmDeleteButton: document.getElementById("confirmDeleteButton"),
+        alert: document.getElementById("vaultAlert"), loading: document.getElementById("vaultLoadingState"), empty: document.getElementById("vaultEmptyState"), tableContainer: document.getElementById("vaultTableContainer"), tableBody: document.getElementById("vaultTableBody"), search: document.getElementById("vaultSearch"), typeFilter: document.getElementById("vaultTypeFilter"), statusFilter: document.getElementById("vaultStatusFilter"), refreshButton: document.getElementById("refreshVaultButton"), metricDocuments: document.getElementById("metricDocuments"), metricStorage: document.getElementById("metricStorage"), metricJson: document.getElementById("metricJson"), metricPdf: document.getElementById("metricPdf"), detailModal: document.getElementById("detailModal"), detailFilename: document.getElementById("detailFilename"), detailGrid: document.getElementById("detailGrid"), closeDetailButton: document.getElementById("closeDetailModalButton"), uploadModal: document.getElementById("uploadModal"), openUploadButton: document.getElementById("openUploadModalButton"), uploadForm: document.getElementById("vaultUploadForm"), uploadFile: document.getElementById("uploadFile"), uploadDocumentType: document.getElementById("uploadDocumentType"), uploadProgress: document.getElementById("uploadProgress"), submitUploadButton: document.getElementById("submitUploadButton"), deleteModal: document.getElementById("deleteModal"), deleteFilename: document.getElementById("deleteFilename"), cancelDeleteButton: document.getElementById("cancelDeleteButton"), confirmDeleteButton: document.getElementById("confirmDeleteButton")
     };
+    const DOCUMENT_TYPE_LABELS = Object.freeze({ DDS_JSON_TRACES: "Declaración JSON estructurada", PDF_CERTIFICADO: "Certificado PDF", REMITO_EXCEL: "Remito Excel", OTHER_EVIDENCE: "Otra evidencia" });
+    const STATUS_LABELS = Object.freeze({ available: "Disponible", pending_upload: "Pendiente", upload_failed: "Carga fallida", delete_pending: "Eliminación pendiente", delete_failed: "Eliminación fallida", deleted: "Eliminado" });
+    const STATUS_CLASSES = Object.freeze({ available: "bg-emerald-50 text-emerald-800 border-emerald-200", pending_upload: "bg-amber-50 text-amber-800 border-amber-200", upload_failed: "bg-red-50 text-red-800 border-red-200", delete_pending: "bg-amber-50 text-amber-800 border-amber-200", delete_failed: "bg-red-50 text-red-800 border-red-200", deleted: "bg-slate-100 text-slate-700 border-slate-200" });
 
-    const DOCUMENT_TYPE_LABELS = Object.freeze({
-        DDS_JSON_TRACES: "JSON TRACES",
-        PDF_CERTIFICADO: "Certificado PDF",
-        REMITO_EXCEL: "Remito Excel",
-        OTHER_EVIDENCE: "Otra evidencia",
-    });
+    function setAlert(message, kind = "info") { if (!elements.alert) return; const classes = { info: "bg-sky-50 border-sky-200 text-sky-800", success: "bg-emerald-50 border-emerald-200 text-emerald-800", error: "bg-red-50 border-red-200 text-red-800" }; elements.alert.className = `rounded-xl border px-4 py-3 text-sm ${classes[kind] || classes.info}`; elements.alert.textContent = message; elements.alert.classList.remove("hidden"); }
+    function clearAlert() { if (!elements.alert) return; elements.alert.textContent = ""; elements.alert.classList.add("hidden"); }
+    function formatBytes(value) { const bytes = Number(value || 0); if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"; const units = ["B", "KB", "MB", "GB"]; let size = bytes; let unitIndex = 0; while (size >= 1024 && unitIndex < units.length - 1) { size /= 1024; unitIndex += 1; } const digits = size >= 100 || unitIndex === 0 ? 0 : 1; return `${size.toFixed(digits)} ${units[unitIndex]}`; }
+    function formatDate(value) { if (!value) return "—"; const parsed = new Date(value); if (Number.isNaN(parsed.getTime())) return "—"; return new Intl.DateTimeFormat("es-AR", { dateStyle: "medium", timeStyle: "short" }).format(parsed); }
+    function createTextCell(text, className = "px-5 py-4 text-slate-700") { const cell = document.createElement("td"); cell.className = className; cell.textContent = String(text ?? "—"); return cell; }
+    function createStatusBadge(statusValue) { const status = String(statusValue || ""); const badge = document.createElement("span"); badge.className = `inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${STATUS_CLASSES[status] || "bg-slate-100 text-slate-700 border-slate-200"}`; badge.textContent = STATUS_LABELS[status] || "Estado desconocido"; return badge; }
+    function createActionButton({ label, icon, className, onClick }) { const button = document.createElement("button"); button.type = "button"; button.className = className; button.setAttribute("aria-label", label); const iconElement = document.createElement("i"); iconElement.className = `fa-solid ${icon}`; iconElement.setAttribute("aria-hidden", "true"); const labelElement = document.createElement("span"); labelElement.textContent = label; button.append(iconElement, labelElement); button.addEventListener("click", onClick); return button; }
 
-    const STATUS_LABELS = Object.freeze({
-        available: "Disponible",
-        pending_upload: "Pendiente",
-        upload_failed: "Carga fallida",
-        delete_pending: "Eliminación pendiente",
-        delete_failed: "Eliminación fallida",
-        deleted: "Eliminado",
-    });
-
-    const STATUS_CLASSES = Object.freeze({
-        available: "bg-emerald-50 text-emerald-800 border-emerald-200",
-        pending_upload: "bg-amber-50 text-amber-800 border-amber-200",
-        upload_failed: "bg-red-50 text-red-800 border-red-200",
-        delete_pending: "bg-amber-50 text-amber-800 border-amber-200",
-        delete_failed: "bg-red-50 text-red-800 border-red-200",
-        deleted: "bg-slate-100 text-slate-700 border-slate-200",
-    });
-
-    function setAlert(message, kind = "info") {
-        if (!elements.alert) {
-            return;
-        }
-
-        const classes = {
-            info: "bg-sky-50 border-sky-200 text-sky-800",
-            success: "bg-emerald-50 border-emerald-200 text-emerald-800",
-            error: "bg-red-50 border-red-200 text-red-800",
-        };
-
-        elements.alert.className = `rounded-xl border px-4 py-3 text-sm ${classes[kind] || classes.info}`;
-        elements.alert.textContent = message;
-        elements.alert.classList.remove("hidden");
-    }
-
-    function clearAlert() {
-        if (!elements.alert) {
-            return;
-        }
-        elements.alert.textContent = "";
-        elements.alert.classList.add("hidden");
-    }
-
-    function formatBytes(value) {
-        const bytes = Number(value || 0);
-        if (!Number.isFinite(bytes) || bytes <= 0) {
-            return "0 B";
-        }
-
-        const units = ["B", "KB", "MB", "GB"];
-        let size = bytes;
-        let unitIndex = 0;
-
-        while (size >= 1024 && unitIndex < units.length - 1) {
-            size /= 1024;
-            unitIndex += 1;
-        }
-
-        const digits = size >= 100 || unitIndex === 0 ? 0 : 1;
-        return `${size.toFixed(digits)} ${units[unitIndex]}`;
-    }
-
-    function formatDate(value) {
-        if (!value) {
-            return "—";
-        }
-
-        const parsed = new Date(value);
-        if (Number.isNaN(parsed.getTime())) {
-            return "—";
-        }
-
-        return new Intl.DateTimeFormat("es-AR", {
-            dateStyle: "medium",
-            timeStyle: "short",
-        }).format(parsed);
-    }
-
-    function createTextCell(text, className = "px-5 py-4 text-slate-700") {
-        const cell = document.createElement("td");
-        cell.className = className;
-        cell.textContent = String(text ?? "—");
-        return cell;
-    }
-
-    function createStatusBadge(statusValue) {
-        const status = String(statusValue || "");
-        const badge = document.createElement("span");
-        badge.className = `inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${STATUS_CLASSES[status] || "bg-slate-100 text-slate-700 border-slate-200"}`;
-        badge.textContent = STATUS_LABELS[status] || status || "Desconocido";
-        return badge;
-    }
-
-    function createActionButton({label, icon, className, onClick}) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = className;
-        button.setAttribute("aria-label", label);
-
-        const iconElement = document.createElement("i");
-        iconElement.className = `fa-solid ${icon}`;
-        iconElement.setAttribute("aria-hidden", "true");
-
-        const labelElement = document.createElement("span");
-        labelElement.textContent = label;
-
-        button.append(iconElement, labelElement);
-        button.addEventListener("click", onClick);
-        return button;
-    }
-
-    function renderMetrics(documents) {
-        const available = documents.filter((doc) => doc.status === "available");
-        const totalBytes = available.reduce(
-            (total, doc) => total + Number(doc.size_bytes || 0),
-            0,
-        );
-        const jsonCount = available.filter(
-            (doc) => doc.document_type === "DDS_JSON_TRACES",
-        ).length;
-        const pdfCount = available.filter(
-            (doc) => doc.document_type === "PDF_CERTIFICADO",
-        ).length;
-
-        elements.metricDocuments.textContent = String(available.length);
-        elements.metricStorage.textContent = formatBytes(totalBytes);
-        elements.metricJson.textContent = String(jsonCount);
-        elements.metricPdf.textContent = String(pdfCount);
-    }
-
-    function applyFilters() {
-        const query = elements.search.value.trim().toLocaleLowerCase("es");
-        const type = elements.typeFilter.value;
-        const status = elements.statusFilter.value;
-
-        state.visibleDocuments = state.documents.filter((doc) => {
-            const filename = String(doc.filename || "").toLocaleLowerCase("es");
-            const matchesQuery = !query || filename.includes(query);
-            const matchesType = !type || doc.document_type === type;
-            const matchesStatus = !status || doc.status === status;
-            return matchesQuery && matchesType && matchesStatus;
-        });
-
-        renderTable();
-    }
+    function renderMetrics(documents) { const available = documents.filter((doc) => doc.status === "available"); const totalBytes = available.reduce((total, doc) => total + Number(doc.size_bytes || 0), 0); elements.metricDocuments.textContent = String(available.length); elements.metricStorage.textContent = formatBytes(totalBytes); elements.metricJson.textContent = String(available.filter((doc) => doc.document_type === "DDS_JSON_TRACES").length); elements.metricPdf.textContent = String(available.filter((doc) => doc.document_type === "PDF_CERTIFICADO").length); }
+    function applyFilters() { const query = elements.search.value.trim().toLocaleLowerCase("es"); const type = elements.typeFilter.value; const status = elements.statusFilter.value; state.visibleDocuments = state.documents.filter((doc) => { const filename = String(doc.filename || "").toLocaleLowerCase("es"); return (!query || filename.includes(query)) && (!type || doc.document_type === type) && (!status || doc.status === status); }); renderTable(); }
 
     function renderTable() {
         elements.tableBody.replaceChildren();
-
-        if (state.visibleDocuments.length === 0) {
-            elements.tableContainer.classList.add("hidden");
-            elements.empty.classList.remove("hidden");
-            return;
-        }
-
-        elements.empty.classList.add("hidden");
-        elements.tableContainer.classList.remove("hidden");
-
+        if (state.visibleDocuments.length === 0) { elements.tableContainer.classList.add("hidden"); elements.empty.classList.remove("hidden"); return; }
+        elements.empty.classList.add("hidden"); elements.tableContainer.classList.remove("hidden");
         const fragment = document.createDocumentFragment();
-
         for (const doc of state.visibleDocuments) {
-            const row = document.createElement("tr");
-            row.className = "hover:bg-slate-50 transition-colors";
-
-            const documentCell = document.createElement("td");
-            documentCell.className = "px-5 py-4 min-w-[260px]";
-
-            const documentWrap = document.createElement("div");
-            documentWrap.className = "flex items-start gap-3";
-
-            const iconWrap = document.createElement("span");
-            iconWrap.className = "mt-0.5 w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 shrink-0";
-
-            const fileIcon = document.createElement("i");
-            fileIcon.className = "fa-regular fa-file";
-            fileIcon.setAttribute("aria-hidden", "true");
-            iconWrap.appendChild(fileIcon);
-
-            const nameWrap = document.createElement("div");
-            nameWrap.className = "min-w-0";
-
-            const name = document.createElement("p");
-            name.className = "font-semibold text-slate-900 break-all";
-            name.textContent = String(doc.filename || "Documento");
-
-            const uuid = document.createElement("p");
-            uuid.className = "mt-1 font-mono text-[11px] text-slate-400 break-all";
-            uuid.textContent = String(doc.id || "");
-
-            nameWrap.append(name, uuid);
-            documentWrap.append(iconWrap, nameWrap);
-            documentCell.appendChild(documentWrap);
-            row.appendChild(documentCell);
-
-            row.appendChild(
-                createTextCell(
-                    DOCUMENT_TYPE_LABELS[doc.document_type] || doc.document_type || "—",
-                )
-            );
-            row.appendChild(createTextCell(formatBytes(doc.size_bytes)));
-
-            const statusCell = document.createElement("td");
-            statusCell.className = "px-5 py-4";
-            statusCell.appendChild(createStatusBadge(doc.status));
-            row.appendChild(statusCell);
-
+            const row = document.createElement("tr"); row.className = "hover:bg-slate-50 transition-colors";
+            const documentCell = document.createElement("td"); documentCell.className = "px-5 py-4 min-w-[260px]";
+            const documentWrap = document.createElement("div"); documentWrap.className = "flex items-start gap-3";
+            const iconWrap = document.createElement("span"); iconWrap.className = "mt-0.5 w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 shrink-0"; iconWrap.innerHTML = '<i class="fa-regular fa-file" aria-hidden="true"></i>';
+            const nameWrap = document.createElement("div"); nameWrap.className = "min-w-0";
+            const name = document.createElement("p"); name.className = "font-semibold text-slate-900 break-all"; name.textContent = String(doc.filename || "Documento");
+            const uuid = document.createElement("p"); uuid.className = "mt-1 font-mono text-[11px] text-slate-400 break-all"; uuid.textContent = String(doc.id || "");
+            nameWrap.append(name, uuid); documentWrap.append(iconWrap, nameWrap); documentCell.appendChild(documentWrap); row.appendChild(documentCell);
+            row.appendChild(createTextCell(DOCUMENT_TYPE_LABELS[doc.document_type] || "Otro documento")); row.appendChild(createTextCell(formatBytes(doc.size_bytes)));
+            const statusCell = document.createElement("td"); statusCell.className = "px-5 py-4"; statusCell.appendChild(createStatusBadge(doc.status)); row.appendChild(statusCell);
             row.appendChild(createTextCell(formatDate(doc.created_at)));
-
-            const integrityCell = document.createElement("td");
-            integrityCell.className = "px-5 py-4";
-
-            const integrity = document.createElement("div");
-            integrity.className = "flex items-center gap-2 text-xs text-slate-600";
-
-            const hashIcon = document.createElement("i");
-            hashIcon.className = "fa-solid fa-shield-halved text-emerald-700";
-            hashIcon.setAttribute("aria-hidden", "true");
-
-            const hash = document.createElement("span");
-            hash.className = "font-mono";
-            hash.textContent = doc.sha256 ? `${String(doc.sha256).slice(0, 12)}…` : "—";
-
-            integrity.append(hashIcon, hash);
-            integrityCell.appendChild(integrity);
-            row.appendChild(integrityCell);
-
-            const actionsCell = document.createElement("td");
-            actionsCell.className = "px-5 py-4";
-
-            const actions = document.createElement("div");
-            actions.className = "flex justify-end gap-2";
-
-            actions.appendChild(
-                createActionButton({
-                    label: "Detalle",
-                    icon: "fa-circle-info",
-                    className: "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700",
-                    onClick: () => openDetail(doc),
-                })
-            );
-
-            if (doc.status === "available") {
-                const download = document.createElement("a");
-                download.className = "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-950 text-xs font-semibold text-white";
-                download.href = `/api/v1/vault/documents/${encodeURIComponent(String(doc.id))}/download`;
-
-                const downloadIcon = document.createElement("i");
-                downloadIcon.className = "fa-solid fa-download";
-                downloadIcon.setAttribute("aria-hidden", "true");
-
-                const downloadLabel = document.createElement("span");
-                downloadLabel.textContent = "Descargar";
-
-                download.append(downloadIcon, downloadLabel);
-                actions.appendChild(download);
-            }
-
-            if (
-                VAULT_CONFIG.canDelete
-                && doc.status !== "deleted"
-                && doc.status !== "delete_pending"
-            ) {
-                actions.appendChild(
-                    createActionButton({
-                        label: "Eliminar",
-                        icon: "fa-trash-can",
-                        className: "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-xs font-semibold text-red-700",
-                        onClick: () => openDelete(doc),
-                    })
-                );
-            }
-
-            actionsCell.appendChild(actions);
-            row.appendChild(actionsCell);
-            fragment.appendChild(row);
+            const integrityCell = document.createElement("td"); integrityCell.className = "px-5 py-4"; const integrity = document.createElement("div"); integrity.className = "flex items-center gap-2 text-xs text-slate-600"; const hashIcon = document.createElement("i"); hashIcon.className = "fa-solid fa-shield-halved text-emerald-700"; hashIcon.setAttribute("aria-hidden", "true"); const hash = document.createElement("span"); hash.className = "font-mono"; hash.textContent = doc.sha256 ? `${String(doc.sha256).slice(0, 12)}…` : "—"; integrity.append(hashIcon, hash); integrityCell.appendChild(integrity); row.appendChild(integrityCell);
+            const actionsCell = document.createElement("td"); actionsCell.className = "px-5 py-4"; const actions = document.createElement("div"); actions.className = "flex justify-end gap-2";
+            actions.appendChild(createActionButton({ label: "Detalle", icon: "fa-circle-info", className: "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700", onClick: () => openDetail(doc) }));
+            if (doc.status === "available") { const download = document.createElement("a"); download.className = "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-950 text-xs font-semibold text-white"; download.href = `/api/v1/vault/documents/${encodeURIComponent(String(doc.id))}/download`; download.innerHTML = '<i class="fa-solid fa-download" aria-hidden="true"></i><span>Descargar</span>'; actions.appendChild(download); }
+            if (VAULT_CONFIG.canDelete && doc.status !== "deleted" && doc.status !== "delete_pending") actions.appendChild(createActionButton({ label: "Eliminar", icon: "fa-trash-can", className: "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-xs font-semibold text-red-700", onClick: () => openDelete(doc) }));
+            actionsCell.appendChild(actions); row.appendChild(actionsCell); fragment.appendChild(row);
         }
-
         elements.tableBody.appendChild(fragment);
     }
 
-    async function parseError(response) {
-        try {
-            const payload = await response.json();
-            if (payload && typeof payload.detail === "string") {
-                return payload.detail;
-            }
-        } catch (_error) {
-            // Generic fallback below.
-        }
+    async function parseError(response) { try { const payload = await response.json(); if (payload && typeof payload.detail === "string") return payload.detail; } catch (_error) {} return "La operación no pudo completarse."; }
+    async function apiFetch(url, options = {}) { const response = await fetch(url, { credentials: "same-origin", cache: "no-store", ...options, headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest", ...(options.headers || {}) } }); if (response.status === 401) { window.location.assign("/login"); throw new Error("La sesión expiró."); } return response; }
 
-        return "La operación no pudo completarse.";
-    }
+    async function loadDocuments() { const requestId = ++state.requestSequence; clearAlert(); elements.loading.classList.remove("hidden"); elements.empty.classList.add("hidden"); elements.tableContainer.classList.add("hidden"); try { const response = await apiFetch(VAULT_CONFIG.listUrl); if (!response.ok) throw new Error(await parseError(response)); const payload = await response.json(); if (requestId !== state.requestSequence) return; state.documents = Array.isArray(payload.documents) ? payload.documents : []; renderMetrics(state.documents); applyFilters(); } catch (error) { if (requestId !== state.requestSequence) return; state.documents = []; state.visibleDocuments = []; renderMetrics([]); elements.tableBody.replaceChildren(); elements.tableContainer.classList.add("hidden"); elements.empty.classList.remove("hidden"); setAlert(error instanceof Error ? error.message : "No se pudieron consultar los documentos.", "error"); } finally { if (requestId === state.requestSequence) elements.loading.classList.add("hidden"); } }
 
-    async function apiFetch(url, options = {}) {
-        const response = await fetch(url, {
-            credentials: "same-origin",
-            cache: "no-store",
-            ...options,
-            headers: {
-                Accept: "application/json",
-                "X-Requested-With": "XMLHttpRequest",
-                ...(options.headers || {}),
-            },
-        });
+    function openDetail(doc) { elements.detailFilename.textContent = String(doc.filename || "Documento"); elements.detailGrid.replaceChildren(); const fields = [["Identificador técnico", doc.id], ["Tipo", DOCUMENT_TYPE_LABELS[doc.document_type] || "Otro documento"], ["Formato MIME", doc.content_type], ["Tamaño", formatBytes(doc.size_bytes)], ["Estado", STATUS_LABELS[doc.status] || "Desconocido"], ["Creado", formatDate(doc.created_at)], ["Actualizado", formatDate(doc.updated_at)], ["SHA-256", doc.sha256]]; for (const [label, value] of fields) { const item = document.createElement("div"); item.className = "rounded-xl border border-slate-200 bg-slate-50 p-3.5 min-w-0"; const term = document.createElement("dt"); term.className = "text-xs font-semibold uppercase tracking-wide text-slate-500"; term.textContent = String(label); const description = document.createElement("dd"); description.className = "mt-1 text-sm font-medium text-slate-900 break-all"; description.textContent = String(value ?? "—"); item.append(term, description); elements.detailGrid.appendChild(item); } elements.detailModal.classList.remove("hidden"); }
+    function closeDetail() { elements.detailModal.classList.add("hidden"); }
+    function openUpload() { if (!VAULT_CONFIG.canUpload || !elements.uploadModal) return; clearAlert(); elements.uploadModal.classList.remove("hidden"); elements.uploadFile?.focus(); }
+    function closeUpload() { if (!elements.uploadModal) return; elements.uploadModal.classList.add("hidden"); elements.uploadForm?.reset(); elements.uploadProgress?.classList.add("hidden"); if (elements.submitUploadButton) elements.submitUploadButton.disabled = false; }
+    function createIdempotencyKey() { if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID(); const random = new Uint8Array(16); window.crypto.getRandomValues(random); return Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join(""); }
 
-        if (response.status === 401) {
-            window.location.assign("/");
-            throw new Error("Sesión expirada.");
-        }
+    async function submitUpload(event) { event.preventDefault(); if (!VAULT_CONFIG.canUpload) { setAlert("La cuenta no tiene permiso para cargar documentos.", "error"); return; } const file = elements.uploadFile?.files?.[0]; const documentType = elements.uploadDocumentType?.value || ""; if (!file) { setAlert("Seleccioná un archivo para continuar.", "error"); return; } if (file.size <= 0 || file.size > VAULT_CONFIG.maxUploadBytes) { setAlert(`El archivo debe ser mayor a 0 bytes y no superar {{ vault_max_upload_mb }} MiB.`, "error"); return; } const formData = new FormData(); formData.append("file", file); formData.append("document_type", documentType); elements.submitUploadButton.disabled = true; elements.uploadProgress.classList.remove("hidden"); clearAlert(); try { const response = await apiFetch(VAULT_CONFIG.listUrl, { method: "POST", headers: { "Idempotency-Key": createIdempotencyKey() }, body: formData }); if (!response.ok) throw new Error(await parseError(response)); closeUpload(); setAlert("Documento almacenado correctamente.", "success"); await loadDocuments(); } catch (error) { setAlert(error instanceof Error ? error.message : "No se pudo subir el documento.", "error"); } finally { if (elements.submitUploadButton) elements.submitUploadButton.disabled = false; elements.uploadProgress?.classList.add("hidden"); } }
+    function openDelete(doc) { if (!VAULT_CONFIG.canDelete || !elements.deleteModal) return; state.pendingDelete = doc; elements.deleteFilename.textContent = String(doc.filename || "Documento"); elements.deleteModal.classList.remove("hidden"); }
+    function closeDelete() { state.pendingDelete = null; elements.deleteModal?.classList.add("hidden"); if (elements.confirmDeleteButton) elements.confirmDeleteButton.disabled = false; }
+    async function confirmDelete() { if (!VAULT_CONFIG.canDelete || !state.pendingDelete) return; const documentId = String(state.pendingDelete.id || ""); elements.confirmDeleteButton.disabled = true; clearAlert(); try { const response = await apiFetch(`/api/v1/vault/documents/${encodeURIComponent(documentId)}`, { method: "DELETE" }); if (!response.ok) throw new Error(await parseError(response)); closeDelete(); setAlert("Documento eliminado del repositorio.", "success"); await loadDocuments(); } catch (error) { elements.confirmDeleteButton.disabled = false; setAlert(error instanceof Error ? error.message : "No se pudo eliminar el documento.", "error"); } }
 
-        return response;
-    }
-
-    async function loadDocuments() {
-        const requestId = ++state.requestSequence;
-
-        clearAlert();
-        elements.loading.classList.remove("hidden");
-        elements.empty.classList.add("hidden");
-        elements.tableContainer.classList.add("hidden");
-
-        try {
-            const response = await apiFetch(VAULT_CONFIG.listUrl);
-
-            if (!response.ok) {
-                throw new Error(await parseError(response));
-            }
-
-            const payload = await response.json();
-
-            if (requestId !== state.requestSequence) {
-                return;
-            }
-
-            state.documents = Array.isArray(payload.documents)
-                ? payload.documents
-                : [];
-
-            renderMetrics(state.documents);
-            applyFilters();
-        } catch (error) {
-            if (requestId !== state.requestSequence) {
-                return;
-            }
-
-            state.documents = [];
-            state.visibleDocuments = [];
-            renderMetrics([]);
-            elements.tableBody.replaceChildren();
-            elements.tableContainer.classList.add("hidden");
-            elements.empty.classList.remove("hidden");
-            setAlert(
-                error instanceof Error
-                    ? error.message
-                    : "No se pudo consultar la bóveda.",
-                "error",
-            );
-        } finally {
-            if (requestId === state.requestSequence) {
-                elements.loading.classList.add("hidden");
-            }
-        }
-    }
-
-    function openDetail(doc) {
-        elements.detailFilename.textContent = String(doc.filename || "Documento");
-        elements.detailGrid.replaceChildren();
-
-        const fields = [
-            ["UUID", doc.id],
-            ["Tipo", DOCUMENT_TYPE_LABELS[doc.document_type] || doc.document_type],
-            ["MIME", doc.content_type],
-            ["Tamaño", formatBytes(doc.size_bytes)],
-            ["Estado", STATUS_LABELS[doc.status] || doc.status],
-            ["Creado", formatDate(doc.created_at)],
-            ["Actualizado", formatDate(doc.updated_at)],
-            ["SHA-256", doc.sha256],
-        ];
-
-        for (const [label, value] of fields) {
-            const item = document.createElement("div");
-            item.className = "rounded-xl border border-slate-200 bg-slate-50 p-3.5 min-w-0";
-
-            const term = document.createElement("dt");
-            term.className = "text-xs font-semibold uppercase tracking-wide text-slate-500";
-            term.textContent = String(label);
-
-            const description = document.createElement("dd");
-            description.className = "mt-1 text-sm font-medium text-slate-900 break-all";
-            description.textContent = String(value ?? "—");
-
-            item.append(term, description);
-            elements.detailGrid.appendChild(item);
-        }
-
-        elements.detailModal.classList.remove("hidden");
-    }
-
-    function closeDetail() {
-        elements.detailModal.classList.add("hidden");
-    }
-
-    function openUpload() {
-        if (!VAULT_CONFIG.canUpload || !elements.uploadModal) {
-            return;
-        }
-
-        clearAlert();
-        elements.uploadModal.classList.remove("hidden");
-        if (elements.uploadFile) {
-            elements.uploadFile.focus();
-        }
-    }
-
-    function closeUpload() {
-        if (!elements.uploadModal) {
-            return;
-        }
-
-        elements.uploadModal.classList.add("hidden");
-        elements.uploadForm?.reset();
-        elements.uploadProgress?.classList.add("hidden");
-
-        if (elements.submitUploadButton) {
-            elements.submitUploadButton.disabled = false;
-        }
-    }
-
-    function createIdempotencyKey() {
-        if (window.crypto && typeof window.crypto.randomUUID === "function") {
-            return window.crypto.randomUUID();
-        }
-
-        const random = new Uint8Array(16);
-        window.crypto.getRandomValues(random);
-        return Array.from(
-            random,
-            (byte) => byte.toString(16).padStart(2, "0"),
-        ).join("");
-    }
-
-    async function submitUpload(event) {
-        event.preventDefault();
-
-        if (!VAULT_CONFIG.canUpload) {
-            setAlert("La cuenta no posee permiso para cargar documentos.", "error");
-            return;
-        }
-
-        const file = elements.uploadFile?.files?.[0];
-        const documentType = elements.uploadDocumentType?.value || "";
-
-        if (!file) {
-            setAlert("Seleccioná un archivo para continuar.", "error");
-            return;
-        }
-
-        if (file.size <= 0 || file.size > VAULT_CONFIG.maxUploadBytes) {
-            setAlert(
-                `El archivo debe ser mayor a 0 bytes y no superar {{ vault_max_upload_mb }} MiB.`,
-                "error",
-            );
-            return;
-        }
-
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("document_type", documentType);
-
-        elements.submitUploadButton.disabled = true;
-        elements.uploadProgress.classList.remove("hidden");
-        clearAlert();
-
-        try {
-            const response = await apiFetch(VAULT_CONFIG.listUrl, {
-                method: "POST",
-                headers: {
-                    "Idempotency-Key": createIdempotencyKey(),
-                },
-                body: formData,
-            });
-
-            if (!response.ok) {
-                throw new Error(await parseError(response));
-            }
-
-            closeUpload();
-            setAlert("Documento almacenado correctamente.", "success");
-            await loadDocuments();
-        } catch (error) {
-            setAlert(
-                error instanceof Error
-                    ? error.message
-                    : "No se pudo subir el documento.",
-                "error",
-            );
-        } finally {
-            if (elements.submitUploadButton) {
-                elements.submitUploadButton.disabled = false;
-            }
-            elements.uploadProgress?.classList.add("hidden");
-        }
-    }
-
-    function openDelete(doc) {
-        if (!VAULT_CONFIG.canDelete || !elements.deleteModal) {
-            return;
-        }
-
-        state.pendingDelete = doc;
-        elements.deleteFilename.textContent = String(doc.filename || "Documento");
-        elements.deleteModal.classList.remove("hidden");
-    }
-
-    function closeDelete() {
-        state.pendingDelete = null;
-        elements.deleteModal?.classList.add("hidden");
-
-        if (elements.confirmDeleteButton) {
-            elements.confirmDeleteButton.disabled = false;
-        }
-    }
-
-    async function confirmDelete() {
-        if (!VAULT_CONFIG.canDelete || !state.pendingDelete) {
-            return;
-        }
-
-        const documentId = String(state.pendingDelete.id || "");
-        elements.confirmDeleteButton.disabled = true;
-        clearAlert();
-
-        try {
-            const response = await apiFetch(
-                `/api/v1/vault/documents/${encodeURIComponent(documentId)}`,
-                {
-                    method: "DELETE",
-                },
-            );
-
-            if (!response.ok) {
-                throw new Error(await parseError(response));
-            }
-
-            closeDelete();
-            setAlert("Documento eliminado de la bóveda.", "success");
-            await loadDocuments();
-        } catch (error) {
-            elements.confirmDeleteButton.disabled = false;
-            setAlert(
-                error instanceof Error
-                    ? error.message
-                    : "No se pudo eliminar el documento.",
-                "error",
-            );
-        }
-    }
-
-    let searchTimer = null;
-    elements.search.addEventListener("input", () => {
-        window.clearTimeout(searchTimer);
-        searchTimer = window.setTimeout(applyFilters, 120);
-    });
-    elements.typeFilter.addEventListener("change", applyFilters);
-    elements.statusFilter.addEventListener("change", applyFilters);
-    elements.refreshButton.addEventListener("click", loadDocuments);
-    elements.closeDetailButton.addEventListener("click", closeDetail);
-
-    elements.detailModal.addEventListener("click", (event) => {
-        if (event.target === elements.detailModal) {
-            closeDetail();
-        }
-    });
-
-    if (VAULT_CONFIG.canUpload && elements.openUploadButton) {
-        elements.openUploadButton.addEventListener("click", openUpload);
-        elements.uploadForm.addEventListener("submit", submitUpload);
-
-        document.querySelectorAll("[data-close-upload]").forEach((button) => {
-            button.addEventListener("click", closeUpload);
-        });
-
-        elements.uploadModal.addEventListener("click", (event) => {
-            if (event.target === elements.uploadModal) {
-                closeUpload();
-            }
-        });
-    }
-
-    if (VAULT_CONFIG.canDelete && elements.deleteModal) {
-        elements.cancelDeleteButton.addEventListener("click", closeDelete);
-        elements.confirmDeleteButton.addEventListener("click", confirmDelete);
-
-        elements.deleteModal.addEventListener("click", (event) => {
-            if (event.target === elements.deleteModal) {
-                closeDelete();
-            }
-        });
-    }
-
-    document.addEventListener("keydown", (event) => {
-        if (event.key !== "Escape") {
-            return;
-        }
-
-        closeDetail();
-
-        if (VAULT_CONFIG.canUpload) {
-            closeUpload();
-        }
-
-        if (VAULT_CONFIG.canDelete) {
-            closeDelete();
-        }
-    });
-
+    let searchTimer = null; elements.search.addEventListener("input", () => { window.clearTimeout(searchTimer); searchTimer = window.setTimeout(applyFilters, 120); }); elements.typeFilter.addEventListener("change", applyFilters); elements.statusFilter.addEventListener("change", applyFilters); elements.refreshButton.addEventListener("click", loadDocuments); elements.closeDetailButton.addEventListener("click", closeDetail); elements.detailModal.addEventListener("click", (event) => { if (event.target === elements.detailModal) closeDetail(); });
+    if (VAULT_CONFIG.canUpload && elements.openUploadButton) { elements.openUploadButton.addEventListener("click", openUpload); elements.uploadForm.addEventListener("submit", submitUpload); document.querySelectorAll("[data-close-upload]").forEach((button) => button.addEventListener("click", closeUpload)); elements.uploadModal.addEventListener("click", (event) => { if (event.target === elements.uploadModal) closeUpload(); }); }
+    if (VAULT_CONFIG.canDelete && elements.deleteModal) { elements.cancelDeleteButton.addEventListener("click", closeDelete); elements.confirmDeleteButton.addEventListener("click", confirmDelete); elements.deleteModal.addEventListener("click", (event) => { if (event.target === elements.deleteModal) closeDelete(); }); }
+    document.addEventListener("keydown", (event) => { if (event.key !== "Escape") return; closeDetail(); if (VAULT_CONFIG.canUpload) closeUpload(); if (VAULT_CONFIG.canDelete) closeDelete(); });
     loadDocuments();
 })();
 </script>
