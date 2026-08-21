@@ -21,6 +21,9 @@ from litoral_trace.services.traceability_lineage import (
     TraceabilityLineageValidationError,
 )
 from litoral_trace.web.traceability import router as traceability_web_router
+from litoral_trace.web.traceability_release_control import (
+    router as release_control_web_router,
+)
 
 
 api_router = APIRouter(
@@ -88,11 +91,13 @@ async def obtener_origen_despacho_endpoint(
 
 
 # ``main.py`` includes one traceability-domain router for the origin API,
-# P1E dossier downloads and the P1D read-only traceability workspace. UX10-D
-# operational HTML routes stay outside this API composition and are registered
-# directly by the application bootstrap from the web layer. P1C remains the
-# lineage source of truth and P1B remains the only stock ledger.
+# P1E dossier downloads and the read-only browser workspaces for genealogy and
+# UX10-F release control. UX10-D operational HTML writes stay outside this API
+# composition and are registered directly by the application bootstrap from
+# the web layer. P1C remains the lineage source of truth and P1B remains the
+# only stock ledger.
 router = APIRouter()
 router.include_router(api_router)
 router.include_router(dossier_router)
 router.include_router(traceability_web_router)
+router.include_router(release_control_web_router)
