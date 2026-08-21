@@ -345,6 +345,27 @@ jobs:
               )
           PY
 
+      - name: Gate 16 - P1D traceability UI acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            --junitxml=gate16-traceability-ui.xml \
+            tests/test_traceability_p1d_ui_unittest.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("gate16-traceability-ui.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          failures = int(root.attrib.get("failures", "0"))
+          errors = int(root.attrib.get("errors", "0"))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  "Gate 16 is fail-closed: "
+                  f"skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
+
       - name: Verify canonical database head
         shell: bash
         run: |
