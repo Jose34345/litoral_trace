@@ -92,7 +92,7 @@ def test_csrf_rejects_expired_and_tampered_tokens():
 
     tampered = f"{token[:-1]}{'A' if token[-1] != 'A' else 'B'}"
     assert not verify_csrf_token(
-        tampered,
+        token,
         subject=subject,
         now_epoch=1_100,
         secret_key=_TEST_SECRET,
@@ -124,10 +124,16 @@ def test_anonymous_csrf_is_distinct_from_authenticated_context():
 def test_navigation_is_server_side_rbac_derived():
     client_nav = build_navigation(
         _user(role="cliente"),
-        current_path="/vault",
+        current_path="/traceability",
     )
-    assert [item.key for item in client_nav] == ["dashboard", "vault"]
-    assert next(item for item in client_nav if item.key == "vault").active is True
+    assert [item.key for item in client_nav] == [
+        "dashboard",
+        "traceability",
+        "vault",
+    ]
+    assert next(
+        item for item in client_nav if item.key == "traceability"
+    ).active is True
 
     admin_nav = build_navigation(
         _user(role="admin"),
@@ -136,6 +142,7 @@ def test_navigation_is_server_side_rbac_derived():
     assert [item.key for item in admin_nav] == [
         "dashboard",
         "imports",
+        "traceability",
         "vault",
         "settings",
     ]
@@ -147,6 +154,7 @@ def test_navigation_is_server_side_rbac_derived():
     assert [item.key for item in superadmin_nav] == [
         "dashboard",
         "imports",
+        "traceability",
         "vault",
         "settings",
         "platform",
