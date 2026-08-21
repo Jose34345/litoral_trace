@@ -91,6 +91,9 @@ import litoral_trace.web.router as web_router_module
 from litoral_trace.web.router import (
     router as web_router,
 )
+from litoral_trace.web.traceability_operations import (
+    router as traceability_operations_router,
+)
 
 from litoral_trace.web.runtime import (
     clear_browser_security_cookies,
@@ -191,6 +194,18 @@ app.include_router(
 app.include_router(
     web_router
 )
+
+# UX10-D is a write workspace owned by the web layer. ``web_router`` can be
+# imported while the operational submodule is still initializing, and
+# APIRouter.include_router() copies routes eagerly. Register the completed
+# operational router here only when that earlier copy did not materialize.
+if not any(
+    getattr(route, "path", "") == "/operations"
+    for route in app.routes
+):
+    app.include_router(
+        traceability_operations_router
+    )
 
 
 # ---------------------------------------------------------------------------
