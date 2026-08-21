@@ -367,8 +367,7 @@ class TraceabilityOperationService:
                     unit=unit,
                 )
             )
-            session.commit()
-            return DraftEventResult(
+            result = DraftEventResult(
                 event_id=int(event.id),
                 event_public_id=event.public_id,
                 event_code=event.event_code,
@@ -376,6 +375,8 @@ class TraceabilityOperationService:
                 status=event.status,
                 output_batch_public_ids=(batch.public_id,),
             )
+            session.commit()
+            return result
         except TraceabilityOperationError:
             session.rollback()
             raise
@@ -536,8 +537,7 @@ class TraceabilityOperationService:
                         unit=item.unit,
                     )
                 )
-            session.commit()
-            return DraftEventResult(
+            result = DraftEventResult(
                 event_id=int(event.id),
                 event_public_id=event.public_id,
                 event_code=event.event_code,
@@ -545,6 +545,8 @@ class TraceabilityOperationService:
                 status=event.status,
                 output_batch_public_ids=tuple(batch.public_id for batch in output_batches),
             )
+            session.commit()
+            return result
         except TraceabilityOperationError:
             session.rollback()
             raise
@@ -654,13 +656,14 @@ class TraceabilityOperationService:
                         unit=batch.unit,
                     )
                 )
-            session.commit()
-            return DraftShipmentResult(
+            result = DraftShipmentResult(
                 shipment_id=int(shipment.id),
                 shipment_public_id=shipment.public_id,
                 shipment_code=shipment.shipment_code,
                 status=shipment.status,
             )
+            session.commit()
+            return result
         except TraceabilityOperationError:
             session.rollback()
             raise
