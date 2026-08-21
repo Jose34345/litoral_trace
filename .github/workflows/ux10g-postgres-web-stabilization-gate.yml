@@ -60,6 +60,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest alembic
 
+      - name: Traceability mapper warning gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_ux10g_traceability_mapper_contract_unittest.py
+
       - name: Provision runtime principal
         shell: bash
         run: |
