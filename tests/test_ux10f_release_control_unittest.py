@@ -199,6 +199,7 @@ def test_volume_check_never_requires_cross_unit_conversion():
         manifest_sha256="c" * 64,
     )
     assert _check(blocked, "volume")["state"] == BLOCKED
+    assert "TON: 1" in _check(blocked, "volume")["detail"]
 
 
 def test_template_has_interactive_filters_route_and_hash_copy_affordance():
@@ -212,7 +213,7 @@ def test_template_has_interactive_filters_route_and_hash_copy_affordance():
     assert 'data-release-filter="READY"' in text
     assert 'id="copy-release-hash"' in text
     assert "navigator.clipboard.writeText" in text
-    assert "No constituye" in text or "no constituye" in text
+    assert "{{ control.disclaimer }}" in text
 
 
 def test_release_control_route_is_exposed_on_cold_start():
