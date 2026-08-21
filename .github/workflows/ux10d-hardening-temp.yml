@@ -72,7 +72,7 @@ jobs:
           git add src/litoral_trace/web/traceability_operations.py \
                   src/litoral_trace/templates/traceability_operations.html \
                   src/litoral_trace/templates/app/_dashboard_traceability_cockpit.html \
-                  src/litoral_trace/static/css/app.css \
+                  src/litoral_trace/static/dist/app.css \
                   .github/workflows/ux10d-hardening-temp.yml
           if git diff --cached --quiet; then
             echo 'No UX10-D hardening changes required.'
