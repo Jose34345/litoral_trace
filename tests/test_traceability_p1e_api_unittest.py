@@ -12,10 +12,10 @@ from litoral_trace.services.traceability_dossier import OriginDossierBundle
 
 
 EXPECTED_PATHS = {
-    "/api/v1/traceability/shipments/{shipment_code}/dossier/manifest",
-    "/api/v1/traceability/shipments/{shipment_code}/dossier/geojson",
-    "/api/v1/traceability/shipments/{shipment_code}/dossier/pdf",
-    "/api/v1/traceability/shipments/{shipment_code}/dossier/bundle",
+    "/api/v1/traceability/shipments/dossier/manifest",
+    "/api/v1/traceability/shipments/dossier/geojson",
+    "/api/v1/traceability/shipments/dossier/pdf",
+    "/api/v1/traceability/shipments/dossier/bundle",
 }
 
 
@@ -63,7 +63,12 @@ expected = {sorted(EXPECTED_PATHS)!r}
 schema = main.app.openapi()
 for path in expected:
     assert path in schema['paths'], (path, sorted(schema['paths']))
-    assert 'get' in schema['paths'][path], schema['paths'][path]
+    operation = schema['paths'][path]['get']
+    parameters = operation.get('parameters', [])
+    shipment = [item for item in parameters if item.get('name') == 'shipment_code']
+    assert len(shipment) == 1, (path, parameters)
+    assert shipment[0].get('in') == 'query', shipment[0]
+    assert shipment[0].get('required') is True, shipment[0]
 """
     completed = subprocess.run(
         [sys.executable, "-c", probe],
@@ -80,15 +85,23 @@ for path in expected:
 
 def test_manifest_download_has_integrity_header_and_safe_attachment(monkeypatch) -> None:
     bundle = _bundle()
-    monkeypatch.setattr(dossier_api, "_load_bundle", lambda **kwargs: bundle)
+    captured = {}
 
+    def _fake_load_bundle(**kwargs):
+        captured.update(kwargs)
+        return bundle
+
+    monkeypatch.setattr(dossier_api, "_load_bundle", _fake_load_bundle)
+
+    requested_code = 'EXP 2026/001\r\n"evil"'
     response = asyncio.run(
         dossier_api.descargar_manifest_dossier_endpoint(
-            'EXP 2026/001\r\n"evil"',
+            requested_code,
             user=_user(),
         )
     )
 
+    assert captured["shipment_code"] == requested_code
     assert response.status_code == 200
     assert response.media_type == "application/json"
     assert response.headers["x-litoral-trace-manifest-sha256"] == bundle.manifest_sha256
