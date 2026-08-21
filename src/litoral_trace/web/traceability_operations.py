@@ -536,3 +536,12 @@ async def dispatch_existing_shipment_operation(request: Request, shipment_public
         return _redirect_result("shipment-dispatched")
     except TraceabilityOperationError as exc:
         return _render(request, user=user, error=_safe_error(exc), status_code=_status_for_error(exc))
+
+
+# UX10-E evidence routes are fully initialized before this parent router is
+# copied into the FastAPI application by main.py.
+from litoral_trace.web.traceability_evidence import (
+    router as traceability_evidence_router,
+)
+
+router.include_router(traceability_evidence_router)

@@ -326,7 +326,7 @@ def test_ux10e_web_contract_is_contextual_and_does_not_duplicate_vault():
 
     assert "Evidencia de la cadena de custodia" in template
     assert "Subir un documento sin salir del flujo" in template
-    assert "no constituye por sí sola una certificación" in template
+    assert "No constituye por sí sola una certificación" in template
     assert "SHA-256" in template
     assert "El archivo no se elimina de la bóveda" in template
     assert "current_stock" not in service_source
