@@ -1,7 +1,7 @@
 """Authenticated P1E origin-dossier download endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.auth.rbac import Permission, require_permission
@@ -81,12 +81,20 @@ def _headers(*, bundle, filename: str) -> dict[str, str]:
     }
 
 
+ShipmentCodeQuery = Query(
+    ...,
+    min_length=1,
+    max_length=120,
+    description="Código comercial del despacho dentro de la organización autenticada.",
+)
+
+
 @router.get(
-    "/shipments/{shipment_code}/dossier/manifest",
+    "/shipments/dossier/manifest",
     response_class=Response,
 )
 async def descargar_manifest_dossier_endpoint(
-    shipment_code: str,
+    shipment_code: str = ShipmentCodeQuery,
     user: UserTenantContext = Depends(
         require_permission(Permission.LOTE_READ)
     ),
@@ -104,11 +112,11 @@ async def descargar_manifest_dossier_endpoint(
 
 
 @router.get(
-    "/shipments/{shipment_code}/dossier/geojson",
+    "/shipments/dossier/geojson",
     response_class=Response,
 )
 async def descargar_geojson_dossier_endpoint(
-    shipment_code: str,
+    shipment_code: str = ShipmentCodeQuery,
     user: UserTenantContext = Depends(
         require_permission(Permission.LOTE_READ)
     ),
@@ -126,11 +134,11 @@ async def descargar_geojson_dossier_endpoint(
 
 
 @router.get(
-    "/shipments/{shipment_code}/dossier/pdf",
+    "/shipments/dossier/pdf",
     response_class=Response,
 )
 async def descargar_pdf_dossier_endpoint(
-    shipment_code: str,
+    shipment_code: str = ShipmentCodeQuery,
     user: UserTenantContext = Depends(
         require_permission(Permission.LOTE_READ)
     ),
@@ -148,11 +156,11 @@ async def descargar_pdf_dossier_endpoint(
 
 
 @router.get(
-    "/shipments/{shipment_code}/dossier/bundle",
+    "/shipments/dossier/bundle",
     response_class=Response,
 )
 async def descargar_bundle_dossier_endpoint(
-    shipment_code: str,
+    shipment_code: str = ShipmentCodeQuery,
     user: UserTenantContext = Depends(
         require_permission(Permission.LOTE_READ)
     ),
