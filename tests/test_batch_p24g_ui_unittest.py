@@ -643,17 +643,23 @@ def test_neutral_upload_service_contains_no_fastapi_starlette_or_jinja_imports()
 
 def test_dashboard_template_no_longer_exposes_retired_batch_upload_ui():
     dashboard = DASHBOARD_TEMPLATE_PATH.read_text(encoding="utf-8")
+    cockpit = (
+        DASHBOARD_TEMPLATE_PATH.parent
+        / "app"
+        / "_dashboard_traceability_cockpit.html"
+    ).read_text(encoding="utf-8")
+    composed_dashboard = dashboard + "\n" + cockpit
 
-    assert "/api/v1/batch/upload" not in dashboard
-    assert 'accept=".xlsx,.xls"' not in dashboard
-    assert "Stress Test & Carga Masiva Batch" not in dashboard
-    assert "Procesamiento Masivo de Guias Forestales y Remitos" not in dashboard
-    assert "batchResult" not in dashboard
-    assert "btn-tab-batch" not in dashboard
-    assert 'id="tab-batch"' not in dashboard
-    assert "Plantilla Excel" in dashboard
-    assert "Mapa geoespacial de rodales" in dashboard
-    assert "Evaluación individual del rodal" in dashboard
+    assert "/api/v1/batch/upload" not in composed_dashboard
+    assert 'accept=".xlsx,.xls"' not in composed_dashboard
+    assert "Stress Test & Carga Masiva Batch" not in composed_dashboard
+    assert "Procesamiento Masivo de Guias Forestales y Remitos" not in composed_dashboard
+    assert "batchResult" not in composed_dashboard
+    assert "btn-tab-batch" not in composed_dashboard
+    assert 'id="tab-batch"' not in composed_dashboard
+    assert "Plantilla Excel" in composed_dashboard
+    assert "Mapa geoespacial de rodales" in composed_dashboard
+    assert "Evaluación individual del rodal" in composed_dashboard
 
 
 def test_web_batch_import_module_no_longer_imports_api_batch():
