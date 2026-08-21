@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request, status
 from fastapi.responses import HTMLResponse
@@ -226,12 +226,12 @@ def build_traceability_view(
 
     shipment = payload.get("shipment") or {}
     shipment_code = str(shipment.get("shipment_code") or "").strip()
-    encoded_shipment_code = quote(shipment_code, safe="")
-    dossier_base = (
-        f"/api/v1/traceability/shipments/{encoded_shipment_code}/dossier"
-        if encoded_shipment_code
+    dossier_query = (
+        urlencode({"shipment_code": shipment_code})
+        if shipment_code
         else None
     )
+    dossier_base = "/api/v1/traceability/shipments/dossier"
     totals = payload.get("unit_totals") or []
     sources = [_present_source(source) for source in payload.get("source_lotes") or []]
     events = [_present_event(event) for event in payload.get("events") or []]
@@ -275,12 +275,12 @@ def build_traceability_view(
         },
         "dossier": (
             {
-                "bundle_href": f"{dossier_base}/bundle",
-                "pdf_href": f"{dossier_base}/pdf",
-                "geojson_href": f"{dossier_base}/geojson",
-                "manifest_href": f"{dossier_base}/manifest",
+                "bundle_href": f"{dossier_base}/bundle?{dossier_query}",
+                "pdf_href": f"{dossier_base}/pdf?{dossier_query}",
+                "geojson_href": f"{dossier_base}/geojson?{dossier_query}",
+                "manifest_href": f"{dossier_base}/manifest?{dossier_query}",
             }
-            if dossier_base is not None
+            if dossier_query is not None
             else None
         ),
         "allocation_method": _text(payload.get("allocation_method")),
