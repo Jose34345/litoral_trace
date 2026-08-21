@@ -245,7 +245,7 @@ def test_login_form_posts_to_real_auth_and_sets_cookies_only_on_success():
         )
     )
     assert dashboard.status_code == 200
-    assert "Trazabilidad Forestal" in dashboard.body.decode("utf-8")
+    assert "Origen forestal, geolocalización y evidencia" in dashboard.body.decode("utf-8")
 
 
 def test_multiple_password_candidates_only_allow_the_real_test_password():
@@ -320,28 +320,10 @@ def test_invalid_access_cookie_variants_do_not_render_protected_html():
     valid_payload = verify_jwt_token(valid_access_token)
     assert valid_payload is not None
 
-    (
-        encoded_header,
-        encoded_payload,
-        encoded_signature,
-    ) = valid_access_token.split(".")
-
-    tampered_first_char = (
-        "A"
-        if encoded_signature[0] != "A"
-        else "B"
-    )
-
-    tampered_signature = (
-        tampered_first_char
-        + encoded_signature[1:]
-    )
-
-    tampered_token = (
-        f"{encoded_header}."
-        f"{encoded_payload}."
-        f"{tampered_signature}"
-    )
+    encoded_header, encoded_payload, encoded_signature = valid_access_token.split(".")
+    tampered_first_char = "A" if encoded_signature[0] != "A" else "B"
+    tampered_signature = tampered_first_char + encoded_signature[1:]
+    tampered_token = f"{encoded_header}.{encoded_payload}.{tampered_signature}"
     expired_token = create_jwt_token(
         {
             "sub": valid_payload["sub"],
@@ -482,7 +464,9 @@ def test_admin_html_route_denies_org_admin_allows_superadmin_and_rejects_forged_
         )
     )
     assert superadmin_response.status_code == 200
-    assert "PANEL SUPERADMIN" in superadmin_response.body.decode("utf-8")
+    admin_body = superadmin_response.body.decode("utf-8")
+    assert "Administración global" in admin_body
+    assert "Organizaciones de la plataforma" in admin_body
 
     access_token = _issue_real_access_cookie(
         username=str(tenant_admin["username"]),
