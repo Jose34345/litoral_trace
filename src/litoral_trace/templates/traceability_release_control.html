@@ -159,8 +159,8 @@
             </div>
             <div class="flex flex-wrap gap-2 lg:justify-end">
                 {% if control.manifest_sha256 %}<button id="copy-release-hash" type="button" class="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 py-2 text-xs font-bold text-white hover:bg-white/15"><i class="fa-regular fa-copy" aria-hidden="true"></i><span>Copiar huella</span></button>{% endif %}
-                {% if control.links.dossier_pdf %}<a href="{{ control.links.dossier_pdf }}" class="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 py-2 text-xs font-bold text-white hover:bg-white/15"><i class="fa-regular fa-file-pdf" aria-hidden="true"></i>PDF</a>{% endif %}
-                {% if control.links.dossier_bundle %}<a href="{{ control.links.dossier_bundle }}" class="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-300"><i class="fa-solid fa-box-archive" aria-hidden="true"></i>Expediente completo</a>{% endif %}
+                {% if control.manifest_sha256 and control.links.dossier_pdf %}<a href="{{ control.links.dossier_pdf }}" class="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 py-2 text-xs font-bold text-white hover:bg-white/15"><i class="fa-regular fa-file-pdf" aria-hidden="true"></i>PDF</a>{% endif %}
+                {% if control.manifest_sha256 and control.links.dossier_bundle %}<a href="{{ control.links.dossier_bundle }}" class="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-300"><i class="fa-solid fa-box-archive" aria-hidden="true"></i>Expediente completo</a>{% endif %}
             </div>
         </div>
         <p id="copy-release-status" class="mt-2 hidden text-xs font-semibold text-emerald-300" role="status">Huella copiada.</p>
