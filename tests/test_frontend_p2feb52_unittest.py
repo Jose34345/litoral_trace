@@ -86,17 +86,13 @@ def test_public_shell_footer_is_encoding_safe():
     )
 
     assert (
-        "Argentina &middot; "
-        "Sudamérica &middot; EUDR"
+        "Argentina · Cadenas forestales · Comercio exterior"
         in shell
     )
 
-    assert (
-        "Argentina ? Sudamérica ? EUDR"
-        not in shell
-    )
-
     assert "\ufffd" not in shell
+    assert "\u00c3" not in shell
+    assert "\u00c2" not in shell
 
 
 def test_public_shell_has_skip_link_and_focus_target():
