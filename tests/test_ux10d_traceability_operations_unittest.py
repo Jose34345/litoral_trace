@@ -411,7 +411,11 @@ def test_ux10d_rbac_separates_operation_from_read_only_roles():
 
 
 def test_ux10d_routes_and_template_keep_browser_as_presentation_layer():
-    import main as main_module
+    import json
+    import os
+    import subprocess
+    import sys
+
     from litoral_trace.web.traceability_operations import router as runtime_operations_router
 
     declared_routes = {
@@ -419,10 +423,35 @@ def test_ux10d_routes_and_template_keep_browser_as_presentation_layer():
         for route in runtime_operations_router.routes
         if getattr(route, "path", "").startswith("/operations")
     }
+    root = Path(__file__).resolve().parents[1]
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(root / "src")
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import json, main; "
+                "routes=[(r.path, sorted(r.methods or set())) "
+                "for r in main.app.routes "
+                "if getattr(r, 'path', '').startswith('/operations')]; "
+                "print('__UX10_ROUTES__'+json.dumps(routes))"
+            ),
+        ],
+        cwd=root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload_line = next(
+        line
+        for line in probe.stdout.splitlines()
+        if line.startswith("__UX10_ROUTES__")
+    )
     routes = {
-        (route.path, tuple(sorted(route.methods or set())))
-        for route in main_module.app.routes
-        if getattr(route, "path", "").startswith("/operations")
+        (path, tuple(methods))
+        for path, methods in json.loads(payload_line.removeprefix("__UX10_ROUTES__"))
     }
     assert declared_routes == routes
     assert ("/operations", ("GET",)) in routes
