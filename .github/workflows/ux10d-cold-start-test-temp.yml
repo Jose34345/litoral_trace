@@ -1,0 +1,41 @@
+name: UX10D Cold Start Test Temp
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-cold-start-test:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Patch acceptance to use clean ASGI cold start
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/test_ux10d_traceability_operations_unittest.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''def test_ux10d_routes_and_template_keep_browser_as_presentation_layer():\n    import main as main_module\n    from litoral_trace.web.traceability_operations import router as runtime_operations_router\n\n    declared_routes = {\n        (route.path, tuple(sorted(route.methods or set())))\n        for route in runtime_operations_router.routes\n        if getattr(route, "path", "").startswith("/operations")\n    }\n    routes = {\n        (route.path, tuple(sorted(route.methods or set())))\n        for route in main_module.app.routes\n        if getattr(route, "path", "").startswith("/operations")\n    }\n'''
+          new = '''def test_ux10d_routes_and_template_keep_browser_as_presentation_layer():\n    import json\n    import os\n    import subprocess\n    import sys\n\n    from litoral_trace.web.traceability_operations import router as runtime_operations_router\n\n    declared_routes = {\n        (route.path, tuple(sorted(route.methods or set())))\n        for route in runtime_operations_router.routes\n        if getattr(route, "path", "").startswith("/operations")\n    }\n    root = Path(__file__).resolve().parents[1]\n    env = dict(os.environ)\n    env["PYTHONPATH"] = str(root / "src")\n    probe = subprocess.run(\n        [\n            sys.executable,\n            "-c",\n            (\n                "import json, main; "\n                "routes=[(r.path, sorted(r.methods or set())) "\n                "for r in main.app.routes "\n                "if getattr(r, 'path', '').startswith('/operations')]; "\n                "print('__UX10_ROUTES__'+json.dumps(routes))"\n            ),\n        ],\n        cwd=root,\n        env=env,\n        check=True,\n        capture_output=True,\n        text=True,\n    )\n    payload_line = next(\n        line\n        for line in probe.stdout.splitlines()\n        if line.startswith("__UX10_ROUTES__")\n    )\n    routes = {\n        (path, tuple(methods))\n        for path, methods in json.loads(payload_line.removeprefix("__UX10_ROUTES__"))\n    }\n'''
+          if old not in text:
+              raise SystemExit("cold-start test anchor not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+      - name: Commit cold-start test and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm .github/workflows/ux10d-cold-start-test-temp.yml
+          git add -- tests/test_ux10d_traceability_operations_unittest.py .github/workflows/ux10d-cold-start-test-temp.yml
+          git commit -m "test(ux10d): verify operational routes on clean ASGI start"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
