@@ -154,7 +154,28 @@ jobs:
           errors = int(attrs.get("errors", 0))
           if skipped or failures or errors:
               raise SystemExit(
-                  "UX10-G fails closed: "
+                  "UX10-G runtime gate fails closed: "
+                  f"skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
+
+      - name: UX10-G real HTTP operations acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs \
+            tests/test_ux10g_operations_http_postgres_e2e.py \
+            --junitxml=ux10g-http-operations.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("ux10g-http-operations.xml").getroot()
+          attrs = root.attrib
+          skipped = int(attrs.get("skipped", 0))
+          failures = int(attrs.get("failures", 0))
+          errors = int(attrs.get("errors", 0))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  "UX10-G HTTP gate fails closed: "
                   f"skipped={skipped}, failures={failures}, errors={errors}"
               )
           PY
