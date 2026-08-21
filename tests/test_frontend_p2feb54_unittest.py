@@ -310,10 +310,8 @@ def test_regional_detail_routes_render_canonical_identity(
         in body
     )
 
-    assert (
-        "Geography, not risk"
-        in body
-    )
+    assert "Geografía, no riesgo" in body
+    assert "no es una conclusión de cumplimiento" in body
 
 
 def test_regional_index_exposes_all_canonical_profiles(
@@ -355,6 +353,12 @@ def test_regional_index_exposes_all_canonical_profiles(
         "provincias.geojson"
         in body
     )
+
+
+def test_critical_frontend_assets_are_served(
+    web_client: TestClient,
+):
+    pass
 
 
 @pytest.mark.parametrize(
