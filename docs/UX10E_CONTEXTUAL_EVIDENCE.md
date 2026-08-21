@@ -15,6 +15,24 @@ La evidencia documental debe verse y gestionarse dentro del eslabón que respald
 7. **Cobertura factual.** El porcentaje representa eslabones con al menos una evidencia registrada. No equivale a certificación ni a cumplimiento normativo automático.
 8. **Navegación corta.** `/operations`, `/evidence`, `/traceability` y `/vault` deben estar conectados mediante acciones visibles; el operador no debe volver al menú lateral para completar el ciclo documental.
 
+## Huella Documental Litoral Trace
+
+La firma de UX10-E es la **Huella Documental Litoral Trace**: una lectura verificable del respaldo que acompaña a la cadena `Origen → Movimiento → Lote industrial → Despacho`.
+
+No es un score regulatorio. La huella responde una pregunta operacional y auditable: **qué evidencia está vinculada a qué eslabón y cuál es el hash del contenido que lo respalda**.
+
+Cuando se genera un dossier de despacho:
+
+- P1C sigue siendo la fuente única de genealogía;
+- UX10-E selecciona sólo los vínculos documentales pertenecientes a ese grafo;
+- el manifiesto buyer-facing incorpora referencias públicas, metadatos relevantes y SHA-256;
+- las notas operativas internas y los IDs internos de base de datos no salen al comprador;
+- el SHA-256 del manifiesto cambia si cambia la evidencia documental;
+- el PDF muestra una sección `HUELLA DOCUMENTAL LITORAL TRACE` después del camino industrial;
+- los archivos privados de Vault **no** se incrustan automáticamente dentro del ZIP.
+
+Así, genealogía y cobertura documental permanecen como dimensiones distintas: una cadena puede estar genealógicamente cerrada y todavía mostrar una brecha documental visible.
+
 ## Sujetos
 
 - `SOURCE_LOTE`: parcela o rodal de origen.
