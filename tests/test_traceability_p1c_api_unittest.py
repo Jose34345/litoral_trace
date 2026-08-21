@@ -2,24 +2,37 @@
 from __future__ import annotations
 
 from pathlib import Path
-import runpy
+import subprocess
+import sys
 
 
 EXPECTED_PATH = "/api/v1/traceability/shipments/{shipment_code}/origin"
 
 
 def test_p1c_origin_endpoint_is_registered_once() -> None:
-    """Load a fresh ASGI entrypoint instead of reusing suite-mutated globals."""
-    main_path = Path(__file__).resolve().parents[1] / "main.py"
-    namespace = runpy.run_path(
-        str(main_path),
-        run_name="p1c_main_registration_probe",
+    """Validate registration in a new Python process like a fresh ASGI worker."""
+    root_dir = Path(__file__).resolve().parents[1]
+    probe = f"""
+import main
+expected = {EXPECTED_PATH!r}
+paths = [
+    route.path
+    for route in main.app.routes
+    if getattr(route, 'path', None) == expected
+]
+assert paths == [expected], [
+    getattr(route, 'path', None)
+    for route in main.app.routes
+]
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=root_dir,
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    app = namespace["app"]
-
-    paths = [
-        route.path
-        for route in app.routes
-        if getattr(route, "path", None) == EXPECTED_PATH
-    ]
-    assert paths == [EXPECTED_PATH]
+    assert completed.returncode == 0, (
+        "P1C endpoint was not registered on isolated ASGI cold start.\n"
+        f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
+    )
