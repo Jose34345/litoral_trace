@@ -15,6 +15,7 @@ class Permission(StrEnum):
     LOTE_DELETE = "lote:delete"
     TRACEABILITY_OPERATE = "traceability:operate"
     TRACEABILITY_DISPATCH = "traceability:dispatch"
+    TRACEABILITY_EVIDENCE = "traceability:evidence"
     SATELLITE_RUN = "satellite:run"
     VAULT_READ = "vault:read"
     VAULT_UPLOAD = "vault:upload"
@@ -36,6 +37,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
             Permission.LOTE_DELETE,
             Permission.TRACEABILITY_OPERATE,
             Permission.TRACEABILITY_DISPATCH,
+            Permission.TRACEABILITY_EVIDENCE,
             Permission.SATELLITE_RUN,
             Permission.VAULT_READ,
             Permission.VAULT_UPLOAD,
@@ -52,6 +54,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
             Permission.LOTE_DELETE,
             Permission.TRACEABILITY_OPERATE,
             Permission.TRACEABILITY_DISPATCH,
+            Permission.TRACEABILITY_EVIDENCE,
             Permission.SATELLITE_RUN,
             Permission.VAULT_READ,
             Permission.VAULT_UPLOAD,
