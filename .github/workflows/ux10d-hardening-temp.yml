@@ -1,0 +1,82 @@
+name: UX10D Hardening Temp
+
+on:
+  push:
+    branches:
+      - ux10-d-chain-of-custody-operations
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout UX10-D head
+        uses: actions/checkout@v4
+        with:
+          ref: ux10-d-chain-of-custody-operations
+          fetch-depth: 0
+
+      - name: Harden operational forms
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          web = Path('src/litoral_trace/web/traceability_operations.py')
+          text = web.read_text(encoding='utf-8')
+          old = 'from decimal import Decimal\n'
+          new = 'from decimal import Decimal, InvalidOperation\n'
+          if old not in text:
+              raise SystemExit('Decimal import anchor not found')
+          web.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          template = Path('src/litoral_trace/templates/traceability_operations.html')
+          text = template.read_text(encoding='utf-8')
+          old = '<option value="{{ batch.public_id }}">{{ batch.code }} · {{ batch.product_name }} · disponible {{ batch.available }}</option>'
+          new = '<option value="{{ batch.public_id }}" {% if not batch.available_positive %}disabled{% endif %}>{{ batch.code }} · {{ batch.product_name }} · disponible {{ batch.available }}</option>'
+          if old not in text:
+              raise SystemExit('Process batch option anchor not found')
+          text = text.replace(old, new)
+          old = '<option value="{{ batch.public_id }}">{{ batch.code }} · {{ batch.product_name }} · {{ batch.available }}</option>'
+          new = '<option value="{{ batch.public_id }}" {% if not batch.available_positive %}disabled{% endif %}>{{ batch.code }} · {{ batch.product_name }} · {{ batch.available }}</option>'
+          if old not in text:
+              raise SystemExit('Shipment batch option anchor not found')
+          template.write_text(text.replace(old, new), encoding='utf-8')
+
+          cockpit = Path('src/litoral_trace/templates/app/_dashboard_traceability_cockpit.html')
+          text = cockpit.read_text(encoding='utf-8')
+          anchor = '''                {% if user.role in ["superadmin", "admin", "manager"] %}\n                <a href="/imports" class="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-xs font-semibold text-slate-200 transition hover:bg-white/10">\n                    <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>\n                    Carga masiva\n                </a>\n                {% endif %}\n'''
+          replacement = '''                {% if user.role in ["superadmin", "admin", "manager"] %}\n                <a href="/operations" class="inline-flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-4 py-2.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-400/15">\n                    <i class="fa-solid fa-industry" aria-hidden="true"></i>\n                    Registrar operación\n                </a>\n                <a href="/imports" class="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-xs font-semibold text-slate-200 transition hover:bg-white/10">\n                    <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>\n                    Carga masiva\n                </a>\n                {% endif %}\n'''
+          if anchor not in text:
+              raise SystemExit('Dashboard operator anchor not found')
+          cockpit.write_text(text.replace(anchor, replacement, 1), encoding='utf-8')
+          PY
+
+      - name: Build frontend assets
+        run: |
+          npm ci
+          npm run build
+
+      - name: Remove temporary workflow
+        run: rm .github/workflows/ux10d-hardening-temp.yml
+
+      - name: Commit hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/litoral_trace/web/traceability_operations.py \
+                  src/litoral_trace/templates/traceability_operations.html \
+                  src/litoral_trace/templates/app/_dashboard_traceability_cockpit.html \
+                  src/litoral_trace/static/css/app.css \
+                  .github/workflows/ux10d-hardening-temp.yml
+          if git diff --cached --quiet; then
+            echo 'No UX10-D hardening changes required.'
+            exit 0
+          fi
+          git commit -m 'fix(ux10d): harden operational form boundaries'
+          git push origin HEAD:ux10-d-chain-of-custody-operations
