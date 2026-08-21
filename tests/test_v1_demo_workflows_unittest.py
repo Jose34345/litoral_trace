@@ -16,7 +16,7 @@ def test_dashboard_uses_real_tenant_lotes_and_satellite_api() -> None:
     assert "/api/v1/lotes" in content
     assert "/api/v1/satellite/jobs" in content
     assert "X-CSRF-Token" in content
-    assert "no se muestran rodales ficticios" in content
+    assert "Muestra únicamente los lotes reales disponibles para tu organización." in content
     assert "No emite un certificado oficial EUDR" in content
 
 
