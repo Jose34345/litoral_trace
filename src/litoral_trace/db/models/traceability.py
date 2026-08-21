@@ -124,11 +124,20 @@ class TraceabilityEvent(Base, TimestampMixin):
         nullable=True,
     )
 
+    # Association rows intentionally share organization_id across two tenant-safe
+    # composite foreign keys. ``overlaps`` documents that shared write path while
+    # the database constraints continue to enforce that both parents are same-tenant.
     inputs: Mapped[list[TraceabilityEventInput]] = relationship(
-        "TraceabilityEventInput", back_populates="event", cascade="save-update, merge"
+        "TraceabilityEventInput",
+        back_populates="event",
+        cascade="save-update, merge",
+        overlaps="event_inputs",
     )
     outputs: Mapped[list[TraceabilityEventOutput]] = relationship(
-        "TraceabilityEventOutput", back_populates="event", cascade="save-update, merge"
+        "TraceabilityEventOutput",
+        back_populates="event",
+        cascade="save-update, merge",
+        overlaps="event_outputs",
     )
     created_by_user: Mapped[User | None] = relationship("User")
 
@@ -159,8 +168,16 @@ class TraceabilityEventInput(Base):
     unit: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
-    event: Mapped[TraceabilityEvent] = relationship("TraceabilityEvent", back_populates="inputs")
-    batch: Mapped[TraceabilityBatch] = relationship("TraceabilityBatch", back_populates="event_inputs")
+    event: Mapped[TraceabilityEvent] = relationship(
+        "TraceabilityEvent",
+        back_populates="inputs",
+        overlaps="event_inputs",
+    )
+    batch: Mapped[TraceabilityBatch] = relationship(
+        "TraceabilityBatch",
+        back_populates="event_inputs",
+        overlaps="event,inputs",
+    )
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -193,8 +210,16 @@ class TraceabilityEventOutput(Base):
     unit: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
-    event: Mapped[TraceabilityEvent] = relationship("TraceabilityEvent", back_populates="outputs")
-    batch: Mapped[TraceabilityBatch] = relationship("TraceabilityBatch", back_populates="event_outputs")
+    event: Mapped[TraceabilityEvent] = relationship(
+        "TraceabilityEvent",
+        back_populates="outputs",
+        overlaps="event_outputs",
+    )
+    batch: Mapped[TraceabilityBatch] = relationship(
+        "TraceabilityBatch",
+        back_populates="event_outputs",
+        overlaps="event,outputs",
+    )
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -239,7 +264,10 @@ class Shipment(Base, TimestampMixin):
     )
 
     items: Mapped[list[ShipmentItem]] = relationship(
-        "ShipmentItem", back_populates="shipment", cascade="save-update, merge"
+        "ShipmentItem",
+        back_populates="shipment",
+        cascade="save-update, merge",
+        overlaps="shipment_items",
     )
     created_by_user: Mapped[User | None] = relationship("User")
 
@@ -273,8 +301,16 @@ class ShipmentItem(Base):
     unit: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
-    shipment: Mapped[Shipment] = relationship("Shipment", back_populates="items")
-    batch: Mapped[TraceabilityBatch] = relationship("TraceabilityBatch", back_populates="shipment_items")
+    shipment: Mapped[Shipment] = relationship(
+        "Shipment",
+        back_populates="items",
+        overlaps="shipment_items",
+    )
+    batch: Mapped[TraceabilityBatch] = relationship(
+        "TraceabilityBatch",
+        back_populates="shipment_items",
+        overlaps="items,shipment",
+    )
 
     __table_args__ = (
         ForeignKeyConstraint(
