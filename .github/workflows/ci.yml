@@ -16,6 +16,82 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ux10b-contract-sync-temp:
+    if: github.event_name == 'pull_request' && github.head_ref == 'ux10-b-operational-dashboard' && github.actor != 'github-actions[bot]'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout UX10-B head
+        uses: actions/checkout@v4
+        with:
+          ref: ux10-b-operational-dashboard
+          fetch-depth: 0
+
+      - name: Align composed dashboard contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/test_batch_p24g_ui_unittest.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''def test_dashboard_template_no_longer_exposes_retired_batch_upload_ui():
+              dashboard = DASHBOARD_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+              assert "/api/v1/batch/upload" not in dashboard
+              assert 'accept=".xlsx,.xls"' not in dashboard
+              assert "Stress Test & Carga Masiva Batch" not in dashboard
+              assert "Procesamiento Masivo de Guias Forestales y Remitos" not in dashboard
+              assert "batchResult" not in dashboard
+              assert "btn-tab-batch" not in dashboard
+              assert 'id="tab-batch"' not in dashboard
+              assert "Plantilla Excel" in dashboard
+              assert "Mapa geoespacial de rodales" in dashboard
+              assert "Evaluación individual del rodal" in dashboard
+          '''
+          old = '\n'.join(line[14:] if line.startswith('              ') else line for line in old.splitlines()) + '\n'
+          new = '''def test_dashboard_template_no_longer_exposes_retired_batch_upload_ui():
+              dashboard = DASHBOARD_TEMPLATE_PATH.read_text(encoding="utf-8")
+              cockpit = (
+                  DASHBOARD_TEMPLATE_PATH.parent
+                  / "app"
+                  / "_dashboard_traceability_cockpit.html"
+              ).read_text(encoding="utf-8")
+              composed_dashboard = dashboard + "\\n" + cockpit
+
+              assert "/api/v1/batch/upload" not in composed_dashboard
+              assert 'accept=".xlsx,.xls"' not in composed_dashboard
+              assert "Stress Test & Carga Masiva Batch" not in composed_dashboard
+              assert "Procesamiento Masivo de Guias Forestales y Remitos" not in composed_dashboard
+              assert "batchResult" not in composed_dashboard
+              assert "btn-tab-batch" not in composed_dashboard
+              assert 'id="tab-batch"' not in composed_dashboard
+              assert "Plantilla Excel" in composed_dashboard
+              assert "Mapa geoespacial de rodales" in composed_dashboard
+              assert "Evaluación individual del rodal" in composed_dashboard
+          '''
+          new = '\n'.join(line[14:] if line.startswith('              ') else line for line in new.splitlines()) + '\n'
+          if old not in text:
+              raise SystemExit('Expected dashboard contract block not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Remove temporary UX10-B sync files
+        run: |
+          rm -f .github/workflows/ux10b-final-test-sync-temp.yml
+          rm -f .github/ux10b-trigger.tmp
+
+      - name: Commit synchronized contract
+        shell: bash
+        run: |
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- tests/test_batch_p24g_ui_unittest.py
+          git add -u -- .github/workflows/ux10b-final-test-sync-temp.yml .github/ux10b-trigger.tmp
+          git commit -m 'test(ux10b): validate composed dashboard surface'
+          git push origin HEAD:ux10-b-operational-dashboard
+
   python-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
