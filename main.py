@@ -60,6 +60,9 @@ from litoral_trace.api.satellite import (
 from litoral_trace.api.settings import (
     router as settings_router,
 )
+from litoral_trace.api.traceability import (
+    router as traceability_router,
+)
 from litoral_trace.api.vault import (
     router as vault_router,
 )
@@ -152,6 +155,10 @@ app.include_router(
 
 app.include_router(
     batch_evidence_router
+)
+
+app.include_router(
+    traceability_router
 )
 
 app.include_router(

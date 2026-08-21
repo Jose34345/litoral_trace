@@ -426,14 +426,3 @@ async def desvincular_evidencia_batch_endpoint(
             "Cache-Control": "no-store",
         },
     )
-
-
-# API composition: main.py already imports this exported router. Keep the
-# established Batch Evidence routes intact while registering the independent
-# P1C traceability router without coupling its URL prefix to /api/v1/batch.
-from litoral_trace.api.traceability import router as traceability_router
-
-_batch_evidence_router = router
-router = APIRouter()
-router.include_router(_batch_evidence_router)
-router.include_router(traceability_router)
