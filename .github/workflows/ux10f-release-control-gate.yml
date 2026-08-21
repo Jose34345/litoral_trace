@@ -1,0 +1,95 @@
+name: UX10 Litoral Trace Release Control Gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ux10f-release-control-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ux10f-release-control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ENVIRONMENT: test
+      ENABLE_POSTGRES_TESTS: "0"
+      TEST_DATABASE_URL: sqlite:///litoral_trace_test.db
+      JWT_SECRET_KEY: ci-only-jwt-secret-key-1234567890
+      LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD: CiBootstrap-Password-1234567890!
+      PYTHONPATH: src
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: UX10-F cold-start route contract
+        run: |
+          python - <<'PY'
+          import main
+          path = str(main.app.url_path_for("render_release_control"))
+          if path != "/release-control":
+              raise SystemExit(f"Unexpected UX10-F route: {path}")
+          PY
+
+      - name: UX10-F release acceptance
+        run: |
+          python -m pytest -q -rs \
+            tests/test_ux10f_release_control_unittest.py \
+            tests/test_traceability_p1c_unittest.py \
+            tests/test_ux10e_traceability_evidence_unittest.py \
+            --junitxml=ux10f-release-control.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("ux10f-release-control.xml").getroot()
+          attrs = root.attrib
+          skipped = int(attrs.get("skipped", 0))
+          failures = int(attrs.get("failures", 0))
+          errors = int(attrs.get("errors", 0))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  f"UX10-F fails closed: skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
+
+      - name: UX10-F product-language contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          template = Path("src/litoral_trace/templates/traceability_release_control.html").read_text(encoding="utf-8")
+          service = Path("src/litoral_trace/services/traceability_release_control.py").read_text(encoding="utf-8")
+          required = (
+              "Pulso del despacho",
+              "Ruta de cierre",
+              "Huella verificable",
+              "Huella Documental Litoral Trace",
+              "No constituye",
+          )
+          for token in required:
+              if token not in template and token not in service:
+                  raise SystemExit(f"Missing UX10-F product language: {token}")
+          forbidden = (
+              "compliance score",
+              "porcentaje de cumplimiento EUDR",
+              "certificación automática",
+          )
+          combined = (template + "\n" + service).lower()
+          for token in forbidden:
+              if token.lower() in combined:
+                  raise SystemExit(f"Forbidden UX10-F claim: {token}")
+          PY
