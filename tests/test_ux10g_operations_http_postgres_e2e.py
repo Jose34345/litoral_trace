@@ -157,7 +157,7 @@ def test_operations_receipt_real_http_login_csrf_rls_and_posting() -> None:
                         role, full_name, is_active
                     ) VALUES (
                         :organization_id, :email, :username, :password_hash,
-                        'manager', 'UX10-G HTTP Operator', true
+                        'admin', 'UX10-G HTTP Operator', true
                     )
                     """
                 ),
@@ -221,7 +221,7 @@ def test_operations_receipt_real_http_login_csrf_rls_and_posting() -> None:
         assert CSRF_BROWSER_COOKIE_KEY in cookies
         anonymous_csrf = _csrf_token(login_html)
 
-        status_code, headers, _ = _request(
+        status_code, headers, login_result_html = _request(
             port=port,
             method="POST",
             path="/login",
@@ -232,7 +232,7 @@ def test_operations_receipt_real_http_login_csrf_rls_and_posting() -> None:
                 "password": password,
             },
         )
-        assert status_code == 303
+        assert status_code == 303, login_result_html
         assert headers.get("location") == "/dashboard"
         assert ACCESS_TOKEN_COOKIE_KEY in cookies
         assert REFRESH_TOKEN_COOKIE_KEY in cookies
