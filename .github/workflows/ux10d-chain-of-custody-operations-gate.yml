@@ -38,14 +38,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
 
-      # This is intentionally a clean application import, not a router-unit
-      # snapshot: production must expose every UX10-D write route at ASGI boot.
-      - name: UX10-D cold-start route registration
+      # FastAPI 0.141 can keep included routers behind internal routing nodes,
+      # so acceptance verifies public URL resolution plus the operational
+      # router's declared method/path contract instead of relying on the
+      # private shape of ``app.routes``.
+      - name: UX10-D cold-start route resolution
         run: |
           python - <<'PY'
           import main
+          from litoral_trace.web.traceability_operations import router as operations_router
 
-          expected = {
+          expected_declared = {
               ("/operations", ("GET",)),
               ("/operations/receipts", ("POST",)),
               ("/operations/processes", ("POST",)),
@@ -53,14 +56,45 @@ jobs:
               ("/operations/shipments", ("POST",)),
               ("/operations/shipments/{shipment_public_id}/dispatch", ("POST",)),
           }
-          actual = {
+          declared = {
               (route.path, tuple(sorted(route.methods or set())))
-              for route in main.app.routes
+              for route in operations_router.routes
               if getattr(route, "path", "").startswith("/operations")
           }
-          if actual != expected:
+          if declared != expected_declared:
               raise SystemExit(
-                  f"UX10-D cold-start routes mismatch: expected={sorted(expected)!r} actual={sorted(actual)!r}"
+                  f"UX10-D declared route mismatch: expected={sorted(expected_declared)!r} actual={sorted(declared)!r}"
+              )
+
+          resolved = {
+              str(main.app.url_path_for("render_traceability_operations")),
+              str(main.app.url_path_for("create_receipt_operation")),
+              str(main.app.url_path_for("create_process_operation")),
+              str(
+                  main.app.url_path_for(
+                      "post_existing_event_operation",
+                      event_public_id="00000000-0000-0000-0000-000000000001",
+                  )
+              ),
+              str(main.app.url_path_for("create_shipment_operation")),
+              str(
+                  main.app.url_path_for(
+                      "dispatch_existing_shipment_operation",
+                      shipment_public_id="00000000-0000-0000-0000-000000000002",
+                  )
+              ),
+          }
+          expected_resolved = {
+              "/operations",
+              "/operations/receipts",
+              "/operations/processes",
+              "/operations/events/00000000-0000-0000-0000-000000000001/post",
+              "/operations/shipments",
+              "/operations/shipments/00000000-0000-0000-0000-000000000002/dispatch",
+          }
+          if resolved != expected_resolved:
+              raise SystemExit(
+                  f"UX10-D cold-start URL resolution mismatch: expected={sorted(expected_resolved)!r} actual={sorted(resolved)!r}"
               )
           PY
 
