@@ -1,0 +1,41 @@
+name: UX10 Tailwind Bundle Sync
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-ux10-css:
+    if: github.event.pull_request.head.ref == 'ux10-a-spanish-language' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout UX10-A head
+        uses: actions/checkout@v4
+        with:
+          ref: ux10-a-spanish-language
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Build tracked frontend assets
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit generated Tailwind bundle when required
+        run: |
+          if git diff --quiet -- src/litoral_trace/static/dist/app.css; then
+            echo "Tailwind bundle already reproducible."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- src/litoral_trace/static/dist/app.css
+          git commit -m "UX10-A: sync generated Tailwind bundle"
+          git push origin HEAD:ux10-a-spanish-language
