@@ -42,6 +42,12 @@ def _decimal(value: Any) -> Decimal:
         return Decimal("0")
 
 
+def _decimal_text(value: Any) -> str:
+    number = _decimal(value)
+    raw = f"{number:.6f}".rstrip("0").rstrip(".")
+    return raw or "0"
+
+
 def _text(value: Any, fallback: str = "—") -> str:
     normalized = str(value or "").strip()
     return normalized or fallback
@@ -148,7 +154,7 @@ def build_release_control_view(
     dossier_available: bool = True,
     dossier_error: str | None = None,
 ) -> dict[str, Any]:
-    """Return a deterministic, buyer-safe operational release-control view."""
+    """Return a deterministic operational release-control view."""
 
     shipment = payload.get("shipment") or {}
     shipment_code = _text(shipment.get("shipment_code"), "")
@@ -207,14 +213,20 @@ def build_release_control_view(
     )
 
     totals = payload.get("unit_totals") or []
-    unresolved = sum((_decimal(item.get("unresolved_quantity")) for item in totals), Decimal("0"))
-    volume_ready = bool(totals) and unresolved == 0
+    unresolved_totals = [
+        item for item in totals if _decimal(item.get("unresolved_quantity")) != 0
+    ]
+    volume_ready = bool(totals) and not unresolved_totals
     if not totals:
         volume_detail = "No hay reconciliación de volumen disponible para el despacho."
-    elif unresolved == 0:
+    elif volume_ready:
         volume_detail = f"{len(totals)} unidad(es) reconciliada(s), sin volumen pendiente."
     else:
-        volume_detail = f"Quedan {unresolved.normalize()} unidades sin atribuir en la reconciliación."
+        rendered = ", ".join(
+            f"{_text(item.get('unit'))}: {_decimal_text(item.get('unresolved_quantity'))}"
+            for item in unresolved_totals
+        )
+        volume_detail = f"Volumen sin atribuir por unidad: {rendered}."
     checks.append(
         _check(
             key="volume",
@@ -368,9 +380,10 @@ def build_release_control_view(
         overall_title = "Listo para compartir"
         overall_message = "Los controles operativos de Litoral Trace están cerrados y el expediente es verificable."
 
+    indexed_checks = list(enumerate(checks))
     ordered_actions = sorted(
-        (item for item in checks if item["state"] != READY),
-        key=lambda item: (_STATE_PRIORITY[item["state"]], checks.index(item)),
+        (pair for pair in indexed_checks if pair[1]["state"] != READY),
+        key=lambda pair: (_STATE_PRIORITY[pair[1]["state"]], pair[0]),
     )
     next_actions = [
         {
@@ -381,7 +394,7 @@ def build_release_control_view(
             "href": item["action_href"],
             "label": item["action_label"],
         }
-        for item in ordered_actions[:4]
+        for _, item in ordered_actions[:4]
     ]
 
     progress = int(round((ready / len(checks)) * 100)) if checks else 0
