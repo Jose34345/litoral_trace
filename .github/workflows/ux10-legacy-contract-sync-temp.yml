@@ -1,0 +1,61 @@
+name: UX10 Legacy Contract Sync Temp
+
+on:
+  push:
+    branches:
+      - ux10-a-spanish-language
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ux10-a-spanish-language
+          fetch-depth: 0
+
+      - name: Align legacy presentation contracts
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('tests/test_batch_p24g_ui_unittest.py'): {
+                  'Mapa Geoespacial de Rodales': 'Mapa geoespacial de rodales',
+                  'Evaluacion Individual de Rodal': 'Evaluación individual del rodal',
+                  'Vincular evidencia': 'Vincular documento',
+              },
+          }
+
+          changed = []
+          for path, mapping in replacements.items():
+              text = path.read_text(encoding='utf-8')
+              updated = text
+              for old, new in mapping.items():
+                  updated = updated.replace(old, new)
+              if updated != text:
+                  path.write_text(updated, encoding='utf-8')
+                  changed.append(str(path))
+
+          print('changed:', ', '.join(changed) if changed else 'none')
+          PY
+
+      - name: Commit synced contracts when needed
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No legacy contract changes required.'
+            exit 0
+          fi
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/test_batch_p24g_ui_unittest.py
+          git commit -m 'test(ux10): align batch UI copy contracts'
+          git push origin HEAD:ux10-a-spanish-language
