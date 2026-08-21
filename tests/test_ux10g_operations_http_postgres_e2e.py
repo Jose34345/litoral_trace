@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import create_engine, text
 
-from litoral_trace.auth.passwords import hash_password
+from litoral_trace.auth.passwords import hash_password, verify_password
 from litoral_trace.auth.sessions import ACCESS_TOKEN_COOKIE_KEY, REFRESH_TOKEN_COOKIE_KEY
 from litoral_trace.config.settings import normalize_database_url
 from litoral_trace.db.engine import reset_engine_state
@@ -188,6 +188,29 @@ def test_operations_receipt_real_http_login_csrf_rls_and_posting() -> None:
                     "productor_id": f"PROV-HTTP-{suffix}",
                 },
             )
+
+        # Verify the exact runtime principal can bootstrap the exact HTTP user
+        # before Uvicorn starts. This keeps RLS/auth diagnosis separate from HTTP.
+        runtime_probe_engine = create_engine(
+            normalize_database_url(RUNTIME_URL or ""),
+            pool_pre_ping=True,
+            hide_parameters=True,
+        )
+        try:
+            with runtime_probe_engine.begin() as connection:
+                bootstrap = connection.execute(
+                    text(
+                        "SELECT id, organization_id, password_hash, is_active "
+                        "FROM public.bootstrap_auth_user_by_username(:username)"
+                    ),
+                    {"username": username},
+                ).mappings().one_or_none()
+            assert bootstrap is not None, "Runtime bootstrap function did not resolve seeded HTTP user."
+            assert int(bootstrap["organization_id"]) == organization_id
+            assert bool(bootstrap["is_active"]) is True
+            assert verify_password(password, str(bootstrap["password_hash"])) is True
+        finally:
+            runtime_probe_engine.dispose()
 
         # Import only after the isolated environment and seed are ready.
         from main import app
