@@ -92,7 +92,7 @@ def test_csrf_rejects_expired_and_tampered_tokens():
 
     tampered = f"{token[:-1]}{'A' if token[-1] != 'A' else 'B'}"
     assert not verify_csrf_token(
-        token,
+        tampered,
         subject=subject,
         now_epoch=1_100,
         secret_key=_TEST_SECRET,
