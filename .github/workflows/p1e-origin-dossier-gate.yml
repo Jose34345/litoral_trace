@@ -46,7 +46,8 @@ jobs:
           python -m pytest -q \
             --junitxml=gate17-origin-dossier.xml \
             tests/test_traceability_p1e_dossier_unittest.py \
-            tests/test_traceability_p1e_api_unittest.py
+            tests/test_traceability_p1e_api_unittest.py \
+            tests/test_traceability_p1e_ui_unittest.py
           python - <<'PY'
           import xml.etree.ElementTree as ET
 
