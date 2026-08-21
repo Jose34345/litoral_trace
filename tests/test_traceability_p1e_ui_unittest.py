@@ -45,19 +45,20 @@ def _payload() -> dict:
     }
 
 
-def test_traceability_view_exposes_url_encoded_dossier_downloads() -> None:
+def test_traceability_view_exposes_query_safe_dossier_downloads() -> None:
     view = build_traceability_view(
         query="EXP UE/2026 001",
         payload=_payload(),
     )
     dossier = view["result"]["dossier"]
-    base = "/api/v1/traceability/shipments/EXP%20UE%2F2026%20001/dossier"
+    base = "/api/v1/traceability/shipments/dossier"
+    query = "shipment_code=EXP+UE%2F2026+001"
 
     assert dossier == {
-        "bundle_href": f"{base}/bundle",
-        "pdf_href": f"{base}/pdf",
-        "geojson_href": f"{base}/geojson",
-        "manifest_href": f"{base}/manifest",
+        "bundle_href": f"{base}/bundle?{query}",
+        "pdf_href": f"{base}/pdf?{query}",
+        "geojson_href": f"{base}/geojson?{query}",
+        "manifest_href": f"{base}/manifest?{query}",
     }
 
 
