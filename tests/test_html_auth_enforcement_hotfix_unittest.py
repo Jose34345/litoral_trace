@@ -245,7 +245,7 @@ def test_login_form_posts_to_real_auth_and_sets_cookies_only_on_success():
         )
     )
     assert dashboard.status_code == 200
-    assert "Origen forestal, geolocalización y evidencia" in dashboard.body.decode("utf-8")
+    assert "Trazabilidad de despachos" in dashboard.body.decode("utf-8")
 
 
 def test_multiple_password_candidates_only_allow_the_real_test_password():
