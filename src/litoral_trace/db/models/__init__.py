@@ -12,6 +12,7 @@ from litoral_trace.db.models.user_session import UserSession
 from litoral_trace.db.models.vault_document import VaultDocument
 from litoral_trace.db.models.batch_import import BatchImport
 from litoral_trace.db.models.batch_evidence_link import BatchEvidenceLink
+from litoral_trace.db.models.traceability_evidence_link import TraceabilityEvidenceLink
 from litoral_trace.db.models.traceability import (
     Shipment,
     ShipmentItem,
@@ -35,6 +36,7 @@ __all__ = [
     "VaultDocument",
     "BatchImport",
     "BatchEvidenceLink",
+    "TraceabilityEvidenceLink",
     "TraceabilityBatch",
     "TraceabilityEvent",
     "TraceabilityEventInput",
