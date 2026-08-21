@@ -57,7 +57,8 @@ class TestFastAPIStep4Templates(unittest.TestCase):
         response = asyncio.run(render_dashboard_view(req))
         self.assertEqual(response.status_code, 200)
         body = response.body.decode("utf-8")
-        self.assertIn("Origen forestal, geolocalización y evidencia", body)
+        self.assertIn("Trazabilidad de despachos", body)
+        self.assertIn("Reconstruir origen", body)
         self.assertIn("TRACES NT", body)
 
 if __name__ == "__main__":
