@@ -1,4 +1,4 @@
-"""RBAC-derived hypermedia navigation for the server-rendered UI."""
+"""Navegación hipermedia derivada de RBAC para la interfaz server-rendered."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -29,7 +29,7 @@ class NavigationView:
 _NAVIGATION = (
     NavigationItem(
         key="dashboard",
-        label="Dashboard",
+        label="Inicio",
         href="/dashboard",
         section="operacion",
         permission=Permission.LOTE_READ,
@@ -37,7 +37,7 @@ _NAVIGATION = (
     ),
     NavigationItem(
         key="imports",
-        label="Importaciones",
+        label="Carga masiva",
         href="/imports",
         section="operacion",
         permission=Permission.LOTE_CREATE,
@@ -53,7 +53,7 @@ _NAVIGATION = (
     ),
     NavigationItem(
         key="vault",
-        label="Vault / Evidencias",
+        label="Documentos y evidencias",
         href="/vault",
         section="compliance",
         permission=Permission.VAULT_READ,
@@ -69,7 +69,7 @@ _NAVIGATION = (
     ),
     NavigationItem(
         key="platform",
-        label="Plataforma",
+        label="Administración de plataforma",
         href="/admin",
         section="administracion",
         permission=Permission.PLATFORM_ADMIN,
@@ -91,7 +91,7 @@ def build_navigation(
     *,
     current_path: str,
 ) -> tuple[NavigationView, ...]:
-    """Return only transitions the authenticated role may actually use."""
+    """Devuelve sólo las opciones que el rol autenticado puede utilizar."""
 
     visible: list[NavigationView] = []
 
