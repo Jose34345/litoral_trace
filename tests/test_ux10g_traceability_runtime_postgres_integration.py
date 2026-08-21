@@ -8,7 +8,7 @@ cleared.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -18,7 +18,12 @@ from sqlalchemy.orm import sessionmaker
 
 from litoral_trace.config.settings import normalize_database_url
 from litoral_trace.services.audit import AuditActor
-from litoral_trace.services.traceability_operations import TraceabilityOperationService
+from litoral_trace.services.traceability_operations import (
+    ProcessInputDraft,
+    ProcessOutputDraft,
+    ShipmentItemDraft,
+    TraceabilityOperationService,
+)
 
 
 ENABLED = os.getenv("ENABLE_POSTGRES_TESTS", "").lower() in {
@@ -147,34 +152,97 @@ def _actor(org_id: int) -> AuditActor:
     )
 
 
-def test_receipt_draft_survives_commit_with_runtime_expiration_and_posts(ux10g_pg):
+def test_all_operation_draft_results_survive_commit_and_keep_p1b_authority(ux10g_pg):
     RuntimeSession, _, org_id, suffix = ux10g_pg
     service = TraceabilityOperationService(session_factory=RuntimeSession)
+    actor = _actor(org_id)
+    t0 = datetime.now(timezone.utc) - timedelta(hours=3)
 
-    draft = service.create_receipt_draft(
+    receipt = service.create_receipt_draft(
         organization_id=org_id,
-        actor=_actor(org_id),
+        actor=actor,
         source_identifier=f"RODAL-UX10G-{suffix}",
         event_code=f"REC-UX10G-{suffix}",
         batch_code=f"MP-UX10G-{suffix}",
         product_name="Madera rolliza demo",
         quantity="100",
         unit="M3",
-        occurred_at=datetime.now(timezone.utc),
+        occurred_at=t0,
         facility_reference="Planta Demo Corrientes",
     )
+    assert receipt.status == "DRAFT"
+    assert receipt.event_code == f"REC-UX10G-{suffix}"
+    assert len(receipt.output_batch_public_ids) == 1
 
-    assert draft.status == "DRAFT"
-    assert draft.event_code == f"REC-UX10G-{suffix}"
-    assert len(draft.output_batch_public_ids) == 1
-
-    posting = service.post_event(
+    receipt_posting = service.post_event(
         organization_id=org_id,
-        event_public_id=draft.event_public_id,
-        actor=_actor(org_id),
+        event_public_id=receipt.event_public_id,
+        actor=actor,
     )
-    assert posting.status == "POSTED"
+    assert receipt_posting.status == "POSTED"
+
+    process = service.create_process_draft(
+        organization_id=org_id,
+        actor=actor,
+        event_code=f"PROC-UX10G-{suffix}",
+        event_type="TRANSFORMATION",
+        occurred_at=t0 + timedelta(hours=1),
+        inputs=(
+            ProcessInputDraft(
+                batch_public_id=receipt.output_batch_public_ids[0],
+                quantity=Decimal("70"),
+            ),
+        ),
+        outputs=(
+            ProcessOutputDraft(
+                code=f"ASERRADO-UX10G-{suffix}",
+                product_name="Madera aserrada demo",
+                stage="FINISHED_GOOD",
+                unit="M3",
+                quantity=Decimal("65"),
+            ),
+        ),
+        facility_reference="Planta Demo Corrientes",
+    )
+    assert process.status == "DRAFT"
+    assert process.event_code == f"PROC-UX10G-{suffix}"
+    assert len(process.output_batch_public_ids) == 1
+
+    process_posting = service.post_event(
+        organization_id=org_id,
+        event_public_id=process.event_public_id,
+        actor=actor,
+    )
+    assert process_posting.status == "POSTED"
+    assert process_posting.unit_balances[0].input_quantity == Decimal("70.000000")
+    assert process_posting.unit_balances[0].output_quantity == Decimal("65.000000")
+    assert process_posting.unit_balances[0].loss_quantity == Decimal("5.000000")
+
+    shipment = service.create_shipment_draft(
+        organization_id=org_id,
+        actor=actor,
+        shipment_code=f"EXP-UX10G-{suffix}",
+        sale_reference=f"FAC-UX10G-{suffix}",
+        buyer_reference="Comprador UE Demo",
+        destination_country="DE",
+        items=(
+            ShipmentItemDraft(
+                batch_public_id=process.output_batch_public_ids[0],
+                quantity=Decimal("60"),
+            ),
+        ),
+    )
+    assert shipment.status == "DRAFT"
+    assert shipment.shipment_code == f"EXP-UX10G-{suffix}"
+
+    dispatch = service.dispatch_shipment(
+        organization_id=org_id,
+        shipment_public_id=shipment.shipment_public_id,
+        actor=actor,
+    )
+    assert dispatch.status == "DISPATCHED"
 
     snapshot = service.snapshot(organization_id=org_id)
     balances = {batch.code: batch.available for batch in snapshot.active_batches}
-    assert balances[f"MP-UX10G-{suffix}"] == Decimal("100.000000")
+    assert balances[f"MP-UX10G-{suffix}"] == Decimal("30.000000")
+    assert balances[f"ASERRADO-UX10G-{suffix}"] == Decimal("5.000000")
