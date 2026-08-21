@@ -1275,3 +1275,13 @@ async def logout_submit_view(
     clear_browser_security_cookies(response)
 
     return response
+
+
+# UX10-D_OPERATION_ROUTER_REGISTRATION
+# Keep operational HTML composition in the web layer. The late import avoids
+# coupling ``api.traceability`` back into server-rendered write workflows.
+from litoral_trace.web.traceability_operations import (
+    router as traceability_operations_router,
+)
+
+router.include_router(traceability_operations_router)
