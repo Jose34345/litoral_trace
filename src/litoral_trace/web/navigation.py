@@ -44,6 +44,14 @@ _NAVIGATION = (
         active_prefixes=("/imports",),
     ),
     NavigationItem(
+        key="traceability",
+        label="Trazabilidad",
+        href="/traceability",
+        section="compliance",
+        permission=Permission.LOTE_READ,
+        active_prefixes=("/traceability",),
+    ),
+    NavigationItem(
         key="vault",
         label="Vault / Evidencias",
         href="/vault",
