@@ -6,11 +6,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.db.tenant import get_tenant_scoped_db_session
+from litoral_trace.services.traceability_documentary_dossier import (
+    build_documentary_dossier_bundle,
+)
 from litoral_trace.services.traceability_dossier import (
     OriginDossierGenerationError,
     OriginDossierValidationError,
-    build_origin_dossier_bundle,
     safe_artifact_stem,
+)
+from litoral_trace.services.traceability_evidence_dossier import (
+    project_documentary_evidence,
 )
 from litoral_trace.services.traceability_lineage import (
     TraceabilityLineageNotFoundError,
@@ -45,7 +50,15 @@ def _load_bundle(*, shipment_code: str, user: UserTenantContext):
             session=session,
             organization_id=user.organization_id,
         ).trace_shipment(shipment_code)
-        return build_origin_dossier_bundle(payload)
+        documentary_evidence = project_documentary_evidence(
+            session=session,
+            organization_id=user.organization_id,
+            lineage_payload=payload,
+        )
+        return build_documentary_dossier_bundle(
+            payload,
+            documentary_evidence=documentary_evidence,
+        )
     except TraceabilityLineageValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
