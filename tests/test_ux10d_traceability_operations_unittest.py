@@ -418,26 +418,58 @@ def test_ux10d_routes_and_template_keep_browser_as_presentation_layer():
 
     from litoral_trace.web.traceability_operations import router as runtime_operations_router
 
+    expected_routes = {
+        ("/operations", ("GET",)),
+        ("/operations/receipts", ("POST",)),
+        ("/operations/processes", ("POST",)),
+        ("/operations/events/{event_public_id}/post", ("POST",)),
+        ("/operations/shipments", ("POST",)),
+        ("/operations/shipments/{shipment_public_id}/dispatch", ("POST",)),
+    }
     declared_routes = {
         (route.path, tuple(sorted(route.methods or set())))
         for route in runtime_operations_router.routes
         if getattr(route, "path", "").startswith("/operations")
     }
+    assert declared_routes == expected_routes
+
     root = Path(__file__).resolve().parents[1]
     env = dict(os.environ)
     env["PYTHONPATH"] = str(root / "src")
+    probe_script = """
+import json
+import main
+
+resolved = {
+    "render_traceability_operations": str(
+        main.app.url_path_for("render_traceability_operations")
+    ),
+    "create_receipt_operation": str(
+        main.app.url_path_for("create_receipt_operation")
+    ),
+    "create_process_operation": str(
+        main.app.url_path_for("create_process_operation")
+    ),
+    "post_existing_event_operation": str(
+        main.app.url_path_for(
+            "post_existing_event_operation",
+            event_public_id="00000000-0000-0000-0000-000000000001",
+        )
+    ),
+    "create_shipment_operation": str(
+        main.app.url_path_for("create_shipment_operation")
+    ),
+    "dispatch_existing_shipment_operation": str(
+        main.app.url_path_for(
+            "dispatch_existing_shipment_operation",
+            shipment_public_id="00000000-0000-0000-0000-000000000002",
+        )
+    ),
+}
+print("__UX10_RESOLVED__" + json.dumps(resolved, sort_keys=True))
+"""
     probe = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import json, main; "
-                "routes=[(r.path, sorted(r.methods or set())) "
-                "for r in main.app.routes "
-                "if getattr(r, 'path', '').startswith('/operations')]; "
-                "print('__UX10_ROUTES__'+json.dumps(routes))"
-            ),
-        ],
+        [sys.executable, "-c", probe_script],
         cwd=root,
         env=env,
         check=True,
@@ -447,21 +479,22 @@ def test_ux10d_routes_and_template_keep_browser_as_presentation_layer():
     payload_line = next(
         line
         for line in probe.stdout.splitlines()
-        if line.startswith("__UX10_ROUTES__")
+        if line.startswith("__UX10_RESOLVED__")
     )
-    routes = {
-        (path, tuple(methods))
-        for path, methods in json.loads(payload_line.removeprefix("__UX10_ROUTES__"))
+    resolved = json.loads(payload_line.removeprefix("__UX10_RESOLVED__"))
+    assert resolved == {
+        "render_traceability_operations": "/operations",
+        "create_receipt_operation": "/operations/receipts",
+        "create_process_operation": "/operations/processes",
+        "post_existing_event_operation": (
+            "/operations/events/00000000-0000-0000-0000-000000000001/post"
+        ),
+        "create_shipment_operation": "/operations/shipments",
+        "dispatch_existing_shipment_operation": (
+            "/operations/shipments/00000000-0000-0000-0000-000000000002/dispatch"
+        ),
     }
-    assert declared_routes == routes
-    assert ("/operations", ("GET",)) in routes
-    assert ("/operations/receipts", ("POST",)) in routes
-    assert ("/operations/processes", ("POST",)) in routes
-    assert ("/operations/events/{event_public_id}/post", ("POST",)) in routes
-    assert ("/operations/shipments", ("POST",)) in routes
-    assert ("/operations/shipments/{shipment_public_id}/dispatch", ("POST",)) in routes
 
-    root = Path(__file__).resolve().parents[1]
     template = (
         root / "src/litoral_trace/templates/traceability_operations.html"
     ).read_text(encoding="utf-8")
