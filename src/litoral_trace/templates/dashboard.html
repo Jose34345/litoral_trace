@@ -1,66 +1,33 @@
 {% extends "app/base_app.html" %}
 
-{% block title %}Dashboard operativo | Litoral Trace{% endblock %}
+{% block title %}Inicio operativo | Litoral Trace{% endblock %}
 
 {% block content %}
 <div class="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
     <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div class="max-w-3xl">
             <div class="mb-2 flex flex-wrap items-center gap-2">
-                <span class="rounded border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-800">
-                    UE 2023/1115
-                </span>
-                <span class="text-xs font-medium text-slate-500">
-                    Trazabilidad y evidencia operativa
-                </span>
+                <span class="rounded border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-800">UE 2023/1115</span>
+                <span class="text-xs font-medium text-slate-500">Origen y evidencia operativa</span>
             </div>
-            <h1 class="text-2xl font-bold tracking-tight text-slate-950">
-                Trazabilidad Forestal: origen, geolocalización y evidencia
-            </h1>
-            <p class="mt-2 text-sm leading-6 text-slate-600">
-                Esta vista usa los lotes reales visibles para tu organización. Los análisis satelitales son evidencia técnica de apoyo y no constituyen certificación ni una garantía automática de cumplimiento legal.
-            </p>
+            <h1 class="text-2xl font-bold tracking-tight text-slate-950">Origen forestal, geolocalización y evidencia</h1>
+            <p class="mt-2 text-sm leading-6 text-slate-600">Esta vista usa los lotes reales visibles para tu organización. Los análisis satelitales son evidencia técnica de apoyo y no constituyen una certificación ni una garantía automática de cumplimiento legal.</p>
         </div>
         <div class="flex flex-wrap gap-2">
             {% if user.role in ["superadmin", "admin", "manager"] %}
-            <a href="/imports" class="inline-flex items-center gap-2 rounded-lg bg-forest-800 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-forest-900">
-                <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>
-                Importar lotes
-            </a>
+            <a href="/imports" class="inline-flex items-center gap-2 rounded-lg bg-forest-800 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-forest-900"><i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>Cargar lotes</a>
             {% endif %}
-            <a href="/api/v1/batch/template" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg border border-slate-300 transition-colors inline-flex items-center gap-2">
-                <i class="fa-solid fa-file-excel text-emerald-600" aria-hidden="true"></i>
-                Plantilla Excel
-            </a>
-            <a href="/vault" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
-                Ver evidencias
-            </a>
+            <a href="/api/v1/batch/template" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-slate-100 px-3.5 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200"><i class="fa-solid fa-file-excel text-emerald-600" aria-hidden="true"></i>Plantilla Excel</a>
+            <a href="/vault" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"><i class="fa-solid fa-box-archive" aria-hidden="true"></i>Ver documentos</a>
         </div>
     </div>
 </div>
 
 <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-lotes-label">
-        <p id="kpi-lotes-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Lotes visibles</p>
-        <p id="kpi-lotes" class="mt-1 text-2xl font-bold text-slate-950">—</p>
-        <p class="mt-1 text-xs text-slate-500">Ámbito de la organización autenticada</p>
-    </section>
-    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-hectareas-label">
-        <p id="kpi-hectareas-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Superficie registrada</p>
-        <p id="kpi-hectareas" class="mt-1 text-2xl font-bold text-slate-950">—</p>
-        <p class="mt-1 text-xs text-slate-500">Suma de hectáreas informadas</p>
-    </section>
-    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-georef-label">
-        <p id="kpi-georef-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Georreferenciados</p>
-        <p id="kpi-georef" class="mt-1 text-2xl font-bold text-slate-950">—</p>
-        <p class="mt-1 text-xs text-slate-500">Con coordenadas válidas para visualización</p>
-    </section>
-    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-source-label">
-        <p id="kpi-source-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Fuente operativa</p>
-        <p class="mt-1 text-lg font-bold text-slate-950">Tenant DB</p>
-        <p id="kpi-source" class="mt-1 text-xs text-slate-500">Cargando datos reales…</p>
-    </section>
+    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-lotes-label"><p id="kpi-lotes-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Lotes visibles</p><p id="kpi-lotes" class="mt-1 text-2xl font-bold text-slate-950">—</p><p class="mt-1 text-xs text-slate-500">Ámbito de la organización autenticada</p></section>
+    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-hectareas-label"><p id="kpi-hectareas-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Superficie registrada</p><p id="kpi-hectareas" class="mt-1 text-2xl font-bold text-slate-950">—</p><p class="mt-1 text-xs text-slate-500">Suma de hectáreas informadas</p></section>
+    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-georef-label"><p id="kpi-georef-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Georreferenciados</p><p id="kpi-georef" class="mt-1 text-2xl font-bold text-slate-950">—</p><p class="mt-1 text-xs text-slate-500">Con coordenadas válidas para visualización</p></section>
+    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-source-label"><p id="kpi-source-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Datos operativos</p><p class="mt-1 text-lg font-bold text-slate-950">Base de la organización</p><p id="kpi-source" class="mt-1 text-xs text-slate-500">Cargando datos reales…</p></section>
 </div>
 
 <div id="dashboard-alert" class="mb-6 hidden rounded-xl border px-4 py-3 text-sm" role="status" aria-live="polite"></div>
@@ -68,130 +35,36 @@
 <div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)]">
     <div class="space-y-6">
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h2 class="text-base font-bold text-slate-950">Mapa Geoespacial de Rodales</h2>
-                    <p class="mt-1 text-xs leading-5 text-slate-500">Los marcadores se cargan desde <code>/api/v1/lotes</code>; no se muestran rodales ficticios.</p>
-                </div>
-                <span id="map-scope" class="text-xs font-semibold text-slate-500">Sin datos cargados</span>
-            </div>
+            <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h2 class="text-base font-bold text-slate-950">Mapa geoespacial de rodales</h2><p class="mt-1 text-xs leading-5 text-slate-500">Muestra únicamente los lotes reales disponibles para tu organización.</p></div><span id="map-scope" class="text-xs font-semibold text-slate-500">Sin datos cargados</span></div>
             <div id="map" class="h-96 w-full rounded-xl border border-slate-300 bg-slate-100"></div>
         </section>
 
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h2 class="text-base font-bold text-slate-950">Lotes de la organización</h2>
-                    <p class="mt-1 text-xs text-slate-500">Seleccioná un lote para revisar su origen y ejecutar acciones permitidas por tu rol.</p>
-                </div>
-                <button id="reload-lotes" type="button" class="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                    <i class="fa-solid fa-rotate" aria-hidden="true"></i>
-                    Actualizar
-                </button>
-            </div>
-            <div class="overflow-x-auto rounded-xl border border-slate-200">
-                <table class="min-w-full divide-y divide-slate-200 text-left text-xs">
-                    <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                        <tr>
-                            <th class="px-4 py-3">Lote</th>
-                            <th class="px-4 py-3">Producto</th>
-                            <th class="px-4 py-3">Superficie</th>
-                            <th class="px-4 py-3">Estado</th>
-                            <th class="px-4 py-3 text-right">Acción</th>
-                        </tr>
-                    </thead>
-                    <tbody id="lotes-body" class="divide-y divide-slate-200 bg-white">
-                        <tr>
-                            <td colspan="5" class="px-4 py-6 text-center text-slate-500">Cargando lotes…</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+            <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h2 class="text-base font-bold text-slate-950">Lotes de la organización</h2><p class="mt-1 text-xs text-slate-500">Seleccioná un lote para revisar su origen y las acciones disponibles para tu rol.</p></div><button id="reload-lotes" type="button" class="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"><i class="fa-solid fa-rotate" aria-hidden="true"></i>Actualizar</button></div>
+            <div class="overflow-x-auto rounded-xl border border-slate-200"><table class="min-w-full divide-y divide-slate-200 text-left text-xs"><thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><tr><th class="px-4 py-3">Lote</th><th class="px-4 py-3">Producto</th><th class="px-4 py-3">Superficie</th><th class="px-4 py-3">Estado</th><th class="px-4 py-3 text-right">Acción</th></tr></thead><tbody id="lotes-body" class="divide-y divide-slate-200 bg-white"><tr><td colspan="5" class="px-4 py-6 text-center text-slate-500">Cargando lotes…</td></tr></tbody></table></div>
         </section>
     </div>
 
     <div class="space-y-6">
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="flex items-start justify-between gap-3">
-                <div>
-                    <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Evaluacion Individual de Rodal</p>
-                    <p class="mt-1 text-xs font-semibold text-slate-500">Lote seleccionado</p>
-                    <h2 id="selected-lote-name" class="mt-1 text-lg font-bold text-slate-950">Ninguno</h2>
-                </div>
-                <span id="selected-lote-status" class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">—</span>
-            </div>
-            <dl class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div class="rounded-lg bg-slate-50 p-3">
-                    <dt class="font-semibold text-slate-500">Proveedor / productor</dt>
-                    <dd id="selected-producer" class="mt-1 break-all font-medium text-slate-900">—</dd>
-                </div>
-                <div class="rounded-lg bg-slate-50 p-3">
-                    <dt class="font-semibold text-slate-500">Producto</dt>
-                    <dd id="selected-product" class="mt-1 break-all font-medium text-slate-900">—</dd>
-                </div>
-                <div class="rounded-lg bg-slate-50 p-3">
-                    <dt class="font-semibold text-slate-500">Coordenadas</dt>
-                    <dd id="selected-coordinates" class="mt-1 font-mono text-[11px] text-slate-900">—</dd>
-                </div>
-                <div class="rounded-lg bg-slate-50 p-3">
-                    <dt class="font-semibold text-slate-500">Superficie</dt>
-                    <dd id="selected-hectares" class="mt-1 font-medium text-slate-900">—</dd>
-                </div>
-            </dl>
+            <div class="flex items-start justify-between gap-3"><div><p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Evaluación individual del rodal</p><p class="mt-1 text-xs font-semibold text-slate-500">Lote seleccionado</p><h2 id="selected-lote-name" class="mt-1 text-lg font-bold text-slate-950">Ninguno</h2></div><span id="selected-lote-status" class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">—</span></div>
+            <dl class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><div class="rounded-lg bg-slate-50 p-3"><dt class="font-semibold text-slate-500">Proveedor / productor</dt><dd id="selected-producer" class="mt-1 break-all font-medium text-slate-900">—</dd></div><div class="rounded-lg bg-slate-50 p-3"><dt class="font-semibold text-slate-500">Producto</dt><dd id="selected-product" class="mt-1 break-all font-medium text-slate-900">—</dd></div><div class="rounded-lg bg-slate-50 p-3"><dt class="font-semibold text-slate-500">Coordenadas</dt><dd id="selected-coordinates" class="mt-1 font-mono text-[11px] text-slate-900">—</dd></div><div class="rounded-lg bg-slate-50 p-3"><dt class="font-semibold text-slate-500">Superficie</dt><dd id="selected-hectares" class="mt-1 font-medium text-slate-900">—</dd></div></dl>
         </section>
 
         {% if user.role in ["superadmin", "admin", "manager"] %}
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div>
-                <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Satellite Engine</p>
-                <h2 class="mt-1 text-base font-bold text-slate-950">Análisis NDVI durable</h2>
-                <p class="mt-1 text-xs leading-5 text-slate-500">Encola un trabajo real para el lote seleccionado. El resultado es evidencia analítica y debe interpretarse junto con documentación y datos de origen.</p>
-            </div>
-            <form id="satellite-form" class="mt-5 space-y-4">
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <label class="text-xs font-semibold text-slate-700">
-                        Desde
-                        <input id="satellite-start" type="date" value="2020-12-31" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs">
-                    </label>
-                    <label class="text-xs font-semibold text-slate-700">
-                        Hasta
-                        <input id="satellite-end" type="date" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs">
-                    </label>
-                </div>
-                <label class="block text-xs font-semibold text-slate-700">
-                    Nubosidad máxima (%)
-                    <input id="satellite-cloud" type="number" min="0" max="100" step="0.1" value="20" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs">
-                </label>
-                <button id="satellite-submit" type="submit" disabled class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-forest-800 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-forest-900">
-                    <i class="fa-solid fa-satellite" aria-hidden="true"></i>
-                    Ejecutar análisis
-                </button>
-            </form>
-            <div id="satellite-result" class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
-                Seleccioná un lote para habilitar el análisis.
-            </div>
+            <div><p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Análisis satelital</p><h2 class="mt-1 text-base font-bold text-slate-950">Análisis NDVI persistente</h2><p class="mt-1 text-xs leading-5 text-slate-500">Genera una tarea de análisis para el lote seleccionado. El resultado es evidencia técnica y debe interpretarse junto con la documentación y los datos de origen.</p></div>
+            <form id="satellite-form" class="mt-5 space-y-4"><div class="grid grid-cols-1 gap-3 sm:grid-cols-2"><label class="text-xs font-semibold text-slate-700">Desde<input id="satellite-start" type="date" value="2020-12-31" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"></label><label class="text-xs font-semibold text-slate-700">Hasta<input id="satellite-end" type="date" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"></label></div><label class="block text-xs font-semibold text-slate-700">Nubosidad máxima (%)<input id="satellite-cloud" type="number" min="0" max="100" step="0.1" value="20" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"></label><button id="satellite-submit" type="submit" disabled class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-forest-800 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-forest-900"><i class="fa-solid fa-satellite" aria-hidden="true"></i>Ejecutar análisis</button></form>
+            <div id="satellite-result" class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">Seleccioná un lote para habilitar el análisis.</div>
         </section>
         {% else %}
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Satellite Engine</p>
-            <h2 class="mt-1 text-base font-bold text-slate-950">Vista de solo lectura</h2>
-            <p class="mt-2 text-xs leading-5 text-slate-500">Tu rol puede consultar los lotes y evidencias disponibles, pero no tiene la capacidad <code>satellite:run</code>.</p>
-        </section>
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Análisis satelital</p><h2 class="mt-1 text-base font-bold text-slate-950">Vista de solo lectura</h2><p class="mt-2 text-xs leading-5 text-slate-500">Tu rol puede consultar los lotes y evidencias disponibles, pero no está habilitado para ejecutar análisis satelitales.</p></section>
         {% endif %}
 
-        <section class="rounded-2xl border border-amber-200 bg-amber-50 p-5">
-            <div class="flex gap-3">
-                <i class="fa-solid fa-circle-info mt-0.5 text-amber-700" aria-hidden="true"></i>
-                <div>
-                    <h2 class="text-sm font-bold text-amber-950">Límite de interpretación</h2>
-                    <p class="mt-1 text-xs leading-5 text-amber-900">Litoral Trace organiza trazabilidad, documentos y análisis. No emite un certificado oficial EUDR. Los artefactos pueden apoyar la preparación de información para TRACES NT, pero no implican aprobación del sistema ni reemplazan la debida diligencia o las responsabilidades legales de los operadores.</p>
-                </div>
-            </div>
-        </section>
+        <section class="rounded-2xl border border-amber-200 bg-amber-50 p-5"><div class="flex gap-3"><i class="fa-solid fa-circle-info mt-0.5 text-amber-700" aria-hidden="true"></i><div><h2 class="text-sm font-bold text-amber-950">Límite de interpretación</h2><p class="mt-1 text-xs leading-5 text-amber-900">Litoral Trace organiza trazabilidad, documentos y análisis. No emite un certificado oficial EUDR. Los artefactos pueden apoyar la preparación de información para TRACES NT, pero no implican aprobación del sistema ni reemplazan la debida diligencia o las responsabilidades legales de los operadores.</p></div></div></section>
     </div>
 </div>
 
-<!-- Keep the historical Tailwind contract stable while the dashboard is migrated away from legacy demo-only widgets. -->
 <div class="hidden bg-forest-100 text-forest-800 border border-forest-300 text-emerald-600 space-x-6 pb-3 border-b-2 border-forest-700 border-transparent hover:text-slate-800 md:col-span-2 mb-8 pt-2" aria-hidden="true"></div>
 {% endblock %}
 
@@ -200,13 +73,7 @@
 (() => {
     'use strict';
 
-    const state = {
-        lotes: [],
-        selectedLote: null,
-        markers: [],
-        map: null,
-    };
-
+    const state = { lotes: [], selectedLote: null, markers: [], map: null };
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
     const alertBox = document.getElementById('dashboard-alert');
     const lotesBody = document.getElementById('lotes-body');
@@ -217,36 +84,18 @@
     function showAlert(message, tone = 'error') {
         alertBox.textContent = message;
         alertBox.className = 'mb-6 rounded-xl border px-4 py-3 text-sm';
-        if (tone === 'error') {
-            alertBox.classList.add('border-rose-200', 'bg-rose-50', 'text-rose-800');
-        } else {
-            alertBox.classList.add('border-emerald-200', 'bg-emerald-50', 'text-emerald-800');
-        }
+        if (tone === 'error') alertBox.classList.add('border-rose-200', 'bg-rose-50', 'text-rose-800');
+        else alertBox.classList.add('border-emerald-200', 'bg-emerald-50', 'text-emerald-800');
     }
 
-    function clearAlert() {
-        alertBox.textContent = '';
-        alertBox.className = 'mb-6 hidden rounded-xl border px-4 py-3 text-sm';
-    }
-
-    function formatNumber(value, maximumFractionDigits = 1) {
-        const number = Number(value);
-        if (!Number.isFinite(number)) return '—';
-        return new Intl.NumberFormat('es-AR', { maximumFractionDigits }).format(number);
-    }
-
-    function validCoordinate(value, min, max) {
-        const number = Number(value);
-        return Number.isFinite(number) && number >= min && number <= max;
-    }
+    function clearAlert() { alertBox.textContent = ''; alertBox.className = 'mb-6 hidden rounded-xl border px-4 py-3 text-sm'; }
+    function formatNumber(value, maximumFractionDigits = 1) { const number = Number(value); if (!Number.isFinite(number)) return '—'; return new Intl.NumberFormat('es-AR', { maximumFractionDigits }).format(number); }
+    function validCoordinate(value, min, max) { const number = Number(value); return Number.isFinite(number) && number >= min && number <= max; }
 
     function initMap() {
         if (!window.L || state.map) return;
         state.map = L.map('map', { zoomControl: true }).setView([-27.4, -59.0], 6);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors',
-            maxZoom: 19,
-        }).addTo(state.map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 }).addTo(state.map);
     }
 
     function popupForLote(lote) {
@@ -264,11 +113,9 @@
     function renderMap() {
         initMap();
         if (!state.map) return;
-
         state.markers.forEach((marker) => marker.remove());
         state.markers = [];
         const bounds = [];
-
         state.lotes.forEach((lote) => {
             if (!validCoordinate(lote.latitud, -90, 90) || !validCoordinate(lote.longitud, -180, 180)) return;
             const marker = L.marker([Number(lote.latitud), Number(lote.longitud)]).addTo(state.map);
@@ -277,13 +124,9 @@
             state.markers.push(marker);
             bounds.push([Number(lote.latitud), Number(lote.longitud)]);
         });
-
         document.getElementById('map-scope').textContent = `${bounds.length} lote${bounds.length === 1 ? '' : 's'} georreferenciado${bounds.length === 1 ? '' : 's'}`;
-        if (bounds.length === 1) {
-            state.map.setView(bounds[0], 12);
-        } else if (bounds.length > 1) {
-            state.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
-        }
+        if (bounds.length === 1) state.map.setView(bounds[0], 12);
+        else if (bounds.length > 1) state.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
     }
 
     function renderKpis(payload) {
@@ -293,7 +136,7 @@
         document.getElementById('kpi-lotes').textContent = formatNumber(lotes.length, 0);
         document.getElementById('kpi-hectareas').textContent = `${formatNumber(totalHectares)} ha`;
         document.getElementById('kpi-georef').textContent = `${formatNumber(georeferenced, 0)} / ${formatNumber(lotes.length, 0)}`;
-        document.getElementById('kpi-source').textContent = payload.organization ? `Organización: ${payload.organization}` : 'Datos tenant-scoped cargados';
+        document.getElementById('kpi-source').textContent = payload.organization ? `Organización: ${payload.organization}` : 'Datos de la organización cargados';
     }
 
     function renderLotesTable() {
@@ -301,39 +144,16 @@
         if (!state.lotes.length) {
             const row = document.createElement('tr');
             const cell = document.createElement('td');
-            cell.colSpan = 5;
-            cell.className = 'px-4 py-6 text-center text-slate-500';
-            cell.textContent = 'No hay lotes visibles para esta organización.';
-            row.appendChild(cell);
-            lotesBody.appendChild(row);
-            return;
+            cell.colSpan = 5; cell.className = 'px-4 py-6 text-center text-slate-500'; cell.textContent = 'No hay lotes visibles para esta organización.';
+            row.appendChild(cell); lotesBody.appendChild(row); return;
         }
-
         state.lotes.forEach((lote) => {
-            const row = document.createElement('tr');
-            row.className = 'hover:bg-slate-50';
-            const values = [
-                lote.identificador || `Lote ${lote.id}`,
-                lote.producto_forestal || '—',
-                `${formatNumber(lote.hectareas)} ha`,
-                lote.estatus || '—',
-            ];
-            values.forEach((value, index) => {
-                const cell = document.createElement('td');
-                cell.className = index === 0 ? 'px-4 py-3 font-semibold text-slate-900' : 'px-4 py-3 text-slate-600';
-                cell.textContent = value;
-                row.appendChild(cell);
-            });
-            const actionCell = document.createElement('td');
-            actionCell.className = 'px-4 py-3 text-right';
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'rounded-lg border border-slate-300 px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100';
-            button.textContent = 'Seleccionar';
-            button.addEventListener('click', () => selectLote(lote.id, true));
-            actionCell.appendChild(button);
-            row.appendChild(actionCell);
-            lotesBody.appendChild(row);
+            const row = document.createElement('tr'); row.className = 'hover:bg-slate-50';
+            const values = [lote.identificador || `Lote ${lote.id}`, lote.producto_forestal || '—', `${formatNumber(lote.hectareas)} ha`, lote.estatus || '—'];
+            values.forEach((value, index) => { const cell = document.createElement('td'); cell.className = index === 0 ? 'px-4 py-3 font-semibold text-slate-900' : 'px-4 py-3 text-slate-600'; cell.textContent = value; row.appendChild(cell); });
+            const actionCell = document.createElement('td'); actionCell.className = 'px-4 py-3 text-right';
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'rounded-lg border border-slate-300 px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100'; button.textContent = 'Seleccionar'; button.addEventListener('click', () => selectLote(lote.id, true));
+            actionCell.appendChild(button); row.appendChild(actionCell); lotesBody.appendChild(row);
         });
     }
 
@@ -346,14 +166,10 @@
         document.getElementById('selected-producer').textContent = lote.productor_id || '—';
         document.getElementById('selected-product').textContent = lote.producto_forestal || '—';
         document.getElementById('selected-hectares').textContent = `${formatNumber(lote.hectareas)} ha`;
-        document.getElementById('selected-coordinates').textContent = validCoordinate(lote.latitud, -90, 90) && validCoordinate(lote.longitud, -180, 180)
-            ? `${Number(lote.latitud).toFixed(6)}, ${Number(lote.longitud).toFixed(6)}`
-            : 'Coordenadas no disponibles';
+        document.getElementById('selected-coordinates').textContent = validCoordinate(lote.latitud, -90, 90) && validCoordinate(lote.longitud, -180, 180) ? `${Number(lote.latitud).toFixed(6)}, ${Number(lote.longitud).toFixed(6)}` : 'Coordenadas no disponibles';
         if (satelliteSubmit) satelliteSubmit.disabled = false;
         if (satelliteResult) satelliteResult.textContent = 'Lote seleccionado. Configurá el rango y ejecutá el análisis cuando corresponda.';
-        if (focusMap && state.map && validCoordinate(lote.latitud, -90, 90) && validCoordinate(lote.longitud, -180, 180)) {
-            state.map.setView([Number(lote.latitud), Number(lote.longitud)], 13);
-        }
+        if (focusMap && state.map && validCoordinate(lote.latitud, -90, 90) && validCoordinate(lote.longitud, -180, 180)) state.map.setView([Number(lote.latitud), Number(lote.longitud)], 13);
     }
 
     async function loadLotes() {
@@ -364,15 +180,10 @@
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const payload = await response.json();
             state.lotes = Array.isArray(payload.lotes) ? payload.lotes : [];
-            renderKpis(payload);
-            renderLotesTable();
-            renderMap();
+            renderKpis(payload); renderLotesTable(); renderMap();
             if (state.lotes.length && !state.selectedLote) selectLote(state.lotes[0].id, false);
         } catch (error) {
-            state.lotes = [];
-            renderKpis({});
-            renderLotesTable();
-            renderMap();
+            state.lotes = []; renderKpis({}); renderLotesTable(); renderMap();
             showAlert('No fue posible consultar los lotes en este momento. Verificá la sesión y la disponibilidad del servicio.');
         }
     }
@@ -382,23 +193,16 @@
         const text = await response.text();
         let payload = null;
         try { payload = text ? JSON.parse(text) : null; } catch (_) { payload = null; }
-        if (!response.ok) {
-            const detail = payload?.detail || payload?.code || `HTTP ${response.status}`;
-            throw new Error(String(detail));
-        }
+        if (!response.ok) { const detail = payload?.detail || payload?.code || `HTTP ${response.status}`; throw new Error(String(detail)); }
         return payload;
     }
 
     async function pollSatelliteJob(jobId) {
         for (let attempt = 0; attempt < 30; attempt += 1) {
             const statusPayload = await fetchJson(`/api/v1/satellite/jobs/${jobId}`, { headers: { Accept: 'application/json' } });
-            satelliteResult.textContent = `Job #${jobId}: ${statusPayload.status} · intento ${statusPayload.attempt_count}/${statusPayload.max_attempts}`;
-            if (statusPayload.status === 'failed') {
-                throw new Error(statusPayload.error_code || 'El análisis satelital falló.');
-            }
-            if (statusPayload.status === 'succeeded') {
-                return fetchJson(`/api/v1/satellite/jobs/${jobId}/result`, { headers: { Accept: 'application/json' } });
-            }
+            satelliteResult.textContent = `Tarea #${jobId}: ${statusPayload.status} · intento ${statusPayload.attempt_count}/${statusPayload.max_attempts}`;
+            if (statusPayload.status === 'failed') throw new Error(statusPayload.error_code || 'El análisis satelital falló.');
+            if (statusPayload.status === 'succeeded') return fetchJson(`/api/v1/satellite/jobs/${jobId}/result`, { headers: { Accept: 'application/json' } });
             await new Promise((resolve) => window.setTimeout(resolve, 2000));
         }
         return { pending: true, job_id: jobId };
@@ -407,69 +211,33 @@
     async function submitSatellite(event) {
         event.preventDefault();
         if (!state.selectedLote || !satelliteSubmit || !satelliteResult) return;
-
         const startDate = document.getElementById('satellite-start').value;
         const endDate = document.getElementById('satellite-end').value;
         const maxCloudPct = Number(document.getElementById('satellite-cloud').value);
-        if (!startDate || !endDate || startDate > endDate) {
-            satelliteResult.textContent = 'Revisá el rango de fechas antes de ejecutar el análisis.';
-            return;
-        }
-
+        if (!startDate || !endDate || startDate > endDate) { satelliteResult.textContent = 'Revisá el rango de fechas antes de ejecutar el análisis.'; return; }
         satelliteSubmit.disabled = true;
-        satelliteResult.textContent = 'Registrando trabajo satelital…';
+        satelliteResult.textContent = 'Registrando tarea de análisis satelital…';
         const idempotencyKey = `dashboard-${state.selectedLote.id}-${window.crypto?.randomUUID?.() || Date.now()}`;
-
         try {
-            const job = await fetchJson('/api/v1/satellite/jobs', {
-                method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrfToken,
-                },
-                body: JSON.stringify({
-                    lote_id: Number(state.selectedLote.id),
-                    start_date: startDate,
-                    end_date: endDate,
-                    max_cloud_pct: maxCloudPct,
-                    idempotency_key: idempotencyKey,
-                }),
-            });
-            satelliteResult.textContent = `Job #${job.job_id} aceptado. Esperando procesamiento…`;
+            const job = await fetchJson('/api/v1/satellite/jobs', { method: 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }, body: JSON.stringify({ lote_id: Number(state.selectedLote.id), start_date: startDate, end_date: endDate, max_cloud_pct: maxCloudPct, idempotency_key: idempotencyKey }) });
+            satelliteResult.textContent = `Tarea #${job.job_id} aceptada. Esperando procesamiento…`;
             const result = await pollSatelliteJob(job.job_id);
-            if (result?.pending) {
-                satelliteResult.textContent = `Job #${job.job_id} sigue en proceso. Podés continuar usando la plataforma y consultar su estado más tarde.`;
-                return;
-            }
+            if (result?.pending) { satelliteResult.textContent = `La tarea #${job.job_id} sigue en proceso. Podés continuar usando la plataforma y consultar su estado más tarde.`; return; }
             const observations = Array.isArray(result.observations) ? result.observations : [];
             const latest = observations.length ? observations[observations.length - 1] : null;
             satelliteResult.replaceChildren();
-            const title = document.createElement('p');
-            title.className = 'font-bold text-emerald-800';
-            title.textContent = `Análisis completado · ${result.total_observations || observations.length} observaciones`;
-            const detail = document.createElement('p');
-            detail.className = 'mt-1 leading-5 text-slate-600';
-            detail.textContent = latest
-                ? `Última observación: ${latest.observation_date} · NDVI medio ${formatNumber(latest.ndvi_mean, 4)}. Interpretar junto con el resto de la evidencia.`
-                : 'El job finalizó sin observaciones utilizables para el rango solicitado.';
+            const title = document.createElement('p'); title.className = 'font-bold text-emerald-800'; title.textContent = `Análisis completado · ${result.total_observations || observations.length} observaciones`;
+            const detail = document.createElement('p'); detail.className = 'mt-1 leading-5 text-slate-600'; detail.textContent = latest ? `Última observación: ${latest.observation_date} · NDVI medio ${formatNumber(latest.ndvi_mean, 4)}. Interpretar junto con el resto de la evidencia.` : 'El análisis finalizó sin observaciones utilizables para el rango solicitado.';
             satelliteResult.append(title, detail);
-        } catch (error) {
-            satelliteResult.textContent = `No fue posible completar el análisis: ${error.message}`;
-        } finally {
-            satelliteSubmit.disabled = !state.selectedLote;
-        }
+        } catch (error) { satelliteResult.textContent = `No fue posible completar el análisis: ${error.message}`; }
+        finally { satelliteSubmit.disabled = !state.selectedLote; }
     }
 
     document.getElementById('reload-lotes')?.addEventListener('click', loadLotes);
     satelliteForm?.addEventListener('submit', submitSatellite);
     const endDateInput = document.getElementById('satellite-end');
     if (endDateInput) endDateInput.value = new Date().toISOString().slice(0, 10);
-
-    window.addEventListener('load', () => {
-        initMap();
-        loadLotes();
-    });
+    window.addEventListener('load', () => { initMap(); loadLotes(); });
 })();
 </script>
 {% endblock %}
