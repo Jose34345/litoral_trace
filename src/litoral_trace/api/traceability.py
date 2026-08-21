@@ -1,4 +1,8 @@
-"""Industrial traceability API and domain router composition."""
+"""Industrial traceability API and read-only browser composition.
+
+Operational UX10-D writes belong to ``litoral_trace.web.router`` so this API
+module never imports the write workspace back through the HTML runtime layer.
+"""
 from __future__ import annotations
 
 from typing import Any
