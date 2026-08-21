@@ -1,4 +1,4 @@
-"""Read-only industrial traceability API for P1C reverse genealogy."""
+"""Industrial traceability API and domain router composition."""
 from __future__ import annotations
 
 from typing import Any
@@ -14,9 +14,10 @@ from litoral_trace.services.traceability_lineage import (
     TraceabilityLineageService,
     TraceabilityLineageValidationError,
 )
+from litoral_trace.web.traceability import router as traceability_web_router
 
 
-router = APIRouter(
+api_router = APIRouter(
     prefix="/api/v1/traceability",
     tags=["Trazabilidad Industrial"],
 )
@@ -29,7 +30,7 @@ def _detail(*, code: str, message: str) -> dict[str, str]:
     }
 
 
-@router.get(
+@api_router.get(
     "/shipments/{shipment_code}/origin",
     response_model=dict[str, Any],
 )
@@ -78,3 +79,12 @@ async def obtener_origen_despacho_endpoint(
         ) from None
     finally:
         session.close()
+
+
+# ``main.py`` includes one traceability-domain router. Keeping both the API
+# contract and the P1D browser workspace beneath this composition avoids a
+# second registration path while leaving the P1C service as the single source
+# of lineage truth.
+router = APIRouter()
+router.include_router(api_router)
+router.include_router(traceability_web_router)
