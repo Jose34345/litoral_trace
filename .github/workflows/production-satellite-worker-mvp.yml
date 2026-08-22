@@ -32,6 +32,7 @@ jobs:
       ENVIRONMENT: production
       LOG_LEVEL: INFO
       WORKERS_ENABLED: "1"
+      PYTHONPATH: src
       DATABASE_URL: ${{ secrets.LT_PROD_DATABASE_URL }}
       WORKER_DATABASE_URL: ${{ secrets.LT_PROD_WORKER_DATABASE_URL }}
       # Code-level production default; add LT_GCP_PROJECT_ID only if the GEE
