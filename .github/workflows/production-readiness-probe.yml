@@ -1,0 +1,67 @@
+name: Production Readiness Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/production-readiness-probe.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe production health and readiness
+        id: probe
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          health_code="$(curl --silent --show-error --location --max-time 90 --retry 2 --retry-delay 5 --retry-all-errors -o /tmp/health.json -w '%{http_code}' https://litoraltrace.com/health)"
+          health_status=$?
+          ready_code="$(curl --silent --show-error --location --max-time 90 --retry 2 --retry-delay 5 --retry-all-errors -o /tmp/ready.json -w '%{http_code}' https://litoraltrace.com/ready)"
+          ready_status=$?
+
+          echo "health_code=${health_code:-000}" >> "$GITHUB_OUTPUT"
+          echo "ready_code=${ready_code:-000}" >> "$GITHUB_OUTPUT"
+
+          if [ "$health_status" -ne 0 ] || [ "$ready_status" -ne 0 ] || [ "$health_code" != "200" ] || [ "$ready_code" != "200" ]; then
+            echo "Production readiness probe failed." >&2
+            exit 1
+          fi
+
+          echo "Production /health and /ready both returned HTTP 200."
+
+      - name: Report sanitized verdict to cutover issue
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          HEALTH_CODE: ${{ steps.probe.outputs.health_code }}
+          READY_CODE: ${{ steps.probe.outputs.ready_code }}
+        run: |
+          if [ "$PROBE_OUTCOME" = "success" ]; then
+            verdict="PASS"
+          else
+            verdict="NO-GO"
+          fi
+          cat > /tmp/readiness-comment.md <<EOF
+          ### Production DB + Vault readiness — ${verdict}
+
+          - \`/health\`: HTTP \`${HEALTH_CODE:-000}\`
+          - \`/ready\`: HTTP \`${READY_CODE:-000}\`
+          - Probe outcome: \`${PROBE_OUTCOME}\`
+          - Evaluated at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`
+          EOF
+          gh issue comment 48 --repo Jose34345/litoral_trace --body-file /tmp/readiness-comment.md
+
+      - name: Enforce fail-closed readiness
+        if: steps.probe.outcome != 'success'
+        run: exit 1
