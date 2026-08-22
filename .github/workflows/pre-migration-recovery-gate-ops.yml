@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - ops-pre-migration-gate-20260821
+  pull_request:
+    branches:
+      - p2-enterprise-production
 
 permissions:
   contents: read
