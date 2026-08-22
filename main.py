@@ -51,6 +51,9 @@ from litoral_trace.api.auth import (
 from litoral_trace.api.batch_evidence import (
     router as batch_evidence_router,
 )
+from litoral_trace.api.integrations import (
+    router as integrations_router,
+)
 from litoral_trace.api.lotes import (
     router as lotes_router,
 )
@@ -162,6 +165,10 @@ app.include_router(
 )
 
 app.include_router(
+    integrations_router
+)
+
+app.include_router(
     vault_router
 )
 
@@ -202,6 +209,15 @@ from litoral_trace.web.traceability_operations import (
 
 app.include_router(
     traceability_operations_router
+)
+
+# P1-A owns a dedicated browser workspace for integration staging/reconciliation.
+from litoral_trace.web.integrations import (
+    router as integrations_web_router,
+)
+
+app.include_router(
+    integrations_web_router
 )
 
 
@@ -264,524 +280,151 @@ def _legacy_home_redirect(
     return response
 
 
-async def render_home_view(
+async def dashboard(
     request: Request,
 ):
-    """Compatibility export for the public homepage."""
-
-    _bind_legacy_request_to_app(
+    legacy_direct_call = _bind_legacy_request_to_app(
         request
     )
 
-    return await (
-        web_router_module
-        .render_home_view(
-            request
-        )
-    )
-
-
-async def render_regional_intelligence_index_view(
-    request: Request,
-):
-    """Compatibility export for Regional Intelligence index."""
-
-    _bind_legacy_request_to_app(
+    response = await web_router_module.dashboard_page(
         request
     )
 
-    return await (
-        web_router_module
-        .render_regional_intelligence_index_view(
-            request
-        )
+    return _legacy_home_redirect(
+        response,
+        legacy_direct_call=legacy_direct_call,
     )
 
 
-async def render_regional_intelligence_detail_view(
+async def admin(
     request: Request,
-    region_slug: str,
 ):
-    """Compatibility export for one regional profile."""
-
-    _bind_legacy_request_to_app(
+    legacy_direct_call = _bind_legacy_request_to_app(
         request
     )
 
-    return await (
-        web_router_module
-        .render_regional_intelligence_detail_view(
-            request,
-            region_slug,
-        )
-    )
-
-
-async def render_login_view(
-    request: Request,
-):
-    """Compatibility export for the browser login page."""
-
-    _bind_legacy_request_to_app(
+    response = await web_router_module.admin_page(
         request
     )
 
-    return await (
-        web_router_module
-        .render_login_view(
-            request
-        )
+    return _legacy_home_redirect(
+        response,
+        legacy_direct_call=legacy_direct_call,
     )
 
 
-async def submit_login_view(
+async def settings_page(
     request: Request,
 ):
-    """Compatibility adapter for historical direct login calls.
-
-    Real POST /login traffic continues through
-    ``web_router_module.submit_login_view`` and therefore enforces the
-    browser-bound CSRF contract.
-
-    Only synthetic direct calls without an ASGI app/router enter the legacy
-    compatibility branch.
-    """
-
-    legacy_direct_call = (
-        _bind_legacy_request_to_app(
-            request
-        )
+    legacy_direct_call = _bind_legacy_request_to_app(
+        request
     )
 
-    if not legacy_direct_call:
-        return await (
-            web_router_module
-            .submit_login_view(
-                request
-            )
-        )
-
-    form = await request.form()
-
-    username = str(
-        form.get(
-            "username",
-            "",
-        )
-    ).strip()
-
-    password = str(
-        form.get(
-            "password",
-            "",
-        )
-    )
-
-    temp_response = Response()
-
-    try:
-        await login_b2b(
-            LoginRequest(
-                username=username,
-                password=password,
-            ),
-            temp_response,
-            request,
-        )
-
-    except HTTPException as exc:
-        error_message = (
-            exc.detail
-            if (
-                exc.status_code
-                == status.HTTP_400_BAD_REQUEST
-            )
-            else (
-                "Usuario o contrasena "
-                "incorrectos."
-            )
-        )
-
-        response_status = (
-            exc.status_code
-            if (
-                exc.status_code
-                == status.HTTP_400_BAD_REQUEST
-            )
-            else status.HTTP_401_UNAUTHORIZED
-        )
-
-        return (
-            web_router_module
-            ._render_login_error(
-                request,
-                message=error_message,
-                status_code=response_status,
-            )
-        )
-
-    response = RedirectResponse(
-        url="/dashboard",
-        status_code=(
-            status.HTTP_303_SEE_OTHER
-        ),
-    )
-
-    copy_response_cookies(
-        source=temp_response,
-        target=response,
-    )
-
-    rotate_csrf_browser_cookie(
-        response
-    )
-
-    return response
-
-
-async def render_dashboard_view(
-    request: Request,
-):
-    """Compatibility export for dashboard rendering."""
-
-    legacy_direct_call = (
-        _bind_legacy_request_to_app(
-            request
-        )
-    )
-
-    response = await (
-        web_router_module
-        .render_dashboard_view(
-            request
-        )
+    response = await web_router_module.settings_page(
+        request
     )
 
     return _legacy_home_redirect(
         response,
-        legacy_direct_call=(
-            legacy_direct_call
-        ),
+        legacy_direct_call=legacy_direct_call,
     )
 
 
-async def render_vault_view(
+async def vault_page(
     request: Request,
 ):
-    """Compatibility export for Vault rendering."""
-
-    legacy_direct_call = (
-        _bind_legacy_request_to_app(
-            request
-        )
+    legacy_direct_call = _bind_legacy_request_to_app(
+        request
     )
 
-    response = await (
-        web_router_module
-        .render_vault_view(
-            request
-        )
+    response = await web_router_module.vault_page(
+        request
     )
 
     return _legacy_home_redirect(
         response,
-        legacy_direct_call=(
-            legacy_direct_call
-        ),
+        legacy_direct_call=legacy_direct_call,
     )
 
 
-async def render_settings_view(
+async def batch_import_page(
     request: Request,
 ):
-    """Compatibility export for Settings rendering."""
-
-    legacy_direct_call = (
-        _bind_legacy_request_to_app(
-            request
-        )
+    legacy_direct_call = _bind_legacy_request_to_app(
+        request
     )
 
-    response = await (
-        web_router_module
-        .render_settings_view(
-            request
-        )
+    response = await web_router_module.batch_import_page(
+        request
     )
 
     return _legacy_home_redirect(
         response,
-        legacy_direct_call=(
-            legacy_direct_call
-        ),
+        legacy_direct_call=legacy_direct_call,
     )
 
 
-async def render_admin_view(
-    request: Request,
-):
-    """Compatibility export for Superadmin rendering."""
-
-    legacy_direct_call = (
-        _bind_legacy_request_to_app(
-            request
-        )
-    )
-
-    response = await (
-        web_router_module
-        .render_admin_view(
-            request
-        )
-    )
-
-    return _legacy_home_redirect(
-        response,
-        legacy_direct_call=(
-            legacy_direct_call
-        ),
-    )
-
-
-async def logout_view(
-    request: Request,
-):
-    """Compatibility export for the logout confirmation page."""
-
-    legacy_direct_call = (
-        _bind_legacy_request_to_app(
-            request
-        )
-    )
-
-    response = await (
-        web_router_module
-        .logout_view(
-            request
-        )
-    )
-
-    return _legacy_home_redirect(
-        response,
-        legacy_direct_call=(
-            legacy_direct_call
-        ),
-    )
-
-
-async def logout_submit_view(
-    request: Request,
-):
-    """Compatibility adapter for historical direct logout calls.
-
-    The actual POST /logout route remains CSRF-protected inside the
-    registered web router.
-    """
-
-    legacy_direct_call = (
-        _bind_legacy_request_to_app(
-            request
-        )
-    )
-
-    if not legacy_direct_call:
-        return await (
-            web_router_module
-            .logout_submit_view(
-                request
-            )
-        )
-
-    user, denied_response = (
-        get_authenticated_html_user(
-            request
-        )
-    )
-
-    if denied_response is not None:
-        return _legacy_home_redirect(
-            denied_response,
-            legacy_direct_call=True,
-        )
-
-    del user
-
-    temp_response = Response()
-
-    await logout_b2b_session(
-        temp_response,
-        request=request,
-        refresh_token_cookie=(
-            request.cookies.get(
-                REFRESH_TOKEN_COOKIE_KEY
-            )
-        ),
-        session_jwt=(
-            request.cookies.get(
-                ACCESS_TOKEN_COOKIE_KEY
-            )
-        ),
-    )
-
-    response = RedirectResponse(
-        url="/",
-        status_code=(
-            status.HTTP_303_SEE_OTHER
-        ),
-    )
-
-    copy_response_cookies(
-        source=temp_response,
-        target=response,
-    )
-
-    clear_browser_security_cookies(
-        response
-    )
-
-    return response
-
-
-# ---------------------------------------------------------------------------
-# Infrastructure endpoints
-# ---------------------------------------------------------------------------
-
-
-def _runtime_dependency_readiness(
-    *,
-    probe_vault_if_database_unavailable: bool = False,
-) -> dict[str, bool]:
-    """Probe required dependencies while preserving /ready short-circuiting."""
-
-    database_ready = False
-    vault_ready = False
-
-    try:
-        session = get_db_session()
-    except Exception:
-        session = None
-
-    if session is not None:
-        try:
-            session.execute(text("SELECT 1"))
-            database_ready = True
-        except Exception:
-            try:
-                session.rollback()
-            except Exception:
-                pass
-        finally:
-            try:
-                session.close()
-            except Exception:
-                pass
-
-    if database_ready or probe_vault_if_database_unavailable:
-        try:
-            vault_ready = bool(is_vault_storage_ready())
-        except Exception:
-            vault_ready = False
-
+@app.get("/health")
+def health_check():
     return {
-        "database": database_ready,
-        "vault": vault_ready,
+        "status": "healthy",
+        "service": "Litoral Trace Engine v2.4.0",
+        "version": "2.4.0",
     }
 
 
-@app.get(
-    "/health",
-    tags=["Infraestructura"],
-)
-async def health_check() -> JSONResponse:
-    """Return a basic service healthcheck."""
+@app.get("/ready")
+def readiness_check():
+    checks: dict[str, bool] = {
+        "database": False,
+        "vault": False,
+    }
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "status": "healthy",
-            "service": (
-                "Litoral Trace Engine"
-            ),
-            "version": app.version,
-        },
-    )
+    session = get_db_session()
+    if session is not None:
+        try:
+            session.execute(text("SELECT 1"))
+            checks["database"] = True
+        except Exception:
+            checks["database"] = False
+        finally:
+            session.close()
 
+    checks["vault"] = is_vault_storage_ready()
 
-@app.get(
-    "/ready",
-    tags=["Infraestructura"],
-)
-async def readiness_check() -> JSONResponse:
-    """Fail closed when a required runtime dependency is unavailable."""
-
-    dependencies = _runtime_dependency_readiness()
-    if not all(dependencies.values()):
-        return JSONResponse(
-            status_code=(
-                status.HTTP_503_SERVICE_UNAVAILABLE
-            ),
-            content={
-                "status": "unavailable"
-            },
-        )
-
+    ready = all(checks.values())
     return JSONResponse(
         status_code=(
             status.HTTP_200_OK
+            if ready
+            else status.HTTP_503_SERVICE_UNAVAILABLE
         ),
         content={
-            "status": "ready"
+            "status": "ready" if ready else "not_ready",
+            "checks": checks,
         },
     )
 
 
-@app.get(
-    "/internal/metrics",
-    include_in_schema=False,
-)
-async def internal_metrics() -> Response:
-    """Expose sanitized Prometheus metrics only to the private service network."""
+@app.get("/internal/metrics")
+def metrics_endpoint():
+    if settings.is_production:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not Found",
+        )
 
-    dependencies = _runtime_dependency_readiness(
-        probe_vault_if_database_unavailable=True,
-    )
-    api_metrics.set_dependency_readiness(
-        database=dependencies["database"],
-        vault=dependencies["vault"],
-    )
     return Response(
         content=api_metrics.render(),
-        status_code=status.HTTP_200_OK,
-        headers={"Content-Type": CONTENT_TYPE_LATEST},
+        media_type=CONTENT_TYPE_LATEST,
     )
 
 
-@app.get(
-    "/api/v1/info",
-    tags=["Infraestructura"],
-)
-async def root_index() -> JSONResponse:
-    """Return basic API metadata."""
-
-    return JSONResponse(
-        status_code=200,
-        content={
-            "message": (
-                "Servidor FastAPI "
-                "Litoral Trace Activo"
-            ),
-            "documentation": "/docs",
-            "health": "/health",
-        },
-    )
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-    )
+@app.get("/api/v1/info")
+def api_info():
+    return {
+        "service": "Litoral Trace",
+        "version": "2.4.0",
+        "environment": settings.environment,
+    }
