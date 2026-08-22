@@ -60,6 +60,9 @@ from litoral_trace.api.satellite import (
 from litoral_trace.api.settings import (
     router as settings_router,
 )
+from litoral_trace.api.traceability import (
+    router as traceability_router,
+)
 from litoral_trace.api.vault import (
     router as vault_router,
 )
@@ -155,6 +158,10 @@ app.include_router(
 )
 
 app.include_router(
+    traceability_router
+)
+
+app.include_router(
     vault_router
 )
 
@@ -183,6 +190,18 @@ app.include_router(
 
 app.include_router(
     web_router
+)
+
+# UX10-D owns write routes and imports ``web.runtime``. Import it only after
+# the primary web router and the application bootstrap are fully initialized.
+# FastAPI copies APIRouter routes eagerly, so this strict late binding prevents
+# a partially initialized operational router from being snapshotted as empty.
+from litoral_trace.web.traceability_operations import (
+    router as traceability_operations_router,
+)
+
+app.include_router(
+    traceability_operations_router
 )
 
 

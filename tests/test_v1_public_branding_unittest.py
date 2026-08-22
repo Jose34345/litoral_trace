@@ -16,9 +16,9 @@ def _read(path: Path) -> str:
 def test_public_home_is_spanish_first_and_commercially_actionable() -> None:
     content = _read(HOME)
 
-    assert "Evidencia trazable para decisiones de debida diligencia EUDR" in content
+    assert "Trazabilidad de origen y cadena de custodia para operaciones forestales." in content
     assert "Solicitar demostración" in content
-    assert "Acceso clientes" in content
+    assert "Acceso de clientes" in content
     assert "id=\"platform\"" in content
     assert "id=\"eudr\"" in content
     assert "id=\"security\"" in content
@@ -29,7 +29,7 @@ def test_public_site_preserves_regulatory_boundary() -> None:
     content = _read(HOME).lower()
 
     assert "no emite certificaciones eudr" in content
-    assert "no representa una certificación automática" in content
+    assert "no emite por sí solo una certificación regulatoria" in content
     for forbidden in (
         "100% compliant",
         "cumplimiento garantizado",
@@ -52,7 +52,7 @@ def test_public_navigation_uses_customer_facing_spanish_ctas() -> None:
     content = _read(PUBLIC_BASE)
 
     assert "Plataforma" in content
-    assert "Inteligencia regional" in content
+    assert "Contexto regional" in content
     assert "Auditabilidad" in content
-    assert "Acceso clientes" in content
-    assert "Solicitar demo" in content
+    assert "Acceso de clientes" in content
+    assert "Solicitar demostración" in content

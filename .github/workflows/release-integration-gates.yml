@@ -265,8 +265,8 @@ jobs:
               raise SystemExit(f"Gate 11 is fail-closed: {skipped} test(s) skipped")
           PY
 
-      - name: Migrate isolated database to canonical head
-        run: python -m alembic upgrade head
+      - name: Migrate isolated database through Batch acceptance revision
+        run: python -m alembic upgrade 018_add_batch_evidence_links
 
       - name: Gate 12 - Batch PostgreSQL acceptance
         shell: bash
@@ -284,12 +284,97 @@ jobs:
               raise SystemExit(f"Gate 12 is fail-closed: {skipped} test(s) skipped")
           PY
 
+      - name: Migrate isolated database through P1 traceability acceptance revision
+        run: python -m alembic upgrade 019_add_traceability_genealogy
+
+      - name: Gate 13 - P1A traceability PostgreSQL acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            --junitxml=gate13-traceability.xml \
+            tests/test_traceability_p1a_postgres_integration.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("gate13-traceability.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          if skipped:
+              raise SystemExit(f"Gate 13 is fail-closed: {skipped} test(s) skipped")
+          PY
+
+      - name: Gate 14 - P1B ledger concurrency acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            --junitxml=gate14-ledger.xml \
+            tests/test_traceability_p1b_postgres_integration.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("gate14-ledger.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          failures = int(root.attrib.get("failures", "0"))
+          errors = int(root.attrib.get("errors", "0"))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  "Gate 14 is fail-closed: "
+                  f"skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
+
+      - name: Gate 15 - P1C reverse lineage acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            --junitxml=gate15-lineage.xml \
+            tests/test_traceability_p1c_postgres_integration.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("gate15-lineage.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          failures = int(root.attrib.get("failures", "0"))
+          errors = int(root.attrib.get("errors", "0"))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  "Gate 15 is fail-closed: "
+                  f"skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
+
+      - name: Gate 16 - P1D traceability UI acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            --junitxml=gate16-traceability-ui.xml \
+            tests/test_traceability_p1d_ui_unittest.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("gate16-traceability-ui.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          failures = int(root.attrib.get("failures", "0"))
+          errors = int(root.attrib.get("errors", "0"))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  "Gate 16 is fail-closed: "
+                  f"skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
+
+      - name: Migrate isolated database to canonical head
+        run: python -m alembic upgrade head
+
       - name: Verify canonical database head
         shell: bash
         run: |
           set -euo pipefail
           python -m alembic current | tee alembic-current.txt
-          grep -F "018_add_batch_evidence_links" alembic-current.txt
+          grep -F "020_add_traceability_evidence_links" alembic-current.txt
 
       - name: Cleanup ephemeral integration files and MinIO
         if: always()

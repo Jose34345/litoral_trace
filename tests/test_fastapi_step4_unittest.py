@@ -27,8 +27,9 @@ class TestFastAPIStep4Templates(unittest.TestCase):
         req = Request(scope={"type": "http", "method": "GET", "path": "/", "headers": []})
         response = asyncio.run(render_login_view(req))
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Litoral Trace", response.body.decode('utf-8'))
-        self.assertIn("EUDR", response.body.decode('utf-8'))
+        body = response.body.decode("utf-8")
+        self.assertIn("Litoral Trace", body)
+        self.assertIn("Acceso seguro", body)
 
     def test_render_dashboard_view(self):
         login_response = Response()
@@ -55,8 +56,10 @@ class TestFastAPIStep4Templates(unittest.TestCase):
         )
         response = asyncio.run(render_dashboard_view(req))
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Trazabilidad Forestal", response.body.decode('utf-8'))
-        self.assertIn("TRACES NT", response.body.decode('utf-8'))
+        body = response.body.decode("utf-8")
+        self.assertIn("Trazabilidad de despachos", body)
+        self.assertIn("Reconstruir origen", body)
+        self.assertIn("TRACES NT", body)
 
 if __name__ == "__main__":
     unittest.main()

@@ -144,9 +144,9 @@ def test_shell_copy_preserves_utf8_content():
     # Public copy is Spanish-first for the initial Argentine launch.
     public_copy = (
         "Litoral Trace",
-        "Compliance Intelligence",
-        "Acceso clientes",
-        "Solicitar demo",
+        "Trazabilidad de origen",
+        "Acceso de clientes",
+        "Solicitar demostración",
     )
 
     for expected in public_copy:

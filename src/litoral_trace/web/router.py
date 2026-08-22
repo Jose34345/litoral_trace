@@ -1275,3 +1275,4 @@ async def logout_submit_view(
     clear_browser_security_cookies(response)
 
     return response
+

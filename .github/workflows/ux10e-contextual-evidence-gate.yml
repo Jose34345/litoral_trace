@@ -1,0 +1,115 @@
+name: UX10 Contextual Evidence Gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ux10e-evidence-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ux10e-contextual-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ENVIRONMENT: test
+      ENABLE_POSTGRES_TESTS: "0"
+      TEST_DATABASE_URL: sqlite:///litoral_trace_test.db
+      JWT_SECRET_KEY: ci-only-jwt-secret-key-1234567890
+      LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD: CiBootstrap-Password-1234567890!
+      PYTHONPATH: src
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: UX10-E cold-start route resolution
+        run: |
+          python - <<'PY'
+          import main
+          from litoral_trace.web.traceability_evidence import router as evidence_router
+
+          expected_declared = {
+              ("/evidence", ("GET",)),
+              ("/evidence/link", ("POST",)),
+              ("/evidence/upload-link", ("POST",)),
+              ("/evidence/{link_public_id}/unlink", ("POST",)),
+          }
+          declared = {
+              (route.path, tuple(sorted(route.methods or set())))
+              for route in evidence_router.routes
+          }
+          if declared != expected_declared:
+              raise SystemExit(
+                  f"UX10-E declared routes mismatch: expected={sorted(expected_declared)!r} actual={sorted(declared)!r}"
+              )
+
+          resolved = {
+              str(main.app.url_path_for("render_traceability_evidence")),
+              str(main.app.url_path_for("link_traceability_evidence")),
+              str(main.app.url_path_for("upload_and_link_traceability_evidence")),
+              str(
+                  main.app.url_path_for(
+                      "unlink_traceability_evidence",
+                      link_public_id="00000000-0000-0000-0000-000000000001",
+                  )
+              ),
+          }
+          expected_resolved = {
+              "/evidence",
+              "/evidence/link",
+              "/evidence/upload-link",
+              "/evidence/00000000-0000-0000-0000-000000000001/unlink",
+          }
+          if resolved != expected_resolved:
+              raise SystemExit(
+                  f"UX10-E cold-start URL mismatch: expected={sorted(expected_resolved)!r} actual={sorted(resolved)!r}"
+              )
+          PY
+
+      - name: UX10-E evidence acceptance
+        run: |
+          python -m pytest -q -rs \
+            tests/test_ux10e_traceability_evidence_unittest.py \
+            tests/test_ux10e_dossier_evidence_unittest.py \
+            tests/test_traceability_p1b_unittest.py \
+            --junitxml=ux10e-evidence.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("ux10e-evidence.xml").getroot()
+          attrs = root.attrib
+          skipped = int(attrs.get("skipped", 0))
+          failures = int(attrs.get("failures", 0))
+          errors = int(attrs.get("errors", 0))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  f"UX10-E fails closed: skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
+
+      - name: Alembic UX10-E head contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          migration = Path("alembic/versions/020_add_traceability_evidence_links.py").read_text(encoding="utf-8")
+          assert 'revision: str = "020_add_traceability_evidence_links"' in migration
+          assert 'down_revision: Union[str, Sequence[str], None] = "019_add_traceability_genealogy"' in migration
+          assert 'FOR SELECT' in migration and 'FOR INSERT' in migration and 'FOR UPDATE' in migration
+          assert 'GRANT SELECT, INSERT, UPDATE' in migration
+          assert 'GRANT DELETE' not in migration
+          PY

@@ -1,0 +1,195 @@
+name: UX10-G PostgreSQL Web Stabilization Gate
+
+on:
+  push:
+    branches:
+      - ux10-g-postgres-web-stabilization
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ux10g-postgres-web-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ux10g-postgres-runtime-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ux10g_owner_password_2026
+          POSTGRES_DB: litoral_trace_ux10g_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d litoral_trace_ux10g_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      ENVIRONMENT: development
+      ENABLE_POSTGRES_TESTS: "1"
+      JWT_SECRET_KEY: ux10g-ci-only-jwt-secret-key-2026
+      LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD: Ux10gCiBootstrapPassword2026
+      TEST_POSTGRES_MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:ux10g_owner_password_2026@127.0.0.1:5432/litoral_trace_ux10g_ci
+      MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:ux10g_owner_password_2026@127.0.0.1:5432/litoral_trace_ux10g_ci
+      TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:ux10g_runtime_password_2026@127.0.0.1:5432/litoral_trace_ux10g_ci
+      DATABASE_URL: postgresql+psycopg://litoral_trace_app:ux10g_runtime_password_2026@127.0.0.1:5432/litoral_trace_ux10g_ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest alembic
+
+      - name: Traceability mapper warning gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_ux10g_traceability_mapper_contract_unittest.py
+
+      - name: Provision runtime principal
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine
+
+          engine = create_engine(
+              os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          statements = [
+              """
+              CREATE ROLE litoral_trace_app
+                LOGIN
+                PASSWORD 'ux10g_runtime_password_2026'
+                NOSUPERUSER
+                NOCREATEDB
+                NOCREATEROLE
+                NOINHERIT
+                NOBYPASSRLS
+              """,
+              "GRANT CONNECT ON DATABASE litoral_trace_ux10g_ci TO litoral_trace_app",
+              "GRANT USAGE ON SCHEMA public TO litoral_trace_app",
+          ]
+          with engine.connect() as connection:
+              for statement in statements:
+                  connection.exec_driver_sql(statement)
+          engine.dispose()
+          PY
+
+      - name: Migrate to canonical head
+        run: python -m alembic upgrade head
+
+      - name: Provision reviewed core runtime grants
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine
+
+          engine = create_engine(
+              os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          core_tables = (
+              "organizations",
+              "users",
+              "user_sessions",
+              "lotes",
+              "satellite_ndvi_observations",
+              "api_keys",
+              "licenses",
+          )
+          with engine.connect() as connection:
+              for table_name in core_tables:
+                  connection.exec_driver_sql(
+                      "GRANT SELECT, INSERT, UPDATE, DELETE "
+                      f"ON TABLE public.{table_name} TO litoral_trace_app"
+                  )
+              connection.exec_driver_sql(
+                  "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public "
+                  "TO litoral_trace_app"
+              )
+          engine.dispose()
+          PY
+
+      - name: Verify canonical head
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m alembic current | tee alembic-current.txt
+          grep -F "020_add_traceability_evidence_links" alembic-current.txt
+
+      - name: Auth RLS login preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs \
+            tests/test_auth_tenant_rls_p18c_postgres_integration.py::test_login_succeeds_under_users_rls
+
+      - name: UX10-G expire-on-commit PostgreSQL regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs \
+            tests/test_ux10g_traceability_runtime_postgres_integration.py \
+            --junitxml=ux10g-postgres-runtime.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("ux10g-postgres-runtime.xml").getroot()
+          attrs = root.attrib
+          skipped = int(attrs.get("skipped", 0))
+          failures = int(attrs.get("failures", 0))
+          errors = int(attrs.get("errors", 0))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  "UX10-G runtime gate fails closed: "
+                  f"skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
+
+      - name: UX10-G real HTTP operations acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs \
+            tests/test_ux10g_operations_http_postgres_e2e.py \
+            --junitxml=ux10g-http-operations.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("ux10g-http-operations.xml").getroot()
+          attrs = root.attrib
+          skipped = int(attrs.get("skipped", 0))
+          failures = int(attrs.get("failures", 0))
+          errors = int(attrs.get("errors", 0))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  "UX10-G HTTP gate fails closed: "
+                  f"skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY

@@ -125,7 +125,9 @@ class TestSettingsPhase2(unittest.TestCase):
         )
         res = asyncio.run(render_settings_view(req))
         self.assertEqual(res.status_code, 200)
-        self.assertIn("Control de Licencia", res.body.decode('utf-8'))
+        body = res.body.decode("utf-8")
+        self.assertIn("Configuración de la organización", body)
+        self.assertIn("Plan, límites y consumo", body)
 
 if __name__ == "__main__":
     unittest.main()
