@@ -1,0 +1,37 @@
+name: P1-A Build Tracked CSS
+
+on:
+  push:
+    branches:
+      - p1a-integration-core-erp
+    paths:
+      - ".github/workflows/p1a-build-css.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: p1a-integration-core-erp
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Commit tracked asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/litoral_trace/static/dist/app.css
+          git diff --cached --quiet && exit 0
+          git commit -m "build(p1a): refresh tracked frontend assets"
+          git push origin HEAD:p1a-integration-core-erp
