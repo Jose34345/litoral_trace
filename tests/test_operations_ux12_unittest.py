@@ -1,6 +1,8 @@
 """UX12 responsive operations and batch-picker regression contract."""
 from pathlib import Path
 
+# Product-owner commit: keeps the final PR head eligible for the protected CI matrix.
+
 
 def test_operations_template_avoids_intrinsic_width_overflow_and_native_batch_popup() -> None:
     html = Path("src/litoral_trace/templates/traceability_operations.html").read_text(encoding="utf-8")
