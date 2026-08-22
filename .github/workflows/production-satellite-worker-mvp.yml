@@ -6,8 +6,8 @@ name: Production Satellite Worker MVP
 # Background Worker and disable this schedule.
 on:
   schedule:
-    # Every 15 minutes, deliberately offset from :00 to reduce scheduler peaks.
-    - cron: "7,22,37,52 * * * *"
+    # Temporary 5-minute activation cadence; revert to 15 minutes after first successful job.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
   push:
     branches:
@@ -67,6 +67,14 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
             echo "Production satellite worker secret contract is present."
           fi
+
+      - name: Report missing worker secret contract
+        if: steps.config.outputs.configured != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment 48 --repo "$GITHUB_REPOSITORY" --body "### Satellite worker activation probe — secrets missing\n\nA Production Satellite Worker MVP run executed, but one or more required repository secrets were unavailable to the workflow. No production job was claimed and no secret value was logged. Required names: LT_PROD_DATABASE_URL, LT_PROD_WORKER_DATABASE_URL, LT_GCP_SERVICE_ACCOUNT. Evaluated at $(date -u +%Y-%m-%dT%H:%M:%SZ)."
 
       - name: Ensure PostgreSQL client is available
         if: steps.config.outputs.configured == 'true'
