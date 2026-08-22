@@ -1,5 +1,6 @@
 name: Dispatch UX12 Operations Polish
 
+# Explicit one-shot trigger after the dispatcher was made valid on main.
 on:
   push:
     branches:
