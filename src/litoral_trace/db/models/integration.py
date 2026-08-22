@@ -219,6 +219,54 @@ class ExternalEntity(Base, TimestampMixin):
     )
 
 
+class ExternalEntityVersion(Base):
+    """Immutable payload snapshot for one distinct external-entity version."""
+
+    __tablename__ = "external_entity_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    public_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), default=uuid4, nullable=False)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    external_entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    sync_run_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    normalized_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_external_entity_versions_id_org"),
+        UniqueConstraint("public_id", name="uq_external_entity_versions_public_id"),
+        UniqueConstraint(
+            "external_entity_id",
+            "payload_hash",
+            name="uq_external_entity_versions_entity_hash",
+        ),
+        ForeignKeyConstraint(
+            ["external_entity_id", "organization_id"],
+            ["external_entities.id", "external_entities.organization_id"],
+            name="fk_external_entity_versions_entity_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["sync_run_id", "organization_id"],
+            ["integration_sync_runs.id", "integration_sync_runs.organization_id"],
+            name="fk_external_entity_versions_sync_run_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("length(payload_hash) = 64", name="ck_external_entity_versions_payload_hash"),
+        Index(
+            "ix_external_entity_versions_tenant_entity_created",
+            "organization_id",
+            "external_entity_id",
+            "created_at",
+        ),
+    )
+
+
 class ExternalReference(Base, TimestampMixin):
     """Explicit reconciliation link from an external entity to an LT subject."""
 
@@ -313,6 +361,7 @@ class IntegrationEvent(Base):
     connection_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sync_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     external_entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actor_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -339,6 +388,12 @@ class IntegrationEvent(Base):
             ["external_entities.id", "external_entities.organization_id"],
             name="fk_integration_events_entity_tenant",
             ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["actor_user_id"],
+            ["users.id"],
+            name="fk_integration_events_actor_user_id",
+            ondelete="SET NULL",
         ),
         Index(
             "ix_integration_events_tenant_created",
