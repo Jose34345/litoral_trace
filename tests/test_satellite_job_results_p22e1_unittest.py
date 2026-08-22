@@ -403,6 +403,60 @@ def test_canonical_ndvi_persistence_remains_compatible_with_snapshot_persistence
     assert immutable_row.result_payload["observations"][0]["aoi_cloud_percentage"] == 1.0
 
 
+def test_canonical_ndvi_persistence_upserts_duplicate_same_day_scene_in_memory():
+    fixture = _create_result_fixture()
+    observation_date = date(2026, 8, 1)
+    first = NdviObservationRecord(
+        observation_date=observation_date,
+        ndvi_mean=0.61, ndvi_min=0.55, ndvi_max=0.68, ndvi_std=0.03,
+        scene_cloud_percentage=5.0, valid_pixel_count=10,
+        valid_pixel_percentage=98.0, satellite="Sentinel-2",
+        collection="COPERNICUS/S2_SR_HARMONIZED",
+        geometry_hash=fixture.geometry_hash,
+        algorithm_version=fixture.algorithm_version,
+        processing_date=datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    second = NdviObservationRecord(
+        observation_date=observation_date,
+        ndvi_mean=0.72, ndvi_min=0.60, ndvi_max=0.81, ndvi_std=0.04,
+        scene_cloud_percentage=2.0, valid_pixel_count=12,
+        valid_pixel_percentage=99.0, satellite="Sentinel-2",
+        collection="COPERNICUS/S2_SR_HARMONIZED",
+        geometry_hash=fixture.geometry_hash,
+        algorithm_version=fixture.algorithm_version,
+        processing_date=datetime(2026, 8, 1, 12, 5, tzinfo=timezone.utc),
+    )
+    result = NormalizedNdviExecutionResult(
+        geometry_hash=fixture.geometry_hash,
+        algorithm_version=fixture.algorithm_version,
+        observations=(first, second),
+    )
+
+    session = get_db_session()
+    persisted = persist_ndvi_execution_result(
+        session,
+        organization_id=fixture.organization_id,
+        lote_id=fixture.lote_id,
+        satellite_job_id=fixture.job_id,
+        result=result,
+    )
+    session.commit()
+    rows = session.execute(
+        select(SatelliteNdviObservation).where(
+            SatelliteNdviObservation.satellite_job_id == fixture.job_id,
+            SatelliteNdviObservation.observation_date == observation_date,
+            SatelliteNdviObservation.geometry_hash == fixture.geometry_hash,
+        )
+    ).scalars().all()
+    session.close()
+
+    assert persisted.observation_count == 2
+    assert len(rows) == 1
+    assert rows[0].ndvi_mean == pytest.approx(0.72)
+    assert rows[0].cloud_percentage == pytest.approx(2.0)
+    assert rows[0].valid_pixel_percentage == pytest.approx(99.0)
+
+
 def test_sqlite_metadata_create_all_supports_satellite_job_results():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(bind=engine)
