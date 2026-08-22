@@ -1,0 +1,59 @@
+name: Production GEE Permission Probe
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/production-gee-permission-probe.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GCP_PROJECT_ID: ${{ secrets.LT_GCP_PROJECT_ID || 'litoral-trace-engine' }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.LT_GCP_SERVICE_ACCOUNT }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Earth Engine client
+        run: python -m pip install --quiet earthengine-api
+      - name: Initialize Earth Engine without touching production queue
+        id: gee
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, sys
+          import ee
+
+          try:
+              data = json.loads(os.environ['GCP_SERVICE_ACCOUNT'])
+              creds = ee.ServiceAccountCredentials(
+                  data['client_email'],
+                  key_data=data['private_key'],
+              )
+              ee.Initialize(creds, project=os.environ['GCP_PROJECT_ID'])
+              print('GEE_INIT_OK')
+          except Exception as exc:
+              print(f'GEE_INIT_FAILED {type(exc).__name__}: {str(exc)[:500]}', file=sys.stderr)
+              raise SystemExit(1)
+          PY
+      - name: Report sanitized verdict
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.gee.outcome }}
+        shell: bash
+        run: |
+          if [ "$OUTCOME" = "success" ]; then verdict="PASS"; else verdict="NO-GO"; fi
+          gh issue comment 48 --repo "$GITHUB_REPOSITORY" --body "### Production GEE permission probe — ${verdict}\n\n- Earth Engine service-account initialization: ${OUTCOME}\n- project: litoral-trace-engine\n- production satellite queue was not touched\n- no secret values were logged intentionally\n- workflow run: ${GITHUB_RUN_ID}\n- evaluated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - name: Enforce fail-closed probe
+        if: steps.gee.outcome != 'success'
+        run: exit 1
