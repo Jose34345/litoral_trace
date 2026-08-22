@@ -1,13 +1,12 @@
 name: Production Satellite Worker MVP
 
-# Activation marker: production secrets loaded 2026-08-22.
-# Temporary zero-fixed-cost worker topology until the first paying customer.
-# At that commercial trigger, migrate this workload to a persistent Render
-# Background Worker and disable this schedule.
+# Zero-fixed-cost worker topology used only before the first paying customer.
+# Commercial trigger: issue #67. Migrate to a persistent Render Background
+# Worker + Neon restore history >=7d before expanding paid production usage.
 on:
   schedule:
-    # Temporary 5-minute activation cadence; revert to 15 minutes after first successful job.
-    - cron: "*/5 * * * *"
+    # Every 15 minutes, offset from :00 to reduce scheduler peak contention.
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
   push:
     branches:
@@ -35,8 +34,6 @@ jobs:
       PYTHONPATH: src
       DATABASE_URL: ${{ secrets.LT_PROD_DATABASE_URL }}
       WORKER_DATABASE_URL: ${{ secrets.LT_PROD_WORKER_DATABASE_URL }}
-      # Code-level production default; add LT_GCP_PROJECT_ID only if the GEE
-      # project is intentionally moved away from litoral-trace-engine.
       GCP_PROJECT_ID: ${{ secrets.LT_GCP_PROJECT_ID || 'litoral-trace-engine' }}
       GCP_SERVICE_ACCOUNT: ${{ secrets.LT_GCP_SERVICE_ACCOUNT }}
       SATELLITE_WORKER_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
@@ -44,12 +41,11 @@ jobs:
       SATELLITE_WORKER_STALE_RECOVERY_INTERVAL_SECONDS: "30"
       SATELLITE_WORKER_RETRY_BASE_SECONDS: "30"
       SATELLITE_WORKER_RETRY_MAX_SECONDS: "900"
-      # An ephemeral --once runner does not expose a long-lived metrics port.
       SATELLITE_METRICS_ENABLED: "0"
       SATELLITE_QUEUE_METRICS_REFRESH_SECONDS: "30"
 
     steps:
-      - name: Detect whether production worker secrets are configured
+      - name: Verify production secret contract
         id: config
         shell: bash
         run: |
@@ -60,22 +56,13 @@ jobs:
               missing=1
             fi
           done
-
           if [ "$missing" -eq 1 ]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "Production satellite worker secrets are not configured yet; skipping safely."
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-            echo "Production satellite worker secret contract is present."
+            echo "Required production worker secrets are unavailable."
+            exit 1
           fi
-
-      - name: Report missing worker secret contract
-        if: steps.config.outputs.configured != 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh issue comment 48 --repo "$GITHUB_REPOSITORY" --body "### Satellite worker activation probe — secrets missing\n\nA Production Satellite Worker MVP run executed, but one or more required repository secrets were unavailable to the workflow. No production job was claimed and no secret value was logged. Required names: LT_PROD_DATABASE_URL, LT_PROD_WORKER_DATABASE_URL, LT_GCP_SERVICE_ACCOUNT. Evaluated at $(date -u +%Y-%m-%dT%H:%M:%SZ)."
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+          echo "Production worker secret contract is present."
 
       - name: Ensure PostgreSQL client is available
         if: steps.config.outputs.configured == 'true'
@@ -87,7 +74,7 @@ jobs:
             sudo apt-get install -y -qq postgresql-client
           fi
 
-      - name: Inspect queue using worker capability only
+      - name: Inspect durable queue using worker capability only
         if: steps.config.outputs.configured == 'true'
         id: queue
         shell: bash
@@ -95,25 +82,20 @@ jobs:
           set -euo pipefail
           worker_psql_url="$WORKER_DATABASE_URL"
           worker_psql_url="${worker_psql_url/postgresql+psycopg:\/\//postgresql:\/\/}"
-
           snapshot="$(psql "$worker_psql_url" -X -qAt -F '|' -v ON_ERROR_STOP=1 -c \
             "SELECT queued_ready_count::int, running_stale_count::int, queued_delayed_count::int FROM public.worker_get_satellite_queue_metrics();")"
-
           IFS='|' read -r queued_ready running_stale queued_delayed <<< "$snapshot"
           queued_ready="${queued_ready:-0}"
           running_stale="${running_stale:-0}"
           queued_delayed="${queued_delayed:-0}"
-
           echo "queued_ready=$queued_ready" >> "$GITHUB_OUTPUT"
           echo "running_stale=$running_stale" >> "$GITHUB_OUTPUT"
           echo "queued_delayed=$queued_delayed" >> "$GITHUB_OUTPUT"
-
           if [ "$queued_ready" -gt 0 ] || [ "$running_stale" -gt 0 ]; then
             echo "needs_work=true" >> "$GITHUB_OUTPUT"
-            echo "Satellite queue requires one worker execution."
           else
             echo "needs_work=false" >> "$GITHUB_OUTPUT"
-            echo "No ready or stale satellite job requires execution."
+            echo "No ready or stale production satellite job requires execution."
           fi
 
       - name: Checkout deployed application line
@@ -133,17 +115,30 @@ jobs:
 
       - name: Install worker runtime dependencies
         if: steps.queue.outputs.needs_work == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install --disable-pip-version-check --quiet -r requirements.txt
+        run: python -m pip install --disable-pip-version-check --quiet -r requirements.txt
 
-      - name: Fail-closed worker readiness check
+      - name: Fail-closed Google Earth Engine preflight
         if: steps.queue.outputs.needs_work == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          python -m litoral_trace.workers.satellite_worker --check
+          python - <<'PY'
+          import json
+          import os
+          import ee
+
+          payload = json.loads(os.environ["GCP_SERVICE_ACCOUNT"])
+          credentials = ee.ServiceAccountCredentials(
+              payload["client_email"],
+              key_data=payload["private_key"],
+          )
+          ee.Initialize(credentials, project=os.environ["GCP_PROJECT_ID"])
+          print("GEE preflight OK")
+          PY
+
+      - name: Fail-closed worker readiness check
+        if: steps.queue.outputs.needs_work == 'true'
+        run: python -m litoral_trace.workers.satellite_worker --check
 
       - name: Claim and execute at most one durable job
         if: steps.queue.outputs.needs_work == 'true'
@@ -151,42 +146,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Bound one GEE execution so a provider stall cannot consume the runner indefinitely.
           timeout --signal=TERM --kill-after=60s 22m \
             python -m litoral_trace.workers.satellite_worker --once
 
-      - name: Capture sanitized queue state after execution
+      - name: Capture sanitized queue state
         if: always() && steps.config.outputs.configured == 'true'
-        id: after
         shell: bash
         run: |
           set -euo pipefail
           worker_psql_url="$WORKER_DATABASE_URL"
           worker_psql_url="${worker_psql_url/postgresql+psycopg:\/\//postgresql:\/\/}"
-
           snapshot="$(psql "$worker_psql_url" -X -qAt -F '|' -v ON_ERROR_STOP=1 -c \
             "SELECT queued_ready_count::int, queued_delayed_count::int, running_count::int, running_stale_count::int FROM public.worker_get_satellite_queue_metrics();")"
-
           IFS='|' read -r queued_ready queued_delayed running running_stale <<< "$snapshot"
-          echo "queued_ready=${queued_ready:-unknown}" >> "$GITHUB_OUTPUT"
-          echo "queued_delayed=${queued_delayed:-unknown}" >> "$GITHUB_OUTPUT"
-          echo "running=${running:-unknown}" >> "$GITHUB_OUTPUT"
-          echo "running_stale=${running_stale:-unknown}" >> "$GITHUB_OUTPUT"
-
           {
             echo "### Production satellite worker MVP"
             echo ""
-            echo "- configured: ${{ steps.config.outputs.configured }}"
             echo "- execution requested: ${{ steps.queue.outputs.needs_work || 'false' }}"
-            echo "- queued ready after run: ${queued_ready:-unknown}"
-            echo "- queued delayed after run: ${queued_delayed:-unknown}"
-            echo "- running after run: ${running:-unknown}"
-            echo "- running stale after run: ${running_stale:-unknown}"
+            echo "- queued ready: ${queued_ready:-unknown}"
+            echo "- queued delayed: ${queued_delayed:-unknown}"
+            echo "- running: ${running:-unknown}"
+            echo "- running stale: ${running_stale:-unknown}"
             echo "- run: $GITHUB_RUN_ID / attempt $GITHUB_RUN_ATTEMPT"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Open or update worker incident on failure
-        if: failure() && steps.config.outputs.configured == 'true'
+        if: failure()
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -194,8 +179,7 @@ jobs:
           set -euo pipefail
           title="[ops] Production satellite worker MVP failure"
           existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "${title} in:title" --json number,title --jq '.[] | select(.title == "[ops] Production satellite worker MVP failure") | .number' | head -n1)"
-          body="Scheduled production satellite worker failed on GitHub Actions run ${GITHUB_RUN_ID} attempt ${GITHUB_RUN_ATTEMPT}. No credentials are included in this incident. Review the Actions run and durable queue state. Temporary topology remains GitHub Actions until the first paying customer."
-
+          body="Production satellite worker failed on GitHub Actions run ${GITHUB_RUN_ID} attempt ${GITHUB_RUN_ATTEMPT}. No credentials are included. Review the Actions run and durable queue state."
           if [ -z "$existing" ]; then
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
           else
@@ -203,7 +187,7 @@ jobs:
           fi
 
       - name: Close worker incident after recovery
-        if: success() && steps.config.outputs.configured == 'true' && steps.queue.outputs.needs_work == 'true'
+        if: success() && steps.queue.outputs.needs_work == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -212,6 +196,6 @@ jobs:
           title="[ops] Production satellite worker MVP failure"
           existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "${title} in:title" --json number,title --jq '.[] | select(.title == "[ops] Production satellite worker MVP failure") | .number' | head -n1)"
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "Worker recovered successfully on Actions run ${GITHUB_RUN_ID}. Closing the temporary incident."
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "Worker recovered successfully on Actions run ${GITHUB_RUN_ID}. Closing incident."
             gh issue close "$existing" --repo "$GITHUB_REPOSITORY" --reason completed
           fi
