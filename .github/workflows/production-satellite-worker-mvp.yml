@@ -28,7 +28,9 @@ jobs:
       WORKERS_ENABLED: "1"
       DATABASE_URL: ${{ secrets.LT_PROD_DATABASE_URL }}
       WORKER_DATABASE_URL: ${{ secrets.LT_PROD_WORKER_DATABASE_URL }}
-      GCP_PROJECT_ID: ${{ secrets.LT_GCP_PROJECT_ID }}
+      # Code-level production default; add LT_GCP_PROJECT_ID only if the GEE
+      # project is intentionally moved away from litoral-trace-engine.
+      GCP_PROJECT_ID: ${{ secrets.LT_GCP_PROJECT_ID || 'litoral-trace-engine' }}
       GCP_SERVICE_ACCOUNT: ${{ secrets.LT_GCP_SERVICE_ACCOUNT }}
       SATELLITE_WORKER_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
       SATELLITE_WORKER_HEARTBEAT_SECONDS: "15"
@@ -46,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for name in DATABASE_URL WORKER_DATABASE_URL GCP_PROJECT_ID GCP_SERVICE_ACCOUNT; do
+          for name in DATABASE_URL WORKER_DATABASE_URL GCP_SERVICE_ACCOUNT; do
             if [ -z "${!name:-}" ]; then
               missing=1
             fi
