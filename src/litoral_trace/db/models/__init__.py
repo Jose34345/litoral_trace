@@ -15,6 +15,7 @@ from litoral_trace.db.models.batch_evidence_link import BatchEvidenceLink
 from litoral_trace.db.models.traceability_evidence_link import TraceabilityEvidenceLink
 from litoral_trace.db.models.integration import (
     ExternalEntity,
+    ExternalEntityVersion,
     ExternalReference,
     IntegrationConnection,
     IntegrationDocument,
@@ -54,6 +55,7 @@ __all__ = [
     "IntegrationConnection",
     "IntegrationSyncRun",
     "ExternalEntity",
+    "ExternalEntityVersion",
     "ExternalReference",
     "IntegrationDocument",
     "IntegrationEvent",
