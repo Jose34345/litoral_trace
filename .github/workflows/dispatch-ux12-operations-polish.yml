@@ -1,0 +1,353 @@
+name: Dispatch UX12 Operations Polish
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/dispatch-ux12-operations-polish.yml"
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux12-operations-responsive-picker
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Apply responsive operations UX patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          template = Path('src/litoral_trace/templates/traceability_operations.html')
+          text = template.read_text(encoding='utf-8')
+
+          replacements = [
+              ('<section class="space-y-6" aria-labelledby="operations-title">', '<section class="min-w-0 space-y-6" aria-labelledby="operations-title">'),
+              ('<div class="grid gap-6 xl:grid-cols-3">', '<div class="grid min-w-0 gap-6 2xl:grid-cols-3">'),
+              ('<section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2" aria-labelledby="process-title">', '<section class="min-w-0 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm 2xl:col-span-2" aria-labelledby="process-title">'),
+              ('<div class="grid gap-2 sm:grid-cols-[1fr_10rem]"><select name="input_batch" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">', '<div class="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_9rem]"><select name="input_batch" data-batch-picker data-batch-picker-placeholder="{% if row == 0 %}Seleccionar lote{% else %}Entrada adicional{% endif %}" class="min-w-0 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">'),
+              ('<div class="grid gap-2 lg:grid-cols-[1fr_1.2fr_11rem_7rem_9rem]">', '<div class="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_9rem_6rem_8rem]">'),
+              ('<div class="grid gap-3 md:grid-cols-4">', '<div class="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">'),
+              ('<div class="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">', '<div data-dynamic-batch-rows="shipment" class="mt-3 grid min-w-0 gap-3 md:grid-cols-2 2xl:grid-cols-3">'),
+              ('<div class="grid grid-cols-[1fr_9rem] gap-2"><select name="shipment_batch" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">', '<div data-batch-row class="grid min-w-0 gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-[minmax(0,1fr)_8rem]"><select name="shipment_batch" data-batch-picker data-batch-picker-placeholder="{% if row == 0 %}Seleccionar lote{% else %}Lote adicional{% endif %}" class="min-w-0 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">'),
+              ('<input name="shipment_quantity" type="number" min="0.000001" step="0.000001" placeholder="Cantidad" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">', '<input name="shipment_quantity" type="number" min="0.000001" step="0.000001" placeholder="Cantidad" class="min-w-0 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">'),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'Expected exactly one template match for {old[:80]!r}; found {count}')
+              text = text.replace(old, new)
+
+          heading = '<div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs font-bold uppercase tracking-wide text-slate-600">Lotes del despacho</p>'
+          replacement = '<div class="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4"><div class="flex flex-wrap items-center justify-between gap-3"><div><p class="text-xs font-bold uppercase tracking-wide text-slate-600">Lotes del despacho</p><p class="mt-1 text-xs text-slate-500">Buscá por código o producto y agregá sólo los lotes que realmente forman parte del envío.</p></div><button type="button" data-add-batch-row="shipment" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"><i class="fa-solid fa-plus" aria-hidden="true"></i>Agregar lote</button></div>'
+          if text.count(heading) != 1:
+              raise SystemExit('Shipment lots heading anchor mismatch')
+          text = text.replace(heading, replacement)
+          template.write_text(text, encoding='utf-8')
+
+          app = Path('src/litoral_trace/static/src/js/app.js')
+          js = app.read_text(encoding='utf-8')
+          anchor = 'function boot() {\n'
+          if js.count(anchor) != 1:
+              raise SystemExit('app.js boot anchor mismatch')
+
+          enhancement = r'''
+function batchOptionParts(option) {
+  const raw = String(option.textContent || "").trim();
+  const parts = raw.split(" · ").map((part) => part.trim()).filter(Boolean);
+  return {
+    label: parts[0] || raw,
+    meta: parts.slice(1).join(" · "),
+    search: raw.toLocaleLowerCase("es"),
+  };
+}
+
+function enhanceBatchPicker(select) {
+  if (select.dataset.batchPickerEnhanced === "true") {
+    return;
+  }
+  select.dataset.batchPickerEnhanced = "true";
+
+  const shell = document.createElement("div");
+  shell.className = "relative min-w-0";
+  select.parentNode.insertBefore(shell, select);
+  shell.appendChild(select);
+
+  select.classList.add("sr-only");
+  select.tabIndex = -1;
+  select.setAttribute("aria-hidden", "true");
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm shadow-sm transition hover:border-slate-400 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-100";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+
+  const copy = document.createElement("span");
+  copy.className = "min-w-0 flex-1";
+  const label = document.createElement("span");
+  label.className = "block truncate font-semibold text-slate-800";
+  const meta = document.createElement("span");
+  meta.className = "mt-0.5 block truncate text-[11px] font-normal text-slate-500";
+  copy.append(label, meta);
+
+  const chevron = document.createElement("i");
+  chevron.className = "fa-solid fa-chevron-down shrink-0 text-xs text-slate-400";
+  chevron.setAttribute("aria-hidden", "true");
+  trigger.append(copy, chevron);
+
+  const menu = document.createElement("div");
+  menu.hidden = true;
+  menu.className = "absolute left-0 right-0 z-50 mt-2 max-w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/15";
+
+  const searchWrap = document.createElement("div");
+  searchWrap.className = "border-b border-slate-100 p-2";
+  const search = document.createElement("input");
+  search.type = "search";
+  search.placeholder = "Buscar lote o producto…";
+  search.className = "w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-100";
+  searchWrap.appendChild(search);
+
+  const list = document.createElement("div");
+  list.className = "max-h-64 overflow-y-auto overscroll-contain p-1";
+  list.setAttribute("role", "listbox");
+  const empty = document.createElement("p");
+  empty.hidden = true;
+  empty.className = "px-3 py-4 text-center text-xs text-slate-500";
+  empty.textContent = "No hay lotes que coincidan con la búsqueda.";
+
+  const optionButtons = [];
+  Array.from(select.options).forEach((option) => {
+    if (!option.value) {
+      return;
+    }
+    const parts = batchOptionParts(option);
+    const item = document.createElement("button");
+    item.type = "button";
+    item.dataset.value = option.value;
+    item.dataset.search = parts.search;
+    item.disabled = option.disabled;
+    item.className = "flex w-full min-w-0 flex-col rounded-lg px-3 py-2.5 text-left transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40";
+    item.setAttribute("role", "option");
+
+    const title = document.createElement("span");
+    title.className = "block w-full truncate text-sm font-semibold text-slate-900";
+    title.textContent = parts.label;
+    const detail = document.createElement("span");
+    detail.className = "mt-0.5 block w-full truncate text-[11px] text-slate-500";
+    detail.textContent = parts.meta || "Lote disponible";
+    item.append(title, detail);
+
+    item.addEventListener("click", () => {
+      select.value = option.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      label.textContent = parts.label;
+      meta.textContent = parts.meta || "Lote seleccionado";
+      menu.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      trigger.focus({ preventScroll: true });
+    });
+    optionButtons.push(item);
+    list.appendChild(item);
+  });
+  list.appendChild(empty);
+
+  const placeholder = select.dataset.batchPickerPlaceholder || "Seleccionar lote";
+  const syncSelection = () => {
+    const selected = select.options[select.selectedIndex];
+    if (selected && selected.value) {
+      const parts = batchOptionParts(selected);
+      label.textContent = parts.label;
+      meta.textContent = parts.meta || "Lote seleccionado";
+    } else {
+      label.textContent = placeholder;
+      meta.textContent = "Buscar por código o producto";
+    }
+  };
+
+  const close = () => {
+    menu.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+  };
+  const open = () => {
+    menu.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+    search.value = "";
+    optionButtons.forEach((item) => { item.hidden = false; });
+    empty.hidden = optionButtons.length !== 0;
+    window.requestAnimationFrame(() => search.focus({ preventScroll: true }));
+  };
+
+  trigger.addEventListener("click", () => {
+    if (menu.hidden) {
+      document.querySelectorAll("[data-batch-picker-menu-open='true']").forEach((other) => {
+        if (other !== shell) {
+          other.dispatchEvent(new CustomEvent("batchpicker:close"));
+        }
+      });
+      shell.dataset.batchPickerMenuOpen = "true";
+      open();
+    } else {
+      shell.dataset.batchPickerMenuOpen = "false";
+      close();
+    }
+  });
+  shell.addEventListener("batchpicker:close", () => {
+    shell.dataset.batchPickerMenuOpen = "false";
+    close();
+  });
+  search.addEventListener("input", () => {
+    const query = search.value.trim().toLocaleLowerCase("es");
+    let visible = 0;
+    optionButtons.forEach((item) => {
+      const matches = !query || item.dataset.search.includes(query);
+      item.hidden = !matches;
+      if (matches) visible += 1;
+    });
+    empty.hidden = visible !== 0;
+  });
+  select.addEventListener("change", syncSelection);
+  document.addEventListener("click", (event) => {
+    if (!shell.contains(event.target)) {
+      shell.dataset.batchPickerMenuOpen = "false";
+      close();
+    }
+  });
+  shell.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !menu.hidden) {
+      event.preventDefault();
+      shell.dataset.batchPickerMenuOpen = "false";
+      close();
+      trigger.focus({ preventScroll: true });
+    }
+  });
+
+  menu.append(searchWrap, list);
+  shell.append(trigger, menu);
+  syncSelection();
+}
+
+function installBatchPickers() {
+  document.querySelectorAll("select[data-batch-picker]").forEach(enhanceBatchPicker);
+}
+
+function resetBatchRow(row) {
+  const select = row.querySelector("select[name='shipment_batch']");
+  const quantity = row.querySelector("input[name='shipment_quantity']");
+  if (select) {
+    select.value = "";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  if (quantity) {
+    quantity.value = "";
+  }
+}
+
+function installDynamicBatchRows() {
+  document.querySelectorAll("[data-dynamic-batch-rows]").forEach((container) => {
+    const key = container.dataset.dynamicBatchRows;
+    const rows = Array.from(container.querySelectorAll("[data-batch-row]"));
+    if (!key || rows.length < 2) {
+      return;
+    }
+
+    rows.forEach((row, index) => {
+      if (index === 0) {
+        row.hidden = false;
+        return;
+      }
+      const select = row.querySelector("select[name='shipment_batch']");
+      row.hidden = !(select && select.value);
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 transition hover:text-rose-700 sm:col-span-2";
+      remove.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>Quitar lote';
+      remove.addEventListener("click", () => {
+        resetBatchRow(row);
+        row.hidden = true;
+        const add = document.querySelector(`[data-add-batch-row="${key}"]`);
+        if (add) add.disabled = false;
+      });
+      row.appendChild(remove);
+    });
+
+    const add = document.querySelector(`[data-add-batch-row="${key}"]`);
+    if (!add) {
+      return;
+    }
+    add.addEventListener("click", () => {
+      const next = rows.find((row, index) => index > 0 && row.hidden);
+      if (!next) {
+        add.disabled = true;
+        return;
+      }
+      next.hidden = false;
+      const trigger = next.querySelector("button[aria-haspopup='listbox']");
+      if (trigger) trigger.focus({ preventScroll: true });
+      if (!rows.some((row, index) => index > 0 && row.hidden)) {
+        add.disabled = true;
+      }
+    });
+  });
+}
+
+'''
+          js = js.replace(anchor, enhancement + anchor)
+          js = js.replace('  installDisclosureMenus();\n', '  installDisclosureMenus();\n  installBatchPickers();\n  installDynamicBatchRows();\n')
+          app.write_text(js, encoding='utf-8')
+
+          regression = Path('tests/test_operations_ux12_unittest.py')
+          regression.write_text('''"""UX12 responsive operations and batch-picker regression contract."""\nfrom pathlib import Path\n\n\ndef test_operations_template_avoids_intrinsic_width_overflow_and_native_batch_popup() -> None:\n    html = Path("src/litoral_trace/templates/traceability_operations.html").read_text(encoding="utf-8")\n    assert "data-dynamic-batch-rows=\\\"shipment\\\"" in html\n    assert "data-add-batch-row=\\\"shipment\\\"" in html\n    assert html.count("data-batch-picker") >= 2\n    assert "sm:grid-cols-[minmax(0,1fr)_9rem]" in html\n    assert "2xl:grid-cols-3" in html\n    assert "md:grid-cols-2 xl:grid-cols-3" not in html\n    assert "grid-cols-[1fr_9rem]" not in html\n    assert "min-w-0" in html\n\n\ndef test_app_js_enhances_real_selects_and_keeps_progressive_form_contract() -> None:\n    js = Path("src/litoral_trace/static/src/js/app.js").read_text(encoding="utf-8")\n    for marker in (\n        "function enhanceBatchPicker(select)",\n        "function installBatchPickers()",\n        "function installDynamicBatchRows()",\n        "select.dispatchEvent(new Event(\\\"change\\\", { bubbles: true }))",\n        "Buscar lote o producto…",\n    ):\n        assert marker in js\n    assert "select.classList.add(\\\"sr-only\\\")" in js\n    assert "select[name='shipment_batch']" in js\n''', encoding='utf-8')
+          PY
+
+      - name: Build tracked frontend assets
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run targeted regression
+        run: |
+          python -m pip install --quiet -r requirements.txt pytest
+          PYTHONPATH=src ENVIRONMENT=test TEST_DATABASE_URL=sqlite:///litoral_trace_test.db JWT_SECRET_KEY=ci-only-jwt-secret-key-1234567890 \
+            python -m pytest -q tests/test_operations_ux12_unittest.py tests/test_ux10d_traceability_operations_unittest.py
+
+      - name: Commit tested UX12 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/litoral_trace/templates/traceability_operations.html \
+                  src/litoral_trace/static/src/js/app.js \
+                  src/litoral_trace/static/dist/app.css \
+                  tests/test_operations_ux12_unittest.py
+          if git diff --cached --quiet; then
+            echo "No UX12 changes to commit."
+            exit 1
+          fi
+          git commit -m "feat: polish responsive operations batch selection"
+          git push origin HEAD:ux12-operations-responsive-picker
+
+      - name: Report dispatcher outcome
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment 48 --repo Jose34345/litoral_trace --body "### UX12 operations polish dispatcher — ${{ job.status }}\n\nResponsive operations layout + enhanced batch picker patcher. No ledger/database changes."
