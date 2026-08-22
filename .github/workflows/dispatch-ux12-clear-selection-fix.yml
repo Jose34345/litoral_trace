@@ -1,5 +1,6 @@
 name: Dispatch UX12 Clear Selection Fix
 
+# Explicit one-shot trigger after workflow registration on main.
 on:
   push:
     branches:
