@@ -18,6 +18,12 @@ from litoral_trace.db.models import (
     ApiKey,
     AuditLog,
     BatchImport,
+    ExternalEntity,
+    ExternalReference,
+    IntegrationConnection,
+    IntegrationDocument,
+    IntegrationEvent,
+    IntegrationSyncRun,
     License,
     Lote,
     SatelliteJob,
@@ -43,6 +49,12 @@ TenantModel = type[
     | TraceabilityBatch
     | TraceabilityEvent
     | Shipment
+    | IntegrationConnection
+    | IntegrationSyncRun
+    | ExternalEntity
+    | ExternalReference
+    | IntegrationDocument
+    | IntegrationEvent
 ]
 TenantEntity = (
     Lote
@@ -56,6 +68,12 @@ TenantEntity = (
     | TraceabilityBatch
     | TraceabilityEvent
     | Shipment
+    | IntegrationConnection
+    | IntegrationSyncRun
+    | ExternalEntity
+    | ExternalReference
+    | IntegrationDocument
+    | IntegrationEvent
 )
 
 
