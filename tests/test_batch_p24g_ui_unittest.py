@@ -572,10 +572,11 @@ def test_navigation_keeps_existing_entries_and_superadmin_gets_imports():
 
     assert [(item.key, item.href) for item in superadmin_nav] == [
         ("dashboard", "/dashboard"),
+        ("operations", "/operations"),
         ("imports", "/imports"),
         ("traceability", "/traceability"),
         ("release_control", "/release-control"),
-        ("vault", "/vault"),
+        ("evidence", "/evidence"),
         ("settings", "/settings"),
         ("platform", "/admin"),
     ]

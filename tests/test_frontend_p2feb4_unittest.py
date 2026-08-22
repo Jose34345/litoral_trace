@@ -169,10 +169,11 @@ def test_superadmin_navigation_contains_only_live_routes():
         for item in navigation
     ] == [
         ("dashboard", "/dashboard"),
+        ("operations", "/operations"),
         ("imports", "/imports"),
         ("traceability", "/traceability"),
         ("release_control", "/release-control"),
-        ("vault", "/vault"),
+        ("evidence", "/evidence"),
         ("settings", "/settings"),
         ("platform", "/admin"),
     ]
