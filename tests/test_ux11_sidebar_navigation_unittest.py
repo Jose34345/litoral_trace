@@ -58,3 +58,14 @@ def test_sidebar_template_prioritizes_navigation_over_redundant_promo_card() -> 
     assert 'item.key == "evidence"' in template
     assert "Cadena de custodia auditable" not in template
     assert 'aria-label="Cerrar sesión"' in template
+
+
+def test_tracked_tailwind_asset_contains_sidebar_utilities() -> None:
+    root = Path(__file__).resolve().parents[1]
+    css = (
+        root / "src/litoral_trace/static/dist/app.css"
+    ).read_text(encoding="utf-8")
+
+    assert ".min-h-0{" in css
+    assert ".p-2\\.5{" in css
+    assert ".ring-slate-800{" in css
