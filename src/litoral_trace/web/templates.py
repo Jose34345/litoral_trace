@@ -18,6 +18,31 @@ templates = Jinja2Templates(
 )
 
 
+# Jinja resolves ``foo.bar`` through Python attributes before mapping keys.
+# The traceability presentation model deliberately contains an ``items`` key,
+# so ``result.items`` / ``graph.items`` would otherwise resolve to the native
+# ``dict.items`` method and fail when the template attempts to iterate it.
+# Keep the override deliberately narrow so every other Jinja lookup preserves
+# the framework default behavior.
+_default_jinja_getattr = templates.env.getattr
+
+
+def _prefer_items_mapping_key(
+    obj: Any,
+    attribute: str,
+) -> Any:
+    if (
+        attribute == "items"
+        and isinstance(obj, dict)
+        and "items" in obj
+    ):
+        return obj["items"]
+    return _default_jinja_getattr(obj, attribute)
+
+
+templates.env.getattr = _prefer_items_mapping_key
+
+
 def render_template(
     request: Request,
     name: str,
