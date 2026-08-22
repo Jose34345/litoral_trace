@@ -1,0 +1,39 @@
+name: Production Satellite Worker Activation Probe
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/production-satellite-worker-activation-probe.yml"
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DATABASE_URL: ${{ secrets.LT_PROD_DATABASE_URL }}
+      WORKER_DATABASE_URL: ${{ secrets.LT_PROD_WORKER_DATABASE_URL }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.LT_GCP_SERVICE_ACCOUNT }}
+    steps:
+      - name: Report secret visibility only
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          configured=true
+          missing=""
+          for name in DATABASE_URL WORKER_DATABASE_URL GCP_SERVICE_ACCOUNT; do
+            if [ -z "${!name:-}" ]; then
+              configured=false
+              if [ -z "$missing" ]; then missing="$name"; else missing="$missing,$name"; fi
+            fi
+          done
+          gh issue comment 48 --repo "$GITHUB_REPOSITORY" --body "### Satellite worker activation probe\n\n- workflow event: ${GITHUB_EVENT_NAME}\n- configured: ${configured}\n- missing secret variable names: ${missing:-none}\n- no secret values were read or logged\n- evaluated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
