@@ -76,6 +76,14 @@ _NAVIGATION = (
         active_prefixes=("/evidence", "/vault"),
     ),
     NavigationItem(
+        key="integrations",
+        label="Integraciones",
+        href="/integrations",
+        section="administracion",
+        permission=Permission.INTEGRATION_READ,
+        active_prefixes=("/integrations",),
+    ),
+    NavigationItem(
         key="settings",
         label="Configuración",
         href="/settings",
