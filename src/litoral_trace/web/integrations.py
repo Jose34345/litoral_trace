@@ -229,6 +229,7 @@ async def create_integration_connection(request: Request):
             connector_type="GENERIC_ERP",
             secret_ref=str(form.get("secret_ref", "")) or None,
             config_json={"mode": "staging_only"},
+            actor_user_id=user.user_id,
         )
         return _redirect("connection-created")
     except IntegrationError as exc:
@@ -269,6 +270,7 @@ async def stage_integration_json(request: Request):
             connection_public_id=connection_public_id,
             payload=payload,
             idempotency_key=str(form.get("idempotency_key", "")),
+            actor_user_id=user.user_id,
         )
         return _redirect("sync-complete")
     except IntegrationError as exc:

@@ -70,6 +70,21 @@ class IntegrationPersistenceError(IntegrationError):
 
 
 @dataclass(frozen=True)
+class ConnectionWriteResult:
+    public_id: UUID
+    name: str
+    connector_type: str
+    status: str
+
+
+@dataclass(frozen=True)
+class ReconciliationWriteResult:
+    public_id: UUID
+    target_type: str
+    target_reference: str
+
+
+@dataclass(frozen=True)
 class SyncResult:
     public_id: UUID
     status: str
@@ -124,11 +139,24 @@ def _validate_secret_ref(value: Any) -> str | None:
     return normalized
 
 
+def _contains_forbidden_config_key(value: Any) -> bool:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            normalized_key = str(key).lower()
+            if any(fragment in normalized_key for fragment in _FORBIDDEN_CONFIG_FRAGMENTS):
+                return True
+            if _contains_forbidden_config_key(child):
+                return True
+        return False
+    if isinstance(value, (list, tuple)):
+        return any(_contains_forbidden_config_key(child) for child in value)
+    return False
+
+
 def _validate_config(config: dict[str, Any] | None) -> dict[str, Any] | None:
     if not config:
         return None
-    serialized_keys = " ".join(str(key).lower() for key in config.keys())
-    if any(fragment in serialized_keys for fragment in _FORBIDDEN_CONFIG_FRAGMENTS):
+    if _contains_forbidden_config_key(config):
         raise IntegrationValidationError(
             "SENSITIVE_CONFIG_REJECTED",
             "La configuración no puede contener secretos; use secret_ref.",
@@ -196,6 +224,15 @@ def _version(
     normalized_json: dict[str, Any],
     source_updated_at: datetime | None,
 ) -> ExternalEntityVersion:
+    existing = session.scalar(
+        select(ExternalEntityVersion).where(
+            ExternalEntityVersion.organization_id == organization_id,
+            ExternalEntityVersion.external_entity_id == external_entity_id,
+            ExternalEntityVersion.payload_hash == payload_hash,
+        )
+    )
+    if existing is not None:
+        return existing
     row = ExternalEntityVersion(
         organization_id=organization_id,
         external_entity_id=external_entity_id,
@@ -236,7 +273,7 @@ class IntegrationCoreService:
         secret_ref: str | None = None,
         config_json: dict[str, Any] | None = None,
         actor_user_id: int | None = None,
-    ) -> IntegrationConnection:
+    ) -> ConnectionWriteResult:
         normalized_name = _clean_text(name, field="name", maximum=160)
         normalized_type = str(connector_type or "").strip().upper()
         if normalized_type != "GENERIC_ERP":
@@ -266,8 +303,14 @@ class IntegrationCoreService:
                 actor_user_id=actor_user_id,
                 metadata={"connector_type": normalized_type},
             )
+            result = ConnectionWriteResult(
+                public_id=connection.public_id,
+                name=connection.name,
+                connector_type=connection.connector_type,
+                status=connection.status,
+            )
             self.session.commit()
-            return connection
+            return result
         except IntegrityError as exc:
             self.session.rollback()
             raise IntegrationConflictError(
@@ -285,7 +328,7 @@ class IntegrationCoreService:
         *,
         status: str,
         actor_user_id: int | None = None,
-    ) -> IntegrationConnection:
+    ) -> ConnectionWriteResult:
         normalized = str(status or "").strip().upper()
         if normalized not in {"ACTIVE", "DISABLED"}:
             raise IntegrationValidationError(
@@ -302,8 +345,14 @@ class IntegrationCoreService:
             metadata={"status": normalized},
         )
         try:
+            result = ConnectionWriteResult(
+                public_id=connection.public_id,
+                name=connection.name,
+                connector_type=connection.connector_type,
+                status=connection.status,
+            )
             self.session.commit()
-            return connection
+            return result
         except SQLAlchemyError as exc:
             self.session.rollback()
             raise IntegrationPersistenceError(
@@ -430,7 +479,15 @@ class IntegrationCoreService:
                     continue
 
                 previous_hash = existing.payload_hash
-                was_reconciled = existing.status == "RECONCILED"
+                has_reference = self.session.scalar(
+                    select(ExternalReference.id).where(
+                        ExternalReference.organization_id == self.organization_id,
+                        ExternalReference.external_entity_id == existing.id,
+                    )
+                ) is not None
+                reconciliation_protected = (
+                    existing.status in {"RECONCILED", "CONFLICT"} or has_reference
+                )
                 _version(
                     self.session,
                     organization_id=self.organization_id,
@@ -444,7 +501,7 @@ class IntegrationCoreService:
                 existing.payload_hash = digest
                 existing.payload_json = raw
                 existing.normalized_json = normalized
-                if was_reconciled:
+                if reconciliation_protected:
                     existing.status = "CONFLICT"
                     existing.conflict_reason = "SOURCE_CHANGED_AFTER_RECONCILIATION"
                     conflict += 1
@@ -476,6 +533,16 @@ class IntegrationCoreService:
             run.records_conflict = conflict
             run.status = "PARTIAL" if conflict else "SUCCEEDED"
             run.finished_at = _now()
+            self.session.flush()
+            result = SyncResult(
+                public_id=run.public_id,
+                status=run.status,
+                records_seen=run.records_seen,
+                records_created=created,
+                records_updated=updated,
+                records_unchanged=unchanged,
+                records_conflict=conflict,
+            )
             _event(
                 self.session,
                 organization_id=self.organization_id,
@@ -503,15 +570,7 @@ class IntegrationCoreService:
                 "No fue posible persistir la sincronización ERP."
             ) from exc
 
-        return SyncResult(
-            public_id=run.public_id,
-            status=run.status,
-            records_seen=run.records_seen,
-            records_created=created,
-            records_updated=updated,
-            records_unchanged=unchanged,
-            records_conflict=conflict,
-        )
+        return result
 
     def reconcile_entity(
         self,
@@ -520,7 +579,7 @@ class IntegrationCoreService:
         target_type: str,
         target_reference: str,
         user_id: int | None,
-    ) -> ExternalReference:
+    ) -> ReconciliationWriteResult:
         normalized_type = str(target_type or "").strip().upper()
         if normalized_type not in {
             "LOTE", "TRACEABILITY_BATCH", "TRACEABILITY_EVENT", "SHIPMENT"
@@ -581,8 +640,14 @@ class IntegrationCoreService:
             },
         )
         try:
+            self.session.flush()
+            result = ReconciliationWriteResult(
+                public_id=reference.public_id,
+                target_type=reference.target_type,
+                target_reference=reference.target_reference,
+            )
             self.session.commit()
-            return reference
+            return result
         except SQLAlchemyError as exc:
             self.session.rollback()
             raise IntegrationPersistenceError(

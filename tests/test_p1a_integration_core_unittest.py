@@ -56,6 +56,10 @@ def test_credentials_are_rejected_from_db_configuration_contract() -> None:
     assert exc.value.code == "SENSITIVE_CONFIG_REJECTED"
 
     with pytest.raises(IntegrationValidationError) as exc:
+        _validate_config({"auth": {"credentials": [{"api_key": "nested-secret"}]}})
+    assert exc.value.code == "SENSITIVE_CONFIG_REJECTED"
+
+    with pytest.raises(IntegrationValidationError) as exc:
         _validate_secret_ref("postgresql://user:password@example/db")
     assert exc.value.code == "INVALID_SECRET_REF"
 
@@ -78,6 +82,9 @@ def test_integration_service_cannot_mutate_chain_of_custody_ledger() -> None:
     assert ".post_event(" not in source
     assert "SOURCE_CHANGED_AFTER_RECONCILIATION" in source
     assert "ExternalEntityVersion" in source
+    assert 'existing.status in {"RECONCILED", "CONFLICT"} or has_reference' in source
+    assert "ConnectionWriteResult" in source
+    assert "ReconciliationWriteResult" in source
 
 
 def test_api_declares_staging_only_result() -> None:
@@ -85,6 +92,8 @@ def test_api_declares_staging_only_result() -> None:
     assert '"ledger_mutated": False' in source
     assert 'alias="Idempotency-Key"' in source
     assert "actor_user_id=user.user_id" in source
+    web_source = Path("src/litoral_trace/web/integrations.py").read_text(encoding="utf-8")
+    assert web_source.count("actor_user_id=user.user_id") >= 2
 
 
 def test_migrations_are_tenant_safe_and_immutable_history_is_append_only() -> None:
