@@ -284,8 +284,8 @@ jobs:
               raise SystemExit(f"Gate 12 is fail-closed: {skipped} test(s) skipped")
           PY
 
-      - name: Migrate isolated database to canonical head
-        run: python -m alembic upgrade head
+      - name: Migrate isolated database through P1 traceability acceptance revision
+        run: python -m alembic upgrade 019_add_traceability_genealogy
 
       - name: Gate 13 - P1A traceability PostgreSQL acceptance
         shell: bash
@@ -365,6 +365,9 @@ jobs:
                   f"skipped={skipped}, failures={failures}, errors={errors}"
               )
           PY
+
+      - name: Migrate isolated database to canonical head
+        run: python -m alembic upgrade head
 
       - name: Verify canonical database head
         shell: bash
