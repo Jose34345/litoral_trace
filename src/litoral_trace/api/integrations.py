@@ -110,6 +110,7 @@ def create_connection(
                 connector_type=body.connector_type,
                 secret_ref=body.secret_ref,
                 config_json=body.config_json,
+                actor_user_id=user.user_id,
             )
         except Exception as exc:
             _raise_service_error(exc)
@@ -133,7 +134,11 @@ def update_connection_status(
     session, service = _service(user)
     try:
         try:
-            row = service.set_connection_status(connection_public_id, status=body.status)
+            row = service.set_connection_status(
+                connection_public_id,
+                status=body.status,
+                actor_user_id=user.user_id,
+            )
         except Exception as exc:
             _raise_service_error(exc)
             raise
@@ -157,6 +162,7 @@ def stage_generic_erp(
                 connection_public_id=connection_public_id,
                 payload=body,
                 idempotency_key=idempotency_key,
+                actor_user_id=user.user_id,
             )
         except Exception as exc:
             _raise_service_error(exc)
