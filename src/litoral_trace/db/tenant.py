@@ -19,6 +19,7 @@ from litoral_trace.db.models import (
     AuditLog,
     BatchImport,
     ExternalEntity,
+    ExternalEntityVersion,
     ExternalReference,
     IntegrationConnection,
     IntegrationDocument,
@@ -52,6 +53,7 @@ TenantModel = type[
     | IntegrationConnection
     | IntegrationSyncRun
     | ExternalEntity
+    | ExternalEntityVersion
     | ExternalReference
     | IntegrationDocument
     | IntegrationEvent
@@ -71,6 +73,7 @@ TenantEntity = (
     | IntegrationConnection
     | IntegrationSyncRun
     | ExternalEntity
+    | ExternalEntityVersion
     | ExternalReference
     | IntegrationDocument
     | IntegrationEvent
