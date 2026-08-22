@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  issues: write
 
 jobs:
   recovery-gate:
@@ -19,7 +20,6 @@ jobs:
       BACKUP_S3_BUCKET: ${{ vars.BACKUP_S3_BUCKET }}
       BACKUP_S3_PREFIX: ${{ vars.BACKUP_S3_PREFIX }}
       BACKUP_S3_REGION: ${{ vars.BACKUP_S3_REGION }}
-      BACKUP_AWS_ROLE_ARN: ${{ vars.BACKUP_AWS_ROLE_ARN }}
       PRE_MIGRATION_SOURCE_RELEASE_COMMIT: ${{ vars.BACKUP_RELEASE_COMMIT }}
       PRE_MIGRATION_OPERATOR: ${{ github.actor }}
       PRE_MIGRATION_TARGET_ENV: production
@@ -44,11 +44,14 @@ jobs:
           role-session-name: litoral-trace-pre-migration-gate
           aws-region: ${{ vars.BACKUP_S3_REGION }}
 
-      - name: Retrieve latest published production recovery evidence
+      - name: Retrieve evidence and execute fail-closed P2.7A5 gate
+        id: recovery
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
-          python - <<'PY'
+          set +e
+          {
+            python - <<'PY'
           import json
           import os
           from pathlib import Path
@@ -88,17 +91,55 @@ jobs:
           }, sort_keys=True))
           PY
 
-      - name: Execute fail-closed P2.7A5 gate
+            python -m scripts.pre_migration_recovery_gate \
+              --manifest /tmp/litoral-manifest.json \
+              --complete-marker /tmp/litoral-complete.json \
+              --source-label production \
+              --max-age-minutes 120
+          } > /tmp/recovery-result.txt 2>&1
+          status=$?
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          cat /tmp/recovery-result.txt
+          exit "$status"
+
+      - name: Report sanitized result to cutover issue
+        if: always()
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_OUTCOME: ${{ steps.recovery.outcome }}
+          RECOVERY_EXIT_CODE: ${{ steps.recovery.outputs.exit_code }}
         run: |
           set -euo pipefail
-          python -m scripts.pre_migration_recovery_gate \
-            --manifest /tmp/litoral-manifest.json \
-            --complete-marker /tmp/litoral-complete.json \
-            --source-label production \
-            --max-age-minutes 120
+          if [ "$RECOVERY_OUTCOME" = "success" ]; then
+            verdict="PASS"
+          else
+            verdict="NO-GO"
+          fi
+          {
+            echo "### P2.7A5 recovery gate — ${verdict}"
+            echo
+            echo "- Workflow branch: \`ops-pre-migration-gate-20260821\`"
+            echo "- Gate outcome: \`${RECOVERY_OUTCOME}\`"
+            echo "- Exit code: \`${RECOVERY_EXIT_CODE:-not-run}\`"
+            echo "- Evaluated at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`"
+            echo
+            echo '```json'
+            if [ -f /tmp/recovery-result.txt ]; then
+              tail -c 12000 /tmp/recovery-result.txt
+            else
+              echo '{"result":"NO-GO","reason":"recovery step did not produce sanitized output"}'
+            fi
+            echo
+            echo '```'
+          } > /tmp/recovery-comment.md
+          gh issue comment 48 --repo Jose34345/litoral_trace --body-file /tmp/recovery-comment.md
 
       - name: Cleanup recovery evidence
         if: always()
         shell: bash
-        run: rm -f /tmp/litoral-manifest.json /tmp/litoral-complete.json
+        run: rm -f /tmp/litoral-manifest.json /tmp/litoral-complete.json /tmp/recovery-result.txt /tmp/recovery-comment.md
+
+      - name: Enforce fail-closed result
+        if: steps.recovery.outcome != 'success'
+        run: exit 1
