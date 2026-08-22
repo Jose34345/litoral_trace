@@ -8,6 +8,11 @@ on:
     # Every 15 minutes, deliberately offset from :00 to reduce scheduler peaks.
     - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/production-satellite-worker-mvp.yml"
 
 permissions:
   contents: read
