@@ -1,0 +1,392 @@
+name: Production Authenticated Cutover Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/production-authenticated-cutover-smoke.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  authenticated-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production-backup
+    env:
+      SMOKE_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BASE_URL: https://litoraltrace.com
+    steps:
+      - name: Install smoke dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet "psycopg[binary]" bcrypt
+
+      - name: Create ephemeral smoke principals
+        id: principals
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python - <<'PY'
+          import os
+          import secrets
+          from pathlib import Path
+          import bcrypt
+          import psycopg
+
+          raw_url = os.environ["SMOKE_DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://", 1)
+          run_id = os.environ["GITHUB_RUN_ID"]
+          principals = [
+              (f"cutover_admin_{run_id}", 1, "admin", f"cutover-admin-{run_id}@invalid.litoraltrace.local"),
+              (f"cutover_auditor_{run_id}", 1, "auditor", f"cutover-auditor-{run_id}@invalid.litoraltrace.local"),
+              (f"cutover_client_{run_id}", 1, "cliente", f"cutover-client-{run_id}@invalid.litoraltrace.local"),
+              (f"cutover_cross_{run_id}", 46, "admin", f"cutover-cross-{run_id}@invalid.litoraltrace.local"),
+          ]
+          out = Path(os.environ["RUNNER_TEMP"]) / "cutover-smoke"
+          out.mkdir(mode=0o700, parents=True, exist_ok=True)
+
+          with psycopg.connect(raw_url) as conn:
+              with conn.cursor() as cur:
+                  cur.execute("SELECT to_regclass('public.users'), to_regclass('public.user_sessions')")
+                  if cur.fetchone() != ("users", "user_sessions"):
+                      raise SystemExit("Required auth tables are not present.")
+                  for username, organization_id, role, email in principals:
+                      password = secrets.token_urlsafe(36)
+                      password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+                      cur.execute(
+                          """
+                          INSERT INTO public.users
+                              (organization_id, email, username, password_hash, role, full_name, is_active)
+                          VALUES (%s, %s, %s, %s, %s, %s, true)
+                          RETURNING id
+                          """,
+                          (organization_id, email, username, password_hash, role, "Temporary cutover smoke principal"),
+                      )
+                      user_id = cur.fetchone()[0]
+                      (out / f"{role}-{organization_id}.password").write_text(password, encoding="utf-8")
+                      os.chmod(out / f"{role}-{organization_id}.password", 0o600)
+                      (out / f"{role}-{organization_id}.userid").write_text(str(user_id), encoding="utf-8")
+              conn.commit()
+
+          env_path = Path(os.environ["GITHUB_ENV"])
+          with env_path.open("a", encoding="utf-8") as fh:
+              fh.write(f"SMOKE_ADMIN=cutover_admin_{run_id}\n")
+              fh.write(f"SMOKE_AUDITOR=cutover_auditor_{run_id}\n")
+              fh.write(f"SMOKE_CLIENT=cutover_client_{run_id}\n")
+              fh.write(f"SMOKE_CROSS=cutover_cross_{run_id}\n")
+              fh.write(f"SMOKE_DIR={out}\n")
+              fh.write(f"SMOKE_RUN_ID={run_id}\n")
+          PY
+          for f in "$RUNNER_TEMP/cutover-smoke"/*.password; do
+            echo "::add-mask::$(cat "$f")"
+          done
+
+      - name: Execute authenticated chain-of-custody smoke
+        id: smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/cutover-http"
+          mkdir -p "$work"
+          chmod 700 "$work"
+          ADMIN_PASS="$SMOKE_DIR/admin-1.password"
+          ADMIN_JAR="$work/admin.cookies"
+          RECEIPT_CODE="CUTOVER-SMOKE-RECEIPT-${SMOKE_RUN_ID}"
+          RAW_CODE="CUTOVER-SMOKE-RAW-${SMOKE_RUN_ID}"
+          PROCESS_CODE="CUTOVER-SMOKE-PROCESS-${SMOKE_RUN_ID}"
+          FINISHED_CODE="CUTOVER-SMOKE-FINISHED-${SMOKE_RUN_ID}"
+          SHIPMENT_CODE="CUTOVER-SMOKE-SHIP-${SMOKE_RUN_ID}"
+          export RECEIPT_CODE RAW_CODE PROCESS_CODE FINISHED_CODE SHIPMENT_CODE
+
+          extract_csrf() {
+            python - "$1" <<'PY'
+          import html
+          import re
+          import sys
+          text = open(sys.argv[1], encoding="utf-8").read()
+          match = re.search(r'<input[^>]+type="hidden"[^>]+name="([^"]+)"[^>]+value="([^"]*)"', text, re.I)
+          if not match:
+              raise SystemExit("CSRF hidden field not found")
+          print(match.group(1))
+          print(html.unescape(match.group(2)))
+          PY
+          }
+
+          login_as() {
+            local username="$1" passfile="$2" jar="$3" prefix="$4"
+            local code
+            code="$(curl --silent --show-error --max-time 90 --retry 2 --retry-delay 3 --retry-all-errors \
+              -c "$jar" -b "$jar" -o "$work/${prefix}-login.html" -w '%{http_code}' "$BASE_URL/login")"
+            test "$code" = "200"
+            mapfile -t csrf < <(extract_csrf "$work/${prefix}-login.html")
+            code="$(curl --silent --show-error --max-time 90 \
+              -c "$jar" -b "$jar" -D "$work/${prefix}-login-post.headers" \
+              -o "$work/${prefix}-login-post.body" -w '%{http_code}' \
+              --data-urlencode "${csrf[0]}=${csrf[1]}" \
+              --data-urlencode "username=${username}" \
+              --data-urlencode "password@${passfile}" \
+              "$BASE_URL/login")"
+            test "$code" = "303"
+            grep -Eiq '^location:[[:space:]]*/dashboard\r?$' "$work/${prefix}-login-post.headers"
+          }
+
+          get_auth() {
+            local jar="$1" path="$2" out="$3"
+            curl --silent --show-error --location --max-time 90 --retry 2 --retry-delay 3 --retry-all-errors \
+              -c "$jar" -b "$jar" -o "$out" -w '%{http_code}' "$BASE_URL$path"
+          }
+
+          login_as "$SMOKE_ADMIN" "$ADMIN_PASS" "$ADMIN_JAR" admin
+          test "$(get_auth "$ADMIN_JAR" /dashboard "$work/dashboard.html")" = "200"
+          grep -Fq 'Trazabilidad de despachos' "$work/dashboard.html"
+          test "$(get_auth "$ADMIN_JAR" /operations "$work/operations.html")" = "200"
+          mapfile -t csrf < <(extract_csrf "$work/operations.html")
+
+          occurred_receipt="$(TZ=America/Argentina/Cordoba date '+%Y-%m-%dT%H:%M')"
+          code="$(curl --silent --show-error --max-time 90 -c "$ADMIN_JAR" -b "$ADMIN_JAR" \
+            -D "$work/receipt.headers" -o "$work/receipt.body" -w '%{http_code}' \
+            --data-urlencode "${csrf[0]}=${csrf[1]}" \
+            --data-urlencode 'source_identifier=SMOKE-TEST-001' \
+            --data-urlencode "event_code=$RECEIPT_CODE" \
+            --data-urlencode "batch_code=$RAW_CODE" \
+            --data-urlencode 'product_name=Pino cutover smoke' \
+            --data-urlencode 'quantity=10' --data-urlencode 'unit=M3' \
+            --data-urlencode "occurred_at=$occurred_receipt" \
+            --data-urlencode 'facility_reference=CUTOVER-SMOKE' \
+            --data-urlencode 'notes=Production cutover acceptance' \
+            --data-urlencode 'commit_mode=post' \
+            "$BASE_URL/operations/receipts")"
+          test "$code" = "303"
+
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import psycopg
+          url = os.environ["SMOKE_DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://", 1)
+          with psycopg.connect(url) as conn, conn.cursor() as cur:
+              cur.execute("SELECT public_id::text FROM traceability_batches WHERE organization_id=1 AND code=%s", (os.environ["RAW_CODE"],))
+              row = cur.fetchone()
+              if not row: raise SystemExit("Receipt batch not persisted")
+              Path(os.environ["RUNNER_TEMP"], "raw-batch-id.txt").write_text(row[0])
+              cur.execute("SELECT status FROM traceability_events WHERE organization_id=1 AND event_code=%s", (os.environ["RECEIPT_CODE"],))
+              if cur.fetchone() != ("POSTED",): raise SystemExit("Receipt event was not POSTED")
+          PY
+          RAW_BATCH_ID="$(cat "$RUNNER_TEMP/raw-batch-id.txt")"
+
+          test "$(get_auth "$ADMIN_JAR" /operations "$work/operations-after-receipt.html")" = "200"
+          mapfile -t csrf < <(extract_csrf "$work/operations-after-receipt.html")
+          occurred_process="$(TZ=America/Argentina/Cordoba date -d '+1 minute' '+%Y-%m-%dT%H:%M')"
+          code="$(curl --silent --show-error --max-time 90 -c "$ADMIN_JAR" -b "$ADMIN_JAR" \
+            -D "$work/process.headers" -o "$work/process.body" -w '%{http_code}' \
+            --data-urlencode "${csrf[0]}=${csrf[1]}" \
+            --data-urlencode "event_code=$PROCESS_CODE" \
+            --data-urlencode 'event_type=TRANSFORMATION' \
+            --data-urlencode "occurred_at=$occurred_process" \
+            --data-urlencode "input_batch=$RAW_BATCH_ID" --data-urlencode 'input_quantity=8' \
+            --data-urlencode "output_code=$FINISHED_CODE" \
+            --data-urlencode 'output_product=Pino terminado cutover smoke' \
+            --data-urlencode 'output_stage=FINISHED_GOOD' --data-urlencode 'output_unit=M3' \
+            --data-urlencode 'output_quantity=6' \
+            --data-urlencode 'facility_reference=CUTOVER-SMOKE' \
+            --data-urlencode 'notes=Production cutover transformation' \
+            --data-urlencode 'commit_mode=post' \
+            "$BASE_URL/operations/processes")"
+          test "$code" = "303"
+
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import psycopg
+          url = os.environ["SMOKE_DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://", 1)
+          with psycopg.connect(url) as conn, conn.cursor() as cur:
+              cur.execute("SELECT public_id::text FROM traceability_batches WHERE organization_id=1 AND code=%s", (os.environ["FINISHED_CODE"],))
+              row = cur.fetchone()
+              if not row: raise SystemExit("Finished batch not persisted")
+              Path(os.environ["RUNNER_TEMP"], "finished-batch-id.txt").write_text(row[0])
+              cur.execute("SELECT status FROM traceability_events WHERE organization_id=1 AND event_code=%s", (os.environ["PROCESS_CODE"],))
+              if cur.fetchone() != ("POSTED",): raise SystemExit("Process event was not POSTED")
+          PY
+          FINISHED_BATCH_ID="$(cat "$RUNNER_TEMP/finished-batch-id.txt")"
+
+          test "$(get_auth "$ADMIN_JAR" /operations "$work/operations-after-process.html")" = "200"
+          mapfile -t csrf < <(extract_csrf "$work/operations-after-process.html")
+          code="$(curl --silent --show-error --max-time 90 -c "$ADMIN_JAR" -b "$ADMIN_JAR" \
+            -D "$work/shipment.headers" -o "$work/shipment.body" -w '%{http_code}' \
+            --data-urlencode "${csrf[0]}=${csrf[1]}" \
+            --data-urlencode "shipment_code=$SHIPMENT_CODE" \
+            --data-urlencode "sale_reference=CUTOVER-SALE-${SMOKE_RUN_ID}" \
+            --data-urlencode 'buyer_reference=CUTOVER-BUYER' --data-urlencode 'destination_country=DE' \
+            --data-urlencode "shipment_batch=$FINISHED_BATCH_ID" --data-urlencode 'shipment_quantity=5' \
+            --data-urlencode 'commit_mode=dispatch' \
+            "$BASE_URL/operations/shipments")"
+          test "$code" = "303"
+
+          python - <<'PY'
+          import os
+          import psycopg
+          url = os.environ["SMOKE_DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://", 1)
+          with psycopg.connect(url) as conn, conn.cursor() as cur:
+              cur.execute("SELECT status FROM shipments WHERE organization_id=1 AND shipment_code=%s", (os.environ["SHIPMENT_CODE"],))
+              if cur.fetchone() != ("DISPATCHED",): raise SystemExit("Shipment was not DISPATCHED")
+          PY
+
+          trace_code="$(curl --silent --show-error --location --max-time 90 -c "$ADMIN_JAR" -b "$ADMIN_JAR" \
+            -G --data-urlencode "shipment_code=$SHIPMENT_CODE" -o "$work/traceability.html" -w '%{http_code}' "$BASE_URL/traceability")"
+          test "$trace_code" = "200"
+          grep -Fq "$SHIPMENT_CODE" "$work/traceability.html"
+
+          api_code="$(curl --silent --show-error --max-time 90 -c "$ADMIN_JAR" -b "$ADMIN_JAR" \
+            -o "$work/origin.json" -w '%{http_code}' "$BASE_URL/api/v1/traceability/shipments/$SHIPMENT_CODE/origin")"
+          test "$api_code" = "200"
+          python - "$work/origin.json" <<'PY'
+          import json, sys
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          if payload.get("complete") is not True:
+              raise SystemExit("Reverse lineage is not complete")
+          PY
+
+          evidence_code="$(get_auth "$ADMIN_JAR" /evidence "$work/evidence.html")"
+          test "$evidence_code" = "200"
+          mapfile -t csrf < <(extract_csrf "$work/evidence.html")
+          printf '{"kind":"production-cutover-smoke","run_id":"%s"}\n' "$SMOKE_RUN_ID" > "$work/cutover-evidence.json"
+          code="$(curl --silent --show-error --max-time 90 -c "$ADMIN_JAR" -b "$ADMIN_JAR" \
+            -D "$work/evidence-upload.headers" -o "$work/evidence-upload.body" -w '%{http_code}' \
+            -F "${csrf[0]}=${csrf[1]}" \
+            -F "file=@$work/cutover-evidence.json;type=application/json" \
+            -F "subject=SHIPMENT|$SHIPMENT_CODE" \
+            -F 'document_type=OTHER_EVIDENCE' -F 'evidence_type=OTHER' \
+            -F "reference_number=CUTOVER-${SMOKE_RUN_ID}" -F 'issuer=Litoral Trace' \
+            -F 'notes=Production cutover documentary evidence' \
+            "$BASE_URL/evidence/upload-link")"
+          test "$code" = "303"
+
+          curl --silent --show-error --location --max-time 90 -c "$ADMIN_JAR" -b "$ADMIN_JAR" \
+            -G --data-urlencode "subject=SHIPMENT|$SHIPMENT_CODE" \
+            -o "$work/evidence-after.html" "$BASE_URL/evidence"
+          grep -Fq 'cutover-evidence.json' "$work/evidence-after.html"
+
+          control_code="$(curl --silent --show-error --location --max-time 90 -c "$ADMIN_JAR" -b "$ADMIN_JAR" \
+            -G --data-urlencode "shipment_code=$SHIPMENT_CODE" -o "$work/release-control.html" -w '%{http_code}' "$BASE_URL/release-control")"
+          test "$control_code" = "200"
+          grep -Fq "$SHIPMENT_CODE" "$work/release-control.html"
+          grep -Fq 'Pulso del despacho' "$work/release-control.html"
+
+          for artifact in manifest pdf bundle; do
+            curl --silent --show-error --fail --max-time 90 -c "$ADMIN_JAR" -b "$ADMIN_JAR" \
+              -G --data-urlencode "shipment_code=$SHIPMENT_CODE" \
+              -D "$work/${artifact}.headers" -o "$work/${artifact}.bin" \
+              "$BASE_URL/api/v1/traceability/shipments/dossier/$artifact"
+            grep -Eiq '^cache-control:[[:space:]]*private, no-store\r?$' "$work/${artifact}.headers"
+            grep -Eiq '^x-litoral-trace-manifest-sha256:[[:space:]]*[0-9a-f]{64}\r?$' "$work/${artifact}.headers"
+          done
+          python - "$work/manifest.bin" "$SHIPMENT_CODE" <<'PY'
+          import json, sys
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          if sys.argv[2] not in json.dumps(payload, ensure_ascii=False):
+              raise SystemExit("Manifest does not reference smoke shipment")
+          PY
+          head -c 5 "$work/pdf.bin" | grep -q '^%PDF-'
+          python - "$work/bundle.bin" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as zf:
+              names = set(zf.namelist())
+          expected = {"manifest.json", "origins.geojson", "dossier.pdf", "README.txt"}
+          if names != expected:
+              raise SystemExit(f"Unexpected dossier bundle contents: {sorted(names)}")
+          PY
+
+          login_as "$SMOKE_AUDITOR" "$SMOKE_DIR/auditor-1.password" "$work/auditor.cookies" auditor
+          test "$(get_auth "$work/auditor.cookies" "/traceability?shipment_code=$SHIPMENT_CODE" "$work/auditor-trace.html")" = "200"
+          test "$(curl --silent --show-error --max-time 90 -b "$work/auditor.cookies" -o /dev/null -w '%{http_code}' "$BASE_URL/operations")" = "403"
+          test "$(curl --silent --show-error --max-time 90 -b "$work/auditor.cookies" -X POST -o /dev/null -w '%{http_code}' "$BASE_URL/operations/receipts")" = "403"
+
+          login_as "$SMOKE_CLIENT" "$SMOKE_DIR/cliente-1.password" "$work/client.cookies" client
+          test "$(get_auth "$work/client.cookies" "/traceability?shipment_code=$SHIPMENT_CODE" "$work/client-trace.html")" = "200"
+          test "$(curl --silent --show-error --max-time 90 -b "$work/client.cookies" -o /dev/null -w '%{http_code}' "$BASE_URL/operations")" = "403"
+          test "$(curl --silent --show-error --max-time 90 -b "$work/client.cookies" -X POST -o /dev/null -w '%{http_code}' "$BASE_URL/operations/receipts")" = "403"
+
+          login_as "$SMOKE_CROSS" "$SMOKE_DIR/admin-46.password" "$work/cross.cookies" cross
+          cross_code="$(curl --silent --show-error --max-time 90 -b "$work/cross.cookies" \
+            -o "$work/cross-origin.json" -w '%{http_code}' "$BASE_URL/api/v1/traceability/shipments/$SHIPMENT_CODE/origin")"
+          test "$cross_code" = "404"
+
+          python - <<'PY'
+          import os
+          import psycopg
+          url = os.environ["SMOKE_DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://", 1)
+          with psycopg.connect(url) as conn, conn.cursor() as cur:
+              cur.execute("""
+                  SELECT
+                    (SELECT status FROM shipments WHERE organization_id=1 AND shipment_code=%s),
+                    (SELECT count(*) FROM traceability_evidence_links tel JOIN shipments s ON s.id=tel.shipment_id AND s.organization_id=tel.organization_id WHERE s.organization_id=1 AND s.shipment_code=%s AND tel.unlinked_at IS NULL),
+                    (SELECT count(*) FROM vault_documents WHERE organization_id=1 AND filename='cutover-evidence.json' AND status='available')
+              """, (os.environ["SHIPMENT_CODE"], os.environ["SHIPMENT_CODE"]))
+              status, evidence_count, vault_count = cur.fetchone()
+              if status != "DISPATCHED" or evidence_count < 1 or vault_count < 1:
+                  raise SystemExit("Persisted authenticated smoke invariants failed")
+          PY
+
+          echo "shipment_code=$SHIPMENT_CODE" >> "$GITHUB_OUTPUT"
+          echo "outcome=success" >> "$GITHUB_OUTPUT"
+
+      - name: Deactivate smoke principals and revoke their sessions
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import psycopg
+          url = os.environ["SMOKE_DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://", 1)
+          run_id = os.environ.get("SMOKE_RUN_ID") or os.environ.get("GITHUB_RUN_ID")
+          usernames = [
+              f"cutover_admin_{run_id}", f"cutover_auditor_{run_id}",
+              f"cutover_client_{run_id}", f"cutover_cross_{run_id}",
+          ]
+          with psycopg.connect(url) as conn, conn.cursor() as cur:
+              cur.execute("SELECT id FROM users WHERE username = ANY(%s)", (usernames,))
+              ids = [row[0] for row in cur.fetchall()]
+              if ids:
+                  cur.execute("UPDATE user_sessions SET revoked_at=COALESCE(revoked_at, now()) WHERE user_id = ANY(%s)", (ids,))
+                  cur.execute("UPDATE users SET is_active=false, updated_at=now() WHERE id = ANY(%s)", (ids,))
+              conn.commit()
+          PY
+          rm -rf "$RUNNER_TEMP/cutover-smoke" "$RUNNER_TEMP/cutover-http" "$RUNNER_TEMP/raw-batch-id.txt" "$RUNNER_TEMP/finished-batch-id.txt"
+
+      - name: Report sanitized authenticated smoke verdict
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.smoke.outcome }}
+          SHIPMENT_CODE: ${{ steps.smoke.outputs.shipment_code }}
+        run: |
+          if [ "$OUTCOME" = "success" ]; then verdict="PASS"; else verdict="NO-GO"; fi
+          cat > /tmp/comment.md <<EOF
+          ### Production authenticated cutover smoke — ${verdict}
+
+          - login/session + dashboard: ${OUTCOME}
+          - receipt DRAFT→POSTED via browser: ${OUTCOME}
+          - transformation DRAFT→POSTED via browser: ${OUTCOME}
+          - shipment DRAFT→DISPATCHED via browser: ${OUTCOME}
+          - reverse lineage + Trazabilidad UI: ${OUTCOME}
+          - contextual evidence upload/link through private Vault: ${OUTCOME}
+          - Control de Salida: ${OUTCOME}
+          - manifest + PDF + ZIP dossier generation: ${OUTCOME}
+          - auditor/client write denial: ${OUTCOME}
+          - cross-tenant shipment lookup returns 404: ${OUTCOME}
+          - temporary smoke users deactivated and sessions revoked in cleanup
+          - smoke shipment: ${SHIPMENT_CODE:-not-completed}
+          - evaluated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+          gh issue comment 48 --repo Jose34345/litoral_trace --body-file /tmp/comment.md
+
+      - name: Enforce fail-closed authenticated smoke
+        if: steps.smoke.outcome != 'success'
+        run: exit 1
