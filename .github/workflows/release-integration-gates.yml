@@ -371,7 +371,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee alembic-current.txt
-          grep -F "019_add_traceability_genealogy" alembic-current.txt
+          grep -F "020_add_traceability_evidence_links" alembic-current.txt
 
       - name: Cleanup ephemeral integration files and MinIO
         if: always()
