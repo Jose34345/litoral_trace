@@ -1,0 +1,72 @@
+name: Diagnose Satellite Same-Day Hotfix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/diagnose-satellite-sameday-hotfix.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix-satellite-sameday-upsert
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Apply patch in ephemeral checkout
+        id: patch
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('src/litoral_trace/services/satellite_ndvi_processing.py')
+          text = source.read_text(encoding='utf-8')
+          old = '''    for observation in result.observations:\n        existing_row = existing_rows.get(\n            (observation.observation_date, observation.geometry_hash)\n        )\n        if existing_row is None:\n'''
+          new = '''    for observation in result.observations:\n        observation_key = (\n            observation.observation_date,\n            observation.geometry_hash,\n        )\n        existing_row = existing_rows.get(observation_key)\n        if existing_row is None:\n'''
+          assert text.count(old) == 1, f'lookup_count={text.count(old)}'
+          text = text.replace(old, new)
+          old_add = '''            db_session.add(existing_row)\n            continue\n'''
+          new_add = '''            db_session.add(existing_row)\n            existing_rows[observation_key] = existing_row\n            continue\n'''
+          assert text.count(old_add) == 1, f'add_count={text.count(old_add)}'
+          source.write_text(text.replace(old_add, new_add), encoding='utf-8')
+          print('PATCH_OK')
+          PY
+      - name: Install dependencies
+        if: steps.patch.outcome == 'success'
+        run: python -m pip install --disable-pip-version-check --quiet -r requirements.txt
+      - name: Run existing persistence tests
+        id: tests
+        if: steps.patch.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -q tests/test_satellite_job_results_p22e1_unittest.py 2>&1 | tee /tmp/pytest.log
+      - name: Report sanitized diagnosis
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PATCH_OUTCOME: ${{ steps.patch.outcome }}
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+        run: |
+          tail_text="not-run"
+          if [ -f /tmp/pytest.log ]; then
+            tail_text="$(tail -n 12 /tmp/pytest.log | sed 's/`/'\''/g')"
+          fi
+          printf '### Same-day NDVI hotfix diagnostic\n\n- patch: `%s`\n- existing persistence tests: `%s`\n\n```text\n%s\n```\n' "$PATCH_OUTCOME" "$TEST_OUTCOME" "$tail_text" > /tmp/body.md
+          gh issue comment 48 --repo "$GITHUB_REPOSITORY" --body-file /tmp/body.md
+      - name: Fail diagnostic if needed
+        if: steps.patch.outcome != 'success' || steps.tests.outcome != 'success'
+        run: exit 1
