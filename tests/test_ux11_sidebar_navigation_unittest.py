@@ -57,6 +57,7 @@ def test_sidebar_template_prioritizes_navigation_over_redundant_promo_card() -> 
     assert 'item.key == "operations"' in template
     assert 'item.key == "evidence"' in template
     assert "Cadena de custodia auditable" not in template
+    assert 'aria-label="Organización y sesión"' in template
     assert 'aria-label="Cerrar sesión"' in template
 
 
