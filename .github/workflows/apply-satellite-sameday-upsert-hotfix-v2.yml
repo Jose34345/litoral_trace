@@ -1,0 +1,74 @@
+name: Apply Satellite Same-Day Upsert Hotfix V2
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/apply-satellite-sameday-upsert-hotfix-v2.yml"
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  patch-test-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix-satellite-sameday-upsert
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Patch canonical daily upsert and add regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('src/litoral_trace/services/satellite_ndvi_processing.py')
+          text = source.read_text(encoding='utf-8')
+          old = '''    for observation in result.observations:\n        existing_row = existing_rows.get(\n            (observation.observation_date, observation.geometry_hash)\n        )\n        if existing_row is None:\n'''
+          new = '''    for observation in result.observations:\n        observation_key = (\n            observation.observation_date,\n            observation.geometry_hash,\n        )\n        existing_row = existing_rows.get(observation_key)\n        if existing_row is None:\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one observation lookup block, found {text.count(old)}')
+          text = text.replace(old, new)
+
+          old_add = '''            db_session.add(existing_row)\n            continue\n'''
+          new_add = '''            db_session.add(existing_row)\n            # GEE may return multiple Sentinel-2 scenes for one calendar day.\n            # The canonical table has one row per date+geometry, so keep pending\n            # inserts in the in-memory identity map and let later same-day\n            # observations update that row instead of scheduling a duplicate.\n            existing_rows[observation_key] = existing_row\n            continue\n'''
+          if text.count(old_add) != 1:
+              raise SystemExit(f'expected one pending add block, found {text.count(old_add)}')
+          source.write_text(text.replace(old_add, new_add), encoding='utf-8')
+
+          test_path = Path('tests/test_satellite_job_results_p22e1_unittest.py')
+          test_text = test_path.read_text(encoding='utf-8')
+          anchor = '''\ndef test_sqlite_metadata_create_all_supports_satellite_job_results():\n'''
+          regression = '''\ndef test_canonical_ndvi_persistence_upserts_duplicate_same_day_scene_in_memory():\n    fixture = _create_result_fixture()\n    observation_date = date(2026, 8, 1)\n    first = NdviObservationRecord(\n        observation_date=observation_date,\n        ndvi_mean=0.61, ndvi_min=0.55, ndvi_max=0.68, ndvi_std=0.03,\n        scene_cloud_percentage=5.0, valid_pixel_count=10,\n        valid_pixel_percentage=98.0, satellite="Sentinel-2",\n        collection="COPERNICUS/S2_SR_HARMONIZED",\n        geometry_hash=fixture.geometry_hash,\n        algorithm_version=fixture.algorithm_version,\n        processing_date=datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc),\n    )\n    second = NdviObservationRecord(\n        observation_date=observation_date,\n        ndvi_mean=0.72, ndvi_min=0.60, ndvi_max=0.81, ndvi_std=0.04,\n        scene_cloud_percentage=2.0, valid_pixel_count=12,\n        valid_pixel_percentage=99.0, satellite="Sentinel-2",\n        collection="COPERNICUS/S2_SR_HARMONIZED",\n        geometry_hash=fixture.geometry_hash,\n        algorithm_version=fixture.algorithm_version,\n        processing_date=datetime(2026, 8, 1, 12, 5, tzinfo=timezone.utc),\n    )\n    result = NormalizedNdviExecutionResult(\n        geometry_hash=fixture.geometry_hash,\n        algorithm_version=fixture.algorithm_version,\n        observations=(first, second),\n    )\n\n    session = get_db_session()\n    persisted = persist_ndvi_execution_result(\n        session,\n        organization_id=fixture.organization_id,\n        lote_id=fixture.lote_id,\n        satellite_job_id=fixture.job_id,\n        result=result,\n    )\n    session.commit()\n    rows = session.execute(\n        select(SatelliteNdviObservation).where(\n            SatelliteNdviObservation.satellite_job_id == fixture.job_id,\n            SatelliteNdviObservation.observation_date == observation_date,\n            SatelliteNdviObservation.geometry_hash == fixture.geometry_hash,\n        )\n    ).scalars().all()\n    session.close()\n\n    assert persisted.observation_count == 2\n    assert len(rows) == 1\n    assert rows[0].ndvi_mean == pytest.approx(0.72)\n    assert rows[0].cloud_percentage == pytest.approx(2.0)\n    assert rows[0].valid_pixel_percentage == pytest.approx(99.0)\n\n'''
+          if anchor not in test_text:
+              raise SystemExit('test insertion anchor not found')
+          if 'test_canonical_ndvi_persistence_upserts_duplicate_same_day_scene_in_memory' not in test_text:
+              test_path.write_text(test_text.replace(anchor, regression + anchor), encoding='utf-8')
+          PY
+      - name: Install runtime and test dependencies
+        run: python -m pip install --disable-pip-version-check --quiet -r requirements.txt pytest
+      - name: Run persistence regression suite
+        run: python -m pytest -q tests/test_satellite_job_results_p22e1_unittest.py
+      - name: Commit tested hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/litoral_trace/services/satellite_ndvi_processing.py tests/test_satellite_job_results_p22e1_unittest.py
+          git commit -m "fix: upsert duplicate same-day NDVI observations"
+          git push origin HEAD:hotfix-satellite-sameday-upsert
+      - name: Report result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ job.status }}
+        run: gh issue comment 48 --repo "$GITHUB_REPOSITORY" --body "### Same-day NDVI persistence hotfix v2 — ${OUTCOME}\n\nThe production queue was not touched by this workflow. On success, the tested code and regression were pushed to \`hotfix-satellite-sameday-upsert\`."
