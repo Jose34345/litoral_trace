@@ -1,0 +1,104 @@
+name: Pre-Migration Recovery Gate Ops
+
+on:
+  push:
+    branches:
+      - ops-pre-migration-gate-20260821
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  recovery-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production-backup
+    env:
+      MIGRATION_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BACKUP_S3_BUCKET: ${{ vars.BACKUP_S3_BUCKET }}
+      BACKUP_S3_PREFIX: ${{ vars.BACKUP_S3_PREFIX }}
+      BACKUP_S3_REGION: ${{ vars.BACKUP_S3_REGION }}
+      BACKUP_AWS_ROLE_ARN: ${{ vars.BACKUP_AWS_ROLE_ARN }}
+      PRE_MIGRATION_SOURCE_RELEASE_COMMIT: ${{ vars.BACKUP_RELEASE_COMMIT }}
+      PRE_MIGRATION_OPERATOR: ${{ github.actor }}
+      PRE_MIGRATION_TARGET_ENV: production
+      PRE_MIGRATION_MAX_AGE_MINUTES: "120"
+
+    steps:
+      - name: Checkout reviewed release code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install gate dependencies
+        run: python -m pip install "psycopg[binary]" boto3
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.BACKUP_AWS_ROLE_ARN }}
+          role-session-name: litoral-trace-pre-migration-gate
+          aws-region: ${{ vars.BACKUP_S3_REGION }}
+
+      - name: Retrieve latest published production recovery evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import boto3
+
+          bucket = os.environ["BACKUP_S3_BUCKET"]
+          prefix = os.environ["BACKUP_S3_PREFIX"].strip("/") + "/production/"
+          region = os.environ.get("BACKUP_S3_REGION") or None
+          s3 = boto3.client("s3", region_name=region)
+
+          complete_objects = []
+          paginator = s3.get_paginator("list_objects_v2")
+          for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+              for item in page.get("Contents", []):
+                  key = str(item.get("Key") or "")
+                  if key.endswith("/complete.json"):
+                      complete_objects.append(item)
+
+          if not complete_objects:
+              raise SystemExit("NO RECOVERY EVIDENCE: no complete.json found for production")
+
+          latest = max(complete_objects, key=lambda item: item["LastModified"])
+          complete_path = Path("/tmp/litoral-complete.json")
+          manifest_path = Path("/tmp/litoral-manifest.json")
+          s3.download_file(bucket, latest["Key"], str(complete_path))
+          marker = json.loads(complete_path.read_text(encoding="utf-8"))
+          manifest_key = str(marker.get("manifest_key") or "")
+          if not manifest_key.startswith(prefix) or not manifest_key.endswith(".json"):
+              raise SystemExit("NO RECOVERY EVIDENCE: complete marker has invalid manifest key")
+          s3.download_file(bucket, manifest_key, str(manifest_path))
+
+          print(json.dumps({
+              "recovery_evidence": "retrieved",
+              "backup_created_at_utc": marker.get("backup_created_at_utc"),
+              "published_at_utc": marker.get("published_at_utc"),
+              "release_commit": marker.get("release_commit"),
+          }, sort_keys=True))
+          PY
+
+      - name: Execute fail-closed P2.7A5 gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.pre_migration_recovery_gate \
+            --manifest /tmp/litoral-manifest.json \
+            --complete-marker /tmp/litoral-complete.json \
+            --source-label production \
+            --max-age-minutes 120
+
+      - name: Cleanup recovery evidence
+        if: always()
+        shell: bash
+        run: rm -f /tmp/litoral-manifest.json /tmp/litoral-complete.json
