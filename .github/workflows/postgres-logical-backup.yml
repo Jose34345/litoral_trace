@@ -14,6 +14,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  issues: write
 
 concurrency:
   group: postgres-logical-backup-production
@@ -174,17 +175,79 @@ jobs:
           PY
 
       - name: Verify exact recovery point with P2.7A5
+        id: recovery
+        continue-on-error: true
         shell: bash
         run: |
+          set +e
           MANIFEST_PATH="$(cat "$BACKUP_WORKDIR/manifest-path.txt")"
           COMPLETE_PATH="$(cat "$BACKUP_WORKDIR/complete-path.txt")"
           python -m scripts.pre_migration_recovery_gate \
             --manifest "$MANIFEST_PATH" \
             --complete-marker "$COMPLETE_PATH" \
             --source-label production \
-            --max-age-minutes "$PRE_MIGRATION_MAX_AGE_MINUTES"
+            --max-age-minutes "$PRE_MIGRATION_MAX_AGE_MINUTES" \
+            > "$BACKUP_WORKDIR/recovery-result.json" \
+            2> "$BACKUP_WORKDIR/recovery-error.txt"
+          status=$?
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ]; then
+            cat "$BACKUP_WORKDIR/recovery-result.json"
+          else
+            cat "$BACKUP_WORKDIR/recovery-error.txt" >&2
+          fi
+          exit "$status"
+
+      - name: Report cutover recovery verdict
+        if: always() && github.event_name != 'schedule'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_OUTCOME: ${{ steps.recovery.outcome }}
+          RECOVERY_EXIT_CODE: ${{ steps.recovery.outputs.exit_code }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          workdir = Path(os.environ["BACKUP_WORKDIR"])
+          outcome = os.environ.get("RECOVERY_OUTCOME") or "not-run"
+          verdict = "PASS" if outcome == "success" else "NO-GO"
+          lines = [
+              f"### P2.7A5 production recovery gate — {verdict}",
+              "",
+              f"- Workflow event: `{os.environ.get('GITHUB_EVENT_NAME', 'unknown')}`",
+              f"- Gate outcome: `{outcome}`",
+              f"- Exit code: `{os.environ.get('RECOVERY_EXIT_CODE') or 'not-run'}`",
+          ]
+
+          result_path = workdir / "recovery-result.json"
+          error_path = workdir / "recovery-error.txt"
+          if outcome == "success" and result_path.exists():
+              payload = json.loads(result_path.read_text(encoding="utf-8"))
+              lines.extend([
+                  f"- Backup created: `{payload.get('backup_created_at_utc', 'unknown')}`",
+                  f"- Backup age: `{payload.get('backup_age_seconds', 'unknown')} seconds`",
+                  f"- Alembic: `{payload.get('alembic_revision', 'unknown')}`",
+                  f"- Source release: `{payload.get('source_release_commit', 'unknown')}`",
+                  "- Database identity / manifest integrity: `verified`",
+              ])
+          elif error_path.exists():
+              error = error_path.read_text(encoding="utf-8", errors="replace").strip()
+              if len(error) > 600:
+                  error = error[-600:]
+              lines.extend(["", "Sanitized gate error:", "```", error or "No detail produced.", "```"])
+
+          Path("/tmp/recovery-comment.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+          gh issue comment 48 --repo Jose34345/litoral_trace --body-file /tmp/recovery-comment.md
+
+      - name: Enforce fail-closed recovery result
+        if: steps.recovery.outcome != 'success'
+        run: exit 1
 
       - name: Cleanup backup workdir
         if: always()
         shell: bash
-        run: rm -rf "$RUNNER_TEMP/litoral-trace-postgres-backup"
+        run: rm -rf "$RUNNER_TEMP/litoral-trace-postgres-backup" /tmp/recovery-comment.md
