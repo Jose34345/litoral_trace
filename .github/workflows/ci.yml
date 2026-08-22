@@ -58,7 +58,7 @@ jobs:
             tests/test_ux10d_traceability_operations_unittest.py
           python -c "import main; print('P1A_REVIEW_MAIN_IMPORT_OK', len(main.app.routes))"
 
-      - name: Commit tested fixes
+      - name: Commit tested product fixes
         shell: bash
         run: |
           set -euo pipefail
@@ -67,10 +67,7 @@ jobs:
           git add \
             src/litoral_trace/services/integrations/core.py \
             src/litoral_trace/web/integrations.py \
-            tests/test_p1a_integration_core_unittest.py \
-            .github/workflows/release-integration-gates.yml \
-            .github/workflows/ux10g-postgres-web-stabilization-gate.yml \
-            .github/workflows/v1-final-release-acceptance.yml
+            tests/test_p1a_integration_core_unittest.py
           git diff --cached --quiet && { echo "No review fix changes to commit"; exit 0; }
           git commit -m "fix(p1a): address integration safety review"
           git push origin HEAD:p1a-integration-core-erp
