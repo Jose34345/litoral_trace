@@ -1,0 +1,126 @@
+name: Diagnose Production Traceability Render
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/diagnose-production-traceability-render.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: production-backup
+    env:
+      DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      ENVIRONMENT: test
+      JWT_SECRET_KEY: diagnostic-only-key-that-is-not-used-for-production-auth-0123456789abcdef
+      DIAG_SHIPMENT: CUTOVER-SMOKE-V3-32552268325-SHIP
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: p2-enterprise-production
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install application dependencies
+        run: python -m pip install --quiet -r requirements.txt
+      - name: Render real production genealogy offline
+        id: diag
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, traceback
+          from starlette.requests import Request
+          from litoral_trace.api.auth import UserTenantContext
+          from litoral_trace.db.tenant import get_tenant_scoped_db_session
+          from litoral_trace.services.traceability_lineage import TraceabilityLineageService
+          from litoral_trace.web.traceability import build_traceability_view
+          from litoral_trace.web.context import build_template_context
+          from litoral_trace.web.csrf import create_csrf_browser_nonce
+          from litoral_trace.web.templates import templates
+
+          shipment = os.environ['DIAG_SHIPMENT']
+          checkpoint = 'session'
+          outcome = 'failure'
+          error = ''
+          session = None
+          try:
+              session = get_tenant_scoped_db_session(1)
+              if session is None:
+                  raise RuntimeError('tenant_session_unavailable')
+              checkpoint = 'lineage_service'
+              payload = TraceabilityLineageService(session=session, organization_id=1).trace_shipment(shipment)
+              if payload.get('complete') is not True:
+                  raise RuntimeError('real_lineage_payload_not_complete')
+              checkpoint = 'presentation_mapper'
+              view = build_traceability_view(query=shipment, payload=payload)
+              if not view.get('result'):
+                  raise RuntimeError('presentation_result_missing')
+              checkpoint = 'template_context'
+              scope = {
+                  'type':'http','http_version':'1.1','method':'GET','scheme':'https',
+                  'path':'/traceability','raw_path':b'/traceability',
+                  'query_string':f'shipment_code={shipment}'.encode(),
+                  'headers':[], 'client':('127.0.0.1',12345), 'server':('litoraltrace.com',443),
+                  'root_path':''
+              }
+              request = Request(scope)
+              user = UserTenantContext(
+                  user_id=1, username='diagnostic', organization_id=1,
+                  organization_name='Diagnostic Organization', organization_slug='diagnostic',
+                  role='admin', email='diagnostic@invalid.local', session_id=1,
+                  is_platform_superadmin=False,
+              )
+              context = build_template_context(
+                  request, user=user, browser_nonce=create_csrf_browser_nonce(),
+                  context={'traceability_view': view},
+              )
+              checkpoint = 'jinja_render'
+              rendered = templates.env.get_template('traceability.html').render(context)
+              if shipment not in rendered:
+                  raise RuntimeError('shipment_missing_from_rendered_html')
+              checkpoint = 'complete'
+              outcome = 'success'
+          except Exception as exc:
+              error = f'{type(exc).__name__}:{str(exc)}'.replace('\n',' ')[:350]
+              print('DIAGNOSTIC_FAILURE checkpoint='+checkpoint+' error='+error)
+              traceback.print_exc(limit=8)
+          finally:
+              if session is not None:
+                  session.close()
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as fh:
+                  fh.write(f'outcome={outcome}\ncheckpoint={checkpoint}\n')
+                  safe = error.replace('%','pct').replace('\r',' ').replace('\n',' ')
+                  fh.write(f'error={safe}\n')
+          if outcome != 'success':
+              raise SystemExit(1)
+          PY
+      - name: Report sanitized diagnostic
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STEP_OUTCOME: ${{ steps.diag.outcome }}
+          OUTCOME: ${{ steps.diag.outputs.outcome }}
+          CHECKPOINT: ${{ steps.diag.outputs.checkpoint }}
+          ERROR: ${{ steps.diag.outputs.error }}
+        shell: bash
+        run: |
+          cat > /tmp/comment.md <<EOF
+          ### Production traceability render diagnostic
+
+          - workflow step: ${STEP_OUTCOME}
+          - diagnostic outcome: ${OUTCOME:-unknown}
+          - last checkpoint: ${CHECKPOINT:-unknown}
+          - sanitized exception: ${ERROR:-none}
+          - target shipment: CUTOVER-SMOKE-V3-32552268325-SHIP
+          - release code: 3f3adb63df9f790b2df3dc522202ec9bc461c7b4
+          EOF
+          gh issue comment 48 --repo Jose34345/litoral_trace --body-file /tmp/comment.md
