@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "17 0,12 * * *"
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/postgres-logical-backup.yml"
+      - "scripts/pre_migration_recovery_gate.py"
 
 permissions:
   contents: read
@@ -27,6 +33,11 @@ jobs:
       BACKUP_S3_REGION: ${{ vars.BACKUP_S3_REGION }}
       BACKUP_S3_SSE: ${{ vars.BACKUP_S3_SSE }}
       BACKUP_RELEASE_COMMIT: ${{ vars.BACKUP_RELEASE_COMMIT }}
+      MIGRATION_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      PRE_MIGRATION_SOURCE_RELEASE_COMMIT: ${{ vars.BACKUP_RELEASE_COMMIT }}
+      PRE_MIGRATION_OPERATOR: ${{ github.actor }}
+      PRE_MIGRATION_TARGET_ENV: production
+      PRE_MIGRATION_MAX_AGE_MINUTES: "120"
     steps:
       - name: Checkout
         # actions/checkout@v4
@@ -136,6 +147,42 @@ jobs:
           python -m scripts.postgres_backup_publish \
             --dump-file "$DUMP_PATH" \
             --manifest "$MANIFEST_PATH" > "$BACKUP_WORKDIR/publish-result.json"
+
+      - name: Retrieve exact published completion marker
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import boto3
+
+          workdir = Path(os.environ["BACKUP_WORKDIR"]).resolve()
+          publish = json.loads((workdir / "publish-result.json").read_text(encoding="utf-8"))
+          complete_key = str(publish.get("complete_key") or "").strip()
+          if not complete_key:
+              raise SystemExit("Published backup did not return a complete marker key.")
+
+          prefix = str(os.environ["BACKUP_S3_PREFIX"]).strip("/") + "/production/"
+          if not complete_key.startswith(prefix) or not complete_key.endswith("/complete.json"):
+              raise SystemExit("Published completion marker key is outside the production backup namespace.")
+
+          s3 = boto3.client("s3", region_name=os.environ.get("BACKUP_S3_REGION") or None)
+          complete_path = workdir / "complete.json"
+          s3.download_file(os.environ["BACKUP_S3_BUCKET"], complete_key, str(complete_path))
+          (workdir / "complete-path.txt").write_text(str(complete_path), encoding="utf-8")
+          PY
+
+      - name: Verify exact recovery point with P2.7A5
+        shell: bash
+        run: |
+          MANIFEST_PATH="$(cat "$BACKUP_WORKDIR/manifest-path.txt")"
+          COMPLETE_PATH="$(cat "$BACKUP_WORKDIR/complete-path.txt")"
+          python -m scripts.pre_migration_recovery_gate \
+            --manifest "$MANIFEST_PATH" \
+            --complete-marker "$COMPLETE_PATH" \
+            --source-label production \
+            --max-age-minutes "$PRE_MIGRATION_MAX_AGE_MINUTES"
 
       - name: Cleanup backup workdir
         if: always()
