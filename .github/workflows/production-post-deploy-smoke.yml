@@ -1,0 +1,134 @@
+name: Production Post-Deploy Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/production-post-deploy-smoke.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  public-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify deployed public surface
+        id: smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://litoraltrace.com"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+
+          fetch() {
+            local name="$1"
+            local path="$2"
+            curl --silent --show-error --location --max-time 90 \
+              --retry 2 --retry-delay 5 --retry-all-errors \
+              -D "$tmp/${name}.headers" -o "$tmp/${name}.body" \
+              -w '%{http_code}' "$BASE$path"
+          }
+
+          code_health="$(fetch health /health)"
+          code_ready="$(fetch ready /ready)"
+          code_home="$(fetch home /)"
+          code_login="$(fetch login /login)"
+          code_regional="$(fetch regional /regional-intelligence)"
+
+          test "$code_health" = "200"
+          test "$code_ready" = "200"
+          test "$code_home" = "200"
+          test "$code_login" = "200"
+          test "$code_regional" = "200"
+
+          grep -Eq '"status"[[:space:]]*:[[:space:]]*"healthy"' "$tmp/health.body"
+          grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"' "$tmp/ready.body"
+
+          grep -Fq 'Trazabilidad de origen y cadena de custodia para operaciones forestales.' "$tmp/home.body"
+          grep -Fq 'Litoral Trace no emite certificaciones EUDR' "$tmp/home.body"
+          grep -Fq 'Cadena de custodia' "$tmp/home.body"
+          grep -Fq 'Dossier de origen' "$tmp/home.body"
+
+          if grep -Fq 'Declaraciones TRACES NT' "$tmp/home.body"; then
+            echo 'Stale TRACES NT claim detected on public landing.' >&2
+            exit 1
+          fi
+          if grep -Fq 'Compliance Intelligence v2.4' "$tmp/home.body"; then
+            echo 'Stale public product positioning detected.' >&2
+            exit 1
+          fi
+
+          protected_paths=(
+            '/operations'
+            '/traceability'
+            '/evidence'
+            '/release-control?shipment_code=SMOKE-NOT-REAL'
+          )
+          protected_ok=0
+          for path in "${protected_paths[@]}"; do
+            headers="$tmp/protected-${protected_ok}.headers"
+            code="$(curl --silent --show-error --max-time 90 --retry 2 --retry-delay 5 --retry-all-errors \
+              -D "$headers" -o /dev/null -w '%{http_code}' "$BASE$path")"
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {gsub(/\r/,""); sub(/^location:[[:space:]]*/,""); print; exit}' "$headers")"
+            case "$code" in
+              302|303|307|308) ;;
+              *) echo "Protected route $path returned HTTP $code instead of redirect." >&2; exit 1 ;;
+            esac
+            case "$location" in
+              /login|/|"$BASE/login"|"$BASE/") ;;
+              *) echo "Protected route $path redirected to unexpected location: $location" >&2; exit 1 ;;
+            esac
+            protected_ok=$((protected_ok + 1))
+          done
+
+          for path in /docs /openapi.json /internal/metrics; do
+            code="$(curl --silent --show-error --max-time 90 --retry 2 --retry-delay 5 --retry-all-errors \
+              -o /dev/null -w '%{http_code}' "$BASE$path")"
+            test "$code" = "404"
+          done
+
+          echo "health=$code_health" >> "$GITHUB_OUTPUT"
+          echo "ready=$code_ready" >> "$GITHUB_OUTPUT"
+          echo "home=$code_home" >> "$GITHUB_OUTPUT"
+          echo "login=$code_login" >> "$GITHUB_OUTPUT"
+          echo "regional=$code_regional" >> "$GITHUB_OUTPUT"
+          echo "protected=$protected_ok" >> "$GITHUB_OUTPUT"
+
+      - name: Report sanitized verdict to cutover issue
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.smoke.outcome }}
+          HEALTH: ${{ steps.smoke.outputs.health }}
+          READY: ${{ steps.smoke.outputs.ready }}
+          HOME: ${{ steps.smoke.outputs.home }}
+          LOGIN: ${{ steps.smoke.outputs.login }}
+          REGIONAL: ${{ steps.smoke.outputs.regional }}
+          PROTECTED: ${{ steps.smoke.outputs.protected }}
+        run: |
+          if [ "$OUTCOME" = "success" ]; then verdict="PASS"; else verdict="NO-GO"; fi
+          cat > /tmp/comment.md <<EOF
+          ### Production post-deploy public smoke — ${verdict}
+
+          - /health: HTTP ${HEALTH:-unknown}
+          - /ready: HTTP ${READY:-unknown}
+          - landing: HTTP ${HOME:-unknown}; UX10 product language + regulatory boundary verified
+          - /login: HTTP ${LOGIN:-unknown}
+          - /regional-intelligence: HTTP ${REGIONAL:-unknown}
+          - protected new routes redirect unauthenticated users: ${PROTECTED:-0}/4
+          - /docs, /openapi.json, /internal/metrics: hidden (404) when PASS
+          - expected application release branch head: 3f3adb63df9f790b2df3dc522202ec9bc461c7b4
+          - evaluated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+          gh issue comment 48 --repo Jose34345/litoral_trace --body-file /tmp/comment.md
+
+      - name: Enforce fail-closed smoke
+        if: steps.smoke.outcome != 'success'
+        run: exit 1
