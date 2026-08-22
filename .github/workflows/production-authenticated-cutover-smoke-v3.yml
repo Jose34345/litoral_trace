@@ -1,0 +1,213 @@
+name: Production Authenticated Cutover Smoke V3
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/production-authenticated-cutover-smoke-v3.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production-backup
+    env:
+      SMOKE_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BASE_URL: https://litoraltrace.com
+    steps:
+      - name: Install dependencies
+        run: python -m pip install --quiet "psycopg[binary]" bcrypt requests
+
+      - name: Execute timezone-correct authenticated acceptance
+        id: acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import html, json, os, re, secrets, sys, zipfile
+          from datetime import datetime, timedelta
+          from io import BytesIO
+          from urllib.parse import quote
+          from zoneinfo import ZoneInfo
+          import bcrypt, psycopg, requests
+
+          BASE = os.environ['BASE_URL'].rstrip('/')
+          DBURL = os.environ['SMOKE_DATABASE_URL'].replace('postgresql+psycopg://','postgresql://',1)
+          RUN = os.environ['GITHUB_RUN_ID']
+          PREFIX = f'CUTOVER-SMOKE-V3-{RUN}'
+          SHIPMENT = f'{PREFIX}-SHIP'
+          checkpoint = 'bootstrap'
+          user_ids = []
+          passwords = {}
+
+          def db(): return psycopg.connect(DBURL)
+
+          def create_user(org, role, label):
+              username = f'cutover_v3_{label}_{RUN}'
+              password = secrets.token_urlsafe(36)
+              ph = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+              with db() as conn, conn.cursor() as cur:
+                  cur.execute('INSERT INTO users (organization_id,email,username,password_hash,role,full_name,is_active) VALUES (%s,%s,%s,%s,%s,%s,true) RETURNING id',
+                              (org,f'cutover-v3-{label}-{RUN}@invalid.litoraltrace.local',username,ph,role,'Temporary cutover smoke principal'))
+                  uid=cur.fetchone()[0]; conn.commit()
+              user_ids.append(uid); passwords[username]=password; return username
+
+          def csrf(text):
+              m=re.search(r'<input[^>]+type=["\']hidden["\'][^>]+name=["\']([^"\']+)["\'][^>]+value=["\']([^"\']*)["\']', text, re.I)
+              if not m: raise RuntimeError('csrf_missing')
+              return m.group(1), html.unescape(m.group(2))
+
+          def login(username):
+              s=requests.Session(); r=s.get(BASE+'/login',timeout=60)
+              if r.status_code!=200: raise RuntimeError(f'login_get_{r.status_code}')
+              n,t=csrf(r.text)
+              r=s.post(BASE+'/login',data={n:t,'username':username,'password':passwords[username]},timeout=60,allow_redirects=False)
+              if r.status_code!=303: raise RuntimeError(f'login_post_{r.status_code}')
+              r=s.get(BASE+'/dashboard',timeout=60)
+              if r.status_code!=200 or 'Trazabilidad de despachos' not in r.text: raise RuntimeError(f'dashboard_{r.status_code}')
+              return s
+
+          def page(s,path,needle=None):
+              r=s.get(BASE+path,timeout=60)
+              if r.status_code!=200: raise RuntimeError(f'get_{path.split("?")[0]}_{r.status_code}')
+              if needle and needle not in r.text: raise RuntimeError(f'content_{path.split("?")[0]}')
+              return r
+
+          def post(s,path,page_text,data):
+              n,t=csrf(page_text); payload={n:t,**data}
+              r=s.post(BASE+path,data=payload,timeout=60,allow_redirects=False)
+              if r.status_code!=303:
+                  safe = re.sub(r'<[^>]+>',' ',r.text)[:240].replace('\n',' ')
+                  raise RuntimeError(f'post_{path}_{r.status_code}:{safe}')
+              return r
+
+          try:
+              checkpoint='principals'
+              admin=create_user(1,'admin','admin'); auditor=create_user(1,'auditor','auditor'); client=create_user(1,'cliente','client'); cross=create_user(46,'admin','cross')
+              checkpoint='login'; s=login(admin)
+              local_now=datetime.now(ZoneInfo('America/Argentina/Cordoba'))
+              receipt_at=(local_now-timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M')
+              process_at=(local_now-timedelta(minutes=9)).strftime('%Y-%m-%dT%H:%M')
+
+              checkpoint='receipt'; ops=page(s,'/operations')
+              post(s,'/operations/receipts',ops.text,{
+                  'source_identifier':'SMOKE-TEST-001','event_code':PREFIX+'-RECEIPT','batch_code':PREFIX+'-RAW','product_name':'Pino cutover smoke','quantity':'10','unit':'M3','occurred_at':receipt_at,'facility_reference':'CUTOVER-SMOKE','notes':'Production cutover acceptance','commit_mode':'post'})
+              with db() as conn, conn.cursor() as cur:
+                  cur.execute('SELECT b.public_id::text,e.status FROM traceability_batches b JOIN traceability_event_outputs o ON o.batch_id=b.id AND o.organization_id=b.organization_id JOIN traceability_events e ON e.id=o.event_id AND e.organization_id=o.organization_id WHERE b.organization_id=1 AND b.code=%s',(PREFIX+'-RAW',)); row=cur.fetchone()
+                  if not row or row[1]!='POSTED': raise RuntimeError('receipt_not_posted')
+                  raw=row[0]
+
+              checkpoint='process'; ops=page(s,'/operations')
+              post(s,'/operations/processes',ops.text,{
+                  'event_code':PREFIX+'-PROCESS','event_type':'TRANSFORMATION','occurred_at':process_at,'input_batch':raw,'input_quantity':'8','output_code':PREFIX+'-FINISHED','output_product':'Pino terminado cutover smoke','output_stage':'FINISHED_GOOD','output_unit':'M3','output_quantity':'6','facility_reference':'CUTOVER-SMOKE','notes':'Production cutover transformation','commit_mode':'post'})
+              with db() as conn, conn.cursor() as cur:
+                  cur.execute('SELECT b.public_id::text,e.status FROM traceability_batches b JOIN traceability_event_outputs o ON o.batch_id=b.id AND o.organization_id=b.organization_id JOIN traceability_events e ON e.id=o.event_id AND e.organization_id=o.organization_id WHERE b.organization_id=1 AND b.code=%s',(PREFIX+'-FINISHED',)); row=cur.fetchone()
+                  if not row or row[1]!='POSTED': raise RuntimeError('process_not_posted')
+                  finished=row[0]
+
+              checkpoint='shipment'; ops=page(s,'/operations')
+              post(s,'/operations/shipments',ops.text,{
+                  'shipment_code':SHIPMENT,'sale_reference':f'CUTOVER-SALE-{RUN}','buyer_reference':'CUTOVER-BUYER','destination_country':'DE','shipment_batch':finished,'shipment_quantity':'5','commit_mode':'dispatch'})
+              with db() as conn, conn.cursor() as cur:
+                  cur.execute('SELECT status FROM shipments WHERE organization_id=1 AND shipment_code=%s',(SHIPMENT,))
+                  if cur.fetchone()!=('DISPATCHED',): raise RuntimeError('shipment_not_dispatched')
+
+              checkpoint='lineage'
+              r=s.get(BASE+f'/api/v1/traceability/shipments/{quote(SHIPMENT,safe="")}/origin',timeout=60)
+              if r.status_code!=200 or r.json().get('complete') is not True: raise RuntimeError(f'lineage_{r.status_code}')
+              page(s,'/traceability?shipment_code='+quote(SHIPMENT),SHIPMENT)
+
+              checkpoint='evidence'; ev=page(s,'/evidence'); n,t=csrf(ev.text)
+              fname=f'cutover-evidence-v3-{RUN}.json'; content=json.dumps({'kind':'production-cutover-smoke','run_id':RUN}).encode()
+              r=s.post(BASE+'/evidence/upload-link',data={n:t,'subject':'SHIPMENT|'+SHIPMENT,'document_type':'OTHER_EVIDENCE','evidence_type':'OTHER','reference_number':f'CUTOVER-{RUN}','issuer':'Litoral Trace','notes':'Production cutover documentary evidence'},files={'file':(fname,content,'application/json')},timeout=90,allow_redirects=False)
+              if r.status_code!=303: raise RuntimeError(f'evidence_{r.status_code}')
+              page(s,'/evidence?subject='+quote('SHIPMENT|'+SHIPMENT),fname)
+
+              checkpoint='release_control'; page(s,'/release-control?shipment_code='+quote(SHIPMENT),SHIPMENT)
+
+              checkpoint='dossier'; hashes=[]
+              for artifact in ('manifest','pdf','bundle'):
+                  r=s.get(BASE+f'/api/v1/traceability/shipments/dossier/{artifact}',params={'shipment_code':SHIPMENT},timeout=90)
+                  if r.status_code!=200: raise RuntimeError(f'dossier_{artifact}_{r.status_code}')
+                  if 'private' not in r.headers.get('cache-control','').lower(): raise RuntimeError(f'cache_{artifact}')
+                  h=r.headers.get('x-litoral-trace-manifest-sha256','')
+                  if not re.fullmatch(r'[0-9a-f]{64}',h): raise RuntimeError(f'hash_{artifact}')
+                  hashes.append(h)
+                  if artifact=='manifest' and SHIPMENT not in json.dumps(r.json(),ensure_ascii=False): raise RuntimeError('manifest_missing_shipment')
+                  if artifact=='pdf' and not r.content.startswith(b'%PDF-'): raise RuntimeError('pdf_invalid')
+                  if artifact=='bundle':
+                      with zipfile.ZipFile(BytesIO(r.content)) as zf:
+                          if set(zf.namelist())!={'manifest.json','origins.geojson','dossier.pdf','README.txt'}: raise RuntimeError('bundle_invalid')
+              if len(set(hashes))!=1: raise RuntimeError('hash_mismatch')
+
+              checkpoint='read_only'
+              for username,label in ((auditor,'auditor'),(client,'client')):
+                  rs=login(username)
+                  if rs.get(BASE+'/traceability',params={'shipment_code':SHIPMENT},timeout=60).status_code!=200: raise RuntimeError(label+'_read')
+                  if rs.get(BASE+'/operations',timeout=60,allow_redirects=False).status_code!=403: raise RuntimeError(label+'_operations')
+                  if rs.post(BASE+'/operations/receipts',timeout=60,allow_redirects=False).status_code!=403: raise RuntimeError(label+'_write')
+
+              checkpoint='cross_tenant'; cs=login(cross)
+              if cs.get(BASE+f'/api/v1/traceability/shipments/{quote(SHIPMENT,safe="")}/origin',timeout=60).status_code!=404: raise RuntimeError('cross_tenant_not_404')
+
+              checkpoint='persistence'
+              with db() as conn, conn.cursor() as cur:
+                  cur.execute('SELECT count(*) FROM traceability_evidence_links tel JOIN shipments s ON s.id=tel.shipment_id AND s.organization_id=tel.organization_id WHERE s.organization_id=1 AND s.shipment_code=%s AND tel.unlinked_at IS NULL',(SHIPMENT,)); ec=cur.fetchone()[0]
+                  cur.execute('SELECT count(*) FROM vault_documents WHERE organization_id=1 AND original_filename=%s AND status=%s',(fname,'available')); vc=cur.fetchone()[0]
+                  if ec<1 or vc<1: raise RuntimeError('persistence_missing')
+              checkpoint='complete'; result='success'
+          except Exception as exc:
+              result='failure'; print(f'SMOKE_FAILURE checkpoint={checkpoint} error={str(exc).replace(chr(10)," ")[:300]}',file=sys.stderr)
+          finally:
+              if user_ids:
+                  try:
+                      with db() as conn, conn.cursor() as cur:
+                          cur.execute('UPDATE user_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE user_id=ANY(%s)',(user_ids,)); cur.execute('UPDATE users SET is_active=false,updated_at=now() WHERE id=ANY(%s)',(user_ids,)); conn.commit()
+                  except Exception as exc:
+                      print('CLEANUP_FAILURE '+str(exc)[:200],file=sys.stderr); result='failure'; checkpoint='cleanup'
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as fh:
+                  fh.write(f'result={result}\ncheckpoint={checkpoint}\nshipment={SHIPMENT if checkpoint not in ("bootstrap","principals","login","receipt") else ""}\n')
+          if result!='success': raise SystemExit(1)
+          PY
+
+      - name: Report sanitized verdict
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.acceptance.outcome }}
+          RESULT: ${{ steps.acceptance.outputs.result }}
+          CHECKPOINT: ${{ steps.acceptance.outputs.checkpoint }}
+          SHIPMENT: ${{ steps.acceptance.outputs.shipment }}
+        run: |
+          if [ "$OUTCOME" = "success" ] && [ "$RESULT" = "success" ]; then verdict="PASS"; else verdict="NO-GO"; fi
+          cat > /tmp/comment.md <<EOF
+          ### Production authenticated cutover smoke v3 — ${verdict}
+
+          - workflow outcome: ${OUTCOME}
+          - last checkpoint: ${CHECKPOINT:-unknown}
+          - browser login/session + dashboard
+          - receipt → POSTED
+          - transformation → POSTED
+          - shipment → DISPATCHED
+          - reverse lineage complete + Trazabilidad UI
+          - contextual evidence uploaded and linked through private Vault
+          - Control de Salida rendered
+          - manifest + PDF + ZIP generated with consistent manifest hash
+          - auditor/client write operations denied
+          - cross-tenant shipment lookup returned 404
+          - temporary smoke principals deactivated and sessions revoked
+          - smoke shipment: ${SHIPMENT:-not-completed}
+          - evaluated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+          gh issue comment 48 --repo Jose34345/litoral_trace --body-file /tmp/comment.md
+
+      - name: Enforce fail-closed result
+        if: steps.acceptance.outcome != 'success'
+        run: exit 1
