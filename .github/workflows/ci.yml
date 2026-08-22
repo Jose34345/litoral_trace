@@ -37,7 +37,7 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Apply accepted PR review fixes
-        run: python scripts/p1a_review_fixes.py
+        run: python scripts/p1a_review_fixes_v2.py
 
       - name: Install Python dependencies
         run: |
@@ -67,7 +67,10 @@ jobs:
           git add \
             src/litoral_trace/services/integrations/core.py \
             src/litoral_trace/web/integrations.py \
-            tests/test_p1a_integration_core_unittest.py
+            tests/test_p1a_integration_core_unittest.py \
+            .github/workflows/release-integration-gates.yml \
+            .github/workflows/ux10g-postgres-web-stabilization-gate.yml \
+            .github/workflows/v1-final-release-acceptance.yml
           git diff --cached --quiet && { echo "No review fix changes to commit"; exit 0; }
           git commit -m "fix(p1a): address integration safety review"
           git push origin HEAD:p1a-integration-core-erp
