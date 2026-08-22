@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import (
     ExternalEntity,
+    ExternalEntityVersion,
     ExternalReference,
     IntegrationConnection,
     IntegrationEvent,
@@ -168,6 +169,7 @@ def _event(
     connection_id: int | None = None,
     sync_run_id: int | None = None,
     external_entity_id: int | None = None,
+    actor_user_id: int | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> IntegrationEvent:
     row = IntegrationEvent(
@@ -175,8 +177,33 @@ def _event(
         connection_id=connection_id,
         sync_run_id=sync_run_id,
         external_entity_id=external_entity_id,
+        actor_user_id=actor_user_id,
         event_type=event_type[:64],
         metadata_json=metadata,
+    )
+    session.add(row)
+    return row
+
+
+def _version(
+    session: Session,
+    *,
+    organization_id: int,
+    external_entity_id: int,
+    sync_run_id: int,
+    payload_hash: str,
+    payload_json: dict[str, Any],
+    normalized_json: dict[str, Any],
+    source_updated_at: datetime | None,
+) -> ExternalEntityVersion:
+    row = ExternalEntityVersion(
+        organization_id=organization_id,
+        external_entity_id=external_entity_id,
+        sync_run_id=sync_run_id,
+        payload_hash=payload_hash,
+        payload_json=payload_json,
+        normalized_json=normalized_json,
+        source_updated_at=source_updated_at,
     )
     session.add(row)
     return row
@@ -208,6 +235,7 @@ class IntegrationCoreService:
         connector_type: str = "GENERIC_ERP",
         secret_ref: str | None = None,
         config_json: dict[str, Any] | None = None,
+        actor_user_id: int | None = None,
     ) -> IntegrationConnection:
         normalized_name = _clean_text(name, field="name", maximum=160)
         normalized_type = str(connector_type or "").strip().upper()
@@ -235,6 +263,7 @@ class IntegrationCoreService:
                 organization_id=self.organization_id,
                 event_type="CONNECTION_CREATED",
                 connection_id=connection.id,
+                actor_user_id=actor_user_id,
                 metadata={"connector_type": normalized_type},
             )
             self.session.commit()
@@ -250,7 +279,13 @@ class IntegrationCoreService:
                 "No fue posible crear la conexión de integración."
             ) from exc
 
-    def set_connection_status(self, public_id: UUID, *, status: str) -> IntegrationConnection:
+    def set_connection_status(
+        self,
+        public_id: UUID,
+        *,
+        status: str,
+        actor_user_id: int | None = None,
+    ) -> IntegrationConnection:
         normalized = str(status or "").strip().upper()
         if normalized not in {"ACTIVE", "DISABLED"}:
             raise IntegrationValidationError(
@@ -263,6 +298,7 @@ class IntegrationCoreService:
             organization_id=self.organization_id,
             event_type="CONNECTION_STATUS_CHANGED",
             connection_id=connection.id,
+            actor_user_id=actor_user_id,
             metadata={"status": normalized},
         )
         try:
@@ -280,7 +316,9 @@ class IntegrationCoreService:
         connection_public_id: UUID,
         payload: GenericErpPayload,
         idempotency_key: str,
+        actor_user_id: int | None = None,
     ) -> SyncResult:
+        """Stage external facts only; never post or dispatch the LT ledger."""
         connection = self._connection(connection_public_id)
         if connection.connector_type != "GENERIC_ERP":
             raise IntegrationValidationError(
@@ -316,8 +354,8 @@ class IntegrationCoreService:
             records_seen=payload.entity_count(),
         )
         self.session.add(run)
-
         created = updated = unchanged = conflict = 0
+
         try:
             self.session.flush()
             _event(
@@ -325,6 +363,7 @@ class IntegrationCoreService:
                 organization_id=self.organization_id,
                 connection_id=connection.id,
                 sync_run_id=run.id,
+                actor_user_id=actor_user_id,
                 event_type="SYNC_STARTED",
                 metadata={
                     "source_system": payload.source_system,
@@ -361,12 +400,23 @@ class IntegrationCoreService:
                     )
                     self.session.add(entity)
                     self.session.flush()
+                    _version(
+                        self.session,
+                        organization_id=self.organization_id,
+                        external_entity_id=entity.id,
+                        sync_run_id=run.id,
+                        payload_hash=digest,
+                        payload_json=raw,
+                        normalized_json=normalized,
+                        source_updated_at=item.source_updated_at,
+                    )
                     _event(
                         self.session,
                         organization_id=self.organization_id,
                         connection_id=connection.id,
                         sync_run_id=run.id,
                         external_entity_id=entity.id,
+                        actor_user_id=actor_user_id,
                         event_type="ENTITY_STAGED",
                         metadata={"entity_type": entity_type, "external_id": external_id},
                     )
@@ -381,6 +431,16 @@ class IntegrationCoreService:
 
                 previous_hash = existing.payload_hash
                 was_reconciled = existing.status == "RECONCILED"
+                _version(
+                    self.session,
+                    organization_id=self.organization_id,
+                    external_entity_id=existing.id,
+                    sync_run_id=run.id,
+                    payload_hash=digest,
+                    payload_json=raw,
+                    normalized_json=normalized,
+                    source_updated_at=item.source_updated_at,
+                )
                 existing.payload_hash = digest
                 existing.payload_json = raw
                 existing.normalized_json = normalized
@@ -400,6 +460,7 @@ class IntegrationCoreService:
                     connection_id=connection.id,
                     sync_run_id=run.id,
                     external_entity_id=existing.id,
+                    actor_user_id=actor_user_id,
                     event_type=event_type,
                     metadata={
                         "entity_type": entity_type,
@@ -420,6 +481,7 @@ class IntegrationCoreService:
                 organization_id=self.organization_id,
                 connection_id=connection.id,
                 sync_run_id=run.id,
+                actor_user_id=actor_user_id,
                 event_type="SYNC_COMPLETED",
                 metadata={
                     "status": run.status,
@@ -511,6 +573,7 @@ class IntegrationCoreService:
             connection_id=entity.connection_id,
             sync_run_id=entity.last_sync_run_id,
             external_entity_id=entity.id,
+            actor_user_id=user_id,
             event_type="ENTITY_RECONCILED",
             metadata={
                 "target_type": normalized_type,
@@ -551,8 +614,8 @@ class IntegrationCoreService:
             ).all()
         )
         entity_ids = [row.id for row in entities]
-        if entity_ids:
-            references = tuple(
+        references = (
+            tuple(
                 self.session.scalars(
                     select(ExternalReference).where(
                         ExternalReference.organization_id == self.organization_id,
@@ -560,8 +623,9 @@ class IntegrationCoreService:
                     )
                 ).all()
             )
-        else:
-            references = ()
+            if entity_ids
+            else ()
+        )
         return IntegrationSnapshot(
             connections=connections,
             sync_runs=sync_runs,
