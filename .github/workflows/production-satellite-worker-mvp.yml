@@ -1,5 +1,6 @@
 name: Production Satellite Worker MVP
 
+# Activation marker: production secrets loaded 2026-08-22.
 # Temporary zero-fixed-cost worker topology until the first paying customer.
 # At that commercial trigger, migrate this workload to a persistent Render
 # Background Worker and disable this schedule.
