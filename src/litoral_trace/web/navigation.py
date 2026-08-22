@@ -36,6 +36,14 @@ _NAVIGATION = (
         active_prefixes=("/dashboard",),
     ),
     NavigationItem(
+        key="operations",
+        label="Operaciones",
+        href="/operations",
+        section="operacion",
+        permission=Permission.TRACEABILITY_OPERATE,
+        active_prefixes=("/operations",),
+    ),
+    NavigationItem(
         key="imports",
         label="Carga masiva",
         href="/imports",
@@ -60,12 +68,12 @@ _NAVIGATION = (
         active_prefixes=("/release-control",),
     ),
     NavigationItem(
-        key="vault",
-        label="Documentos y evidencias",
-        href="/vault",
+        key="evidence",
+        label="Evidencias",
+        href="/evidence",
         section="compliance",
         permission=Permission.VAULT_READ,
-        active_prefixes=("/vault",),
+        active_prefixes=("/evidence", "/vault"),
     ),
     NavigationItem(
         key="settings",
@@ -77,7 +85,7 @@ _NAVIGATION = (
     ),
     NavigationItem(
         key="platform",
-        label="Administración de plataforma",
+        label="Plataforma",
         href="/admin",
         section="administracion",
         permission=Permission.PLATFORM_ADMIN,
