@@ -641,6 +641,20 @@ function enhanceBatchPicker(select) {
   empty.className = "px-3 py-4 text-center text-xs text-slate-500";
   empty.textContent = "No hay lotes que coincidan con la búsqueda.";
 
+  const clearSelection = document.createElement("button");
+  clearSelection.type = "button";
+  clearSelection.className = "mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40";
+  clearSelection.innerHTML = '<i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Limpiar selección';
+  clearSelection.addEventListener("click", () => {
+    select.value = "";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    menu.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+    shell.dataset.batchPickerMenuOpen = "false";
+    trigger.focus({ preventScroll: true });
+  });
+  list.appendChild(clearSelection);
+
   const optionButtons = [];
   Array.from(select.options).forEach((option) => {
     if (!option.value) {
@@ -680,6 +694,7 @@ function enhanceBatchPicker(select) {
   const placeholder = select.dataset.batchPickerPlaceholder || "Seleccionar lote";
   const syncSelection = () => {
     const selected = select.options[select.selectedIndex];
+    clearSelection.disabled = !(selected && selected.value);
     if (selected && selected.value) {
       const parts = batchOptionParts(selected);
       label.textContent = parts.label;

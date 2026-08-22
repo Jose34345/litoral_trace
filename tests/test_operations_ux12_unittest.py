@@ -22,6 +22,8 @@ def test_app_js_enhances_real_selects_and_keeps_progressive_form_contract() -> N
         "function installDynamicBatchRows()",
         "select.dispatchEvent(new Event(\"change\", { bubbles: true }))",
         "Buscar lote o producto…",
+        "Limpiar selección",
+        'select.value = "";',
     ):
         assert marker in js
     assert "select.classList.add(\"sr-only\")" in js
