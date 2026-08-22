@@ -323,9 +323,11 @@ def persist_ndvi_execution_result(
     )
 
     for observation in result.observations:
-        existing_row = existing_rows.get(
-            (observation.observation_date, observation.geometry_hash)
+        observation_key = (
+            observation.observation_date,
+            observation.geometry_hash,
         )
+        existing_row = existing_rows.get(observation_key)
         if existing_row is None:
             existing_row = SatelliteNdviObservation(
                 organization_id=organization_id,
@@ -346,6 +348,11 @@ def persist_ndvi_execution_result(
                 processing_date=observation.processing_date,
             )
             db_session.add(existing_row)
+            # GEE may return multiple Sentinel-2 scenes for one calendar day.
+            # The canonical table has one row per date+geometry, so keep pending
+            # inserts in the in-memory identity map and let later same-day
+            # observations update that row instead of scheduling a duplicate.
+            existing_rows[observation_key] = existing_row
             continue
 
         if satellite_job_id is not None or existing_row.satellite_job_id is None:
