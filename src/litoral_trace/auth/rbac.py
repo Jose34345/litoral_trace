@@ -16,6 +16,8 @@ class Permission(StrEnum):
     TRACEABILITY_OPERATE = "traceability:operate"
     TRACEABILITY_DISPATCH = "traceability:dispatch"
     TRACEABILITY_EVIDENCE = "traceability:evidence"
+    INTEGRATION_READ = "integration:read"
+    INTEGRATION_MANAGE = "integration:manage"
     SATELLITE_RUN = "satellite:run"
     VAULT_READ = "vault:read"
     VAULT_UPLOAD = "vault:upload"
@@ -38,6 +40,8 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
             Permission.TRACEABILITY_OPERATE,
             Permission.TRACEABILITY_DISPATCH,
             Permission.TRACEABILITY_EVIDENCE,
+            Permission.INTEGRATION_READ,
+            Permission.INTEGRATION_MANAGE,
             Permission.SATELLITE_RUN,
             Permission.VAULT_READ,
             Permission.VAULT_UPLOAD,
@@ -55,6 +59,8 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
             Permission.TRACEABILITY_OPERATE,
             Permission.TRACEABILITY_DISPATCH,
             Permission.TRACEABILITY_EVIDENCE,
+            Permission.INTEGRATION_READ,
+            Permission.INTEGRATION_MANAGE,
             Permission.SATELLITE_RUN,
             Permission.VAULT_READ,
             Permission.VAULT_UPLOAD,
@@ -64,6 +70,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
     "auditor": frozenset(
         {
             Permission.LOTE_READ,
+            Permission.INTEGRATION_READ,
             Permission.VAULT_READ,
             Permission.LICENSE_READ,
         }
