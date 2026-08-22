@@ -1,0 +1,69 @@
+name: Build UX11 Assets Once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-ux11-assets-once.yml"
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout UX11 branch
+        uses: actions/checkout@v4
+        with:
+          ref: ux11-sidebar-navigation-polish
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build deterministic frontend assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm audit --audit-level=high
+
+      - name: Validate and commit generated CSS only
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only)"
+          echo "Generated changes:"
+          printf '%s\n' "$changed"
+          unexpected="$(printf '%s\n' "$changed" | grep -v '^src/litoral_trace/static/dist/app.css$' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "Unexpected generated files:" >&2
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          if ! printf '%s\n' "$changed" | grep -qx 'src/litoral_trace/static/dist/app.css'; then
+            echo "Expected regenerated app.css was not produced." >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/litoral_trace/static/dist/app.css
+          git commit -m "build: refresh UX11 frontend assets"
+          git push origin HEAD:ux11-sidebar-navigation-polish
+
+      - name: Report result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          gh issue comment 48 --repo Jose34345/litoral_trace --body "### UX11 deterministic asset refresh — ${STATUS}\n\nOne-shot Tailwind build for PR #61. On success, only the regenerated tracked \`src/litoral_trace/static/dist/app.css\` was committed to \`ux11-sidebar-navigation-polish\`."
