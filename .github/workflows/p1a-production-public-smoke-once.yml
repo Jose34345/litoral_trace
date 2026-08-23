@@ -1,0 +1,83 @@
+name: P1-A Production Public Smoke Once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/p1a-production-public-smoke-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify P1-A deployed public boundary
+        id: smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://litoraltrace.com"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+
+          health="$(curl --silent --show-error --location --max-time 90 --retry 2 --retry-delay 5 --retry-all-errors -o "$tmp/health" -w '%{http_code}' "$BASE/health")"
+          ready="$(curl --silent --show-error --location --max-time 90 --retry 2 --retry-delay 5 --retry-all-errors -o "$tmp/ready" -w '%{http_code}' "$BASE/ready")"
+          login="$(curl --silent --show-error --location --max-time 90 --retry 2 --retry-delay 5 --retry-all-errors -o "$tmp/login" -w '%{http_code}' "$BASE/login")"
+          test "$health" = "200"
+          test "$ready" = "200"
+          test "$login" = "200"
+          grep -Eq '"status"[[:space:]]*:[[:space:]]*"healthy"' "$tmp/health"
+          grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"' "$tmp/ready"
+
+          integration_code="$(curl --silent --show-error --max-time 90 --retry 2 --retry-delay 5 --retry-all-errors -D "$tmp/integrations.headers" -o "$tmp/integrations.body" -w '%{http_code}' "$BASE/integrations")"
+          integration_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {gsub(/\r/,""); sub(/^location:[[:space:]]*/,""); print; exit}' "$tmp/integrations.headers")"
+          case "$integration_code" in
+            302|303|307|308) ;;
+            *) echo "P1-A /integrations returned HTTP $integration_code; expected authenticated redirect." >&2; exit 1 ;;
+          esac
+          case "$integration_location" in
+            /login|/|"$BASE/login"|"$BASE/") ;;
+            *) echo "P1-A /integrations redirected to unexpected location: $integration_location" >&2; exit 1 ;;
+          esac
+
+          echo "health=$health" >> "$GITHUB_OUTPUT"
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "login=$login" >> "$GITHUB_OUTPUT"
+          echo "integrations=$integration_code" >> "$GITHUB_OUTPUT"
+          echo "location=$integration_location" >> "$GITHUB_OUTPUT"
+
+      - name: Report sanitized verdict to cutover issue
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.smoke.outcome }}
+          HEALTH: ${{ steps.smoke.outputs.health }}
+          READY: ${{ steps.smoke.outputs.ready }}
+          LOGIN: ${{ steps.smoke.outputs.login }}
+          INTEGRATIONS: ${{ steps.smoke.outputs.integrations }}
+          LOCATION: ${{ steps.smoke.outputs.location }}
+        run: |
+          if [ "$OUTCOME" = "success" ]; then verdict="PASS"; else verdict="NO-GO"; fi
+          cat > /tmp/comment.md <<EOF
+          ### P1-A production public surface — ${verdict}
+
+          - /health: HTTP ${HEALTH:-unknown}
+          - /ready: HTTP ${READY:-unknown}
+          - /login: HTTP ${LOGIN:-unknown}
+          - /integrations protected route: HTTP ${INTEGRATIONS:-unknown}
+          - /integrations redirect target: ${LOCATION:-unknown}
+          - expected release branch head: ee7720d702ebf0aa20f2ac2a5e8ce55c51f0fa3f
+          - evaluated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+          gh issue comment 48 --repo Jose34345/litoral_trace --body-file /tmp/comment.md
+
+      - name: Enforce fail-closed verdict
+        if: steps.smoke.outcome != 'success'
+        run: exit 1
