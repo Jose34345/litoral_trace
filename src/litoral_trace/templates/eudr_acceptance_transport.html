@@ -8,14 +8,14 @@
         <div class="grid gap-6 p-6 lg:grid-cols-2 lg:p-8">
             <div>
                 <div class="flex flex-wrap gap-2">
-                    <span class="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-200">P1-D2 · API V3</span>
+                    <span class="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-semibold text-sky-300">P1-D2 · API V3</span>
                     <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-300">ACCEPTANCE-only</span>
                 </div>
                 <h1 id="acceptance-transport-title" class="mt-4 text-3xl font-bold tracking-tight">Transporte EUDR ACCEPTANCE</h1>
                 <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-300">Prepará y, cuando el deployment esté autorizado, enviá el request SOAP V3 al entorno de prueba europeo. El body se identifica por hash; las credenciales y el envelope WS-Security nunca se muestran ni se guardan en esta pantalla.</p>
             </div>
             <aside class="rounded-2xl border border-white/10 bg-white/5 p-5">
-                <p class="text-xs font-bold uppercase tracking-wider text-amber-400">Sin efecto legal</p>
+                <p class="text-xs font-bold uppercase tracking-wider text-amber-500">Sin efecto legal</p>
                 <ul class="mt-3 space-y-2 text-sm leading-5 text-slate-300">
                     <li>ACCEPTANCE no demuestra cumplimiento EUDR.</li>
                     <li>LIVE no está habilitado desde este módulo.</li>
@@ -109,7 +109,7 @@
         </dl>
 
         {% if attempt.error_code or attempt.error_summary %}
-        <div class="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-900"><span class="font-bold">{{ attempt.error_code or 'REMOTE_ERROR' }}</span>{% if attempt.error_summary %} · {{ attempt.error_summary }}{% endif %}</div>
+        <div class="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800"><span class="font-bold">{{ attempt.error_code or 'REMOTE_ERROR' }}</span>{% if attempt.error_summary %} · {{ attempt.error_summary }}{% endif %}</div>
         {% endif %}
 
         {% if acceptance_can_manage and conformance.ready and not acceptance_attempt_stale and attempt.state == 'PREPARED' %}
@@ -119,7 +119,7 @@
                 <input type="hidden" name="{{ csrf_form_field }}" value="{{ csrf_token }}">
                 <input type="hidden" name="shipment_code" value="{{ conformance.shipment_code }}">
                 <input type="hidden" name="attempt_public_id" value="{{ attempt.public_id }}">
-                <button class="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-800">Enviar a ACCEPTANCE</button>
+                <button class="inline-flex items-center gap-2 rounded-lg bg-forest-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-forest-800">Enviar a ACCEPTANCE</button>
                 <p class="mt-2 text-xs text-slate-500">Una vez marcado SENT, un resultado ambiguo no se reenvía automáticamente.</p>
             </form>
             {% else %}
