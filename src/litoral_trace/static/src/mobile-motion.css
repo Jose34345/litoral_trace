@@ -52,11 +52,13 @@ html {
 /* Keep the established hidden/aria-hidden drawer overlay contract. */
 .lt-app-overlay {
   opacity: 0;
+  pointer-events: none;
   transition: opacity var(--lt-motion-duration-fast) ease;
 }
 
 .lt-app-overlay[aria-hidden="false"] {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .lt-sidebar {
