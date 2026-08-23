@@ -166,6 +166,11 @@ class EudrAcceptanceSubmissionService:
         internal_reference_number: str | None,
         geo_location_confidential: bool,
     ) -> tuple[Any, EudrDdsCandidate, EudrV3PreparedBody]:
+        if geo_location_confidential:
+            raise EudrAcceptanceSubmissionError(
+                "ACCEPTANCE_GEOLOCATION_CONFIDENTIALITY_NOT_SUPPORTED",
+                "P1-D2 fija geoLocationConfidential=false para que PREPARED y SUBMIT compartan exactamente el mismo wire contract. La confidencialidad configurable requiere una revisión/versionado separado.",
+            )
         conformance = EudrDdsCandidateService(
             session=self._session,
             organization_id=self._organization_id,
@@ -189,7 +194,7 @@ class EudrAcceptanceSubmissionService:
                 country_of_activity=country_of_activity,
                 border_cross_country=border_cross_country,
                 internal_reference_number=internal_reference_number,
-                geo_location_confidential=geo_location_confidential,
+                geo_location_confidential=False,
             )
         except EudrAcceptanceContractError as exc:
             raise EudrAcceptanceSubmissionError(exc.code, exc.detail) from exc
