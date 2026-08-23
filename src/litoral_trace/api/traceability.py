@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from litoral_trace.api.auth import UserTenantContext
+from litoral_trace.api.eudr_dds_candidate import router as eudr_candidate_api_router
 from litoral_trace.api.integrations import router as integrations_api_router
 from litoral_trace.api.shipment_export_case import router as export_case_api_router
 from litoral_trace.api.shipment_phytosanitary_case import router as phytosanitary_api_router
@@ -84,6 +85,7 @@ router.include_router(dossier_router)
 router.include_router(integrations_api_router)
 router.include_router(export_case_api_router)
 router.include_router(phytosanitary_api_router)
+router.include_router(eudr_candidate_api_router)
 router.include_router(traceability_web_router)
 router.include_router(release_control_web_router)
 router.include_router(integrations_web_router)
