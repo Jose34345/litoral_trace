@@ -1,8 +1,10 @@
 import {
   copyFile,
   mkdir,
+  readFile,
   readdir,
   rm,
+  writeFile,
 } from "node:fs/promises";
 
 import {
@@ -36,6 +38,23 @@ const vendorRoot = resolve(
   "static",
   "vendor",
 );
+
+
+async function copyTextFile(
+  source,
+  destination,
+) {
+  const content = await readFile(
+    source,
+    "utf8",
+  );
+
+  await writeFile(
+    destination,
+    content.replace(/\r\n?/g, "\n"),
+    "utf8",
+  );
+}
 
 
 async function copyDirectory(
@@ -99,7 +118,7 @@ async function copyHtmx() {
     },
   );
 
-  await copyFile(
+  await copyTextFile(
     resolve(
       nodeModules,
       "htmx.org",
@@ -133,7 +152,7 @@ async function copyLeaflet() {
     },
   );
 
-  await copyFile(
+  await copyTextFile(
     resolve(
       sourceDirectory,
       "leaflet.css",
@@ -144,7 +163,7 @@ async function copyLeaflet() {
     ),
   );
 
-  await copyFile(
+  await copyTextFile(
     resolve(
       sourceDirectory,
       "leaflet.js",
@@ -192,7 +211,7 @@ async function copyFontAwesome() {
     },
   );
 
-  await copyFile(
+  await copyTextFile(
     resolve(
       packageRoot,
       "css",
