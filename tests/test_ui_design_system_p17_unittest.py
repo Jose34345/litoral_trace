@@ -76,3 +76,15 @@ def test_p17_logout_canary_uses_shared_primitives_without_contract_drift() -> No
     assert 'name="{{ csrf_form_field }}"' in logout
     assert 'value="{{ csrf_token }}"' in logout
     assert 'href="/dashboard"' in logout
+
+
+def test_p17_ui_catalog_is_server_rendered_and_parses() -> None:
+    catalog = _read(TEMPLATES / "dev" / "ui_catalog.html")
+
+    Environment().parse(catalog)
+
+    assert '{% extends "app/base_app.html" %}' in catalog
+    assert 'components/ui.html' in catalog
+    assert 'UI Catalog' in catalog
+    assert 'status_badge("READY")' in catalog
+    assert 'risk_badge("CRITICAL")' in catalog
