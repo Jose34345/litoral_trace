@@ -37,6 +37,7 @@ NONCE_ENCODING_TYPE = (
     "http://docs.oasis-open.org/wss/2004/01/"
     "oasis-200401-wss-soap-message-security-1.0#Base64Binary"
 )
+MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 for prefix, namespace in (
     ("soapenv", SOAP_NS),
@@ -83,6 +84,17 @@ def _tag(namespace: str, local: str) -> str:
 def _utc_timestamp(value: datetime) -> str:
     normalized = value.astimezone(timezone.utc).replace(microsecond=0)
     return normalized.isoformat().replace("+00:00", "Z")
+
+
+def _read_bounded_response(stream, *, http_status: int) -> bytes:
+    body = stream.read(MAX_RESPONSE_BYTES + 1)
+    if len(body) > MAX_RESPONSE_BYTES:
+        raise EudrAcceptanceTransportError(
+            "ACCEPTANCE_RESPONSE_TOO_LARGE",
+            "La respuesta ACCEPTANCE excede el límite de seguridad.",
+            http_status=http_status,
+        )
+    return body
 
 
 def password_digest(*, nonce: bytes, created: str, authentication_key: str) -> str:
@@ -200,13 +212,19 @@ class UrllibAcceptanceTransport:
         context = ssl.create_default_context()
         try:
             with urlopen(request, timeout=timeout, context=context) as response:  # noqa: S310 - URL is allow-listed by settings.
+                status = int(response.status)
                 return EudrAcceptanceResponse(
-                    http_status=int(response.status),
-                    body=response.read(),
+                    http_status=status,
+                    body=_read_bounded_response(response, http_status=status),
                 )
         except HTTPError as exc:
-            body = exc.read() if hasattr(exc, "read") else b""
-            return EudrAcceptanceResponse(http_status=int(exc.code), body=body)
+            status = int(exc.code)
+            return EudrAcceptanceResponse(
+                http_status=status,
+                body=_read_bounded_response(exc, http_status=status),
+            )
+        except EudrAcceptanceTransportError:
+            raise
         except (URLError, TimeoutError, OSError) as exc:
             raise EudrAcceptanceTransportError(
                 "ACCEPTANCE_TRANSPORT_ERROR",
@@ -221,7 +239,7 @@ def _local_name(tag: str) -> str:
 def parse_submit_response(*, http_status: int, body: bytes) -> EudrSubmitParsedResponse:
     """Parse UUID success or SOAP Fault without exposing arbitrary remote XML."""
 
-    if len(body) > 4 * 1024 * 1024:
+    if len(body) > MAX_RESPONSE_BYTES:
         raise EudrAcceptanceTransportError(
             "ACCEPTANCE_RESPONSE_TOO_LARGE",
             "La respuesta ACCEPTANCE excede el límite de seguridad.",
