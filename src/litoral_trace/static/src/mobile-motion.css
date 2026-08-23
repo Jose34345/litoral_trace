@@ -1,0 +1,247 @@
+:root {
+  --lt-motion-duration: 480ms;
+  --lt-motion-duration-fast: 220ms;
+  --lt-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --lt-motion-distance: 0.875rem;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.lt-app-shell,
+.lt-workspace,
+.lt-main,
+.lt-content-frame {
+  min-width: 0;
+}
+
+.lt-app-shell {
+  overflow-x: clip;
+}
+
+/* Progressive reveal: content remains fully visible without JavaScript. */
+.lt-motion-ready [data-reveal] {
+  opacity: 0;
+  transform: translate3d(0, var(--lt-motion-distance), 0);
+  transition:
+    opacity var(--lt-motion-duration) var(--lt-motion-ease),
+    transform var(--lt-motion-duration) var(--lt-motion-ease);
+  transition-delay: var(--lt-reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+
+.lt-motion-ready [data-reveal="fade"] {
+  transform: none;
+}
+
+.lt-motion-ready [data-reveal="left"] {
+  transform: translate3d(-0.75rem, 0, 0);
+}
+
+.lt-motion-ready [data-reveal="right"] {
+  transform: translate3d(0.75rem, 0, 0);
+}
+
+.lt-motion-ready [data-reveal].lt-reveal-visible {
+  opacity: 1;
+  transform: none;
+  will-change: auto;
+}
+
+/* Drawer overlay uses state instead of display:none, allowing a real fade. */
+.lt-app-overlay {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--lt-motion-duration-fast) ease,
+    visibility 0s linear var(--lt-motion-duration-fast);
+}
+
+.lt-app-overlay[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.lt-sidebar {
+  transition: transform var(--lt-motion-duration-fast) var(--lt-motion-ease);
+}
+
+/* Dashboard-specific responsive composition. */
+.lt-dashboard-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.lt-dashboard-actions > a,
+.lt-dashboard-actions > button {
+  min-height: 2.75rem;
+  justify-content: center;
+}
+
+.lt-dashboard-map {
+  height: 20rem;
+}
+
+.lt-mobile-lote-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.lt-mobile-lote-card {
+  min-width: 0;
+  border: 1px solid var(--lt-border);
+  border-radius: var(--lt-radius-md);
+  background: var(--lt-surface);
+  padding: 1rem;
+  box-shadow: var(--lt-shadow-sm);
+}
+
+.lt-mobile-lote-card__header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.lt-mobile-lote-card__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.875rem;
+}
+
+.lt-mobile-lote-card__field {
+  min-width: 0;
+}
+
+.lt-mobile-lote-card__label {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--lt-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lt-mobile-lote-card__value {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--lt-text-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.lt-mobile-lote-card__action {
+  width: 100%;
+  min-height: 2.75rem;
+  margin-top: 0.875rem;
+}
+
+.lt-desktop-lote-table {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .lt-dashboard-actions {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .lt-dashboard-actions > a,
+  .lt-dashboard-actions > button {
+    min-height: auto;
+  }
+
+  .lt-dashboard-map {
+    height: 22.5rem;
+  }
+
+  .lt-mobile-lote-list {
+    display: none;
+  }
+
+  .lt-desktop-lote-table {
+    display: block;
+  }
+}
+
+@media (max-width: 1023px) {
+  .lt-sidebar {
+    width: min(20rem, 88vw);
+    max-width: calc(100vw - 1.5rem);
+    box-shadow: 22px 0 48px -26px rgb(2 6 23 / 0.78);
+  }
+
+  .lt-sidebar__brandbar {
+    min-height: 4rem;
+  }
+
+  .lt-nav-link {
+    min-height: 2.75rem;
+  }
+
+  .lt-drawer-trigger,
+  [data-app-drawer-close],
+  .lt-user-avatar,
+  .lt-session-action {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .lt-sidebar__footer {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 639px) {
+  .lt-main {
+    padding-inline: 0.75rem;
+    padding-top: 1rem;
+  }
+
+  .lt-content-frame {
+    width: 100%;
+  }
+
+  .lt-dashboard-actions > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  .lt-mobile-lote-card__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@supports not (overflow: clip) {
+  .lt-app-shell {
+    overflow-x: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .lt-motion-ready [data-reveal],
+  .lt-motion-ready [data-reveal="fade"],
+  .lt-motion-ready [data-reveal="left"],
+  .lt-motion-ready [data-reveal="right"] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+    will-change: auto;
+  }
+
+  .lt-app-overlay,
+  .lt-sidebar {
+    transition: none;
+  }
+}
