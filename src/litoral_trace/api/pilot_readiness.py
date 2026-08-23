@@ -61,6 +61,7 @@ def get_pilot_readiness(
             view = PilotReadinessService(
                 session=session,
                 organization_id=user.organization_id,
+                organization_name=user.organization_name,
             ).evaluate()
             return _payload(view)
         except PilotReadinessPersistenceError as exc:
