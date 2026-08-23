@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/dropdown.html" import dropdown, dropdown_item %}
 
 {% block head_extra %}
 <link rel="stylesheet" href="{{ url_for('static', path='/src/app-shell.css') }}">
@@ -120,7 +121,17 @@
                         <p class="lt-user-meta__name truncate text-xs font-semibold text-slate-800" title="{{ user.organization_name }}">{{ user.organization_name }}</p>
                         <p class="lt-user-meta__role truncate text-[11px] text-slate-500">{{ user.username }} · {{ user.role|upper }}</p>
                     </div>
-                    <div class="lt-user-avatar flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white" aria-hidden="true">{{ user.username[:1]|upper }}</div>
+                    <button
+                        type="button"
+                        class="lt-user-avatar flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white"
+                        popovertarget="app-user-dropdown"
+                        aria-label="Abrir menú de cuenta"
+                        title="Cuenta"
+                    >{{ user.username[:1]|upper }}</button>
+                    {% call dropdown("app-user-dropdown", "Cuenta y sesión") %}
+                        {{ dropdown_item("Configuración", href="/settings", icon="fa-sliders", description=user.organization_name) }}
+                        {{ dropdown_item("Cerrar sesión", href="/logout", icon="fa-right-from-bracket", description=user.username) }}
+                    {% endcall %}
                 </div>
             </div>
         </header>
