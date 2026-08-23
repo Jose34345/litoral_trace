@@ -47,7 +47,7 @@ class TestFastAPIStep5FullIntegration(unittest.TestCase):
         lotes_res = asyncio.run(listar_lotes_tenant(user=tenant_user))
         self.assertEqual(lotes_res.status_code, 200)
 
-        # 5. Evaluar Compliance EUDR
+        # 5. Ejecutar análisis histórico no regulatorio
         eval_req = LoteEvaluacionRequest(
             identificador="RODAL-PINO-EXPORT-01",
             productor_id="30-12345678-9",
@@ -62,7 +62,11 @@ class TestFastAPIStep5FullIntegration(unittest.TestCase):
         self.assertEqual(comp_res.status_code, 200)
         body = json.loads(comp_res.body.decode('utf-8'))
         self.assertEqual(body["dictamen"], "Verde")
-        self.assertIsNotNone(body["dds_traces_nt_json"])
+        self.assertEqual(body["analysis_kind"], "LEGACY_NON_REGULATORY_PREVIEW")
+        self.assertEqual(body["regulatory_effect"], "NONE")
+        self.assertFalse(body["submit_ready"])
+        self.assertIsNotNone(body["legacy_non_regulatory_preview_json"])
+        self.assertNotIn("dds_traces_nt_json", body)
 
         # 6. HTML Template Rendering
         cookie_header = "; ".join(
