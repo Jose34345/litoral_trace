@@ -1,3 +1,4 @@
+# Audit trigger: fresh P1-A pre-cutover recovery point (2026-08-23 UTC)
 name: PostgreSQL Logical Backup
 
 on:
