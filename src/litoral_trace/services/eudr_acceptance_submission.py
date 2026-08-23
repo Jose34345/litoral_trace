@@ -22,6 +22,7 @@ from litoral_trace.config.eudr_acceptance import (
     get_eudr_acceptance_settings,
 )
 from litoral_trace.db.models import EudrAcceptanceAttempt, EudrDdsCandidate, Shipment
+from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.services.eudr_acceptance_contract import (
     EudrAcceptanceContractError,
     EudrV3PreparedBody,
@@ -105,6 +106,10 @@ class EudrAcceptanceSubmissionService:
         self._organization_id = int(organization_id)
         self._settings = settings or get_eudr_acceptance_settings()
         self._transport = transport or UrllibAcceptanceTransport()
+
+    def _restore_tenant_context(self) -> None:
+        """Restore transaction-local RLS context after commit/rollback boundaries."""
+        set_tenant_db_context(self._session, self._organization_id)
 
     def _candidate_row(self, public_id: UUID) -> EudrDdsCandidate:
         row = self._session.scalar(
@@ -271,9 +276,11 @@ class EudrAcceptanceSubmissionService:
         self._session.add(row)
         try:
             self._session.commit()
+            self._restore_tenant_context()
             self._session.refresh(row)
         except IntegrityError:
             self._session.rollback()
+            self._restore_tenant_context()
             existing = self._session.scalar(
                 select(EudrAcceptanceAttempt).where(
                     EudrAcceptanceAttempt.organization_id == self._organization_id,
@@ -361,7 +368,11 @@ class EudrAcceptanceSubmissionService:
 
         row, candidate = self._attempt_with_candidate(attempt_public_id)
         if row.state in {"REMOTE_ACCEPTED", "REMOTE_REJECTED"}:
-            return self._view(row, candidate_public_id=candidate.public_id, shipment_code=self._shipment_code_for_candidate(candidate))
+            return self._view(
+                row,
+                candidate_public_id=candidate.public_id,
+                shipment_code=self._shipment_code_for_candidate(candidate),
+            )
         if row.state == "SENT":
             raise EudrAcceptanceSubmissionError(
                 "ACCEPTANCE_DELIVERY_UNCERTAIN",
@@ -425,6 +436,7 @@ class EudrAcceptanceSubmissionService:
         row.error_summary = None
         try:
             self._session.commit()
+            self._restore_tenant_context()
         except SQLAlchemyError as exc:
             self._session.rollback()
             raise EudrAcceptanceSubmissionPersistenceError(
@@ -443,13 +455,18 @@ class EudrAcceptanceSubmissionService:
             row.completed_at = _utcnow()
             try:
                 self._session.commit()
+                self._restore_tenant_context()
             except SQLAlchemyError as persist_exc:
                 self._session.rollback()
                 raise EudrAcceptanceSubmissionPersistenceError(
                     "ACCEPTANCE_TRANSPORT_ERROR_PERSISTENCE_ERROR",
                     "Ocurrió un error de transporte y no pudo persistirse su resultado.",
                 ) from persist_exc
-            return self._view(row, candidate_public_id=candidate.public_id, shipment_code=resolved_shipment_code)
+            return self._view(
+                row,
+                candidate_public_id=candidate.public_id,
+                shipment_code=resolved_shipment_code,
+            )
 
         row.http_status = response.http_status
         row.response_sha256 = hashlib.sha256(response.body).hexdigest()
@@ -461,10 +478,15 @@ class EudrAcceptanceSubmissionService:
         row.state = "REMOTE_ACCEPTED" if parsed.accepted else "REMOTE_REJECTED"
         try:
             self._session.commit()
+            self._restore_tenant_context()
         except SQLAlchemyError as exc:
             self._session.rollback()
             raise EudrAcceptanceSubmissionPersistenceError(
                 "ACCEPTANCE_RESULT_PERSISTENCE_ERROR",
                 "ACCEPTANCE respondió pero no fue posible persistir el resultado; requiere reconciliación manual.",
             ) from exc
-        return self._view(row, candidate_public_id=candidate.public_id, shipment_code=resolved_shipment_code)
+        return self._view(
+            row,
+            candidate_public_id=candidate.public_id,
+            shipment_code=resolved_shipment_code,
+        )
