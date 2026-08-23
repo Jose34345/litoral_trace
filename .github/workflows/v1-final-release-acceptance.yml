@@ -146,7 +146,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee v1-final-alembic-current.txt
-          grep -F "026_add_eudr_acceptance_attempts" v1-final-alembic-current.txt
+          grep -F "028_platform_definer_rls (head)" v1-final-alembic-current.txt
 
       - name: Gate 39 - final browser staging sign-off
         shell: bash
