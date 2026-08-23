@@ -68,6 +68,27 @@ def test_platform_definer_is_non_login_non_superuser_non_bypass() -> None:
         engine.dispose()
 
 
+def test_platform_definer_keeps_usage_but_not_create_on_public_schema() -> None:
+    engine = _owner_engine()
+    try:
+        with engine.connect() as conn:
+            privileges = conn.execute(
+                text(
+                    """
+                    SELECT
+                        has_schema_privilege(:role_name, 'public', 'USAGE') AS has_usage,
+                        has_schema_privilege(:role_name, 'public', 'CREATE') AS has_create
+                    """
+                ),
+                {"role_name": PLATFORM_ROLE},
+            ).mappings().one()
+
+        assert privileges["has_usage"] is True
+        assert privileges["has_create"] is False
+    finally:
+        engine.dispose()
+
+
 def test_platform_functions_are_owned_by_dedicated_definer() -> None:
     expected = {
         "_platform_insert_audit_log",
