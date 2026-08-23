@@ -4,41 +4,43 @@
 {% block title %}Cerrar sesión | Litoral Trace{% endblock %}
 
 {% block content %}
-<section class="lt-page mx-auto my-12 max-w-xl" aria-labelledby="logout-title">
-    <div class="lt-card p-6 sm:p-8">
-        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-700" aria-hidden="true">
-            <i class="fa-solid fa-right-from-bracket"></i>
-        </div>
-
-        {{ page_header(
-            "Cerrar sesión",
-            "Sesión segura",
-            "Se revocará la sesión activa de " ~ user.username ~ " para " ~ user.organization_name ~ ".",
-            "logout-title"
-        ) }}
-
-        <div class="mt-6 flex flex-wrap gap-3">
-            <form method="post" action="/logout">
-                <input
-                    type="hidden"
-                    name="{{ csrf_form_field }}"
-                    value="{{ csrf_token }}"
-                >
-                {{ button(
-                    "Confirmar cierre de sesión",
-                    variant="primary",
-                    icon="fa-right-from-bracket",
-                    button_type="submit"
-                ) }}
-            </form>
-
-            {{ button(
-                "Volver",
-                href="/dashboard",
-                variant="secondary",
-                icon="fa-arrow-left"
-            ) }}
-        </div>
+<section class="lt-page lt-card max-w-lg mx-auto my-12 bg-white rounded-2xl border border-slate-200 shadow-sm p-8" aria-labelledby="logout-title">
+    <div class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-700" aria-hidden="true">
+        <i class="fa-solid fa-right-from-bracket"></i>
     </div>
+
+    {{ page_header(
+        "Cerrar sesión",
+        "Sesión segura",
+        "Se revocará la sesión activa de " ~ user.username ~ " para " ~ user.organization_name ~ ".",
+        "logout-title"
+    ) }}
+
+    <div class="mt-6 flex flex-wrap gap-3">
+        <form method="post" action="/logout">
+            <input
+                type="hidden"
+                name="{{ csrf_form_field }}"
+                value="{{ csrf_token }}"
+            >
+            {{ button(
+                "Confirmar cierre de sesión",
+                variant="primary",
+                icon="fa-right-from-bracket",
+                button_type="submit",
+                extra_classes="px-4 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-950 text-white text-sm font-semibold"
+            ) }}
+        </form>
+
+        {{ button(
+            "Volver",
+            href="/dashboard",
+            variant="secondary",
+            icon="fa-arrow-left",
+            extra_classes="px-4 py-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold"
+        ) }}
+    </div>
+
+    <span class="hidden mt-4 text-xl font-bold text-slate-950 mt-2 text-sm text-slate-600" aria-hidden="true"></span>
 </section>
 {% endblock %}
