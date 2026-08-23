@@ -66,6 +66,11 @@ html {
 }
 
 /* Dashboard-specific responsive composition. */
+.lt-dashboard-title {
+  font-size: 1.75rem;
+  line-height: 1.25;
+}
+
 .lt-dashboard-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -73,9 +78,24 @@ html {
 }
 
 .lt-dashboard-actions > a,
-.lt-dashboard-actions > button {
+.lt-dashboard-actions > button,
+.lt-dashboard-reconstruct-control,
+.lt-dashboard-support-action,
+.lt-mobile-touch {
   min-height: 2.75rem;
+}
+
+.lt-dashboard-actions > a,
+.lt-dashboard-actions > button {
   justify-content: center;
+}
+
+.lt-dashboard-flow {
+  margin-top: 1.75rem;
+}
+
+.lt-mobile-wrap {
+  overflow-wrap: anywhere;
 }
 
 .lt-mobile-lote-list {
@@ -140,6 +160,11 @@ html {
 }
 
 @media (min-width: 640px) {
+  .lt-dashboard-title {
+    font-size: 2.25rem;
+    line-height: 2.5rem;
+  }
+
   .lt-dashboard-actions {
     display: flex;
     flex-wrap: wrap;
@@ -148,6 +173,10 @@ html {
   .lt-dashboard-actions > a,
   .lt-dashboard-actions > button {
     min-height: auto;
+  }
+
+  .lt-dashboard-flow {
+    margin-top: 2rem;
   }
 
   .lt-mobile-lote-list {
@@ -195,6 +224,10 @@ html {
 
   .lt-content-frame {
     width: 100%;
+  }
+
+  .lt-dashboard-cockpit {
+    padding: 1.25rem;
   }
 
   .lt-dashboard-actions > :first-child {
