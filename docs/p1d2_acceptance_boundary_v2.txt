@@ -1,1 +1,0 @@
-target_environment=ACCEPTANCE; legal_effect=NONE_NON_LEGAL_ACCEPTANCE; LIVE=false
