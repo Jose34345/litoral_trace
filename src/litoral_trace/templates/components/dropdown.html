@@ -1,0 +1,56 @@
+{% macro dropdown_trigger(target_id, label, variant='secondary', icon=None) -%}
+<button
+    type="button"
+    class="lt-btn lt-btn--{{ variant }} lt-dropdown-trigger"
+    popovertarget="{{ target_id }}"
+>
+    {% if icon %}<i class="fa-solid {{ icon }}" aria-hidden="true"></i>{% endif %}
+    <span>{{ label }}</span>
+    <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+</button>
+{%- endmacro %}
+
+
+{% macro dropdown(dropdown_id, label='Acciones') -%}
+<div
+    id="{{ dropdown_id }}"
+    class="lt-dropdown"
+    popover="auto"
+    aria-label="{{ label }}"
+>
+    {% if label %}<p class="lt-dropdown__label">{{ label }}</p>{% endif %}
+    {{ caller() }}
+</div>
+{%- endmacro %}
+
+
+{% macro dropdown_item(label, href=None, icon=None, description=None, tone='default', button_type='button', name=None, value=None) -%}
+{% set item_class = "lt-dropdown__item" ~ (" lt-dropdown__item--danger" if tone == "danger" else "") %}
+{% if href %}
+<a href="{{ href }}" class="{{ item_class }}">
+    {% if icon %}<i class="fa-solid {{ icon }} lt-dropdown__icon" aria-hidden="true"></i>{% endif %}
+    <span class="lt-dropdown__copy">
+        <span class="lt-dropdown__primary">{{ label }}</span>
+        {% if description %}<span class="lt-dropdown__secondary">{{ description }}</span>{% endif %}
+    </span>
+</a>
+{% else %}
+<button
+    type="{{ button_type }}"
+    class="{{ item_class }}"
+    {% if name %}name="{{ name }}"{% endif %}
+    {% if value is not none %}value="{{ value }}"{% endif %}
+>
+    {% if icon %}<i class="fa-solid {{ icon }} lt-dropdown__icon" aria-hidden="true"></i>{% endif %}
+    <span class="lt-dropdown__copy">
+        <span class="lt-dropdown__primary">{{ label }}</span>
+        {% if description %}<span class="lt-dropdown__secondary">{{ description }}</span>{% endif %}
+    </span>
+</button>
+{% endif %}
+{%- endmacro %}
+
+
+{% macro dropdown_separator() -%}
+<div class="lt-dropdown__separator" role="separator"></div>
+{%- endmacro %}
