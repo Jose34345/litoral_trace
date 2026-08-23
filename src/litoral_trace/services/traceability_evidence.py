@@ -32,6 +32,12 @@ from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.services.audit import AuditActor
 
 
+_EVIDENCE_REQUIRED_CONTENT_TYPE = {
+    "PHYTOSANITARY_CERTIFICATE": "application/pdf",
+    "EPHYTO_XML": "application/xml",
+}
+
+
 class TraceabilityEvidenceError(RuntimeError):
     """Base safe error for contextual evidence workflows."""
 
@@ -155,6 +161,22 @@ def _coerce_uuid(value: Any) -> UUID:
         raise TraceabilityEvidenceNotFoundError(
             "El eslabón de trazabilidad no existe en la organización."
         ) from exc
+
+
+def _validate_evidence_document_content_type(
+    evidence_type: str,
+    document: VaultDocument,
+) -> None:
+    required = _EVIDENCE_REQUIRED_CONTENT_TYPE.get(evidence_type)
+    if required is None:
+        return
+    observed = str(document.content_type or "").split(";", 1)[0].strip().lower()
+    if observed != required:
+        label = "XML ePhyto" if evidence_type == "EPHYTO_XML" else "certificado fitosanitario PDF"
+        raise TraceabilityEvidenceValidationError(
+            "EVIDENCE_CONTENT_TYPE_MISMATCH",
+            f"La evidencia {label} debe provenir de un archivo {required} validado en Vault.",
+        )
 
 
 class TraceabilityEvidenceService:
@@ -507,6 +529,7 @@ class TraceabilityEvidenceService:
                 raise TraceabilityEvidenceNotFoundError(
                     "El documento no existe o no está disponible en Documentos y evidencias."
                 )
+            _validate_evidence_document_content_type(normalized_evidence, document)
 
             duplicate_filters = [
                 TraceabilityEvidenceLink.organization_id == organization_id,
