@@ -12,6 +12,9 @@ from litoral_trace.services.compliance import (
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPLIANCE_PATH = ROOT / "src" / "litoral_trace" / "services" / "compliance.py"
+LOTES_API_PATH = ROOT / "src" / "litoral_trace" / "api" / "lotes.py"
+BATCH_PATH = ROOT / "src" / "litoral_trace" / "services" / "batch.py"
+LEGACY_DASHBOARD_PATH = ROOT / "src" / "litoral_trace" / "ui" / "screens" / "dashboard.py"
 
 
 def _sample_lote() -> dict[str, object]:
@@ -77,3 +80,21 @@ def test_p1d_legacy_module_contains_no_hardcoded_positive_legal_claims() -> None
     )
     for token in forbidden_source_tokens:
         assert token not in source
+
+
+def test_p1d_active_legacy_surfaces_do_not_publish_preview_as_dds() -> None:
+    lotes_source = LOTES_API_PATH.read_text(encoding="utf-8")
+    batch_source = BATCH_PATH.read_text(encoding="utf-8")
+    dashboard_source = LEGACY_DASHBOARD_PATH.read_text(encoding="utf-8")
+
+    assert '"dds_traces_nt_json"' not in lotes_source
+    assert '"legacy_non_regulatory_preview_json"' in lotes_source
+    assert '"regulatory_effect": "NONE"' in lotes_source
+    assert '"submit_ready": False' in lotes_source
+
+    assert "DDS_TRACES_NT_" not in batch_source
+    assert "PREVIEW_NO_REGULATORIO_" in batch_source
+
+    assert "Descargar DDS TRACES NT" not in dashboard_source
+    assert "Descargar preview no regulatorio" in dashboard_source
+    assert "no emite certificados oficiales ni DDS EUDR" in dashboard_source
