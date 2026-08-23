@@ -6,7 +6,6 @@ from typing import Final
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -59,9 +58,6 @@ class EudrAcceptanceAttempt(Base, TimestampMixin):
     country_of_activity: Mapped[str] = mapped_column(String(2), nullable=False)
     border_cross_country: Mapped[str | None] = mapped_column(String(2), nullable=True)
     internal_reference_number: Mapped[str] = mapped_column(String(120), nullable=False)
-    geo_location_confidential: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="false"
-    )
 
     candidate_payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     wire_contract_profile: Mapped[str] = mapped_column(String(120), nullable=False)
