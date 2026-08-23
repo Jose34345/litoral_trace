@@ -210,6 +210,27 @@ html {
   .lt-mobile-lote-card__grid {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  /* Consistent touch targets across Settings, Admin, Integrations and forms. */
+  .lt-main form input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
+  .lt-main form select,
+  .lt-main form textarea,
+  .lt-main form button,
+  .lt-main .lt-control,
+  .lt-main .lt-data-table__page {
+    min-height: 2.75rem;
+    max-width: 100%;
+  }
+
+  .lt-main .lt-data-table__toolbar,
+  .lt-main .lt-data-table__toolbar-group,
+  .lt-main .lt-data-table__search {
+    min-width: 0;
+  }
+
+  .lt-main .lt-data-table__search {
+    min-width: 100%;
+  }
 }
 
 @supports not (overflow: clip) {
