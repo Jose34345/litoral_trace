@@ -577,6 +577,7 @@ def test_navigation_keeps_existing_entries_and_superadmin_gets_imports():
         ("traceability", "/traceability"),
         ("release_control", "/release-control"),
         ("evidence", "/evidence"),
+        ("integrations", "/integrations"),
         ("settings", "/settings"),
         ("platform", "/admin"),
     ]

@@ -147,6 +147,7 @@ def test_navigation_is_server_side_rbac_derived():
         "traceability",
         "release_control",
         "evidence",
+        "integrations",
         "settings",
     ]
 
@@ -161,6 +162,7 @@ def test_navigation_is_server_side_rbac_derived():
         "traceability",
         "release_control",
         "evidence",
+        "integrations",
         "settings",
         "platform",
     ]
