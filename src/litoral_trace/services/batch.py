@@ -311,10 +311,6 @@ def _preflight_xlsx_container(payload: bytes) -> None:
         ]
 
         if not infos:
-            if isinstance(exc, BatchExcelValidationError):
-                raise
-            if not isinstance(exc, StopIteration):
-                _raise_invalid_workbook()
             _raise_batch_error(
                 "INVALID_XLSX_CONTAINER",
                 "El archivo XLSX no contiene datos internos.",
@@ -918,10 +914,7 @@ def _validate_semantic_row(
             )
         )
 
-    if (
-        volumen_ingresado is not None
-        and volumen_ingresado < 0.0
-    ):
+    if volumen_ingresado is not None and volumen_ingresado < 0.0:
         errors.append(
             _row_error(
                 row=source_row,
@@ -931,10 +924,7 @@ def _validate_semantic_row(
             )
         )
 
-    if (
-        volumen_exportar is not None
-        and volumen_exportar < 0.0
-    ):
+    if volumen_exportar is not None and volumen_exportar < 0.0:
         errors.append(
             _row_error(
                 row=source_row,
@@ -1036,14 +1026,9 @@ def validar_dataframe_lotes(
         )
 
     if source_row_numbers is None:
-        resolved_source_rows = tuple(
-            range(2, row_count + 2)
-        )
+        resolved_source_rows = tuple(range(2, row_count + 2))
     else:
-        resolved_source_rows = tuple(
-            int(value)
-            for value in source_row_numbers
-        )
+        resolved_source_rows = tuple(int(value) for value in source_row_numbers)
 
     if len(resolved_source_rows) != row_count:
         _raise_batch_error(
@@ -1053,14 +1038,8 @@ def validar_dataframe_lotes(
 
     results: list[BatchRowValidation] = []
 
-    for position, (_, pandas_row) in enumerate(
-        dataframe.iterrows()
-    ):
-        row_payload = {
-            column: pandas_row[column]
-            for column in BATCH_COLUMNAS
-        }
-
+    for position, (_, pandas_row) in enumerate(dataframe.iterrows()):
+        row_payload = {column: pandas_row[column] for column in BATCH_COLUMNAS}
         results.append(
             _validate_semantic_row(
                 row_payload,
@@ -1071,17 +1050,10 @@ def validar_dataframe_lotes(
     duplicate_map: dict[str, list[int]] = {}
 
     for index, row_result in enumerate(results):
-        if (
-            row_result.data is None
-            or not row_result.data.identificador
-        ):
+        if row_result.data is None or not row_result.data.identificador:
             continue
-
         duplicate_key = row_result.data.identificador.casefold()
-        duplicate_map.setdefault(
-            duplicate_key,
-            [],
-        ).append(index)
+        duplicate_map.setdefault(duplicate_key, []).append(index)
 
     duplicate_indexes = {
         index
@@ -1092,14 +1064,10 @@ def validar_dataframe_lotes(
 
     if duplicate_indexes:
         rewritten_results: list[BatchRowValidation] = []
-
         for index, row_result in enumerate(results):
             if index not in duplicate_indexes:
-                rewritten_results.append(
-                    row_result
-                )
+                rewritten_results.append(row_result)
                 continue
-
             duplicate_error = _row_error(
                 row=row_result.row,
                 field="Identificador_Lote",
@@ -1109,26 +1077,17 @@ def validar_dataframe_lotes(
                     "dentro de la planilla."
                 ),
             )
-
             rewritten_results.append(
                 BatchRowValidation(
                     row=row_result.row,
                     valid=False,
                     data=None,
-                    errors=(
-                        *row_result.errors,
-                        duplicate_error,
-                    ),
+                    errors=(*row_result.errors, duplicate_error),
                 )
             )
-
         results = rewritten_results
 
-    valid_rows = sum(
-        1
-        for row_result in results
-        if row_result.valid
-    )
+    valid_rows = sum(1 for row_result in results if row_result.valid)
     invalid_rows = len(results) - valid_rows
 
     return BatchValidationResult(
@@ -1140,9 +1099,7 @@ def validar_dataframe_lotes(
     )
 
 
-def validar_filas_lotes(
-    workbook: BatchWorkbook,
-) -> BatchValidationResult:
+def validar_filas_lotes(workbook: BatchWorkbook) -> BatchValidationResult:
     """Validate the semantic contents of a structurally safe workbook."""
 
     return validar_dataframe_lotes(
@@ -1154,40 +1111,22 @@ def validar_filas_lotes(
 def generar_plantilla_excel() -> bytes:
     """Generate the official XLSX template for batch lot ingestion."""
 
-    df_template = pd.DataFrame(
-        columns=BATCH_COLUMNAS,
-    )
+    df_template = pd.DataFrame(columns=BATCH_COLUMNAS)
     df_template.loc[0] = BATCH_FILA_EJEMPLO
-
     buffer = io.BytesIO()
-
-    with pd.ExcelWriter(
-        buffer,
-        engine="openpyxl",
-    ) as writer:
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df_template.to_excel(
             writer,
             index=False,
             sheet_name=BATCH_SHEET_NAME,
         )
-
     return buffer.getvalue()
 
 
-def _polygon_from_point(
-    *,
-    latitud: float,
-    longitud: float,
-) -> str:
-    """
-    Preserve the legacy evidence geometry from already validated coordinates.
-
-    This does not invent coordinates. It deterministically derives the same
-    small polygon that the legacy report path used from valid source values.
-    """
+def _polygon_from_point(*, latitud: float, longitud: float) -> str:
+    """Preserve the deterministic legacy evidence geometry."""
 
     delta = 0.01
-
     return (
         "POLYGON(("
         f"{longitud - delta} {latitud - delta}, "
@@ -1199,39 +1138,24 @@ def _polygon_from_point(
     )
 
 
-def procesar_lote_masivo(
-    df_upload: pd.DataFrame,
-) -> tuple[pd.DataFrame, bytes]:
-    """
-    Generate the legacy evidence ZIP only after strict semantic validation.
+def procesar_lote_masivo(df_upload: pd.DataFrame) -> tuple[pd.DataFrame, bytes]:
+    """Generate a legacy audit ZIP after strict semantic validation.
 
-    P2.4B removes all permissive numeric/text defaults. Invalid input now fails
-    closed with BatchSemanticValidationError and produces no partial artifact.
+    Any JSON artifact produced here is explicitly a non-regulatory historical
+    preview. It is not a DDS and cannot be submitted to EUDR ACCEPTANCE/LIVE.
     """
 
     resumen_filas: list[dict[str, object]] = []
     zip_buffer = io.BytesIO()
 
     if df_upload is None or df_upload.empty:
-        return (
-            pd.DataFrame(resumen_filas),
-            zip_buffer.getvalue(),
-        )
+        return pd.DataFrame(resumen_filas), zip_buffer.getvalue()
 
-    validation = validar_dataframe_lotes(
-        df_upload,
-    )
-
+    validation = validar_dataframe_lotes(df_upload)
     if not validation.valid:
-        raise BatchSemanticValidationError(
-            validation
-        )
+        raise BatchSemanticValidationError(validation)
 
-    with zipfile.ZipFile(
-        zip_buffer,
-        "w",
-        zipfile.ZIP_DEFLATED,
-    ) as zip_file:
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for canonical_row in validation.canonical_rows:
             lote_data = {
                 "identificador": canonical_row.identificador,
@@ -1245,7 +1169,6 @@ def procesar_lote_masivo(
                     longitud=canonical_row.longitud,
                 ),
             }
-
             eval_res = evaluar_compliance_lote(
                 lote_data,
                 canonical_row.volumen_ingresado_ton,
@@ -1260,9 +1183,7 @@ def procesar_lote_masivo(
                     "Lote": canonical_row.identificador,
                     "Proveedor": canonical_row.productor_id,
                     "Producto": canonical_row.producto_forestal,
-                    (
-                        "Vol. Exportar (Ton)"
-                    ): canonical_row.volumen_exportar_ton,
+                    "Vol. Exportar (Ton)": canonical_row.volumen_exportar_ton,
                     "Dictamen": dictamen,
                     "Observación": observacion,
                 }
@@ -1276,37 +1197,26 @@ def procesar_lote_masivo(
                 canonical_row.volumen_exportar_ton,
                 balance_masas.coeficiente_rendimiento,
             )
-
             carpeta = (
-                f"{dictamen}_"
-                f"{canonical_row.productor_id}_"
+                f"{dictamen}_{canonical_row.productor_id}_"
                 f"{canonical_row.identificador}/"
             )
-
             zip_file.writestr(
-                (
-                    f"{carpeta}"
-                    f"AUDITORIA_{canonical_row.productor_id}.pdf"
-                ),
+                f"{carpeta}AUDITORIA_{canonical_row.productor_id}.pdf",
                 pdf_bytes,
             )
 
             if dictamen == "Verde":
-                json_data = generar_dds_json_traces_nt(
+                preview_json = generar_dds_json_traces_nt(
                     lote_data,
                     canonical_row.volumen_exportar_ton,
                 )
-
                 zip_file.writestr(
                     (
-                        f"{carpeta}"
-                        f"DDS_TRACES_NT_"
+                        f"{carpeta}PREVIEW_NO_REGULATORIO_"
                         f"{canonical_row.productor_id}.json"
                     ),
-                    json_data.encode("utf-8"),
+                    preview_json.encode("utf-8"),
                 )
 
-    return (
-        pd.DataFrame(resumen_filas),
-        zip_buffer.getvalue(),
-    )
+    return pd.DataFrame(resumen_filas), zip_buffer.getvalue()
