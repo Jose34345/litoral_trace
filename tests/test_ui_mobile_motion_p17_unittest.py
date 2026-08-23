@@ -98,12 +98,18 @@ def test_k_admin_uses_mobile_cards_without_removing_data_table_canary() -> None:
 def test_k_mobile_controls_keep_minimum_touch_targets() -> None:
     styles = _read(STATIC_SRC / "mobile-motion.css")
     cockpit = _read(TEMPLATES / "app" / "_dashboard_traceability_cockpit.html")
+    admin = _read(TEMPLATES / "admin_organizations.html")
 
     assert "min-height: 2.75rem" in styles
     assert "[data-app-drawer-close]" in styles
     assert ".lt-user-avatar" in styles
+    assert ".lt-dashboard-reconstruct-control" in styles
+    assert ".lt-dashboard-support-action" in styles
+    assert ".lt-mobile-touch" in styles
     assert "lt-dashboard-actions" in cockpit
-    assert "min-h-11" in cockpit
+    assert "lt-dashboard-reconstruct-control" in cockpit
+    assert "lt-dashboard-support-action" in cockpit
+    assert "lt-mobile-touch" in admin
 
 
 def test_k_leaflet_container_is_explicitly_protected_from_auto_translate_reveal() -> None:
