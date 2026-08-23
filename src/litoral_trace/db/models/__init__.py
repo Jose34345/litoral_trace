@@ -13,6 +13,7 @@ from litoral_trace.db.models.vault_document import VaultDocument
 from litoral_trace.db.models.batch_import import BatchImport
 from litoral_trace.db.models.batch_evidence_link import BatchEvidenceLink
 from litoral_trace.db.models.traceability_evidence_link import TraceabilityEvidenceLink
+from litoral_trace.db.models.shipment_export_case import ShipmentExportCase
 from litoral_trace.db.models.integration import (
     ExternalEntity,
     ExternalEntityVersion,
@@ -46,6 +47,7 @@ __all__ = [
     "BatchImport",
     "BatchEvidenceLink",
     "TraceabilityEvidenceLink",
+    "ShipmentExportCase",
     "TraceabilityBatch",
     "TraceabilityEvent",
     "TraceabilityEventInput",
