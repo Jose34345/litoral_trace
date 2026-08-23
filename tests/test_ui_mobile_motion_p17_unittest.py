@@ -112,6 +112,17 @@ def test_k_mobile_controls_keep_minimum_touch_targets() -> None:
     assert "lt-mobile-touch" in admin
 
 
+def test_k_operations_mobile_actions_match_dashboard_hierarchy() -> None:
+    operations = _read(TEMPLATES / "traceability_operations.html")
+    styles = _read(STATIC_SRC / "mobile-motion.css")
+
+    assert 'id="operations-title"' in operations
+    assert '#operations-title ~ .mt-5' in styles
+    assert '#operations-title ~ .mt-5 > a' in styles
+    assert "width: 100%" in styles
+    assert "justify-content: center" in styles
+
+
 def test_k_leaflet_container_is_explicitly_protected_from_auto_translate_reveal() -> None:
     controller = _read(STATIC_SRC / "js" / "mobile-motion.js")
 
