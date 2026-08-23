@@ -16,6 +16,7 @@ from litoral_trace.db.models.traceability_evidence_link import TraceabilityEvide
 from litoral_trace.db.models.shipment_export_case import ShipmentExportCase
 from litoral_trace.db.models.shipment_phytosanitary_case import ShipmentPhytosanitaryCase
 from litoral_trace.db.models.eudr_dds_candidate import EudrDdsCandidate
+from litoral_trace.db.models.eudr_acceptance_attempt import EudrAcceptanceAttempt
 from litoral_trace.db.models.integration import (
     ExternalEntity,
     ExternalEntityVersion,
@@ -52,6 +53,7 @@ __all__ = [
     "ShipmentExportCase",
     "ShipmentPhytosanitaryCase",
     "EudrDdsCandidate",
+    "EudrAcceptanceAttempt",
     "TraceabilityBatch",
     "TraceabilityEvent",
     "TraceabilityEventInput",

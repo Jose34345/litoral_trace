@@ -1,4 +1,4 @@
-name: P1-D EUDR Conformance PostgreSQL Gate
+name: P1-D2 EUDR ACCEPTANCE PostgreSQL Gate
 
 on:
   pull_request:
@@ -13,11 +13,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: p1d-eudr-conformance-${{ github.workflow }}-${{ github.ref }}
+  group: p1d2-eudr-acceptance-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  p1d-eudr-conformance-postgres:
+  p1d2-eudr-acceptance-postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -26,12 +26,12 @@ jobs:
         image: postgis/postgis:17-3.5
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: p1d_owner_password_2026
-          POSTGRES_DB: litoral_trace_p1d_ci
+          POSTGRES_PASSWORD: p1d2_owner_password_2026
+          POSTGRES_DB: litoral_trace_p1d2_ci
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d litoral_trace_p1d_ci"
+          --health-cmd "pg_isready -U postgres -d litoral_trace_p1d2_ci"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -39,12 +39,13 @@ jobs:
     env:
       ENVIRONMENT: development
       ENABLE_POSTGRES_TESTS: "1"
-      JWT_SECRET_KEY: p1d-ci-only-jwt-secret-key-2026
-      LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD: P1dCiBootstrapPassword2026
-      TEST_POSTGRES_MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:p1d_owner_password_2026@127.0.0.1:5432/litoral_trace_p1d_ci
-      MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:p1d_owner_password_2026@127.0.0.1:5432/litoral_trace_p1d_ci
-      TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:p1d_runtime_password_2026@127.0.0.1:5432/litoral_trace_p1d_ci
-      DATABASE_URL: postgresql+psycopg://litoral_trace_app:p1d_runtime_password_2026@127.0.0.1:5432/litoral_trace_p1d_ci
+      JWT_SECRET_KEY: p1d2-ci-only-jwt-secret-key-2026
+      LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD: P1d2CiBootstrapPassword2026
+      TEST_POSTGRES_MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:p1d2_owner_password_2026@127.0.0.1:5432/litoral_trace_p1d2_ci
+      MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:p1d2_owner_password_2026@127.0.0.1:5432/litoral_trace_p1d2_ci
+      TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:p1d2_runtime_password_2026@127.0.0.1:5432/litoral_trace_p1d2_ci
+      DATABASE_URL: postgresql+psycopg://litoral_trace_app:p1d2_runtime_password_2026@127.0.0.1:5432/litoral_trace_p1d2_ci
+      EUDR_ACCEPTANCE_ENABLED: "false"
 
     steps:
       - name: Checkout
@@ -62,11 +63,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest alembic
 
-      - name: Gate P1-D - quarantine legacy automatic compliance claims
+      - name: Gate P1-D2 - local V3 contract and WS-Security
         run: |
-          python -m pytest -q -rs \
-            tests/test_p1d_legacy_compliance_quarantine_unittest.py \
-            tests/test_intelligence_engine_unittest.py
+          python -m pytest -q -rs tests/test_p1d2_eudr_acceptance_unittest.py
 
       - name: Provision runtime principal
         shell: bash
@@ -85,14 +84,14 @@ jobs:
               """
               CREATE ROLE litoral_trace_app
                 LOGIN
-                PASSWORD 'p1d_runtime_password_2026'
+                PASSWORD 'p1d2_runtime_password_2026'
                 NOSUPERUSER
                 NOCREATEDB
                 NOCREATEROLE
                 NOINHERIT
                 NOBYPASSRLS
               """,
-              "GRANT CONNECT ON DATABASE litoral_trace_p1d_ci TO litoral_trace_app",
+              "GRANT CONNECT ON DATABASE litoral_trace_p1d2_ci TO litoral_trace_app",
               "GRANT USAGE ON SCHEMA public TO litoral_trace_app",
           ]
           with engine.connect() as connection:
@@ -101,8 +100,8 @@ jobs:
           engine.dispose()
           PY
 
-      - name: Migrate database to historical P1-D revision
-        run: python -m alembic upgrade 025_add_eudr_dds_candidates
+      - name: Migrate database to P1-D2 canonical head
+        run: python -m alembic upgrade 026_add_eudr_acceptance_attempts
 
       - name: Provision reviewed source-lot read for fixture
         shell: bash
@@ -124,33 +123,33 @@ jobs:
           engine.dispose()
           PY
 
-      - name: Verify P1-D canonical revision
+      - name: Verify P1-D2 canonical revision
         shell: bash
         run: |
           set -euo pipefail
-          python -m alembic current | tee p1d-alembic-current.txt
-          grep -F "025_add_eudr_dds_candidates" p1d-alembic-current.txt
+          python -m alembic current | tee p1d2-alembic-current.txt
+          grep -F "026_add_eudr_acceptance_attempts" p1d2-alembic-current.txt
 
       - name: Write isolated runtime contract
         shell: bash
         run: |
           cat > .env.integration <<'EOF'
           ENABLE_POSTGRES_TESTS=1
-          TEST_POSTGRES_DATABASE_URL=postgresql+psycopg://litoral_trace_app:p1d_runtime_password_2026@127.0.0.1:5432/litoral_trace_p1d_ci
-          TEST_POSTGRES_MIGRATION_DATABASE_URL=postgresql+psycopg://postgres:p1d_owner_password_2026@127.0.0.1:5432/litoral_trace_p1d_ci
+          TEST_POSTGRES_DATABASE_URL=postgresql+psycopg://litoral_trace_app:p1d2_runtime_password_2026@127.0.0.1:5432/litoral_trace_p1d2_ci
+          TEST_POSTGRES_MIGRATION_DATABASE_URL=postgresql+psycopg://postgres:p1d2_owner_password_2026@127.0.0.1:5432/litoral_trace_p1d2_ci
           EOF
 
-      - name: Gate P1-D - conformance, determinism, tenant isolation and least privilege
+      - name: Gate P1-D2 - idempotency, outcomes, tenant isolation and least privilege
         shell: bash
         run: |
           set -euo pipefail
           python -m pytest -q -rs \
-            tests/test_eudr_dds_candidate_p1d_postgres_integration.py \
-            --junitxml=p1d-eudr-conformance.xml
+            tests/test_eudr_acceptance_p1d2_postgres_integration.py \
+            --junitxml=p1d2-eudr-acceptance.xml
           python - <<'PY'
           import xml.etree.ElementTree as ET
 
-          root = ET.parse("p1d-eudr-conformance.xml").getroot()
+          root = ET.parse("p1d2-eudr-acceptance.xml").getroot()
           suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
           tests = sum(int(s.attrib.get("tests", "0")) for s in suites)
           skipped = sum(int(s.attrib.get("skipped", "0")) for s in suites)
@@ -158,10 +157,18 @@ jobs:
           errors = sum(int(s.attrib.get("errors", "0")) for s in suites)
           if tests != 1 or skipped or failures or errors:
               raise SystemExit(
-                  "P1-D PostgreSQL gate fails closed: "
+                  "P1-D2 PostgreSQL gate fails closed: "
                   f"tests={tests}, skipped={skipped}, failures={failures}, errors={errors}"
               )
           PY
+
+      - name: Assert CI never enabled remote ACCEPTANCE network
+        shell: bash
+        run: |
+          test "${EUDR_ACCEPTANCE_ENABLED}" = "false"
+          test -z "${EUDR_ACCEPTANCE_USERNAME:-}"
+          test -z "${EUDR_ACCEPTANCE_AUTHENTICATION_KEY:-}"
+          test -z "${EUDR_ACCEPTANCE_WEB_SERVICE_CLIENT_ID:-}"
 
       - name: Cleanup isolated contract
         if: always()

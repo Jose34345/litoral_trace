@@ -1,0 +1,176 @@
+{% extends "app/base_app.html" %}
+
+{% block title %}EUDR ACCEPTANCE Transport | Litoral Trace{% endblock %}
+
+{% block content %}
+<section class="min-w-0 space-y-6" aria-labelledby="acceptance-transport-title">
+    <header class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-sm">
+        <div class="grid gap-6 p-6 lg:grid-cols-2 lg:p-8">
+            <div>
+                <div class="flex flex-wrap gap-2">
+                    <span class="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-semibold text-sky-300">P1-D2 · API V3</span>
+                    <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-300">ACCEPTANCE-only</span>
+                </div>
+                <h1 id="acceptance-transport-title" class="mt-4 text-3xl font-bold tracking-tight">Transporte EUDR ACCEPTANCE</h1>
+                <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-300">Prepará y, cuando el deployment esté autorizado, enviá el request SOAP V3 al entorno de prueba europeo. El body se identifica por hash; las credenciales y el envelope WS-Security nunca se muestran ni se guardan en esta pantalla.</p>
+            </div>
+            <aside class="rounded-2xl border border-white/10 bg-white/5 p-5">
+                <p class="text-xs font-bold uppercase tracking-wider text-amber-500">Sin efecto legal</p>
+                <ul class="mt-3 space-y-2 text-sm leading-5 text-slate-300">
+                    <li>ACCEPTANCE no demuestra cumplimiento EUDR.</li>
+                    <li>LIVE no está habilitado desde este módulo.</li>
+                    <li>SENT o TRANSPORT_ERROR nunca se reintentan automáticamente.</li>
+                </ul>
+            </aside>
+        </div>
+    </header>
+
+    {% if acceptance_message %}
+    <section class="rounded-2xl border border-emerald-200 bg-emerald-50 p-5" role="status">
+        <p class="text-sm font-bold text-emerald-950">{{ acceptance_message.title }}</p>
+        <p class="mt-1 text-sm text-emerald-800">{{ acceptance_message.message }}</p>
+    </section>
+    {% endif %}
+
+    {% if acceptance_error %}
+    <section class="rounded-2xl border border-rose-200 bg-rose-50 p-5" role="alert">
+        <p class="text-sm font-bold text-rose-950">{{ acceptance_error.title }}</p>
+        <p class="mt-1 text-sm text-rose-800">{{ acceptance_error.message }}</p>
+    </section>
+    {% endif %}
+
+    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <form method="get" action="/eudr-acceptance/transport" class="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div class="min-w-0 flex-1">
+                <label for="acceptance_shipment_code" class="text-xs font-semibold text-slate-700">Código de despacho</label>
+                <input id="acceptance_shipment_code" name="shipment_code" value="{{ acceptance_query }}" maxlength="120" required placeholder="EXP-2026-001" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+            </div>
+            <button class="inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Consultar transporte</button>
+        </form>
+    </section>
+
+    {% if acceptance_conformance %}
+    {% set conformance = acceptance_conformance %}
+    {% set attempt = acceptance_attempt %}
+
+    <div class="grid gap-6 lg:grid-cols-3">
+        <section class="rounded-2xl border {% if conformance.ready %}border-emerald-200 bg-emerald-50{% else %}border-amber-200 bg-amber-50{% endif %} p-5 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider {% if conformance.ready %}text-emerald-700{% else %}text-amber-700{% endif %}">Conformance local</p>
+            <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+                <p class="text-lg font-bold text-slate-950">{{ conformance.state }}</p>
+                <span class="rounded-full px-2.5 py-1 text-xs font-bold {% if conformance.ready %}bg-emerald-700 text-white{% else %}bg-amber-600 text-white{% endif %}">{% if conformance.ready %}LISTO{% else %}BLOQUEADO{% endif %}</span>
+            </div>
+            {% if not conformance.ready %}
+            <p class="mt-3 text-xs leading-5 text-amber-800">Faltan: {{ conformance.missing|join(', ') if conformance.missing else 'requisitos de conformance' }}.</p>
+            {% endif %}
+            {% if conformance.payload_sha256 %}<p class="mt-4 break-all font-mono text-[11px] text-slate-600">{{ conformance.payload_sha256 }}</p>{% endif %}
+        </section>
+
+        <section class="rounded-2xl border {% if acceptance_network_ready %}border-sky-200 bg-sky-50{% else %}border-slate-200 bg-white{% endif %} p-5 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Deployment ACCEPTANCE</p>
+            <p class="mt-2 text-lg font-bold text-slate-950">{% if acceptance_network_ready %}Network ready{% else %}Network disabled{% endif %}</p>
+            <p class="mt-3 text-xs leading-5 text-slate-600">{% if acceptance_network_ready %}Endpoint y referencias de credenciales están configurados fuera de PostgreSQL.{% else %}Podés preparar el request y auditar hashes; el envío de red permanece bloqueado hasta configurar credenciales autorizadas.{% endif %}</p>
+        </section>
+
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Efecto</p>
+            <p class="mt-2 text-lg font-bold text-slate-950">NON_LEGAL_ACCEPTANCE</p>
+            <p class="mt-3 text-xs leading-5 text-slate-600">Ledger y genealogía no se modifican. LIVE permanece fuera del flujo.</p>
+        </section>
+    </div>
+
+    {% if attempt %}
+    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Último intento auditable</p>
+                <h2 class="mt-1 text-xl font-bold text-slate-950">{{ attempt.state }}</h2>
+                <p class="mt-1 text-sm text-slate-500">{{ attempt.internal_reference_number }} · {{ attempt.operator_role }} · {{ attempt.country_of_activity }}</p>
+            </div>
+            <span class="rounded-full px-3 py-1.5 text-xs font-bold {% if attempt.state == 'REMOTE_ACCEPTED' %}bg-emerald-100 text-emerald-800{% elif attempt.state in ['REMOTE_REJECTED','TRANSPORT_ERROR'] %}bg-rose-100 text-rose-800{% elif attempt.state == 'SENT' %}bg-amber-100 text-amber-800{% else %}bg-sky-100 text-sky-800{% endif %}">{{ attempt.environment }}</span>
+        </div>
+
+        {% if acceptance_attempt_stale %}
+        <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">El candidato cambió desde este PREPARED. No envíes este intento; prepará uno nuevo desde el fingerprint actual.</div>
+        {% endif %}
+
+        {% if attempt.state in ['SENT','TRANSPORT_ERROR'] %}
+        <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <p class="text-sm font-bold text-amber-950">Reconciliación manual requerida</p>
+            <p class="mt-1 text-xs leading-5 text-amber-800">La entrega puede ser ambigua. Esta UI no ofrece reintento para evitar crear una DDS duplicada en ACCEPTANCE.</p>
+        </div>
+        {% endif %}
+
+        <dl class="mt-5 grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-4">
+            <div><dt class="text-xs font-semibold text-slate-500">Request body SHA-256</dt><dd class="mt-1 break-all font-mono text-[11px] text-slate-800">{{ attempt.request_body_sha256 }}</dd></div>
+            <div><dt class="text-xs font-semibold text-slate-500">Envelope SHA-256</dt><dd class="mt-1 break-all font-mono text-[11px] text-slate-800">{{ attempt.envelope_sha256 or 'No enviado' }}</dd></div>
+            <div><dt class="text-xs font-semibold text-slate-500">Remote UUID</dt><dd class="mt-1 break-all font-mono text-xs text-slate-800">{{ attempt.remote_uuid or '—' }}</dd></div>
+            <div><dt class="text-xs font-semibold text-slate-500">HTTP / estado remoto</dt><dd class="mt-1 text-xs text-slate-800">{{ attempt.http_status or '—' }} · {{ attempt.remote_status or '—' }}</dd></div>
+        </dl>
+
+        {% if attempt.error_code or attempt.error_summary %}
+        <div class="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800"><span class="font-bold">{{ attempt.error_code or 'REMOTE_ERROR' }}</span>{% if attempt.error_summary %} · {{ attempt.error_summary }}{% endif %}</div>
+        {% endif %}
+
+        {% if acceptance_can_manage and conformance.ready and not acceptance_attempt_stale and attempt.state == 'PREPARED' %}
+        <div class="mt-5 border-t border-slate-200 pt-5">
+            {% if acceptance_network_ready %}
+            <form method="post" action="/eudr-acceptance/transport/submit">
+                <input type="hidden" name="{{ csrf_form_field }}" value="{{ csrf_token }}">
+                <input type="hidden" name="shipment_code" value="{{ conformance.shipment_code }}">
+                <input type="hidden" name="attempt_public_id" value="{{ attempt.public_id }}">
+                <button class="inline-flex items-center gap-2 rounded-lg bg-forest-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-forest-800">Enviar a ACCEPTANCE</button>
+                <p class="mt-2 text-xs text-slate-500">Una vez marcado SENT, un resultado ambiguo no se reenvía automáticamente.</p>
+            </form>
+            {% else %}
+            <p class="text-sm font-semibold text-slate-700">El request está PREPARED, pero el deployment no tiene transporte ACCEPTANCE habilitado.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {% if conformance.ready %}
+    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <p class="text-xs font-bold uppercase tracking-wider text-sky-700">Preparación V3</p>
+                <h2 class="mt-1 text-lg font-bold text-slate-950">Crear fingerprint de SubmitDdsRequest</h2>
+                <p class="mt-2 max-w-3xl text-sm text-slate-600">Preparar no realiza ninguna llamada de red. País de actividad y cruce se ingresan explícitamente; Litoral Trace no los infiere.</p>
+            </div>
+            <a href="/eudr-acceptance?shipment_code={{ conformance.shipment_code }}" class="inline-flex items-center rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Editar candidato</a>
+        </div>
+        {% if acceptance_can_manage %}
+        <form method="post" action="/eudr-acceptance/transport/prepare" class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <input type="hidden" name="{{ csrf_form_field }}" value="{{ csrf_token }}">
+            <input type="hidden" name="shipment_code" value="{{ conformance.shipment_code }}">
+            <div>
+                <label class="text-xs font-semibold text-slate-700">País de actividad</label>
+                <input name="country_of_activity" maxlength="2" required placeholder="DE" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm uppercase">
+            </div>
+            <div>
+                <label class="text-xs font-semibold text-slate-700">País de cruce</label>
+                <input name="border_cross_country" maxlength="2" placeholder="DE" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm uppercase">
+            </div>
+            <div>
+                <label class="text-xs font-semibold text-slate-700">Referencia interna</label>
+                <input name="internal_reference_number" maxlength="120" placeholder="LT-EXP-2026-001" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+            </div>
+            <div class="flex items-end">
+                <button class="w-full rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Preparar request</button>
+            </div>
+        </form>
+        {% else %}
+        <div class="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Tu rol puede auditar el intento ACCEPTANCE, pero no preparar ni enviar solicitudes.</div>
+        {% endif %}
+    </section>
+    {% else %}
+    <section class="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+        <p class="text-sm font-bold text-amber-950">Transporte deshabilitado por conformance</p>
+        <p class="mt-1 text-sm text-amber-800">Completá primero el candidato local. Ninguna acción PREPARE o SUBMIT se ofrece mientras permanezca BLOCKED.</p>
+        <a href="/eudr-acceptance?shipment_code={{ conformance.shipment_code }}" class="mt-4 inline-flex rounded-lg border border-amber-300 bg-white px-3.5 py-2 text-sm font-semibold text-amber-900">Volver al candidato</a>
+    </section>
+    {% endif %}
+    {% endif %}
+</section>
+{% endblock %}

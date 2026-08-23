@@ -1,0 +1,1 @@
+P1-D2 is ACCEPTANCE-only and non-legal. LIVE is not enabled. CI network access to EUDR is disabled. Runtime credentials belong only to deployment secrets, never PostgreSQL. SENT and TRANSPORT_ERROR are not automatically retried because delivery can be ambiguous.
