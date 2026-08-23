@@ -81,6 +81,20 @@ def test_k_dashboard_keeps_leaflet_contract_and_adds_mobile_lot_cards() -> None:
     assert "height: 20rem" in styles
 
 
+def test_k_admin_uses_mobile_cards_without_removing_data_table_canary() -> None:
+    admin = _read(TEMPLATES / "admin_organizations.html")
+
+    assert 'aria-label="Organizaciones de la plataforma en vista móvil"' in admin
+    assert 'class="grid gap-3 sm:hidden"' in admin
+    assert "hidden sm:block overflow-x-auto rounded-xl border border-slate-200 lt-data-table__scroll" in admin
+    assert "lt-data-table__table" in admin
+    assert "lt-data-table__row" in admin
+    assert "organization.license_plan_type" in admin
+    assert "organization.license_max_lotes" in admin
+    assert "organization.admin_username" in admin
+    assert "organization.is_active" in admin
+
+
 def test_k_mobile_controls_keep_minimum_touch_targets() -> None:
     styles = _read(STATIC_SRC / "mobile-motion.css")
     cockpit = _read(TEMPLATES / "app" / "_dashboard_traceability_cockpit.html")
