@@ -47,6 +47,7 @@ async def render_pilot_readiness(request: Request) -> HTMLResponse:
         view = PilotReadinessService(
             session=session,
             organization_id=user.organization_id,
+            organization_name=user.organization_name,
         ).evaluate()
         return render_web_template(
             request,
