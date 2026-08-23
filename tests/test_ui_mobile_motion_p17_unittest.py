@@ -54,6 +54,7 @@ def test_k_motion_respects_reduced_motion_and_transform_only_reveal_geometry() -
 
 def test_k_dashboard_keeps_leaflet_contract_and_adds_mobile_lot_cards() -> None:
     dashboard = _read(TEMPLATES / "dashboard.html")
+    styles = _read(STATIC_SRC / "mobile-motion.css")
 
     for contract in (
         'id="map"',
@@ -68,12 +69,16 @@ def test_k_dashboard_keeps_leaflet_contract_and_adds_mobile_lot_cards() -> None:
     ):
         assert contract in dashboard
 
+    assert 'id="map" class="h-96 w-full rounded-xl border border-slate-300 bg-slate-100"' in dashboard
+    assert 'id="map-scope" class="text-xs font-semibold text-slate-500"' in dashboard
     assert 'id="lotes-mobile"' in dashboard
     assert "lt-mobile-lote-card" in dashboard
     assert "renderLotesMobile" in dashboard
     assert "lt-desktop-lote-table" in dashboard
-    assert "lt-dashboard-map" in dashboard
     assert "invalidateSize" in dashboard
+    assert "@media (max-width: 639px)" in styles
+    assert "#map" in styles
+    assert "height: 20rem" in styles
 
 
 def test_k_mobile_controls_keep_minimum_touch_targets() -> None:
