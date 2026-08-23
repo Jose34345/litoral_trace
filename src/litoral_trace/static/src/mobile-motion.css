@@ -234,6 +234,19 @@ html {
     grid-column: 1 / -1;
   }
 
+  /* Match the dashboard action hierarchy on the operations cockpit. */
+  #operations-title ~ .mt-5 {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  #operations-title ~ .mt-5 > a {
+    width: 100%;
+    min-height: 2.75rem;
+    justify-content: center;
+  }
+
   .lt-mobile-lote-card__grid {
     grid-template-columns: minmax(0, 1fr);
   }
