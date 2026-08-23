@@ -1,10 +1,10 @@
 """Local EUDR API V3 DDS candidate and fail-closed conformance service.
 
-The service deliberately stops before any legal submission.  It reconstructs
-source plots from the current Shipment genealogy, validates the local Annex-II
-profile, and produces a deterministic candidate payload/hash suitable for a
-later ACCEPTANCE adapter.  ACCEPTANCE is a non-legal test environment; LIVE is
-outside P1-D.
+This layer stops before any legal submission. It rebuilds source plots from the
+current tenant Shipment genealogy, validates the reviewed local conformance
+profile and produces a deterministic candidate payload/hash for a later
+ACCEPTANCE transport adapter. ACCEPTANCE has no legal effect; LIVE is outside
+P1-D.
 """
 from __future__ import annotations
 
@@ -17,9 +17,9 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from shapely.geometry import mapping
 from shapely import wkt as shapely_wkt
-from sqlalchemy import select
+from shapely.geometry import mapping
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -39,10 +39,6 @@ EUDR_SPEC_PROFILE = "EUDR_OPERATOR_API_V3_2026-06_LOCAL_CONFORMANCE"
 EUDR_LOCAL_PAYLOAD_PROFILE = "LITORAL_TRACE_EUDR_DDS_CANDIDATE_V1"
 EUDR_TARGET_ENVIRONMENT = "ACCEPTANCE"
 
-# This fingerprint describes the reviewed local conformance profile, not a
-# claim that Litoral Trace embeds or reproduces the Commission's XSD verbatim.
-# If the official API reference changes, update this descriptor and candidates
-# persisted under the previous fingerprint will fail closed as stale.
 _EUDR_SPEC_DESCRIPTOR = {
     "source": "EU EUDR Information System operator API V3 reference, 2026-06",
     "environment": EUDR_TARGET_ENVIRONMENT,
@@ -55,7 +51,7 @@ _EUDR_SPEC_DESCRIPTOR = {
         "country_and_dates_of_production",
         "all_source_plots_geolocation",
         "wood_species_when_applicable",
-        "previous_dds_when_relied_upon",
+        "previous_dds_reference_and_verification_when_relied_upon",
         "explicit_due_diligence_risk_conclusion",
     ],
     "geolocation_rule": "polygon_when_available; point_only_for_plot_area_ha_lte_4",
@@ -167,10 +163,7 @@ def _optional_text(value: Any, *, maximum: int) -> str | None:
 def _enum(value: Any, allowed: frozenset[str], *, code: str, label: str) -> str:
     normalized = str(value or "").strip().upper()
     if normalized not in allowed:
-        raise EudrDdsCandidateValidationError(
-            code,
-            f"{label} no permitido.",
-        )
+        raise EudrDdsCandidateValidationError(code, f"{label} no permitido.")
     return normalized
 
 
@@ -250,8 +243,6 @@ def _plot_geojson(lote: dict[str, Any]) -> tuple[dict[str, Any] | None, str | No
     except (TypeError, ValueError):
         return None, "MISSING_GEOLOCATION"
 
-    # EUDR geolocation permits a point for a production plot of no more than
-    # four hectares; larger plots fail closed without polygon geometry.
     if hectares <= 4.0 and -90 <= lat <= 90 and -180 <= lon <= 180:
         return {
             "type": "Point",
@@ -304,7 +295,7 @@ class EudrDdsCandidateService:
         shipment = self._session.scalar(
             select(Shipment).where(
                 Shipment.organization_id == self._organization_id,
-                Shipment.shipment_code == normalized,
+                func.lower(Shipment.shipment_code) == normalized.lower(),
             )
         )
         if shipment is None:
@@ -330,11 +321,7 @@ class EudrDdsCandidateService:
             product_description=candidate.product_description,
             common_species_name=candidate.common_species_name,
             scientific_species_name=candidate.scientific_species_name,
-            net_mass_kg=(
-                format(candidate.net_mass_kg, "f")
-                if candidate.net_mass_kg is not None
-                else None
-            ),
+            net_mass_kg=(format(candidate.net_mass_kg, "f") if candidate.net_mass_kg is not None else None),
             production_country_code=candidate.production_country_code,
             production_date_from=candidate.production_date_from,
             production_date_to=candidate.production_date_to,
@@ -398,11 +385,7 @@ class EudrDdsCandidateService:
             code="INVALID_RISK_CONCLUSION",
             label="Conclusión de riesgo",
         )
-        if (
-            production_date_from
-            and production_date_to
-            and production_date_to < production_date_from
-        ):
+        if production_date_from and production_date_to and production_date_to < production_date_from:
             raise EudrDdsCandidateValidationError(
                 "INVALID_PRODUCTION_DATE_RANGE",
                 "La fecha final de producción no puede ser anterior a la inicial.",
@@ -441,28 +424,16 @@ class EudrDdsCandidateService:
         candidate.trade_name = _optional_text(trade_name, maximum=240)
         candidate.product_description = _optional_text(product_description, maximum=4000)
         candidate.common_species_name = _optional_text(common_species_name, maximum=240)
-        candidate.scientific_species_name = _optional_text(
-            scientific_species_name,
-            maximum=240,
-        )
+        candidate.scientific_species_name = _optional_text(scientific_species_name, maximum=240)
         candidate.net_mass_kg = _positive_decimal(net_mass_kg)
         candidate.production_country_code = _country(production_country_code)
         candidate.production_date_from = production_date_from
         candidate.production_date_to = production_date_to
         candidate.relies_on_previous_dds = bool(relies_on_previous_dds)
-        candidate.previous_dds_reference = _optional_text(
-            previous_dds_reference,
-            maximum=160,
-        )
-        candidate.previous_dds_verification = _optional_text(
-            previous_dds_verification,
-            maximum=160,
-        )
+        candidate.previous_dds_reference = _optional_text(previous_dds_reference, maximum=160)
+        candidate.previous_dds_verification = _optional_text(previous_dds_verification, maximum=160)
         candidate.risk_conclusion = risk
-        candidate.risk_assessment_reference = _optional_text(
-            risk_assessment_reference,
-            maximum=240,
-        )
+        candidate.risk_assessment_reference = _optional_text(risk_assessment_reference, maximum=240)
         candidate.risk_assessed_at = risk_assessed_at
         candidate.notes = _optional_text(notes, maximum=4000)
 
@@ -491,13 +462,7 @@ class EudrDdsCandidateService:
         source: str,
         detail: str | None = None,
     ) -> EudrRequirementView:
-        return EudrRequirementView(
-            key=key,
-            label=label,
-            satisfied=bool(satisfied),
-            source=source,
-            detail=detail,
-        )
+        return EudrRequirementView(key, label, bool(satisfied), source, detail)
 
     def _lineage(self, shipment_code: str) -> dict[str, Any] | None:
         try:
@@ -522,9 +487,7 @@ class EudrDdsCandidateService:
                     "producer_reference": lote.get("productor_id"),
                     "product": lote.get("producto_forestal"),
                     "area_ha": lote.get("hectareas"),
-                    "attributed_shipment_quantity": source.get(
-                        "attributed_shipment_quantity"
-                    ),
+                    "attributed_shipment_quantity": source.get("attributed_shipment_quantity"),
                     "unit": source.get("unit"),
                     "geojson": geojson,
                     "geometry_error": geometry_error,
@@ -599,39 +562,21 @@ class EudrDdsCandidateService:
                 EudrDdsCandidate.shipment_id == shipment.id,
             )
         )
-        candidate = (
-            self._view(candidate_row, shipment) if candidate_row is not None else None
-        )
+        candidate = self._view(candidate_row, shipment) if candidate_row is not None else None
         lineage = self._lineage(shipment.shipment_code)
         plots = self._plots(lineage)
-        requirements: list[EudrRequirementView] = []
-
-        requirements.append(
-            self._requirement(
-                "DDS_CANDIDATE",
-                "Candidato DDS local configurado",
-                candidate is not None,
-                "Litoral Trace",
-            )
-        )
         lineage_complete = bool(lineage and lineage.get("complete"))
-        requirements.append(
+        requirements: list[EudrRequirementView] = [
+            self._requirement("DDS_CANDIDATE", "Candidato DDS local configurado", candidate is not None, "Litoral Trace"),
             self._requirement(
                 "LINEAGE_COMPLETE",
                 "Genealogía completa del despacho",
                 lineage_complete,
                 "Cadena de custodia",
                 None if lineage_complete else "El origen no puede reconstruirse sin brechas.",
-            )
-        )
-        requirements.append(
-            self._requirement(
-                "SOURCE_PLOTS",
-                "Al menos una parcela de producción atribuida",
-                bool(plots),
-                "Genealogía",
-            )
-        )
+            ),
+            self._requirement("SOURCE_PLOTS", "Al menos una parcela de producción atribuida", bool(plots), "Genealogía"),
+        ]
         invalid_plots = [
             str(plot.get("parcel_identifier") or "sin identificador")
             for plot in plots
@@ -643,11 +588,7 @@ class EudrDdsCandidateService:
                 "Geolocalización válida de todas las parcelas de producción",
                 bool(plots) and not invalid_plots,
                 "Lotes / geometría",
-                (
-                    None
-                    if not invalid_plots
-                    else "Sin geometría EUDR utilizable: " + ", ".join(invalid_plots)
-                ),
+                None if not invalid_plots else "Sin geometría EUDR utilizable: " + ", ".join(invalid_plots),
             )
         )
 
@@ -659,168 +600,51 @@ class EudrDdsCandidateService:
             ).strip().upper()
             requirements.extend(
                 [
-                    self._requirement(
-                        "SHIPMENT_DESTINATION",
-                        "País de destino del despacho",
-                        len(destination) == 2,
-                        "Despacho",
-                    ),
-                    self._requirement(
-                        "OPERATOR_NAME",
-                        "Nombre del operador EUDR responsable",
-                        bool(candidate.operator_name),
-                        "Operador UE",
-                    ),
-                    self._requirement(
-                        "OPERATOR_ADDRESS",
-                        "Domicilio del operador EUDR",
-                        bool(candidate.operator_address),
-                        "Operador UE",
-                    ),
-                    self._requirement(
-                        "OPERATOR_COUNTRY",
-                        "País del operador EUDR",
-                        bool(candidate.operator_country_code),
-                        "Operador UE",
-                    ),
-                    self._requirement(
-                        "OPERATOR_EORI",
-                        "EORI del operador cuando la actividad es importación",
-                        (
-                            bool(candidate.operator_eori)
-                            if candidate.activity_type == "IMPORT"
-                            else True
-                        ),
-                        "Operador UE / aduana",
-                    ),
-                    self._requirement(
-                        "HS_CODE",
-                        "Código HS/CN explícito",
-                        bool(candidate.hs_code),
-                        "Producto",
-                    ),
-                    self._requirement(
-                        "TRADE_NAME",
-                        "Nombre comercial del producto",
-                        bool(candidate.trade_name),
-                        "Producto",
-                    ),
-                    self._requirement(
-                        "PRODUCT_DESCRIPTION",
-                        "Descripción suficiente del producto",
-                        bool(candidate.product_description),
-                        "Producto",
-                    ),
-                    self._requirement(
-                        "NET_MASS_KG",
-                        "Masa neta en kg",
-                        bool(candidate.net_mass_kg),
-                        "Cantidad",
-                    ),
-                    self._requirement(
-                        "PRODUCTION_COUNTRY",
-                        "País de producción",
-                        bool(candidate.production_country_code),
-                        "Origen",
-                    ),
-                    self._requirement(
-                        "PRODUCTION_DATES",
-                        "Fecha o rango de producción",
-                        bool(
-                            candidate.production_date_from
-                            and candidate.production_date_to
-                        ),
-                        "Origen",
-                    ),
-                    self._requirement(
-                        "WOOD_COMMON_SPECIES",
-                        "Nombre común de la especie de madera",
-                        (
-                            bool(candidate.common_species_name)
-                            if candidate.commodity_profile == "WOOD"
-                            else True
-                        ),
-                        "Producto",
-                    ),
-                    self._requirement(
-                        "WOOD_SCIENTIFIC_SPECIES",
-                        "Nombre científico completo de la especie de madera",
-                        (
-                            bool(candidate.scientific_species_name)
-                            if candidate.commodity_profile == "WOOD"
-                            else True
-                        ),
-                        "Producto",
-                    ),
-                    self._requirement(
-                        "PREVIOUS_DDS_REFERENCE",
-                        "Referencia DDS previa cuando se declara dependencia",
-                        (
-                            bool(candidate.previous_dds_reference)
-                            if candidate.relies_on_previous_dds
-                            else True
-                        ),
-                        "DDS previa",
-                    ),
+                    self._requirement("SHIPMENT_DESTINATION", "País de destino del despacho", len(destination) == 2, "Despacho"),
+                    self._requirement("OPERATOR_NAME", "Nombre del operador EUDR responsable", bool(candidate.operator_name), "Operador UE"),
+                    self._requirement("OPERATOR_ADDRESS", "Domicilio del operador EUDR", bool(candidate.operator_address), "Operador UE"),
+                    self._requirement("OPERATOR_COUNTRY", "País del operador EUDR", bool(candidate.operator_country_code), "Operador UE"),
+                    self._requirement("OPERATOR_EORI", "EORI del operador cuando la actividad es importación", bool(candidate.operator_eori) if candidate.activity_type == "IMPORT" else True, "Operador UE / aduana"),
+                    self._requirement("HS_CODE", "Código HS/CN explícito", bool(candidate.hs_code), "Producto"),
+                    self._requirement("TRADE_NAME", "Nombre comercial del producto", bool(candidate.trade_name), "Producto"),
+                    self._requirement("PRODUCT_DESCRIPTION", "Descripción suficiente del producto", bool(candidate.product_description), "Producto"),
+                    self._requirement("NET_MASS_KG", "Masa neta en kg", bool(candidate.net_mass_kg), "Cantidad"),
+                    self._requirement("PRODUCTION_COUNTRY", "País de producción", bool(candidate.production_country_code), "Origen"),
+                    self._requirement("PRODUCTION_DATES", "Fecha o rango de producción", bool(candidate.production_date_from and candidate.production_date_to), "Origen"),
+                    self._requirement("WOOD_COMMON_SPECIES", "Nombre común de la especie de madera", bool(candidate.common_species_name) if candidate.commodity_profile == "WOOD" else True, "Producto"),
+                    self._requirement("WOOD_SCIENTIFIC_SPECIES", "Nombre científico completo de la especie de madera", bool(candidate.scientific_species_name) if candidate.commodity_profile == "WOOD" else True, "Producto"),
+                    self._requirement("PREVIOUS_DDS_REFERENCE", "Referencia DDS previa cuando se declara dependencia", bool(candidate.previous_dds_reference) if candidate.relies_on_previous_dds else True, "DDS previa"),
+                    self._requirement("PREVIOUS_DDS_VERIFICATION", "Número de verificación de la DDS previa cuando se declara dependencia", bool(candidate.previous_dds_verification) if candidate.relies_on_previous_dds else True, "DDS previa"),
                     self._requirement(
                         "RISK_CONCLUSION",
                         "Conclusión de riesgo nulo o despreciable",
                         candidate.risk_conclusion == "NO_OR_NEGLIGIBLE_RISK",
                         "Debida diligencia",
-                        (
-                            "Una conclusión UNASSESSED o NON_NEGLIGIBLE_RISK bloquea el candidato."
-                            if candidate.risk_conclusion != "NO_OR_NEGLIGIBLE_RISK"
-                            else None
-                        ),
+                        None if candidate.risk_conclusion == "NO_OR_NEGLIGIBLE_RISK" else "Una conclusión UNASSESSED o NON_NEGLIGIBLE_RISK bloquea el candidato.",
                     ),
-                    self._requirement(
-                        "RISK_ASSESSMENT_REFERENCE",
-                        "Referencia auditable de evaluación de riesgo",
-                        bool(candidate.risk_assessment_reference),
-                        "Debida diligencia",
-                    ),
-                    self._requirement(
-                        "RISK_ASSESSED_AT",
-                        "Fecha de cierre de evaluación de riesgo",
-                        candidate.risk_assessed_at is not None,
-                        "Debida diligencia",
-                    ),
+                    self._requirement("RISK_ASSESSMENT_REFERENCE", "Referencia auditable de evaluación de riesgo", bool(candidate.risk_assessment_reference), "Debida diligencia"),
+                    self._requirement("RISK_ASSESSED_AT", "Fecha de cierre de evaluación de riesgo", candidate.risk_assessed_at is not None, "Debida diligencia"),
                     self._requirement(
                         "SPEC_PROFILE_CURRENT",
                         "Perfil local alineado a la especificación API V3 revisada",
-                        (
-                            candidate.spec_profile == EUDR_SPEC_PROFILE
-                            and candidate.spec_fingerprint_sha256
-                            == EUDR_SPEC_FINGERPRINT_SHA256
-                        ),
+                        candidate.spec_profile == EUDR_SPEC_PROFILE and candidate.spec_fingerprint_sha256 == EUDR_SPEC_FINGERPRINT_SHA256,
                         "Conformance",
                     ),
                 ]
             )
 
-        missing = tuple(
-            requirement.key for requirement in requirements if not requirement.satisfied
-        )
+        missing = tuple(item.key for item in requirements if not item.satisfied)
         ready = candidate is not None and not missing
-        payload: dict[str, Any] | None = None
-        payload_sha256: str | None = None
+        payload = None
+        payload_sha256 = None
         if candidate is not None and lineage is not None:
-            payload = self._payload(
-                candidate=candidate,
-                lineage=lineage,
-                plots=plots,
-            )
-            payload = _canonicalize(payload)
+            payload = _canonicalize(self._payload(candidate=candidate, lineage=lineage, plots=plots))
             payload_sha256 = canonical_payload_sha256(payload)
 
         return EudrDdsConformanceView(
             shipment_public_id=shipment.public_id,
             shipment_code=shipment.shipment_code,
-            state=(
-                "CONFORMANCE_READY"
-                if ready
-                else ("DRAFT" if candidate is None else "BLOCKED")
-            ),
+            state="CONFORMANCE_READY" if ready else ("DRAFT" if candidate is None else "BLOCKED"),
             ready=ready,
             requirements=tuple(requirements),
             missing=missing,
