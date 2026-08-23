@@ -62,6 +62,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest alembic
 
+      - name: Gate P1-C - genuine ePhyto XML Vault contract
+        run: python -m pytest -q -rs tests/test_p1c_ephyto_vault_unittest.py
+
       - name: Provision runtime principal
         shell: bash
         run: |
