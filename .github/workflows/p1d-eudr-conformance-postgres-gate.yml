@@ -104,6 +104,26 @@ jobs:
       - name: Migrate database to P1-D canonical head
         run: python -m alembic upgrade head
 
+      - name: Provision reviewed source-lot read for fixture
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine
+
+          engine = create_engine(
+              os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          with engine.connect() as connection:
+              connection.exec_driver_sql(
+                  "GRANT SELECT ON TABLE public.lotes TO litoral_trace_app"
+              )
+          engine.dispose()
+          PY
+
       - name: Verify P1-D canonical revision
         shell: bash
         run: |
