@@ -1,0 +1,57 @@
+{% macro empty_row(colspan, title, description=None) -%}
+<tr class="lt-data-table__empty-row">
+    <td colspan="{{ colspan }}" class="p-6 text-center text-slate-500 lt-data-table__empty-cell">
+        <p class="lt-data-table__empty-title">{{ title }}</p>
+        {% if description %}<p class="lt-data-table__empty-description">{{ description }}</p>{% endif %}
+    </td>
+</tr>
+{%- endmacro %}
+
+
+{% macro search_control(name='q', value='', placeholder='Buscar…', label='Buscar') -%}
+<label class="lt-data-table__search">
+    <span class="lt-visually-hidden">{{ label }}</span>
+    <i class="fa-solid fa-magnifying-glass lt-data-table__search-icon" aria-hidden="true"></i>
+    <input
+        class="lt-control"
+        type="search"
+        name="{{ name }}"
+        value="{{ value }}"
+        placeholder="{{ placeholder }}"
+        autocomplete="off"
+    >
+</label>
+{%- endmacro %}
+
+
+{% macro page_link(label, href=None, current=False, disabled=False, aria_label=None) -%}
+{% if href and not disabled %}
+<a
+    href="{{ href }}"
+    class="lt-data-table__page"
+    {% if current %}aria-current="page"{% endif %}
+    {% if aria_label %}aria-label="{{ aria_label }}"{% endif %}
+>{{ label }}</a>
+{% else %}
+<span
+    class="lt-data-table__page"
+    aria-disabled="true"
+    {% if current %}aria-current="page"{% endif %}
+    {% if aria_label %}aria-label="{{ aria_label }}"{% endif %}
+>{{ label }}</span>
+{% endif %}
+{%- endmacro %}
+
+
+{% macro pagination(range_label, previous_href=None, next_href=None, current_page=None, total_pages=None) -%}
+<footer class="lt-data-table__footer">
+    <p class="lt-data-table__range">{{ range_label }}</p>
+    <nav class="lt-data-table__pagination" aria-label="Paginación de resultados">
+        {{ page_link('‹', previous_href, disabled=not previous_href, aria_label='Página anterior') }}
+        {% if current_page is not none and total_pages is not none %}
+        <span class="lt-data-table__range">Página {{ current_page }} de {{ total_pages }}</span>
+        {% endif %}
+        {{ page_link('›', next_href, disabled=not next_href, aria_label='Página siguiente') }}
+    </nav>
+</footer>
+{%- endmacro %}
