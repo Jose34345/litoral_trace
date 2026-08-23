@@ -6,6 +6,7 @@ from jinja2 import Environment
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES = ROOT / "src" / "litoral_trace" / "templates"
 STATIC_SRC = ROOT / "src" / "litoral_trace" / "static" / "src"
+SCRIPTS = ROOT / "scripts"
 
 
 def _read(path: Path) -> str:
@@ -112,6 +113,24 @@ def test_p17_ui_stack_keeps_server_as_source_of_truth() -> None:
     assert 'hx-target="#inviteFeedback"' in settings
     assert 'action="/logout"' in shell
     assert "csrf_token" in shell
+
+
+def test_p17_vendor_copy_normalizes_text_assets_for_cross_platform_builds() -> None:
+    script = _read(SCRIPTS / "copy_frontend_vendor.mjs")
+
+    assert "async function copyTextFile(" in script
+    assert 'content.replace(/\\r\\n?/g, "\\n")' in script
+
+    for asset in (
+        '"htmx.min.js"',
+        '"leaflet.css"',
+        '"leaflet.js"',
+        '"all.min.css"',
+    ):
+        assert asset in script
+
+    # Binary images/webfonts continue to use byte-for-byte copyDirectory/copyFile.
+    assert "await copyDirectory(" in script
 
 
 def test_p17_acceptance_has_no_new_backend_or_migration_artifact() -> None:
