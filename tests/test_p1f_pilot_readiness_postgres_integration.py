@@ -144,7 +144,11 @@ def test_p1f_readiness_tracks_real_tenant_progress_and_isolation(monkeypatch) ->
     session_b = RuntimeSession()
     try:
         set_tenant_db_context(session_b, org_b)
-        initial_b = PilotReadinessService(session=session_b, organization_id=org_b).evaluate()
+        initial_b = PilotReadinessService(
+            session=session_b,
+            organization_id=org_b,
+            organization_name=f"P1F Pilot Org B {suffix}",
+        ).evaluate()
         assert initial_b.state == PILOT_NOT_STARTED
         assert initial_b.completed_steps == 1
         assert initial_b.counts["lotes"] == 0
@@ -285,7 +289,11 @@ def test_p1f_readiness_tracks_real_tenant_progress_and_isolation(monkeypatch) ->
     session_a = RuntimeSession()
     try:
         set_tenant_db_context(session_a, org_a)
-        ready_a = PilotReadinessService(session=session_a, organization_id=org_a).evaluate()
+        ready_a = PilotReadinessService(
+            session=session_a,
+            organization_id=org_a,
+            organization_name=f"P1F Pilot Org A {suffix}",
+        ).evaluate()
         assert ready_a.state == PILOT_READY
         assert ready_a.ready is True
         assert ready_a.completed_steps == ready_a.total_steps == 7
@@ -299,10 +307,72 @@ def test_p1f_readiness_tracks_real_tenant_progress_and_isolation(monkeypatch) ->
     finally:
         session_a.close()
 
+    # A newer shipment from a different receipt has no TRANSFORMATION in its
+    # own lineage. Tenant-wide activity must not be combined with that newer
+    # shipment, and the already-qualified older shipment must remain the pilot
+    # evidence instead of regressing readiness.
+    receipt_only = operations.create_receipt_draft(
+        organization_id=org_a,
+        actor=actor,
+        source_identifier=f"RODAL-P1F-{suffix}",
+        event_code=f"REC-RAW-P1F-{suffix}",
+        batch_code=f"RAW-P1F-{suffix}",
+        product_name="Madera rolliza sin transformar",
+        quantity="10",
+        unit="M3",
+        occurred_at=t0 + timedelta(hours=2),
+        facility_reference="Planta piloto Corrientes",
+    )
+    operations.post_event(
+        organization_id=org_a,
+        event_public_id=receipt_only.event_public_id,
+        actor=actor,
+    )
+    newer_shipment = operations.create_shipment_draft(
+        organization_id=org_a,
+        actor=actor,
+        shipment_code=f"EXP-RAW-P1F-{suffix}",
+        sale_reference=f"FAC-RAW-P1F-{suffix}",
+        buyer_reference="Importador UE piloto",
+        destination_country="DE",
+        items=(
+            ShipmentItemDraft(
+                batch_public_id=receipt_only.output_batch_public_ids[0],
+                quantity=Decimal("5"),
+            ),
+        ),
+    )
+    operations.dispatch_shipment(
+        organization_id=org_a,
+        shipment_public_id=newer_shipment.shipment_public_id,
+        actor=actor,
+    )
+
+    session_a = RuntimeSession()
+    try:
+        set_tenant_db_context(session_a, org_a)
+        preserved_a = PilotReadinessService(
+            session=session_a,
+            organization_id=org_a,
+            organization_name=f"P1F Pilot Org A {suffix}",
+        ).evaluate()
+        assert preserved_a.state == PILOT_READY
+        assert preserved_a.ready is True
+        assert preserved_a.shipment_code == shipment.shipment_code
+        assert preserved_a.shipment_code != newer_shipment.shipment_code
+        assert preserved_a.counts["posted_transformations"] == 1
+        assert preserved_a.counts["dispatched_shipments"] == 2
+    finally:
+        session_a.close()
+
     session_b = RuntimeSession()
     try:
         set_tenant_db_context(session_b, org_b)
-        unchanged_b = PilotReadinessService(session=session_b, organization_id=org_b).evaluate()
+        unchanged_b = PilotReadinessService(
+            session=session_b,
+            organization_id=org_b,
+            organization_name=f"P1F Pilot Org B {suffix}",
+        ).evaluate()
         assert unchanged_b.state == PILOT_NOT_STARTED
         assert unchanged_b.completed_steps == 1
         assert unchanged_b.counts["lotes"] == 0
