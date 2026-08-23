@@ -11,6 +11,7 @@ from litoral_trace.db.tenant import get_tenant_scoped_db_session
 from litoral_trace.services.eudr_dds_candidate import EudrDdsCandidateService
 from litoral_trace.services.eudr_release_control import (
     apply_eudr_conformance_release_control,
+    is_eudr_destination,
 )
 from litoral_trace.services.shipment_export_case import ShipmentExportCaseService
 from litoral_trace.services.shipment_export_release_control import (
@@ -167,6 +168,8 @@ async def render_release_control(
                 lineage_payload=payload,
                 readiness=phytosanitary_readiness,
             )
+
+        if is_eudr_destination(payload):
             eudr_conformance = EudrDdsCandidateService(
                 session=session,
                 organization_id=user.organization_id,
