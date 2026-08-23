@@ -98,8 +98,8 @@ jobs:
           engine.dispose()
           PY
 
-      - name: Migrate to canonical head
-        run: python -m alembic upgrade head
+      - name: Migrate to UX10-G owned revision
+        run: python -m alembic upgrade 023_add_shipment_export_cases
 
       - name: Provision reviewed core runtime grants
         shell: bash
@@ -134,12 +134,12 @@ jobs:
           engine.dispose()
           PY
 
-      - name: Verify canonical head
+      - name: Verify UX10-G revision
         shell: bash
         run: |
           set -euo pipefail
           python -m alembic current | tee alembic-current.txt
-          grep -F "024_add_shipment_phytosanitary_cases" alembic-current.txt
+          grep -F "023_add_shipment_export_cases" alembic-current.txt
 
       - name: Auth RLS login preflight
         shell: bash
