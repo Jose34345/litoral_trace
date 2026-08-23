@@ -68,7 +68,6 @@ jobs:
           python - <<'PY'
           import os
           from sqlalchemy import create_engine
-
           engine = create_engine(
               os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
               isolation_level="AUTOCOMMIT",
@@ -77,14 +76,8 @@ jobs:
           )
           statements = [
               """
-              CREATE ROLE litoral_trace_app
-                LOGIN
-                PASSWORD 'p1b_runtime_password_2026'
-                NOSUPERUSER
-                NOCREATEDB
-                NOCREATEROLE
-                NOINHERIT
-                NOBYPASSRLS
+              CREATE ROLE litoral_trace_app LOGIN PASSWORD 'p1b_runtime_password_2026'
+                NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
               """,
               "GRANT CONNECT ON DATABASE litoral_trace_p1b_ci TO litoral_trace_app",
               "GRANT USAGE ON SCHEMA public TO litoral_trace_app",
@@ -95,10 +88,10 @@ jobs:
           engine.dispose()
           PY
 
-      - name: Migrate database to P1-B canonical head
-        run: python -m alembic upgrade head
+      - name: Migrate database to P1-B owned revision
+        run: python -m alembic upgrade 023_add_shipment_export_cases
 
-      - name: Verify canonical revision
+      - name: Verify P1-B revision
         shell: bash
         run: |
           set -euo pipefail
@@ -118,12 +111,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q -rs \
-            tests/test_shipment_export_case_p1b_postgres_integration.py \
-            --junitxml=p1b-export-case-postgres.xml
+          python -m pytest -q -rs tests/test_shipment_export_case_p1b_postgres_integration.py --junitxml=p1b-export-case-postgres.xml
           python - <<'PY'
           import xml.etree.ElementTree as ET
-
           root = ET.parse("p1b-export-case-postgres.xml").getroot()
           suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
           tests = sum(int(s.attrib.get("tests", "0")) for s in suites)
