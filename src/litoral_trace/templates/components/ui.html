@@ -1,0 +1,123 @@
+{% macro button(label, href=None, variant='primary', icon=None, button_type='button', extra_classes='', disabled=False, aria_label=None) -%}
+    {% set variant_class = {
+        'primary': 'lt-btn--primary',
+        'secondary': 'lt-btn--secondary',
+        'ghost': 'lt-btn--ghost',
+        'danger': 'lt-btn--danger'
+    }.get(variant, 'lt-btn--primary') %}
+    {% if href %}
+    <a href="{{ href }}" class="lt-btn {{ variant_class }} {{ extra_classes }}"{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}{% if disabled %} aria-disabled="true" tabindex="-1"{% endif %}>
+        {% if icon %}<i class="fa-solid {{ icon }}" aria-hidden="true"></i>{% endif %}
+        <span>{{ label }}</span>
+    </a>
+    {% else %}
+    <button type="{{ button_type }}" class="lt-btn {{ variant_class }} {{ extra_classes }}"{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}{% if disabled %} disabled{% endif %}>
+        {% if icon %}<i class="fa-solid {{ icon }}" aria-hidden="true"></i>{% endif %}
+        <span>{{ label }}</span>
+    </button>
+    {% endif %}
+{%- endmacro %}
+
+
+{% macro badge(label, tone='neutral', dot=True, icon=None, extra_classes='') -%}
+    {% set tone_class = {
+        'positive': 'lt-badge--positive',
+        'warning': 'lt-badge--warning',
+        'high': 'lt-badge--high',
+        'danger': 'lt-badge--danger',
+        'info': 'lt-badge--info',
+        'neutral': 'lt-badge--neutral'
+    }.get(tone, 'lt-badge--neutral') %}
+    <span class="lt-badge {{ tone_class }} {{ extra_classes }}">
+        {% if icon %}
+        <i class="fa-solid {{ icon }}" aria-hidden="true"></i>
+        {% elif dot %}
+        <span class="lt-badge__dot" aria-hidden="true"></span>
+        {% endif %}
+        <span>{{ label }}</span>
+    </span>
+{%- endmacro %}
+
+
+{% macro status_badge(status, extra_classes='') -%}
+    {% set normalized = (status or 'UNKNOWN')|upper %}
+    {% if normalized in ['READY', 'VERIFIED', 'ACTIVE', 'SUCCEEDED', 'RECONCILED', 'COMPLETED', 'APPROVED'] %}
+        {{ badge(status, 'positive', True, extra_classes=extra_classes) }}
+    {% elif normalized in ['PENDING', 'REVIEW', 'STAGED', 'PARTIAL', 'PROCESSING', 'QUEUED', 'UNASSESSED'] %}
+        {{ badge(status, 'warning', True, extra_classes=extra_classes) }}
+    {% elif normalized in ['BLOCKED', 'CONFLICT', 'FAILED', 'REJECTED', 'ERROR', 'INVALID'] %}
+        {{ badge(status, 'danger', True, extra_classes=extra_classes) }}
+    {% elif normalized in ['INACTIVE', 'DISABLED', 'UNKNOWN', 'NONE'] %}
+        {{ badge(status, 'neutral', True, extra_classes=extra_classes) }}
+    {% else %}
+        {{ badge(status, 'info', True, extra_classes=extra_classes) }}
+    {% endif %}
+{%- endmacro %}
+
+
+{% macro risk_badge(risk, extra_classes='') -%}
+    {% set normalized = (risk or 'UNKNOWN')|upper %}
+    {% if normalized in ['LOW', 'BAJO'] %}
+        {{ badge(risk, 'positive', True, extra_classes=extra_classes) }}
+    {% elif normalized in ['MEDIUM', 'MEDIO'] %}
+        {{ badge(risk, 'warning', True, extra_classes=extra_classes) }}
+    {% elif normalized in ['HIGH', 'ALTO'] %}
+        {{ badge(risk, 'high', True, extra_classes=extra_classes) }}
+    {% elif normalized in ['CRITICAL', 'CRITICO', 'CRÍTICO'] %}
+        {{ badge(risk, 'danger', True, extra_classes=extra_classes) }}
+    {% else %}
+        {{ badge(risk, 'neutral', True, extra_classes=extra_classes) }}
+    {% endif %}
+{%- endmacro %}
+
+
+{% macro page_header(title, eyebrow=None, description=None, title_id=None, icon=None) -%}
+    <header class="lt-page-header">
+        <div class="lt-page-header__copy">
+            {% if eyebrow %}<p class="lt-page-header__eyebrow">{{ eyebrow }}</p>{% endif %}
+            <h1{% if title_id %} id="{{ title_id }}"{% endif %} class="lt-page-header__title">
+                {% if icon %}<i class="fa-solid {{ icon }}" aria-hidden="true"></i>{% endif %}
+                {{ title }}
+            </h1>
+            {% if description %}<p class="lt-page-header__description">{{ description }}</p>{% endif %}
+        </div>
+    </header>
+{%- endmacro %}
+
+
+{% macro alert(title, message, tone='info', icon=None) -%}
+    {% set tone_class = {
+        'positive': 'lt-alert--positive',
+        'warning': 'lt-alert--warning',
+        'danger': 'lt-alert--danger',
+        'neutral': 'lt-alert--neutral',
+        'info': ''
+    }.get(tone, '') %}
+    {% set default_icon = {
+        'positive': 'fa-circle-check',
+        'warning': 'fa-triangle-exclamation',
+        'danger': 'fa-circle-exclamation',
+        'neutral': 'fa-circle-info',
+        'info': 'fa-circle-info'
+    }.get(tone, 'fa-circle-info') %}
+    <section class="lt-alert {{ tone_class }}" role="{% if tone == 'danger' %}alert{% else %}status{% endif %}">
+        <i class="fa-solid {{ icon or default_icon }} lt-alert__icon" aria-hidden="true"></i>
+        <div>
+            <p class="lt-alert__title">{{ title }}</p>
+            {% if message %}<p class="lt-alert__message">{{ message }}</p>{% endif %}
+        </div>
+    </section>
+{%- endmacro %}
+
+
+{% macro empty_state(title, description=None, icon='fa-inbox') -%}
+    <div class="lt-empty-state">
+        <span class="lt-empty-state__icon" aria-hidden="true">
+            <i class="fa-solid {{ icon }}"></i>
+        </span>
+        <div>
+            <p class="lt-empty-state__title">{{ title }}</p>
+            {% if description %}<p class="lt-empty-state__description">{{ description }}</p>{% endif %}
+        </div>
+    </div>
+{%- endmacro %}
