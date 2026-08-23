@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MIGRATION = ROOT / "alembic" / "versions" / "027_fix_platform_control_plane_rls_bootstrap.py"
+MIGRATION = ROOT / "alembic" / "versions" / "027_fix_platform_rls_bootstrap.py"
 
 
 def _migration_source() -> str:
@@ -14,7 +14,7 @@ def _migration_source() -> str:
 def test_platform_control_plane_bootstraps_tenant_before_forced_rls_reads() -> None:
     source = _migration_source()
 
-    assert 'revision: str = "027_fix_platform_control_plane_rls_bootstrap"' in source
+    assert 'revision: str = "027_fix_platform_rls_bootstrap"' in source
     assert 'down_revision: Union[str, Sequence[str], None] = "026_add_eudr_acceptance_attempts"' in source
     assert "bootstrap_auth_session_by_token_hash" in source
     assert "bootstrap_organization_id" in source
