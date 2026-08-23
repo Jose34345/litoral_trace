@@ -1,7 +1,7 @@
 """Idempotent ACCEPTANCE-only orchestration for EUDR DDS API V3.
 
 The service deliberately separates deterministic preparation from the ephemeral
-WS-Security envelope.  A persisted SENT or TRANSPORT_ERROR state is not retried
+WS-Security envelope. A persisted SENT or TRANSPORT_ERROR state is not retried
 automatically because delivery may be ambiguous and a blind retry could create
 a duplicate remote DDS.
 """
@@ -21,7 +21,7 @@ from litoral_trace.config.eudr_acceptance import (
     EudrAcceptanceSettings,
     get_eudr_acceptance_settings,
 )
-from litoral_trace.db.models import EudrAcceptanceAttempt, EudrDdsCandidate
+from litoral_trace.db.models import EudrAcceptanceAttempt, EudrDdsCandidate, Shipment
 from litoral_trace.services.eudr_acceptance_contract import (
     EudrAcceptanceContractError,
     EudrV3PreparedBody,
@@ -119,6 +119,20 @@ class EudrAcceptanceSubmissionService:
                 "No se encontró el candidato EUDR del tenant.",
             )
         return row
+
+    def _shipment_code_for_candidate(self, candidate: EudrDdsCandidate) -> str:
+        code = self._session.scalar(
+            select(Shipment.shipment_code).where(
+                Shipment.organization_id == self._organization_id,
+                Shipment.id == candidate.shipment_id,
+            )
+        )
+        if not code:
+            raise EudrAcceptanceSubmissionPersistenceError(
+                "ACCEPTANCE_SHIPMENT_REFERENCE_BROKEN",
+                "El intento ACCEPTANCE no puede resolver su despacho.",
+            )
+        return str(code)
 
     @staticmethod
     def _view(
@@ -321,9 +335,13 @@ class EudrAcceptanceSubmissionService:
             )
         return row, candidate
 
-    def get_attempt(self, attempt_public_id: UUID, *, shipment_code: str) -> EudrAcceptanceAttemptView:
+    def get_attempt(self, attempt_public_id: UUID) -> EudrAcceptanceAttemptView:
         row, candidate = self._attempt_with_candidate(attempt_public_id)
-        return self._view(row, candidate_public_id=candidate.public_id, shipment_code=shipment_code)
+        return self._view(
+            row,
+            candidate_public_id=candidate.public_id,
+            shipment_code=self._shipment_code_for_candidate(candidate),
+        )
 
     def submit(
         self,
@@ -333,7 +351,6 @@ class EudrAcceptanceSubmissionService:
         actor_user_id: int | None = None,
         allow_retry_after_transport_error: bool = False,
     ) -> EudrAcceptanceAttemptView:
-        # Validate deployment configuration before mutating the durable attempt.
         try:
             self._settings.require_network_ready()
         except (RuntimeError, ValueError) as exc:
@@ -343,8 +360,8 @@ class EudrAcceptanceSubmissionService:
             ) from exc
 
         row, candidate = self._attempt_with_candidate(attempt_public_id)
-        if row.state == "REMOTE_ACCEPTED" or row.state == "REMOTE_REJECTED":
-            return self._view(row, candidate_public_id=candidate.public_id, shipment_code=shipment_code)
+        if row.state in {"REMOTE_ACCEPTED", "REMOTE_REJECTED"}:
+            return self._view(row, candidate_public_id=candidate.public_id, shipment_code=self._shipment_code_for_candidate(candidate))
         if row.state == "SENT":
             raise EudrAcceptanceSubmissionError(
                 "ACCEPTANCE_DELIVERY_UNCERTAIN",
@@ -361,8 +378,14 @@ class EudrAcceptanceSubmissionService:
                 "El estado actual del intento no admite envío.",
             )
 
+        resolved_shipment_code = self._shipment_code_for_candidate(candidate)
+        if resolved_shipment_code.casefold() != str(shipment_code or "").strip().casefold():
+            raise EudrAcceptanceSubmissionError(
+                "ACCEPTANCE_ATTEMPT_SHIPMENT_MISMATCH",
+                "El intento ACCEPTANCE pertenece a otro despacho.",
+            )
         conformance, current_candidate, body = self._prepared_body(
-            shipment_code=shipment_code,
+            shipment_code=resolved_shipment_code,
             operator_role=row.operator_role,
             country_of_activity=row.country_of_activity,
             border_cross_country=row.border_cross_country,
@@ -426,7 +449,7 @@ class EudrAcceptanceSubmissionService:
                     "ACCEPTANCE_TRANSPORT_ERROR_PERSISTENCE_ERROR",
                     "Ocurrió un error de transporte y no pudo persistirse su resultado.",
                 ) from persist_exc
-            return self._view(row, candidate_public_id=candidate.public_id, shipment_code=shipment_code)
+            return self._view(row, candidate_public_id=candidate.public_id, shipment_code=resolved_shipment_code)
 
         row.http_status = response.http_status
         row.response_sha256 = hashlib.sha256(response.body).hexdigest()
@@ -444,4 +467,4 @@ class EudrAcceptanceSubmissionService:
                 "ACCEPTANCE_RESULT_PERSISTENCE_ERROR",
                 "ACCEPTANCE respondió pero no fue posible persistir el resultado; requiere reconciliación manual.",
             ) from exc
-        return self._view(row, candidate_public_id=candidate.public_id, shipment_code=shipment_code)
+        return self._view(row, candidate_public_id=candidate.public_id, shipment_code=resolved_shipment_code)
