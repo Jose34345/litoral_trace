@@ -215,10 +215,17 @@ def _restore_platform_actor_without_bootstrap_dependency() -> None:
 
 
 def _transfer_platform_function_ownership() -> None:
+    # PostgreSQL requires the target owner to hold CREATE on the containing
+    # schema during ALTER ... OWNER. Grant it only for the transactional
+    # ownership handoff, then remove it so the definer keeps least privilege.
+    op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")
+
     for function_signature in PLATFORM_FUNCTIONS:
         op.execute(
             f"ALTER FUNCTION {function_signature} OWNER TO {PLATFORM_ROLE}"
         )
+
+    op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
 
     for function_signature in INTERNAL_PLATFORM_FUNCTIONS:
         op.execute(f"REVOKE ALL ON FUNCTION {function_signature} FROM PUBLIC")
