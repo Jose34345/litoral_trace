@@ -1,0 +1,104 @@
+{% extends "app/base_app.html" %}
+{% from "components/ui.html" import alert, badge, button, empty_state, page_header, risk_badge, status_badge %}
+
+{% block title %}UI Catalog | Litoral Trace{% endblock %}
+
+{% block content %}
+<section class="lt-page" aria-labelledby="ui-catalog-title">
+    {{ page_header(
+        "UI Catalog",
+        "P1.7 · UI/UX 2.0",
+        "Catálogo server-rendered de los primitives reales de Litoral Trace. No replica componentes en un runtime separado.",
+        "ui-catalog-title",
+        "fa-swatchbook"
+    ) }}
+
+    <section class="lt-card p-6" aria-labelledby="catalog-actions-title">
+        <p class="lt-page-header__eyebrow">Actions</p>
+        <h2 id="catalog-actions-title" class="mt-1 text-lg font-bold text-slate-950">Buttons</h2>
+        <div class="mt-5 flex flex-wrap gap-3">
+            {{ button("Acción primaria", variant="primary", icon="fa-check") }}
+            {{ button("Acción secundaria", variant="secondary", icon="fa-arrow-right") }}
+            {{ button("Acción discreta", variant="ghost", icon="fa-ellipsis") }}
+            {{ button("Acción destructiva", variant="danger", icon="fa-trash") }}
+            {{ button("Deshabilitada", variant="secondary", disabled=True) }}
+        </div>
+    </section>
+
+    <section class="lt-card p-6" aria-labelledby="catalog-status-title">
+        <p class="lt-page-header__eyebrow">Semantic language</p>
+        <h2 id="catalog-status-title" class="mt-1 text-lg font-bold text-slate-950">Operational status</h2>
+        <div class="mt-5 flex flex-wrap gap-3">
+            {{ status_badge("READY") }}
+            {{ status_badge("ACTIVE") }}
+            {{ status_badge("STAGED") }}
+            {{ status_badge("PARTIAL") }}
+            {{ status_badge("CONFLICT") }}
+            {{ status_badge("FAILED") }}
+            {{ status_badge("UNKNOWN") }}
+        </div>
+
+        <h3 class="mt-7 text-sm font-bold text-slate-950">Risk</h3>
+        <div class="mt-3 flex flex-wrap gap-3">
+            {{ risk_badge("LOW") }}
+            {{ risk_badge("MEDIUM") }}
+            {{ risk_badge("HIGH") }}
+            {{ risk_badge("CRITICAL") }}
+        </div>
+
+        <h3 class="mt-7 text-sm font-bold text-slate-950">Generic tones</h3>
+        <div class="mt-3 flex flex-wrap gap-3">
+            {{ badge("Positive", "positive") }}
+            {{ badge("Warning", "warning") }}
+            {{ badge("High attention", "high") }}
+            {{ badge("Danger", "danger") }}
+            {{ badge("Information", "info") }}
+            {{ badge("Neutral", "neutral") }}
+        </div>
+    </section>
+
+    <section class="lt-card p-6" aria-labelledby="catalog-feedback-title">
+        <p class="lt-page-header__eyebrow">Feedback</p>
+        <h2 id="catalog-feedback-title" class="mt-1 text-lg font-bold text-slate-950">Alerts</h2>
+        <div class="mt-5 grid gap-3">
+            {{ alert("Expediente listo", "La evidencia mínima requerida está completa para continuar.", "positive") }}
+            {{ alert("Revisión requerida", "Hay campos pendientes antes de confirmar la operación.", "warning") }}
+            {{ alert("Operación bloqueada", "Existe un conflicto que debe resolverse antes de continuar.", "danger") }}
+            {{ alert("Información", "Este estado es informativo y no modifica el ledger.", "info") }}
+        </div>
+    </section>
+
+    <section class="lt-card p-6" aria-labelledby="catalog-form-title">
+        <p class="lt-page-header__eyebrow">Forms</p>
+        <h2 id="catalog-form-title" class="mt-1 text-lg font-bold text-slate-950">Controls</h2>
+        <div class="mt-5 grid max-w-2xl gap-5 sm:grid-cols-2">
+            <label class="lt-field">
+                <span class="lt-field__label">Referencia</span>
+                <input class="lt-control" type="text" placeholder="EXP-DE-2026-014">
+                <span class="lt-field__help">Identificador visible y estable para el usuario.</span>
+            </label>
+            <label class="lt-field">
+                <span class="lt-field__label">Estado</span>
+                <select class="lt-control">
+                    <option>READY</option>
+                    <option>REVIEW</option>
+                    <option>BLOCKED</option>
+                </select>
+                <span class="lt-field__help">Los colores se derivan del significado, no de la pantalla.</span>
+            </label>
+        </div>
+    </section>
+
+    <section class="lt-card p-6" aria-labelledby="catalog-empty-title">
+        <p class="lt-page-header__eyebrow">Empty state</p>
+        <h2 id="catalog-empty-title" class="mt-1 text-lg font-bold text-slate-950">No data</h2>
+        <div class="mt-5">
+            {{ empty_state(
+                "Todavía no hay evidencia",
+                "La pantalla debe explicar qué falta y cuál es la siguiente acción útil, no mostrar un área vacía.",
+                "fa-folder-open"
+            ) }}
+        </div>
+    </section>
+</section>
+{% endblock %}
