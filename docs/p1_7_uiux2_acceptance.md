@@ -67,17 +67,20 @@ Use only `http://127.0.0.1:8000` during this validation.
 1. Open `/health` and `/ready`; confirm the local instance is the one responding.
 2. Log in with a development/test account.
 3. Verify the App Shell: sidebar, active navigation, mobile drawer, skip-link, account popover and CSRF-protected logout.
-4. Open the UI Catalog route used by the development environment and inspect buttons, badges, alerts, data table, fields and native dialog.
+4. Open the Superadmin organizations surface, when available to the test role, and inspect the LTDataTable canary: row readability, status semantics, horizontal overflow and responsive behavior.
 5. Open Settings and submit the demo-user form only against the isolated test database; confirm the existing HTMX endpoint and feedback target still work.
 6. Verify the account dropdown opens/closes through the native Popover API and that the existing sidebar logout still works.
-7. Verify the native dialog opens, closes with Escape/backdrop/close controls as designed, and restores focus to its trigger.
-8. Check keyboard navigation and visible focus across sidebar, topbar, forms, dialog and dropdown.
+7. Open the logout confirmation surface and verify the shared buttons/page-header canary while preserving the CSRF-protected POST logout contract.
+8. Check keyboard navigation and visible focus across sidebar, topbar, forms and dropdown.
 9. Check responsive layouts at approximately 375 px, 768 px, 1024 px and desktop width.
 10. Open Dashboard and verify the real `#map` Leaflet viewport renders, zoom controls work, markers/popups work with test data, and `#map-scope` updates without changing the existing runtime contract.
 11. Confirm the satellite panel is not interpreted as an EUDR certificate and that no UI claims official approval/compliance.
-12. Confirm loading/progress primitives are only used where an actual pending/measurable state exists; no fabricated percentages or risk states.
-13. In browser DevTools, confirm no unexpected JavaScript exceptions and no missing CSS/JS/vendor assets.
-14. Perform a hard reload and repeat the primary paths to catch asset-cache issues.
+12. In browser DevTools, confirm no unexpected JavaScript exceptions and no missing CSS/JS/vendor assets.
+13. Perform a hard reload and repeat the primary paths to catch asset-cache issues.
+
+The native dialog, skeleton and progress primitives are intentionally not forced into a production screen merely to create a visual canary. Their structure, accessibility and server-state contracts are covered by the dedicated P1.7 automated gates and the integrated J acceptance gate until a real workflow needs them.
+
+The dev UI Catalog template is also contract-tested but is not assumed to have a registered HTTP route. Do not invent or depend on a browser URL for it during this acceptance pass.
 
 ## Final no-production verification
 
