@@ -75,14 +75,12 @@ jobs:
           python - <<'PY'
           import os
           from sqlalchemy import create_engine
-
           engine = create_engine(
               os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
               isolation_level="AUTOCOMMIT",
               pool_pre_ping=True,
               hide_parameters=True,
           )
-
           statements = [
               """
               CREATE ROLE litoral_trace_app
@@ -109,11 +107,9 @@ jobs:
               "GRANT USAGE ON SCHEMA public TO litoral_trace_app",
               "GRANT USAGE ON SCHEMA public TO litoral_trace_worker_final",
           ]
-
           with engine.connect() as connection:
               for statement in statements:
                   connection.exec_driver_sql(statement)
-
           engine.dispose()
           PY
 
@@ -126,14 +122,12 @@ jobs:
           python - <<'PY'
           import os
           from sqlalchemy import create_engine
-
           engine = create_engine(
               os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
               isolation_level="AUTOCOMMIT",
               pool_pre_ping=True,
               hide_parameters=True,
           )
-
           with engine.connect() as connection:
               connection.exec_driver_sql(
                   "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO litoral_trace_app"
@@ -144,7 +138,6 @@ jobs:
               connection.exec_driver_sql(
                   "GRANT litoral_trace_worker_executor TO litoral_trace_worker_final"
               )
-
           engine.dispose()
           PY
 
@@ -153,7 +146,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee v1-final-alembic-current.txt
-          grep -F "023_add_shipment_export_cases" v1-final-alembic-current.txt
+          grep -F "024_add_shipment_phytosanitary_cases" v1-final-alembic-current.txt
 
       - name: Gate 39 - final browser staging sign-off
         shell: bash
@@ -166,17 +159,14 @@ jobs:
 
           python - <<'PY'
           import xml.etree.ElementTree as ET
-
           root = ET.parse("v1-final-staging.xml").getroot()
           suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
           if not suites:
               raise SystemExit("V1 final staging acceptance produced no testsuite.")
-
           tests = sum(int(suite.attrib.get("tests", "0")) for suite in suites)
           skipped = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)
           failures = sum(int(suite.attrib.get("failures", "0")) for suite in suites)
           errors = sum(int(suite.attrib.get("errors", "0")) for suite in suites)
-
           if tests != 2 or skipped or failures or errors:
               raise SystemExit(
                   "Gate 39 is fail-closed: "

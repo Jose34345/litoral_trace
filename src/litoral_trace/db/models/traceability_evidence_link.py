@@ -33,6 +33,8 @@ TRACEABILITY_EVIDENCE_TYPES: Final[frozenset[str]] = frozenset(
         "REMITO",
         "INVOICE",
         "CERTIFICATE",
+        "PHYTOSANITARY_CERTIFICATE",
+        "EPHYTO_XML",
         "TRANSPORT",
         "GEOSPATIAL",
         "SUPPLIER_DECLARATION",
@@ -126,7 +128,7 @@ class TraceabilityEvidenceLink(Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "evidence_type IN ('ORIGIN_AUTHORIZATION','FOREST_GUIDE','FRUIT_GUIDE','REMITO','INVOICE','CERTIFICATE','TRANSPORT','GEOSPATIAL','SUPPLIER_DECLARATION','OTHER')",
+            "evidence_type IN ('ORIGIN_AUTHORIZATION','FOREST_GUIDE','FRUIT_GUIDE','REMITO','INVOICE','CERTIFICATE','PHYTOSANITARY_CERTIFICATE','EPHYTO_XML','TRANSPORT','GEOSPATIAL','SUPPLIER_DECLARATION','OTHER')",
             name="ck_traceability_evidence_links_type",
         ),
         CheckConstraint(

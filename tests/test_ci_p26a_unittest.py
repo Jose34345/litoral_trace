@@ -22,7 +22,6 @@ def test_p26a_ci_workflow_exists():
 
 def test_p26a_ci_uses_read_only_permissions():
     workflow = _workflow_text()
-
     assert "permissions:" in workflow
     assert "contents: read" in workflow
     assert "contents: write" not in workflow
@@ -32,7 +31,6 @@ def test_p26a_ci_uses_read_only_permissions():
 
 def test_p26a_ci_runs_on_pull_requests_and_enterprise_branch():
     workflow = _workflow_text()
-
     assert "pull_request:" in workflow
     assert "push:" in workflow
     assert "- p2-enterprise-production" in workflow
@@ -41,7 +39,6 @@ def test_p26a_ci_runs_on_pull_requests_and_enterprise_branch():
 
 def test_p26a_ci_python_job_uses_production_runtime_version():
     workflow = _workflow_text()
-
     assert "python-tests:" in workflow
     assert 'python-version: "3.11"' in workflow
 
@@ -49,7 +46,6 @@ def test_p26a_ci_python_job_uses_production_runtime_version():
 def test_p26a_ci_runs_pytest_and_disables_postgres_integration():
     workflow = _workflow_text()
     python_job = workflow.split("python-tests:", 1)[1].split("frontend-build:", 1)[0]
-
     assert 'ENABLE_POSTGRES_TESTS: "0"' in workflow
     assert "python -m pytest -q -rs" in workflow
     assert "\n      DATABASE_URL:" not in python_job
@@ -62,15 +58,13 @@ def test_p26a_ci_runs_pytest_and_disables_postgres_integration():
 
 def test_p26a_ci_checks_single_canonical_alembic_head():
     workflow = _workflow_text()
-
     assert "alembic heads" in workflow
-    assert "023_add_shipment_export_cases (head)" in workflow
+    assert "024_add_shipment_phytosanitary_cases (head)" in workflow
     assert "alembic upgrade head" not in workflow
 
 
 def test_p26a_ci_frontend_is_reproducible():
     workflow = _workflow_text()
-
     assert "frontend-build:" in workflow
     assert "npm ci" in workflow
     assert "npm run build" in workflow
@@ -80,7 +74,6 @@ def test_p26a_ci_frontend_is_reproducible():
 
 def test_p26a_ci_validates_docker_and_compose():
     workflow = _workflow_text()
-
     assert "production-build:" in workflow
     assert "docker build -f Dockerfile -t litoral-trace-ci ." in workflow
     assert "docker compose -f docker-compose.prod.yml config --quiet" in workflow
@@ -90,7 +83,6 @@ def test_p26a_ci_validates_docker_and_compose():
 
 def test_p26a_ci_does_not_deploy():
     workflow = _workflow_text()
-
     forbidden = (
         "ssh ",
         "scp ",
@@ -106,7 +98,6 @@ def test_p26a_ci_does_not_deploy():
 
 def test_p26a_runbook_documents_ci_release_gate():
     runbook = _runbook_text()
-
     assert "6A. CI release gate" in runbook
     assert "GitHub CI must be green." in runbook
     assert "Python tests must be green." in runbook

@@ -7,6 +7,7 @@ import json
 import re
 import tempfile
 import unicodedata
+import xml.etree.ElementTree as ET
 import zipfile
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ from litoral_trace.storage import (
 
 PDF_CONTENT_TYPE = "application/pdf"
 JSON_CONTENT_TYPE = "application/json"
+XML_CONTENT_TYPE = "application/xml"
 XLSX_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
@@ -44,6 +46,7 @@ XLSX_CONTENT_TYPE = (
 _CONTENT_TYPE_EXTENSION = {
     PDF_CONTENT_TYPE: ".pdf",
     JSON_CONTENT_TYPE: ".json",
+    XML_CONTENT_TYPE: ".xml",
     XLSX_CONTENT_TYPE: ".xlsx",
 }
 
@@ -296,6 +299,33 @@ def _validate_json(content: bytes, *, require_object: bool) -> None:
         )
 
 
+def _validate_xml(content: bytes) -> None:
+    """Validate UTF-8 XML without permitting DTD/entity expansion."""
+    try:
+        decoded = content.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise VaultValidationError(
+            "El XML debe estar codificado en UTF-8."
+        ) from exc
+
+    upper = decoded.upper()
+    if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
+        raise VaultValidationError(
+            "El XML no puede declarar DTD ni entidades."
+        )
+
+    try:
+        root = ET.fromstring(decoded)
+    except ET.ParseError as exc:
+        raise VaultValidationError(
+            "El contenido XML es invalido."
+        ) from exc
+    if not str(root.tag or "").strip():
+        raise VaultValidationError(
+            "El XML no contiene un elemento raiz valido."
+        )
+
+
 def _validate_xlsx(content: bytes, *, max_upload_bytes: int) -> None:
     try:
         with zipfile.ZipFile(io.BytesIO(content), "r") as workbook:
@@ -381,6 +411,8 @@ def validate_vault_upload(
             payload,
             require_object=(normalized_document_type == "DDS_JSON_TRACES"),
         )
+    elif canonical_content_type == XML_CONTENT_TYPE:
+        _validate_xml(payload)
     elif canonical_content_type == XLSX_CONTENT_TYPE:
         _validate_xlsx(
             payload,

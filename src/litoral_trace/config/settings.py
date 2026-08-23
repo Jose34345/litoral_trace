@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 DEFAULT_STORAGE_ALLOWED_CONTENT_TYPES = (
     "application/pdf",
     "application/json",
+    "application/xml",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
 

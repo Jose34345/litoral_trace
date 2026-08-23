@@ -51,6 +51,8 @@ jobs:
         run: |
           python -m pytest -q -rs \
             tests/test_ux10f_release_control_unittest.py \
+            tests/test_p1b_export_release_control_unittest.py \
+            tests/test_p1c_phytosanitary_release_control_unittest.py \
             tests/test_traceability_p1c_unittest.py \
             tests/test_ux10e_traceability_evidence_unittest.py \
             --junitxml=ux10f-release-control.xml

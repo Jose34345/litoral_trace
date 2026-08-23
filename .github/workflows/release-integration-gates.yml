@@ -70,14 +70,12 @@ jobs:
           python - <<'PY'
           import os
           from sqlalchemy import create_engine
-
           engine = create_engine(
               os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
               isolation_level="AUTOCOMMIT",
               pool_pre_ping=True,
               hide_parameters=True,
           )
-
           statements = [
               """
               CREATE ROLE litoral_trace_app
@@ -104,11 +102,9 @@ jobs:
               "GRANT USAGE ON SCHEMA public TO litoral_trace_app",
               "GRANT USAGE ON SCHEMA public TO litoral_trace_worker_integration",
           ]
-
           with engine.connect() as connection:
               for statement in statements:
                   connection.exec_driver_sql(statement)
-
           engine.dispose()
           PY
 
@@ -131,14 +127,12 @@ jobs:
           python - <<'PY'
           import os
           from sqlalchemy import create_engine
-
           engine = create_engine(
               os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
               isolation_level="AUTOCOMMIT",
               pool_pre_ping=True,
               hide_parameters=True,
           )
-
           core_tables = (
               "organizations",
               "users",
@@ -148,23 +142,18 @@ jobs:
               "api_keys",
               "licenses",
           )
-
           with engine.connect() as connection:
               for table_name in core_tables:
                   connection.exec_driver_sql(
                       "GRANT SELECT, INSERT, UPDATE, DELETE "
                       f"ON TABLE public.{table_name} TO litoral_trace_app"
                   )
-
               connection.exec_driver_sql(
-                  "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public "
-                  "TO litoral_trace_app"
+                  "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO litoral_trace_app"
               )
               connection.exec_driver_sql(
-                  "GRANT litoral_trace_worker_executor "
-                  "TO litoral_trace_worker_integration"
+                  "GRANT litoral_trace_worker_executor TO litoral_trace_worker_integration"
               )
-
           engine.dispose()
           PY
 
@@ -172,13 +161,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q \
-            --junitxml=gate09-auth.xml \
+          python -m pytest -q --junitxml=gate09-auth.xml \
             tests/test_auth_tenant_rls_p18c_postgres_integration.py \
             tests/test_auth_refresh_concurrency_p1_postgres_integration.py
           python - <<'PY'
           import xml.etree.ElementTree as ET
-
           root = ET.parse("gate09-auth.xml").getroot()
           skipped = int(root.attrib.get("skipped", "0"))
           if skipped:
@@ -189,13 +176,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q \
-            --junitxml=gate10-satellite.xml \
+          python -m pytest -q --junitxml=gate10-satellite.xml \
             tests/test_satellite_concurrency_p22g_postgres_acceptance.py \
             tests/test_satellite_failure_recovery_p22h_postgres_acceptance.py
           python - <<'PY'
           import xml.etree.ElementTree as ET
-
           root = ET.parse("gate10-satellite.xml").getroot()
           skipped = int(root.attrib.get("skipped", "0"))
           if skipped:
@@ -207,18 +192,12 @@ jobs:
         run: |
           set -euo pipefail
           docker rm -f litoral-trace-ci-minio >/dev/null 2>&1 || true
-          docker run \
-            -d \
-            --rm \
-            --name litoral-trace-ci-minio \
+          docker run -d --rm --name litoral-trace-ci-minio \
             -p 127.0.0.1:9000:9000 \
             -e MINIO_ROOT_USER=p23g-ci-root \
             -e MINIO_ROOT_PASSWORD=ci_minio_password_2026 \
-            -e MINIO_BROWSER=off \
-            quay.io/minio/minio \
-            server /data \
-            --address 0.0.0.0:9000 >/dev/null
-
+            -e MINIO_BROWSER=off quay.io/minio/minio \
+            server /data --address 0.0.0.0:9000 >/dev/null
           ready=0
           for attempt in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null; then
@@ -227,7 +206,6 @@ jobs:
             fi
             sleep 1
           done
-
           if [ "$ready" -ne 1 ]; then
             docker logs litoral-trace-ci-minio || true
             echo "MinIO did not become healthy."
@@ -253,12 +231,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q \
-            --junitxml=gate11-vault.xml \
-            tests/test_vault_p23g_minio_integration.py
+          python -m pytest -q --junitxml=gate11-vault.xml tests/test_vault_p23g_minio_integration.py
           python - <<'PY'
           import xml.etree.ElementTree as ET
-
           root = ET.parse("gate11-vault.xml").getroot()
           skipped = int(root.attrib.get("skipped", "0"))
           if skipped:
@@ -272,12 +247,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q \
-            --junitxml=gate12-batch.xml \
-            tests/test_batch_p24h_postgres_integration.py
+          python -m pytest -q --junitxml=gate12-batch.xml tests/test_batch_p24h_postgres_integration.py
           python - <<'PY'
           import xml.etree.ElementTree as ET
-
           root = ET.parse("gate12-batch.xml").getroot()
           skipped = int(root.attrib.get("skipped", "0"))
           if skipped:
@@ -291,12 +263,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q \
-            --junitxml=gate13-traceability.xml \
-            tests/test_traceability_p1a_postgres_integration.py
+          python -m pytest -q --junitxml=gate13-traceability.xml tests/test_traceability_p1a_postgres_integration.py
           python - <<'PY'
           import xml.etree.ElementTree as ET
-
           root = ET.parse("gate13-traceability.xml").getroot()
           skipped = int(root.attrib.get("skipped", "0"))
           if skipped:
@@ -307,12 +276,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q \
-            --junitxml=gate14-ledger.xml \
-            tests/test_traceability_p1b_postgres_integration.py
+          python -m pytest -q --junitxml=gate14-ledger.xml tests/test_traceability_p1b_postgres_integration.py
           python - <<'PY'
           import xml.etree.ElementTree as ET
-
           root = ET.parse("gate14-ledger.xml").getroot()
           skipped = int(root.attrib.get("skipped", "0"))
           failures = int(root.attrib.get("failures", "0"))
@@ -328,12 +294,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q \
-            --junitxml=gate15-lineage.xml \
-            tests/test_traceability_p1c_postgres_integration.py
+          python -m pytest -q --junitxml=gate15-lineage.xml tests/test_traceability_p1c_postgres_integration.py
           python - <<'PY'
           import xml.etree.ElementTree as ET
-
           root = ET.parse("gate15-lineage.xml").getroot()
           skipped = int(root.attrib.get("skipped", "0"))
           failures = int(root.attrib.get("failures", "0"))
@@ -349,12 +312,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q \
-            --junitxml=gate16-traceability-ui.xml \
-            tests/test_traceability_p1d_ui_unittest.py
+          python -m pytest -q --junitxml=gate16-traceability-ui.xml tests/test_traceability_p1d_ui_unittest.py
           python - <<'PY'
           import xml.etree.ElementTree as ET
-
           root = ET.parse("gate16-traceability-ui.xml").getroot()
           skipped = int(root.attrib.get("skipped", "0"))
           failures = int(root.attrib.get("failures", "0"))
@@ -374,7 +334,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee alembic-current.txt
-          grep -F "023_add_shipment_export_cases" alembic-current.txt
+          grep -F "024_add_shipment_phytosanitary_cases" alembic-current.txt
 
       - name: Cleanup ephemeral integration files and MinIO
         if: always()
