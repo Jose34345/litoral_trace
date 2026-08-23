@@ -98,10 +98,10 @@ jobs:
           engine.dispose()
           PY
 
-      - name: Migrate database to P1-C canonical head
-        run: python -m alembic upgrade head
+      - name: Migrate database to P1-C owned revision
+        run: python -m alembic upgrade 024_add_shipment_phytosanitary_cases
 
-      - name: Verify canonical revision
+      - name: Verify P1-C revision
         shell: bash
         run: |
           set -euo pipefail
