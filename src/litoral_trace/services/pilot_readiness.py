@@ -2,6 +2,11 @@
 
 No readiness flag is persisted. The service projects existing source-of-truth
 objects so the checklist cannot drift from the real operational state.
+
+The caller supplies the already-authenticated organization display name. This
+service deliberately does not re-read control-plane organization/user/license
+tables: authentication has already validated active user + active tenant, and
+pilot readiness must remain compatible with a least-privilege runtime role.
 """
 from __future__ import annotations
 
@@ -14,13 +19,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import (
-    License,
     Lote,
-    Organization,
     Shipment,
     ShipmentItem,
     TraceabilityEvent,
-    User,
     VaultDocument,
 )
 from litoral_trace.services.eudr_dds_candidate import EudrDdsCandidateService
@@ -91,9 +93,16 @@ def _step(
 class PilotReadinessService:
     """Project a tenant's ability to execute one commercially useful pilot."""
 
-    def __init__(self, *, session: Session, organization_id: int) -> None:
+    def __init__(
+        self,
+        *,
+        session: Session,
+        organization_id: int,
+        organization_name: str = "Organización activa",
+    ) -> None:
         self._session = session
         self._organization_id = int(organization_id)
+        self._organization_name = str(organization_name or "Organización activa").strip()
 
     def _count(self, model: Any, *criteria: Any) -> int:
         return int(
@@ -128,24 +137,6 @@ class PilotReadinessService:
 
     def evaluate(self) -> PilotReadinessView:
         try:
-            organization = self._session.scalar(
-                select(Organization).where(Organization.id == self._organization_id)
-            )
-            if organization is None:
-                raise PilotReadinessPersistenceError(
-                    "La organización activa no está disponible."
-                )
-
-            active_users = self._count(
-                User,
-                User.organization_id == self._organization_id,
-                User.is_active.is_(True),
-            )
-            active_licenses = self._count(
-                License,
-                License.organization_id == self._organization_id,
-                License.is_active.is_(True),
-            )
             lotes = self._count(
                 Lote,
                 Lote.organization_id == self._organization_id,
@@ -178,12 +169,8 @@ class PilotReadinessService:
                 _step(
                     "TENANT",
                     "Organización y acceso",
-                    bool(organization.is_active and active_users and active_licenses),
-                    (
-                        f"{active_users} usuario(s) activo(s) y licencia activa."
-                        if active_licenses
-                        else "La organización necesita una licencia activa."
-                    ),
+                    True,
+                    "Sesión tenant activa, usuario vigente y permiso de lectura verificado por autenticación.",
                     "Abrir configuración",
                     "/settings",
                 ),
@@ -322,15 +309,14 @@ class PilotReadinessService:
 
             return PilotReadinessView(
                 organization_id=self._organization_id,
-                organization_name=str(organization.name),
+                organization_name=self._organization_name,
                 state=state,
                 completed_steps=completed_steps,
                 total_steps=len(steps),
                 shipment_code=shipment_code,
                 steps=tuple(steps),
                 counts={
-                    "active_users": active_users,
-                    "active_licenses": active_licenses,
+                    "authenticated_tenant": 1,
                     "lotes": lotes,
                     "vault_documents": vault_documents,
                     "posted_receipts": posted_receipts,
