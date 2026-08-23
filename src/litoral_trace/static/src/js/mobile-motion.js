@@ -25,6 +25,30 @@ function shouldSkipAutoReveal(element) {
   return false;
 }
 
+function autoRevealCandidates(root) {
+  const children = Array.from(root.children).filter(
+    (child) => !shouldSkipAutoReveal(child),
+  );
+
+  /*
+   * Several authenticated pages use one semantic wrapper (`section.space-y-*`)
+   * around all their major blocks. Reveal those blocks instead of animating the
+   * whole page as one slab, while keeping ordinary multi-root pages unchanged.
+   */
+  if (
+    children.length === 1
+    && children[0] instanceof HTMLElement
+    && children[0].children.length > 1
+    && !children[0].hasAttribute("data-reveal")
+  ) {
+    return Array.from(children[0].children).filter(
+      (child) => !shouldSkipAutoReveal(child),
+    );
+  }
+
+  return children;
+}
+
 function prepareAutoReveal(scope = document) {
   const roots = [];
 
@@ -40,11 +64,8 @@ function prepareAutoReveal(scope = document) {
   );
 
   roots.forEach((root) => {
-    Array.from(root.children).forEach((child) => {
-      if (
-        shouldSkipAutoReveal(child)
-        || child.hasAttribute("data-reveal")
-      ) {
+    autoRevealCandidates(root).forEach((child) => {
+      if (child.hasAttribute("data-reveal")) {
         return;
       }
 
