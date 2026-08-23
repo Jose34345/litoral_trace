@@ -142,6 +142,7 @@ def test_navigation_is_server_side_rbac_derived():
     )
     assert [item.key for item in admin_nav] == [
         "dashboard",
+        "pilot_readiness",
         "operations",
         "imports",
         "traceability",

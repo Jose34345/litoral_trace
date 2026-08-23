@@ -36,6 +36,14 @@ _NAVIGATION = (
         active_prefixes=("/dashboard",),
     ),
     NavigationItem(
+        key="pilot_readiness",
+        label="Preparar piloto",
+        href="/pilot-readiness",
+        section="operacion",
+        permission=Permission.LOTE_READ,
+        active_prefixes=("/pilot-readiness",),
+    ),
+    NavigationItem(
         key="operations",
         label="Operaciones",
         href="/operations",
@@ -118,9 +126,18 @@ def build_navigation(
     """Devuelve sólo las opciones que el rol autenticado puede utilizar."""
 
     visible: list[NavigationView] = []
+    role = str(getattr(user, "role", "") or "").strip().lower()
 
     for item in _NAVIGATION:
         if not has_permission(user, item.permission):
+            continue
+
+        # Pilot readiness is an onboarding workspace for the tenant roles that
+        # actually operate the pilot. Superadmin remains a platform control-
+        # plane role, while auditor/cliente retain read-only direct-route/API
+        # access through LOTE_READ without adding onboarding clutter to their
+        # sidebar.
+        if item.key == "pilot_readiness" and role not in {"admin", "manager"}:
             continue
 
         visible.append(
