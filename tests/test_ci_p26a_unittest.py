@@ -64,7 +64,7 @@ def test_p26a_ci_checks_single_canonical_alembic_head():
     workflow = _workflow_text()
 
     assert "alembic heads" in workflow
-    assert "022_add_integration_history (head)" in workflow
+    assert "023_add_shipment_export_cases (head)" in workflow
     assert "alembic upgrade head" not in workflow
 
 

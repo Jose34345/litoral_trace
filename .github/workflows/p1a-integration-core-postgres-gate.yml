@@ -108,8 +108,11 @@ jobs:
           engine.dispose()
           PY
 
-      - name: Migrate database to P1-A canonical head
-        run: python -m alembic upgrade head
+      # Keep the P1-A regression pinned to the schema it owns. Later feature
+      # gates validate newer Alembic heads independently, avoiding a false red
+      # when an additive downstream migration is introduced.
+      - name: Migrate database to P1-A canonical revision
+        run: python -m alembic upgrade 022_add_integration_history
 
       - name: Provision existing-domain read contract and worker capability
         shell: bash

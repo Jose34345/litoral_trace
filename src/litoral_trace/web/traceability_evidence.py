@@ -45,6 +45,7 @@ _SUBJECT_LABELS = {
 _EVIDENCE_LABELS = {
     "ORIGIN_AUTHORIZATION": "Autorización de origen",
     "FOREST_GUIDE": "Guía forestal",
+    "FRUIT_GUIDE": "Guía de Frutos",
     "REMITO": "Remito",
     "INVOICE": "Factura / documento comercial",
     "CERTIFICATE": "Certificado",

@@ -1,9 +1,4 @@
-"""Industrial traceability API and read-only browser composition.
-
-Operational UX10-D writes are registered directly by the application bootstrap
-from the web layer, so this API module never imports the write workspace back
-through the HTML runtime layer.
-"""
+"""Industrial traceability API and browser-domain composition."""
 from __future__ import annotations
 
 from typing import Any
@@ -13,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.api.integrations import router as integrations_api_router
+from litoral_trace.api.shipment_export_case import router as export_case_api_router
 from litoral_trace.api.traceability_dossier import router as dossier_router
 from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.db.tenant import get_tenant_scoped_db_session
@@ -22,6 +18,7 @@ from litoral_trace.services.traceability_lineage import (
     TraceabilityLineageValidationError,
 )
 from litoral_trace.web.integrations import router as integrations_web_router
+from litoral_trace.web.shipment_export_case import router as export_case_web_router
 from litoral_trace.web.traceability import router as traceability_web_router
 from litoral_trace.web.traceability_release_control import (
     router as release_control_web_router,
@@ -92,14 +89,15 @@ async def obtener_origen_despacho_endpoint(
         session.close()
 
 
-# ``main.py`` includes one traceability-domain router for the origin API,
-# P1E dossier downloads and browser workspaces. P1-A is composed here to avoid
-# changing the legacy application bootstrap while keeping a separate
-# `/api/v1/integrations` and `/integrations` namespace.
+# ``main.py`` includes one traceability-domain router. P1-A and P1-B are
+# composed here so the production bootstrap remains stable while each feature
+# keeps an independent API/browser namespace.
 router = APIRouter()
 router.include_router(api_router)
 router.include_router(dossier_router)
 router.include_router(integrations_api_router)
+router.include_router(export_case_api_router)
 router.include_router(traceability_web_router)
 router.include_router(release_control_web_router)
 router.include_router(integrations_web_router)
+router.include_router(export_case_web_router)
