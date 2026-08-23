@@ -50,7 +50,11 @@ class TestFastAPIStep3Lotes(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         body = json.loads(res.body.decode('utf-8'))
         self.assertEqual(body["dictamen"], "Verde")
-        self.assertIsNotNone(body["dds_traces_nt_json"])
+        self.assertEqual(body["analysis_kind"], "LEGACY_NON_REGULATORY_PREVIEW")
+        self.assertEqual(body["regulatory_effect"], "NONE")
+        self.assertFalse(body["submit_ready"])
+        self.assertIsNotNone(body["legacy_non_regulatory_preview_json"])
+        self.assertNotIn("dds_traces_nt_json", body)
 
     def test_descargar_plantilla_excel_endpoint(self):
         res = asyncio.run(descargar_plantilla_excel_endpoint())
