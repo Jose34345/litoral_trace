@@ -6,6 +6,7 @@ from typing import Final
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -38,7 +39,7 @@ class EudrAcceptanceAttempt(Base, TimestampMixin):
     """One idempotent, tenant-safe attempt against non-legal ACCEPTANCE.
 
     The row deliberately stores no username, authentication key, WS-Security
-    nonce or raw XML.  Those belong to deployment secrets / transient memory.
+    nonce or raw XML. Those belong to deployment secrets / transient memory.
     Hashes make the outbound contract auditable without turning PostgreSQL into
     a credential or message-body store.
     """
@@ -58,6 +59,9 @@ class EudrAcceptanceAttempt(Base, TimestampMixin):
     country_of_activity: Mapped[str] = mapped_column(String(2), nullable=False)
     border_cross_country: Mapped[str | None] = mapped_column(String(2), nullable=True)
     internal_reference_number: Mapped[str] = mapped_column(String(120), nullable=False)
+    geo_location_confidential: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     candidate_payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     wire_contract_profile: Mapped[str] = mapped_column(String(120), nullable=False)
