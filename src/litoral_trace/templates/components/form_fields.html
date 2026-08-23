@@ -1,0 +1,76 @@
+{% macro text_field(name, label, value='', type='text', placeholder='', help_text=None, required=False, autocomplete=None, error=None) -%}
+<label class="lt-field" {% if error %}data-state="error"{% endif %}>
+    <span class="lt-field__label-row">
+        <span class="lt-field__label">{{ label }}</span>
+        {% if required %}<span class="lt-field__required" aria-hidden="true">*</span>{% else %}<span class="lt-field__optional">Opcional</span>{% endif %}
+    </span>
+    <input
+        type="{{ type }}"
+        name="{{ name }}"
+        value="{{ value }}"
+        {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+        {% if autocomplete %}autocomplete="{{ autocomplete }}"{% endif %}
+        {% if required %}required{% endif %}
+        {% if error %}aria-invalid="true"{% endif %}
+        {% if help_text and error %}aria-describedby="{{ name }}-help {{ name }}-error"{% elif help_text %}aria-describedby="{{ name }}-help"{% elif error %}aria-describedby="{{ name }}-error"{% endif %}
+        class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-forest-600 lt-control"
+    >
+    {% if help_text %}<span id="{{ name }}-help" class="lt-field__help">{{ help_text }}</span>{% endif %}
+    {% if error %}<span id="{{ name }}-error" class="lt-field__error" role="alert">{{ error }}</span>{% endif %}
+</label>
+{%- endmacro %}
+
+
+{% macro select_field(name, label, options, selected_value=None, help_text=None, required=False, error=None) -%}
+<label class="lt-field" {% if error %}data-state="error"{% endif %}>
+    <span class="lt-field__label-row">
+        <span class="lt-field__label">{{ label }}</span>
+        {% if required %}<span class="lt-field__required" aria-hidden="true">*</span>{% else %}<span class="lt-field__optional">Opcional</span>{% endif %}
+    </span>
+    <select
+        name="{{ name }}"
+        {% if required %}required{% endif %}
+        {% if error %}aria-invalid="true"{% endif %}
+        {% if help_text and error %}aria-describedby="{{ name }}-help {{ name }}-error"{% elif help_text %}aria-describedby="{{ name }}-help"{% elif error %}aria-describedby="{{ name }}-error"{% endif %}
+        class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none lt-control"
+    >
+        {% for option_value, option_label in options %}
+        <option value="{{ option_value }}" {% if selected_value is not none and option_value == selected_value %}selected{% endif %}>{{ option_label }}</option>
+        {% endfor %}
+    </select>
+    {% if help_text %}<span id="{{ name }}-help" class="lt-field__help">{{ help_text }}</span>{% endif %}
+    {% if error %}<span id="{{ name }}-error" class="lt-field__error" role="alert">{{ error }}</span>{% endif %}
+</label>
+{%- endmacro %}
+
+
+{% macro textarea_field(name, label, value='', placeholder='', help_text=None, required=False, error=None, rows=4) -%}
+<label class="lt-field" {% if error %}data-state="error"{% endif %}>
+    <span class="lt-field__label-row">
+        <span class="lt-field__label">{{ label }}</span>
+        {% if required %}<span class="lt-field__required" aria-hidden="true">*</span>{% else %}<span class="lt-field__optional">Opcional</span>{% endif %}
+    </span>
+    <textarea
+        name="{{ name }}"
+        rows="{{ rows }}"
+        {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+        {% if required %}required{% endif %}
+        {% if error %}aria-invalid="true"{% endif %}
+        {% if help_text and error %}aria-describedby="{{ name }}-help {{ name }}-error"{% elif help_text %}aria-describedby="{{ name }}-help"{% elif error %}aria-describedby="{{ name }}-error"{% endif %}
+        class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-forest-600 lt-control"
+    >{{ value }}</textarea>
+    {% if help_text %}<span id="{{ name }}-help" class="lt-field__help">{{ help_text }}</span>{% endif %}
+    {% if error %}<span id="{{ name }}-error" class="lt-field__error" role="alert">{{ error }}</span>{% endif %}
+</label>
+{%- endmacro %}
+
+
+{% macro checkbox_field(name, label, checked=False, value='1', help_text=None) -%}
+<label class="lt-check-field">
+    <input class="lt-check-field__control" type="checkbox" name="{{ name }}" value="{{ value }}" {% if checked %}checked{% endif %}>
+    <span>
+        <span class="lt-check-field__label">{{ label }}</span>
+        {% if help_text %}<span class="lt-check-field__help">{{ help_text }}</span>{% endif %}
+    </span>
+</label>
+{%- endmacro %}
