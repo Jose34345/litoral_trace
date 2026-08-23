@@ -1,0 +1,33 @@
+{% macro progress_bar(label, value, max_value, value_label=None) -%}
+<div class="lt-progress">
+    <div class="lt-progress__header">
+        <span class="lt-progress__label">{{ label }}</span>
+        <span class="lt-progress__value">{{ value_label if value_label is not none else value ~ " / " ~ max_value }}</span>
+    </div>
+    <progress
+        class="lt-progress__bar"
+        value="{{ value }}"
+        max="{{ max_value }}"
+        aria-label="{{ label }}"
+    >{{ value }} / {{ max_value }}</progress>
+</div>
+{%- endmacro %}
+
+
+{% macro progress_steps(steps, label='Progreso del proceso') -%}
+<ol class="lt-progress-steps" aria-label="{{ label }}">
+    {% for step in steps %}
+    <li class="lt-progress-step" data-state="{{ step.state }}" {% if step.state == 'current' %}aria-current="step"{% endif %}>
+        <span class="lt-progress-step__marker" aria-hidden="true">
+            {% if step.state == 'complete' %}<i class="fa-solid fa-check"></i>
+            {% elif step.state == 'blocked' %}<i class="fa-solid fa-xmark"></i>
+            {% else %}{{ loop.index }}{% endif %}
+        </span>
+        <span>
+            <span class="lt-progress-step__title">{{ step.title }}</span>
+            {% if step.description %}<span class="lt-progress-step__description">{{ step.description }}</span>{% endif %}
+        </span>
+    </li>
+    {% endfor %}
+</ol>
+{%- endmacro %}
