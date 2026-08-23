@@ -35,6 +35,7 @@ def upgrade() -> None:
         sa.Column("organization_id", sa.Integer(), nullable=False),
         sa.Column("shipment_id", sa.Integer(), nullable=False),
         sa.Column("activity_type", sa.String(length=16), nullable=False),
+        sa.Column("commodity_profile", sa.String(length=16), nullable=False),
         sa.Column("operator_name", sa.String(length=240), nullable=True),
         sa.Column("operator_address", sa.Text(), nullable=True),
         sa.Column("operator_country_code", sa.String(length=2), nullable=True),
@@ -112,6 +113,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "activity_type IN ('IMPORT','DOMESTIC','EXPORT')",
             name="ck_eudr_dds_candidates_activity_type",
+        ),
+        sa.CheckConstraint(
+            "commodity_profile IN ('WOOD','OTHER_EUDR')",
+            name="ck_eudr_dds_candidates_commodity_profile",
         ),
         sa.CheckConstraint(
             "risk_conclusion IN ('UNASSESSED','NO_OR_NEGLIGIBLE_RISK','NON_NEGLIGIBLE_RISK')",
