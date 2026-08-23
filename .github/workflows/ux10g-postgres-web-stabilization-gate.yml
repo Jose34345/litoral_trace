@@ -193,6 +193,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest -q -rs \
+            tests/test_platform_definer_p17k_postgres_integration.py \
             tests/test_platform_control_plane_p21_postgres_integration.py \
             --junitxml=p17k-platform-postgres.xml
           python - <<'PY'
