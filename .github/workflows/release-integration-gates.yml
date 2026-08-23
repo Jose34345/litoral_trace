@@ -334,7 +334,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee alembic-current.txt
-          grep -F "024_add_shipment_phytosanitary_cases" alembic-current.txt
+          grep -F "025_add_eudr_dds_candidates" alembic-current.txt
 
       - name: Cleanup ephemeral integration files and MinIO
         if: always()

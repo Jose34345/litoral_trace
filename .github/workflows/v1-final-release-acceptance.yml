@@ -146,7 +146,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee v1-final-alembic-current.txt
-          grep -F "024_add_shipment_phytosanitary_cases" v1-final-alembic-current.txt
+          grep -F "025_add_eudr_dds_candidates" v1-final-alembic-current.txt
 
       - name: Gate 39 - final browser staging sign-off
         shell: bash

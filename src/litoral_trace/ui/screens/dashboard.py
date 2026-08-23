@@ -29,10 +29,10 @@ def dashboard_screen() -> None:
     st.markdown("""
     <div style="margin-bottom: 20px;">
         <h1 style="font-size: 2rem; font-weight: 700; color: #0f172a; margin: 0;">
-            Compliance Intelligence & Trazabilidad (EUDR 2023/1115)
+            Análisis histórico de trazabilidad y balance de masas
         </h1>
         <p style="font-size: 0.95rem; color: #64748b; margin-top: 4px;">
-            Plataforma B2B para gestión de activos forestales, balance de masas y emisión de declaraciones de debida diligencia para la Unión Europea.
+            Pantalla legacy de análisis orientativo. No emite DDS EUDR, no presenta declaraciones ante la UE y no determina cumplimiento regulatorio.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -42,11 +42,11 @@ def dashboard_screen() -> None:
     with k1:
         render_kpi_card("Activos Monitoreados", "12 Lotes", "Superficie: 850 ha")
     with k2:
-        render_kpi_card("Superficie Auditada", "850 ha", "Línea base 2020 ok")
+        render_kpi_card("Superficie Analizada", "850 ha", "Vista histórica/demo")
     with k3:
-        render_kpi_card("Certificados DDS", "8 DDS", "TRACES NT Listos")
+        render_kpi_card("Previews legacy", "8 previews", "No regulatorios")
     with k4:
-        render_kpi_card("Riesgo / Bloqueos", "0 Bloqueos", "100% Compliant", is_alert=False)
+        render_kpi_card("Resultado demo", "Sin bloqueo demo", "No concluyente EUDR", is_alert=False)
 
     st.markdown("<br/>", unsafe_allow_html=True)
 
@@ -54,12 +54,12 @@ def dashboard_screen() -> None:
     tab_mapa, tab_batch, tab_manual = st.tabs([
         "🗺️ Mapa Geoespacial de Lotes",
         "⚡ Ingreso Masivo & Stress Test (Batch)",
-        "🔍 Motor de Auditoría Manual"
+        "🔍 Análisis Manual Legacy"
     ])
 
     # Tab 1: Mapa Geoespacial
     with tab_mapa:
-        st.subheader("Visualización de Lotes y Estado de Riesgo")
+        st.subheader("Visualización de Lotes y Estado Orientativo")
         
         # DataFrame Demo
         df_lotes = pd.DataFrame([
@@ -90,7 +90,7 @@ def dashboard_screen() -> None:
     # Tab 2: Procesamiento Batch (DEMO STRESS TEST EN VIVO)
     with tab_batch:
         st.subheader("⚡ Procesamiento Masivo & Stress Test en Vivo")
-        st.write("Sube tu matriz de datos en Excel (remitos, guías forestales y coordenadas) para ejecutar el análisis de biomasa y balance de masas en segundos.")
+        st.write("Sube tu matriz de datos en Excel para ejecutar el análisis histórico de biomasa y balance de masas. El resultado es orientativo y no constituye una DDS EUDR.")
 
         st.download_button(
             label="📥 Descargar Plantilla Excel Oficial",
@@ -101,18 +101,18 @@ def dashboard_screen() -> None:
 
         archivo_subido = st.file_uploader("Cargar Matriz de Datos (.xlsx)", type=["xlsx"])
         if archivo_subido is not None:
-            if st.button("🚀 Ejecutar Stress Test de Auditoría", type="primary"):
+            if st.button("🚀 Ejecutar Stress Test Orientativo", type="primary"):
                 try:
                     df_upload = pd.read_excel(archivo_subido)
                     df_resumen, zip_data = procesar_lote_masivo(df_upload)
                     
-                    st.success("✅ Auditado Exitosamente. Resumen de Veredictos:")
+                    st.success("✅ Análisis histórico completado. Resumen de resultados:")
                     st.dataframe(df_resumen, use_container_width=True, hide_index=True)
                     
                     st.download_button(
-                        label="📦 Descargar Paquete Completo de Certificados y DDS (.ZIP)",
+                        label="📦 Descargar paquete legacy de auditoría (.ZIP)",
                         data=zip_data,
-                        file_name="LitoralTrace_Paquete_Auditoria.zip",
+                        file_name="LitoralTrace_Paquete_Auditoria_Legacy.zip",
                         mime="application/zip",
                         type="primary"
                     )
@@ -121,7 +121,8 @@ def dashboard_screen() -> None:
 
     # Tab 3: Auditoría Manual
     with tab_manual:
-        st.subheader("🔍 Auditoría Lote a Lote")
+        st.subheader("🔍 Análisis orientativo lote a lote")
+        st.caption("Esta pantalla legacy no emite certificados oficiales ni DDS EUDR.")
         
         c1, c2 = st.columns(2)
         with c1:
@@ -142,7 +143,7 @@ def dashboard_screen() -> None:
             vol_in = st.number_input("Volumen Ingresado (Ton)", value=500.0)
             vol_out = st.number_input("Volumen Declarado para Exportar (Ton)", value=220.0)
 
-        if st.button("⚖️ Evaluar Compliance & Emitir Certificado", type="primary"):
+        if st.button("⚖️ Ejecutar análisis orientativo", type="primary"):
             lote_data = {
                 "identificador": nombre_lote,
                 "productor_id": proveedor_id,
@@ -156,15 +157,15 @@ def dashboard_screen() -> None:
             res = evaluar_compliance_lote(lote_data, vol_in, vol_out)
             
             if res["dictamen"] == "Verde":
-                st.success(f"✅ {res['observacion']}")
+                st.success(f"✅ Resultado orientativo: {res['observacion']}")
                 
-                dds_json = generar_dds_json_traces_nt(lote_data, vol_out)
+                preview_json = generar_dds_json_traces_nt(lote_data, vol_out)
                 pdf_bytes = generar_pdf_reporte_bytes(
                     lote_data, res["dictamen"], res["observacion"], vol_in, vol_out, res["balance_masas"].coeficiente_rendimiento
                 )
                 
                 dl1, dl2 = st.columns(2)
-                dl1.download_button("📄 Descargar Certificado (PDF)", data=pdf_bytes, file_name=f"CERTIFICADO_{proveedor_id}.pdf", mime="application/pdf")
-                dl2.download_button("📑 Descargar DDS TRACES NT (JSON)", data=dds_json.encode("utf-8"), file_name=f"DDS_{proveedor_id}.json", mime="application/json")
+                dl1.download_button("📄 Descargar reporte legacy (PDF)", data=pdf_bytes, file_name=f"REPORTE_LEGACY_{proveedor_id}.pdf", mime="application/pdf")
+                dl2.download_button("📑 Descargar preview no regulatorio (JSON)", data=preview_json.encode("utf-8"), file_name=f"PREVIEW_NO_REGULATORIO_{proveedor_id}.json", mime="application/json")
             else:
-                st.error(f"❌ {res['observacion']}")
+                st.error(f"❌ Resultado orientativo: {res['observacion']}")

@@ -8,6 +8,11 @@ from fastapi.responses import HTMLResponse
 
 from litoral_trace.auth.rbac import Permission
 from litoral_trace.db.tenant import get_tenant_scoped_db_session
+from litoral_trace.services.eudr_dds_candidate import EudrDdsCandidateService
+from litoral_trace.services.eudr_release_control import (
+    apply_eudr_conformance_release_control,
+    is_eudr_destination,
+)
 from litoral_trace.services.shipment_export_case import ShipmentExportCaseService
 from litoral_trace.services.shipment_export_release_control import (
     apply_export_case_release_control,
@@ -162,6 +167,17 @@ async def render_release_control(
                 control,
                 lineage_payload=payload,
                 readiness=phytosanitary_readiness,
+            )
+
+        if is_eudr_destination(payload):
+            eudr_conformance = EudrDdsCandidateService(
+                session=session,
+                organization_id=user.organization_id,
+            ).conformance(normalized_code)
+            control = apply_eudr_conformance_release_control(
+                control,
+                lineage_payload=payload,
+                conformance=eudr_conformance,
             )
     except TraceabilityLineageNotFoundError as exc:
         return _render(

@@ -1,4 +1,4 @@
-"""Router REST de Lotes Geoespaciales y Compliance EUDR."""
+"""Router REST de Lotes Geoespaciales y análisis legacy."""
 
 from __future__ import annotations
 
@@ -39,44 +39,19 @@ LOTE_TENANT_IDENTIFIER_CONSTRAINT = "uq_lotes_tenant_identificador_ci"
 
 router = APIRouter(
     prefix="/api/v1",
-    tags=["Lotes & Compliance EUDR"],
+    tags=["Lotes & análisis legacy"],
 )
 
 
 class LoteCreateRequest(BaseModel):
     """Datos necesarios para crear un lote."""
 
-    identificador: str = Field(
-        ...,
-        min_length=1,
-        max_length=100,
-        examples=["Rodal Norte 01"],
-    )
-    productor_id: str = Field(
-        ...,
-        min_length=1,
-        max_length=100,
-        examples=["30-12345678-9"],
-    )
-    producto_forestal: str = Field(
-        default="Madera Aserrada (Pino)",
-        min_length=1,
-        max_length=100,
-    )
-    hectareas: float = Field(
-        default=100.0,
-        ge=0.0,
-    )
-    latitud: float = Field(
-        default=-27.45,
-        ge=-90.0,
-        le=90.0,
-    )
-    longitud: float = Field(
-        default=-59.05,
-        ge=-180.0,
-        le=180.0,
-    )
+    identificador: str = Field(..., min_length=1, max_length=100, examples=["Rodal Norte 01"])
+    productor_id: str = Field(..., min_length=1, max_length=100, examples=["30-12345678-9"])
+    producto_forestal: str = Field(default="Madera Aserrada (Pino)", min_length=1, max_length=100)
+    hectareas: float = Field(default=100.0, ge=0.0)
+    latitud: float = Field(default=-27.45, ge=-90.0, le=90.0)
+    longitud: float = Field(default=-59.05, ge=-180.0, le=180.0)
     polygon_wkt: str | None = Field(
         default=None,
         description=(
@@ -84,61 +59,23 @@ class LoteCreateRequest(BaseModel):
             "se genera uno alrededor del centroide."
         ),
     )
-    volumen_ingresado_ton: float = Field(
-        default=0.0,
-        ge=0.0,
-    )
-    volumen_exportar_ton: float = Field(
-        default=0.0,
-        ge=0.0,
-    )
+    volumen_ingresado_ton: float = Field(default=0.0, ge=0.0)
+    volumen_exportar_ton: float = Field(default=0.0, ge=0.0)
 
 
 class LoteUpdateRequest(BaseModel):
     """Campos modificables de un lote."""
 
-    identificador: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=100,
-    )
-    productor_id: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=100,
-    )
-    producto_forestal: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=100,
-    )
-    hectareas: float | None = Field(
-        default=None,
-        ge=0.0,
-    )
-    latitud: float | None = Field(
-        default=None,
-        ge=-90.0,
-        le=90.0,
-    )
-    longitud: float | None = Field(
-        default=None,
-        ge=-180.0,
-        le=180.0,
-    )
+    identificador: str | None = Field(default=None, min_length=1, max_length=100)
+    productor_id: str | None = Field(default=None, min_length=1, max_length=100)
+    producto_forestal: str | None = Field(default=None, min_length=1, max_length=100)
+    hectareas: float | None = Field(default=None, ge=0.0)
+    latitud: float | None = Field(default=None, ge=-90.0, le=90.0)
+    longitud: float | None = Field(default=None, ge=-180.0, le=180.0)
     polygon_wkt: str | None = None
-    estatus: str | None = Field(
-        default=None,
-        max_length=50,
-    )
-    volumen_ingresado_ton: float | None = Field(
-        default=None,
-        ge=0.0,
-    )
-    volumen_exportar_ton: float | None = Field(
-        default=None,
-        ge=0.0,
-    )
+    estatus: str | None = Field(default=None, max_length=50)
+    volumen_ingresado_ton: float | None = Field(default=None, ge=0.0)
+    volumen_exportar_ton: float | None = Field(default=None, ge=0.0)
 
 
 class LoteResponse(BaseModel):
@@ -161,55 +98,20 @@ class LoteResponse(BaseModel):
 
 
 class LoteEvaluacionRequest(BaseModel):
-    """Datos utilizados para evaluar compliance EUDR."""
+    """Datos utilizados por el análisis histórico no regulatorio."""
 
-    identificador: str = Field(
-        ...,
-        min_length=1,
-        max_length=100,
-        examples=["Rodal Norte 01"],
-    )
-    productor_id: str = Field(
-        ...,
-        min_length=1,
-        max_length=100,
-        examples=["30-12345678-9"],
-    )
-    producto_forestal: str = Field(
-        default="Madera Aserrada (Pino)",
-        min_length=1,
-        max_length=100,
-    )
-    hectareas: float = Field(
-        default=100.0,
-        ge=0.0,
-    )
-    latitud: float = Field(
-        default=-27.45,
-        ge=-90.0,
-        le=90.0,
-    )
-    longitud: float = Field(
-        default=-59.05,
-        ge=-180.0,
-        le=180.0,
-    )
-    volumen_ingresado_ton: float = Field(
-        ...,
-        ge=0.0,
-    )
-    volumen_exportar_ton: float = Field(
-        ...,
-        ge=0.0,
-    )
+    identificador: str = Field(..., min_length=1, max_length=100, examples=["Rodal Norte 01"])
+    productor_id: str = Field(..., min_length=1, max_length=100, examples=["30-12345678-9"])
+    producto_forestal: str = Field(default="Madera Aserrada (Pino)", min_length=1, max_length=100)
+    hectareas: float = Field(default=100.0, ge=0.0)
+    latitud: float = Field(default=-27.45, ge=-90.0, le=90.0)
+    longitud: float = Field(default=-59.05, ge=-180.0, le=180.0)
+    volumen_ingresado_ton: float = Field(..., ge=0.0)
+    volumen_exportar_ton: float = Field(..., ge=0.0)
 
 
-def _generate_default_polygon(
-    latitud: float,
-    longitud: float,
-) -> str:
+def _generate_default_polygon(latitud: float, longitud: float) -> str:
     delta = 0.01
-
     return (
         "POLYGON(("
         f"{longitud - delta} {latitud - delta}, "
@@ -221,9 +123,7 @@ def _generate_default_polygon(
     )
 
 
-def _lote_to_dict(
-    lote: Lote,
-) -> dict[str, Any]:
+def _lote_to_dict(lote: Lote) -> dict[str, Any]:
     return {
         "id": lote.id,
         "organization_id": lote.organization_id,
@@ -240,9 +140,7 @@ def _lote_to_dict(
     }
 
 
-def _build_lote_audit_state(
-    lote: Lote,
-) -> dict[str, Any]:
+def _build_lote_audit_state(lote: Lote) -> dict[str, Any]:
     return {
         "identificador": lote.identificador,
         "estatus": lote.estatus,
@@ -252,24 +150,15 @@ def _build_lote_audit_state(
     }
 
 
-def _get_tenant_lote(
-    session: Any,
-    lote_id: int,
-    organization_id: int,
-) -> Lote:
+def _get_tenant_lote(session: Any, lote_id: int, organization_id: int) -> Lote:
     lote = session.execute(
         select(Lote).where(
             Lote.id == lote_id,
             Lote.organization_id == organization_id,
         )
     ).scalar_one_or_none()
-
     if lote is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Lote no encontrado.",
-        )
-
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lote no encontrado.")
     return lote
 
 
@@ -284,112 +173,68 @@ def _identifier_exists(
         Lote.organization_id == organization_id,
         func.lower(Lote.identificador) == identificador.lower(),
     )
-
     if exclude_lote_id is not None:
-        statement = statement.where(
-            Lote.id != exclude_lote_id
-        )
-
-    return (
-        session.execute(statement).scalar_one_or_none()
-        is not None
-    )
+        statement = statement.where(Lote.id != exclude_lote_id)
+    return session.execute(statement).scalar_one_or_none() is not None
 
 
-def _integrity_constraint_name(
-    exc: IntegrityError,
-) -> str | None:
+def _integrity_constraint_name(exc: IntegrityError) -> str | None:
     original = getattr(exc, "orig", None)
     diagnostic = getattr(original, "diag", None)
     name = getattr(diagnostic, "constraint_name", None)
-
     return str(name) if name else None
 
 
 def _raise_identifier_conflict() -> None:
     raise HTTPException(
         status_code=status.HTTP_409_CONFLICT,
-        detail=(
-            "Ya existe un lote con ese identificador "
-            "en esta organización."
-        ),
+        detail="Ya existe un lote con ese identificador en esta organización.",
     )
 
 
-@router.get(
-    "/lotes",
-    response_model=dict[str, Any],
-    tags=["Lotes Geoespaciales"],
-)
+@router.get("/lotes", response_model=dict[str, Any], tags=["Lotes Geoespaciales"])
 async def listar_lotes_tenant(
-    user: UserTenantContext = Depends(
-        require_permission(Permission.LOTE_READ)
-    ),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_READ)),
 ) -> JSONResponse:
-    session = get_tenant_scoped_db_session(
-        user.organization_id
-    )
-
+    session = get_tenant_scoped_db_session(user.organization_id)
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Servicio de base de datos no disponible.",
         )
-
     try:
         result = session.execute(
             select(Lote)
-            .where(
-                Lote.organization_id
-                == user.organization_id
-            )
+            .where(Lote.organization_id == user.organization_id)
             .order_by(Lote.id.desc())
         )
         lotes = result.scalars().all()
-
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "organization_id": user.organization_id,
                 "organization": user.organization_name,
                 "total": len(lotes),
-                "lotes": [
-                    _lote_to_dict(lote)
-                    for lote in lotes
-                ],
+                "lotes": [_lote_to_dict(lote) for lote in lotes],
             },
         )
     finally:
         session.close()
 
 
-@router.get(
-    "/lotes/{lote_id}",
-    response_model=LoteResponse,
-    tags=["Lotes Geoespaciales"],
-)
+@router.get("/lotes/{lote_id}", response_model=LoteResponse, tags=["Lotes Geoespaciales"])
 async def obtener_lote(
     lote_id: int,
-    user: UserTenantContext = Depends(
-        require_permission(Permission.LOTE_READ)
-    ),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_READ)),
 ) -> LoteResponse:
-    session = get_tenant_scoped_db_session(
-        user.organization_id
-    )
-
+    session = get_tenant_scoped_db_session(user.organization_id)
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Servicio de base de datos no disponible.",
         )
-
     try:
-        lote = _get_tenant_lote(
-            session=session,
-            lote_id=lote_id,
-            organization_id=user.organization_id,
-        )
+        lote = _get_tenant_lote(session, lote_id, user.organization_id)
         return LoteResponse.model_validate(lote)
     finally:
         session.close()
@@ -404,26 +249,17 @@ async def obtener_lote(
 async def crear_lote(
     payload: LoteCreateRequest,
     request: Request = None,
-    user: UserTenantContext = Depends(
-        require_permission(Permission.LOTE_CREATE)
-    ),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_CREATE)),
 ) -> LoteResponse:
-    session = get_tenant_scoped_db_session(
-        user.organization_id
-    )
-
+    session = get_tenant_scoped_db_session(user.organization_id)
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Servicio de base de datos no disponible.",
         )
-
     try:
-        request_context = build_request_audit_context(
-            request
-        )
+        request_context = build_request_audit_context(request)
         identificador = payload.identificador.strip()
-
         if _identifier_exists(
             session,
             organization_id=user.organization_id,
@@ -431,37 +267,25 @@ async def crear_lote(
         ):
             _raise_identifier_conflict()
 
-        polygon_wkt = (
-            payload.polygon_wkt
-            or _generate_default_polygon(
-                latitud=payload.latitud,
-                longitud=payload.longitud,
-            )
+        polygon_wkt = payload.polygon_wkt or _generate_default_polygon(
+            payload.latitud,
+            payload.longitud,
         )
-
         lote = Lote(
             organization_id=user.organization_id,
             identificador=identificador,
             productor_id=payload.productor_id.strip(),
-            producto_forestal=(
-                payload.producto_forestal.strip()
-            ),
+            producto_forestal=payload.producto_forestal.strip(),
             hectareas=payload.hectareas,
             latitud=payload.latitud,
             longitud=payload.longitud,
             polygon_wkt=polygon_wkt,
             estatus="Pendiente",
-            volumen_ingresado_ton=(
-                payload.volumen_ingresado_ton
-            ),
-            volumen_exportar_ton=(
-                payload.volumen_exportar_ton
-            ),
+            volumen_ingresado_ton=payload.volumen_ingresado_ton,
+            volumen_exportar_ton=payload.volumen_exportar_ton,
         )
-
         session.add(lote)
         session.flush()
-
         record_audit_event(
             session,
             actor=build_audit_actor_from_user(user),
@@ -470,97 +294,55 @@ async def crear_lote(
             entity_id=lote.id,
             outcome=AuditOutcome.SUCCESS,
             request_context=request_context,
-            metadata={
-                "identificador": lote.identificador
-            },
-            after_data=_build_lote_audit_state(
-                lote
-            ),
+            metadata={"identificador": lote.identificador},
+            after_data=_build_lote_audit_state(lote),
         )
-
         session.commit()
-        set_tenant_db_context(
-            session,
-            user.organization_id,
-        )
+        set_tenant_db_context(session, user.organization_id)
         session.refresh(lote)
-
         return LoteResponse.model_validate(lote)
-
     except HTTPException:
         session.rollback()
         raise
-
     except IntegrityError as exc:
         session.rollback()
-
-        if (
-            _integrity_constraint_name(exc)
-            == LOTE_TENANT_IDENTIFIER_CONSTRAINT
-        ):
+        if _integrity_constraint_name(exc) == LOTE_TENANT_IDENTIFIER_CONSTRAINT:
             _raise_identifier_conflict()
-
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible crear el lote.",
         ) from None
-
     except Exception:
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible crear el lote.",
         ) from None
-
     finally:
         session.close()
 
 
-@router.put(
-    "/lotes/{lote_id}",
-    response_model=LoteResponse,
-    tags=["Lotes Geoespaciales"],
-)
+@router.put("/lotes/{lote_id}", response_model=LoteResponse, tags=["Lotes Geoespaciales"])
 async def actualizar_lote(
     lote_id: int,
     payload: LoteUpdateRequest,
     request: Request = None,
-    user: UserTenantContext = Depends(
-        require_permission(Permission.LOTE_UPDATE)
-    ),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_UPDATE)),
 ) -> LoteResponse:
-    session = get_tenant_scoped_db_session(
-        user.organization_id
-    )
-
+    session = get_tenant_scoped_db_session(user.organization_id)
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Servicio de base de datos no disponible.",
         )
-
     try:
-        request_context = build_request_audit_context(
-            request
-        )
-        lote = _get_tenant_lote(
-            session=session,
-            lote_id=lote_id,
-            organization_id=user.organization_id,
-        )
-        before_state = _build_lote_audit_state(
-            lote
-        )
-
-        changes = payload.model_dump(
-            exclude_unset=True
-        )
+        request_context = build_request_audit_context(request)
+        lote = _get_tenant_lote(session, lote_id, user.organization_id)
+        before_state = _build_lote_audit_state(lote)
+        changes = payload.model_dump(exclude_unset=True)
 
         if "identificador" in changes:
-            nuevo_identificador = changes[
-                "identificador"
-            ].strip()
-
+            nuevo_identificador = changes["identificador"].strip()
             if _identifier_exists(
                 session,
                 organization_id=user.organization_id,
@@ -568,35 +350,15 @@ async def actualizar_lote(
                 exclude_lote_id=lote.id,
             ):
                 _raise_identifier_conflict()
+            changes["identificador"] = nuevo_identificador
 
-            changes[
-                "identificador"
-            ] = nuevo_identificador
-
-        if (
-            "productor_id" in changes
-            and changes["productor_id"] is not None
-        ):
-            changes[
-                "productor_id"
-            ] = changes["productor_id"].strip()
-
-        if (
-            "producto_forestal" in changes
-            and changes["producto_forestal"] is not None
-        ):
-            changes[
-                "producto_forestal"
-            ] = changes[
-                "producto_forestal"
-            ].strip()
+        if "productor_id" in changes and changes["productor_id"] is not None:
+            changes["productor_id"] = changes["productor_id"].strip()
+        if "producto_forestal" in changes and changes["producto_forestal"] is not None:
+            changes["producto_forestal"] = changes["producto_forestal"].strip()
 
         for field_name, value in changes.items():
-            setattr(
-                lote,
-                field_name,
-                value,
-            )
+            setattr(lote, field_name, value)
 
         record_audit_event(
             session,
@@ -606,49 +368,31 @@ async def actualizar_lote(
             entity_id=lote.id,
             outcome=AuditOutcome.SUCCESS,
             request_context=request_context,
-            metadata={
-                "identificador": lote.identificador
-            },
+            metadata={"identificador": lote.identificador},
             before_data=before_state,
-            after_data=_build_lote_audit_state(
-                lote
-            ),
+            after_data=_build_lote_audit_state(lote),
         )
-
         session.commit()
-        set_tenant_db_context(
-            session,
-            user.organization_id,
-        )
+        set_tenant_db_context(session, user.organization_id)
         session.refresh(lote)
-
         return LoteResponse.model_validate(lote)
-
     except HTTPException:
         session.rollback()
         raise
-
     except IntegrityError as exc:
         session.rollback()
-
-        if (
-            _integrity_constraint_name(exc)
-            == LOTE_TENANT_IDENTIFIER_CONSTRAINT
-        ):
+        if _integrity_constraint_name(exc) == LOTE_TENANT_IDENTIFIER_CONSTRAINT:
             _raise_identifier_conflict()
-
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible actualizar el lote.",
         ) from None
-
     except Exception:
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible actualizar el lote.",
         ) from None
-
     finally:
         session.close()
 
@@ -661,34 +405,19 @@ async def actualizar_lote(
 async def eliminar_lote(
     lote_id: int,
     request: Request = None,
-    user: UserTenantContext = Depends(
-        require_permission(Permission.LOTE_DELETE)
-    ),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_DELETE)),
 ) -> None:
-    session = get_tenant_scoped_db_session(
-        user.organization_id
-    )
-
+    session = get_tenant_scoped_db_session(user.organization_id)
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Servicio de base de datos no disponible.",
         )
-
     try:
-        request_context = build_request_audit_context(
-            request
-        )
-        lote = _get_tenant_lote(
-            session=session,
-            lote_id=lote_id,
-            organization_id=user.organization_id,
-        )
-        before_state = _build_lote_audit_state(
-            lote
-        )
+        request_context = build_request_audit_context(request)
+        lote = _get_tenant_lote(session, lote_id, user.organization_id)
+        before_state = _build_lote_audit_state(lote)
         lote_identificador = lote.identificador
-
         record_audit_event(
             session,
             actor=build_audit_actor_from_user(user),
@@ -697,65 +426,49 @@ async def eliminar_lote(
             entity_id=lote.id,
             outcome=AuditOutcome.SUCCESS,
             request_context=request_context,
-            metadata={
-                "identificador": lote_identificador
-            },
+            metadata={"identificador": lote_identificador},
             before_data=before_state,
         )
-
         session.delete(lote)
         session.commit()
-
     except HTTPException:
         session.rollback()
         raise
-
     except Exception:
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible eliminar el lote.",
         ) from None
-
     finally:
         session.close()
 
 
-@router.post(
-    "/compliance/evaluate",
-    tags=["Compliance EUDR"],
-)
+@router.post("/compliance/evaluate", tags=["Análisis legacy no regulatorio"])
 async def evaluar_compliance_endpoint(
     payload: LoteEvaluacionRequest,
-    user: UserTenantContext = Depends(
-        require_permission(Permission.LOTE_READ)
-    ),
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_READ)),
 ) -> JSONResponse:
+    """Return a historical analysis preview, never a legal EUDR DDS."""
+
     lote_data = {
         "identificador": payload.identificador,
         "productor_id": payload.productor_id,
-        "producto_forestal": (
-            payload.producto_forestal
-        ),
+        "producto_forestal": payload.producto_forestal,
         "hectareas": payload.hectareas,
         "latitud": payload.latitud,
         "longitud": payload.longitud,
-        "polygon_wkt": _generate_default_polygon(
-            latitud=payload.latitud,
-            longitud=payload.longitud,
-        ),
+        "polygon_wkt": _generate_default_polygon(payload.latitud, payload.longitud),
     }
-
     comp_res = evaluar_compliance_lote(
         lote_data,
         payload.volumen_ingresado_ton,
         payload.volumen_exportar_ton,
     )
 
-    dds_json = None
-
+    preview_json = None
     if comp_res["dictamen"] == "Verde":
-        dds_json = generar_dds_json_traces_nt(
+        preview_json = generar_dds_json_traces_nt(
             lote_data,
             payload.volumen_exportar_ton,
             operador_username=user.email,
@@ -767,38 +480,21 @@ async def evaluar_compliance_endpoint(
             "organization_id": user.organization_id,
             "identificador": payload.identificador,
             "productor_id": payload.productor_id,
+            "analysis_kind": "LEGACY_NON_REGULATORY_PREVIEW",
+            "regulatory_effect": "NONE",
+            "submit_ready": False,
             "dictamen": comp_res["dictamen"],
             "observacion": comp_res["observacion"],
             "balance_masas": {
-                "coeficiente": (
-                    comp_res[
-                        "balance_masas"
-                    ].coeficiente_rendimiento
-                ),
-                "vol_max_permitido": (
-                    comp_res[
-                        "balance_masas"
-                    ].volumen_maximo_permitido_ton
-                ),
-                "es_valido": (
-                    comp_res[
-                        "balance_masas"
-                    ].es_valido
-                ),
+                "coeficiente": comp_res["balance_masas"].coeficiente_rendimiento,
+                "vol_max_permitido": comp_res["balance_masas"].volumen_maximo_permitido_ton,
+                "es_valido": comp_res["balance_masas"].es_valido,
             },
             "satelital": {
-                "base_2020": (
-                    comp_res["satelital"][
-                        "base_2020"
-                    ]
-                ),
-                "actual": (
-                    comp_res["satelital"][
-                        "actual"
-                    ]
-                ),
+                "base_2020": comp_res["satelital"]["base_2020"],
+                "actual": comp_res["satelital"]["actual"],
             },
-            "dds_traces_nt_json": dds_json,
+            "legacy_non_regulatory_preview_json": preview_json,
         },
     )
 

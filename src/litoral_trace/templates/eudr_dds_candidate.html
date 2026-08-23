@@ -1,0 +1,222 @@
+{% extends "app/base_app.html" %}
+
+{% block title %}EUDR ACCEPTANCE | Litoral Trace{% endblock %}
+
+{% block content %}
+<section class="min-w-0 space-y-6" aria-labelledby="eudr-title">
+    <header class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-sm">
+        <div class="grid gap-6 p-6 lg:grid-cols-2 lg:p-8">
+            <div>
+                <div class="flex flex-wrap gap-2">
+                    <span class="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">P1-D · API V3</span>
+                    <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-300">Conformance local → ACCEPTANCE</span>
+                </div>
+                <h1 id="eudr-title" class="mt-4 text-3xl font-bold tracking-tight">Candidato DDS EUDR</h1>
+                <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-300">Prepará un candidato reproducible desde el despacho, su genealogía y todas las parcelas de origen. Este módulo no presenta declaraciones legales ni inventa EORI, riesgo, especies o geometrías.</p>
+            </div>
+            <aside class="rounded-2xl border border-white/10 bg-white/5 p-5">
+                <p class="text-xs font-bold uppercase tracking-wider text-amber-500">Límite legal</p>
+                <ul class="mt-3 space-y-2 text-sm leading-5 text-slate-300">
+                    <li>CONFORMANCE_READY significa que el perfil local está completo.</li>
+                    <li>ACCEPTANCE es un entorno de prueba y no acredita cumplimiento legal.</li>
+                    <li>LIVE está fuera de P1-D y no se ejecuta desde esta pantalla.</li>
+                </ul>
+            </aside>
+        </div>
+    </header>
+
+    {% if eudr_message %}
+    <section class="rounded-2xl border border-emerald-200 bg-emerald-50 p-5" role="status">
+        <p class="text-sm font-bold text-emerald-950">{{ eudr_message.title }}</p>
+        <p class="mt-1 text-sm text-emerald-800">{{ eudr_message.message }}</p>
+    </section>
+    {% endif %}
+
+    {% if eudr_error %}
+    <section class="rounded-2xl border border-rose-200 bg-rose-50 p-5" role="alert">
+        <p class="text-sm font-bold text-rose-950">{{ eudr_error.title }}</p>
+        <p class="mt-1 text-sm text-rose-800">{{ eudr_error.message }}</p>
+    </section>
+    {% endif %}
+
+    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <form method="get" action="/eudr-acceptance" class="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div class="min-w-0 flex-1">
+                <label for="shipment_code" class="text-xs font-semibold text-slate-700">Código de despacho</label>
+                <input id="shipment_code" name="shipment_code" value="{{ eudr_query }}" maxlength="120" required placeholder="EXP-2026-001" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+            </div>
+            <button class="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Consultar conformance</button>
+        </form>
+    </section>
+
+    {% if eudr_view %}
+    {% set view = eudr_view %}
+    <div class="grid min-w-0 gap-6 xl:grid-cols-2">
+        <section class="rounded-2xl border {% if view.ready %}border-emerald-200 bg-emerald-50{% else %}border-amber-200 bg-amber-50{% endif %} p-6 shadow-sm">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <p class="text-xs font-bold uppercase tracking-wider {% if view.ready %}text-emerald-700{% else %}text-amber-700{% endif %}">Conformance local</p>
+                    <h2 class="mt-1 text-xl font-bold text-slate-950">Despacho {{ view.shipment_code }}</h2>
+                </div>
+                <span class="rounded-full px-3 py-1.5 text-xs font-bold {% if view.ready %}bg-emerald-700 text-white{% else %}bg-amber-600 text-white{% endif %}">{{ view.state }}</span>
+            </div>
+            <div class="mt-5 space-y-2">
+                {% for requirement in view.requirements %}
+                <article class="rounded-xl border border-slate-200 bg-white p-4">
+                    <div class="flex items-start gap-3">
+                        <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full {% if requirement.satisfied %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">
+                            <i class="fa-solid {% if requirement.satisfied %}fa-check{% else %}fa-xmark{% endif %} text-xs" aria-hidden="true"></i>
+                        </span>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-sm font-semibold text-slate-900">{{ requirement.label }}</p>
+                            <p class="mt-1 text-xs text-slate-500">{{ requirement.source }} · {{ requirement.key }}</p>
+                            {% if requirement.detail %}<p class="mt-2 text-xs text-slate-600">{{ requirement.detail }}</p>{% endif %}
+                        </div>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            {% if view.payload_sha256 %}
+            <div class="mt-5 rounded-xl border border-slate-200 bg-white p-4">
+                <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Fingerprint del candidato</p>
+                <p class="mt-2 break-all font-mono text-xs text-slate-700">{{ view.payload_sha256 }}</p>
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-emerald-700">Datos declarativos</p>
+            <h2 class="mt-1 text-lg font-bold text-slate-950">Operador + producto + riesgo</h2>
+            {% if eudr_can_manage %}
+            {% set c = view.candidate or {} %}
+            <form method="post" action="/eudr-acceptance" class="mt-5 grid gap-4 sm:grid-cols-2">
+                <input type="hidden" name="{{ csrf_form_field }}" value="{{ csrf_token }}">
+                <input type="hidden" name="shipment_code" value="{{ view.shipment_code }}">
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">Actividad EUDR</label>
+                    <select name="activity_type" required class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm">
+                        <option value="IMPORT" {% if c.activity_type == 'IMPORT' %}selected{% endif %}>IMPORT</option>
+                        <option value="DOMESTIC" {% if c.activity_type == 'DOMESTIC' %}selected{% endif %}>DOMESTIC</option>
+                        <option value="EXPORT" {% if c.activity_type == 'EXPORT' %}selected{% endif %}>EXPORT</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">Perfil de commodity</label>
+                    <select name="commodity_profile" required class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm">
+                        <option value="WOOD" {% if c.commodity_profile == 'WOOD' %}selected{% endif %}>Madera / WOOD</option>
+                        <option value="OTHER_EUDR" {% if c.commodity_profile == 'OTHER_EUDR' %}selected{% endif %}>Otro producto EUDR</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">Operador EUDR</label>
+                    <input name="operator_name" maxlength="240" value="{{ c.operator_name or '' }}" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">País operador</label>
+                    <input name="operator_country_code" maxlength="2" value="{{ c.operator_country_code or '' }}" placeholder="DE" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm uppercase">
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="text-xs font-semibold text-slate-700">Domicilio operador</label>
+                    <input name="operator_address" maxlength="2000" value="{{ c.operator_address or '' }}" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">EORI</label>
+                    <input name="operator_eori" maxlength="32" value="{{ c.operator_eori or '' }}" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-mono text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">HS/CN</label>
+                    <input name="hs_code" maxlength="16" value="{{ c.hs_code or '' }}" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-mono text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">Nombre comercial</label>
+                    <input name="trade_name" maxlength="240" value="{{ c.trade_name or '' }}" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">Masa neta kg</label>
+                    <input name="net_mass_kg" value="{{ c.net_mass_kg or '' }}" inputmode="decimal" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="text-xs font-semibold text-slate-700">Descripción del producto</label>
+                    <textarea name="product_description" maxlength="4000" rows="2" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">{{ c.product_description or '' }}</textarea>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">Especie común</label>
+                    <input name="common_species_name" maxlength="240" value="{{ c.common_species_name or '' }}" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">Especie científica</label>
+                    <input name="scientific_species_name" maxlength="240" value="{{ c.scientific_species_name or '' }}" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">País producción</label>
+                    <input name="production_country_code" maxlength="2" value="{{ c.production_country_code or '' }}" placeholder="AR" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm uppercase">
+                </div>
+                <div></div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">Producción desde</label>
+                    <input type="date" name="production_date_from" value="{{ c.production_date_from or '' }}" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">Producción hasta</label>
+                    <input type="date" name="production_date_to" value="{{ c.production_date_to or '' }}" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">Conclusión de riesgo</label>
+                    <select name="risk_conclusion" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm">
+                        <option value="UNASSESSED" {% if c.risk_conclusion == 'UNASSESSED' %}selected{% endif %}>Sin evaluar</option>
+                        <option value="NO_OR_NEGLIGIBLE_RISK" {% if c.risk_conclusion == 'NO_OR_NEGLIGIBLE_RISK' %}selected{% endif %}>Nulo o despreciable</option>
+                        <option value="NON_NEGLIGIBLE_RISK" {% if c.risk_conclusion == 'NON_NEGLIGIBLE_RISK' %}selected{% endif %}>No despreciable</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-700">Evaluado el</label>
+                    <input type="datetime-local" name="risk_assessed_at" value="{{ c.risk_assessed_at or '' }}" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="text-xs font-semibold text-slate-700">Referencia evaluación de riesgo</label>
+                    <input name="risk_assessment_reference" maxlength="240" value="{{ c.risk_assessment_reference or '' }}" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+                </div>
+                <div class="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <label class="flex items-center gap-2 text-sm font-semibold text-slate-800"><input type="checkbox" name="relies_on_previous_dds" {% if c.relies_on_previous_dds %}checked{% endif %}>Este candidato se apoya en una DDS previa</label>
+                    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                        <input name="previous_dds_reference" maxlength="160" value="{{ c.previous_dds_reference or '' }}" placeholder="Referencia DDS" class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+                        <input name="previous_dds_verification" maxlength="160" value="{{ c.previous_dds_verification or '' }}" placeholder="Número de verificación" class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+                    </div>
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="text-xs font-semibold text-slate-700">Notas internas</label>
+                    <textarea name="notes" maxlength="4000" rows="2" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">{{ c.notes or '' }}</textarea>
+                </div>
+                <div class="sm:col-span-2">
+                    <button class="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">Guardar y recalcular</button>
+                </div>
+            </form>
+            {% else %}
+            <div class="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Tu rol puede revisar conformance, pero no modificar el candidato.</div>
+            {% endif %}
+        </section>
+    </div>
+
+    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Parcelas reconstruidas</p>
+                <p class="mt-1 text-sm text-slate-600">{{ view.plots|length }} parcela(s) derivadas de la genealogía actual del despacho.</p>
+            </div>
+            <a href="/release-control?shipment_code={{ view.shipment_code }}" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Control de Salida</a>
+        </div>
+        <div class="mt-4 grid gap-3 lg:grid-cols-2">
+            {% for plot in view.plots %}
+            <article class="rounded-xl border border-slate-200 p-4">
+                <p class="text-sm font-bold text-slate-900">{{ plot.parcel_identifier or 'Parcela sin identificador' }}</p>
+                <p class="mt-1 text-xs text-slate-500">Proveedor {{ plot.producer_reference or '—' }} · {{ plot.area_ha or '—' }} ha</p>
+                <p class="mt-2 text-xs {% if plot.geojson %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if plot.geojson %}GeoJSON {{ plot.geojson.type }} disponible{% else %}{{ plot.geometry_error or 'Geometría faltante' }}{% endif %}</p>
+            </article>
+            {% else %}
+            <p class="text-sm text-slate-500">La genealogía aún no aporta parcelas de producción.</p>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+</section>
+{% endblock %}
