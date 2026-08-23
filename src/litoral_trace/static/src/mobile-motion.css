@@ -78,10 +78,6 @@ html {
   justify-content: center;
 }
 
-.lt-dashboard-map {
-  height: 20rem;
-}
-
 .lt-mobile-lote-list {
   display: grid;
   gap: 0.75rem;
@@ -154,10 +150,6 @@ html {
     min-height: auto;
   }
 
-  .lt-dashboard-map {
-    height: 22.5rem;
-  }
-
   .lt-mobile-lote-list {
     display: none;
   }
@@ -211,6 +203,11 @@ html {
 
   .lt-mobile-lote-card__grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Preserve P1.7-I markup while making the map less vertically dominant. */
+  #map {
+    height: 20rem;
   }
 
   /* Consistent touch targets across Settings, Admin, Integrations and forms. */
