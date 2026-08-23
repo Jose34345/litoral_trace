@@ -1,9 +1,11 @@
 {% extends "app/base_app.html" %}
 {% from "components/ui.html" import alert, badge, button, empty_state, page_header, risk_badge, status_badge %}
+{% from "components/data_table.html" import pagination, search_control %}
 
 {% block title %}UI Catalog | Litoral Trace{% endblock %}
 
 {% block head_extra %}
+{{ super() }}
 <link rel="stylesheet" href="{{ url_for('static', path='/src/ui-catalog.css') }}">
 {% endblock %}
 
@@ -58,6 +60,58 @@
             {{ badge("Danger", "danger") }}
             {{ badge("Information", "info") }}
             {{ badge("Neutral", "neutral") }}
+        </div>
+    </section>
+
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-table-title">
+        <p class="lt-catalog-eyebrow">Data display</p>
+        <h2 id="catalog-table-title" class="lt-catalog-title">LTDataTable</h2>
+        <div class="lt-data-table lt-catalog-stack">
+            <div class="lt-data-table__toolbar">
+                <div class="lt-data-table__toolbar-group">
+                    {{ search_control(placeholder="Buscar despacho, cliente o referencia…") }}
+                    {{ button("Estado", variant="secondary", icon="fa-filter") }}
+                </div>
+                {{ button("Exportar", variant="secondary", icon="fa-download") }}
+            </div>
+
+            <div class="lt-data-table__scroll">
+                <table class="lt-data-table__table">
+                    <thead class="lt-data-table__head">
+                        <tr>
+                            <th class="lt-data-table__th">Despacho</th>
+                            <th class="lt-data-table__th">Cliente</th>
+                            <th class="lt-data-table__th">Estado</th>
+                            <th class="lt-data-table__th">Riesgo</th>
+                            <th class="lt-data-table__th">Volumen</th>
+                        </tr>
+                    </thead>
+                    <tbody class="lt-data-table__body">
+                        <tr class="lt-data-table__row">
+                            <td class="lt-data-table__cell"><span class="lt-data-table__primary">EXP-DE-2026-014</span><span class="lt-data-table__secondary">Hamburg · Alemania</span></td>
+                            <td class="lt-data-table__cell">Müller Holz GmbH</td>
+                            <td class="lt-data-table__cell">{{ status_badge("READY") }}</td>
+                            <td class="lt-data-table__cell">{{ risk_badge("LOW") }}</td>
+                            <td class="lt-data-table__cell lt-data-table__cell--numeric">284,6 m³</td>
+                        </tr>
+                        <tr class="lt-data-table__row" data-state="attention">
+                            <td class="lt-data-table__cell"><span class="lt-data-table__primary">EXP-DE-2026-015</span><span class="lt-data-table__secondary">Bremen · Alemania</span></td>
+                            <td class="lt-data-table__cell">Nordholz AG</td>
+                            <td class="lt-data-table__cell">{{ status_badge("REVIEW") }}</td>
+                            <td class="lt-data-table__cell">{{ risk_badge("MEDIUM") }}</td>
+                            <td class="lt-data-table__cell lt-data-table__cell--numeric">96,2 m³</td>
+                        </tr>
+                        <tr class="lt-data-table__row">
+                            <td class="lt-data-table__cell"><span class="lt-data-table__primary">EXP-ES-2026-009</span><span class="lt-data-table__secondary">Valencia · España</span></td>
+                            <td class="lt-data-table__cell">Maderas Levante S.L.</td>
+                            <td class="lt-data-table__cell">{{ status_badge("BLOCKED") }}</td>
+                            <td class="lt-data-table__cell">{{ risk_badge("HIGH") }}</td>
+                            <td class="lt-data-table__cell lt-data-table__cell--numeric">71,8 m³</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            {{ pagination("1–3 de 24 resultados", next_href="#", current_page=1, total_pages=8) }}
         </div>
     </section>
 
