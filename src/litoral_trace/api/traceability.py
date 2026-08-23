@@ -20,6 +20,7 @@ from litoral_trace.services.traceability_lineage import (
     TraceabilityLineageService,
     TraceabilityLineageValidationError,
 )
+from litoral_trace.web.eudr_acceptance import router as eudr_acceptance_web_router
 from litoral_trace.web.eudr_dds_candidate import router as eudr_candidate_web_router
 from litoral_trace.web.integrations import router as integrations_web_router
 from litoral_trace.web.shipment_export_case import router as export_case_web_router
@@ -95,3 +96,4 @@ router.include_router(integrations_web_router)
 router.include_router(export_case_web_router)
 router.include_router(phytosanitary_web_router)
 router.include_router(eudr_candidate_web_router)
+router.include_router(eudr_acceptance_web_router)
