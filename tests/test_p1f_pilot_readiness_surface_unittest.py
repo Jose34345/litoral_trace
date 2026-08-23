@@ -36,3 +36,15 @@ def test_p1f_surface_does_not_block_pilot_on_acceptance_or_enable_live() -> None
     assert "PILOT_READY" in service
     assert "EudrAcceptance" not in service
     assert "eudr_acceptance_attempts" not in service
+
+
+def test_p1f_reuses_authenticated_tenant_and_real_shipment_lineage() -> None:
+    service = (ROOT / "src/litoral_trace/services/pilot_readiness.py").read_text(encoding="utf-8")
+
+    # P1-F must not require direct runtime reads of platform control-plane
+    # organization/user/license records that authentication already validated.
+    assert "Organization," not in service
+    assert "User," not in service
+    assert "License," not in service
+    assert "TraceabilityLineageService" in service
+    assert "projection.qualifies" in service
