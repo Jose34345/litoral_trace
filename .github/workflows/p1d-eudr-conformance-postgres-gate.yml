@@ -101,8 +101,8 @@ jobs:
           engine.dispose()
           PY
 
-      - name: Migrate database to P1-D canonical head
-        run: python -m alembic upgrade head
+      - name: Migrate database to historical P1-D revision
+        run: python -m alembic upgrade 025_add_eudr_dds_candidates
 
       - name: Provision reviewed source-lot read for fixture
         shell: bash
