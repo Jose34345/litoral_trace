@@ -1,0 +1,181 @@
+name: P1.7-K Non-Superuser Migration Gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p17k-nonsuperuser-migration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  non-superuser-migration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: p17k_root_password_2026
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      ENVIRONMENT: development
+      ENABLE_POSTGRES_TESTS: "1"
+      JWT_SECRET_KEY: p17k-ci-only-jwt-secret-key-2026
+      LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD: P17kCiBootstrapPassword2026
+      MIGRATION_DATABASE_URL: postgresql+psycopg://lt_p17k_migrator:p17k_migrator_password_2026@127.0.0.1:5432/litoral_trace_p17k_ci
+      TEST_POSTGRES_MIGRATION_DATABASE_URL: postgresql+psycopg://lt_p17k_migrator:p17k_migrator_password_2026@127.0.0.1:5432/litoral_trace_p17k_ci
+      DATABASE_URL: postgresql+psycopg://litoral_trace_app:p17k_runtime_password_2026@127.0.0.1:5432/litoral_trace_p17k_ci
+      TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:p17k_runtime_password_2026@127.0.0.1:5432/litoral_trace_p17k_ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest alembic
+
+      - name: Provision non-superuser migration owner and runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from sqlalchemy import create_engine
+
+          root_url = "postgresql+psycopg://postgres:p17k_root_password_2026@127.0.0.1:5432/postgres"
+          root = create_engine(
+              root_url,
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+
+          statements = [
+              """
+              CREATE ROLE lt_p17k_migrator
+                LOGIN
+                PASSWORD 'p17k_migrator_password_2026'
+                NOSUPERUSER
+                NOCREATEDB
+                CREATEROLE
+                INHERIT
+                NOBYPASSRLS
+              """,
+              """
+              CREATE ROLE litoral_trace_app
+                LOGIN
+                PASSWORD 'p17k_runtime_password_2026'
+                NOSUPERUSER
+                NOCREATEDB
+                NOCREATEROLE
+                NOINHERIT
+                NOBYPASSRLS
+              """,
+              "CREATE DATABASE litoral_trace_p17k_ci OWNER lt_p17k_migrator",
+          ]
+
+          with root.connect() as connection:
+              for statement in statements:
+                  connection.exec_driver_sql(statement)
+          root.dispose()
+
+          target_root = create_engine(
+              "postgresql+psycopg://postgres:p17k_root_password_2026@127.0.0.1:5432/litoral_trace_p17k_ci",
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          with target_root.connect() as connection:
+              connection.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS postgis")
+              connection.exec_driver_sql(
+                  "GRANT CONNECT ON DATABASE litoral_trace_p17k_ci TO litoral_trace_app"
+              )
+              connection.exec_driver_sql(
+                  "GRANT USAGE ON SCHEMA public TO litoral_trace_app"
+              )
+          target_root.dispose()
+          PY
+
+      - name: Verify migration principal is production-shaped
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
+          with engine.connect() as connection:
+              row = connection.execute(text("""
+                  SELECT
+                      current_user AS role_name,
+                      r.rolsuper,
+                      r.rolcreatedb,
+                      r.rolcreaterole,
+                      r.rolbypassrls,
+                      has_schema_privilege(current_user, 'public', 'CREATE') AS public_create
+                  FROM pg_roles AS r
+                  WHERE r.rolname = current_user
+              """)).mappings().one()
+
+          assert row["role_name"] == "lt_p17k_migrator"
+          assert row["rolsuper"] is False
+          assert row["rolcreatedb"] is False
+          assert row["rolcreaterole"] is True
+          assert row["rolbypassrls"] is False
+          assert row["public_create"] is True
+          engine.dispose()
+          PY
+
+      - name: Migrate clean database to canonical head as non-superuser
+        run: python -m alembic upgrade head
+
+      - name: Gate platform definer privilege model
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs \
+            tests/test_platform_definer_p17k_postgres_integration.py \
+            --junitxml=p17k-nonsuperuser-platform.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("p17k-nonsuperuser-platform.xml").getroot()
+          attrs = root.attrib
+          skipped = int(attrs.get("skipped", 0))
+          failures = int(attrs.get("failures", 0))
+          errors = int(attrs.get("errors", 0))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  "P1.7-K non-superuser migration gate fails closed: "
+                  f"skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
+
+      - name: Verify canonical head
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m alembic current | tee alembic-current.txt
+          grep -F "028_platform_definer_rls" alembic-current.txt
