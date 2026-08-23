@@ -13,6 +13,10 @@ from pydantic import BaseModel, Field
 
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.auth.rbac import Permission, require_permission
+from litoral_trace.config.eudr_acceptance import (
+    READINESS_WAITING_FOR_CREDENTIALS,
+    get_eudr_acceptance_settings,
+)
 from litoral_trace.db.tenant import get_tenant_scoped_db_session
 from litoral_trace.services.eudr_acceptance_submission import (
     EudrAcceptanceAttemptView,
@@ -150,6 +154,36 @@ def _raise_error(exc: Exception) -> None:
             detail={"code": "EUDR_CANDIDATE_ERROR", "message": str(exc)},
         ) from None
     raise exc
+
+
+@router.get("/readiness")
+def get_eudr_acceptance_readiness(
+    user: UserTenantContext = Depends(require_permission(Permission.LOTE_READ)),
+) -> dict[str, Any]:
+    """Return deployment readiness flags without returning credential material."""
+    del user
+    try:
+        payload = get_eudr_acceptance_settings().sanitized_readiness()
+        payload["configuration_valid"] = True
+        payload["acceptance_smoke_performed"] = False
+        return payload
+    except (RuntimeError, ValueError):
+        return {
+            "state": READINESS_WAITING_FOR_CREDENTIALS,
+            "enabled": False,
+            "network_ready": False,
+            "configuration_valid": False,
+            "endpoint_configured": False,
+            "username_configured": False,
+            "authentication_key_configured": False,
+            "web_service_client_id_configured": False,
+            "missing_configuration": ["INVALID_RUNTIME_CONFIGURATION"],
+            "target_environment": "ACCEPTANCE",
+            "api_family": "V3",
+            "legal_effect": "NONE_NON_LEGAL_ACCEPTANCE",
+            "live_enabled": False,
+            "acceptance_smoke_performed": False,
+        }
 
 
 @router.post("/{shipment_code}/prepare")
