@@ -1,3 +1,4 @@
+# One-shot trigger after workflow registration on main.
 name: P1-A Production Authenticated Smoke Once
 
 on:
@@ -202,9 +203,6 @@ jobs:
                   expect_json_list(auditor_session, path, 200)
               results["api_auditor"] = "200"
 
-              # Auditor has READ but not MANAGE. Use the HTML manage endpoint because
-              # authorization is evaluated before the mutation/CSRF path, guaranteeing
-              # that this denial cannot create an integration connection.
               denied = auditor_session.post(
                   BASE + "/integrations/connections",
                   data={"name": f"must-not-exist-{RUN}"},
