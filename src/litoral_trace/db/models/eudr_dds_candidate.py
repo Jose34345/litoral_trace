@@ -29,6 +29,9 @@ from litoral_trace.db.base import Base, TimestampMixin
 EUDR_ACTIVITY_TYPES: Final[frozenset[str]] = frozenset(
     {"IMPORT", "DOMESTIC", "EXPORT"}
 )
+EUDR_COMMODITY_PROFILES: Final[frozenset[str]] = frozenset(
+    {"WOOD", "OTHER_EUDR"}
+)
 EUDR_RISK_CONCLUSIONS: Final[frozenset[str]] = frozenset(
     {"UNASSESSED", "NO_OR_NEGLIGIBLE_RISK", "NON_NEGLIGIBLE_RISK"}
 )
@@ -38,7 +41,7 @@ class EudrDdsCandidate(Base, TimestampMixin):
     """Local candidate metadata; readiness and payload are always recomputed.
 
     This row is not a legal Due Diligence Statement and stores no EUDR API
-    credentials.  Source plots are deliberately not copied here: they are
+    credentials. Source plots are deliberately not copied here: they are
     reconstructed from the current tenant shipment genealogy at conformance
     time so stale provenance cannot silently survive upstream corrections.
     """
@@ -51,6 +54,7 @@ class EudrDdsCandidate(Base, TimestampMixin):
     shipment_id: Mapped[int] = mapped_column(Integer, nullable=False)
 
     activity_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    commodity_profile: Mapped[str] = mapped_column(String(16), nullable=False)
 
     operator_name: Mapped[str | None] = mapped_column(String(240), nullable=True)
     operator_address: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -126,6 +130,10 @@ class EudrDdsCandidate(Base, TimestampMixin):
         CheckConstraint(
             "activity_type IN ('IMPORT','DOMESTIC','EXPORT')",
             name="ck_eudr_dds_candidates_activity_type",
+        ),
+        CheckConstraint(
+            "commodity_profile IN ('WOOD','OTHER_EUDR')",
+            name="ck_eudr_dds_candidates_commodity_profile",
         ),
         CheckConstraint(
             "risk_conclusion IN ('UNASSESSED','NO_OR_NEGLIGIBLE_RISK','NON_NEGLIGIBLE_RISK')",
