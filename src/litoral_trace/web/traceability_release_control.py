@@ -13,12 +13,16 @@ from litoral_trace.services.shipment_export_release_control import (
     apply_export_case_release_control,
     is_international_shipment,
 )
+from litoral_trace.services.shipment_phytosanitary_case import (
+    ShipmentPhytosanitaryCaseService,
+)
+from litoral_trace.services.shipment_phytosanitary_release_control import (
+    apply_phytosanitary_release_control,
+)
 from litoral_trace.services.traceability_documentary_dossier import (
     build_documentary_dossier_bundle,
 )
-from litoral_trace.services.traceability_dossier import (
-    OriginDossierError,
-)
+from litoral_trace.services.traceability_dossier import OriginDossierError
 from litoral_trace.services.traceability_evidence_dossier import (
     project_documentary_evidence,
 )
@@ -30,10 +34,7 @@ from litoral_trace.services.traceability_lineage import (
 from litoral_trace.services.traceability_release_control import (
     build_release_control_view,
 )
-from litoral_trace.web.runtime import (
-    get_html_route_user,
-    render_web_template,
-)
+from litoral_trace.web.runtime import get_html_route_user, render_web_template
 
 
 router = APIRouter(tags=["Frontend B2B"])
@@ -76,10 +77,8 @@ async def render_release_control(
     shipment_code: str | None = None,
 ) -> HTMLResponse:
     """Evaluate one shipment using factual operational release controls."""
-
     user, denied_response = get_html_route_user(
-        request,
-        required_permission=Permission.LOTE_READ,
+        request, required_permission=Permission.LOTE_READ
     )
     if denied_response is not None:
         return denied_response
@@ -119,8 +118,7 @@ async def render_release_control(
 
     try:
         payload = TraceabilityLineageService(
-            session=session,
-            organization_id=user.organization_id,
+            session=session, organization_id=user.organization_id
         ).trace_shipment(normalized_code)
         evidence = project_documentary_evidence(
             session=session,
@@ -133,8 +131,7 @@ async def render_release_control(
         manifest_sha256 = None
         try:
             bundle = build_documentary_dossier_bundle(
-                payload,
-                documentary_evidence=evidence,
+                payload, documentary_evidence=evidence
             )
             manifest_sha256 = bundle.manifest_sha256
         except OriginDossierError as exc:
@@ -149,17 +146,22 @@ async def render_release_control(
             dossier_error=dossier_error,
         )
 
-        # P1-B applies only to shipments with a non-AR destination. Domestic
-        # operations retain the existing release-control contract unchanged.
         if is_international_shipment(payload):
             export_readiness = ShipmentExportCaseService(
-                session=session,
-                organization_id=user.organization_id,
+                session=session, organization_id=user.organization_id
             ).readiness(normalized_code)
             control = apply_export_case_release_control(
                 control,
                 lineage_payload=payload,
                 readiness=export_readiness,
+            )
+            phytosanitary_readiness = ShipmentPhytosanitaryCaseService(
+                session=session, organization_id=user.organization_id
+            ).readiness(normalized_code)
+            control = apply_phytosanitary_release_control(
+                control,
+                lineage_payload=payload,
+                readiness=phytosanitary_readiness,
             )
     except TraceabilityLineageNotFoundError as exc:
         return _render(
