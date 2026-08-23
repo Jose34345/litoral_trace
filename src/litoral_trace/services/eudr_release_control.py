@@ -1,4 +1,4 @@
-"""Compose P1-D local EUDR conformance into international release control."""
+"""Compose P1-D local EUDR conformance into EU-destination release control."""
 from __future__ import annotations
 
 from copy import deepcopy
@@ -12,8 +12,25 @@ from litoral_trace.services.shipment_export_release_control import (
     READY,
     _STATE_LABELS,
     _STATE_PRIORITY,
-    is_international_shipment,
 )
+
+
+# EUDR is an EU market-access regulation.  Keep this predicate deliberately
+# narrower than the generic "international" predicate so exports to BR/US/etc.
+# are not blocked by a European regulatory workflow.
+EU_EUDR_DESTINATION_CODES = frozenset(
+    {
+        "AT", "BE", "BG", "HR", "CY", "CZ", "DE", "DK", "EE",
+        "ES", "FI", "FR", "GR", "HU", "IE", "IT", "LT", "LU",
+        "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK",
+    }
+)
+
+
+def is_eudr_destination(lineage_payload: dict[str, Any]) -> bool:
+    shipment = lineage_payload.get("shipment") or {}
+    destination = str(shipment.get("destination_country") or "").strip().upper()
+    return destination in EU_EUDR_DESTINATION_CODES
 
 
 def apply_eudr_conformance_release_control(
@@ -22,8 +39,8 @@ def apply_eudr_conformance_release_control(
     lineage_payload: dict[str, Any],
     conformance: EudrDdsConformanceView | None,
 ) -> dict[str, Any]:
-    """Add a non-legal, fail-closed EUDR conformance gate for export shipments."""
-    if not is_international_shipment(lineage_payload):
+    """Add a non-legal, fail-closed EUDR conformance gate for EU shipments."""
+    if not is_eudr_destination(lineage_payload):
         return control
 
     result = deepcopy(control)
@@ -36,7 +53,7 @@ def apply_eudr_conformance_release_control(
         state = BLOCKED
         summary = "Falta preparar el candidato DDS EUDR."
         detail = (
-            "El despacho internacional no tiene un candidato local conformance-ready. "
+            "El despacho con destino UE no tiene un candidato local conformance-ready. "
             "Esto no implica una presentación legal ni un resultado ACCEPTANCE."
         )
         metric = "Sin candidato"
