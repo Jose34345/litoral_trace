@@ -143,7 +143,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee alembic-current.txt
-          grep -F "020_add_traceability_evidence_links" alembic-current.txt
+          grep -F "022_add_integration_history" alembic-current.txt
 
       - name: Auth RLS login preflight
         shell: bash

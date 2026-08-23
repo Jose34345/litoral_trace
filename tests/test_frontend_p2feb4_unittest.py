@@ -174,6 +174,7 @@ def test_superadmin_navigation_contains_only_live_routes():
         ("traceability", "/traceability"),
         ("release_control", "/release-control"),
         ("evidence", "/evidence"),
+        ("integrations", "/integrations"),
         ("settings", "/settings"),
         ("platform", "/admin"),
     ]

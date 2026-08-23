@@ -64,10 +64,10 @@ def ux10g_pg():
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        if revision != "020_add_traceability_evidence_links":
+        if revision != "022_add_integration_history":
             raise RuntimeError(
                 "UX10-G requires canonical head "
-                f"020_add_traceability_evidence_links; found {revision!r}."
+                f"022_add_integration_history; found {revision!r}."
             )
 
         org_id = int(
