@@ -3,6 +3,10 @@
 
 {% block title %}UI Catalog | Litoral Trace{% endblock %}
 
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', path='/src/ui-catalog.css') }}">
+{% endblock %}
+
 {% block content %}
 <section class="lt-page" aria-labelledby="ui-catalog-title">
     {{ page_header(
@@ -13,10 +17,10 @@
         "fa-swatchbook"
     ) }}
 
-    <section class="lt-card p-6" aria-labelledby="catalog-actions-title">
-        <p class="lt-page-header__eyebrow">Actions</p>
-        <h2 id="catalog-actions-title" class="mt-1 text-lg font-bold text-slate-950">Buttons</h2>
-        <div class="mt-5 flex flex-wrap gap-3">
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-actions-title">
+        <p class="lt-catalog-eyebrow">Actions</p>
+        <h2 id="catalog-actions-title" class="lt-catalog-title">Buttons</h2>
+        <div class="lt-catalog-cluster">
             {{ button("Acción primaria", variant="primary", icon="fa-check") }}
             {{ button("Acción secundaria", variant="secondary", icon="fa-arrow-right") }}
             {{ button("Acción discreta", variant="ghost", icon="fa-ellipsis") }}
@@ -25,10 +29,10 @@
         </div>
     </section>
 
-    <section class="lt-card p-6" aria-labelledby="catalog-status-title">
-        <p class="lt-page-header__eyebrow">Semantic language</p>
-        <h2 id="catalog-status-title" class="mt-1 text-lg font-bold text-slate-950">Operational status</h2>
-        <div class="mt-5 flex flex-wrap gap-3">
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-status-title">
+        <p class="lt-catalog-eyebrow">Semantic language</p>
+        <h2 id="catalog-status-title" class="lt-catalog-title">Operational status</h2>
+        <div class="lt-catalog-cluster">
             {{ status_badge("READY") }}
             {{ status_badge("ACTIVE") }}
             {{ status_badge("STAGED") }}
@@ -38,16 +42,16 @@
             {{ status_badge("UNKNOWN") }}
         </div>
 
-        <h3 class="mt-7 text-sm font-bold text-slate-950">Risk</h3>
-        <div class="mt-3 flex flex-wrap gap-3">
+        <h3 class="lt-catalog-subtitle">Risk</h3>
+        <div class="lt-catalog-cluster lt-catalog-cluster--compact">
             {{ risk_badge("LOW") }}
             {{ risk_badge("MEDIUM") }}
             {{ risk_badge("HIGH") }}
             {{ risk_badge("CRITICAL") }}
         </div>
 
-        <h3 class="mt-7 text-sm font-bold text-slate-950">Generic tones</h3>
-        <div class="mt-3 flex flex-wrap gap-3">
+        <h3 class="lt-catalog-subtitle">Generic tones</h3>
+        <div class="lt-catalog-cluster lt-catalog-cluster--compact">
             {{ badge("Positive", "positive") }}
             {{ badge("Warning", "warning") }}
             {{ badge("High attention", "high") }}
@@ -57,10 +61,10 @@
         </div>
     </section>
 
-    <section class="lt-card p-6" aria-labelledby="catalog-feedback-title">
-        <p class="lt-page-header__eyebrow">Feedback</p>
-        <h2 id="catalog-feedback-title" class="mt-1 text-lg font-bold text-slate-950">Alerts</h2>
-        <div class="mt-5 grid gap-3">
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-feedback-title">
+        <p class="lt-catalog-eyebrow">Feedback</p>
+        <h2 id="catalog-feedback-title" class="lt-catalog-title">Alerts</h2>
+        <div class="lt-catalog-stack">
             {{ alert("Expediente listo", "La evidencia mínima requerida está completa para continuar.", "positive") }}
             {{ alert("Revisión requerida", "Hay campos pendientes antes de confirmar la operación.", "warning") }}
             {{ alert("Operación bloqueada", "Existe un conflicto que debe resolverse antes de continuar.", "danger") }}
@@ -68,10 +72,10 @@
         </div>
     </section>
 
-    <section class="lt-card p-6" aria-labelledby="catalog-form-title">
-        <p class="lt-page-header__eyebrow">Forms</p>
-        <h2 id="catalog-form-title" class="mt-1 text-lg font-bold text-slate-950">Controls</h2>
-        <div class="mt-5 grid max-w-2xl gap-5 sm:grid-cols-2">
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-form-title">
+        <p class="lt-catalog-eyebrow">Forms</p>
+        <h2 id="catalog-form-title" class="lt-catalog-title">Controls</h2>
+        <div class="lt-catalog-form-grid">
             <label class="lt-field">
                 <span class="lt-field__label">Referencia</span>
                 <input class="lt-control" type="text" placeholder="EXP-DE-2026-014">
@@ -89,10 +93,10 @@
         </div>
     </section>
 
-    <section class="lt-card p-6" aria-labelledby="catalog-empty-title">
-        <p class="lt-page-header__eyebrow">Empty state</p>
-        <h2 id="catalog-empty-title" class="mt-1 text-lg font-bold text-slate-950">No data</h2>
-        <div class="mt-5">
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-empty-title">
+        <p class="lt-catalog-eyebrow">Empty state</p>
+        <h2 id="catalog-empty-title" class="lt-catalog-title">No data</h2>
+        <div class="lt-catalog-empty-wrap">
             {{ empty_state(
                 "Todavía no hay evidencia",
                 "La pantalla debe explicar qué falta y cuál es la siguiente acción útil, no mostrar un área vacía.",
