@@ -12,21 +12,46 @@
                 <h1 id="platform-admin-title" class="text-2xl font-bold tracking-tight text-slate-950">Gestión de organizaciones y licencias</h1>
                 <p class="mt-2 text-sm leading-6 text-slate-600">Alta de organizaciones reales, configuración inicial de licencia y creación del primer administrador de cada cuenta.</p>
             </div>
-            <a href="/dashboard" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>Volver al inicio</a>
+            <a href="/dashboard" class="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>Volver al inicio</a>
         </div>
     </div>
 
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <article class="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2 lt-data-table">
+        <article class="space-y-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 lg:col-span-2 lt-data-table">
             <div class="flex items-center justify-between gap-3 lt-data-table__summary"><div><p class="text-xs font-bold uppercase tracking-wide text-purple-700">Clientes registrados</p><h2 class="mt-1 text-lg font-bold text-slate-950">Organizaciones de la plataforma</h2></div><span class="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{{ organization_count }} registradas</span></div>
-            <div class="overflow-x-auto rounded-xl border border-slate-200 lt-data-table__scroll"><table class="w-full text-left text-xs lt-data-table__table"><thead class="border-b border-slate-200 bg-slate-50 font-semibold uppercase text-slate-600 lt-data-table__head"><tr><th class="p-3 lt-data-table__th">ID</th><th class="p-3 lt-data-table__th">Empresa</th><th class="p-3 lt-data-table__th">CUIT</th><th class="p-3 lt-data-table__th">Plan</th><th class="p-3 lt-data-table__th">Límite de lotes</th><th class="p-3 lt-data-table__th">Administrador</th><th class="p-3 lt-data-table__th">Estado</th></tr></thead><tbody class="divide-y divide-slate-200 font-medium text-slate-700 lt-data-table__body">
+
+            <div class="grid gap-3 sm:hidden" aria-label="Organizaciones de la plataforma en vista móvil" data-reveal-stagger="55">
+                {% for organization in organizations %}
+                <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div class="flex min-w-0 items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="break-words text-sm font-bold text-slate-950">{{ organization.name }}</p>
+                            <p class="mt-1 break-all text-[11px] text-slate-500">{{ organization.slug }} · ID {{ organization.id }}</p>
+                        </div>
+                        {% if organization.is_active %}<span class="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-800">ACTIVA</span>{% else %}<span class="shrink-0 rounded-full bg-rose-100 px-2 py-1 text-[10px] font-bold text-rose-800">INACTIVA</span>{% endif %}
+                    </div>
+                    <dl class="mt-4 grid gap-3">
+                        <div><dt class="text-[10px] font-bold uppercase tracking-wide text-slate-500">CUIT</dt><dd class="mt-1 break-all text-xs font-semibold text-slate-800">{{ organization.tax_id or "—" }}</dd></div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div><dt class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Plan</dt><dd class="mt-1 text-xs font-bold text-slate-800">{{ (organization.license_plan_type or organization.tier or "pro")|upper }}</dd></div>
+                            <div><dt class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Límite</dt><dd class="mt-1 text-xs font-semibold text-slate-800">{% if organization.license_max_lotes is not none %}{{ organization.license_max_lotes }} / mes{% else %}—{% endif %}</dd></div>
+                        </div>
+                        <div><dt class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Administrador</dt><dd class="mt-1 break-all text-xs font-semibold text-slate-800">{% if organization.admin_username %}{{ organization.admin_username }}{% if organization.admin_email %}<span class="mt-0.5 block font-normal text-slate-500">{{ organization.admin_email }}</span>{% endif %}{% else %}—{% endif %}</dd></div>
+                    </dl>
+                </article>
+                {% else %}
+                <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">No hay organizaciones registradas para mostrar.</div>
+                {% endfor %}
+            </div>
+
+            <div class="hidden sm:block overflow-x-auto rounded-xl border border-slate-200 lt-data-table__scroll"><table class="w-full text-left text-xs lt-data-table__table"><thead class="border-b border-slate-200 bg-slate-50 font-semibold uppercase text-slate-600 lt-data-table__head"><tr><th class="p-3 lt-data-table__th">ID</th><th class="p-3 lt-data-table__th">Empresa</th><th class="p-3 lt-data-table__th">CUIT</th><th class="p-3 lt-data-table__th">Plan</th><th class="p-3 lt-data-table__th">Límite de lotes</th><th class="p-3 lt-data-table__th">Administrador</th><th class="p-3 lt-data-table__th">Estado</th></tr></thead><tbody class="divide-y divide-slate-200 font-medium text-slate-700 lt-data-table__body">
                 {% for organization in organizations %}
                 <tr class="hover:bg-slate-50 lt-data-table__row"><td class="p-3 font-bold lt-data-table__cell lt-data-table__cell--primary">{{ organization.id }}</td><td class="p-3 lt-data-table__cell"><div class="font-semibold text-slate-900 lt-data-table__primary">{{ organization.name }}</div><div class="text-slate-500 lt-data-table__secondary">{{ organization.slug }}</div></td><td class="p-3 text-slate-500 lt-data-table__cell">{{ organization.tax_id or "—" }}</td><td class="p-3 lt-data-table__cell"><span class="rounded px-2 py-0.5 font-bold {% if organization.license_plan_type == 'enterprise' %}bg-purple-100 text-purple-800{% else %}bg-sky-100 text-sky-800{% endif %}">{{ (organization.license_plan_type or organization.tier or "pro")|upper }}</span></td><td class="p-3 font-semibold lt-data-table__cell lt-data-table__cell--numeric">{% if organization.license_max_lotes is not none %}{{ organization.license_max_lotes }} / mes{% else %}—{% endif %}</td><td class="p-3 text-slate-600 lt-data-table__cell">{% if organization.admin_username %}<div>{{ organization.admin_username }}</div><div class="text-slate-500 lt-data-table__secondary">{{ organization.admin_email }}</div>{% else %}—{% endif %}</td><td class="p-3 lt-data-table__cell">{% if organization.is_active %}<span class="rounded-full bg-emerald-100 px-2 py-0.5 font-bold text-emerald-800 lt-badge lt-badge--positive">ACTIVA</span>{% else %}<span class="rounded-full bg-rose-100 px-2 py-0.5 font-bold text-rose-800 lt-badge lt-badge--neutral">INACTIVA</span>{% endif %}</td></tr>
                 {% else %}{{ empty_row(7, "No hay organizaciones registradas para mostrar.") }}{% endfor %}
             </tbody></table></div>
         </article>
 
-        <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
             <div><p class="text-xs font-bold uppercase tracking-wide text-purple-700">Nueva organización</p><h2 class="mt-1 text-lg font-bold text-slate-950">Dar de alta un cliente B2B</h2><p class="mt-2 text-sm leading-6 text-slate-600">Crea una organización persistente con licencia inicial y un administrador autorizado.</p></div>
             <form hx-post="/api/v1/admin/organizations" hx-target="#adminCreateResult" class="mt-6 space-y-4">
                 <div><label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-700">Nombre o razón social</label><input type="text" name="name" placeholder="Aserradero San Miguel S.R.L." required class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-purple-600"></div>
@@ -37,7 +62,7 @@
                 <div><label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-700">Plan contratado</label><select name="tier" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none"><option value="pro">Pro (50 lotes / mes)</option><option value="enterprise">Enterprise (100+ lotes / mes)</option></select></div>
                 <div class="grid grid-cols-1 gap-3 md:grid-cols-2"><div><label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-700">Límite de lotes</label><input type="number" name="monthly_lote_limit" min="1" value="50" required class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-purple-600"></div><div><label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-700">Toneladas por mes</label><input type="number" step="0.1" name="monthly_ton_limit" min="1" value="3000" required class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-purple-600"></div></div>
                 <div><label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-700">Máximo de filas por carga</label><input type="number" name="max_batch_rows" min="1" value="500" required class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-purple-600"></div>
-                <button type="submit" class="w-full rounded-lg bg-purple-800 py-2.5 text-sm font-semibold text-white shadow transition-colors hover:bg-purple-900">Activar cuenta del cliente</button>
+                <button type="submit" class="min-h-11 w-full rounded-lg bg-purple-800 py-2.5 text-sm font-semibold text-white shadow transition-colors hover:bg-purple-900">Activar cuenta del cliente</button>
             </form>
             <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">La contraseña inicial nunca se devuelve en pantalla ni se persiste en texto plano.</div>
             <div id="adminCreateResult" class="mt-4"></div>
