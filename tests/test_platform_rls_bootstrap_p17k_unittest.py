@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "alembic" / "versions" / "028_platform_definer_rls.py"
+RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-integration-gates.yml"
 
 
 def _migration_source() -> str:
@@ -75,3 +76,12 @@ def test_platform_function_ownership_and_runtime_execute_are_fail_closed() -> No
     assert "GRANT EXECUTE ON FUNCTION" in source
     assert "TO {RUNTIME_ROLE}" in source
     assert "REVOKE ALL ON FUNCTION {function_signature} FROM {RUNTIME_ROLE}" in source
+
+
+def test_release_gate_executes_real_platform_postgres_control_plane() -> None:
+    workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "python -m alembic upgrade head" in workflow
+    assert "Gate 17 - Platform control-plane under FORCE RLS" in workflow
+    assert "tests/test_platform_control_plane_p21_postgres_integration.py" in workflow
+    assert 'grep -F "028_platform_definer_rls" alembic-current.txt' in workflow
