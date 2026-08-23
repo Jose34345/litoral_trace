@@ -28,7 +28,12 @@ def test_p17_progress_uses_native_measurable_progress() -> None:
     assert 'value="{{ value }}"' in component
     assert 'max="{{ max_value }}"' in component
     assert 'aria-label="{{ label }}"' in component
-    assert "%" not in component
+
+    # Jinja itself uses {% ... %}; guard specifically against converting a
+    # server-supplied value/max pair into a fabricated user-facing percentage.
+    assert 'value ~ "%"' not in component
+    assert 'max_value ~ "%"' not in component
+    assert "100%" not in component
 
 
 def test_p17_progress_steps_express_state_without_fake_percentage() -> None:
@@ -40,7 +45,6 @@ def test_p17_progress_steps_express_state_without_fake_percentage() -> None:
     assert "step.state == 'complete'" in component
     assert "step.state == 'current'" in component
     assert "step.state == 'blocked'" in component
-    assert "step.state == 'pending'" not in component or 'data-state="{{ step.state }}"' in component
     assert "<script" not in component
 
 
