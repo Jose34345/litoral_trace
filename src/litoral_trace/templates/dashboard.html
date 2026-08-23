@@ -5,45 +5,67 @@
 {% block content %}
 {% include "app/_dashboard_traceability_cockpit.html" %}
 
-<div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+<div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" data-reveal-skip data-reveal-stagger="60">
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-lotes-label"><p id="kpi-lotes-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Lotes visibles</p><p id="kpi-lotes" class="mt-1 text-2xl font-bold text-slate-950">—</p><p class="mt-1 text-xs text-slate-500">Ámbito de la organización autenticada</p></section>
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-hectareas-label"><p id="kpi-hectareas-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Superficie registrada</p><p id="kpi-hectareas" class="mt-1 text-2xl font-bold text-slate-950">—</p><p class="mt-1 text-xs text-slate-500">Suma de hectáreas informadas</p></section>
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-georef-label"><p id="kpi-georef-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Georreferenciados</p><p id="kpi-georef" class="mt-1 text-2xl font-bold text-slate-950">—</p><p class="mt-1 text-xs text-slate-500">Con coordenadas válidas para visualización</p></section>
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="kpi-source-label"><p id="kpi-source-label" class="text-xs font-semibold uppercase tracking-wider text-slate-500">Datos operativos</p><p class="mt-1 text-lg font-bold text-slate-950">Base de la organización</p><p id="kpi-source" class="mt-1 text-xs text-slate-500">Cargando datos reales…</p></section>
 </div>
 
-<div id="dashboard-alert" class="mb-6 hidden rounded-xl border px-4 py-3 text-sm" role="status" aria-live="polite"></div>
+<div id="dashboard-alert" class="mb-6 hidden rounded-xl border px-4 py-3 text-sm" role="status" aria-live="polite" data-reveal-skip></div>
 
-<div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)]">
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)]" data-reveal-skip>
     <div class="space-y-6">
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h2 class="text-base font-bold text-slate-950">Mapa geoespacial de rodales</h2><p class="mt-1 text-xs leading-5 text-slate-500">Muestra únicamente los lotes reales disponibles para tu organización.</p></div><span id="map-scope" class="text-xs font-semibold text-slate-500">Sin datos cargados</span></div>
-            <div id="map" class="h-96 w-full rounded-xl border border-slate-300 bg-slate-100"></div>
+        <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" data-reveal="fade">
+            <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h2 class="text-base font-bold text-slate-950">Mapa geoespacial de rodales</h2>
+                    <p class="mt-1 text-xs leading-5 text-slate-500">Muestra únicamente los lotes reales disponibles para tu organización.</p>
+                </div>
+                <span id="map-scope" class="inline-flex w-fit items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-600">Sin datos cargados</span>
+            </div>
+            <div id="map" class="lt-dashboard-map w-full rounded-xl border border-slate-300 bg-slate-100"></div>
         </section>
 
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h2 class="text-base font-bold text-slate-950">Lotes de la organización</h2><p class="mt-1 text-xs text-slate-500">Seleccioná un lote para revisar su origen y las acciones disponibles para tu rol.</p></div><button id="reload-lotes" type="button" class="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"><i class="fa-solid fa-rotate" aria-hidden="true"></i>Actualizar</button></div>
-            <div class="overflow-x-auto rounded-xl border border-slate-200"><table class="min-w-full divide-y divide-slate-200 text-left text-xs"><thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><tr><th class="px-4 py-3">Lote</th><th class="px-4 py-3">Producto</th><th class="px-4 py-3">Superficie</th><th class="px-4 py-3">Estado</th><th class="px-4 py-3 text-right">Acción</th></tr></thead><tbody id="lotes-body" class="divide-y divide-slate-200 bg-white"><tr><td colspan="5" class="px-4 py-6 text-center text-slate-500">Cargando lotes…</td></tr></tbody></table></div>
+        <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" data-reveal="up">
+            <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h2 class="text-base font-bold text-slate-950">Lotes de la organización</h2>
+                    <p class="mt-1 text-xs leading-5 text-slate-500">Seleccioná un lote para revisar su origen y las acciones disponibles para tu rol.</p>
+                </div>
+                <button id="reload-lotes" type="button" class="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"><i class="fa-solid fa-rotate" aria-hidden="true"></i>Actualizar</button>
+            </div>
+
+            <div id="lotes-mobile" class="lt-mobile-lote-list sm:hidden" aria-live="polite">
+                <div class="lt-mobile-lote-card text-center text-sm text-slate-500">Cargando lotes…</div>
+            </div>
+
+            <div class="lt-desktop-lote-table overflow-x-auto rounded-xl border border-slate-200">
+                <table class="min-w-full divide-y divide-slate-200 text-left text-xs">
+                    <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><tr><th class="px-4 py-3">Lote</th><th class="px-4 py-3">Producto</th><th class="px-4 py-3">Superficie</th><th class="px-4 py-3">Estado</th><th class="px-4 py-3 text-right">Acción</th></tr></thead>
+                    <tbody id="lotes-body" class="divide-y divide-slate-200 bg-white"><tr><td colspan="5" class="px-4 py-6 text-center text-slate-500">Cargando lotes…</td></tr></tbody>
+                </table>
+            </div>
         </section>
     </div>
 
-    <div class="space-y-6">
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="flex items-start justify-between gap-3"><div><p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Evaluación individual del rodal</p><p class="mt-1 text-xs font-semibold text-slate-500">Lote seleccionado</p><h2 id="selected-lote-name" class="mt-1 text-lg font-bold text-slate-950">Ninguno</h2></div><span id="selected-lote-status" class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">—</span></div>
-            <dl class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><div class="rounded-lg bg-slate-50 p-3"><dt class="font-semibold text-slate-500">Proveedor / productor</dt><dd id="selected-producer" class="mt-1 break-all font-medium text-slate-900">—</dd></div><div class="rounded-lg bg-slate-50 p-3"><dt class="font-semibold text-slate-500">Producto</dt><dd id="selected-product" class="mt-1 break-all font-medium text-slate-900">—</dd></div><div class="rounded-lg bg-slate-50 p-3"><dt class="font-semibold text-slate-500">Coordenadas</dt><dd id="selected-coordinates" class="mt-1 font-mono text-[11px] text-slate-900">—</dd></div><div class="rounded-lg bg-slate-50 p-3"><dt class="font-semibold text-slate-500">Superficie</dt><dd id="selected-hectares" class="mt-1 font-medium text-slate-900">—</dd></div></dl>
+    <div class="space-y-6" data-reveal-stagger="70">
+        <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <div class="flex items-start justify-between gap-3"><div class="min-w-0"><p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Evaluación individual del rodal</p><p class="mt-1 text-xs font-semibold text-slate-500">Lote seleccionado</p><h2 id="selected-lote-name" class="mt-1 break-words text-lg font-bold text-slate-950">Ninguno</h2></div><span id="selected-lote-status" class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">—</span></div>
+            <dl class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><div class="rounded-lg bg-slate-50 p-3"><dt class="font-semibold text-slate-500">Proveedor / productor</dt><dd id="selected-producer" class="mt-1 break-all font-medium text-slate-900">—</dd></div><div class="rounded-lg bg-slate-50 p-3"><dt class="font-semibold text-slate-500">Producto</dt><dd id="selected-product" class="mt-1 break-all font-medium text-slate-900">—</dd></div><div class="rounded-lg bg-slate-50 p-3"><dt class="font-semibold text-slate-500">Coordenadas</dt><dd id="selected-coordinates" class="mt-1 break-all font-mono text-[11px] text-slate-900">—</dd></div><div class="rounded-lg bg-slate-50 p-3"><dt class="font-semibold text-slate-500">Superficie</dt><dd id="selected-hectares" class="mt-1 font-medium text-slate-900">—</dd></div></dl>
         </section>
 
         {% if user.role in ["superadmin", "admin", "manager"] %}
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <div><p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Análisis satelital</p><h2 class="mt-1 text-base font-bold text-slate-950">Análisis NDVI persistente</h2><p class="mt-1 text-xs leading-5 text-slate-500">Genera una tarea de análisis para el lote seleccionado. El resultado es evidencia técnica y debe interpretarse junto con la documentación y los datos de origen.</p></div>
-            <form id="satellite-form" class="mt-5 space-y-4"><div class="grid grid-cols-1 gap-3 sm:grid-cols-2"><label class="text-xs font-semibold text-slate-700">Desde<input id="satellite-start" type="date" value="2020-12-31" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"></label><label class="text-xs font-semibold text-slate-700">Hasta<input id="satellite-end" type="date" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"></label></div><label class="block text-xs font-semibold text-slate-700">Nubosidad máxima (%)<input id="satellite-cloud" type="number" min="0" max="100" step="0.1" value="20" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"></label><button id="satellite-submit" type="submit" disabled class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-forest-800 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-forest-900"><i class="fa-solid fa-satellite" aria-hidden="true"></i>Ejecutar análisis</button></form>
-            <div id="satellite-result" class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">Seleccioná un lote para habilitar el análisis.</div>
+            <form id="satellite-form" class="mt-5 space-y-4"><div class="grid grid-cols-1 gap-3 sm:grid-cols-2"><label class="text-xs font-semibold text-slate-700">Desde<input id="satellite-start" type="date" value="2020-12-31" required class="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"></label><label class="text-xs font-semibold text-slate-700">Hasta<input id="satellite-end" type="date" required class="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"></label></div><label class="block text-xs font-semibold text-slate-700">Nubosidad máxima (%)<input id="satellite-cloud" type="number" min="0" max="100" step="0.1" value="20" required class="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"></label><button id="satellite-submit" type="submit" disabled class="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-forest-800 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-forest-900"><i class="fa-solid fa-satellite" aria-hidden="true"></i>Ejecutar análisis</button></form>
+            <div id="satellite-result" class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600">Seleccioná un lote para habilitar el análisis.</div>
         </section>
         {% else %}
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Análisis satelital</p><h2 class="mt-1 text-base font-bold text-slate-950">Vista de solo lectura</h2><p class="mt-2 text-xs leading-5 text-slate-500">Tu rol puede consultar los lotes y evidencias disponibles, pero no está habilitado para ejecutar análisis satelitales.</p></section>
+        <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Análisis satelital</p><h2 class="mt-1 text-base font-bold text-slate-950">Vista de solo lectura</h2><p class="mt-2 text-xs leading-5 text-slate-500">Tu rol puede consultar los lotes y evidencias disponibles, pero no está habilitado para ejecutar análisis satelitales.</p></section>
         {% endif %}
 
-        <section class="rounded-2xl border border-amber-200 bg-amber-50 p-5"><div class="flex gap-3"><i class="fa-solid fa-circle-info mt-0.5 text-amber-700" aria-hidden="true"></i><div><h2 class="text-sm font-bold text-amber-950">Límite de interpretación</h2><p class="mt-1 text-xs leading-5 text-amber-900">Litoral Trace organiza trazabilidad, documentos y análisis. No emite un certificado oficial EUDR. Los artefactos pueden apoyar la preparación de información para TRACES NT, pero no implican aprobación del sistema ni reemplazan la debida diligencia o las responsabilidades legales de los operadores.</p></div></div></section>
+        <section class="rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5"><div class="flex gap-3"><i class="fa-solid fa-circle-info mt-0.5 text-amber-700" aria-hidden="true"></i><div><h2 class="text-sm font-bold text-amber-950">Límite de interpretación</h2><p class="mt-1 text-xs leading-5 text-amber-900">Litoral Trace organiza trazabilidad, documentos y análisis. No emite un certificado oficial EUDR. Los artefactos pueden apoyar la preparación de información para TRACES NT, pero no implican aprobación del sistema ni reemplazan la debida diligencia o las responsabilidades legales de los operadores.</p></div></div></section>
     </div>
 </div>
 
@@ -59,6 +81,7 @@
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
     const alertBox = document.getElementById('dashboard-alert');
     const lotesBody = document.getElementById('lotes-body');
+    const lotesMobile = document.getElementById('lotes-mobile');
     const satelliteForm = document.getElementById('satellite-form');
     const satelliteSubmit = document.getElementById('satellite-submit');
     const satelliteResult = document.getElementById('satellite-result');
@@ -109,6 +132,7 @@
         document.getElementById('map-scope').textContent = `${bounds.length} lote${bounds.length === 1 ? '' : 's'} georreferenciado${bounds.length === 1 ? '' : 's'}`;
         if (bounds.length === 1) state.map.setView(bounds[0], 12);
         else if (bounds.length > 1) state.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
+        window.requestAnimationFrame(() => state.map?.invalidateSize({ animate: false }));
     }
 
     function renderKpis(payload) {
@@ -121,8 +145,66 @@
         document.getElementById('kpi-source').textContent = payload.organization ? `Organización: ${payload.organization}` : 'Datos de la organización cargados';
     }
 
+    function mobileField(label, value) {
+        const field = document.createElement('div');
+        field.className = 'lt-mobile-lote-card__field';
+        const labelNode = document.createElement('span');
+        labelNode.className = 'lt-mobile-lote-card__label';
+        labelNode.textContent = label;
+        const valueNode = document.createElement('span');
+        valueNode.className = 'lt-mobile-lote-card__value';
+        valueNode.textContent = value;
+        field.append(labelNode, valueNode);
+        return field;
+    }
+
+    function renderLotesMobile() {
+        if (!lotesMobile) return;
+        lotesMobile.replaceChildren();
+
+        if (!state.lotes.length) {
+            const empty = document.createElement('div');
+            empty.className = 'lt-mobile-lote-card text-center text-sm text-slate-500';
+            empty.textContent = 'No hay lotes visibles para esta organización.';
+            lotesMobile.appendChild(empty);
+            return;
+        }
+
+        state.lotes.forEach((lote) => {
+            const card = document.createElement('article');
+            card.className = 'lt-mobile-lote-card';
+
+            const header = document.createElement('div');
+            header.className = 'lt-mobile-lote-card__header';
+            const title = document.createElement('h3');
+            title.className = 'min-w-0 break-words text-sm font-bold text-slate-950';
+            title.textContent = lote.identificador || `Lote ${lote.id}`;
+            const status = document.createElement('span');
+            status.className = 'shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600';
+            status.textContent = lote.estatus || 'Sin estado';
+            header.append(title, status);
+
+            const fields = document.createElement('div');
+            fields.className = 'lt-mobile-lote-card__grid';
+            fields.append(
+                mobileField('Producto', lote.producto_forestal || '—'),
+                mobileField('Superficie', `${formatNumber(lote.hectareas)} ha`),
+            );
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'lt-mobile-lote-card__action inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50';
+            button.textContent = 'Seleccionar lote';
+            button.addEventListener('click', () => selectLote(lote.id, true));
+
+            card.append(header, fields, button);
+            lotesMobile.appendChild(card);
+        });
+    }
+
     function renderLotesTable() {
         lotesBody.replaceChildren();
+        renderLotesMobile();
         if (!state.lotes.length) {
             const row = document.createElement('tr');
             const cell = document.createElement('td');
@@ -157,6 +239,9 @@
     async function loadLotes() {
         clearAlert();
         lotesBody.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-slate-500">Cargando lotes…</td></tr>';
+        if (lotesMobile) {
+            lotesMobile.innerHTML = '<div class="lt-mobile-lote-card text-center text-sm text-slate-500">Cargando lotes…</div>';
+        }
         try {
             const response = await fetch('/api/v1/lotes', { headers: { Accept: 'application/json' } });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
