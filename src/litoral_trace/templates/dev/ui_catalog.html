@@ -1,6 +1,7 @@
 {% extends "app/base_app.html" %}
 {% from "components/ui.html" import alert, badge, button, empty_state, page_header, risk_badge, status_badge %}
 {% from "components/data_table.html" import pagination, search_control %}
+{% from "components/form_fields.html" import checkbox_field, select_field, text_field, textarea_field %}
 
 {% block title %}UI Catalog | Litoral Trace{% endblock %}
 
@@ -128,22 +129,44 @@
 
     <section class="lt-card lt-catalog-section" aria-labelledby="catalog-form-title">
         <p class="lt-catalog-eyebrow">Forms</p>
-        <h2 id="catalog-form-title" class="lt-catalog-title">Controls</h2>
+        <h2 id="catalog-form-title" class="lt-catalog-title">LTField</h2>
+        {% set catalog_status_options = [("READY", "Ready"), ("REVIEW", "Review"), ("BLOCKED", "Blocked")] %}
         <div class="lt-catalog-form-grid">
-            <label class="lt-field">
-                <span class="lt-field__label">Referencia</span>
-                <input class="lt-control" type="text" placeholder="EXP-DE-2026-014">
-                <span class="lt-field__help">Identificador visible y estable para el usuario.</span>
-            </label>
-            <label class="lt-field">
-                <span class="lt-field__label">Estado</span>
-                <select class="lt-control">
-                    <option>READY</option>
-                    <option>REVIEW</option>
-                    <option>BLOCKED</option>
-                </select>
-                <span class="lt-field__help">Los colores se derivan del significado, no de la pantalla.</span>
-            </label>
+            {{ text_field(
+                "catalog_reference",
+                "Referencia",
+                placeholder="EXP-DE-2026-014",
+                help_text="Identificador visible y estable para el usuario.",
+                required=True
+            ) }}
+            {{ select_field(
+                "catalog_status",
+                "Estado",
+                catalog_status_options,
+                selected_value="REVIEW",
+                help_text="La opción seleccionada proviene del estado server-side."
+            ) }}
+            {{ text_field(
+                "catalog_cuit",
+                "CUIT",
+                value="30-12345678-9",
+                help_text="Ejemplo de validación accesible.",
+                error="El CUIT no supera la validación de ejemplo."
+            ) }}
+            {{ textarea_field(
+                "catalog_note",
+                "Nota operativa",
+                placeholder="Agregar contexto para auditoría…",
+                show_optional=True,
+                rows=3
+            ) }}
+        </div>
+        <div class="lt-catalog-stack">
+            {{ checkbox_field(
+                "catalog_confirm",
+                "Confirmé la documentación asociada",
+                help_text="El checkbox representa una decisión del usuario, no un estado inventado por cliente."
+            ) }}
         </div>
     </section>
 
