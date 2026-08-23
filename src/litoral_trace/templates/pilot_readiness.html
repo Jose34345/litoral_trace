@@ -1,0 +1,76 @@
+{% extends "app/base_app.html" %}
+
+{% block title %}Preparar piloto | Litoral Trace{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-emerald-700">Primer cliente</p>
+        <h1 class="mt-1 text-2xl font-bold text-slate-950">Preparar piloto de 30 días</h1>
+        <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Este checklist se calcula desde datos reales de tu organización. No guarda tildes manuales ni reemplaza los controles regulatorios de cada módulo.</p>
+    </div>
+    {% if pilot_readiness %}
+    <div class="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Estado</p>
+        {% if pilot_readiness.ready %}
+        <p class="mt-1 text-sm font-bold text-emerald-700">PILOT_READY</p>
+        {% elif pilot_readiness.state == "IN_PROGRESS" %}
+        <p class="mt-1 text-sm font-bold text-slate-900">IN_PROGRESS</p>
+        {% else %}
+        <p class="mt-1 text-sm font-bold text-slate-700">NOT_STARTED</p>
+        {% endif %}
+        <p class="mt-1 text-xs text-slate-500">{{ pilot_readiness.completed_steps }} de {{ pilot_readiness.total_steps }} hitos cerrados</p>
+    </div>
+    {% endif %}
+</div>
+
+{% if pilot_error %}
+<section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-base font-bold text-slate-950">Estado temporalmente no disponible</h2>
+    <p class="mt-2 text-sm text-slate-600">{{ pilot_error }}</p>
+</section>
+{% elif pilot_readiness %}
+<section class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+            <h2 class="text-base font-bold text-slate-950">{{ pilot_readiness.organization_name }}</h2>
+            <p class="mt-1 text-xs text-slate-500">El objetivo es completar una operación forestal demostrable de punta a punta con evidencia verificable.</p>
+        </div>
+        {% if pilot_readiness.shipment_code %}
+        <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Despacho: {{ pilot_readiness.shipment_code }}</span>
+        {% endif %}
+    </div>
+</section>
+
+<div class="space-y-4">
+    {% for step in pilot_readiness.steps %}
+    <section class="rounded-2xl border {% if step.completed %}border-emerald-200{% else %}border-slate-200{% endif %} bg-white p-5 shadow-sm">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex items-start gap-3">
+                <div class="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full {% if step.completed %}bg-emerald-50 text-emerald-700{% else %}bg-slate-100 text-slate-600{% endif %}">
+                    {% if step.completed %}<i class="fa-solid fa-check" aria-hidden="true"></i>{% else %}<i class="fa-solid fa-arrow-right" aria-hidden="true"></i>{% endif %}
+                </div>
+                <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <h2 class="text-sm font-bold text-slate-950">{{ loop.index }}. {{ step.label }}</h2>
+                        {% if step.completed %}
+                        <span class="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Listo</span>
+                        {% else %}
+                        <span class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">Pendiente</span>
+                        {% endif %}
+                    </div>
+                    <p class="mt-1 text-sm leading-6 text-slate-600">{{ step.detail }}</p>
+                </div>
+            </div>
+            <a href="{{ step.action_href }}" class="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">{{ step.action_label }}</a>
+        </div>
+    </section>
+    {% endfor %}
+</div>
+
+<section class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+    <h2 class="text-sm font-bold text-slate-950">Qué significa PILOT_READY</h2>
+    <p class="mt-2 text-xs leading-5 text-slate-600">La organización ya puede demostrar una cadena con origen, evidencia, recepción, transformación, despacho internacional y controles documentales aplicables. Para destinos UE se exige candidato EUDR conformance-ready. El smoke remoto de ACCEPTANCE no bloquea este piloto y ningún resultado implica certificación oficial EUDR.</p>
+</section>
+{% endif %}
+{% endblock %}
