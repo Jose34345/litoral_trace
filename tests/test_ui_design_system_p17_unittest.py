@@ -76,6 +76,9 @@ def test_p17_logout_canary_uses_shared_primitives_without_contract_drift() -> No
     assert 'name="{{ csrf_form_field }}"' in logout
     assert 'value="{{ csrf_token }}"' in logout
     assert 'href="/dashboard"' in logout
+    # Keep the legacy candidate that was unique to this surface so the
+    # tracked Tailwind artifact remains reproducible while P1.7 migrates UI.
+    assert "max-w-lg" in logout
 
 
 def test_p17_ui_catalog_is_server_rendered_and_parses() -> None:
@@ -85,6 +88,24 @@ def test_p17_ui_catalog_is_server_rendered_and_parses() -> None:
 
     assert '{% extends "app/base_app.html" %}' in catalog
     assert 'components/ui.html' in catalog
+    assert "path='/src/ui-catalog.css'" in catalog
     assert 'UI Catalog' in catalog
     assert 'status_badge("READY")' in catalog
     assert 'risk_badge("CRITICAL")' in catalog
+
+
+def test_p17_ui_catalog_does_not_expand_tailwind_candidate_surface() -> None:
+    catalog = _read(TEMPLATES / "dev" / "ui_catalog.html")
+
+    # The catalog is intentionally styled by semantic CSS. Keeping Tailwind
+    # utilities out of this dev-only template prevents a documentation page
+    # from mutating the production tracked bundle during `npm run build`.
+    forbidden_candidates = (
+        "mt-7",
+        "max-w-2xl",
+        "sm:grid-cols-2",
+        "p-6",
+    )
+
+    for candidate in forbidden_candidates:
+        assert candidate not in catalog
