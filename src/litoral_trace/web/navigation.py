@@ -36,6 +36,14 @@ _NAVIGATION = (
         active_prefixes=("/dashboard",),
     ),
     NavigationItem(
+        key="pilot_readiness",
+        label="Preparar piloto",
+        href="/pilot-readiness",
+        section="operacion",
+        permission=Permission.LOTE_READ,
+        active_prefixes=("/pilot-readiness",),
+    ),
+    NavigationItem(
         key="operations",
         label="Operaciones",
         href="/operations",
