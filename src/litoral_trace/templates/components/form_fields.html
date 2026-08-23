@@ -1,8 +1,8 @@
-{% macro text_field(name, label, value='', type='text', placeholder='', help_text=None, required=False, autocomplete=None, error=None) -%}
+{% macro text_field(name, label, value='', type='text', placeholder='', help_text=None, required=False, show_optional=False, autocomplete=None, error=None) -%}
 <label class="lt-field" {% if error %}data-state="error"{% endif %}>
     <span class="lt-field__label-row">
         <span class="lt-field__label">{{ label }}</span>
-        {% if required %}<span class="lt-field__required" aria-hidden="true">*</span>{% else %}<span class="lt-field__optional">Opcional</span>{% endif %}
+        {% if required %}<span class="lt-field__required" aria-hidden="true">*</span>{% elif show_optional %}<span class="lt-field__optional">Opcional</span>{% endif %}
     </span>
     <input
         type="{{ type }}"
@@ -21,11 +21,11 @@
 {%- endmacro %}
 
 
-{% macro select_field(name, label, options, selected_value=None, help_text=None, required=False, error=None) -%}
+{% macro select_field(name, label, options, selected_value=None, help_text=None, required=False, show_optional=False, error=None) -%}
 <label class="lt-field" {% if error %}data-state="error"{% endif %}>
     <span class="lt-field__label-row">
         <span class="lt-field__label">{{ label }}</span>
-        {% if required %}<span class="lt-field__required" aria-hidden="true">*</span>{% else %}<span class="lt-field__optional">Opcional</span>{% endif %}
+        {% if required %}<span class="lt-field__required" aria-hidden="true">*</span>{% elif show_optional %}<span class="lt-field__optional">Opcional</span>{% endif %}
     </span>
     <select
         name="{{ name }}"
@@ -44,11 +44,11 @@
 {%- endmacro %}
 
 
-{% macro textarea_field(name, label, value='', placeholder='', help_text=None, required=False, error=None, rows=4) -%}
+{% macro textarea_field(name, label, value='', placeholder='', help_text=None, required=False, show_optional=False, error=None, rows=4) -%}
 <label class="lt-field" {% if error %}data-state="error"{% endif %}>
     <span class="lt-field__label-row">
         <span class="lt-field__label">{{ label }}</span>
-        {% if required %}<span class="lt-field__required" aria-hidden="true">*</span>{% else %}<span class="lt-field__optional">Opcional</span>{% endif %}
+        {% if required %}<span class="lt-field__required" aria-hidden="true">*</span>{% elif show_optional %}<span class="lt-field__optional">Opcional</span>{% endif %}
     </span>
     <textarea
         name="{{ name }}"
