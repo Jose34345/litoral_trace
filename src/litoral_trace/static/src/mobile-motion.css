@@ -49,21 +49,14 @@ html {
   will-change: auto;
 }
 
-/* Drawer overlay uses state instead of display:none, allowing a real fade. */
+/* Keep the established hidden/aria-hidden drawer overlay contract. */
 .lt-app-overlay {
   opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition:
-    opacity var(--lt-motion-duration-fast) ease,
-    visibility 0s linear var(--lt-motion-duration-fast);
+  transition: opacity var(--lt-motion-duration-fast) ease;
 }
 
-.lt-app-overlay[data-open="true"] {
+.lt-app-overlay[aria-hidden="false"] {
   opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transition-delay: 0s;
 }
 
 .lt-sidebar {
