@@ -16,10 +16,12 @@
     <link rel="stylesheet" href="{{ url_for('static', path='/src/design-system.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/src/data-table.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/src/form-controls.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/src/dialog.css') }}">
 
     <script src="{{ url_for('static', path='/vendor/htmx/htmx.min.js') }}" defer></script>
     <script src="{{ url_for('static', path='/vendor/leaflet/leaflet.js') }}" defer></script>
     <script type="module" src="{{ url_for('static', path='/src/js/app.js') }}"></script>
+    <script type="module" src="{{ url_for('static', path='/src/js/dialog.js') }}"></script>
 
     {% block head_extra %}{% endblock %}
 </head>
