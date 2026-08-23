@@ -1,0 +1,299 @@
+name: P1-A Production Authenticated Smoke Once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/p1a-production-authenticated-smoke-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: production-backup
+    timeout-minutes: 12
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install smoke dependencies
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]' bcrypt requests
+
+      - name: Verify authenticated P1-A surface and RBAC
+        id: smoke
+        shell: bash
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import html
+          import json
+          import os
+          import re
+          import secrets
+          import sys
+          import time
+
+          import bcrypt
+          import psycopg
+          import requests
+
+          BASE = "https://litoraltrace.com"
+          EXPECTED_REVISION = "022_add_integration_history"
+          EXPECTED_RELEASE = "ee7720d702ebf0aa20f2ac2a5e8ce55c51f0fa3f"
+          TABLES = (
+              "integration_connections",
+              "integration_sync_runs",
+              "external_entities",
+              "external_references",
+              "integration_documents",
+              "integration_events",
+              "external_entity_versions",
+          )
+          RUN = f"{int(time.time())}-{secrets.token_hex(4)}"
+          conn = None
+          user_ids = []
+          passwords = {}
+          results = {
+              "workspace_admin": "unknown",
+              "api_admin": "unknown",
+              "workspace_auditor": "unknown",
+              "api_auditor": "unknown",
+              "auditor_manage": "unknown",
+              "workspace_cliente": "unknown",
+              "api_cliente": "unknown",
+              "counts_unchanged": "unknown",
+              "revision": "unknown",
+          }
+
+          def output(name, value):
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                  fh.write(f"{name}={value}\n")
+
+          def csrf(text):
+              patterns = (
+                  r'<input[^>]+type=["\']hidden["\'][^>]+name=["\']([^"\']+)["\'][^>]+value=["\']([^"\']*)["\']',
+                  r'<input[^>]+name=["\']([^"\']+)["\'][^>]+type=["\']hidden["\'][^>]+value=["\']([^"\']*)["\']',
+              )
+              for pattern in patterns:
+                  match = re.search(pattern, text, re.I)
+                  if match:
+                      return match.group(1), html.unescape(match.group(2))
+              raise RuntimeError("authenticated_csrf_missing")
+
+          def integration_counts(cur):
+              counts = {}
+              for table in TABLES:
+                  cur.execute(f"SELECT count(*) FROM public.{table}")
+                  counts[table] = int(cur.fetchone()[0])
+              return counts
+
+          def create_user(cur, org_id, role):
+              username = f"p1a-smoke-{role}-{RUN}"
+              password = f"P1aSmoke-{secrets.token_urlsafe(18)}!"
+              password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+              cur.execute(
+                  """
+                  INSERT INTO public.users
+                      (organization_id, email, username, password_hash, role, full_name, is_active)
+                  VALUES (%s, %s, %s, %s, %s, %s, true)
+                  RETURNING id
+                  """,
+                  (
+                      org_id,
+                      f"{username}@invalid.litoraltrace.local",
+                      username,
+                      password_hash,
+                      role,
+                      "Temporary P1-A production smoke principal",
+                  ),
+              )
+              user_id = int(cur.fetchone()[0])
+              user_ids.append(user_id)
+              passwords[username] = password
+              return username
+
+          def login(username):
+              session = requests.Session()
+              response = session.get(BASE + "/login", timeout=60)
+              if response.status_code != 200:
+                  raise RuntimeError(f"login_get_{response.status_code}")
+              field, token = csrf(response.text)
+              response = session.post(
+                  BASE + "/login",
+                  data={field: token, "username": username, "password": passwords[username]},
+                  timeout=60,
+                  allow_redirects=False,
+              )
+              if response.status_code != 303:
+                  raise RuntimeError(f"login_post_{response.status_code}")
+              dashboard = session.get(BASE + "/dashboard", timeout=60)
+              if dashboard.status_code != 200:
+                  raise RuntimeError(f"dashboard_{dashboard.status_code}")
+              return session
+
+          def expect_json_list(session, path, expected=200):
+              response = session.get(BASE + path, timeout=60)
+              if response.status_code != expected:
+                  raise RuntimeError(f"get_{path}_{response.status_code}_expected_{expected}")
+              if expected == 200 and not isinstance(response.json(), list):
+                  raise RuntimeError(f"json_shape_{path}")
+              return response
+
+          try:
+              health = requests.get(BASE + "/health", timeout=60)
+              ready = requests.get(BASE + "/ready", timeout=60)
+              if health.status_code != 200 or ready.status_code != 200:
+                  raise RuntimeError(f"preflight_health_{health.status_code}_ready_{ready.status_code}")
+
+              db_url = os.environ.get("BACKUP_DATABASE_URL", "").strip()
+              if not db_url:
+                  raise RuntimeError("BACKUP_DATABASE_URL_missing")
+              conn = psycopg.connect(db_url, connect_timeout=20)
+              with conn.cursor() as cur:
+                  cur.execute("SELECT version_num FROM public.alembic_version")
+                  revision = str(cur.fetchone()[0])
+                  results["revision"] = revision
+                  if revision != EXPECTED_REVISION:
+                      raise RuntimeError(f"unexpected_alembic_revision_{revision}")
+
+                  before = integration_counts(cur)
+                  cur.execute("SELECT id FROM public.organizations ORDER BY id LIMIT 1")
+                  row = cur.fetchone()
+                  if row is None:
+                      raise RuntimeError("no_organization_available")
+                  org_id = int(row[0])
+                  admin = create_user(cur, org_id, "admin")
+                  auditor = create_user(cur, org_id, "auditor")
+                  cliente = create_user(cur, org_id, "cliente")
+                  conn.commit()
+
+              admin_session = login(admin)
+              page = admin_session.get(BASE + "/integrations", timeout=60)
+              if page.status_code != 200 or "P1-A · Integration Core" not in page.text or "Integraciones empresariales" not in page.text:
+                  raise RuntimeError(f"admin_workspace_{page.status_code}")
+              results["workspace_admin"] = "200"
+              for path in (
+                  "/api/v1/integrations/connections",
+                  "/api/v1/integrations/entities",
+                  "/api/v1/integrations/sync-runs",
+              ):
+                  expect_json_list(admin_session, path, 200)
+              results["api_admin"] = "200"
+
+              auditor_session = login(auditor)
+              page = auditor_session.get(BASE + "/integrations", timeout=60)
+              if page.status_code != 200 or "P1-A · Integration Core" not in page.text:
+                  raise RuntimeError(f"auditor_workspace_{page.status_code}")
+              results["workspace_auditor"] = "200"
+              for path in (
+                  "/api/v1/integrations/connections",
+                  "/api/v1/integrations/entities",
+                  "/api/v1/integrations/sync-runs",
+              ):
+                  expect_json_list(auditor_session, path, 200)
+              results["api_auditor"] = "200"
+
+              # Auditor has READ but not MANAGE. Use the HTML manage endpoint because
+              # authorization is evaluated before the mutation/CSRF path, guaranteeing
+              # that this denial cannot create an integration connection.
+              denied = auditor_session.post(
+                  BASE + "/integrations/connections",
+                  data={"name": f"must-not-exist-{RUN}"},
+                  timeout=60,
+                  allow_redirects=False,
+              )
+              if denied.status_code != 403:
+                  raise RuntimeError(f"auditor_manage_{denied.status_code}_expected_403")
+              results["auditor_manage"] = "403"
+
+              cliente_session = login(cliente)
+              page = cliente_session.get(BASE + "/integrations", timeout=60, allow_redirects=False)
+              if page.status_code != 403:
+                  raise RuntimeError(f"cliente_workspace_{page.status_code}_expected_403")
+              results["workspace_cliente"] = "403"
+              denied = cliente_session.get(BASE + "/api/v1/integrations/connections", timeout=60)
+              if denied.status_code != 403:
+                  raise RuntimeError(f"cliente_api_{denied.status_code}_expected_403")
+              results["api_cliente"] = "403"
+
+              with conn.cursor() as cur:
+                  after = integration_counts(cur)
+              if before != after:
+                  raise RuntimeError("p1a_state_mutated_by_read_only_smoke")
+              results["counts_unchanged"] = "yes"
+
+              print(json.dumps({
+                  "verdict": "PASS",
+                  "release": EXPECTED_RELEASE,
+                  "revision": revision,
+                  "p1a_counts_unchanged": True,
+                  "rbac": results,
+              }, sort_keys=True))
+          finally:
+              if conn is not None and user_ids:
+                  try:
+                      with conn.cursor() as cur:
+                          cur.execute(
+                              "UPDATE public.user_sessions SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP) WHERE user_id = ANY(%s)",
+                              (user_ids,),
+                          )
+                          cur.execute(
+                              "UPDATE public.users SET is_active = false WHERE id = ANY(%s)",
+                              (user_ids,),
+                          )
+                      conn.commit()
+                  except Exception as cleanup_exc:
+                      print(f"cleanup_warning:{type(cleanup_exc).__name__}", file=sys.stderr)
+                  finally:
+                      conn.close()
+
+              for key, value in results.items():
+                  output(key, value)
+          PY
+
+      - name: Report sanitized verdict to cutover issue
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.smoke.outcome }}
+          WORKSPACE_ADMIN: ${{ steps.smoke.outputs.workspace_admin }}
+          API_ADMIN: ${{ steps.smoke.outputs.api_admin }}
+          WORKSPACE_AUDITOR: ${{ steps.smoke.outputs.workspace_auditor }}
+          API_AUDITOR: ${{ steps.smoke.outputs.api_auditor }}
+          AUDITOR_MANAGE: ${{ steps.smoke.outputs.auditor_manage }}
+          WORKSPACE_CLIENTE: ${{ steps.smoke.outputs.workspace_cliente }}
+          API_CLIENTE: ${{ steps.smoke.outputs.api_cliente }}
+          COUNTS_UNCHANGED: ${{ steps.smoke.outputs.counts_unchanged }}
+          REVISION: ${{ steps.smoke.outputs.revision }}
+        run: |
+          if [ "$OUTCOME" = "success" ]; then verdict="PASS"; else verdict="NO-GO"; fi
+          cat > /tmp/comment.md <<EOF
+          ### P1-A production authenticated/RBAC smoke — ${verdict}
+
+          - Alembic production: ${REVISION:-unknown}
+          - admin workspace: HTTP ${WORKSPACE_ADMIN:-unknown}
+          - admin API reads: HTTP ${API_ADMIN:-unknown}
+          - auditor workspace: HTTP ${WORKSPACE_AUDITOR:-unknown}
+          - auditor API reads: HTTP ${API_AUDITOR:-unknown}
+          - auditor manage denied: HTTP ${AUDITOR_MANAGE:-unknown}
+          - cliente workspace denied: HTTP ${WORKSPACE_CLIENTE:-unknown}
+          - cliente API read denied: HTTP ${API_CLIENTE:-unknown}
+          - P1-A table row counts unchanged by smoke: ${COUNTS_UNCHANGED:-unknown}
+          - expected release branch head: ee7720d702ebf0aa20f2ac2a5e8ce55c51f0fa3f
+          - evaluated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+          gh issue comment 48 --repo Jose34345/litoral_trace --body-file /tmp/comment.md
+
+      - name: Enforce fail-closed verdict
+        if: steps.smoke.outcome != 'success'
+        run: exit 1
