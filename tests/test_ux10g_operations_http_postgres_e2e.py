@@ -129,7 +129,7 @@ def test_operations_receipt_real_http_login_csrf_rls_and_posting(
     try:
         with owner_engine.begin() as connection:
             revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            assert revision == "022_add_integration_history"
+            assert revision == "023_add_shipment_export_cases"
 
             organization_id = int(
                 connection.execute(
