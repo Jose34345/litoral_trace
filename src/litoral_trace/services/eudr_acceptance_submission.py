@@ -317,13 +317,16 @@ class EudrAcceptanceSubmissionService:
     def _attempt_with_candidate(
         self,
         attempt_public_id: UUID,
+        *,
+        for_update: bool = False,
     ) -> tuple[EudrAcceptanceAttempt, EudrDdsCandidate]:
-        row = self._session.scalar(
-            select(EudrAcceptanceAttempt).where(
-                EudrAcceptanceAttempt.organization_id == self._organization_id,
-                EudrAcceptanceAttempt.public_id == attempt_public_id,
-            )
+        statement = select(EudrAcceptanceAttempt).where(
+            EudrAcceptanceAttempt.organization_id == self._organization_id,
+            EudrAcceptanceAttempt.public_id == attempt_public_id,
         )
+        if for_update:
+            statement = statement.with_for_update()
+        row = self._session.scalar(statement)
         if row is None:
             raise EudrAcceptanceSubmissionError(
                 "ACCEPTANCE_ATTEMPT_NOT_FOUND",
@@ -366,7 +369,13 @@ class EudrAcceptanceSubmissionService:
                 str(exc),
             ) from exc
 
-        row, candidate = self._attempt_with_candidate(attempt_public_id)
+        # Serialize the PREPARED -> SENT claim. Under READ COMMITTED a concurrent
+        # waiter sees the committed SENT/terminal state after this lock is released
+        # and therefore cannot issue a second remote submission.
+        row, candidate = self._attempt_with_candidate(
+            attempt_public_id,
+            for_update=True,
+        )
         if row.state in {"REMOTE_ACCEPTED", "REMOTE_REJECTED"}:
             return self._view(
                 row,
