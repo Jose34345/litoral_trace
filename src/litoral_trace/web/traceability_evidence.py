@@ -49,6 +49,8 @@ _EVIDENCE_LABELS = {
     "REMITO": "Remito",
     "INVOICE": "Factura / documento comercial",
     "CERTIFICATE": "Certificado",
+    "PHYTOSANITARY_CERTIFICATE": "Certificado fitosanitario SENASA",
+    "EPHYTO_XML": "ePhyto XML",
     "TRANSPORT": "Documento de transporte",
     "GEOSPATIAL": "Evidencia geoespacial",
     "SUPPLIER_DECLARATION": "Declaración de proveedor",
