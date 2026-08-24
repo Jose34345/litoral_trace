@@ -79,13 +79,19 @@ def _ensure_platform_role() -> None:
             ELSE
                 -- A cluster-level role can predate this database. Never attach
                 -- platform FORCE-RLS policies to a role carrying privileged
-                -- cluster attributes that this non-superuser migration should
-                -- not silently normalize.
+                -- attributes that the production-shaped non-superuser migrator
+                -- cannot safely strip. Abort instead of widening migrator power.
                 IF EXISTS (
                     SELECT 1
                     FROM pg_catalog.pg_roles
                     WHERE rolname = '{PLATFORM_ROLE}'
-                      AND (rolsuper OR rolreplication OR rolbypassrls)
+                      AND (
+                          rolsuper
+                          OR rolcreatedb
+                          OR rolcreaterole
+                          OR rolreplication
+                          OR rolbypassrls
+                      )
                 ) THEN
                     RAISE EXCEPTION
                         'pre-existing platform definer role has unsafe cluster privileges'
@@ -105,10 +111,11 @@ def _ensure_platform_role() -> None:
                         USING ERRCODE = '55006';
                 END IF;
 
+                -- LOGIN and INHERIT are the only legacy attributes normalized
+                -- in place. Stronger cluster privileges above fail closed so the
+                -- migration owner never needs CREATEDB, SUPERUSER, or BYPASSRLS.
                 ALTER ROLE {PLATFORM_ROLE}
                     NOLOGIN
-                    NOCREATEDB
-                    NOCREATEROLE
                     NOINHERIT;
             END IF;
 
