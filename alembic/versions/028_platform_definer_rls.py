@@ -89,7 +89,7 @@ def _ensure_platform_role() -> None:
             -- creator ADMIN TRUE, SET FALSE, INHERIT FALSE on the new role.
             -- Keep that administrative edge unchanged in steady state. A
             -- separate self-grant with SET TRUE is created only around the
-            -- ownership handoff and is removed before the migration completes.
+            -- forward ownership handoff and removed before upgrade completes.
         END;
         $$;
         """
@@ -381,27 +381,17 @@ def _restore_027_actor() -> None:
 
 
 def _transfer_platform_functions_back_to_migration_role() -> None:
-    signatures = "\n".join(
-        f"EXECUTE format('ALTER FUNCTION {signature} OWNER TO %I', migration_role);"
-        for signature in PLATFORM_FUNCTIONS
-    )
-
-    # Ownership transfer back to the migrator has the same SET ROLE requirement.
-    # Recreate the self-issued SET edge only for this operation and remove it
-    # immediately after the functions are back under the migration owner.
-    _grant_temporary_platform_set_capability()
+    # REASSIGN OWNED is PostgreSQL's canonical role-removal primitive. It
+    # requires membership in both source and target roles, but unlike ALTER ...
+    # OWNER it does not require the migrator to SET ROLE into the source owner.
+    # The stable automatic creator edge gives MEMBER/ADMIN while deliberately
+    # keeping SET FALSE and INHERIT FALSE, and CURRENT_USER is naturally the
+    # target role. Because 028 creates the definer itself and runtime cannot
+    # assume it, the only objects it owns are the six platform functions whose
+    # ownership 028 transferred above.
     op.execute(
-        f"""
-        DO $$
-        DECLARE
-            migration_role name := current_user;
-        BEGIN
-            {signatures}
-        END;
-        $$;
-        """
+        f"REASSIGN OWNED BY {PLATFORM_ROLE} TO CURRENT_USER"
     )
-    _revoke_temporary_platform_set_capability()
 
 
 def _drop_platform_rls_policies() -> None:
