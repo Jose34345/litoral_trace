@@ -1,0 +1,449 @@
+"""Isolate platform control-plane with a dedicated FORCE-RLS definer.
+
+Revision ID: 028_platform_definer_rls
+Revises: 027_fix_platform_rls_bootstrap
+Create Date: 2026-08-23 19:15:00.000000
+"""
+from __future__ import annotations
+
+from typing import Sequence, Union
+
+from alembic import op
+
+
+revision: str = "028_platform_definer_rls"
+down_revision: Union[str, Sequence[str], None] = "027_fix_platform_rls_bootstrap"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+PLATFORM_ROLE = "litoral_trace_platform_definer"
+RUNTIME_ROLE = "litoral_trace_app"
+
+PLATFORM_FUNCTIONS: tuple[str, ...] = (
+    "public._platform_superadmin_session_actor(text)",
+    "public._platform_insert_audit_log(integer, text, text, integer, integer, text, text, integer, jsonb)",
+    "public.platform_list_organizations(text)",
+    "public.platform_create_organization(text, text, text, text, text, text, text, text, text, text, text, integer, double precision, integer, timestamptz, boolean)",
+    "public.platform_toggle_organization_status(text, integer)",
+    "public.platform_upsert_license(text, integer, text, integer, double precision, integer, timestamptz, boolean)",
+)
+
+PUBLIC_PLATFORM_FUNCTIONS: tuple[str, ...] = (
+    "public.platform_list_organizations(text)",
+    "public.platform_create_organization(text, text, text, text, text, text, text, text, text, text, text, integer, double precision, integer, timestamptz, boolean)",
+    "public.platform_toggle_organization_status(text, integer)",
+    "public.platform_upsert_license(text, integer, text, integer, double precision, integer, timestamptz, boolean)",
+)
+
+INTERNAL_PLATFORM_FUNCTIONS: tuple[str, ...] = (
+    "public._platform_superadmin_session_actor(text)",
+    "public._platform_insert_audit_log(integer, text, text, integer, integer, text, text, integer, jsonb)",
+)
+
+PLATFORM_POLICIES: tuple[tuple[str, str, str, str], ...] = (
+    ("organizations", "organizations_platform_select", "SELECT", "USING (true)"),
+    ("organizations", "organizations_platform_insert", "INSERT", "WITH CHECK (true)"),
+    ("organizations", "organizations_platform_update", "UPDATE", "USING (true) WITH CHECK (true)"),
+    ("users", "users_platform_select", "SELECT", "USING (true)"),
+    ("users", "users_platform_insert", "INSERT", "WITH CHECK (true)"),
+    ("user_sessions", "user_sessions_platform_select", "SELECT", "USING (true)"),
+    ("user_sessions", "user_sessions_platform_update", "UPDATE", "USING (true) WITH CHECK (true)"),
+    ("licenses", "licenses_platform_select", "SELECT", "USING (true)"),
+    ("licenses", "licenses_platform_insert", "INSERT", "WITH CHECK (true)"),
+    ("licenses", "licenses_platform_update", "UPDATE", "USING (true) WITH CHECK (true)"),
+    ("audit_logs", "audit_logs_platform_insert", "INSERT", "WITH CHECK (true)"),
+)
+
+
+def _ensure_platform_role() -> None:
+    op.execute(
+        f"""
+        DO $$
+        BEGIN
+            -- PostgreSQL roles are cluster-global, while Alembic revisions are
+            -- database-local. Reusing an identically named role that predates
+            -- this revision could silently couple this database to another one
+            -- and would make downgrade ownership ambiguous. Fail closed instead:
+            -- a successful 028 upgrade always owns the complete role lifecycle.
+            IF EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_roles
+                WHERE rolname = '{PLATFORM_ROLE}'
+            ) THEN
+                RAISE EXCEPTION
+                    'platform definer role already exists outside migration 028 lifecycle'
+                    USING ERRCODE = '42710';
+            END IF;
+
+            CREATE ROLE {PLATFORM_ROLE}
+                NOLOGIN
+                NOSUPERUSER
+                NOCREATEDB
+                NOCREATEROLE
+                NOINHERIT
+                NOREPLICATION
+                NOBYPASSRLS;
+
+            -- PostgreSQL 17 automatically grants the non-superuser CREATEROLE
+            -- creator ADMIN TRUE, SET FALSE, INHERIT FALSE on the new role.
+            -- Keep that administrative edge unchanged in steady state.
+        END;
+        $$;
+        """
+    )
+
+
+def _grant_temporary_platform_set_capability() -> None:
+    # ALTER ... OWNER TO requires the migration principal to be able to SET ROLE
+    # to the target owner. PostgreSQL 17's automatic creator membership is
+    # intentionally SET FALSE, so create a second, narrowly scoped self-grant.
+    # GRANTED BY CURRENT_USER makes the later revoke target only this temporary
+    # edge and leaves the bootstrap-superuser ADMIN grant untouched.
+    op.execute(
+        f"""
+        GRANT {PLATFORM_ROLE} TO CURRENT_USER
+            WITH ADMIN FALSE, INHERIT FALSE, SET TRUE
+            GRANTED BY CURRENT_USER
+        """
+    )
+
+
+def _grant_temporary_platform_inherit_capability() -> None:
+    # REASSIGN OWNED checks has_privs_of_role() for the source role. A stable
+    # ADMIN-only membership with INHERIT FALSE deliberately does not satisfy
+    # that check. During downgrade only, add a self-issued INHERIT edge without
+    # SET capability; transaction rollback removes it automatically on failure.
+    op.execute(
+        f"""
+        GRANT {PLATFORM_ROLE} TO CURRENT_USER
+            WITH ADMIN FALSE, INHERIT TRUE, SET FALSE
+            GRANTED BY CURRENT_USER
+        """
+    )
+
+
+def _revoke_temporary_platform_capability() -> None:
+    # Remove whichever self-issued edge is active (SET during upgrade ownership
+    # handoff, or INHERIT during downgrade REASSIGN OWNED). The automatic creator
+    # ADMIN TRUE / SET FALSE / INHERIT FALSE membership has a different grantor
+    # and remains untouched.
+    op.execute(
+        f"""
+        REVOKE {PLATFORM_ROLE} FROM CURRENT_USER
+            GRANTED BY CURRENT_USER
+        """
+    )
+
+
+def _grant_platform_capabilities() -> None:
+    op.execute(f"GRANT USAGE ON SCHEMA public TO {PLATFORM_ROLE}")
+    op.execute(
+        f"GRANT SELECT, INSERT, UPDATE ON TABLE public.organizations TO {PLATFORM_ROLE}"
+    )
+    op.execute(f"GRANT SELECT, INSERT ON TABLE public.users TO {PLATFORM_ROLE}")
+    op.execute(
+        f"GRANT SELECT, UPDATE ON TABLE public.user_sessions TO {PLATFORM_ROLE}"
+    )
+    op.execute(
+        f"GRANT SELECT, INSERT, UPDATE ON TABLE public.licenses TO {PLATFORM_ROLE}"
+    )
+    op.execute(f"GRANT INSERT ON TABLE public.audit_logs TO {PLATFORM_ROLE}")
+
+    op.execute(
+        f"""
+        DO $$
+        DECLARE
+            sequence_name text;
+            relation_name text;
+        BEGIN
+            FOREACH relation_name IN ARRAY ARRAY[
+                'organizations',
+                'users',
+                'licenses',
+                'audit_logs'
+            ]
+            LOOP
+                SELECT pg_get_serial_sequence(
+                    format('public.%I', relation_name),
+                    'id'
+                )
+                INTO sequence_name;
+
+                IF sequence_name IS NOT NULL THEN
+                    EXECUTE format(
+                        'GRANT USAGE, SELECT ON SEQUENCE %s TO {PLATFORM_ROLE}',
+                        sequence_name
+                    );
+                END IF;
+            END LOOP;
+        END;
+        $$;
+        """
+    )
+
+
+def _create_platform_rls_policies() -> None:
+    for table_name, policy_name, command, predicate in PLATFORM_POLICIES:
+        op.execute(f"DROP POLICY IF EXISTS {policy_name} ON public.{table_name}")
+        op.execute(
+            f"CREATE POLICY {policy_name} "
+            f"ON public.{table_name} "
+            f"FOR {command} "
+            f"TO {PLATFORM_ROLE} "
+            f"{predicate}"
+        )
+
+
+def _restore_platform_actor_without_bootstrap_dependency() -> None:
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public._platform_superadmin_session_actor(
+            actor_refresh_token_hash text
+        )
+        RETURNS TABLE (
+            actor_user_id integer,
+            actor_session_id integer,
+            actor_organization_id integer
+        )
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path = public, pg_temp
+        AS $$
+        BEGIN
+            IF actor_refresh_token_hash IS NULL OR btrim(actor_refresh_token_hash) = '' THEN
+                RAISE EXCEPTION 'invalid platform session'
+                    USING ERRCODE = '28000';
+            END IF;
+
+            RETURN QUERY
+            SELECT
+                users.id,
+                user_sessions.id,
+                users.organization_id
+            FROM public.user_sessions AS user_sessions
+            JOIN public.users AS users
+                ON users.id = user_sessions.user_id
+               AND users.organization_id = user_sessions.organization_id
+            JOIN public.organizations AS organizations
+                ON organizations.id = users.organization_id
+            WHERE user_sessions.token_hash = actor_refresh_token_hash
+              AND user_sessions.revoked_at IS NULL
+              AND user_sessions.expires_at > now()
+              AND users.is_active
+              AND organizations.is_active
+              AND users.role = 'superadmin';
+
+            IF NOT FOUND THEN
+                IF EXISTS (
+                    SELECT 1
+                    FROM public.user_sessions AS user_sessions
+                    JOIN public.users AS users
+                        ON users.id = user_sessions.user_id
+                       AND users.organization_id = user_sessions.organization_id
+                    JOIN public.organizations AS organizations
+                        ON organizations.id = users.organization_id
+                    WHERE user_sessions.token_hash = actor_refresh_token_hash
+                      AND user_sessions.revoked_at IS NULL
+                      AND user_sessions.expires_at > now()
+                      AND users.is_active
+                      AND organizations.is_active
+                ) THEN
+                    RAISE EXCEPTION 'platform permission denied'
+                        USING ERRCODE = '42501';
+                END IF;
+
+                RAISE EXCEPTION 'invalid platform session'
+                    USING ERRCODE = '28000';
+            END IF;
+        END;
+        $$;
+        """
+    )
+
+
+def _finalize_platform_function_acl() -> None:
+    # Finalize function ACLs while the migration principal still owns the
+    # routines. After ownership moves to the definer, the migrator intentionally
+    # loses permission to alter these ACLs.
+    for function_signature in INTERNAL_PLATFORM_FUNCTIONS:
+        op.execute(f"REVOKE ALL ON FUNCTION {function_signature} FROM PUBLIC")
+        op.execute(
+            f"REVOKE ALL ON FUNCTION {function_signature} FROM {RUNTIME_ROLE}"
+        )
+
+    for function_signature in PUBLIC_PLATFORM_FUNCTIONS:
+        op.execute(f"REVOKE ALL ON FUNCTION {function_signature} FROM PUBLIC")
+        op.execute(
+            f"GRANT EXECUTE ON FUNCTION {function_signature} TO {RUNTIME_ROLE}"
+        )
+
+
+def _transfer_platform_function_ownership() -> None:
+    # PostgreSQL requires the migration principal to be able to SET ROLE to the
+    # target owner for ALTER ... OWNER. Grant SET only for this transactional
+    # handoff; successful completion removes the self-issued edge before return.
+    _grant_temporary_platform_set_capability()
+
+    # The target owner also needs CREATE on the containing schema during
+    # ALTER ... OWNER. Keep this grant equally short-lived.
+    op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")
+
+    for function_signature in PLATFORM_FUNCTIONS:
+        op.execute(
+            f"ALTER FUNCTION {function_signature} OWNER TO {PLATFORM_ROLE}"
+        )
+
+    op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
+    _revoke_temporary_platform_capability()
+
+
+def _restore_027_actor() -> None:
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public._platform_superadmin_session_actor(
+            actor_refresh_token_hash text
+        )
+        RETURNS TABLE (
+            actor_user_id integer,
+            actor_session_id integer,
+            actor_organization_id integer
+        )
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path = public, pg_temp
+        AS $$
+        DECLARE
+            bootstrap_organization_id integer;
+        BEGIN
+            IF actor_refresh_token_hash IS NULL OR btrim(actor_refresh_token_hash) = '' THEN
+                RAISE EXCEPTION 'invalid platform session'
+                    USING ERRCODE = '28000';
+            END IF;
+
+            SELECT bootstrap.organization_id
+            INTO bootstrap_organization_id
+            FROM public.bootstrap_auth_session_by_token_hash(
+                actor_refresh_token_hash
+            ) AS bootstrap
+            LIMIT 1;
+
+            IF bootstrap_organization_id IS NULL THEN
+                RAISE EXCEPTION 'invalid platform session'
+                    USING ERRCODE = '28000';
+            END IF;
+
+            PERFORM set_config(
+                'app.current_organization_id',
+                bootstrap_organization_id::text,
+                true
+            );
+
+            RETURN QUERY
+            SELECT
+                users.id,
+                user_sessions.id,
+                users.organization_id
+            FROM public.user_sessions AS user_sessions
+            JOIN public.users AS users
+                ON users.id = user_sessions.user_id
+               AND users.organization_id = user_sessions.organization_id
+            JOIN public.organizations AS organizations
+                ON organizations.id = users.organization_id
+            WHERE user_sessions.token_hash = actor_refresh_token_hash
+              AND user_sessions.organization_id = bootstrap_organization_id
+              AND user_sessions.revoked_at IS NULL
+              AND user_sessions.expires_at > now()
+              AND users.is_active
+              AND organizations.is_active
+              AND users.role = 'superadmin';
+
+            IF NOT FOUND THEN
+                IF EXISTS (
+                    SELECT 1
+                    FROM public.user_sessions AS user_sessions
+                    JOIN public.users AS users
+                        ON users.id = user_sessions.user_id
+                       AND users.organization_id = user_sessions.organization_id
+                    JOIN public.organizations AS organizations
+                        ON organizations.id = users.organization_id
+                    WHERE user_sessions.token_hash = actor_refresh_token_hash
+                      AND user_sessions.organization_id = bootstrap_organization_id
+                      AND user_sessions.revoked_at IS NULL
+                      AND user_sessions.expires_at > now()
+                      AND users.is_active
+                      AND organizations.is_active
+                ) THEN
+                    RAISE EXCEPTION 'platform permission denied'
+                        USING ERRCODE = '42501';
+                END IF;
+
+                RAISE EXCEPTION 'invalid platform session'
+                    USING ERRCODE = '28000';
+            END IF;
+        END;
+        $$;
+        """
+    )
+    op.execute(
+        "REVOKE ALL ON FUNCTION public._platform_superadmin_session_actor(text) FROM PUBLIC"
+    )
+
+
+def _transfer_platform_functions_back_to_migration_role() -> None:
+    # REASSIGN OWNED is PostgreSQL's canonical role-removal primitive. Its
+    # permission check requires effective privileges of the source role, not an
+    # ADMIN-only membership. Enable INHERIT without SET only for this rollback
+    # statement, then remove the self-issued edge immediately. The receiving role
+    # is CURRENT_USER itself and needs no additional membership.
+    _grant_temporary_platform_inherit_capability()
+    op.execute(f"REASSIGN OWNED BY {PLATFORM_ROLE} TO CURRENT_USER")
+    _revoke_temporary_platform_capability()
+
+
+def _drop_platform_rls_policies() -> None:
+    for table_name, policy_name, _, _ in reversed(PLATFORM_POLICIES):
+        op.execute(f"DROP POLICY IF EXISTS {policy_name} ON public.{table_name}")
+
+
+def _revoke_platform_capabilities_and_drop_role() -> None:
+    op.execute(
+        f"REVOKE ALL PRIVILEGES ON TABLE public.organizations FROM {PLATFORM_ROLE}"
+    )
+    op.execute(f"REVOKE ALL PRIVILEGES ON TABLE public.users FROM {PLATFORM_ROLE}")
+    op.execute(
+        f"REVOKE ALL PRIVILEGES ON TABLE public.user_sessions FROM {PLATFORM_ROLE}"
+    )
+    op.execute(
+        f"REVOKE ALL PRIVILEGES ON TABLE public.licenses FROM {PLATFORM_ROLE}"
+    )
+    op.execute(
+        f"REVOKE ALL PRIVILEGES ON TABLE public.audit_logs FROM {PLATFORM_ROLE}"
+    )
+    op.execute(
+        f"REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM {PLATFORM_ROLE}"
+    )
+    op.execute(f"REVOKE USAGE ON SCHEMA public FROM {PLATFORM_ROLE}")
+
+    # The only remaining membership is PostgreSQL 17's automatic creator grant:
+    # ADMIN TRUE, SET FALSE, INHERIT FALSE, granted by the bootstrap superuser.
+    # DROP ROLE automatically removes memberships involving the dropped role.
+    # A successful upgrade cannot reach this point with a pre-existing role:
+    # _ensure_platform_role aborts before mutating database state on collision.
+    op.execute(f"DROP ROLE {PLATFORM_ROLE}")
+
+
+def upgrade() -> None:
+    _ensure_platform_role()
+    _grant_platform_capabilities()
+    _create_platform_rls_policies()
+    _restore_platform_actor_without_bootstrap_dependency()
+    _finalize_platform_function_acl()
+    _transfer_platform_function_ownership()
+
+
+def downgrade() -> None:
+    _transfer_platform_functions_back_to_migration_role()
+    _restore_027_actor()
+    _drop_platform_rls_policies()
+    _revoke_platform_capabilities_and_drop_role()

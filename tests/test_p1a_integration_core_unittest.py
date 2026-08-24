@@ -123,5 +123,5 @@ def test_integration_workspace_is_registered_with_navigation_and_traceability_pa
     assert 'href="/integrations"' in navigation
     assert "integrations_api_router" in parent_router
     assert "integrations_web_router" in parent_router
-    assert "Staging only:" in template
+    assert "Recepción controlada:" in template
     assert "ningún" in template.lower()

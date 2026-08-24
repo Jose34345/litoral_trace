@@ -1,0 +1,42 @@
+{% macro dialog_trigger(target_id, label, variant='secondary', icon=None, extra_classes='') -%}
+<button
+    type="button"
+    class="lt-btn lt-btn--{{ variant }} {{ extra_classes }}"
+    data-lt-dialog-open="{{ target_id }}"
+    aria-haspopup="dialog"
+>
+    {% if icon %}<i class="fa-solid {{ icon }}" aria-hidden="true"></i>{% endif %}
+    <span>{{ label }}</span>
+</button>
+{%- endmacro %}
+
+
+{% macro dialog(dialog_id, title, description=None, size='md', close_label='Cerrar diálogo') -%}
+<dialog
+    id="{{ dialog_id }}"
+    class="lt-dialog{% if size != 'md' %} lt-dialog--{{ size }}{% endif %}"
+    data-lt-dialog
+    aria-labelledby="{{ dialog_id }}-title"
+    {% if description %}aria-describedby="{{ dialog_id }}-description"{% endif %}
+>
+    <header class="lt-dialog__header">
+        <div class="lt-dialog__copy">
+            <h2 id="{{ dialog_id }}-title" class="lt-dialog__title">{{ title }}</h2>
+            {% if description %}<p id="{{ dialog_id }}-description" class="lt-dialog__description">{{ description }}</p>{% endif %}
+        </div>
+        <button type="button" class="lt-dialog__close" data-lt-dialog-close aria-label="{{ close_label }}">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+    </header>
+    <div class="lt-dialog__body">
+        {{ caller() }}
+    </div>
+</dialog>
+{%- endmacro %}
+
+
+{% macro dialog_footer() -%}
+<footer class="lt-dialog__footer">
+    {{ caller() }}
+</footer>
+{%- endmacro %}

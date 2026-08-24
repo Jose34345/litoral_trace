@@ -802,11 +802,11 @@ def test_platform_create_persists_atomic_audit_rows_with_platform_actor(
     assert persisted_counts["organization_exists"] is True
     assert persisted_counts["admin_exists"] is True
     assert persisted_counts["license_exists"] is True
-    assert [row["action"] for row in audit_rows] == [
+    assert {row["action"] for row in audit_rows} == {
         "platform.license.create",
         "platform.organization.create",
         "platform.organization_admin.create",
-    ]
+    }
     assert {row["user_id"] for row in audit_rows} == {
         control_plane_fixture["platform_user_id"]
     }

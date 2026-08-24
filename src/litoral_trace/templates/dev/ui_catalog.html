@@ -1,0 +1,182 @@
+{% extends "app/base_app.html" %}
+{% from "components/ui.html" import alert, badge, button, empty_state, page_header, risk_badge, status_badge %}
+{% from "components/data_table.html" import pagination, search_control %}
+{% from "components/form_fields.html" import checkbox_field, select_field, text_field, textarea_field %}
+{% from "components/dialog.html" import dialog, dialog_footer, dialog_trigger %}
+
+{% block title %}UI Catalog | Litoral Trace{% endblock %}
+
+{% block head_extra %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', path='/src/ui-catalog.css') }}">
+{% endblock %}
+
+{% block content %}
+<section class="lt-page" aria-labelledby="ui-catalog-title">
+    {{ page_header(
+        "UI Catalog",
+        "P1.7 · UI/UX 2.0",
+        "Catálogo server-rendered de los primitives reales de Litoral Trace. No replica componentes en un runtime separado.",
+        "ui-catalog-title",
+        "fa-swatchbook"
+    ) }}
+
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-actions-title">
+        <p class="lt-catalog-eyebrow">Actions</p>
+        <h2 id="catalog-actions-title" class="lt-catalog-title">Buttons</h2>
+        <div class="lt-catalog-cluster">
+            {{ button("Acción primaria", variant="primary", icon="fa-check") }}
+            {{ button("Acción secundaria", variant="secondary", icon="fa-arrow-right") }}
+            {{ button("Acción discreta", variant="ghost", icon="fa-ellipsis") }}
+            {{ button("Acción destructiva", variant="danger", icon="fa-trash") }}
+            {{ button("Deshabilitada", variant="secondary", disabled=True) }}
+        </div>
+    </section>
+
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-status-title">
+        <p class="lt-catalog-eyebrow">Semantic language</p>
+        <h2 id="catalog-status-title" class="lt-catalog-title">Operational status</h2>
+        <div class="lt-catalog-cluster">
+            {{ status_badge("READY") }}
+            {{ status_badge("ACTIVE") }}
+            {{ status_badge("STAGED") }}
+            {{ status_badge("PARTIAL") }}
+            {{ status_badge("CONFLICT") }}
+            {{ status_badge("FAILED") }}
+            {{ status_badge("UNKNOWN") }}
+        </div>
+
+        <h3 class="lt-catalog-subtitle">Risk</h3>
+        <div class="lt-catalog-cluster lt-catalog-cluster--compact">
+            {{ risk_badge("LOW") }}
+            {{ risk_badge("MEDIUM") }}
+            {{ risk_badge("HIGH") }}
+            {{ risk_badge("CRITICAL") }}
+        </div>
+
+        <h3 class="lt-catalog-subtitle">Generic tones</h3>
+        <div class="lt-catalog-cluster lt-catalog-cluster--compact">
+            {{ badge("Positive", "positive") }}
+            {{ badge("Warning", "warning") }}
+            {{ badge("High attention", "high") }}
+            {{ badge("Danger", "danger") }}
+            {{ badge("Information", "info") }}
+            {{ badge("Neutral", "neutral") }}
+        </div>
+    </section>
+
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-table-title">
+        <p class="lt-catalog-eyebrow">Data display</p>
+        <h2 id="catalog-table-title" class="lt-catalog-title">LTDataTable</h2>
+        <div class="lt-data-table lt-catalog-stack">
+            <div class="lt-data-table__toolbar">
+                <div class="lt-data-table__toolbar-group">
+                    {{ search_control(placeholder="Buscar despacho, cliente o referencia…") }}
+                    {{ button("Estado", variant="secondary", icon="fa-filter") }}
+                </div>
+                {{ button("Exportar", variant="secondary", icon="fa-download") }}
+            </div>
+
+            <div class="lt-data-table__scroll">
+                <table class="lt-data-table__table">
+                    <thead class="lt-data-table__head">
+                        <tr>
+                            <th class="lt-data-table__th">Despacho</th>
+                            <th class="lt-data-table__th">Cliente</th>
+                            <th class="lt-data-table__th">Estado</th>
+                            <th class="lt-data-table__th">Riesgo</th>
+                            <th class="lt-data-table__th">Volumen</th>
+                        </tr>
+                    </thead>
+                    <tbody class="lt-data-table__body">
+                        <tr class="lt-data-table__row">
+                            <td class="lt-data-table__cell"><span class="lt-data-table__primary">EXP-DE-2026-014</span><span class="lt-data-table__secondary">Hamburg · Alemania</span></td>
+                            <td class="lt-data-table__cell">Müller Holz GmbH</td>
+                            <td class="lt-data-table__cell">{{ status_badge("READY") }}</td>
+                            <td class="lt-data-table__cell">{{ risk_badge("LOW") }}</td>
+                            <td class="lt-data-table__cell lt-data-table__cell--numeric">284,6 m³</td>
+                        </tr>
+                        <tr class="lt-data-table__row" data-state="attention">
+                            <td class="lt-data-table__cell"><span class="lt-data-table__primary">EXP-DE-2026-015</span><span class="lt-data-table__secondary">Bremen · Alemania</span></td>
+                            <td class="lt-data-table__cell">Nordholz AG</td>
+                            <td class="lt-data-table__cell">{{ status_badge("REVIEW") }}</td>
+                            <td class="lt-data-table__cell">{{ risk_badge("MEDIUM") }}</td>
+                            <td class="lt-data-table__cell lt-data-table__cell--numeric">96,2 m³</td>
+                        </tr>
+                        <tr class="lt-data-table__row">
+                            <td class="lt-data-table__cell"><span class="lt-data-table__primary">EXP-ES-2026-009</span><span class="lt-data-table__secondary">Valencia · España</span></td>
+                            <td class="lt-data-table__cell">Maderas Levante S.L.</td>
+                            <td class="lt-data-table__cell">{{ status_badge("BLOCKED") }}</td>
+                            <td class="lt-data-table__cell">{{ risk_badge("HIGH") }}</td>
+                            <td class="lt-data-table__cell lt-data-table__cell--numeric">71,8 m³</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            {{ pagination("1–3 de 24 resultados", next_href="#", current_page=1, total_pages=8) }}
+        </div>
+    </section>
+
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-feedback-title">
+        <p class="lt-catalog-eyebrow">Feedback</p>
+        <h2 id="catalog-feedback-title" class="lt-catalog-title">Alerts</h2>
+        <div class="lt-catalog-stack">
+            {{ alert("Expediente listo", "La evidencia mínima requerida está completa para continuar.", "positive") }}
+            {{ alert("Revisión requerida", "Hay campos pendientes antes de confirmar la operación.", "warning") }}
+            {{ alert("Operación bloqueada", "Existe un conflicto que debe resolverse antes de continuar.", "danger") }}
+            {{ alert("Información", "Este estado es informativo y no modifica el ledger.", "info") }}
+        </div>
+    </section>
+
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-form-title">
+        <p class="lt-catalog-eyebrow">Forms</p>
+        <h2 id="catalog-form-title" class="lt-catalog-title">LTField</h2>
+        {% set catalog_status_options = [("READY", "Ready"), ("REVIEW", "Review"), ("BLOCKED", "Blocked")] %}
+        <div class="lt-catalog-form-grid">
+            {{ text_field("catalog_reference", "Referencia", placeholder="EXP-DE-2026-014", help_text="Identificador visible y estable para el usuario.", required=True) }}
+            {{ select_field("catalog_status", "Estado", catalog_status_options, selected_value="REVIEW", help_text="La opción seleccionada proviene del estado server-side.") }}
+            {{ text_field("catalog_cuit", "CUIT", value="30-12345678-9", help_text="Ejemplo de validación accesible.", error="El CUIT no supera la validación de ejemplo.") }}
+            {{ textarea_field("catalog_note", "Nota operativa", placeholder="Agregar contexto para auditoría…", show_optional=True, rows=3) }}
+        </div>
+        <div class="lt-catalog-stack">
+            {{ checkbox_field("catalog_confirm", "Confirmé la documentación asociada", help_text="El checkbox representa una decisión del usuario, no un estado inventado por cliente.") }}
+        </div>
+    </section>
+
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-dialog-title">
+        <p class="lt-catalog-eyebrow">Overlay</p>
+        <h2 id="catalog-dialog-title" class="lt-catalog-title">LTDialog</h2>
+        <p class="lt-catalog-copy">Usa el elemento nativo dialog: foco modal del navegador, Escape para cerrar y devolución explícita del foco al disparador.</p>
+        <div class="lt-catalog-cluster">
+            {{ dialog_trigger("catalog-release-dialog", "Revisar liberación", variant="secondary", icon="fa-lock") }}
+        </div>
+
+        {% call dialog(
+            "catalog-release-dialog",
+            "Confirmar liberación del despacho",
+            "La decisión debe apoyarse en evidencia persistida; este componente no modifica por sí mismo el estado de dominio."
+        ) %}
+            <div class="lt-catalog-stack">
+                <p>EXP-DE-2026-014 está listo para una decisión humana de ejemplo.</p>
+                <div class="lt-dialog__notice">Antes de confirmar una acción destructiva o irreversible, la pantalla debe explicar su consecuencia y conservar el endpoint server-side como fuente de verdad.</div>
+                {% call dialog_footer() %}
+                    <button type="button" class="lt-btn lt-btn--secondary" data-lt-dialog-close>Cancelar</button>
+                    <button type="button" class="lt-btn lt-btn--primary" data-lt-dialog-close>Confirmar ejemplo</button>
+                {% endcall %}
+            </div>
+        {% endcall %}
+    </section>
+
+    <section class="lt-card lt-catalog-section" aria-labelledby="catalog-empty-title">
+        <p class="lt-catalog-eyebrow">Empty state</p>
+        <h2 id="catalog-empty-title" class="lt-catalog-title">No data</h2>
+        <div class="lt-catalog-empty-wrap">
+            {{ empty_state(
+                "Todavía no hay evidencia",
+                "La pantalla debe explicar qué falta y cuál es la siguiente acción útil, no mostrar un área vacía.",
+                "fa-folder-open"
+            ) }}
+        </div>
+    </section>
+</section>
+{% endblock %}

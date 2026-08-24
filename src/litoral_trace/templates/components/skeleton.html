@@ -1,0 +1,40 @@
+{% macro skeleton_line(size='md') -%}
+<span class="lt-skeleton lt-skeleton--line{% if size == 'sm' %} lt-skeleton--line-sm{% elif size == 'lg' %} lt-skeleton--line-lg{% endif %}" aria-hidden="true">&nbsp;</span>
+{%- endmacro %}
+
+
+{% macro skeleton_avatar() -%}
+<span class="lt-skeleton lt-skeleton--avatar" aria-hidden="true">&nbsp;</span>
+{%- endmacro %}
+
+
+{% macro skeleton_block() -%}
+<span class="lt-skeleton lt-skeleton--block" aria-hidden="true">&nbsp;</span>
+{%- endmacro %}
+
+
+{% macro loading_region(label='Cargando contenido…') -%}
+<div class="lt-skeleton-region" role="status" aria-live="polite" aria-busy="true">
+    <span class="lt-visually-hidden">{{ label }}</span>
+    {{ caller() }}
+</div>
+{%- endmacro %}
+
+
+{% macro skeleton_table(rows=4) -%}
+<div class="lt-data-table__scroll" aria-hidden="true">
+    <div class="lt-skeleton-table">
+        <div class="lt-skeleton-table__row lt-skeleton-table__row--header">
+            {% for _ in range(4) %}<div class="lt-skeleton-table__cell">{{ skeleton_line('sm') }}</div>{% endfor %}
+        </div>
+        {% for _ in range(rows) %}
+        <div class="lt-skeleton-table__row">
+            <div class="lt-skeleton-table__cell">{{ skeleton_line('lg') }}</div>
+            <div class="lt-skeleton-table__cell">{{ skeleton_line() }}</div>
+            <div class="lt-skeleton-table__cell">{{ skeleton_line('sm') }}</div>
+            <div class="lt-skeleton-table__cell">{{ skeleton_line('sm') }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{%- endmacro %}

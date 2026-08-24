@@ -1,25 +1,25 @@
-<section class="relative overflow-hidden rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:p-8" aria-labelledby="dashboard-traceability-heading">
+<section class="lt-dashboard-cockpit relative overflow-hidden rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:p-8" aria-labelledby="dashboard-traceability-heading">
     <div class="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" aria-hidden="true"></div>
     <div class="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" aria-hidden="true"></div>
 
-    <div class="relative grid gap-8 xl:grid-cols-[minmax(0,1.05fr)_minmax(22rem,0.95fr)] xl:items-start">
+    <div class="relative grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(22rem,0.95fr)] xl:items-start">
         <div>
             <div class="flex flex-wrap items-center gap-2">
                 <span class="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-200">
                     <i class="fa-solid fa-route" aria-hidden="true"></i>
                     Centro operativo
                 </span>
-                <span class="text-xs font-medium text-slate-400">Origen → cadena industrial → despacho → expediente</span>
+                <span class="text-xs font-medium leading-5 text-slate-400">Origen → cadena industrial → despacho → expediente</span>
             </div>
 
-            <h1 id="dashboard-traceability-heading" class="mt-5 max-w-3xl text-3xl font-bold tracking-tight text-white sm:text-4xl">
+            <h1 id="dashboard-traceability-heading" class="lt-dashboard-title mt-5 max-w-3xl font-bold tracking-tight text-white sm:text-4xl">
                 Trazabilidad de despachos
             </h1>
             <p class="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
                 Partí de un despacho o una referencia comercial y reconstruí su genealogía documentada hasta las parcelas y proveedores de origen. La evidencia geoespacial y satelital acompaña esa cadena; no la reemplaza.
             </p>
 
-            <div class="mt-6 flex flex-wrap gap-2">
+            <div class="lt-dashboard-actions mt-6">
                 <a href="/traceability" class="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-white/15">
                     <i class="fa-solid fa-diagram-project text-emerald-300" aria-hidden="true"></i>
                     Abrir trazabilidad
@@ -41,12 +41,12 @@
             </div>
         </div>
 
-        <form action="/traceability" method="get" class="rounded-2xl border border-white/10 bg-white p-5 text-slate-950 shadow-2xl shadow-black/20" aria-label="Buscar trazabilidad de un despacho">
+        <form action="/traceability" method="get" class="rounded-2xl border border-white/10 bg-white p-4 text-slate-950 shadow-2xl shadow-black/20 sm:p-6" aria-label="Buscar trazabilidad de un despacho">
             <div class="flex items-start gap-3">
                 <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700" aria-hidden="true">
                     <i class="fa-solid fa-magnifying-glass-location"></i>
                 </span>
-                <div>
+                <div class="min-w-0">
                     <p class="text-sm font-bold text-slate-950">Reconstruir un despacho</p>
                     <p class="mt-1 text-xs leading-5 text-slate-500">Ingresá el código utilizado en la operación o la referencia comercial asociada.</p>
                 </div>
@@ -62,9 +62,9 @@
                     required
                     autocomplete="off"
                     placeholder="Ingresá un código"
-                    class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    class="lt-dashboard-reconstruct-control min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 >
-                <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800">
+                <button type="submit" class="lt-dashboard-reconstruct-control inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800">
                     Reconstruir origen
                     <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
                 </button>
@@ -76,7 +76,7 @@
         </form>
     </div>
 
-    <div class="relative mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Flujo de trazabilidad">
+    <div class="lt-dashboard-flow relative grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Flujo de trazabilidad" data-reveal-stagger="65">
         <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div class="flex items-center justify-between gap-3"><span class="text-[11px] font-bold tracking-[0.16em] text-emerald-300">01</span><i class="fa-solid fa-location-dot text-slate-500" aria-hidden="true"></i></div>
             <h2 class="mt-3 text-sm font-bold text-white">Origen registrado</h2>
@@ -107,12 +107,12 @@
         <p class="mt-1 max-w-3xl text-sm leading-6 text-slate-600">Parcelas, superficies, coordenadas y análisis satelitales que respaldan la documentación de origen de la organización.</p>
     </div>
     <div class="flex flex-wrap gap-2">
-        <a href="/api/v1/batch/template" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">
+        <a href="/api/v1/batch/template" class="lt-dashboard-support-action inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">
             <i class="fa-solid fa-file-excel text-emerald-600" aria-hidden="true"></i>
             Plantilla Excel
         </a>
         {% if user.role in ["superadmin", "admin", "manager"] %}
-        <a href="/imports" class="inline-flex items-center gap-2 rounded-lg bg-forest-800 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-forest-900">
+        <a href="/imports" class="lt-dashboard-support-action inline-flex items-center gap-2 rounded-lg bg-forest-800 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-forest-900">
             <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>
             Cargar lotes
         </a>

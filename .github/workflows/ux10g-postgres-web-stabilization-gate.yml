@@ -17,7 +17,7 @@ concurrency:
 jobs:
   ux10g-postgres-runtime-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -184,3 +184,35 @@ jobs:
                   f"skipped={skipped}, failures={failures}, errors={errors}"
               )
           PY
+
+      - name: Migrate PostgreSQL runtime fixture to canonical head
+        run: python -m alembic upgrade head
+
+      - name: P1.7-K platform FORCE-RLS PostgreSQL acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs \
+            tests/test_platform_definer_p17k_postgres_integration.py \
+            tests/test_platform_control_plane_p21_postgres_integration.py \
+            --junitxml=p17k-platform-postgres.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("p17k-platform-postgres.xml").getroot()
+          attrs = root.attrib
+          skipped = int(attrs.get("skipped", 0))
+          failures = int(attrs.get("failures", 0))
+          errors = int(attrs.get("errors", 0))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  "P1.7-K platform PostgreSQL gate fails closed: "
+                  f"skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
+
+      - name: Verify canonical PostgreSQL head
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m alembic current | tee p17k-alembic-current.txt
+          grep -F "028_platform_definer_rls" p17k-alembic-current.txt

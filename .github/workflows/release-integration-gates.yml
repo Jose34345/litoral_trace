@@ -329,12 +329,31 @@ jobs:
       - name: Migrate isolated database to canonical head
         run: python -m alembic upgrade head
 
+      - name: Gate 17 - Platform control-plane under FORCE RLS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q --junitxml=gate17-platform.xml \
+            tests/test_platform_control_plane_p21_postgres_integration.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("gate17-platform.xml").getroot()
+          skipped = int(root.attrib.get("skipped", "0"))
+          failures = int(root.attrib.get("failures", "0"))
+          errors = int(root.attrib.get("errors", "0"))
+          if skipped or failures or errors:
+              raise SystemExit(
+                  "Gate 17 is fail-closed: "
+                  f"skipped={skipped}, failures={failures}, errors={errors}"
+              )
+          PY
+
       - name: Verify canonical database head
         shell: bash
         run: |
           set -euo pipefail
           python -m alembic current | tee alembic-current.txt
-          grep -F "026_add_eudr_acceptance_attempts" alembic-current.txt
+          grep -F "028_platform_definer_rls" alembic-current.txt
 
       - name: Cleanup ephemeral integration files and MinIO
         if: always()

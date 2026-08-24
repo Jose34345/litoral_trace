@@ -1,4 +1,5 @@
 {% extends "app/base_app.html" %}
+{% from "components/form_fields.html" import select_field, text_field %}
 
 {% block title %}Configuración | Litoral Trace{% endblock %}
 
@@ -9,7 +10,7 @@
             <div class="max-w-3xl">
                 <div class="mb-2 flex flex-wrap items-center gap-2"><span class="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700"><i class="fa-solid fa-sliders mr-1 text-emerald-700" aria-hidden="true"></i>Administración de la cuenta</span></div>
                 <h1 id="settings-title" class="text-2xl font-bold tracking-tight text-slate-950">Configuración de la organización</h1>
-                <p class="mt-2 text-sm leading-6 text-slate-600">Gestioná parámetros operativos disponibles para tu rol. Litoral Trace no muestra cuotas, vencimientos o consumos ficticios cuando esa información no proviene de una fuente persistida.</p>
+                <p class="mt-2 text-sm leading-6 text-slate-600">Gestioná parámetros operativos disponibles para tu rol. Litoral Trace muestra cuotas, vencimientos y consumos sólo cuando provienen de datos reales registrados.</p>
             </div>
             <a href="/dashboard" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>Volver al inicio</a>
         </div>
@@ -17,29 +18,35 @@
 
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1.15fr_0.85fr]">
         <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div class="flex items-start gap-3"><span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-gauge-high"></i></span><div><h2 class="text-lg font-bold text-slate-950">Plan, límites y consumo</h2><p class="mt-1 text-sm leading-6 text-slate-600">Esta versión de la pantalla no inventa métricas de licencia. Cuando los límites comerciales estén conectados con datos persistidos, se mostrarán aquí con su período y fuente.</p></div></div>
+            <div class="flex items-start gap-3"><span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-gauge-high"></i></span><div><h2 class="text-lg font-bold text-slate-950">Plan, límites y consumo</h2><p class="mt-1 text-sm leading-6 text-slate-600">Los límites y consumos se muestran sólo cuando provienen de la licencia registrada para la organización.</p></div></div>
             <div class="mt-6 grid gap-4 sm:grid-cols-2">
-                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Plan contratado</p><p class="mt-2 text-base font-bold text-slate-950">No informado en esta vista</p><p class="mt-1 text-xs leading-5 text-slate-500">Se mostrará cuando exista una fuente de licencia autoritativa.</p></div>
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Plan contratado</p><p class="mt-2 text-base font-bold text-slate-950">No informado en esta vista</p><p class="mt-1 text-xs leading-5 text-slate-500">Se mostrará cuando la licencia esté registrada y disponible.</p></div>
                 <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Consumo del período</p><p class="mt-2 text-base font-bold text-slate-950">No informado en esta vista</p><p class="mt-1 text-xs leading-5 text-slate-500">No se estiman toneladas ni lotes sin datos reales.</p></div>
-                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Vencimiento</p><p class="mt-2 text-base font-bold text-slate-950">No informado</p><p class="mt-1 text-xs leading-5 text-slate-500">Sin fecha ficticia ni valor de demostración.</p></div>
-                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Alcance de productos</p><p class="mt-2 text-base font-bold text-slate-950">Según configuración contractual</p><p class="mt-1 text-xs leading-5 text-slate-500">La interfaz no presume especies habilitadas.</p></div>
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Vencimiento</p><p class="mt-2 text-base font-bold text-slate-950">No informado</p><p class="mt-1 text-xs leading-5 text-slate-500">No se muestra una fecha si no existe un dato registrado.</p></div>
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Alcance de productos</p><p class="mt-2 text-base font-bold text-slate-950">Según configuración contractual</p><p class="mt-1 text-xs leading-5 text-slate-500">La interfaz sólo muestra especies habilitadas cuando están configuradas.</p></div>
             </div>
         </article>
 
         <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div class="flex items-start gap-3"><span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700" aria-hidden="true"><i class="fa-solid fa-user-plus"></i></span><div><h2 class="text-lg font-bold text-slate-950">Crear acceso de demostración</h2><p class="mt-1 text-sm leading-6 text-slate-600">Generá credenciales temporales sólo para una demostración comercial autorizada. El formulario comienza vacío para evitar confundir datos de ejemplo con información real.</p></div></div>
 
-            <form hx-post="/api/v1/settings/invite_demo_user" hx-target="#inviteFeedback" class="mt-6 space-y-4">
-                <div><label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-700">CUIT de la empresa</label><input type="text" name="cuit_empresa" placeholder="30-XXXXXXXX-X" required class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-forest-600"></div>
-                <div><label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-700">Nombre del contacto</label><input type="text" name="nombre_contacto" placeholder="Nombre y apellido" required class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-forest-600"></div>
-                <div><label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-700">Correo electrónico</label><input type="email" name="email_contacto" placeholder="contacto@empresa.com" required class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-forest-600"></div>
-                <div><label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-700">Actividad principal</label><select name="especie_principal" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none"><option value="Madera Aserrada (Pino)">Madera aserrada de pino</option><option value="Madera Aserrada (Eucalipto)">Madera aserrada de eucalipto</option><option value="Extracto de Quebracho (Tanino)">Extracto de quebracho / tanino</option><option value="Carbón Vegetal">Carbón vegetal</option></select></div>
+            {% set activity_options = [
+                ("Madera Aserrada (Pino)", "Madera aserrada de pino"),
+                ("Madera Aserrada (Eucalipto)", "Madera aserrada de eucalipto"),
+                ("Extracto de Quebracho (Tanino)", "Extracto de quebracho / tanino"),
+                ("Carbón Vegetal", "Carbón vegetal")
+            ] %}
+            <form hx-post="/api/v1/settings/invite_demo_user" hx-target="#inviteFeedback" class="mt-6 space-y-4 lt-form">
+                {{ text_field("cuit_empresa", "CUIT de la empresa", placeholder="30-XXXXXXXX-X", required=True) }}
+                {{ text_field("nombre_contacto", "Nombre del contacto", placeholder="Nombre y apellido", required=True) }}
+                {{ text_field("email_contacto", "Correo electrónico", type="email", placeholder="contacto@empresa.com", required=True) }}
+                {{ select_field("especie_principal", "Actividad principal", activity_options) }}
                 <button type="submit" class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"><i class="fa-solid fa-key" aria-hidden="true"></i>Generar acceso temporal</button>
             </form>
             <div id="inviteFeedback" class="mt-4"></div>
         </article>
     </div>
 
-    <section class="rounded-2xl border border-amber-200 bg-amber-50 p-5"><div class="flex gap-3"><i class="fa-solid fa-circle-info mt-0.5 text-amber-700" aria-hidden="true"></i><div><h2 class="text-sm font-bold text-amber-950">Criterio de confiabilidad</h2><p class="mt-1 text-sm leading-6 text-amber-900">Una interfaz enterprise debe distinguir claramente entre datos persistidos, valores configurables y ejemplos. Por eso esta pantalla no presenta números simulados como si fueran métricas de una cuenta real.</p></div></div></section>
+    <section class="rounded-2xl border border-amber-200 bg-amber-50 p-5"><div class="flex gap-3"><i class="fa-solid fa-circle-info mt-0.5 text-amber-700" aria-hidden="true"></i><div><h2 class="text-sm font-bold text-amber-950">Datos confiables</h2><p class="mt-1 text-sm leading-6 text-amber-900">Litoral Trace distingue entre datos registrados, valores configurables y ejemplos. Esta pantalla no presenta números simulados como si fueran métricas reales de la cuenta.</p></div></div></section>
 </section>
 {% endblock %}
