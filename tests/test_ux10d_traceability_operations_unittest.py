@@ -502,7 +502,7 @@ print("__UX10_RESOLVED__" + json.dumps(resolved, sort_keys=True))
         root / "src/litoral_trace/services/traceability_operations.py"
     ).read_text(encoding="utf-8")
 
-    assert "Borrador → ledger → trazabilidad" in template
+    assert "Borrador → contabilización → trazabilidad" in template
     assert "no aplica densidades ni coeficientes ocultos" in template
     assert "{{ csrf_token }}" in template
     assert "fetch(" not in template

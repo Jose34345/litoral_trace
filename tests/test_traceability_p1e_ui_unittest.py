@@ -65,7 +65,7 @@ def test_traceability_view_exposes_query_safe_dossier_downloads() -> None:
 def test_traceability_template_surfaces_origin_dossier_without_compliance_claim() -> None:
     template = TEMPLATE.read_text(encoding="utf-8")
 
-    assert "Dossier de origen" in template
+    assert "Expediente de origen" in template
     assert "Expediente del despacho para el comprador" in template
     assert "{{ result.dossier.bundle_href }}" in template
     assert "{{ result.dossier.pdf_href }}" in template

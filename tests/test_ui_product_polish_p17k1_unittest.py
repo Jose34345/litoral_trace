@@ -78,7 +78,7 @@ def test_k1_eudr_copy_keeps_acceptance_and_live_fail_closed_boundary() -> None:
     assert "LIVE no está habilitado desde esta pantalla" in candidate
     assert "ACCEPTANCE no demuestra cumplimiento EUDR" in transport
     assert "LIVE no está habilitado desde este módulo" in transport
-    assert "no se reintentan automáticamente" in transport
+    assert "nunca se reintentan automáticamente" in transport
 
 
 def test_k1_operations_and_traceability_use_customer_language() -> None:
