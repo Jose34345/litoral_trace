@@ -1,5 +1,5 @@
 name: Production Readiness Probe
-# Operational trigger marker: post-migration verification 2026-08-22.
+# Operational trigger marker: post-028 pre-redeploy verification 2026-08-24.
 
 on:
   workflow_dispatch:
