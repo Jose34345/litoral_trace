@@ -60,8 +60,6 @@ def _ensure_platform_role() -> None:
     op.execute(
         f"""
         DO $$
-        DECLARE
-            migration_role name := current_user;
         BEGIN
             -- PostgreSQL roles are cluster-global, while Alembic revisions are
             -- database-local. Reusing an identically named role that predates
@@ -87,15 +85,41 @@ def _ensure_platform_role() -> None:
                 NOREPLICATION
                 NOBYPASSRLS;
 
-            -- The migration owner needs this membership only for controlled
-            -- SECURITY DEFINER ownership handoff and downgrade. Runtime never
-            -- receives it, and downgrade revokes it before dropping the role.
-            EXECUTE format(
-                'GRANT {PLATFORM_ROLE} TO %I',
-                migration_role
-            );
+            -- PostgreSQL 17 automatically grants the non-superuser CREATEROLE
+            -- creator ADMIN TRUE, SET FALSE, INHERIT FALSE on the new role.
+            -- Keep that administrative edge unchanged in steady state. A
+            -- separate self-grant with SET TRUE is created only around the
+            -- ownership handoff and is removed before the migration completes.
         END;
         $$;
+        """
+    )
+
+
+def _grant_temporary_platform_set_capability() -> None:
+    # ALTER ... OWNER TO requires the migration principal to be able to SET ROLE
+    # to the target owner. PostgreSQL 17's automatic creator membership is
+    # intentionally SET FALSE, so create a second, narrowly scoped self-grant.
+    # GRANTED BY CURRENT_USER makes the later revoke target only this temporary
+    # edge and leaves the bootstrap-superuser ADMIN grant untouched.
+    op.execute(
+        f"""
+        GRANT {PLATFORM_ROLE} TO CURRENT_USER
+            WITH ADMIN FALSE, INHERIT FALSE, SET TRUE
+            GRANTED BY CURRENT_USER
+        """
+    )
+
+
+def _revoke_temporary_platform_set_capability() -> None:
+    # Remove the entire self-issued edge instead of merely flipping SET FALSE.
+    # The automatic creator ADMIN TRUE / SET FALSE / INHERIT FALSE membership
+    # remains, so the migrator can still administer/drop the role but cannot
+    # inherit its cross-tenant privileges or SET ROLE into it.
+    op.execute(
+        f"""
+        REVOKE {PLATFORM_ROLE} FROM CURRENT_USER
+            GRANTED BY CURRENT_USER
         """
     )
 
@@ -227,9 +251,14 @@ def _restore_platform_actor_without_bootstrap_dependency() -> None:
 
 
 def _transfer_platform_function_ownership() -> None:
-    # PostgreSQL requires the target owner to hold CREATE on the containing
-    # schema during ALTER ... OWNER. Grant it only for the transactional
-    # ownership handoff, then remove it so the definer keeps least privilege.
+    # PostgreSQL requires the migration principal to be able to SET ROLE to the
+    # target owner for ALTER ... OWNER. Grant SET only for this transactional
+    # handoff; any failure aborts the migration transaction, and successful
+    # completion removes the self-issued membership before returning.
+    _grant_temporary_platform_set_capability()
+
+    # The target owner also needs CREATE on the containing schema during
+    # ALTER ... OWNER. Keep this grant equally short-lived.
     op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")
 
     for function_signature in PLATFORM_FUNCTIONS:
@@ -250,6 +279,8 @@ def _transfer_platform_function_ownership() -> None:
         op.execute(
             f"GRANT EXECUTE ON FUNCTION {function_signature} TO {RUNTIME_ROLE}"
         )
+
+    _revoke_temporary_platform_set_capability()
 
 
 def _restore_027_actor() -> None:
@@ -349,6 +380,11 @@ def _transfer_platform_functions_back_to_migration_role() -> None:
         f"EXECUTE format('ALTER FUNCTION {signature} OWNER TO %I', migration_role);"
         for signature in PLATFORM_FUNCTIONS
     )
+
+    # Ownership transfer back to the migrator has the same SET ROLE requirement.
+    # Recreate the self-issued SET edge only for this operation and remove it
+    # immediately after the functions are back under the migration owner.
+    _grant_temporary_platform_set_capability()
     op.execute(
         f"""
         DO $$
@@ -360,6 +396,7 @@ def _transfer_platform_functions_back_to_migration_role() -> None:
         $$;
         """
     )
+    _revoke_temporary_platform_set_capability()
 
 
 def _drop_platform_rls_policies() -> None:
@@ -385,20 +422,11 @@ def _revoke_platform_capabilities_and_drop_role() -> None:
         f"REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM {PLATFORM_ROLE}"
     )
     op.execute(f"REVOKE USAGE ON SCHEMA public FROM {PLATFORM_ROLE}")
-    op.execute(
-        f"""
-        DO $$
-        DECLARE
-            migration_role name := current_user;
-        BEGIN
-            EXECUTE format(
-                'REVOKE {PLATFORM_ROLE} FROM %I',
-                migration_role
-            );
-        END;
-        $$;
-        """
-    )
+
+    # The only remaining membership is PostgreSQL 17's automatic creator grant:
+    # ADMIN TRUE, SET FALSE, INHERIT FALSE, granted by the bootstrap superuser.
+    # The CREATEROLE migration principal cannot and need not revoke that edge;
+    # DROP ROLE removes memberships in the dropped role automatically.
     # A successful upgrade cannot reach this point with a pre-existing role:
     # _ensure_platform_role aborts before mutating database state on collision.
     op.execute(f"DROP ROLE {PLATFORM_ROLE}")
