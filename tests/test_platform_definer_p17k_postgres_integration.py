@@ -214,12 +214,14 @@ def test_platform_definer_membership_graph_is_closed_to_unexpected_roles() -> No
                 {"platform_role": PLATFORM_ROLE},
             ).mappings().all()
 
-        assert memberships == [
-            {
-                "granted_role": PLATFORM_ROLE,
-                "member_role": migration_role,
-            }
-        ]
+        # PostgreSQL 17 can retain more than one grant edge for the same
+        # role/member pair when grants have different grantors. Security here is
+        # about which principals are reachable, not the physical edge count.
+        membership_pairs = {
+            (row["granted_role"], row["member_role"])
+            for row in memberships
+        }
+        assert membership_pairs == {(PLATFORM_ROLE, migration_role)}
     finally:
         engine.dispose()
 
