@@ -34,6 +34,45 @@ def _owner_engine():
     )
 
 
+def _current_principal(conn):
+    return conn.execute(
+        text(
+            """
+            SELECT r.rolname, r.rolsuper
+            FROM pg_catalog.pg_roles AS r
+            WHERE r.rolname = current_user
+            """
+        )
+    ).mappings().one()
+
+
+def _platform_memberships(conn):
+    return conn.execute(
+        text(
+            """
+            SELECT
+                granted_role.rolname AS granted_role,
+                member_role.rolname AS member_role,
+                grantor_role.rolname AS grantor_role,
+                membership.admin_option,
+                membership.inherit_option,
+                membership.set_option
+            FROM pg_catalog.pg_auth_members AS membership
+            JOIN pg_catalog.pg_roles AS granted_role
+              ON granted_role.oid = membership.roleid
+            JOIN pg_catalog.pg_roles AS member_role
+              ON member_role.oid = membership.member
+            JOIN pg_catalog.pg_roles AS grantor_role
+              ON grantor_role.oid = membership.grantor
+            WHERE granted_role.rolname = :platform_role
+               OR member_role.rolname = :platform_role
+            ORDER BY granted_role.rolname, member_role.rolname, grantor_role.rolname
+            """
+        ),
+        {"platform_role": PLATFORM_ROLE},
+    ).mappings().all()
+
+
 def test_platform_definer_is_non_login_non_superuser_non_bypass() -> None:
     engine = _owner_engine()
     try:
@@ -191,41 +230,28 @@ def test_platform_definer_has_explicit_force_rls_policies_only_for_required_comm
         engine.dispose()
 
 
-def test_platform_definer_membership_graph_keeps_only_safe_creator_admin_edge() -> None:
+def test_platform_definer_membership_graph_has_no_persistent_privilege_edge() -> None:
     engine = _owner_engine()
     try:
         with engine.connect() as conn:
-            migration_role = conn.execute(text("SELECT current_user")).scalar_one()
-            memberships = conn.execute(
-                text(
-                    """
-                    SELECT
-                        granted_role.rolname AS granted_role,
-                        member_role.rolname AS member_role,
-                        grantor_role.rolname AS grantor_role,
-                        membership.admin_option,
-                        membership.inherit_option,
-                        membership.set_option
-                    FROM pg_catalog.pg_auth_members AS membership
-                    JOIN pg_catalog.pg_roles AS granted_role
-                      ON granted_role.oid = membership.roleid
-                    JOIN pg_catalog.pg_roles AS member_role
-                      ON member_role.oid = membership.member
-                    JOIN pg_catalog.pg_roles AS grantor_role
-                      ON grantor_role.oid = membership.grantor
-                    WHERE granted_role.rolname = :platform_role
-                       OR member_role.rolname = :platform_role
-                    ORDER BY granted_role.rolname, member_role.rolname, grantor_role.rolname
-                    """
-                ),
-                {"platform_role": PLATFORM_ROLE},
-            ).mappings().all()
+            principal = _current_principal(conn)
+            memberships = _platform_memberships(conn)
 
+        if principal["rolsuper"]:
+            # Compatibility fixtures such as UX10-G migrate as postgres. A
+            # superuser has implicit role powers independently of pg_auth_members,
+            # so the meaningful invariant is that 028 persisted no explicit edge.
+            assert memberships == []
+            return
+
+        # The production-shaped non-superuser CREATEROLE migrator receives only
+        # PostgreSQL 17's automatic creator administration edge. It must carry
+        # neither privilege inheritance nor SET ROLE capability in steady state.
         assert len(memberships) == 1
         membership = memberships[0]
         assert membership["granted_role"] == PLATFORM_ROLE
-        assert membership["member_role"] == migration_role
-        assert membership["grantor_role"] != migration_role
+        assert membership["member_role"] == principal["rolname"]
+        assert membership["grantor_role"] != principal["rolname"]
         assert membership["admin_option"] is True
         assert membership["inherit_option"] is False
         assert membership["set_option"] is False
@@ -233,10 +259,20 @@ def test_platform_definer_membership_graph_keeps_only_safe_creator_admin_edge() 
         engine.dispose()
 
 
-def test_migration_role_cannot_assume_or_inherit_platform_definer_after_upgrade() -> None:
+def test_non_superuser_migration_role_cannot_assume_or_inherit_platform_definer_after_upgrade() -> None:
     engine = _owner_engine()
     try:
         with engine.connect() as conn:
+            principal = _current_principal(conn)
+            memberships = _platform_memberships(conn)
+
+            if principal["rolsuper"]:
+                # Superusers intrinsically pass pg_has_role(..., USAGE/SET) and
+                # SET ROLE, so those APIs cannot prove a negative in this fixture.
+                # Instead ensure neither temporary self-issued grant survived 028.
+                assert memberships == []
+                return
+
             capabilities = conn.execute(
                 text(
                     """
