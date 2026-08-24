@@ -1,8 +1,11 @@
 name: PostgreSQL Backup Watchdog
 
+# Private-repository pre-revenue cadence: check every six hours to preserve
+# GitHub Actions included minutes while still detecting a stale twice-daily
+# logical backup well before the next business day.
 on:
   schedule:
-    - cron: "23 */2 * * *"
+    - cron: "23 */6 * * *"
   workflow_dispatch:
     inputs:
       synthetic_alert:
