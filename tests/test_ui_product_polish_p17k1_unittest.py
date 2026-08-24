@@ -134,8 +134,20 @@ def test_k1_file_picker_is_progressive_and_preserves_native_inputs() -> None:
     assert "Seleccionar archivo" in script
     assert "Ningún archivo seleccionado" in script
     assert "htmx:load" in script
+    assert "window.getComputedStyle(input)" in script
+    assert 'input.style.margin = "0"' in script
+    assert 'wrapper.style[property] = computed[property]' in script
     assert ".lt-file-input__native" in css
     assert ".lt-file-input__name" in css
+    native_rule = css.split(".lt-file-input__native {", 1)[1].split("}", 1)[0]
+    assert "position: absolute" in native_rule
+    assert "inset: 0" in native_rule
+    assert "width: 100%" in native_rule
+    assert "height: 100%" in native_rule
+    assert "margin: 0" in native_rule
+    assert "border: 0" in native_rule
+    assert "padding: 0" in native_rule
+    assert "box-sizing: border-box" in native_rule
     assert "#evidence-title ~ .mt-5" in css
     assert "path='/src/js/file-input.js'" in base
 
