@@ -1,12 +1,14 @@
 name: Production Satellite Worker MVP
 
 # Zero-fixed-cost worker topology used only before the first paying customer.
-# Commercial trigger: issue #67. Migrate to a persistent Render Background
-# Worker + Neon restore history >=7d before expanding paid production usage.
+# Private-repository pre-revenue cadence is intentionally hourly to preserve
+# GitHub Actions included minutes. Commercial trigger: issue #67. Migrate to a
+# persistent Render Background Worker + Neon restore history >=7d before
+# expanding paid production usage.
 on:
   schedule:
-    # Every 15 minutes, offset from :00 to reduce scheduler peak contention.
-    - cron: "7,22,37,52 * * * *"
+    # Hourly at :07 UTC while the repository is private and pre-revenue.
+    - cron: "7 * * * *"
   workflow_dispatch:
   push:
     branches:
