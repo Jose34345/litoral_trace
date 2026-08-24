@@ -29,7 +29,7 @@ def test_preexisting_cluster_role_collision_fails_without_mutation() -> None:
     assert "NOBYPASSRLS" in ensure_source
 
 
-def test_migrator_set_capability_is_transactional_and_self_issued_only() -> None:
+def test_migrator_set_capability_is_forward_handoff_only_and_self_issued() -> None:
     source = MIGRATION.read_text(encoding="utf-8")
     grant_helper = source.split(
         "def _grant_temporary_platform_set_capability()", 1
@@ -56,8 +56,13 @@ def test_migrator_set_capability_is_transactional_and_self_issued_only() -> None
     assert transfer_helper.index("ALTER FUNCTION {function_signature} OWNER TO {PLATFORM_ROLE}") < transfer_helper.index(
         "_revoke_temporary_platform_set_capability()"
     )
-    assert "_grant_temporary_platform_set_capability()" in transfer_back_helper
-    assert "_revoke_temporary_platform_set_capability()" in transfer_back_helper
+
+    # Rollback uses the safe MEMBER edge directly through REASSIGN OWNED and
+    # never re-enables SET ROLE or privilege inheritance for the migrator.
+    assert "REASSIGN OWNED BY {PLATFORM_ROLE} TO CURRENT_USER" in transfer_back_helper
+    assert "_grant_temporary_platform_set_capability()" not in transfer_back_helper
+    assert "SET ROLE" not in transfer_back_helper
+    assert "ALTER FUNCTION" not in transfer_back_helper
 
 
 def test_downgrade_drops_only_role_owned_by_successful_028_lifecycle() -> None:
