@@ -4,6 +4,7 @@ import os
 
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import DBAPIError
 
 from litoral_trace.config.settings import normalize_database_url
 
@@ -190,7 +191,7 @@ def test_platform_definer_has_explicit_force_rls_policies_only_for_required_comm
         engine.dispose()
 
 
-def test_platform_definer_membership_graph_is_closed_to_unexpected_roles() -> None:
+def test_platform_definer_membership_graph_keeps_only_safe_creator_admin_edge() -> None:
     engine = _owner_engine()
     try:
         with engine.connect() as conn:
@@ -200,28 +201,62 @@ def test_platform_definer_membership_graph_is_closed_to_unexpected_roles() -> No
                     """
                     SELECT
                         granted_role.rolname AS granted_role,
-                        member_role.rolname AS member_role
+                        member_role.rolname AS member_role,
+                        grantor_role.rolname AS grantor_role,
+                        membership.admin_option,
+                        membership.inherit_option,
+                        membership.set_option
                     FROM pg_catalog.pg_auth_members AS membership
                     JOIN pg_catalog.pg_roles AS granted_role
                       ON granted_role.oid = membership.roleid
                     JOIN pg_catalog.pg_roles AS member_role
                       ON member_role.oid = membership.member
+                    JOIN pg_catalog.pg_roles AS grantor_role
+                      ON grantor_role.oid = membership.grantor
                     WHERE granted_role.rolname = :platform_role
                        OR member_role.rolname = :platform_role
-                    ORDER BY granted_role.rolname, member_role.rolname
+                    ORDER BY granted_role.rolname, member_role.rolname, grantor_role.rolname
                     """
                 ),
                 {"platform_role": PLATFORM_ROLE},
             ).mappings().all()
 
-        # PostgreSQL 17 can retain more than one grant edge for the same
-        # role/member pair when grants have different grantors. Security here is
-        # about which principals are reachable, not the physical edge count.
-        membership_pairs = {
-            (row["granted_role"], row["member_role"])
-            for row in memberships
-        }
-        assert membership_pairs == {(PLATFORM_ROLE, migration_role)}
+        assert len(memberships) == 1
+        membership = memberships[0]
+        assert membership["granted_role"] == PLATFORM_ROLE
+        assert membership["member_role"] == migration_role
+        assert membership["grantor_role"] != migration_role
+        assert membership["admin_option"] is True
+        assert membership["inherit_option"] is False
+        assert membership["set_option"] is False
+    finally:
+        engine.dispose()
+
+
+def test_migration_role_cannot_assume_or_inherit_platform_definer_after_upgrade() -> None:
+    engine = _owner_engine()
+    try:
+        with engine.connect() as conn:
+            capabilities = conn.execute(
+                text(
+                    """
+                    SELECT
+                        pg_has_role(current_user, :role_name, 'MEMBER') AS is_member,
+                        pg_has_role(current_user, :role_name, 'USAGE') AS can_inherit,
+                        pg_has_role(current_user, :role_name, 'SET') AS can_set
+                    """
+                ),
+                {"role_name": PLATFORM_ROLE},
+            ).mappings().one()
+
+            assert capabilities["is_member"] is True
+            assert capabilities["can_inherit"] is False
+            assert capabilities["can_set"] is False
+
+            with pytest.raises(DBAPIError) as exc_info:
+                conn.execute(text(f"SET ROLE {PLATFORM_ROLE}"))
+
+            assert getattr(exc_info.value.orig, "sqlstate", None) == "42501"
     finally:
         engine.dispose()
 
