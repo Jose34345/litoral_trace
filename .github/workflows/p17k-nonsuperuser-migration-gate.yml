@@ -64,14 +64,12 @@ jobs:
           python - <<'PY'
           from sqlalchemy import create_engine
 
-          root_url = "postgresql+psycopg://postgres:p17k_root_password_2026@127.0.0.1:5432/postgres"
           root = create_engine(
-              root_url,
+              "postgresql+psycopg://postgres:p17k_root_password_2026@127.0.0.1:5432/postgres",
               isolation_level="AUTOCOMMIT",
               pool_pre_ping=True,
               hide_parameters=True,
           )
-
           statements = [
               """
               CREATE ROLE lt_p17k_migrator
@@ -95,7 +93,6 @@ jobs:
               """,
               "CREATE DATABASE litoral_trace_p17k_ci OWNER lt_p17k_migrator",
           ]
-
           with root.connect() as connection:
               for statement in statements:
                   connection.exec_driver_sql(statement)
@@ -116,44 +113,6 @@ jobs:
                   "GRANT USAGE ON SCHEMA public TO litoral_trace_app"
               )
           target_root.dispose()
-
-          # Seed intentionally unsafe pre-existing platform role through the
-          # non-superuser CREATEROLE migration principal. Migration 028 must
-          # normalize this LOGIN/INHERIT identity before attaching FORCE-RLS
-          # policies or SECURITY DEFINER ownership.
-          migration_admin = create_engine(
-              "postgresql+psycopg://lt_p17k_migrator:p17k_migrator_password_2026@127.0.0.1:5432/postgres",
-              isolation_level="AUTOCOMMIT",
-              pool_pre_ping=True,
-              hide_parameters=True,
-          )
-          with migration_admin.connect() as connection:
-              connection.exec_driver_sql(
-                  """
-                  CREATE ROLE litoral_trace_platform_definer
-                    LOGIN
-                    PASSWORD 'p17k_preexisting_platform_password_2026'
-                    NOSUPERUSER
-                    NOCREATEDB
-                    NOCREATEROLE
-                    INHERIT
-                    NOREPLICATION
-                    NOBYPASSRLS
-                  """
-              )
-              role = connection.exec_driver_sql(
-                  """
-                  SELECT rolcanlogin, rolinherit, rolsuper, rolreplication, rolbypassrls
-                  FROM pg_catalog.pg_roles
-                  WHERE rolname = 'litoral_trace_platform_definer'
-                  """
-              ).mappings().one()
-              assert role["rolcanlogin"] is True
-              assert role["rolinherit"] is True
-              assert role["rolsuper"] is False
-              assert role["rolreplication"] is False
-              assert role["rolbypassrls"] is False
-          migration_admin.dispose()
           PY
 
       - name: Verify migration principal is production-shaped
@@ -187,8 +146,102 @@ jobs:
           engine.dispose()
           PY
 
-      - name: Migrate clean database to canonical head as non-superuser
-        run: python -m alembic upgrade head
+      - name: Migrate baseline through 027
+        run: python -m alembic upgrade 027_fix_platform_rls_bootstrap
+
+      - name: Seed colliding pre-existing platform role
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from sqlalchemy import create_engine
+
+          engine = create_engine(
+              "postgresql+psycopg://lt_p17k_migrator:p17k_migrator_password_2026@127.0.0.1:5432/postgres",
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          with engine.connect() as connection:
+              connection.exec_driver_sql(
+                  """
+                  CREATE ROLE litoral_trace_platform_definer
+                    LOGIN
+                    PASSWORD 'p17k_collision_only_password_2026'
+                    NOSUPERUSER
+                    NOCREATEDB
+                    NOCREATEROLE
+                    INHERIT
+                    NOREPLICATION
+                    NOBYPASSRLS
+                  """
+              )
+          engine.dispose()
+          PY
+
+      - name: Expect migration 028 to reject the cluster role collision
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          python -m alembic upgrade head > collision-attempt.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "Expected migration 028 to reject a pre-existing cluster role." >&2
+            exit 1
+          fi
+          grep -F "platform definer role already exists outside migration 028 lifecycle" collision-attempt.log
+
+      - name: Verify collision attempt left role unchanged and database at 027
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(
+              "postgresql+psycopg://lt_p17k_migrator:p17k_migrator_password_2026@127.0.0.1:5432/postgres",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          with engine.connect() as connection:
+              role = connection.execute(text("""
+                  SELECT rolcanlogin, rolinherit, rolsuper, rolcreatedb,
+                         rolcreaterole, rolreplication, rolbypassrls
+                  FROM pg_catalog.pg_roles
+                  WHERE rolname = 'litoral_trace_platform_definer'
+              """)).mappings().one()
+          assert role["rolcanlogin"] is True
+          assert role["rolinherit"] is True
+          assert role["rolsuper"] is False
+          assert role["rolcreatedb"] is False
+          assert role["rolcreaterole"] is False
+          assert role["rolreplication"] is False
+          assert role["rolbypassrls"] is False
+          engine.dispose()
+          PY
+          python -m alembic current | tee collision-current.txt
+          grep -F "027_fix_platform_rls_bootstrap" collision-current.txt
+
+      - name: Remove collision and migrate to canonical head
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from sqlalchemy import create_engine
+
+          engine = create_engine(
+              "postgresql+psycopg://lt_p17k_migrator:p17k_migrator_password_2026@127.0.0.1:5432/postgres",
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          with engine.connect() as connection:
+              connection.exec_driver_sql("DROP ROLE litoral_trace_platform_definer")
+          engine.dispose()
+          PY
+          python -m alembic upgrade head
 
       - name: Gate platform definer privilege model
         shell: bash
@@ -210,6 +263,39 @@ jobs:
                   f"skipped={skipped}, failures={failures}, errors={errors}"
               )
           PY
+
+      - name: Verify 028 downgrade removes only its own role
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m alembic downgrade 027_fix_platform_rls_bootstrap
+          python - <<'PY'
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(
+              "postgresql+psycopg://lt_p17k_migrator:p17k_migrator_password_2026@127.0.0.1:5432/postgres",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          with engine.connect() as connection:
+              count = connection.execute(text("""
+                  SELECT count(*)
+                  FROM pg_catalog.pg_roles
+                  WHERE rolname = 'litoral_trace_platform_definer'
+              """)).scalar_one()
+          assert count == 0
+          engine.dispose()
+          PY
+          python -m alembic current | tee rollback-current.txt
+          grep -F "027_fix_platform_rls_bootstrap" rollback-current.txt
+
+      - name: Re-upgrade to canonical head after rollback proof
+        run: python -m alembic upgrade head
+
+      - name: Re-gate final platform definer state
+        run: >-
+          python -m pytest -q -rs
+          tests/test_platform_definer_p17k_postgres_integration.py
 
       - name: Verify canonical head
         shell: bash
