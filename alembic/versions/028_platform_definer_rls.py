@@ -76,6 +76,93 @@ def _ensure_platform_role() -> None:
                     NOINHERIT
                     NOREPLICATION
                     NOBYPASSRLS;
+            ELSE
+                -- A cluster-level role can predate this database. Never attach
+                -- platform FORCE-RLS policies to a role carrying privileged
+                -- cluster attributes that this non-superuser migration should
+                -- not silently normalize.
+                IF EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.pg_roles
+                    WHERE rolname = '{PLATFORM_ROLE}'
+                      AND (rolsuper OR rolreplication OR rolbypassrls)
+                ) THEN
+                    RAISE EXCEPTION
+                        'pre-existing platform definer role has unsafe cluster privileges'
+                        USING ERRCODE = '42501';
+                END IF;
+
+                -- NOLOGIN prevents new sessions but does not terminate an
+                -- already authenticated one. Refuse to repurpose the role while
+                -- any cluster session is still active under that identity.
+                IF EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.pg_stat_activity
+                    WHERE usename = '{PLATFORM_ROLE}'
+                ) THEN
+                    RAISE EXCEPTION
+                        'pre-existing platform definer role has active sessions'
+                        USING ERRCODE = '55006';
+                END IF;
+
+                ALTER ROLE {PLATFORM_ROLE}
+                    NOLOGIN
+                    NOCREATEDB
+                    NOCREATEROLE
+                    NOINHERIT;
+            END IF;
+
+            -- Revalidate the effective attributes before granting any table
+            -- capability or creating any cross-tenant policy.
+            IF EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_roles
+                WHERE rolname = '{PLATFORM_ROLE}'
+                  AND (
+                      rolcanlogin
+                      OR rolsuper
+                      OR rolcreatedb
+                      OR rolcreaterole
+                      OR rolinherit
+                      OR rolreplication
+                      OR rolbypassrls
+                  )
+            ) THEN
+                RAISE EXCEPTION
+                    'platform definer role did not normalize to least privilege'
+                    USING ERRCODE = '42501';
+            END IF;
+
+            -- The definer must not inherit capabilities from any other role.
+            IF EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_auth_members AS membership
+                JOIN pg_catalog.pg_roles AS member_role
+                  ON member_role.oid = membership.member
+                WHERE member_role.rolname = '{PLATFORM_ROLE}'
+            ) THEN
+                RAISE EXCEPTION
+                    'platform definer role has unexpected inherited memberships'
+                    USING ERRCODE = '42501';
+            END IF;
+
+            -- No principal may already be able to SET ROLE into the platform
+            -- definer except the migration owner itself. The migration owner
+            -- needs that membership only for the transactional ownership handoff
+            -- and controlled downgrade path.
+            IF EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_auth_members AS membership
+                JOIN pg_catalog.pg_roles AS granted_role
+                  ON granted_role.oid = membership.roleid
+                JOIN pg_catalog.pg_roles AS member_role
+                  ON member_role.oid = membership.member
+                WHERE granted_role.rolname = '{PLATFORM_ROLE}'
+                  AND member_role.rolname <> migration_role
+            ) THEN
+                RAISE EXCEPTION
+                    'platform definer role is assumable by an unexpected member'
+                    USING ERRCODE = '42501';
             END IF;
 
             EXECUTE format(
