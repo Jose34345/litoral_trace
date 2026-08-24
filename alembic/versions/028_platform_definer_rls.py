@@ -250,6 +250,24 @@ def _restore_platform_actor_without_bootstrap_dependency() -> None:
     )
 
 
+def _finalize_platform_function_acl() -> None:
+    # Finalize function ACLs while the migration principal still owns the
+    # routines. After ownership moves to the definer, the migrator intentionally
+    # loses permission to alter these ACLs unless it actually SET ROLEs into the
+    # definer. Avoid that broader elevation entirely.
+    for function_signature in INTERNAL_PLATFORM_FUNCTIONS:
+        op.execute(f"REVOKE ALL ON FUNCTION {function_signature} FROM PUBLIC")
+        op.execute(
+            f"REVOKE ALL ON FUNCTION {function_signature} FROM {RUNTIME_ROLE}"
+        )
+
+    for function_signature in PUBLIC_PLATFORM_FUNCTIONS:
+        op.execute(f"REVOKE ALL ON FUNCTION {function_signature} FROM PUBLIC")
+        op.execute(
+            f"GRANT EXECUTE ON FUNCTION {function_signature} TO {RUNTIME_ROLE}"
+        )
+
+
 def _transfer_platform_function_ownership() -> None:
     # PostgreSQL requires the migration principal to be able to SET ROLE to the
     # target owner for ALTER ... OWNER. Grant SET only for this transactional
@@ -267,19 +285,6 @@ def _transfer_platform_function_ownership() -> None:
         )
 
     op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
-
-    for function_signature in INTERNAL_PLATFORM_FUNCTIONS:
-        op.execute(f"REVOKE ALL ON FUNCTION {function_signature} FROM PUBLIC")
-        op.execute(
-            f"REVOKE ALL ON FUNCTION {function_signature} FROM {RUNTIME_ROLE}"
-        )
-
-    for function_signature in PUBLIC_PLATFORM_FUNCTIONS:
-        op.execute(f"REVOKE ALL ON FUNCTION {function_signature} FROM PUBLIC")
-        op.execute(
-            f"GRANT EXECUTE ON FUNCTION {function_signature} TO {RUNTIME_ROLE}"
-        )
-
     _revoke_temporary_platform_set_capability()
 
 
@@ -437,6 +442,7 @@ def upgrade() -> None:
     _grant_platform_capabilities()
     _create_platform_rls_policies()
     _restore_platform_actor_without_bootstrap_dependency()
+    _finalize_platform_function_acl()
     _transfer_platform_function_ownership()
 
 
