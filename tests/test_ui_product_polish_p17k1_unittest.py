@@ -19,6 +19,8 @@ CUSTOMER_SURFACES = (
     "traceability.html",
     "traceability_release_control.html",
     "traceability_evidence.html",
+    "settings.html",
+    "admin_organizations.html",
 )
 
 
@@ -53,6 +55,12 @@ def test_k1_customer_surfaces_parse_and_hide_roadmap_copy() -> None:
         "Código técnico:",
         "manifest canónico",
         "Huella Documental",
+        "Controles fail-closed",
+        "licencias persistidas",
+        "fuente de licencia autoritativa",
+        "Esta versión de la pantalla",
+        "Una interfaz enterprise",
+        "render:erp_cliente_1",
     )
     for token in forbidden:
         assert token not in combined
@@ -65,6 +73,8 @@ def test_k1_integrations_localizes_display_without_changing_contract_values() ->
     assert "Conciliada" in source
     assert "Pendiente" in source
     assert "ERP-JSON" in source
+    assert "existencias" in source
+    assert "erp/cliente-1" in source
     assert "entity.status == 'RECONCILED'" in source
     assert "entity.status == 'CONFLICT'" in source
     assert "connection.connector_type == 'GENERIC_JSON'" in source
@@ -87,12 +97,31 @@ def test_k1_operations_and_traceability_use_customer_language() -> None:
     release = _template("traceability_release_control.html")
 
     assert "ledger" not in operations.lower()
+    assert "fail-closed" not in operations.lower()
+    assert "stock" not in operations.lower()
     assert "contabilización" in operations
+    assert "Controles de seguridad" in operations
+    assert "Origen → existencias" in operations
+    assert "Existencias → proceso → lotes" in operations
+    assert '<option value="M3">m³</option>' in operations
+    assert '<option value="KG">kg</option>' in operations
+    assert '<option value="TON">t</option>' in operations
     assert "Expediente de origen" in traceability
     assert "manifiesto técnico" in traceability
     assert "Referencia técnica:" in traceability
     assert "manifiesto canónico" in release
     assert "huella documental" in release
+
+
+def test_k1_settings_and_platform_use_registered_customer_language() -> None:
+    settings = _template("settings.html")
+    platform = _template("admin_organizations.html")
+
+    assert "datos reales registrados" in settings
+    assert "licencia registrada" in settings
+    assert "Datos confiables" in settings
+    assert "licencias registradas" in platform
+    assert "Creá una organización con licencia inicial" in platform
 
 
 def test_k1_file_picker_is_progressive_and_preserves_native_inputs() -> None:
