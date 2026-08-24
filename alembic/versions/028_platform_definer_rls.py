@@ -399,8 +399,8 @@ def _revoke_platform_capabilities_and_drop_role() -> None:
         $$;
         """
     )
-    -- A successful upgrade cannot reach this point with a pre-existing role:
-    -- _ensure_platform_role aborts before mutating database state on collision.
+    # A successful upgrade cannot reach this point with a pre-existing role:
+    # _ensure_platform_role aborts before mutating database state on collision.
     op.execute(f"DROP ROLE {PLATFORM_ROLE}")
 
 
