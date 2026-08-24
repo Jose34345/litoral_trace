@@ -1,4 +1,5 @@
 const EMPTY_FILE_LABEL = "Ningún archivo seleccionado";
+const MARGIN_PROPERTIES = ["marginTop", "marginRight", "marginBottom", "marginLeft"];
 
 function selectedFileLabel(input) {
     const files = Array.from(input.files || []);
@@ -7,12 +8,27 @@ function selectedFileLabel(input) {
     return `${files.length} archivos seleccionados`;
 }
 
+function transferExternalSpacing(input, wrapper) {
+    const computed = window.getComputedStyle(input);
+    MARGIN_PROPERTIES.forEach((property) => {
+        wrapper.style[property] = computed[property];
+    });
+
+    // The native input becomes a transparent absolute overlay. Keeping its
+    // previous utility margin would move the real click target away from the
+    // visible picker, so external spacing belongs exclusively to the wrapper.
+    input.style.margin = "0";
+}
+
 function enhanceFileInput(input) {
     if (!input || input.dataset.fileInputEnhanced === "true") return;
-    input.dataset.fileInputEnhanced = "true";
+
+    const parent = input.parentNode;
+    if (!parent) return;
 
     const wrapper = document.createElement("div");
     wrapper.className = "lt-file-input";
+    transferExternalSpacing(input, wrapper);
 
     const button = document.createElement("span");
     button.className = "lt-file-input__button";
@@ -24,11 +40,10 @@ function enhanceFileInput(input) {
     filename.setAttribute("aria-live", "polite");
     filename.textContent = selectedFileLabel(input);
 
-    const parent = input.parentNode;
-    if (!parent) return;
     parent.insertBefore(wrapper, input);
     wrapper.append(button, filename, input);
     input.classList.add("lt-file-input__native");
+    input.dataset.fileInputEnhanced = "true";
 
     const refreshLabel = () => {
         filename.textContent = selectedFileLabel(input);
@@ -53,4 +68,4 @@ document.body?.addEventListener("htmx:load", (event) => {
     initializeFileInputs(event.target || document);
 });
 
-export { enhanceFileInput, initializeFileInputs, selectedFileLabel };
+export { enhanceFileInput, initializeFileInputs, selectedFileLabel, transferExternalSpacing };
