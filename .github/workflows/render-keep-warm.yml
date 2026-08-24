@@ -1,9 +1,10 @@
 name: Render Keep Warm
 
+# Private-repository pre-revenue mode:
+# keep this workflow manual-only so GitHub-hosted runner usage cannot be
+# consumed every five minutes just to prevent Render Free from sleeping.
+# Before a live demo, dispatch this workflow or open litoraltrace.com once.
 on:
-  schedule:
-    # Offset from the top of the hour to reduce GitHub schedule congestion.
-    - cron: "2-57/5 * * * *"
   workflow_dispatch:
 
 permissions:
