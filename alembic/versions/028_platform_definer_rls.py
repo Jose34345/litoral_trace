@@ -87,9 +87,7 @@ def _ensure_platform_role() -> None:
 
             -- PostgreSQL 17 automatically grants the non-superuser CREATEROLE
             -- creator ADMIN TRUE, SET FALSE, INHERIT FALSE on the new role.
-            -- Keep that administrative edge unchanged in steady state. A
-            -- separate self-grant with SET TRUE is created only around the
-            -- forward ownership handoff and removed before upgrade completes.
+            -- Keep that administrative edge unchanged in steady state.
         END;
         $$;
         """
@@ -111,11 +109,25 @@ def _grant_temporary_platform_set_capability() -> None:
     )
 
 
-def _revoke_temporary_platform_set_capability() -> None:
-    # Remove the entire self-issued edge instead of merely flipping SET FALSE.
-    # The automatic creator ADMIN TRUE / SET FALSE / INHERIT FALSE membership
-    # remains, so the migrator can still administer/drop the role but cannot
-    # inherit its cross-tenant privileges or SET ROLE into it.
+def _grant_temporary_platform_inherit_capability() -> None:
+    # REASSIGN OWNED checks has_privs_of_role() for the source role. A stable
+    # ADMIN-only membership with INHERIT FALSE deliberately does not satisfy
+    # that check. During downgrade only, add a self-issued INHERIT edge without
+    # SET capability; transaction rollback removes it automatically on failure.
+    op.execute(
+        f"""
+        GRANT {PLATFORM_ROLE} TO CURRENT_USER
+            WITH ADMIN FALSE, INHERIT TRUE, SET FALSE
+            GRANTED BY CURRENT_USER
+        """
+    )
+
+
+def _revoke_temporary_platform_capability() -> None:
+    # Remove whichever self-issued edge is active (SET during upgrade ownership
+    # handoff, or INHERIT during downgrade REASSIGN OWNED). The automatic creator
+    # ADMIN TRUE / SET FALSE / INHERIT FALSE membership has a different grantor
+    # and remains untouched.
     op.execute(
         f"""
         REVOKE {PLATFORM_ROLE} FROM CURRENT_USER
@@ -253,8 +265,7 @@ def _restore_platform_actor_without_bootstrap_dependency() -> None:
 def _finalize_platform_function_acl() -> None:
     # Finalize function ACLs while the migration principal still owns the
     # routines. After ownership moves to the definer, the migrator intentionally
-    # loses permission to alter these ACLs unless it actually SET ROLEs into the
-    # definer. Avoid that broader elevation entirely.
+    # loses permission to alter these ACLs.
     for function_signature in INTERNAL_PLATFORM_FUNCTIONS:
         op.execute(f"REVOKE ALL ON FUNCTION {function_signature} FROM PUBLIC")
         op.execute(
@@ -271,8 +282,7 @@ def _finalize_platform_function_acl() -> None:
 def _transfer_platform_function_ownership() -> None:
     # PostgreSQL requires the migration principal to be able to SET ROLE to the
     # target owner for ALTER ... OWNER. Grant SET only for this transactional
-    # handoff; any failure aborts the migration transaction, and successful
-    # completion removes the self-issued membership before returning.
+    # handoff; successful completion removes the self-issued edge before return.
     _grant_temporary_platform_set_capability()
 
     # The target owner also needs CREATE on the containing schema during
@@ -285,7 +295,7 @@ def _transfer_platform_function_ownership() -> None:
         )
 
     op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
-    _revoke_temporary_platform_set_capability()
+    _revoke_temporary_platform_capability()
 
 
 def _restore_027_actor() -> None:
@@ -381,17 +391,14 @@ def _restore_027_actor() -> None:
 
 
 def _transfer_platform_functions_back_to_migration_role() -> None:
-    # REASSIGN OWNED is PostgreSQL's canonical role-removal primitive. It
-    # requires membership in both source and target roles, but unlike ALTER ...
-    # OWNER it does not require the migrator to SET ROLE into the source owner.
-    # The stable automatic creator edge gives MEMBER/ADMIN while deliberately
-    # keeping SET FALSE and INHERIT FALSE, and CURRENT_USER is naturally the
-    # target role. Because 028 creates the definer itself and runtime cannot
-    # assume it, the only objects it owns are the six platform functions whose
-    # ownership 028 transferred above.
-    op.execute(
-        f"REASSIGN OWNED BY {PLATFORM_ROLE} TO CURRENT_USER"
-    )
+    # REASSIGN OWNED is PostgreSQL's canonical role-removal primitive. Its
+    # permission check requires effective privileges of the source role, not an
+    # ADMIN-only membership. Enable INHERIT without SET only for this rollback
+    # statement, then remove the self-issued edge immediately. The receiving role
+    # is CURRENT_USER itself and needs no additional membership.
+    _grant_temporary_platform_inherit_capability()
+    op.execute(f"REASSIGN OWNED BY {PLATFORM_ROLE} TO CURRENT_USER")
+    _revoke_temporary_platform_capability()
 
 
 def _drop_platform_rls_policies() -> None:
@@ -420,8 +427,7 @@ def _revoke_platform_capabilities_and_drop_role() -> None:
 
     # The only remaining membership is PostgreSQL 17's automatic creator grant:
     # ADMIN TRUE, SET FALSE, INHERIT FALSE, granted by the bootstrap superuser.
-    # The CREATEROLE migration principal cannot and need not revoke that edge;
-    # DROP ROLE removes memberships in the dropped role automatically.
+    # DROP ROLE automatically removes memberships involving the dropped role.
     # A successful upgrade cannot reach this point with a pre-existing role:
     # _ensure_platform_role aborts before mutating database state on collision.
     op.execute(f"DROP ROLE {PLATFORM_ROLE}")
