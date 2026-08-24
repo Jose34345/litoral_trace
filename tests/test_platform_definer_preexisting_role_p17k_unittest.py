@@ -15,13 +15,21 @@ def test_preexisting_platform_role_is_hardened_before_capabilities() -> None:
     ensure_source = source.split("def _ensure_platform_role()", 1)[1].split(
         "def _grant_platform_capabilities()", 1
     )[0]
+    existing_role_path = ensure_source.split("ELSE", 1)[1]
+    alter_block = existing_role_path.split("ALTER ROLE {PLATFORM_ROLE}", 1)[1].split(
+        ";", 1
+    )[0]
 
     assert "ALTER ROLE {PLATFORM_ROLE}" in ensure_source
-    assert "NOLOGIN" in ensure_source
-    assert "NOCREATEDB" in ensure_source
-    assert "NOCREATEROLE" in ensure_source
-    assert "NOINHERIT" in ensure_source
-    assert "rolsuper OR rolreplication OR rolbypassrls" in ensure_source
+    assert "NOLOGIN" in alter_block
+    assert "NOINHERIT" in alter_block
+    assert "NOCREATEDB" not in alter_block
+    assert "NOCREATEROLE" not in alter_block
+    assert "rolsuper" in existing_role_path
+    assert "rolcreatedb" in existing_role_path
+    assert "rolcreaterole" in existing_role_path
+    assert "rolreplication" in existing_role_path
+    assert "rolbypassrls" in existing_role_path
     assert "pg_catalog.pg_stat_activity" in ensure_source
     assert "pg_catalog.pg_auth_members" in ensure_source
     assert "member_role.rolname <> migration_role" in ensure_source
