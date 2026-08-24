@@ -116,6 +116,44 @@ jobs:
                   "GRANT USAGE ON SCHEMA public TO litoral_trace_app"
               )
           target_root.dispose()
+
+          # Seed intentionally unsafe pre-existing platform role through the
+          # non-superuser CREATEROLE migration principal. Migration 028 must
+          # normalize this LOGIN/INHERIT identity before attaching FORCE-RLS
+          # policies or SECURITY DEFINER ownership.
+          migration_admin = create_engine(
+              "postgresql+psycopg://lt_p17k_migrator:p17k_migrator_password_2026@127.0.0.1:5432/postgres",
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          with migration_admin.connect() as connection:
+              connection.exec_driver_sql(
+                  """
+                  CREATE ROLE litoral_trace_platform_definer
+                    LOGIN
+                    PASSWORD 'p17k_preexisting_platform_password_2026'
+                    NOSUPERUSER
+                    NOCREATEDB
+                    NOCREATEROLE
+                    INHERIT
+                    NOREPLICATION
+                    NOBYPASSRLS
+                  """
+              )
+              role = connection.exec_driver_sql(
+                  """
+                  SELECT rolcanlogin, rolinherit, rolsuper, rolreplication, rolbypassrls
+                  FROM pg_catalog.pg_roles
+                  WHERE rolname = 'litoral_trace_platform_definer'
+                  """
+              ).mappings().one()
+              assert role["rolcanlogin"] is True
+              assert role["rolinherit"] is True
+              assert role["rolsuper"] is False
+              assert role["rolreplication"] is False
+              assert role["rolbypassrls"] is False
+          migration_admin.dispose()
           PY
 
       - name: Verify migration principal is production-shaped
