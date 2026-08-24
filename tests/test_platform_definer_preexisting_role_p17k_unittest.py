@@ -13,7 +13,7 @@ NON_SUPERUSER_GATE = (
 def test_preexisting_cluster_role_collision_fails_without_mutation() -> None:
     source = MIGRATION.read_text(encoding="utf-8")
     ensure_source = source.split("def _ensure_platform_role()", 1)[1].split(
-        "def _grant_platform_capabilities()", 1
+        "def _grant_temporary_platform_set_capability()", 1
     )[0]
 
     assert "platform definer role already exists outside migration 028 lifecycle" in ensure_source
@@ -29,10 +29,41 @@ def test_preexisting_cluster_role_collision_fails_without_mutation() -> None:
     assert "NOBYPASSRLS" in ensure_source
 
 
+def test_migrator_set_capability_is_transactional_and_self_issued_only() -> None:
+    source = MIGRATION.read_text(encoding="utf-8")
+    grant_helper = source.split(
+        "def _grant_temporary_platform_set_capability()", 1
+    )[1].split("def _revoke_temporary_platform_set_capability()", 1)[0]
+    revoke_helper = source.split(
+        "def _revoke_temporary_platform_set_capability()", 1
+    )[1].split("def _grant_platform_capabilities()", 1)[0]
+    transfer_helper = source.split(
+        "def _transfer_platform_function_ownership()", 1
+    )[1].split("def _restore_027_actor()", 1)[0]
+    transfer_back_helper = source.split(
+        "def _transfer_platform_functions_back_to_migration_role()", 1
+    )[1].split("def _drop_platform_rls_policies()", 1)[0]
+
+    assert "WITH ADMIN FALSE, INHERIT FALSE, SET TRUE" in grant_helper
+    assert "GRANTED BY CURRENT_USER" in grant_helper
+    assert "REVOKE {PLATFORM_ROLE} FROM CURRENT_USER" in revoke_helper
+    assert "GRANTED BY CURRENT_USER" in revoke_helper
+    assert "_grant_temporary_platform_set_capability()" in transfer_helper
+    assert "_revoke_temporary_platform_set_capability()" in transfer_helper
+    assert transfer_helper.index("_grant_temporary_platform_set_capability()") < transfer_helper.index(
+        "ALTER FUNCTION {function_signature} OWNER TO {PLATFORM_ROLE}"
+    )
+    assert transfer_helper.index("ALTER FUNCTION {function_signature} OWNER TO {PLATFORM_ROLE}") < transfer_helper.index(
+        "_revoke_temporary_platform_set_capability()"
+    )
+    assert "_grant_temporary_platform_set_capability()" in transfer_back_helper
+    assert "_revoke_temporary_platform_set_capability()" in transfer_back_helper
+
+
 def test_downgrade_drops_only_role_owned_by_successful_028_lifecycle() -> None:
     source = MIGRATION.read_text(encoding="utf-8")
     ensure_source = source.split("def _ensure_platform_role()", 1)[1].split(
-        "def _grant_platform_capabilities()", 1
+        "def _grant_temporary_platform_set_capability()", 1
     )[0]
     downgrade_helper = source.split(
         "def _revoke_platform_capabilities_and_drop_role()", 1
@@ -43,6 +74,8 @@ def test_downgrade_drops_only_role_owned_by_successful_028_lifecycle() -> None:
     assert "DROP ROLE {PLATFORM_ROLE}" in downgrade_helper
     assert "DROP ROLE IF EXISTS" not in downgrade_helper
     assert "aborts before mutating database state on collision" in downgrade_helper
+    assert "REVOKE {PLATFORM_ROLE} FROM %I" not in downgrade_helper
+    assert "automatic creator grant" in downgrade_helper
 
 
 def test_non_superuser_gate_exercises_collision_then_clean_lifecycle() -> None:
