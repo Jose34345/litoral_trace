@@ -190,6 +190,40 @@ def test_platform_definer_has_explicit_force_rls_policies_only_for_required_comm
         engine.dispose()
 
 
+def test_platform_definer_membership_graph_is_closed_to_unexpected_roles() -> None:
+    engine = _owner_engine()
+    try:
+        with engine.connect() as conn:
+            migration_role = conn.execute(text("SELECT current_user")).scalar_one()
+            memberships = conn.execute(
+                text(
+                    """
+                    SELECT
+                        granted_role.rolname AS granted_role,
+                        member_role.rolname AS member_role
+                    FROM pg_catalog.pg_auth_members AS membership
+                    JOIN pg_catalog.pg_roles AS granted_role
+                      ON granted_role.oid = membership.roleid
+                    JOIN pg_catalog.pg_roles AS member_role
+                      ON member_role.oid = membership.member
+                    WHERE granted_role.rolname = :platform_role
+                       OR member_role.rolname = :platform_role
+                    ORDER BY granted_role.rolname, member_role.rolname
+                    """
+                ),
+                {"platform_role": PLATFORM_ROLE},
+            ).mappings().all()
+
+        assert memberships == [
+            {
+                "granted_role": PLATFORM_ROLE,
+                "member_role": migration_role,
+            }
+        ]
+    finally:
+        engine.dispose()
+
+
 def test_runtime_role_cannot_assume_platform_definer() -> None:
     engine = _owner_engine()
     try:
