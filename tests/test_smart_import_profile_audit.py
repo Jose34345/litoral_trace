@@ -221,3 +221,36 @@ def test_profile_mutation_rolls_back_when_atomic_audit_write_fails() -> None:
     assert session.commit.called is False
     assert session.rollback.call_count == 1
     assert session.close.call_count == 1
+
+
+def test_profile_return_is_detached_before_commit_without_post_commit_refresh() -> None:
+    candidate, mappings = _candidate_and_mappings()
+    session = _new_profile_session()
+    service = SmartImportProfileService(session_factory=lambda: session)
+    lifecycle: list[str] = []
+
+    session.expunge.side_effect = lambda profile: lifecycle.append("expunge")
+    session.commit.side_effect = lambda: lifecycle.append("commit")
+
+    with (
+        patch(
+            "litoral_trace.services.smart_import.profiles.set_tenant_db_context",
+            return_value=None,
+        ),
+        patch(
+            "litoral_trace.services.smart_import.profiles.record_audit_event",
+            return_value=MagicMock(),
+        ),
+    ):
+        profile = service.remember(
+            organization_id=123,
+            user_id=456,
+            candidate=candidate,
+            mappings=mappings,
+            name="Recepciones planta",
+        )
+
+    assert profile.id == 77
+    assert lifecycle == ["expunge", "commit"]
+    assert session.flush.call_count >= 2
+    assert session.refresh.called is False
