@@ -15,10 +15,29 @@ from .contracts import (
     MappingDecision,
     MappingStatus,
 )
-from .normalize import normalize_aliases, normalize_header
+from .normalize import (
+    SMART_HEADER_TEXT_MAX_CHARS,
+    normalize_aliases,
+    normalize_header,
+)
 
+
+SMART_SAMPLE_TEXT_MAX_CHARS = 512
 
 _CUIT_RE = re.compile(r"^\d{2}-?\d{8}-?\d$")
+
+
+def _bounded_sample_value(value: Any) -> Any:
+    """Cap untrusted text retained/scored during discovery.
+
+    Smart Import needs only a small sample to corroborate header semantics. Keeping
+    arbitrarily large cell strings would increase regex/float parsing work and
+    could retain unnecessary business payload in preview memory.
+    """
+
+    if isinstance(value, str):
+        return value[:SMART_SAMPLE_TEXT_MAX_CHARS]
+    return value
 
 
 def _safe_float(value: Any) -> float | None:
@@ -27,7 +46,7 @@ def _safe_float(value: Any) -> float | None:
     if isinstance(value, (int, float)):
         number = float(value)
     elif isinstance(value, str):
-        text = value.strip().replace(",", ".")
+        text = value[:SMART_SAMPLE_TEXT_MAX_CHARS].strip().replace(",", ".")
         if not text:
             return None
         try:
@@ -56,7 +75,11 @@ def _semantic_score(
     semantic_type: str,
     sample_values: Sequence[Any],
 ) -> tuple[float, str | None]:
-    values = [value for value in sample_values if value not in (None, "")]
+    values = [
+        _bounded_sample_value(value)
+        for value in sample_values
+        if value not in (None, "")
+    ]
     if not values:
         return 0.0, None
 
@@ -160,10 +183,15 @@ def map_source_column(
     """Return the safest deterministic mapping proposal for one source column."""
 
     normalized = normalize_header(source_header)
+    bounded_samples = tuple(
+        _bounded_sample_value(value)
+        for value in sample_values[:8]
+    )
+    bounded_source_header = str(source_header or "")[:SMART_HEADER_TEXT_MAX_CHARS]
     scored = [
         (
             field,
-            *score_column_for_field(source_header, sample_values, field),
+            *score_column_for_field(source_header, bounded_samples, field),
         )
         for field in fields
     ]
@@ -197,11 +225,11 @@ def map_source_column(
                 reasons=reasons or ("sin coincidencia suficientemente segura",),
             )
             return ColumnMapping(
-                source_column=str(source_header or ""),
+                source_column=bounded_source_header,
                 source_index=source_index,
                 normalized_source=normalized,
                 decision=decision,
-                sample_values=tuple(sample_values[:8]),
+                sample_values=bounded_samples,
             )
 
         decision = MappingDecision(
@@ -212,11 +240,11 @@ def map_source_column(
         )
 
     return ColumnMapping(
-        source_column=str(source_header or ""),
+        source_column=bounded_source_header,
         source_index=source_index,
         normalized_source=normalized,
         decision=decision,
-        sample_values=tuple(sample_values[:8]),
+        sample_values=bounded_samples,
     )
 
 
