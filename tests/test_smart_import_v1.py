@@ -35,6 +35,37 @@ def test_mapper_recognizes_common_business_aliases() -> None:
     assert mapping.decision.confidence >= 0.78
 
 
+def test_mapper_auto_selects_exact_alias_only_when_values_corroborate() -> None:
+    mapping = map_source_column(
+        "Identificador_Lote",
+        ["R-001", "R-002"],
+        source_index=0,
+    )
+
+    assert mapping.decision.canonical_field == "Identificador_Lote"
+    assert mapping.decision.status == MappingStatus.AUTO
+    assert mapping.decision.confidence >= 0.97
+
+    incompatible = map_source_column(
+        "Hectareas",
+        ["N/D", "sin dato"],
+        source_index=3,
+    )
+    assert incompatible.decision.canonical_field == "Hectareas"
+    assert incompatible.decision.status != MappingStatus.AUTO
+
+
+def test_mapper_keeps_close_semantic_names_manual_when_ambiguous() -> None:
+    mapping = map_source_column(
+        "Productor",
+        ["Forestal Perez", "Forestal Gomez"],
+        source_index=1,
+    )
+
+    assert mapping.decision.canonical_field == "ID_Proveedor"
+    assert mapping.decision.status == MappingStatus.MANUAL
+
+
 def test_engine_discovers_nonstandard_sheet_header_and_extra_columns() -> None:
     def build(workbook: Workbook) -> None:
         default = workbook.active
