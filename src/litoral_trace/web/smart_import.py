@@ -21,6 +21,8 @@ from litoral_trace.services.smart_import.profiles import (
     SmartImportProfilePersistenceError,
     SmartImportProfileService,
     SmartImportProfileValidationError,
+    candidate_header_signature,
+    header_fingerprint,
 )
 
 
@@ -28,6 +30,7 @@ SMART_MAPPING_FIELD_PREFIX = "smart_map__"
 SMART_CONFIRM_FIELD = "smart_mapping_confirmed"
 SMART_SHEET_FIELD = "smart_sheet_name"
 SMART_HEADER_ROW_FIELD = "smart_header_row"
+SMART_HEADER_FINGERPRINT_FIELD = "smart_header_fingerprint"
 SMART_REMEMBER_FIELD = "smart_remember_mapping"
 SMART_PROFILE_NAME_FIELD = "smart_profile_name"
 
@@ -55,6 +58,7 @@ class SmartImportPreviewView:
     filename: str
     sheet_name: str
     header_row: int
+    header_fingerprint: str
     dataset_score_percent: int
     estimated_rows: int
     estimated_columns: int
@@ -94,12 +98,17 @@ def _is_truthy_form_value(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "on", "yes", "si", "sí"}
 
 
+def _candidate_fingerprint(candidate: DatasetCandidate) -> str:
+    return header_fingerprint(candidate_header_signature(candidate))
+
+
 def _select_candidate(
     analysis,
     form: Mapping[str, Any],
 ) -> DatasetCandidate:
     requested_sheet = _form_text(form, SMART_SHEET_FIELD)
     requested_header = _form_text(form, SMART_HEADER_ROW_FIELD)
+    requested_fingerprint = _form_text(form, SMART_HEADER_FINGERPRINT_FIELD)
 
     if requested_sheet or requested_header:
         try:
@@ -111,8 +120,17 @@ def _select_candidate(
             ) from None
 
         for candidate in analysis.candidates:
-            if candidate.sheet_name == requested_sheet and candidate.header_row == header_row:
-                return candidate
+            if candidate.sheet_name != requested_sheet or candidate.header_row != header_row:
+                continue
+            if requested_fingerprint and _candidate_fingerprint(candidate) != requested_fingerprint:
+                raise SmartImportError(
+                    code="SMART_CANDIDATE_CHANGED",
+                    detail=(
+                        "Los encabezados del archivo cambiaron desde la vista previa. "
+                        "Volvé a analizarlo antes de confirmar el mapping."
+                    ),
+                )
+            return candidate
 
         raise SmartImportError(
             code="SMART_CANDIDATE_CHANGED",
@@ -143,6 +161,15 @@ def _explicit_mapping(
 
     if not has_mapping_fields:
         return None, confirmed
+
+    if confirmed and not _form_text(form, SMART_HEADER_FINGERPRINT_FIELD):
+        raise SmartImportError(
+            code="SMART_CANDIDATE_CHANGED",
+            detail=(
+                "La confirmación del mapping no incluye la firma de encabezados esperada. "
+                "Volvé a analizar el archivo antes de importar."
+            ),
+        )
 
     by_index = {column.source_index: column for column in candidate.mappings}
     mappings: list[ConfirmedMapping] = []
@@ -284,6 +311,7 @@ def _build_preview(
         filename=analysis.filename,
         sheet_name=candidate.sheet_name,
         header_row=candidate.header_row,
+        header_fingerprint=_candidate_fingerprint(candidate),
         dataset_score_percent=int(round(candidate.score * 100)),
         estimated_rows=candidate.estimated_rows,
         estimated_columns=candidate.estimated_columns,
