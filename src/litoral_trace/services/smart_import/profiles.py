@@ -16,6 +16,12 @@ from sqlalchemy.orm import Session
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models.smart_import_profile import SmartImportProfile
 from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.services.audit import (
+    AuditAction,
+    AuditOutcome,
+    build_audit_actor,
+    record_audit_event,
+)
 from litoral_trace.services.batch import BATCH_COLUMNAS
 
 from .canonicalize import ConfirmedMapping
@@ -279,6 +285,13 @@ class SmartImportProfileService:
         mappings: tuple[ConfirmedMapping, ...],
         name: str | None = None,
     ) -> SmartImportProfile:
+        """Create/update a tenant mapping profile and its audit row atomically.
+
+        Only structural metadata is audited. Raw workbook values, source samples
+        and normalized source headers are deliberately excluded from the audit
+        event so remembering an Excel format does not duplicate business data.
+        """
+
         mapping_payload = profile_mapping_payload(candidate, mappings)
         signature = candidate_header_signature(candidate)
         fingerprint = header_fingerprint(signature)
@@ -286,6 +299,12 @@ class SmartImportProfileService:
             name,
             fallback=candidate.sheet_name,
         )
+
+        normalized_org_id = int(organization_id)
+        if normalized_org_id <= 0:
+            raise SmartImportProfileValidationError(
+                "El tenant del formato recordado no es válido."
+            )
 
         session = self._session_factory()
         if session is None:
@@ -295,18 +314,21 @@ class SmartImportProfileService:
 
         now = datetime.now(timezone.utc)
         try:
-            set_tenant_db_context(session, organization_id)
+            set_tenant_db_context(session, normalized_org_id)
             profile = session.execute(
                 select(SmartImportProfile).where(
-                    SmartImportProfile.organization_id == int(organization_id),
+                    SmartImportProfile.organization_id == normalized_org_id,
                     SmartImportProfile.schema_kind == SMART_PROFILE_SCHEMA_KIND,
                     SmartImportProfile.name == profile_name,
                 )
             ).scalar_one_or_none()
 
+            created = profile is None
+            before_state: dict[str, object] | None = None
+
             if profile is None:
                 profile = SmartImportProfile(
-                    organization_id=int(organization_id),
+                    organization_id=normalized_org_id,
                     created_by_user_id=user_id,
                     updated_by_user_id=user_id,
                     name=profile_name,
@@ -322,6 +344,12 @@ class SmartImportProfileService:
                 )
                 session.add(profile)
             else:
+                before_state = {
+                    "version": int(profile.version),
+                    "use_count": int(profile.use_count),
+                    "active": bool(profile.active),
+                    "header_fingerprint": profile.header_fingerprint,
+                }
                 profile.updated_by_user_id = user_id
                 profile.sheet_name = candidate.sheet_name
                 profile.header_fingerprint = fingerprint
@@ -333,13 +361,54 @@ class SmartImportProfileService:
                 profile.last_used_at = now
                 profile.updated_at = now
 
+            # Assign DB-generated identity before writing the audit envelope. The
+            # profile mutation and audit event remain inside the same transaction:
+            # if audit persistence fails, neither state is committed.
+            session.flush([profile])
+
+            actor = build_audit_actor(
+                organization_id=normalized_org_id,
+                user_id=user_id,
+                username=None,
+                role=None,
+            )
+            after_state = {
+                "version": int(profile.version),
+                "use_count": int(profile.use_count),
+                "active": bool(profile.active),
+                "header_fingerprint": profile.header_fingerprint,
+            }
+            record_audit_event(
+                session,
+                actor=actor,
+                action=(
+                    AuditAction.SMART_IMPORT_PROFILE_CREATE
+                    if created
+                    else AuditAction.SMART_IMPORT_PROFILE_UPDATE
+                ),
+                entity_type="smart_import_profile",
+                entity_id=profile.id,
+                outcome=AuditOutcome.SUCCESS,
+                metadata={
+                    "schema_kind": SMART_PROFILE_SCHEMA_KIND,
+                    "mapping_field_count": len(mapping_payload),
+                    "profile_public_id": (
+                        str(profile.public_id)
+                        if profile.public_id is not None
+                        else None
+                    ),
+                },
+                before_data=before_state,
+                after_data=after_state,
+            )
+
             session.commit()
             session.refresh(profile)
             return profile
         except SmartImportProfileError:
             session.rollback()
             raise
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, ValueError) as exc:
             session.rollback()
             raise SmartImportProfilePersistenceError(
                 "No fue posible guardar el formato de importación."
