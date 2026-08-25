@@ -49,10 +49,8 @@ _SMART_FALLBACK_CODES = frozenset(
         "MISSING_REQUIRED_SHEET",
         "TOO_MANY_COLUMNS",
         "MISSING_HEADER",
-        "FORMULA_NOT_ALLOWED",
         "DUPLICATE_HEADERS",
         "INVALID_HEADERS",
-        "CELL_ERROR",
         "NO_DATA_ROWS",
     }
 )
@@ -355,6 +353,8 @@ def _smart_error_to_html(exc: SmartImportError) -> BatchImportHtmlError:
         "SOURCE_COLUMN_OUT_OF_RANGE",
         "FORMULA_IN_MAPPED_COLUMN",
         "CELL_ERROR_IN_MAPPED_COLUMN",
+        "FORMULA_NOT_ALLOWED",
+        "CELL_ERROR",
         "SMART_TOO_MANY_DATA_ROWS",
     }:
         return BatchImportHtmlError(
