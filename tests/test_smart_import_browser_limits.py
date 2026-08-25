@@ -9,6 +9,8 @@ from litoral_trace.services.smart_import import SMART_MAX_SHEETS, SmartImportErr
 from litoral_trace.web.batch_import import _smart_error_to_html, workspace_limits_view
 
 
+# Keep the browser contract aligned with both the strict-template fast path
+# and the wider Smart Import discovery envelope.
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = (
     ROOT / "src/litoral_trace/templates/batch_import.html"
