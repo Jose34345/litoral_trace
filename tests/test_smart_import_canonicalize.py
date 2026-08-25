@@ -3,16 +3,18 @@ from __future__ import annotations
 from io import BytesIO
 
 from openpyxl import Workbook
+import pytest
 
 from litoral_trace.services.batch import BATCH_COLUMNAS, validar_filas_lotes
 from litoral_trace.services.smart_import import SmartImportEngine
 from litoral_trace.services.smart_import.canonicalize import (
+    SmartCanonicalizationError,
     canonicalize_workbook,
     default_confirmed_mapping,
 )
 
 
-def _build_workbook() -> bytes:
+def _build_workbook(*, formula_in_extra: bool = False, formula_in_mapped: bool = False) -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Movimientos"
@@ -38,12 +40,12 @@ def _build_workbook() -> bytes:
             "R-001",
             "P-001",
             "Pino",
-            10.0,
+            "=5+5" if formula_in_mapped else 10.0,
             -27.4,
             -58.8,
             25.0,
             12.0,
-            "AB123CD",
+            "=CONCAT(\"AB\",\"123CD\")" if formula_in_extra else "AB123CD",
         ]
     )
     sheet.append(
@@ -89,3 +91,36 @@ def test_canonicalizer_projects_only_confirmed_columns_into_existing_schema() ->
     validation = validar_filas_lotes(workbook)
     assert validation.valid is True
     assert validation.invalid_rows == 0
+
+
+def test_canonicalizer_ignores_formula_in_unmapped_extra_column() -> None:
+    payload = _build_workbook(formula_in_extra=True)
+    analysis = SmartImportEngine().analyze(payload, filename="cliente.xlsx")
+    candidate = analysis.best_candidate
+    assert candidate is not None
+
+    workbook = canonicalize_workbook(
+        payload,
+        filename="cliente.xlsx",
+        candidate=candidate,
+        mappings=default_confirmed_mapping(candidate),
+    )
+
+    assert validar_filas_lotes(workbook).valid is True
+
+
+def test_canonicalizer_fails_closed_on_formula_in_mapped_column() -> None:
+    payload = _build_workbook(formula_in_mapped=True)
+    analysis = SmartImportEngine().analyze(payload, filename="cliente.xlsx")
+    candidate = analysis.best_candidate
+    assert candidate is not None
+
+    with pytest.raises(SmartCanonicalizationError) as exc_info:
+        canonicalize_workbook(
+            payload,
+            filename="cliente.xlsx",
+            candidate=candidate,
+            mappings=default_confirmed_mapping(candidate),
+        )
+
+    assert exc_info.value.code == "FORMULA_IN_MAPPED_COLUMN"
