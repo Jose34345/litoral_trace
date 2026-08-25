@@ -1,7 +1,6 @@
 name: P1E Origin Dossier Gate
 
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:
