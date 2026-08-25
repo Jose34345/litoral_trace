@@ -264,6 +264,93 @@ jobs:
               )
           PY
 
+      - name: Gate Smart Import profile tenant isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.exc import DBAPIError
+
+          root_url = "postgresql+psycopg://postgres:p17k_root_password_2026@127.0.0.1:5432/litoral_trace_p17k_ci"
+          runtime_url = "postgresql+psycopg://litoral_trace_app:p17k_runtime_password_2026@127.0.0.1:5432/litoral_trace_p17k_ci"
+
+          root = create_engine(root_url, pool_pre_ping=True, hide_parameters=True)
+          with root.begin() as connection:
+              flags = connection.execute(text("""
+                  SELECT c.relrowsecurity, c.relforcerowsecurity
+                  FROM pg_class AS c
+                  JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                  WHERE n.nspname = 'public' AND c.relname = 'smart_import_profiles'
+              """)).mappings().one()
+              assert flags["relrowsecurity"] is True
+              assert flags["relforcerowsecurity"] is True
+              assert connection.execute(text(
+                  "SELECT has_table_privilege('public', 'public.smart_import_profiles', 'SELECT')"
+              )).scalar_one() is False
+              assert connection.execute(text(
+                  "SELECT has_table_privilege('litoral_trace_worker_executor', 'public.smart_import_profiles', 'SELECT')"
+              )).scalar_one() is False
+
+              connection.execute(text("""
+                  INSERT INTO organizations (id, name, slug, active)
+                  VALUES
+                    (910001, 'Smart Import Tenant A', 'smart-import-tenant-a', true),
+                    (910002, 'Smart Import Tenant B', 'smart-import-tenant-b', true)
+                  ON CONFLICT (id) DO NOTHING
+              """))
+
+          runtime = create_engine(runtime_url, pool_pre_ping=True, hide_parameters=True)
+          with runtime.begin() as connection:
+              connection.execute(text("SELECT set_config('app.current_organization_id', '910001', true)"))
+              connection.execute(text("""
+                  INSERT INTO smart_import_profiles (
+                      organization_id, name, schema_kind, sheet_name,
+                      header_fingerprint, header_signature, mapping_json
+                  ) VALUES (
+                      910001, 'Tenant A Mapping', 'lotes', 'Datos',
+                      repeat('a', 64), '[]'::json, '{}'::json
+                  )
+              """))
+              visible = connection.execute(text(
+                  "SELECT organization_id FROM smart_import_profiles"
+              )).scalars().all()
+              assert visible == [910001]
+
+          with runtime.connect() as connection:
+              transaction = connection.begin()
+              connection.execute(text("SELECT set_config('app.current_organization_id', '910001', true)"))
+              try:
+                  connection.execute(text("""
+                      INSERT INTO smart_import_profiles (
+                          organization_id, name, schema_kind, sheet_name,
+                          header_fingerprint, header_signature, mapping_json
+                      ) VALUES (
+                          910002, 'Cross Tenant Write', 'lotes', 'Datos',
+                          repeat('b', 64), '[]'::json, '{}'::json
+                      )
+                  """))
+              except DBAPIError:
+                  transaction.rollback()
+              else:
+                  transaction.rollback()
+                  raise AssertionError("RLS allowed a cross-tenant Smart Import profile insert")
+
+          with runtime.begin() as connection:
+              connection.execute(text("SELECT set_config('app.current_organization_id', '910002', true)"))
+              assert connection.execute(text(
+                  "SELECT count(*) FROM smart_import_profiles WHERE organization_id = 910001"
+              )).scalar_one() == 0
+
+          with runtime.begin() as connection:
+              assert connection.execute(text(
+                  "SELECT count(*) FROM smart_import_profiles"
+              )).scalar_one() == 0
+
+          runtime.dispose()
+          root.dispose()
+          PY
+
       - name: Verify 028 downgrade removes only its own role
         shell: bash
         run: |
@@ -302,4 +389,4 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee alembic-current.txt
-          grep -F "028_platform_definer_rls" alembic-current.txt
+          grep -F "029_add_smart_import_profiles" alembic-current.txt
