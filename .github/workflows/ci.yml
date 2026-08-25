@@ -11,7 +11,6 @@ on:
     branches:
       - p2-enterprise-production
       - p2-v1-closure
-      - feature/smart-import-v1
     paths-ignore:
       - "**/*.md"
       - "commercial/**"
@@ -72,7 +71,7 @@ jobs:
         run: python -m pytest -q -rs
 
   frontend-build:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'feature/smart-import-v1')
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -98,7 +97,7 @@ jobs:
         run: git diff --exit-code
 
   production-build:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'feature/smart-import-v1')
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -165,6 +164,6 @@ jobs:
           set -euo pipefail
           docker run --rm \
             --entrypoint /bin/amtool \
-            -v "$PWD/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
+            -v "$PWD/monitoring/alertmanager.yml:/etc/alertmanager.yml:ro" \
             prom/alertmanager:v0.33.1 \
-            check-config /etc/alertmanager/alertmanager.yml
+            check-config /etc/alertmanager.yml
