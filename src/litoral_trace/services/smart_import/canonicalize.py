@@ -175,12 +175,12 @@ def canonicalize_workbook(
                     non_blank = True
                 if cell.data_type == "f":
                     _raise(
-                        "FORMULA_IN_MAPPED_COLUMN",
+                        "FORMULA_NOT_ALLOWED",
                         f"No se admiten fórmulas en columnas mapeadas (fila {row_number}).",
                     )
                 if cell.data_type == "e":
                     _raise(
-                        "CELL_ERROR_IN_MAPPED_COLUMN",
+                        "CELL_ERROR",
                         f"La planilla contiene una celda con error en una columna mapeada (fila {row_number}).",
                     )
                 mapping = mapping_by_index[source_index]
