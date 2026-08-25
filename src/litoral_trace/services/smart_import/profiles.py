@@ -421,8 +421,14 @@ class SmartImportProfileService:
                 after_data=after_state,
             )
 
+            # Flush the audit row before detaching the profile so every DB write
+            # still belongs to the same transaction. Detaching before commit avoids a
+            # post-commit refresh: PostgreSQL transaction-local tenant context is cleared
+            # by commit and FORCE RLS must never be bypassed merely to materialize the
+            # return value. A failure in this flush or commit still rolls back atomically.
+            session.flush()
+            session.expunge(profile)
             session.commit()
-            session.refresh(profile)
             return profile
         except SmartImportProfileError:
             session.rollback()
