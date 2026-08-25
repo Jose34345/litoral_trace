@@ -6,6 +6,8 @@ import re
 import unicodedata
 
 
+SMART_HEADER_TEXT_MAX_CHARS = 256
+
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 _WHITESPACE_RE = re.compile(r"\s+")
 
@@ -24,12 +26,18 @@ _ABBREVIATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
 
 
 def normalize_header(value: object) -> str:
-    """Return a stable accent/case/punctuation-insensitive header string."""
+    """Return a stable accent/case/punctuation-insensitive header string.
+
+    Header normalization is on an untrusted-upload path and feeds fuzzy matching.
+    Bound the raw text before Unicode expansion/regex work so a pathological cell
+    cannot turn discovery into an unbounded CPU or memory operation.
+    """
 
     if value is None:
         return ""
 
-    text = unicodedata.normalize("NFKD", str(value))
+    raw = str(value)[:SMART_HEADER_TEXT_MAX_CHARS]
+    text = unicodedata.normalize("NFKD", raw)
     text = "".join(char for char in text if not unicodedata.combining(char))
     text = text.lower().strip()
     text = _NON_ALNUM_RE.sub(" ", text)
