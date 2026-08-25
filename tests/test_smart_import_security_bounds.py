@@ -100,3 +100,5 @@ def test_canonicalizer_rejects_sparse_pathological_source_range_before_iteration
         )
 
     assert exc_info.value.code == "SMART_SOURCE_RANGE_TOO_LARGE"
+    assert "formato o contenido residual" in exc_info.value.detail
+    assert "guardá una copia limpia" in exc_info.value.detail
