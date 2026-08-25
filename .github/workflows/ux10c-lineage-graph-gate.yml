@@ -1,7 +1,6 @@
 name: UX10 Visual Lineage Graph Gate
 
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:

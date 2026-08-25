@@ -1,0 +1,121 @@
+name: Required PostgreSQL Release Attestation
+
+on:
+  # This workflow exists only to translate an explicitly-run heavyweight
+  # release gate into a PR-associated required check. It does not run on push.
+  pull_request:
+    types:
+      - reopened
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: required-postgres-attestation-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-integration-gates:
+    name: postgres-integration-gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+      GH_TOKEN: ${{ github.token }}
+      BOOTSTRAP_PARENT_SHA: e3b095ab8842d0938e2ca25e64d23d298c0b8115
+    steps:
+      - name: Attest successful heavyweight gate for this release head
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$BASE_REF" != "p2-enterprise-production" ]; then
+            echo "This required attestation is valid only for p2-enterprise-production PRs." >&2
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          head_sha = os.environ["HEAD_SHA"]
+          bootstrap_parent_sha = os.environ["BOOTSTRAP_PARENT_SHA"]
+          workflow_path = ".github/workflows/release-integration-gates.yml"
+          attestation_path = ".github/workflows/required-postgres-release-attestation.yml"
+
+          def gh_json(endpoint: str) -> dict:
+              completed = subprocess.run(
+                  ["gh", "api", endpoint],
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              )
+              return json.loads(completed.stdout)
+
+          def successful_release_run(sha: str):
+              payload = gh_json(f"repos/{repo}/actions/runs?head_sha={sha}&per_page=100")
+              candidates = [
+                  run
+                  for run in payload.get("workflow_runs", [])
+                  if run.get("path") == workflow_path
+                  and run.get("head_sha") == sha
+                  and run.get("event") == "workflow_dispatch"
+                  and run.get("status") == "completed"
+                  and run.get("conclusion") == "success"
+              ]
+              if not candidates:
+                  return None
+              return max(candidates, key=lambda run: run.get("updated_at") or "")
+
+          run = successful_release_run(head_sha)
+          attested_sha = head_sha
+          mode = "exact-head"
+
+          if run is None:
+              # One-time bootstrap only: the previous head was already fully
+              # certified before this PR-associated attestation workflow was
+              # added. Reuse that result only when this exact commit's sole
+              # delta is the attestation workflow itself. This fallback cannot
+              # apply to later product/code changes.
+              commit = gh_json(f"repos/{repo}/commits/{head_sha}")
+              parents = commit.get("parents") or []
+              if len(parents) != 1:
+                  raise SystemExit("No exact-head release gate and bootstrap parent is not unique.")
+
+              parent_sha = parents[0].get("sha")
+              if parent_sha != bootstrap_parent_sha:
+                  raise SystemExit(
+                      "No successful exact-head Release Integration Gates run exists. "
+                      "Run release-integration-gates.yml for this head before reopening the PR."
+                  )
+
+              comparison = gh_json(f"repos/{repo}/compare/{parent_sha}...{head_sha}")
+              changed = {entry.get("filename") for entry in comparison.get("files", [])}
+              if changed != {attestation_path}:
+                  raise SystemExit(
+                      "Bootstrap attestation refused: the new head contains changes beyond "
+                      "the PR-attestation workflow."
+                  )
+
+              run = successful_release_run(parent_sha)
+              if run is None:
+                  raise SystemExit(
+                      "Bootstrap parent has no successful heavyweight Release Integration Gates run."
+                  )
+              attested_sha = parent_sha
+              mode = "bootstrap-parent-ci-only"
+
+          print(
+              "PostgreSQL release gate attested:",
+              f"mode={mode}",
+              f"pr_head={head_sha}",
+              f"attested_sha={attested_sha}",
+              f"run_id={run.get('id')}",
+          )
+          PY

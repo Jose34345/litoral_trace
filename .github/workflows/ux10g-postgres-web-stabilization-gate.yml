@@ -1,10 +1,6 @@
 name: UX10-G PostgreSQL Web Stabilization Gate
 
 on:
-  push:
-    branches:
-      - ux10-g-postgres-web-stabilization
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -215,4 +211,4 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee p17k-alembic-current.txt
-          grep -F "028_platform_definer_rls" p17k-alembic-current.txt
+          grep -F "029_add_smart_import_profiles" p17k-alembic-current.txt

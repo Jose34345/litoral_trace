@@ -1,12 +1,6 @@
 name: V1 Final Release Acceptance
 
 on:
-  pull_request:
-    branches:
-      - p2-enterprise-production
-  push:
-    branches:
-      - p2-enterprise-production
   workflow_dispatch:
 
 permissions:
@@ -146,7 +140,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee v1-final-alembic-current.txt
-          grep -F "028_platform_definer_rls (head)" v1-final-alembic-current.txt
+          grep -F "029_add_smart_import_profiles (head)" v1-final-alembic-current.txt
 
       - name: Gate 39 - final browser staging sign-off
         shell: bash

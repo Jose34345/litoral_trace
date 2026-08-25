@@ -1,12 +1,6 @@
 name: P1-C SENASA ePhyto PostgreSQL Gate
 
 on:
-  pull_request:
-    branches:
-      - p2-enterprise-production
-  push:
-    branches:
-      - p2-enterprise-production
   workflow_dispatch:
 
 permissions:

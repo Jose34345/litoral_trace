@@ -34,6 +34,8 @@ class AuditAction(StrEnum):
     LOTE_BATCH_UPLOAD = "lote.batch_upload"
     LOTE_BATCH_EVIDENCE_LINK = "lote.batch_evidence.link"
     LOTE_BATCH_EVIDENCE_UNLINK = "lote.batch_evidence.unlink"
+    SMART_IMPORT_PROFILE_CREATE = "smart_import.profile.create"
+    SMART_IMPORT_PROFILE_UPDATE = "smart_import.profile.update"
     TRACEABILITY_EVENT_POST = "traceability.event.post"
     TRACEABILITY_SHIPMENT_DISPATCH = "traceability.shipment.dispatch"
     SATELLITE_NDVI_RUN = "satellite.ndvi.run"

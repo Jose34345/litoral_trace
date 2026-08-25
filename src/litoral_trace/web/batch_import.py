@@ -13,7 +13,6 @@ from starlette.datastructures import UploadFile
 from litoral_trace.services.batch import (
     BATCH_MAX_FILE_BYTES,
     BATCH_MAX_ROWS,
-    BATCH_MAX_SHEETS,
     BatchExcelValidationError,
     BatchValidationResult,
     BatchWorkbook,
@@ -23,27 +22,37 @@ from litoral_trace.services.batch_upload import (
     parse_batch_upload_bytes,
     validate_batch_upload_content_length,
 )
-from litoral_trace.services.batch_evidence import (
-    BatchEvidenceView,
-)
-from litoral_trace.services.batch_queries import (
-    BatchImportSnapshot,
-)
+from litoral_trace.services.batch_evidence import BatchEvidenceView
+from litoral_trace.services.batch_queries import BatchImportSnapshot
 from litoral_trace.services.batch_imports import (
     BatchImportIdempotencyConflictError,
     BatchImportResult,
     normalize_idempotency_key,
 )
-from litoral_trace.services.vault import (
-    VaultDocumentView,
-)
-from litoral_trace.db.models.batch_evidence_link import (
-    BATCH_EVIDENCE_TYPES,
+from litoral_trace.services.smart_import import SMART_MAX_SHEETS, SmartImportError
+from litoral_trace.services.vault import VaultDocumentView
+from litoral_trace.db.models.batch_evidence_link import BATCH_EVIDENCE_TYPES
+from litoral_trace.web.runtime import get_authenticated_html_user
+from litoral_trace.web.smart_import import (
+    SmartBatchWorkbook,
+    SmartImportPreviewView,
+    parse_smart_browser_workbook,
 )
 
 
 _MIB = 1024 * 1024
 _BROWSER_IDEMPOTENCY_BYTES = 24
+_SMART_FALLBACK_CODES = frozenset(
+    {
+        "TOO_MANY_SHEETS",
+        "MISSING_REQUIRED_SHEET",
+        "TOO_MANY_COLUMNS",
+        "MISSING_HEADER",
+        "DUPLICATE_HEADERS",
+        "INVALID_HEADERS",
+        "NO_DATA_ROWS",
+    }
+)
 _EVIDENCE_TYPE_LABELS = {
     "SOURCE_WORKBOOK": "Workbook fuente",
     "SUPPORTING_EVIDENCE": "Evidencia de soporte",
@@ -136,6 +145,7 @@ class BatchValidationView:
     valid_rows: int
     invalid_rows: int
     row_errors: tuple[BatchValidationRowErrorView, ...]
+    smart_preview: SmartImportPreviewView | None = None
 
 
 @dataclass(frozen=True)
@@ -232,22 +242,16 @@ def issue_browser_import_idempotency_key() -> str:
     """Issue a browser form key using the same normalization contract."""
 
     token = normalize_idempotency_key(
-        secrets.token_urlsafe(
-            _BROWSER_IDEMPOTENCY_BYTES
-        )
+        secrets.token_urlsafe(_BROWSER_IDEMPOTENCY_BYTES)
     )
-
     if token is None:
         raise AssertionError(
             "Browser idempotency key generation produced no value."
         )
-
     return token
 
 
-def normalize_browser_import_idempotency_key(
-    value: str | None,
-) -> str:
+def normalize_browser_import_idempotency_key(value: str | None) -> str:
     if value is None or not str(value).strip():
         raise BatchImportHtmlError(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -260,9 +264,7 @@ def normalize_browser_import_idempotency_key(
         )
 
     try:
-        normalized = normalize_idempotency_key(
-            value
-        )
+        normalized = normalize_idempotency_key(value)
     except BatchImportIdempotencyConflictError as exc:
         raise BatchImportHtmlError(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -284,19 +286,15 @@ def normalize_browser_import_idempotency_key(
                 "emitida por el servidor."
             ),
         )
-
     return normalized
 
 
 def workspace_limits_view() -> BatchImportLimitsView:
     return BatchImportLimitsView(
         max_file_bytes=BATCH_MAX_FILE_BYTES,
-        max_file_mb=(
-            BATCH_MAX_FILE_BYTES
-            // _MIB
-        ),
+        max_file_mb=BATCH_MAX_FILE_BYTES // _MIB,
         max_rows=BATCH_MAX_ROWS,
-        max_sheets=BATCH_MAX_SHEETS,
+        max_sheets=SMART_MAX_SHEETS,
     )
 
 
@@ -327,6 +325,53 @@ def build_workspace_view(
     )
 
 
+def _smart_error_to_html(exc: SmartImportError) -> BatchImportHtmlError:
+    code = str(getattr(exc, "code", "") or "SMART_IMPORT_ERROR")
+    message = str(
+        getattr(exc, "detail", "")
+        or "No fue posible interpretar la estructura de la planilla."
+    )
+    if code in {"SMART_FILE_TOO_LARGE"}:
+        return BatchImportHtmlError(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            code=code,
+            title="Archivo demasiado grande",
+            message=message,
+        )
+    if code in {
+        "SMART_DATASET_NOT_FOUND",
+        "SMART_INVALID_CANDIDATE",
+        "SMART_CANDIDATE_CHANGED",
+        "SMART_INVALID_MAPPING",
+        "SMART_MAPPING_CHANGED",
+        "SMART_DUPLICATE_SOURCE_MAPPING",
+        "SMART_MAPPING_CONFIRMATION_REQUIRED",
+        "SMART_MAPPING_INCOMPLETE",
+        "MISSING_REQUIRED_MAPPING",
+        "DUPLICATE_CANONICAL_MAPPING",
+        "SOURCE_COLUMN_OUT_OF_RANGE",
+        "FORMULA_IN_MAPPED_COLUMN",
+        "CELL_ERROR_IN_MAPPED_COLUMN",
+        "FORMULA_NOT_ALLOWED",
+        "CELL_ERROR",
+        "SMART_TOO_MANY_DATA_ROWS",
+        "SMART_TOO_MANY_SHEETS",
+        "SMART_SOURCE_RANGE_TOO_LARGE",
+    }:
+        return BatchImportHtmlError(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            code=code,
+            title="Revisá el mapping del Excel",
+            message=message,
+        )
+    return BatchImportHtmlError(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        code=code,
+        title="No se pudo interpretar la planilla",
+        message=message,
+    )
+
+
 async def parse_browser_upload(
     file: UploadFile,
     *,
@@ -334,44 +379,52 @@ async def parse_browser_upload(
 ) -> BatchWorkbook:
     try:
         validate_batch_upload_content_length(
-            request.headers.get(
-                "content-length"
-            )
+            request.headers.get("content-length")
         )
     except BatchUploadEnvelopeError as exc:
         await file.close()
-        raise structural_error_to_html(
-            exc
-        ) from exc
+        raise structural_error_to_html(exc) from exc
 
     filename = file.filename or ""
-
     try:
-        payload = await file.read(
-            BATCH_MAX_FILE_BYTES + 1
-        )
+        payload = await file.read(BATCH_MAX_FILE_BYTES + 1)
     finally:
         await file.close()
 
     try:
-        return parse_batch_upload_bytes(
-            payload,
-            filename=filename,
+        return parse_batch_upload_bytes(payload, filename=filename)
+    except BatchUploadEnvelopeError as exc:
+        raise structural_error_to_html(exc) from exc
+    except BatchExcelValidationError as exc:
+        if str(getattr(exc, "code", "")) not in _SMART_FALLBACK_CODES:
+            raise structural_error_to_html(exc) from exc
+
+        user, denied_response = get_authenticated_html_user(request)
+        del denied_response
+        organization_id = (
+            int(user.organization_id)
+            if user is not None
+            else None
         )
-    except (
-        BatchUploadEnvelopeError,
-        BatchExcelValidationError,
-    ) as exc:
-        raise structural_error_to_html(
-            exc
-        ) from exc
+        user_id = (
+            getattr(user, "user_id", None)
+            if user is not None
+            else None
+        )
+        try:
+            return await parse_smart_browser_workbook(
+                payload,
+                filename=filename,
+                request=request,
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+        except SmartImportError as smart_exc:
+            raise _smart_error_to_html(smart_exc) from smart_exc
 
 
 def structural_error_to_html(
-    exc: (
-        BatchUploadEnvelopeError
-        | BatchExcelValidationError
-    ),
+    exc: BatchUploadEnvelopeError | BatchExcelValidationError,
 ) -> BatchImportHtmlError:
     code = str(
         getattr(exc, "code", "")
@@ -420,7 +473,28 @@ def present_validation(
     workbook: BatchWorkbook,
     result: BatchValidationResult,
 ) -> BatchValidationView:
-    if result.valid:
+    smart_preview = (
+        workbook.smart_preview
+        if isinstance(workbook, SmartBatchWorkbook)
+        else None
+    )
+
+    if smart_preview is not None and smart_preview.missing_required_fields:
+        valid = False
+        title = "Mapping incompleto"
+        message = (
+            "Litoral Trace encontró una tabla probable, pero faltan campos obligatorios. "
+            "Asigná las columnas correctas, volvé a seleccionar el archivo y validá nuevamente."
+        )
+    elif smart_preview is not None and not smart_preview.mapping_confirmed:
+        valid = result.valid
+        title = "Mapping detectado"
+        message = (
+            "Litoral Trace interpretó el Excel y preparó una propuesta de columnas. "
+            "Revisala y confirmala antes de importar."
+        )
+    elif result.valid:
+        valid = True
         title = "Validacion completada"
         message = (
             "La planilla supero la validacion semantica del servidor. "
@@ -428,6 +502,7 @@ def present_validation(
             "porque el navegador no conserva el archivo tras el POST."
         )
     else:
+        valid = False
         title = "Validacion fallida"
         message = (
             "La planilla requiere correcciones antes de cualquier "
@@ -435,7 +510,7 @@ def present_validation(
         )
 
     return BatchValidationView(
-        valid=result.valid,
+        valid=valid,
         title=title,
         message=message,
         filename=workbook.filename,
@@ -452,6 +527,7 @@ def present_validation(
             )
             for error in result.errors
         ),
+        smart_preview=smart_preview,
     )
 
 
@@ -479,26 +555,16 @@ def present_import_success(
         )
     else:
         title = "Importacion creada"
-        message = (
-            "La importacion se persistio de forma atomica y auditable."
-        )
+        message = "La importacion se persistio de forma atomica y auditable."
 
     return BatchImportResultView(
-        code=(
-            "IMPORT_REPLAYED"
-            if result.replayed
-            else "IMPORT_CREATED"
-        ),
+        code=("IMPORT_REPLAYED" if result.replayed else "IMPORT_CREATED"),
         title=title,
         message=message,
         replayed=result.replayed,
         status="completed",
-        import_id=str(
-            result.import_public_id
-        ),
-        detail_href=(
-            f"/imports/{result.import_public_id}"
-        ),
+        import_id=str(result.import_public_id),
+        detail_href=f"/imports/{result.import_public_id}",
         inserted_rows=result.inserted_rows,
         source_filename=workbook.filename,
     )
@@ -519,44 +585,28 @@ def present_import_error(
         message=message,
         replayed=False,
         import_id=import_id,
-        detail_href=(
-            f"/imports/{import_id}"
-            if import_id is not None
-            else None
-        ),
+        detail_href=(f"/imports/{import_id}" if import_id is not None else None),
         source_filename=source_filename,
         duplicate_identifiers=duplicate_identifiers,
     )
 
 
-def _format_timestamp(
-    value: datetime | None,
-) -> str | None:
+def _format_timestamp(value: datetime | None) -> str | None:
     if value is None:
         return None
-
     return value.isoformat()
 
 
-def present_import_detail(
-    snapshot: BatchImportSnapshot,
-) -> BatchImportDetailView:
+def present_import_detail(snapshot: BatchImportSnapshot) -> BatchImportDetailView:
     return BatchImportDetailView(
-        public_id=str(
-            snapshot.public_id
-        ),
+        public_id=str(snapshot.public_id),
         status=snapshot.status,
         source_filename=snapshot.source_filename,
         total_rows=snapshot.total_rows,
         inserted_rows=snapshot.inserted_rows,
         identifiers=snapshot.identifiers,
-        created_at=_format_timestamp(
-            snapshot.created_at
-        )
-        or "",
-        completed_at=_format_timestamp(
-            snapshot.completed_at
-        ),
+        created_at=_format_timestamp(snapshot.created_at) or "",
+        completed_at=_format_timestamp(snapshot.completed_at),
     )
 
 
@@ -566,9 +616,7 @@ def present_import_evidence(
     batch_import_public_id: str,
 ) -> BatchImportEvidenceItemView:
     return BatchImportEvidenceItemView(
-        vault_document_public_id=str(
-            evidence.vault_document_public_id
-        ),
+        vault_document_public_id=str(evidence.vault_document_public_id),
         evidence_type=evidence.evidence_type,
         evidence_type_label=_EVIDENCE_TYPE_LABELS.get(
             evidence.evidence_type,
@@ -579,10 +627,7 @@ def present_import_evidence(
         document_content_type=evidence.document_content_type,
         document_size_bytes=evidence.document_size_bytes,
         document_sha256=evidence.document_sha256,
-        linked_at=_format_timestamp(
-            evidence.linked_at
-        )
-        or "",
+        linked_at=_format_timestamp(evidence.linked_at) or "",
         document_status=evidence.document_status,
         document_available=evidence.document_available,
         unlink_action=(
@@ -597,9 +642,7 @@ def present_evidence_document_choice(
     document: VaultDocumentView,
 ) -> BatchImportEvidenceDocumentChoiceView:
     return BatchImportEvidenceDocumentChoiceView(
-        public_id=str(
-            document.public_id
-        ),
+        public_id=str(document.public_id),
         filename=document.filename,
         document_type=document.document_type,
         content_type=document.content_type,
@@ -611,14 +654,9 @@ def present_evidence_type_choices() -> tuple[BatchImportEvidenceTypeChoiceView, 
     return tuple(
         BatchImportEvidenceTypeChoiceView(
             value=value,
-            label=_EVIDENCE_TYPE_LABELS.get(
-                value,
-                value,
-            ),
+            label=_EVIDENCE_TYPE_LABELS.get(value, value),
         )
-        for value in sorted(
-            BATCH_EVIDENCE_TYPES
-        )
+        for value in sorted(BATCH_EVIDENCE_TYPES)
     )
 
 
@@ -633,9 +671,7 @@ def build_import_evidence_form(
         document_field_name="document_id",
         evidence_type_field_name="evidence_type",
         document_choices=tuple(
-            present_evidence_document_choice(
-                document
-            )
+            present_evidence_document_choice(document)
             for document in available_documents
         ),
         evidence_type_choices=present_evidence_type_choices(),
@@ -652,13 +688,9 @@ def present_import_detail_result(
 ) -> BatchImportPageMessageView | None:
     if result_code is None:
         return None
-
-    message = _DETAIL_RESULT_MESSAGES.get(
-        str(result_code).strip().lower()
-    )
+    message = _DETAIL_RESULT_MESSAGES.get(str(result_code).strip().lower())
     if message is None:
         return None
-
     code, title, text, level = message
     return BatchImportPageMessageView(
         code=code,
@@ -676,82 +708,52 @@ def present_evidence_mutation_error(
     catalog = {
         "INVALID_EVIDENCE_TYPE": (
             "Tipo de evidencia inválido",
-            (
-                "Seleccioná un tipo de evidencia permitido por el "
-                "sistema."
-            ),
+            "Seleccioná un tipo de evidencia permitido por el sistema.",
             "warning",
         ),
         "SOURCE_WORKBOOK_REQUIRES_REMITO_EXCEL": (
             "Documento incompatible",
-            (
-                "SOURCE_WORKBOOK sólo admite documentos Vault del tipo "
-                "REMITO_EXCEL."
-            ),
+            "SOURCE_WORKBOOK sólo admite documentos Vault del tipo REMITO_EXCEL.",
             "warning",
         ),
         "SOURCE_WORKBOOK_HASH_MISMATCH": (
             "Workbook no coincide",
-            (
-                "El documento SOURCE_WORKBOOK debe coincidir exactamente "
-                "con el SHA-256 de la planilla importada."
-            ),
+            "El documento SOURCE_WORKBOOK debe coincidir exactamente con el SHA-256 de la planilla importada.",
             "warning",
         ),
         "SOURCE_WORKBOOK_ALREADY_LINKED": (
             "Workbook fuente ya vinculado",
-            (
-                "La importación ya posee una evidencia "
-                "SOURCE_WORKBOOK activa."
-            ),
+            "La importación ya posee una evidencia SOURCE_WORKBOOK activa.",
             "warning",
         ),
         "EVIDENCE_TYPE_CONFLICT": (
             "Conflicto de evidencia",
-            (
-                "Ese documento ya está vinculado a la importación con "
-                "otro tipo de evidencia."
-            ),
+            "Ese documento ya está vinculado a la importación con otro tipo de evidencia.",
             "warning",
         ),
         "VAULT_DOCUMENT_NOT_FOUND": (
             "Documento no disponible",
-            (
-                "El documento solicitado no existe o no está disponible "
-                "para la organización actual."
-            ),
+            "El documento solicitado no existe o no está disponible para la organización actual.",
             "warning",
         ),
         "BATCH_IMPORT_NOT_FOUND": (
             "Importación no disponible",
-            (
-                "La importación solicitada no existe o no está disponible "
-                "para la organización actual."
-            ),
+            "La importación solicitada no existe o no está disponible para la organización actual.",
             "warning",
         ),
         "EVIDENCE_NOT_FOUND": (
             "Evidencia no disponible",
-            (
-                "El recurso solicitado no existe o no está disponible "
-                "para la organización actual."
-            ),
+            "El recurso solicitado no existe o no está disponible para la organización actual.",
             "warning",
         ),
         "EVIDENCE_LINK_NOT_FOUND": (
             "Vínculo no disponible",
-            (
-                "La relación activa solicitada no existe o no está "
-                "disponible para la organización actual."
-            ),
+            "La relación activa solicitada no existe o no está disponible para la organización actual.",
             "warning",
         ),
         "BATCH_EVIDENCE_UNAVAILABLE": (
             "Operación no disponible",
-            (
-                "No fue posible completar la operación de evidencia en "
-                "este momento."
-            ),
+            "No fue posible completar la operación de evidencia en este momento.",
             "danger",
         ),
     }
@@ -759,10 +761,7 @@ def present_evidence_mutation_error(
         code,
         (
             "Operación no disponible",
-            (
-                "No fue posible completar la operación de evidencia en "
-                "este momento."
-            ),
+            "No fue posible completar la operación de evidencia en este momento.",
             "danger",
         ),
     )
@@ -785,11 +784,7 @@ def present_import_detail_page(
     evidence_error: BatchImportAlertView | None = None,
     not_found: bool = False,
 ) -> BatchImportDetailPageView:
-    detail = (
-        present_import_detail(snapshot)
-        if snapshot is not None
-        else None
-    )
+    detail = present_import_detail(snapshot) if snapshot is not None else None
     return BatchImportDetailPageView(
         detail=detail,
         can_view_evidence=can_view_evidence,
@@ -797,11 +792,7 @@ def present_import_detail_page(
         evidence_items=tuple(
             present_import_evidence(
                 item,
-                batch_import_public_id=(
-                    detail.public_id
-                    if detail is not None
-                    else ""
-                ),
+                batch_import_public_id=(detail.public_id if detail is not None else ""),
             )
             for item in evidence
         ),
@@ -819,9 +810,5 @@ def present_import_detail_page(
     )
 
 
-def workspace_context(
-    view: BatchImportWorkspaceView,
-) -> dict[str, Any]:
-    return {
-        "batch_import_view": view,
-    }
+def workspace_context(view: BatchImportWorkspaceView) -> dict[str, Any]:
+    return {"batch_import_view": view}

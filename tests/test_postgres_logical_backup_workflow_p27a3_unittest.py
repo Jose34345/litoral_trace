@@ -32,7 +32,7 @@ def test_p27a3c2_trigger_and_cadence_are_operator_only():
 
     assert "name: PostgreSQL Logical Backup" in workflow
     assert "schedule:" in workflow
-    assert 'cron: "17 0,12 * * *"' in workflow
+    assert 'cron: "17 3 * * *"' in workflow
     assert "workflow_dispatch:" in workflow
     assert "\n  push:" not in workflow
     assert "\n  pull_request:" not in workflow
@@ -223,7 +223,7 @@ def test_p27a3c2_pins_actions_to_immutable_shas_and_records_default_branch_activ
     assert "Default-branch activation is an operational release step and is not performed by this workflow." in workflow
 
 
-def test_p27a3c2_ci_workflow_remains_untouched():
+def test_p27a3c2_ci_workflow_remains_separate_from_backup_runtime():
     ci = _ci_text()
 
     assert "name: CI" in ci
