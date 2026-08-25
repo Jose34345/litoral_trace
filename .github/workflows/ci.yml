@@ -52,7 +52,7 @@ jobs:
             echo "Expected exactly one Alembic head."
             exit 1
           fi
-          grep -Fx "028_platform_definer_rls (head)" alembic-heads.txt
+          grep -Fx "029_add_smart_import_profiles (head)" alembic-heads.txt
 
       - name: Run pytest suite
         run: python -m pytest -q -rs
@@ -118,37 +118,30 @@ jobs:
             -keyout "$CERT_DIR/privkey.pem" \
             -out "$CERT_DIR/fullchain.pem" \
             -subj "/CN=litoraltrace.com" \
-            -days 1 \
-            >/dev/null 2>&1
+            -days 1 >/dev/null 2>&1
           docker run --rm \
-            --add-host app:127.0.0.1 \
             -v "$PWD/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
-            -v "$CERT_DIR:/etc/nginx/certs:ro" \
-            nginx:1.25-alpine \
-            nginx -t
+            -v "$CERT_DIR:/etc/letsencrypt/live/litoraltrace.com:ro" \
+            nginx:1.27-alpine nginx -t
 
       - name: Validate Prometheus configuration and alert rules
-        shell: bash
         run: |
-          set -euo pipefail
           docker run --rm \
             --entrypoint /bin/promtool \
             -v "$PWD/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
-            -v "$PWD/monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro" \
-            prom/prometheus:v3.13.1 \
+            -v "$PWD/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro" \
+            prom/prometheus:v2.55.1 \
             check config /etc/prometheus/prometheus.yml
           docker run --rm \
             --entrypoint /bin/promtool \
-            -v "$PWD/monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro" \
-            prom/prometheus:v3.13.1 \
-            check rules /etc/prometheus/alert_rules.yml
+            -v "$PWD/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro" \
+            prom/prometheus:v2.55.1 \
+            check rules /etc/prometheus/alerts.yml
 
       - name: Validate Alertmanager configuration
-        shell: bash
         run: |
-          set -euo pipefail
           docker run --rm \
             --entrypoint /bin/amtool \
             -v "$PWD/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
-            prom/alertmanager:v0.33.1 \
+            prom/alertmanager:v0.28.1 \
             check-config /etc/alertmanager/alertmanager.yml
