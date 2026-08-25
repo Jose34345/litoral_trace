@@ -168,9 +168,9 @@ def canonicalize_workbook(
             _raise(
                 "SMART_SOURCE_RANGE_TOO_LARGE",
                 (
-                    "La hoja declara un rango de filas demasiado amplio para una importación "
-                    "interactiva segura. Eliminá filas/formato residual fuera de la tabla útil "
-                    "o usá el flujo de grandes volúmenes cuando esté habilitado."
+                    "La hoja parece tener miles de filas usadas fuera de la tabla real, normalmente "
+                    "por formato o contenido residual. Eliminá las filas vacías sobrantes debajo de "
+                    "la tabla, guardá una copia limpia del XLSX y volvé a validarla."
                 ),
             )
 
