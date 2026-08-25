@@ -293,7 +293,7 @@ jobs:
               )).scalar_one() is False
 
               connection.execute(text("""
-                  INSERT INTO organizations (id, name, slug, active)
+                  INSERT INTO organizations (id, name, slug, is_active)
                   VALUES
                     (910001, 'Smart Import Tenant A', 'smart-import-tenant-a', true),
                     (910002, 'Smart Import Tenant B', 'smart-import-tenant-b', true)
