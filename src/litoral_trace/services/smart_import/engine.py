@@ -8,14 +8,14 @@ the final authority before database writes.
 
 from __future__ import annotations
 
-from dataclasses import replace
 import hashlib
 import io
-from typing import Any, BinaryIO
+from typing import Any
 
 from openpyxl import load_workbook
 
 from litoral_trace.services.batch import (
+    BATCH_MAX_FILE_BYTES,
     _preflight_xlsx_container,
     normalizar_nombre_archivo_batch,
 )
@@ -30,7 +30,10 @@ from .contracts import (
 from .matcher import map_source_column, resolve_duplicate_targets
 
 
-SMART_MAX_FILE_BYTES = 25 * 1024 * 1024
+# Keep every Smart Import entry point on the same upload-size security contract
+# as the hardened canonical batch parser. The browser already enforces this cap;
+# duplicating it here protects direct/service-level callers as well.
+SMART_MAX_FILE_BYTES = BATCH_MAX_FILE_BYTES
 SMART_MAX_SHEETS = 20
 SMART_HEADER_SCAN_ROWS = 25
 SMART_SAMPLE_ROWS = 24
@@ -206,9 +209,10 @@ class SmartImportEngine:
         if not data:
             _error("EMPTY_FILE", "El archivo Excel está vacío.")
         if len(data) > SMART_MAX_FILE_BYTES:
+            limit_mb = SMART_MAX_FILE_BYTES // (1024 * 1024)
             _error(
                 "SMART_FILE_TOO_LARGE",
-                "El archivo excede el límite seguro de Smart Import (25 MB).",
+                f"El archivo excede el límite seguro de Smart Import ({limit_mb} MB).",
             )
 
         # Reuse LT's hardened ZIP/XML preflight before openpyxl sees the bytes.
