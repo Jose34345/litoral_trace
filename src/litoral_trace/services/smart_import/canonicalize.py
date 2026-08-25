@@ -28,6 +28,9 @@ from .contracts import DatasetCandidate
 from .engine import SMART_MAX_FILE_BYTES, SmartImportError
 
 
+SMART_MAX_SOURCE_ROW_SPAN = 5_000
+
+
 @dataclass(frozen=True)
 class ConfirmedMapping:
     """One user-confirmed source-to-canonical mapping."""
@@ -156,12 +159,28 @@ def canonicalize_workbook(
                 "El mapping hace referencia a una columna que no existe en la hoja.",
             )
 
+        max_source_row = int(worksheet.max_row or 0)
+        if max_source_row < candidate.first_data_row:
+            _raise("NO_DATA_ROWS", "La tabla seleccionada no contiene filas para importar.")
+
+        source_row_span = max_source_row - candidate.first_data_row + 1
+        if source_row_span > SMART_MAX_SOURCE_ROW_SPAN:
+            _raise(
+                "SMART_SOURCE_RANGE_TOO_LARGE",
+                (
+                    "La hoja declara un rango de filas demasiado amplio para una importación "
+                    "interactiva segura. Eliminá filas/formato residual fuera de la tabla útil "
+                    "o usá el flujo de grandes volúmenes cuando esté habilitado."
+                ),
+            )
+
         rows: list[dict[str, object]] = []
         source_row_numbers: list[int] = []
 
         for row_number, cells in enumerate(
             worksheet.iter_rows(
                 min_row=candidate.first_data_row,
+                max_row=max_source_row,
                 max_col=max_source_index + 1,
             ),
             start=candidate.first_data_row,
