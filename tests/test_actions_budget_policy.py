@@ -45,7 +45,6 @@ def test_expensive_specialized_gates_are_manual_only() -> None:
 def test_ordinary_ci_uses_one_automatic_runner_job() -> None:
     workflow = _read("ci.yml")
     assert "pull_request:" in workflow
-    assert "paths-ignore:" in workflow
 
     python_job = workflow.split("python-tests:", 1)[1].split("frontend-build:", 1)[0]
     frontend_job = workflow.split("frontend-build:", 1)[1].split("production-build:", 1)[0]
@@ -58,18 +57,29 @@ def test_ordinary_ci_uses_one_automatic_runner_job() -> None:
     assert "if: github.event_name == 'workflow_dispatch'" in production_job
 
 
-def test_ordinary_ci_cancels_superseded_runs_and_ignores_docs_only_changes() -> None:
+def test_required_pr_ci_always_reports_and_push_can_ignore_docs_only_changes() -> None:
     workflow = _read("ci.yml")
+    before_push, after_push = workflow.split("\n  push:\n", 1)
+    push_block = after_push.split("\n  workflow_dispatch:", 1)[0]
 
-    assert "concurrency:" in workflow
-    assert "cancel-in-progress: true" in workflow
+    # A branch-required PR check must not be suppressed by workflow-level path
+    # filters, otherwise GitHub can leave it indefinitely in Expected/Pending.
+    assert "pull_request:" in before_push
+    assert "paths-ignore:" not in before_push
+
+    # Push CI is not a branch-required PR report, so docs-only pushes may still
+    # be ignored to conserve private-repository Actions minutes.
+    assert "paths-ignore:" in push_block
     for ignored_path in (
         '- "**/*.md"',
         '- "commercial/**"',
         '- "docs/**"',
         '- ".github/ISSUE_TEMPLATE/**"',
     ):
-        assert ignored_path in workflow
+        assert ignored_path in push_block
+
+    assert "concurrency:" in workflow
+    assert "cancel-in-progress: true" in workflow
 
 
 def test_logical_backup_runs_at_most_once_per_day_automatically() -> None:
