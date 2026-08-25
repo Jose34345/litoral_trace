@@ -1,7 +1,6 @@
 name: P1.7-K Non-Superuser Migration Gate
 
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:
