@@ -123,4 +123,6 @@ def test_canonicalizer_fails_closed_on_formula_in_mapped_column() -> None:
             mappings=default_confirmed_mapping(candidate),
         )
 
-    assert exc_info.value.code == "FORMULA_IN_MAPPED_COLUMN"
+    # Smart Import preserves the strict batch parser's public security contract:
+    # formulas in any mapped business field are rejected, never evaluated.
+    assert exc_info.value.code == "FORMULA_NOT_ALLOWED"
