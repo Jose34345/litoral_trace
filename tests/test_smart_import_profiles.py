@@ -3,10 +3,13 @@ from __future__ import annotations
 from io import BytesIO
 
 from openpyxl import Workbook
+import pytest
 
 from litoral_trace.services.batch import BATCH_COLUMNAS
 from litoral_trace.services.smart_import import SmartImportEngine, default_confirmed_mapping
 from litoral_trace.services.smart_import.profiles import (
+    SmartImportProfileValidationError,
+    _normalize_profile_name,
     candidate_header_signature,
     header_fingerprint,
     profile_mapping_payload,
@@ -50,6 +53,32 @@ def _candidate(headers: list[str]):
     candidate = analysis.best_candidate
     assert candidate is not None
     return candidate
+
+
+def test_profile_name_nfkc_normalizes_safe_compatibility_text() -> None:
+    assert _normalize_profile_name(
+        "  Ｒｅｃｅｐｃｉｏｎｅｓ   planta  ",
+        fallback="Datos",
+    ) == "Recepciones planta"
+
+
+@pytest.mark.parametrize(
+    "unsafe_name",
+    (
+        "Recepciones\u202eXLSX",
+        "Recepciones\u2066XLSX",
+        "Recepciones\u200bXLSX",
+        "Recepciones\x07XLSX",
+        "Recepciones\u2028XLSX",
+    ),
+)
+def test_profile_name_rejects_control_format_and_bidi_codepoints(
+    unsafe_name: str,
+) -> None:
+    with pytest.raises(SmartImportProfileValidationError) as exc_info:
+        _normalize_profile_name(unsafe_name, fallback="Datos")
+
+    assert "Unicode" in str(exc_info.value)
 
 
 def test_header_fingerprint_is_stable_when_columns_reorder() -> None:
