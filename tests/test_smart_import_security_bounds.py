@@ -5,7 +5,7 @@ from io import BytesIO
 from openpyxl import Workbook
 import pytest
 
-from litoral_trace.services.batch import BATCH_COLUMNAS
+from litoral_trace.services.batch import BATCH_COLUMNAS, BATCH_MAX_FILE_BYTES
 from litoral_trace.services.smart_import import SmartImportEngine
 from litoral_trace.services.smart_import.canonicalize import (
     SMART_MAX_SOURCE_ROW_SPAN,
@@ -13,6 +13,7 @@ from litoral_trace.services.smart_import.canonicalize import (
     canonicalize_workbook,
     default_confirmed_mapping,
 )
+from litoral_trace.services.smart_import.engine import SMART_MAX_FILE_BYTES
 from litoral_trace.services.smart_import.matcher import (
     SMART_SAMPLE_TEXT_MAX_CHARS,
     map_source_column,
@@ -28,6 +29,10 @@ def _serialize(workbook: Workbook) -> bytes:
     workbook.save(buffer)
     workbook.close()
     return buffer.getvalue()
+
+
+def test_smart_import_file_cap_matches_hardened_batch_parser() -> None:
+    assert SMART_MAX_FILE_BYTES == BATCH_MAX_FILE_BYTES
 
 
 def test_header_normalization_caps_untrusted_text_before_fuzzy_work() -> None:
