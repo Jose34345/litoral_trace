@@ -13,7 +13,6 @@ from starlette.datastructures import UploadFile
 from litoral_trace.services.batch import (
     BATCH_MAX_FILE_BYTES,
     BATCH_MAX_ROWS,
-    BATCH_MAX_SHEETS,
     BatchExcelValidationError,
     BatchValidationResult,
     BatchWorkbook,
@@ -30,7 +29,7 @@ from litoral_trace.services.batch_imports import (
     BatchImportResult,
     normalize_idempotency_key,
 )
-from litoral_trace.services.smart_import import SmartImportError
+from litoral_trace.services.smart_import import SMART_MAX_SHEETS, SmartImportError
 from litoral_trace.services.vault import VaultDocumentView
 from litoral_trace.db.models.batch_evidence_link import BATCH_EVIDENCE_TYPES
 from litoral_trace.web.runtime import get_authenticated_html_user
@@ -295,7 +294,7 @@ def workspace_limits_view() -> BatchImportLimitsView:
         max_file_bytes=BATCH_MAX_FILE_BYTES,
         max_file_mb=BATCH_MAX_FILE_BYTES // _MIB,
         max_rows=BATCH_MAX_ROWS,
-        max_sheets=BATCH_MAX_SHEETS,
+        max_sheets=SMART_MAX_SHEETS,
     )
 
 
@@ -356,6 +355,8 @@ def _smart_error_to_html(exc: SmartImportError) -> BatchImportHtmlError:
         "FORMULA_NOT_ALLOWED",
         "CELL_ERROR",
         "SMART_TOO_MANY_DATA_ROWS",
+        "SMART_TOO_MANY_SHEETS",
+        "SMART_SOURCE_RANGE_TOO_LARGE",
     }:
         return BatchImportHtmlError(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
