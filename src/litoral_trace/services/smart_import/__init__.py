@@ -14,7 +14,7 @@ from .contracts import (
     MappingStatus,
     SmartWorkbookAnalysis,
 )
-from .engine import SmartImportEngine, SmartImportError
+from .engine import SMART_MAX_SHEETS, SmartImportEngine, SmartImportError
 
 __all__ = [
     "CanonicalFieldSpec",
@@ -23,6 +23,7 @@ __all__ = [
     "DatasetCandidate",
     "MappingDecision",
     "MappingStatus",
+    "SMART_MAX_SHEETS",
     "SmartCanonicalizationError",
     "SmartImportEngine",
     "SmartImportError",
