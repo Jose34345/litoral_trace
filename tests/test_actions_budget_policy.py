@@ -46,15 +46,30 @@ def test_ordinary_ci_uses_one_automatic_runner_job() -> None:
     workflow = _read("ci.yml")
     assert "pull_request:" in workflow
     assert "paths-ignore:" in workflow
-    assert 'if: github.event_name == \'workflow_dispatch\'' in workflow.split(
-        "frontend-build:", 1
-    )[1].split("production-build:", 1)[0]
-    assert 'if: github.event_name == \'workflow_dispatch\'' in workflow.split(
-        "production-build:", 1
-    )[1]
-    assert "if: github.event_name == 'workflow_dispatch'" not in workflow.split(
-        "python-tests:", 1
-    )[1].split("frontend-build:", 1)[0]
+
+    python_job = workflow.split("python-tests:", 1)[1].split("frontend-build:", 1)[0]
+    frontend_job = workflow.split("frontend-build:", 1)[1].split("production-build:", 1)[0]
+    production_job = workflow.split("production-build:", 1)[1]
+
+    assert "if: github.event_name == 'workflow_dispatch'" not in python_job
+    assert "runs-on: ubuntu-latest" in python_job
+    assert "timeout-minutes: 20" in python_job
+    assert "if: github.event_name == 'workflow_dispatch'" in frontend_job
+    assert "if: github.event_name == 'workflow_dispatch'" in production_job
+
+
+def test_ordinary_ci_cancels_superseded_runs_and_ignores_docs_only_changes() -> None:
+    workflow = _read("ci.yml")
+
+    assert "concurrency:" in workflow
+    assert "cancel-in-progress: true" in workflow
+    for ignored_path in (
+        '- "**/*.md"',
+        '- "commercial/**"',
+        '- "docs/**"',
+        '- ".github/ISSUE_TEMPLATE/**"',
+    ):
+        assert ignored_path in workflow
 
 
 def test_logical_backup_runs_at_most_once_per_day_automatically() -> None:
