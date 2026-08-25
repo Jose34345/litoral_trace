@@ -2,10 +2,20 @@ name: CI
 
 on:
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "commercial/**"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
   push:
     branches:
       - p2-enterprise-production
       - p2-v1-closure
+    paths-ignore:
+      - "**/*.md"
+      - "commercial/**"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
   workflow_dispatch:
 
 permissions:
@@ -16,6 +26,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # This is the only automatic runner-consuming job on ordinary PRs/pushes.
+  # Heavy frontend/container validation remains available through one explicit
+  # workflow_dispatch before a release or production merge.
   python-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -58,6 +71,7 @@ jobs:
         run: python -m pytest -q -rs
 
   frontend-build:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -83,6 +97,7 @@ jobs:
         run: git diff --exit-code
 
   production-build:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
