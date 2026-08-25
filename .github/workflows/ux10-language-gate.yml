@@ -1,7 +1,6 @@
 name: UX10 Spanish Product Language Gate
 
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:
