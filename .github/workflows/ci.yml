@@ -1,12 +1,10 @@
 name: CI
 
 on:
+  # Required PR checks must always report. Do not use workflow-level path filters
+  # here: GitHub leaves skipped required checks in Expected/Pending state and can
+  # block protected-branch merges indefinitely.
   pull_request:
-    paths-ignore:
-      - "**/*.md"
-      - "commercial/**"
-      - "docs/**"
-      - ".github/ISSUE_TEMPLATE/**"
   push:
     branches:
       - p2-enterprise-production
