@@ -1,0 +1,39 @@
+name: Temporary Smart Import Final Gates Dispatcher
+
+on:
+  push:
+    branches:
+      - feature/smart-import-v1
+    paths:
+      - ".github/workflows/temp-smart-import-p17k-dispatch.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: temp-smart-import-final-gates-dispatch
+  cancel-in-progress: true
+
+jobs:
+  dispatch-final-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch selected final gates on Smart Import branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TARGET_REF: feature/smart-import-v1
+        shell: bash
+        run: |
+          set -euo pipefail
+          for workflow in \
+            ci.yml \
+            release-integration-gates.yml \
+            v1-final-release-acceptance.yml
+          do
+            gh workflow run "$workflow" \
+              --repo "$GH_REPO" \
+              --ref "$TARGET_REF"
+          done
