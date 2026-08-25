@@ -84,19 +84,26 @@ def _semantic_score(
         ratio = non_negative / len(numeric_values)
         return numeric_ratio * ratio, "valores numéricos no negativos"
 
+    text_values = [
+        value.strip()
+        for value in values
+        if isinstance(value, str) and value.strip()
+    ]
+    text_ratio = len(text_values) / len(values)
+
     if semantic_type == "supplier":
-        string_values = [str(value).strip() for value in values]
+        if not text_values:
+            return 0.0, None
         cuit_ratio = sum(
             bool(_CUIT_RE.fullmatch(value.replace(" ", "")))
-            for value in string_values
-        ) / len(string_values)
+            for value in text_values
+        ) / len(text_values)
         if cuit_ratio:
-            return min(1.0, 0.55 + 0.45 * cuit_ratio), "patrón CUIT detectado"
-        return 0.35, "valores textuales compatibles con proveedor"
+            return min(1.0, 0.70 + 0.30 * cuit_ratio), "patrón CUIT detectado"
+        return 0.70 * text_ratio, "valores textuales compatibles con proveedor"
 
     if semantic_type in {"identifier", "product"}:
-        text_ratio = sum(bool(str(value).strip()) for value in values) / len(values)
-        return 0.45 * text_ratio, "valores textuales presentes"
+        return 0.85 * text_ratio, "valores textuales presentes"
 
     return 0.0, None
 
@@ -130,6 +137,10 @@ def score_column_for_field(
 
     if source in aliases:
         reasons.append("alias exacto normalizado")
+        # A known alias with compatible source values deserves a strong floor.
+        # Incompatible values do not receive this boost and remain reviewable.
+        if semantic_score >= 0.5:
+            confidence = max(confidence, 0.97)
     elif name_score >= 0.75:
         reasons.append(f"similitud de encabezado {name_score:.0%}")
 
