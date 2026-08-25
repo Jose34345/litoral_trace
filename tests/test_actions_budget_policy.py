@@ -24,7 +24,6 @@ MANUAL_ONLY_WORKFLOWS = (
     "ux10e-contextual-evidence-gate.yml",
     "ux10f-release-control-gate.yml",
     "ux10g-postgres-web-stabilization-gate.yml",
-    "v1-final-release-acceptance.yml",
     "v1-satellite-browser-staging-e2e.yml",
 )
 
