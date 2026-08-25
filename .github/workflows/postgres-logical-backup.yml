@@ -1,8 +1,10 @@
 name: PostgreSQL Logical Backup
 
 on:
+  # One daily logical backup preserves a 24h recovery point while avoiding the
+  # previous twice-daily GitHub-hosted runner cost on the private repository.
   schedule:
-    - cron: "17 0,12 * * *"
+    - cron: "17 3 * * *"
   workflow_dispatch:
 
 permissions:
