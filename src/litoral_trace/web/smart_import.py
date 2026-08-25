@@ -21,7 +21,6 @@ from litoral_trace.services.smart_import.profiles import (
     SmartImportProfilePersistenceError,
     SmartImportProfileService,
     SmartImportProfileValidationError,
-    candidate_header_signature,
     header_fingerprint,
 )
 
@@ -99,7 +98,20 @@ def _is_truthy_form_value(value: Any) -> bool:
 
 
 def _candidate_fingerprint(candidate: DatasetCandidate) -> str:
-    return header_fingerprint(candidate_header_signature(candidate))
+    """Order-sensitive schema fingerprint for one browser confirmation.
+
+    Persistent format profiles intentionally use an order-insensitive signature so
+    they can survive harmless column reordering. A browser confirmation has a
+    different security property: it maps by source index, so its fingerprint must
+    change when columns are inserted, removed or reordered. The index is included
+    explicitly to preserve gaps and duplicate normalized headers.
+    """
+
+    ordered_signature = tuple(
+        f"{column.source_index}:{column.normalized_source}"
+        for column in sorted(candidate.mappings, key=lambda item: item.source_index)
+    )
+    return header_fingerprint(ordered_signature)
 
 
 def _select_candidate(
@@ -109,8 +121,29 @@ def _select_candidate(
     requested_sheet = _form_text(form, SMART_SHEET_FIELD)
     requested_header = _form_text(form, SMART_HEADER_ROW_FIELD)
     requested_fingerprint = _form_text(form, SMART_HEADER_FINGERPRINT_FIELD)
+    mapping_confirmed = _is_truthy_form_value(form.get(SMART_CONFIRM_FIELD))
 
-    if requested_sheet or requested_header:
+    if mapping_confirmed and not requested_fingerprint:
+        raise SmartImportError(
+            code="SMART_CANDIDATE_CHANGED",
+            detail=(
+                "La confirmación del mapping no incluye la firma estructural esperada. "
+                "Volvé a analizar el archivo antes de importar."
+            ),
+        )
+
+    has_candidate_binding = bool(
+        requested_sheet or requested_header or requested_fingerprint
+    )
+    if has_candidate_binding:
+        if not requested_sheet or not requested_header:
+            raise SmartImportError(
+                code="SMART_INVALID_CANDIDATE",
+                detail=(
+                    "La selección de hoja/encabezado está incompleta. "
+                    "Volvé a analizar el archivo."
+                ),
+            )
         try:
             header_row = int(requested_header)
         except (TypeError, ValueError):
@@ -126,8 +159,8 @@ def _select_candidate(
                 raise SmartImportError(
                     code="SMART_CANDIDATE_CHANGED",
                     detail=(
-                        "Los encabezados del archivo cambiaron desde la vista previa. "
-                        "Volvé a analizarlo antes de confirmar el mapping."
+                        "La estructura de columnas cambió desde la vista previa. "
+                        "Volvé a analizar el archivo antes de confirmar el mapping."
                     ),
                 )
             return candidate
@@ -161,15 +194,6 @@ def _explicit_mapping(
 
     if not has_mapping_fields:
         return None, confirmed
-
-    if confirmed and not _form_text(form, SMART_HEADER_FINGERPRINT_FIELD):
-        raise SmartImportError(
-            code="SMART_CANDIDATE_CHANGED",
-            detail=(
-                "La confirmación del mapping no incluye la firma de encabezados esperada. "
-                "Volvé a analizar el archivo antes de importar."
-            ),
-        )
 
     by_index = {column.source_index: column for column in candidate.mappings}
     mappings: list[ConfirmedMapping] = []
