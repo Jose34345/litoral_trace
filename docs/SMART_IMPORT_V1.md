@@ -6,54 +6,109 @@ Permitir que Litoral Trace interprete workbooks XLSX empresariales razonablement
 
 Smart Import es una capa previa al pipeline batch existente. No reemplaza la validación semántica, idempotencia, aislamiento por tenant, auditoría ni persistencia atómica actuales.
 
-## Primer ciclo implementado
+## Ciclo 1 — motor de interpretación
 
-- Normalización determinística de encabezados: case, acentos, puntuación y abreviaturas comunes.
-- Diccionario amplio de aliases para los 8 campos canónicos de lotes.
-- Fuzzy matching sin dependencia externa.
-- Inferencia de contenido como evidencia secundaria, nunca como autoridad única.
-- Umbrales más estrictos para campos de trazabilidad de mayor riesgo.
-- Detección de columnas extra sin rechazar el workbook.
-- Descubrimiento de hojas distintas a `Plantilla_LitoralTrace`.
-- Detección de encabezados dentro de las primeras 25 filas.
-- Hasta 20 hojas y 256 columnas inspeccionables por workbook en la capa de discovery.
-- Selección del mejor dataset por hoja y ranking global.
-- Identificación explícita de campos obligatorios faltantes.
-- Canonicalización side-effect-free de un mapping confirmado hacia `BatchWorkbook`.
-- Reutilización directa del validador semántico batch existente después de canonicalizar.
-- Compatibilidad con la plantilla oficial como caso simple.
+Implementado:
+
+- normalización determinística de encabezados: case, acentos, puntuación y abreviaturas comunes;
+- diccionario amplio de aliases para los 8 campos canónicos de lotes;
+- fuzzy matching sin dependencia externa;
+- inferencia de contenido como evidencia secundaria, nunca como autoridad única;
+- umbrales más estrictos para campos de trazabilidad de mayor riesgo;
+- columnas extra sin rechazo automático;
+- descubrimiento de hojas distintas a `Plantilla_LitoralTrace`;
+- detección de encabezados dentro de las primeras 25 filas;
+- hasta 20 hojas y 256 columnas inspeccionables en discovery;
+- ranking de datasets;
+- campos obligatorios faltantes explícitos;
+- canonicalización side-effect-free a `BatchWorkbook`;
+- reutilización del validador batch existente.
+
+## Ciclo 2 — browser mapping + memoria por empresa
+
+Implementado en la rama Smart Import:
+
+- fallback automático desde el parser estricto al motor Smart Import cuando el problema es de estructura/esquema y no de seguridad del contenedor;
+- preview browser con hoja sugerida, fila de encabezado, score del dataset, columnas observadas y mapping canónico;
+- selector manual source → canonical para los 8 campos requeridos;
+- muestras de valores sólo para facilitar la revisión visual del mapping;
+- columnas no utilizadas mostradas como ignoradas y excluidas de la canonicalización;
+- importación no estándar bloqueada hasta recibir confirmación explícita del mapping;
+- binding de la confirmación a `sheet_name + header_row` y reanálisis completo del archivo re-subido;
+- rechazo si una misma columna se intenta reutilizar para dos campos obligatorios;
+- perfil tenant-scoped opcional para recordar el formato;
+- el perfil guarda sólo encabezados normalizados + mapping, nunca valores de negocio ni bytes del workbook;
+- fingerprint SHA-256 del esquema de encabezados;
+- resolución del mapping recordado por nombre normalizado de encabezado, no por posición física de columna;
+- `EXACT`: misma firma de encabezados;
+- `COMPATIBLE_DRIFT`: cambió la firma (por ejemplo, aparecieron columnas extra) pero siguen existiendo de forma unívoca todas las columnas usadas por el mapping;
+- `BLOCKED_DRIFT`: falta o se vuelve ambigua alguna columna necesaria; el perfil no se aplica automáticamente;
+- perfiles versionados, con contador de uso y metadatos de creador/último editor;
+- tabla protegida con RLS forzado por `organization_id` y privilegios mínimos del runtime.
+
+## Flujo browser
+
+```text
+Excel del cliente
+    ↓
+preflight XLSX seguro
+    ↓
+parser oficial exacto ──si coincide──→ validador canónico
+    │
+    └─si sólo difiere la estructura──→ Smart Import discovery
+                                         ↓
+                                   hoja + header
+                                         ↓
+                                   mapping sugerido
+                                         ↓
+                                  preview humano
+                                         ↓
+                                confirmación explícita
+                                         ↓
+                                  canonicalización
+                                         ↓
+                               validador batch existente
+                                         ↓
+                              persistencia atómica existente
+```
 
 ## Principios de seguridad
 
 1. El XLSX pasa primero por el preflight ZIP/XML endurecido existente.
-2. Discovery no persiste datos.
-3. Un campo ausente nunca se inventa.
-4. Un mapping ambiguo queda `MANUAL` o `IGNORED`.
-5. Campos críticos requieren mayor confianza para auto-map.
+2. Un error de seguridad del contenedor no activa un bypass Smart Import.
+3. Discovery no persiste lotes.
+4. Un campo ausente nunca se inventa.
+5. Un mapping ambiguo queda sujeto a revisión humana.
 6. Dos columnas fuente no pueden auto-mapear silenciosamente al mismo destino canónico.
-7. Las columnas extra se ignoran en la proyección canónica; no invalidan el workbook.
-8. Fórmulas o errores Excel en columnas mapeadas fallan cerrado.
-9. La validación final sigue pasando por el esquema canónico de Litoral Trace antes de cualquier escritura en PostgreSQL.
-10. La canonicalización V1 conserva temporalmente el límite actual de 500 filas porque el validador/persistencia existentes todavía son atómicos. Discovery puede inspeccionar workbooks más amplios; chunk/jobs se implementará en un gate posterior.
+7. La confirmación recibida desde el browser no se confía por sí sola: el workbook se analiza nuevamente y se verifica que hoja, header e índices sigan existiendo.
+8. Fórmulas o errores Excel en columnas mapeadas fallan cerrado; una fórmula en una columna ignorada no contamina el dataset canónico.
+9. Los perfiles recordados se aíslan por tenant con RLS y no contienen datos de negocio del archivo.
+10. La validación semántica, idempotencia y persistencia atómica existentes siguen siendo la última autoridad.
+11. La importación canónica browser mantiene temporalmente el límite de 500 filas; no se aumenta una constante para simular escalabilidad.
 
-## Estados de mapping
+## Estados de mapping del motor
 
 - `AUTO`: suficientemente seguro para preselección automática.
 - `CONFIRM`: sugerencia fuerte que debe mostrarse al usuario.
 - `MANUAL`: candidato ambiguo; requiere decisión humana.
 - `IGNORED`: no tiene correspondencia suficientemente segura con el esquema objetivo.
 
-## Lo que todavía no hace este primer ciclo
+Una selección realizada por el usuario puede aparecer en el preview como `USER` cuando contradice o reemplaza la sugerencia original del matcher.
 
-- UI browser de preview/mapping/confirmación.
-- Persistencia de perfiles de mapping por empresa.
-- Fingerprint y schema drift/versionado por tenant.
-- Importación grande por chunks/jobs.
-- Joins entre hojas.
-- Varias tablas independientes dentro de una misma hoja.
-- CSV/ERP/API.
+## Compatibilidad y límites
+
+La plantilla oficial continúa siendo el fast path y conserva el comportamiento histórico.
+
+Smart Import V1/V1.1 no intenta ser un ETL genérico. Todavía quedan fuera:
+
+- importación grande por jobs/chunks;
+- joins entre hojas;
+- varias tablas independientes dentro de una misma hoja;
+- CSV;
+- conectores ERP/API;
+- transformaciones arbitrarias;
 - LLM/OCR.
 
-## Próximo gate
+## Próximo gate recomendado
 
-Exponer el discovery y la canonicalización mediante un preview browser-safe: hoja sugerida, fila de encabezado, mappings, confidence, campos faltantes y muestra de filas. Después, persistir perfiles por `organization_id` con fingerprint y detección de schema drift. El procesamiento de más de 500 filas debe implementarse como trabajo explícito por chunks sin debilitar la semántica fail-closed.
+El siguiente salto técnico debe ser `Large Intake Jobs`: staging explícito + chunks + validación global + commit controlado, para superar las 500 filas sin debilitar atomicidad, idempotencia o tenant isolation. Antes de construir joins o pipelines genéricos conviene validar con archivos reales de clientes qué patrones se repiten.
