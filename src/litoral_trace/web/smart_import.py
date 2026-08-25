@@ -30,6 +30,7 @@ SMART_CONFIRM_FIELD = "smart_mapping_confirmed"
 SMART_SHEET_FIELD = "smart_sheet_name"
 SMART_HEADER_ROW_FIELD = "smart_header_row"
 SMART_HEADER_FINGERPRINT_FIELD = "smart_header_fingerprint"
+SMART_WORKBOOK_SHA_FIELD = "smart_workbook_sha256"
 SMART_REMEMBER_FIELD = "smart_remember_mapping"
 SMART_PROFILE_NAME_FIELD = "smart_profile_name"
 
@@ -58,6 +59,7 @@ class SmartImportPreviewView:
     sheet_name: str
     header_row: int
     header_fingerprint: str
+    workbook_sha256: str
     dataset_score_percent: int
     estimated_rows: int
     estimated_columns: int
@@ -121,19 +123,32 @@ def _select_candidate(
     requested_sheet = _form_text(form, SMART_SHEET_FIELD)
     requested_header = _form_text(form, SMART_HEADER_ROW_FIELD)
     requested_fingerprint = _form_text(form, SMART_HEADER_FINGERPRINT_FIELD)
+    requested_workbook_sha = _form_text(form, SMART_WORKBOOK_SHA_FIELD)
     mapping_confirmed = _is_truthy_form_value(form.get(SMART_CONFIRM_FIELD))
 
-    if mapping_confirmed and not requested_fingerprint:
+    if mapping_confirmed and (not requested_fingerprint or not requested_workbook_sha):
         raise SmartImportError(
             code="SMART_CANDIDATE_CHANGED",
             detail=(
-                "La confirmación del mapping no incluye la firma estructural esperada. "
-                "Volvé a analizar el archivo antes de importar."
+                "La confirmación del mapping no incluye la identidad estructural completa del archivo. "
+                "Volvé a analizarlo antes de importar."
+            ),
+        )
+
+    if requested_workbook_sha and requested_workbook_sha != analysis.sha256:
+        raise SmartImportError(
+            code="SMART_CANDIDATE_CHANGED",
+            detail=(
+                "El archivo seleccionado no coincide exactamente con el que fue analizado. "
+                "Volvé a analizar este Excel antes de confirmar o importar."
             ),
         )
 
     has_candidate_binding = bool(
-        requested_sheet or requested_header or requested_fingerprint
+        requested_sheet
+        or requested_header
+        or requested_fingerprint
+        or requested_workbook_sha
     )
     if has_candidate_binding:
         if not requested_sheet or not requested_header:
@@ -336,6 +351,7 @@ def _build_preview(
         sheet_name=candidate.sheet_name,
         header_row=candidate.header_row,
         header_fingerprint=_candidate_fingerprint(candidate),
+        workbook_sha256=analysis.sha256,
         dataset_score_percent=int(round(candidate.score * 100)),
         estimated_rows=candidate.estimated_rows,
         estimated_columns=candidate.estimated_columns,
