@@ -84,4 +84,4 @@ def test_release_gate_executes_real_platform_postgres_control_plane() -> None:
     assert "python -m alembic upgrade head" in workflow
     assert "Gate 17 - Platform control-plane under FORCE RLS" in workflow
     assert "tests/test_platform_control_plane_p21_postgres_integration.py" in workflow
-    assert 'grep -F "028_platform_definer_rls" alembic-current.txt' in workflow
+    assert 'grep -F "029_add_smart_import_profiles" alembic-current.txt' in workflow
