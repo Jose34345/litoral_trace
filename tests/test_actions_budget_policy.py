@@ -51,15 +51,11 @@ def test_ordinary_ci_uses_one_automatic_runner_job() -> None:
     frontend_job = workflow.split("frontend-build:", 1)[1].split("production-build:", 1)[0]
     production_job = workflow.split("production-build:", 1)[1]
 
-    temporary_public_gate = (
-        "if: github.event_name == 'workflow_dispatch' || "
-        "(github.event_name == 'push' && github.ref_name == 'feature/smart-import-v1')"
-    )
     assert "if: github.event_name == 'workflow_dispatch'" not in python_job
     assert "runs-on: ubuntu-latest" in python_job
     assert "timeout-minutes: 20" in python_job
-    assert temporary_public_gate in frontend_job
-    assert temporary_public_gate in production_job
+    assert "if: github.event_name == 'workflow_dispatch'" in frontend_job
+    assert "if: github.event_name == 'workflow_dispatch'" in production_job
 
 
 def test_ordinary_ci_cancels_superseded_runs_and_ignores_docs_only_changes() -> None:
