@@ -2,11 +2,6 @@ name: V1 Final Release Acceptance
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feature/smart-import-v1
-    paths:
-      - ".github/workflows/v1-final-release-acceptance.yml"
 
 permissions:
   contents: read
