@@ -31,6 +31,7 @@ from .contracts import DatasetCandidate
 SMART_PROFILE_SCHEMA_KIND = "lotes"
 SMART_PROFILE_NAME_MAX_LENGTH = 120
 SMART_PROFILE_MIN_OVERLAP = 0.45
+_UNSAFE_PROFILE_NAME_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 
 
 class SmartImportProfileError(RuntimeError):
@@ -60,11 +61,29 @@ class SmartImportProfileMatch:
 SessionFactory = Callable[[], Session | None]
 
 
+def _contains_unsafe_profile_name_codepoint(value: str) -> bool:
+    """Reject invisible/control direction changes in a user-visible profile name."""
+
+    return any(
+        unicodedata.category(character) in _UNSAFE_PROFILE_NAME_CATEGORIES
+        for character in value
+    )
+
+
 def _normalize_profile_name(value: str | None, *, fallback: str) -> str:
     raw = str(value or fallback)
-    normalized = " ".join(
-        unicodedata.normalize("NFKC", raw).strip().split()
-    )
+    if _contains_unsafe_profile_name_codepoint(raw):
+        raise SmartImportProfileValidationError(
+            "El nombre del formato contiene caracteres de control o dirección Unicode no permitidos."
+        )
+
+    normalized_unicode = unicodedata.normalize("NFKC", raw)
+    if _contains_unsafe_profile_name_codepoint(normalized_unicode):
+        raise SmartImportProfileValidationError(
+            "El nombre del formato contiene caracteres de control o dirección Unicode no permitidos."
+        )
+
+    normalized = " ".join(normalized_unicode.strip().split())
     if not normalized:
         raise SmartImportProfileValidationError(
             "El nombre del formato recordado no puede estar vacío."
