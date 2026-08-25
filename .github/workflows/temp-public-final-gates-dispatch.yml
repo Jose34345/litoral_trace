@@ -28,6 +28,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Dispatch only the final integration surfaces needed for this PR.
           for workflow in \
             ci.yml \
             release-integration-gates.yml \
