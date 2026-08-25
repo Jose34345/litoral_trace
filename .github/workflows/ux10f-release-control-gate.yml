@@ -1,7 +1,6 @@
 name: UX10 Litoral Trace Release Control Gate
 
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:
