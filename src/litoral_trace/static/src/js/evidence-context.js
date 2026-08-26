@@ -77,7 +77,16 @@ function disableMutationFormsUntilSubjectConfirmed(selector) {
   const guard = document.createElement("div");
   guard.dataset.evidenceContextGuard = "true";
   guard.setAttribute("role", "status");
-  guard.className = "mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs leading-5 text-amber-900";
+  guard.style.cssText = [
+    "margin-top:0.75rem",
+    "border:1px solid #fcd34d",
+    "border-radius:0.5rem",
+    "background:#fffbeb",
+    "padding:0.75rem",
+    "font-size:0.75rem",
+    "line-height:1.25rem",
+    "color:#78350f",
+  ].join(";");
   guard.innerHTML = "<strong>Confirmá el eslabón antes de vincular.</strong> La pantalla no reutiliza silenciosamente el primer origen después de un reingreso. Elegí el origen, movimiento, lote o despacho que el documento respalda.";
   selector.closest("form")?.appendChild(guard);
 
@@ -88,7 +97,8 @@ function disableMutationFormsUntilSubjectConfirmed(selector) {
       button.disabled = true;
       button.setAttribute("aria-disabled", "true");
       button.title = "Elegí y confirmá primero el eslabón de trazabilidad.";
-      button.classList.add("opacity-50", "cursor-not-allowed");
+      button.style.opacity = "0.5";
+      button.style.cursor = "not-allowed";
     });
   });
 }
