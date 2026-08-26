@@ -51,7 +51,23 @@ function showSessionWarning() {
   const warning = document.createElement("div");
   warning.dataset.sessionRenewalWarning = "true";
   warning.setAttribute("role", "alert");
-  warning.className = "fixed inset-x-4 top-4 z-[100] mx-auto max-w-2xl rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 shadow-xl";
+  warning.style.cssText = [
+    "position:fixed",
+    "left:1rem",
+    "right:1rem",
+    "top:1rem",
+    "z-index:100",
+    "max-width:42rem",
+    "margin:0 auto",
+    "border:1px solid #fcd34d",
+    "border-radius:0.75rem",
+    "background:#fffbeb",
+    "padding:1rem",
+    "font-size:0.875rem",
+    "line-height:1.5",
+    "color:#451a03",
+    "box-shadow:0 10px 15px -3px rgb(0 0 0 / 0.1)",
+  ].join(";");
   warning.innerHTML = "<strong>La sesión necesita reautenticación.</strong> Para proteger los datos, Litoral Trace no renovó la sesión automáticamente. Abrí nuevamente la aplicación antes de continuar.";
   document.body.appendChild(warning);
 }
