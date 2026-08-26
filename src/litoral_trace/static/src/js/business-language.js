@@ -54,11 +54,38 @@ const ORDERED_LABELS = Array.from(PRESENTATION_LABELS.entries())
   .sort((left, right) => right[0].length - left[0].length);
 
 function presentText(rawText) {
-  let rendered = rawText;
-  ORDERED_LABELS.forEach(([technical, business]) => {
-    rendered = rendered.replaceAll(technical, business);
-  });
-  return rendered;
+  const original = String(rawText ?? "");
+  const trimmed = original.trim();
+
+  if (!trimmed) {
+    return original;
+  }
+
+  // Exact badges/options are safe to translate because there is no business
+  // identifier around the token. Preserve whitespace emitted by the template.
+  const exact = PRESENTATION_LABELS.get(trimmed);
+  if (exact) {
+    const start = original.indexOf(trimmed);
+    return `${original.slice(0, start)}${exact}${original.slice(start + trimmed.length)}`;
+  }
+
+  // Technical source keys in checklists are rendered as a terminal segment,
+  // usually "Fuente legible · RISK_CONCLUSION". Translate only that terminal
+  // segment. Never replace substrings inside filenames, shipment codes, notes,
+  // hashes or other audit-relevant user/business data.
+  for (const [technical, business] of ORDERED_LABELS) {
+    const suffixes = [` · ${technical}`, `: ${technical}`];
+    for (const suffix of suffixes) {
+      if (trimmed.endsWith(suffix)) {
+        const technicalStart = original.lastIndexOf(technical);
+        if (technicalStart >= 0) {
+          return `${original.slice(0, technicalStart)}${business}${original.slice(technicalStart + technical.length)}`;
+        }
+      }
+    }
+  }
+
+  return original;
 }
 
 function translateTextNodes(root = document.body) {
