@@ -2,11 +2,6 @@ const EVIDENCE_PATH = "/evidence";
 const SHIPMENT_PARAM = "shipment_code";
 const SUBJECT_PARAM = "subject";
 
-function shipmentSubject(code) {
-  const normalized = String(code || "").trim();
-  return normalized ? `SHIPMENT|${normalized}` : "";
-}
-
 function currentShipmentCode() {
   const params = new URLSearchParams(window.location.search);
   return (params.get(SHIPMENT_PARAM) || "").trim();
@@ -18,7 +13,6 @@ function preserveShipmentOnEvidenceLinks() {
     return;
   }
 
-  const subject = shipmentSubject(code);
   document.querySelectorAll('a[href]').forEach((anchor) => {
     let target;
     try {
@@ -31,16 +25,21 @@ function preserveShipmentOnEvidenceLinks() {
       target.origin !== window.location.origin
       || target.pathname !== EVIDENCE_PATH
       || target.searchParams.has(SUBJECT_PARAM)
+      || target.searchParams.has(SHIPMENT_PARAM)
     ) {
       return;
     }
 
-    target.searchParams.set(SUBJECT_PARAM, subject);
+    // Shipment evidence subjects use the shipment public UUID internally, not
+    // the commercial shipment code. Preserve the code only as navigation
+    // context; /evidence resolves it against the tenant-scoped selector before
+    // adding an explicit subject key.
+    target.searchParams.set(SHIPMENT_PARAM, code);
     anchor.href = `${target.pathname}${target.search}${target.hash}`;
   });
 }
 
-function subjectFromSafeReferrer() {
+function shipmentCodeFromSafeReferrer() {
   if (!document.referrer) {
     return "";
   }
@@ -51,35 +50,30 @@ function subjectFromSafeReferrer() {
       return "";
     }
 
-    const code = (referrer.searchParams.get(SHIPMENT_PARAM) || "").trim();
-    return shipmentSubject(code);
+    return (referrer.searchParams.get(SHIPMENT_PARAM) || "").trim();
   } catch (_error) {
     return "";
   }
 }
 
-function addSubjectConfirmationGuard() {
-  if (window.location.pathname !== EVIDENCE_PATH) {
-    return;
+function findShipmentSubject(selector, shipmentCode) {
+  const normalizedCode = String(shipmentCode || "").trim();
+  if (!normalizedCode) {
+    return "";
   }
 
-  const params = new URLSearchParams(window.location.search);
-  if (params.has(SUBJECT_PARAM)) {
-    return;
-  }
+  const expectedPrefix = `Despacho · ${normalizedCode}`.toLocaleLowerCase("es");
+  const option = Array.from(selector.options).find((candidate) => {
+    const text = String(candidate.textContent || "").trim().toLocaleLowerCase("es");
+    return text === expectedPrefix || text.startsWith(`${expectedPrefix} ·`);
+  });
 
-  const recoveredSubject = subjectFromSafeReferrer();
-  if (recoveredSubject) {
-    params.set(SUBJECT_PARAM, recoveredSubject);
-    window.location.replace(`${EVIDENCE_PATH}?${params.toString()}`);
-    return;
-  }
+  // The value is the tenant-scoped key rendered by the server, e.g.
+  // SHIPMENT|<public UUID>. We never manufacture that UUID in the browser.
+  return option?.value || "";
+}
 
-  const selector = document.querySelector("#subject-select");
-  if (!selector) {
-    return;
-  }
-
+function disableMutationFormsUntilSubjectConfirmed(selector) {
   const guard = document.createElement("div");
   guard.dataset.evidenceContextGuard = "true";
   guard.setAttribute("role", "status");
@@ -87,11 +81,9 @@ function addSubjectConfirmationGuard() {
   guard.innerHTML = "<strong>Confirmá el eslabón antes de vincular.</strong> La pantalla no reutiliza silenciosamente el primer origen después de un reingreso. Elegí el origen, movimiento, lote o despacho que el documento respalda.";
   selector.closest("form")?.appendChild(guard);
 
-  const guardedForms = document.querySelectorAll(
+  document.querySelectorAll(
     'form[action="/evidence/link"], form[action="/evidence/upload-link"]',
-  );
-
-  guardedForms.forEach((form) => {
+  ).forEach((form) => {
     form.querySelectorAll('button[type="submit"], button:not([type])').forEach((button) => {
       button.disabled = true;
       button.setAttribute("aria-disabled", "true");
@@ -101,9 +93,40 @@ function addSubjectConfirmationGuard() {
   });
 }
 
+function resolveOrGuardEvidenceSubject() {
+  if (window.location.pathname !== EVIDENCE_PATH) {
+    return;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  if (params.has(SUBJECT_PARAM)) {
+    return;
+  }
+
+  const selector = document.querySelector("#subject-select");
+  if (!selector) {
+    return;
+  }
+
+  const shipmentCode = (
+    (params.get(SHIPMENT_PARAM) || "").trim()
+    || shipmentCodeFromSafeReferrer()
+  );
+  const resolvedSubject = findShipmentSubject(selector, shipmentCode);
+
+  if (resolvedSubject) {
+    params.delete(SHIPMENT_PARAM);
+    params.set(SUBJECT_PARAM, resolvedSubject);
+    window.location.replace(`${EVIDENCE_PATH}?${params.toString()}`);
+    return;
+  }
+
+  disableMutationFormsUntilSubjectConfirmed(selector);
+}
+
 function bootEvidenceContext() {
   preserveShipmentOnEvidenceLinks();
-  addSubjectConfirmationGuard();
+  resolveOrGuardEvidenceSubject();
 }
 
 if (document.readyState === "loading") {
