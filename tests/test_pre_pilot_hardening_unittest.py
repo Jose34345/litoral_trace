@@ -97,9 +97,27 @@ def test_session_renewal_preserves_forms_and_rotates_rendered_csrf() -> None:
     assert 'input[name="csrf_token"]' in source
     assert "window.location.href" in source
     assert "DOMParser" in source
-    assert "credentials: \"same-origin\"" in source
-    assert "localStorage" not in source
-    assert "sessionStorage" not in source
+    assert 'credentials: "same-origin"' in source
+    assert "window.localStorage" not in source
+    assert "window.sessionStorage" not in source
+
+
+def test_session_renewal_serializes_tabs_and_rehydrates_peer_csrf() -> None:
+    source = (STATIC_JS / "session-renewal.js").read_text(encoding="utf-8")
+    assert "navigator.locks.request" in source
+    assert "BroadcastChannel" in source
+    assert 'type: "refreshed"' in source
+    assert "synchronizeFromPeer" in source
+    assert "synchronizeSecurityMeta" in source
+    assert "announceRefresh(completedAt)" in source
+
+
+def test_live_csrf_bridge_overrides_stale_page_headers_after_rotation() -> None:
+    source = (STATIC_JS / "session-renewal.js").read_text(encoding="utf-8")
+    assert "installLiveCsrfFetchBridge" in source
+    assert "headers.set(CSRF_HEADER_NAME, token)" in source
+    assert "requestUrl.pathname === REFRESH_URL" in source
+    assert "readMeta(CSRF_META_NAME)" in source
 
 
 def test_evidence_context_never_silently_enables_default_subject_mutations() -> None:
@@ -109,13 +127,15 @@ def test_evidence_context_never_silently_enables_default_subject_mutations() -> 
     assert 'form[action="/evidence/link"]' in source
     assert 'form[action="/evidence/upload-link"]' in source
     assert "button.disabled = true" in source
+    assert "target.searchParams.set(SHIPMENT_PARAM, code)" in source
+    assert "return option?.value" in source
 
 
 def test_datetime_local_guard_handles_timestamptz_rendering_without_timezone_shift() -> None:
     source = (STATIC_JS / "datetime-local.js").read_text(encoding="utf-8")
     assert 'input[type="datetime-local"]' in source
     assert "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}" in source
-    assert "getAttribute(\"value\")" in source
+    assert 'getAttribute("value")' in source
     assert "getTimezoneOffset" not in source
 
 
@@ -132,3 +152,6 @@ def test_business_language_layer_translates_internal_codes_without_mutating_valu
         assert pair in source
     assert "node.nodeValue = translated" in source
     assert ".value =" not in source
+    assert "replaceAll" not in source
+    assert "trimmed.endsWith(suffix)" in source
+    assert "PRESENTATION_LABELS.get(trimmed)" in source
