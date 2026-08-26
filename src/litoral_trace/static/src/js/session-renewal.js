@@ -4,7 +4,7 @@ const REFRESH_AFTER_META_NAME = "lt-session-refresh-after";
 const CSRF_HEADER_NAME = "X-CSRF-Token";
 const REFRESH_URL = "/api/v1/auth/refresh";
 const REFRESH_LOCK_NAME = "litoral-trace-session-refresh";
-const LAST_REFRESH_KEY = "litoral-trace:last-session-refresh-at";
+const REFRESH_CHANNEL_NAME = "litoral-trace-session-refresh-events";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
 
 function readMeta(name) {
@@ -44,25 +44,6 @@ function extractSecurityMeta(htmlText) {
       ?.getAttribute("content")
       ?.trim() || "",
   };
-}
-
-function readSharedRefreshAt() {
-  try {
-    const value = Number.parseInt(window.localStorage.getItem(LAST_REFRESH_KEY) || "0", 10);
-    return Number.isFinite(value) ? value : 0;
-  } catch (_error) {
-    return 0;
-  }
-}
-
-function writeSharedRefreshAt(value) {
-  try {
-    // This is coordination metadata only. No access token, refresh token, CSRF
-    // token, tenant id or other credential is ever persisted in Web Storage.
-    window.localStorage.setItem(LAST_REFRESH_KEY, String(value));
-  } catch (_error) {
-    // Storage may be disabled. Web Locks still serialize rotations safely.
-  }
 }
 
 function showSessionWarning(message = "La sesión necesita reautenticación.") {
@@ -120,9 +101,9 @@ function installLiveCsrfFetchBridge() {
       return downstreamFetch(input, init);
     }
 
-    // /refresh uses the separate browser-bound token. Every other unsafe API
-    // request must use the current subject/session-bound token from the meta tag,
-    // even if legacy page code cached and supplied an older explicit header.
+    // /refresh uses its dedicated browser-bound token. Every other unsafe API
+    // request uses the current session-bound token from the meta tag, even when
+    // legacy page code supplied a token that was cached before a rotation.
     if (requestUrl.pathname === REFRESH_URL) {
       return downstreamFetch(input, init);
     }
@@ -179,7 +160,7 @@ async function synchronizeSecurityMeta() {
 async function rotateSession() {
   const token = readMeta(REFRESH_CSRF_META_NAME);
   if (!token) {
-    return false;
+    return {rotated: false, synchronized: false};
   }
 
   let response;
@@ -199,24 +180,23 @@ async function rotateSession() {
       },
     );
   } catch (_error) {
-    return false;
+    return {rotated: false, synchronized: false};
   }
 
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
       showSessionWarning();
     }
-    return false;
+    return {rotated: false, synchronized: false};
   }
 
-  // Refresh-token rotation changes the session id. Pull only the security meta
-  // from a fresh GET and update the existing DOM in place so form inputs and
-  // scroll position are preserved.
+  // Set-Cookie has been applied when fetch resolves. Rehydrate this tab's
+  // session-bound CSRF material without reloading the page or losing inputs.
   const synchronized = await synchronizeSecurityMeta();
   if (!synchronized) {
     showSessionWarning("La sesión se renovó, pero la página no pudo sincronizar su protección CSRF.");
   }
-  return synchronized;
+  return {rotated: true, synchronized};
 }
 
 function installSessionRenewal() {
@@ -227,20 +207,88 @@ function installSessionRenewal() {
     return;
   }
 
+  // Correct rotation requires both an origin-scoped exclusive lock and an
+  // ephemeral cross-tab notification channel. Without either primitive we fail
+  // closed: the server-side session simply expires normally and the user can
+  // authenticate again. No credential or coordination state is persisted in
+  // localStorage/sessionStorage.
+  if (!navigator.locks?.request || typeof window.BroadcastChannel !== "function") {
+    return;
+  }
+
   installLiveCsrfFetchBridge();
 
   const intervalMs = rawInterval * 1000;
   const duplicateSuppressionMs = Math.max(5000, Math.min(30000, Math.floor(intervalMs / 3)));
+  const channel = new window.BroadcastChannel(REFRESH_CHANNEL_NAME);
   let lastRenewalAt = Date.now();
+  let sharedRefreshAt = 0;
   let inFlight = null;
+  let peerSyncInFlight = null;
+
+  const rememberSharedRefresh = (value) => {
+    const timestamp = Number(value);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+      return false;
+    }
+    sharedRefreshAt = Math.max(sharedRefreshAt, timestamp);
+    return true;
+  };
+
+  const announceRefresh = (timestamp) => {
+    rememberSharedRefresh(timestamp);
+    channel.postMessage({type: "refreshed", at: timestamp});
+  };
+
+  const synchronizeFromPeer = async (timestamp) => {
+    if (!rememberSharedRefresh(timestamp)) {
+      return false;
+    }
+    lastRenewalAt = Math.max(lastRenewalAt, Number(timestamp));
+
+    if (peerSyncInFlight) {
+      return peerSyncInFlight;
+    }
+
+    peerSyncInFlight = synchronizeSecurityMeta();
+    try {
+      const synchronized = await peerSyncInFlight;
+      if (!synchronized) {
+        showSessionWarning("Otra pestaña renovó la sesión, pero esta página no pudo sincronizar su protección CSRF.");
+      }
+      return synchronized;
+    } finally {
+      peerSyncInFlight = null;
+    }
+  };
+
+  channel.addEventListener("message", (event) => {
+    const payload = event.data;
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+
+    if (payload.type === "refreshed") {
+      void synchronizeFromPeer(payload.at);
+      return;
+    }
+
+    if (payload.type === "state-request" && sharedRefreshAt > 0) {
+      channel.postMessage({type: "refreshed", at: sharedRefreshAt});
+    }
+  });
+
+  // A newly opened tab can ask existing tabs for their latest in-memory
+  // coordination timestamp. Only a timestamp crosses the channel—never access,
+  // refresh or CSRF tokens, tenant IDs, usernames or business data.
+  channel.postMessage({type: "state-request"});
 
   const renewInsideCrossTabLock = async () => {
     const now = Date.now();
-    const sharedRefreshAt = readSharedRefreshAt();
 
-    // Another tab may have just rotated the shared cookies while this tab was
-    // waiting for the Web Lock. Do not rotate again; only rehydrate this tab's
-    // session-bound CSRF token from the newly authenticated GET response.
+    // A peer may have rotated the shared HttpOnly cookies while this tab waited
+    // for the Web Lock. If so, never perform a second immediate rotation: just
+    // rehydrate this tab's session-bound CSRF material.
     if (sharedRefreshAt && now - sharedRefreshAt < duplicateSuppressionMs) {
       const synchronized = await synchronizeSecurityMeta();
       if (synchronized) {
@@ -249,13 +297,15 @@ function installSessionRenewal() {
       return synchronized;
     }
 
-    const rotated = await rotateSession();
-    if (rotated) {
+    const result = await rotateSession();
+    if (result.rotated) {
       const completedAt = Date.now();
       lastRenewalAt = completedAt;
-      writeSharedRefreshAt(completedAt);
+      // Broadcast immediately after the server rotated the HttpOnly cookies so
+      // every peer can refresh its session-bound CSRF token before its next POST.
+      announceRefresh(completedAt);
     }
-    return rotated;
+    return result.synchronized;
   };
 
   const renew = async () => {
@@ -263,22 +313,11 @@ function installSessionRenewal() {
       return inFlight;
     }
 
-    inFlight = (async () => {
-      // Rotation-based reuse detection intentionally revokes a session family
-      // when the same refresh token is used twice. Therefore automatic refresh
-      // must be serialized across browser tabs. Web Locks provides an origin-
-      // scoped exclusive lock without storing credentials. On browsers without
-      // Web Locks we fail closed and leave the existing server expiry behavior.
-      if (!navigator.locks?.request) {
-        return false;
-      }
-
-      return navigator.locks.request(
-        REFRESH_LOCK_NAME,
-        {mode: "exclusive"},
-        renewInsideCrossTabLock,
-      );
-    })();
+    inFlight = navigator.locks.request(
+      REFRESH_LOCK_NAME,
+      {mode: "exclusive"},
+      renewInsideCrossTabLock,
+    );
 
     try {
       return await inFlight;
