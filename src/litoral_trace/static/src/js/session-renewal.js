@@ -3,6 +3,9 @@ const REFRESH_CSRF_META_NAME = "lt-refresh-csrf-token";
 const REFRESH_AFTER_META_NAME = "lt-session-refresh-after";
 const CSRF_HEADER_NAME = "X-CSRF-Token";
 const REFRESH_URL = "/api/v1/auth/refresh";
+const REFRESH_LOCK_NAME = "litoral-trace-session-refresh";
+const LAST_REFRESH_KEY = "litoral-trace:last-session-refresh-at";
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
 
 function readMeta(name) {
   return (
@@ -43,7 +46,26 @@ function extractSecurityMeta(htmlText) {
   };
 }
 
-function showSessionWarning() {
+function readSharedRefreshAt() {
+  try {
+    const value = Number.parseInt(window.localStorage.getItem(LAST_REFRESH_KEY) || "0", 10);
+    return Number.isFinite(value) ? value : 0;
+  } catch (_error) {
+    return 0;
+  }
+}
+
+function writeSharedRefreshAt(value) {
+  try {
+    // This is coordination metadata only. No access token, refresh token, CSRF
+    // token, tenant id or other credential is ever persisted in Web Storage.
+    window.localStorage.setItem(LAST_REFRESH_KEY, String(value));
+  } catch (_error) {
+    // Storage may be disabled. Web Locks still serialize rotations safely.
+  }
+}
+
+function showSessionWarning(message = "La sesión necesita reautenticación.") {
   if (document.querySelector("[data-session-renewal-warning]")) {
     return;
   }
@@ -68,8 +90,133 @@ function showSessionWarning() {
     "color:#451a03",
     "box-shadow:0 10px 15px -3px rgb(0 0 0 / 0.1)",
   ].join(";");
-  warning.innerHTML = "<strong>La sesión necesita reautenticación.</strong> Para proteger los datos, Litoral Trace no renovó la sesión automáticamente. Abrí nuevamente la aplicación antes de continuar.";
+  warning.innerHTML = `<strong>${message}</strong> Para proteger los datos, Litoral Trace no continuó la renovación automática. Abrí nuevamente la aplicación antes de seguir.`;
   document.body.appendChild(warning);
+}
+
+function installLiveCsrfFetchBridge() {
+  if (
+    typeof window.fetch !== "function"
+    || window.fetch.__litoralTraceLiveCsrf
+  ) {
+    return;
+  }
+
+  const downstreamFetch = window.fetch.bind(window);
+
+  const liveCsrfFetch = (input, init = {}) => {
+    const method = String(
+      init.method || (input instanceof Request ? input.method : "GET"),
+    ).toUpperCase();
+
+    if (SAFE_METHODS.has(method)) {
+      return downstreamFetch(input, init);
+    }
+
+    const rawUrl = input instanceof Request ? input.url : String(input);
+    const requestUrl = new URL(rawUrl, window.location.href);
+
+    if (requestUrl.origin !== window.location.origin) {
+      return downstreamFetch(input, init);
+    }
+
+    // /refresh uses the separate browser-bound token. Every other unsafe API
+    // request must use the current subject/session-bound token from the meta tag,
+    // even if legacy page code cached and supplied an older explicit header.
+    if (requestUrl.pathname === REFRESH_URL) {
+      return downstreamFetch(input, init);
+    }
+
+    const token = readMeta(CSRF_META_NAME);
+    if (!token) {
+      return downstreamFetch(input, init);
+    }
+
+    const headers = new Headers(input instanceof Request ? input.headers : undefined);
+    const initHeaders = new Headers(init.headers || undefined);
+    initHeaders.forEach((value, key) => headers.set(key, value));
+    headers.set(CSRF_HEADER_NAME, token);
+
+    return downstreamFetch(input, {...init, headers});
+  };
+
+  Object.defineProperty(liveCsrfFetch, "__litoralTraceLiveCsrf", {
+    value: true,
+    enumerable: false,
+  });
+  window.fetch = liveCsrfFetch;
+}
+
+async function synchronizeSecurityMeta() {
+  try {
+    const pageResponse = await window.fetch(
+      window.location.href,
+      {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {"Accept": "text/html"},
+      },
+    );
+
+    if (!pageResponse.ok) {
+      return false;
+    }
+
+    const securityMeta = extractSecurityMeta(await pageResponse.text());
+    if (!securityMeta.csrfToken || !securityMeta.refreshCsrfToken) {
+      return false;
+    }
+
+    updateRenderedCsrfToken(securityMeta.csrfToken);
+    updateMeta(REFRESH_CSRF_META_NAME, securityMeta.refreshCsrfToken);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function rotateSession() {
+  const token = readMeta(REFRESH_CSRF_META_NAME);
+  if (!token) {
+    return false;
+  }
+
+  let response;
+  try {
+    response = await window.fetch(
+      REFRESH_URL,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          [CSRF_HEADER_NAME]: token,
+        },
+        body: "{}",
+      },
+    );
+  } catch (_error) {
+    return false;
+  }
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      showSessionWarning();
+    }
+    return false;
+  }
+
+  // Refresh-token rotation changes the session id. Pull only the security meta
+  // from a fresh GET and update the existing DOM in place so form inputs and
+  // scroll position are preserved.
+  const synchronized = await synchronizeSecurityMeta();
+  if (!synchronized) {
+    showSessionWarning("La sesión se renovó, pero la página no pudo sincronizar su protección CSRF.");
+  }
+  return synchronized;
 }
 
 function installSessionRenewal() {
@@ -80,9 +227,36 @@ function installSessionRenewal() {
     return;
   }
 
+  installLiveCsrfFetchBridge();
+
   const intervalMs = rawInterval * 1000;
+  const duplicateSuppressionMs = Math.max(5000, Math.min(30000, Math.floor(intervalMs / 3)));
   let lastRenewalAt = Date.now();
   let inFlight = null;
+
+  const renewInsideCrossTabLock = async () => {
+    const now = Date.now();
+    const sharedRefreshAt = readSharedRefreshAt();
+
+    // Another tab may have just rotated the shared cookies while this tab was
+    // waiting for the Web Lock. Do not rotate again; only rehydrate this tab's
+    // session-bound CSRF token from the newly authenticated GET response.
+    if (sharedRefreshAt && now - sharedRefreshAt < duplicateSuppressionMs) {
+      const synchronized = await synchronizeSecurityMeta();
+      if (synchronized) {
+        lastRenewalAt = Date.now();
+      }
+      return synchronized;
+    }
+
+    const rotated = await rotateSession();
+    if (rotated) {
+      const completedAt = Date.now();
+      lastRenewalAt = completedAt;
+      writeSharedRefreshAt(completedAt);
+    }
+    return rotated;
+  };
 
   const renew = async () => {
     if (inFlight) {
@@ -90,72 +264,20 @@ function installSessionRenewal() {
     }
 
     inFlight = (async () => {
-      const token = readMeta(REFRESH_CSRF_META_NAME);
-      if (!token) {
+      // Rotation-based reuse detection intentionally revokes a session family
+      // when the same refresh token is used twice. Therefore automatic refresh
+      // must be serialized across browser tabs. Web Locks provides an origin-
+      // scoped exclusive lock without storing credentials. On browsers without
+      // Web Locks we fail closed and leave the existing server expiry behavior.
+      if (!navigator.locks?.request) {
         return false;
       }
 
-      let response;
-      try {
-        response = await window.fetch(
-          REFRESH_URL,
-          {
-            method: "POST",
-            credentials: "same-origin",
-            cache: "no-store",
-            headers: {
-              "Accept": "application/json",
-              "Content-Type": "application/json",
-              [CSRF_HEADER_NAME]: token,
-            },
-            body: "{}",
-          },
-        );
-      } catch (_error) {
-        return false;
-      }
-
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          showSessionWarning();
-        }
-        return false;
-      }
-
-      // Refresh-token rotation changes the authenticated session id. Fetch a
-      // fresh server-rendered copy of the current GET page only to obtain the
-      // new signed CSRF tokens, then update the current DOM in place. User
-      // inputs and scroll position are therefore preserved.
-      try {
-        const pageResponse = await window.fetch(
-          window.location.href,
-          {
-            method: "GET",
-            credentials: "same-origin",
-            cache: "no-store",
-            headers: {"Accept": "text/html"},
-          },
-        );
-
-        if (!pageResponse.ok) {
-          showSessionWarning();
-          return false;
-        }
-
-        const securityMeta = extractSecurityMeta(await pageResponse.text());
-        if (!securityMeta.csrfToken || !securityMeta.refreshCsrfToken) {
-          showSessionWarning();
-          return false;
-        }
-
-        updateRenderedCsrfToken(securityMeta.csrfToken);
-        updateMeta(REFRESH_CSRF_META_NAME, securityMeta.refreshCsrfToken);
-        lastRenewalAt = Date.now();
-        return true;
-      } catch (_error) {
-        showSessionWarning();
-        return false;
-      }
+      return navigator.locks.request(
+        REFRESH_LOCK_NAME,
+        {mode: "exclusive"},
+        renewInsideCrossTabLock,
+      );
     })();
 
     try {
