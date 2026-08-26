@@ -122,13 +122,13 @@ def test_datetime_local_guard_handles_timestamptz_rendering_without_timezone_shi
 def test_business_language_layer_translates_internal_codes_without_mutating_values() -> None:
     source = (STATIC_JS / "business-language.js").read_text(encoding="utf-8")
     required_pairs = (
-        ('"CONFORMANCE_READY", "Preparado para conformidad"',),
-        ('"POSTED", "Contabilizado"',),
-        ('"DISPATCHED", "Despachado"',),
-        ('"RISK_CONCLUSION", "Conclusión de riesgo"',),
-        ('"RISK_ASSESSED_AT", "Fecha de evaluación de riesgo"',),
+        '"CONFORMANCE_READY", "Preparado para conformidad"',
+        '"POSTED", "Contabilizado"',
+        '"DISPATCHED", "Despachado"',
+        '"RISK_CONCLUSION", "Conclusión de riesgo"',
+        '"RISK_ASSESSED_AT", "Fecha de evaluación de riesgo"',
     )
-    for (pair,) in required_pairs:
+    for pair in required_pairs:
         assert pair in source
     assert "node.nodeValue = translated" in source
     assert ".value =" not in source
