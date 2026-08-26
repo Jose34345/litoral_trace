@@ -1,8 +1,6 @@
 """Pure-ASGI CSRF enforcement for unsafe API requests authenticated by cookies."""
 from __future__ import annotations
 
-from typing import Any
-
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import (
@@ -16,9 +14,7 @@ from litoral_trace.auth.sessions import (
     ACCESS_TOKEN_COOKIE_KEY,
     REFRESH_TOKEN_COOKIE_KEY,
 )
-from litoral_trace.auth.tokens import (
-    verify_jwt_token,
-)
+from litoral_trace.auth.tokens import verify_jwt_token
 from litoral_trace.web.csrf import (
     CSRF_HEADER_NAME,
     csrf_subject_from_access_payload,
@@ -107,6 +103,22 @@ def validate_cookie_csrf_request(
     if not csrf_token or browser_nonce is None:
         return "csrf_missing"
 
+    # Session renewal deliberately accepts a dedicated token bound only to the
+    # HttpOnly browser nonce. This keeps refresh possible after a suspended tab
+    # outlives the short access JWT, without exposing or weakening the refresh
+    # cookie. The signed token still has a bounded lifetime and same-origin UI
+    # code must possess it.
+    if (
+        refresh_token
+        and path == "/api/v1/auth/refresh"
+        and verify_csrf_browser_binding(
+            csrf_token,
+            browser_nonce=browser_nonce,
+            secret_key=secret_key,
+        )
+    ):
+        return None
+
     if access_token:
         payload = verify_jwt_token(
             access_token,
@@ -173,10 +185,8 @@ class CookieApiCsrfMiddleware:
 
         request = Request(scope)
 
-        error_code = (
-            validate_cookie_csrf_request(
-                request
-            )
+        error_code = validate_cookie_csrf_request(
+            request
         )
 
         if error_code is None:
