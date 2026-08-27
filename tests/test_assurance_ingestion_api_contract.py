@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 
 from litoral_trace.api.assurance import (
     _require_document_intelligence_enabled,
-    router as assurance_router,
+    build_assurance_router,
 )
 from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
 
@@ -37,10 +37,10 @@ def _main_registers_assurance_router() -> bool:
 
 
 def test_assurance_universal_upload_and_progress_routes_are_registered():
-    # Build an isolated probe application so this contract is not affected by
-    # legacy tests that share/mutate the repository-level FastAPI instance.
+    # Build a fresh router instance so the contract verifies route construction,
+    # not mutable module state shared across the repository's large test suite.
     probe = FastAPI()
-    probe.include_router(assurance_router)
+    probe.include_router(build_assurance_router())
     routes = {route.path for route in probe.routes if hasattr(route, "path")}
     assert "/api/v1/assurance/documents" in routes
     assert "/api/v1/assurance/documents/{assurance_document_id}/progress" in routes
