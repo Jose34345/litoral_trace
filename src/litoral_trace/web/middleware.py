@@ -19,6 +19,7 @@ from litoral_trace.web.csrf import (
     CSRF_HEADER_NAME,
     csrf_subject_from_access_payload,
     get_csrf_browser_nonce,
+    refresh_csrf_max_age_seconds,
     verify_csrf_browser_binding,
     verify_csrf_token,
 )
@@ -104,16 +105,16 @@ def validate_cookie_csrf_request(
         return "csrf_missing"
 
     # Session renewal deliberately accepts a dedicated token bound only to the
-    # HttpOnly browser nonce. This keeps refresh possible after a suspended tab
-    # outlives the short access JWT, without exposing or weakening the refresh
-    # cookie. The signed token still has a bounded lifetime and same-origin UI
-    # code must possess it.
+    # HttpOnly browser nonce. Its verification window matches the refresh-session
+    # TTL so a legitimately suspended tab can still renew after the one-hour
+    # regular form-CSRF window, without weakening CSRF on any other API endpoint.
     if (
         refresh_token
         and path == "/api/v1/auth/refresh"
         and verify_csrf_browser_binding(
             csrf_token,
             browser_nonce=browser_nonce,
+            max_age_seconds=refresh_csrf_max_age_seconds(),
             secret_key=secret_key,
         )
     ):
