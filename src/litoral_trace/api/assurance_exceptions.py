@@ -20,7 +20,7 @@ from litoral_trace.auth.rbac import Permission, require_permission
 
 class AssuranceExceptionResolveRequest(BaseModel):
     resolution_note: str = Field(min_length=3, max_length=4000)
-    preflight: AssurancePreflightRequest | None = None
+    preflight: AssurancePreflightRequest
 
 
 def _require_operational_exceptions_enabled() -> None:
@@ -111,9 +111,7 @@ async def resolve_assurance_exception(
     ),
 ) -> JSONResponse:
     _require_operational_exceptions_enabled()
-    domain_preflight = (
-        build_preflight_input(payload.preflight) if payload.preflight is not None else None
-    )
+    domain_preflight = build_preflight_input(payload.preflight)
     try:
         result = AssuranceOperationalExceptionService().resolve(
             organization_id=user.organization_id,
