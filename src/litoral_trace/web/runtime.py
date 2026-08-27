@@ -208,7 +208,12 @@ def render_web_template(
     )
     response.headers["Pragma"] = "no-cache"
 
-    if created:
+    # Authenticated renders are also the synchronization heartbeat used by the
+    # browser session-renewal layer. Re-issuing the same HttpOnly nonce only
+    # slides its Max-Age; it does not expose or rotate the binding. This keeps
+    # the 8-hour browser binding alive while an authenticated application tab is
+    # actively renewing, without extending anonymous cookies unnecessarily.
+    if created or user is not None:
         set_csrf_browser_cookie(
             response,
             browser_nonce,
