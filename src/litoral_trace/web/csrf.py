@@ -201,6 +201,21 @@ def get_or_create_csrf_browser_nonce(
     return create_csrf_browser_nonce(), True
 
 
+def _csrf_browser_cookie_max_age_seconds(settings: Any) -> int:
+    """Keep the browser CSRF binding usable for the full refresh-session TTL."""
+
+    try:
+        refresh_days = int(settings.jwt.refresh_token_expire_days)
+    except (AttributeError, TypeError, ValueError):
+        refresh_days = 0
+
+    refresh_seconds = max(0, refresh_days) * 24 * 60 * 60
+    return max(
+        CSRF_BROWSER_COOKIE_MAX_AGE_SECONDS,
+        refresh_seconds,
+    )
+
+
 def set_csrf_browser_cookie(
     response: Response,
     browser_nonce: str,
@@ -220,7 +235,7 @@ def set_csrf_browser_cookie(
         httponly=True,
         samesite="lax",
         secure=settings.is_production,
-        max_age=CSRF_BROWSER_COOKIE_MAX_AGE_SECONDS,
+        max_age=_csrf_browser_cookie_max_age_seconds(settings),
         path="/",
     )
 
