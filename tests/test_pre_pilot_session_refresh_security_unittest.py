@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 
+from fastapi import HTTPException, status
 from starlette.requests import Request
 
 from litoral_trace.auth.sessions import (
@@ -9,6 +10,7 @@ from litoral_trace.auth.sessions import (
     REFRESH_TOKEN_COOKIE_KEY,
 )
 from litoral_trace.web import middleware as middleware_web
+from litoral_trace.web import runtime as runtime_web
 from litoral_trace.web.csrf import (
     CSRF_BROWSER_COOKIE_KEY,
     CSRF_HEADER_NAME,
@@ -41,6 +43,29 @@ def _refresh_request(*, browser_nonce: str, csrf_token: str) -> Request:
             (b"cookie", cookies.encode("utf-8")),
             (CSRF_HEADER_NAME.lower().encode("ascii"), csrf_token.encode("utf-8")),
         ],
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 443),
+        "root_path": "",
+    }
+    return Request(scope)
+
+
+def _html_request() -> Request:
+    cookies = "; ".join(
+        (
+            f"{ACCESS_TOKEN_COOKIE_KEY}=expired-access-token",
+            f"{REFRESH_TOKEN_COOKIE_KEY}=still-valid-refresh-token",
+        )
+    )
+    scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "https",
+        "path": "/dashboard",
+        "raw_path": b"/dashboard",
+        "query_string": b"",
+        "headers": [(b"cookie", cookies.encode("utf-8"))],
         "client": ("127.0.0.1", 12345),
         "server": ("testserver", 443),
         "root_path": "",
@@ -96,3 +121,27 @@ def test_regular_session_csrf_cannot_be_reused_as_refresh_capability(monkeypatch
         ),
         secret_key=SECRET,
     ) == "csrf_invalid"
+
+
+def test_expired_html_access_does_not_erase_recoverable_refresh_cookie(monkeypatch) -> None:
+    def reject_access(*_args, **_kwargs):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="expired",
+        )
+
+    monkeypatch.setattr(
+        runtime_web,
+        "get_current_tenant_user",
+        reject_access,
+    )
+
+    user, response = runtime_web.get_authenticated_html_user(
+        _html_request()
+    )
+
+    assert user is None
+    assert response is not None
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers.get("location") == "/login"
+    assert response.headers.getlist("set-cookie") == []
