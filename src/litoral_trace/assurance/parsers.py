@@ -48,7 +48,8 @@ class ParsedDocument:
 
 
 _OLE_XLS_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
-_MIN_USEFUL_PDF_TEXT_CHARS = 24
+_MIN_USEFUL_PDF_TEXT_CHARS = 12
+_MIN_USEFUL_PDF_ALPHA_CHARS = 4
 _TOTAL_MARKERS = frozenset(
     {
         "total",
@@ -281,6 +282,15 @@ def parse_csv(content: bytes) -> ParsedDocument:
     )
 
 
+def _has_useful_pdf_text(text: str) -> bool:
+    compact = re.sub(r"\s+", "", text or "")
+    alpha_chars = sum(character.isalpha() for character in compact)
+    return (
+        len(compact) >= _MIN_USEFUL_PDF_TEXT_CHARS
+        and alpha_chars >= _MIN_USEFUL_PDF_ALPHA_CHARS
+    )
+
+
 def parse_pdf(content: bytes) -> ParsedDocument:
     if not content.startswith(b"%PDF-"):
         raise DocumentParseError("El archivo no corresponde a un PDF valido.")
@@ -305,7 +315,7 @@ def parse_pdf(content: bytes) -> ParsedDocument:
             page_texts.append("")
 
     useful_text = "\n\n".join(text for text in page_texts if text).strip()
-    ocr_required = len(re.sub(r"\s+", "", useful_text)) < _MIN_USEFUL_PDF_TEXT_CHARS
+    ocr_required = not _has_useful_pdf_text(useful_text)
 
     tables: list[ParsedTable] = []
     if not ocr_required:
