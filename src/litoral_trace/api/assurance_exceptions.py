@@ -1,6 +1,8 @@
 """Tenant-scoped API for the Assurance operational attention queue."""
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -10,12 +12,21 @@ from litoral_trace.api.assurance_preflight import (
     build_preflight_input,
 )
 from litoral_trace.api.auth import UserTenantContext
+from litoral_trace.assurance.exception_assignment import (
+    AssuranceExceptionAssignmentError,
+    AssuranceExceptionAssignmentService,
+)
 from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
 from litoral_trace.assurance.operational_exceptions import (
     AssuranceOperationalExceptionError,
     AssuranceOperationalExceptionService,
 )
 from litoral_trace.auth.rbac import Permission, require_permission
+
+
+class AssuranceExceptionAssignRequest(BaseModel):
+    assigned_to_user_id: int = Field(gt=0)
+    due_at: datetime
 
 
 class AssuranceExceptionResolveRequest(BaseModel):
@@ -99,6 +110,51 @@ async def assurance_attention_queue(
             "organization_id": user.organization_id,
             "count": len(rows),
             "exceptions": [_serialize_exception(row) for row in rows],
+        },
+    )
+
+
+async def assign_assurance_exception(
+    exception_id: str,
+    payload: AssuranceExceptionAssignRequest,
+    user: UserTenantContext = Depends(
+        require_permission(Permission.TRACEABILITY_OPERATE)
+    ),
+) -> JSONResponse:
+    _require_operational_exceptions_enabled()
+    try:
+        result = AssuranceExceptionAssignmentService().assign(
+            organization_id=user.organization_id,
+            exception_public_id=exception_id,
+            assigned_to_user_id=payload.assigned_to_user_id,
+            due_at=payload.due_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "ASSURANCE_EXCEPTION_ASSIGNMENT_INVALID", "message": str(exc)},
+        ) from None
+    except AssuranceExceptionAssignmentError as exc:
+        message = str(exc)
+        if "no encontrada" in message.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "ASSURANCE_EXCEPTION_NOT_FOUND", "message": message},
+            ) from None
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "ASSURANCE_EXCEPTION_ASSIGNMENT_REJECTED", "message": message},
+        ) from None
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "organization_id": user.organization_id,
+            "exception_id": str(result.exception_public_id),
+            "assigned_to_user_id": result.assigned_to_user_id,
+            "assigned_to_name": result.assigned_to_name,
+            "due_at": result.due_at.isoformat(),
+            "status": result.status,
         },
     )
 
