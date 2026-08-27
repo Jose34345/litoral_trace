@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
-from typing import Iterable, Mapping, Sequence
+from typing import Mapping, Sequence
 
 from litoral_trace.assurance.domain import ReconciliationSeverity
 from litoral_trace.assurance.reconciliation import ReconciliationFinding
@@ -88,140 +88,101 @@ class PreflightResult:
 
 REASON_CATALOG: Mapping[str, ReasonDefinition] = {
     "INVALID_MINIMUM_INPUT": ReasonDefinition(
-        code="INVALID_MINIMUM_INPUT",
-        category="INPUT",
-        status=PreflightStatus.BLOCKED,
-        explanation="Faltan datos mínimos confiables para evaluar la operación.",
-        action="Completar cliente, mercado, producto, cantidad, fecha y stock.",
+        "INVALID_MINIMUM_INPUT", "INPUT", PreflightStatus.BLOCKED,
+        "Faltan datos mínimos confiables para evaluar la operación.",
+        "Completar cliente, mercado, producto, cantidad, fecha y stock.",
     ),
     "INSUFFICIENT_STOCK": ReasonDefinition(
-        code="INSUFFICIENT_STOCK",
-        category="STOCK",
-        status=PreflightStatus.BLOCKED,
-        explanation="El stock disponible no alcanza para cubrir la cantidad comprometida.",
-        action="Asignar stock suficiente o reducir la cantidad de la operación.",
+        "INSUFFICIENT_STOCK", "STOCK", PreflightStatus.BLOCKED,
+        "El stock disponible no alcanza para cubrir la cantidad comprometida.",
+        "Asignar stock suficiente o reducir la cantidad de la operación.",
     ),
     "ORIGIN_UNASSESSED": ReasonDefinition(
-        code="ORIGIN_UNASSESSED",
-        category="ORIGIN",
-        status=PreflightStatus.BLOCKED,
-        explanation="El origen todavía no fue evaluado para esta operación.",
-        action="Completar la evaluación del origen antes de avanzar.",
+        "ORIGIN_UNASSESSED", "ORIGIN", PreflightStatus.BLOCKED,
+        "El origen todavía no fue evaluado para esta operación.",
+        "Completar la evaluación del origen antes de avanzar.",
     ),
     "ORIGIN_BLOCKED": ReasonDefinition(
-        code="ORIGIN_BLOCKED",
-        category="ORIGIN",
-        status=PreflightStatus.BLOCKED,
-        explanation="El control de origen tiene un bloqueo vigente.",
-        action="Resolver el bloqueo de origen y volver a ejecutar el preflight.",
+        "ORIGIN_BLOCKED", "ORIGIN", PreflightStatus.BLOCKED,
+        "El control de origen tiene un bloqueo vigente.",
+        "Resolver el bloqueo de origen y volver a ejecutar el preflight.",
     ),
     "ORIGIN_PENDING": ReasonDefinition(
-        code="ORIGIN_PENDING",
-        category="ORIGIN",
-        status=PreflightStatus.CONDITIONAL,
-        explanation="El origen tiene una condición pendiente que todavía puede resolverse.",
-        action="Completar la condición pendiente de origen.",
+        "ORIGIN_PENDING", "ORIGIN", PreflightStatus.CONDITIONAL,
+        "El origen tiene una condición pendiente que todavía puede resolverse.",
+        "Completar la condición pendiente de origen.",
     ),
     "GENEALOGY_UNASSESSED": ReasonDefinition(
-        code="GENEALOGY_UNASSESSED",
-        category="GENEALOGY",
-        status=PreflightStatus.BLOCKED,
-        explanation="La genealogía de la operación todavía no fue evaluada.",
-        action="Reconstruir y validar la genealogía del volumen asignado.",
+        "GENEALOGY_UNASSESSED", "GENEALOGY", PreflightStatus.BLOCKED,
+        "La genealogía de la operación todavía no fue evaluada.",
+        "Reconstruir y validar la genealogía del volumen asignado.",
     ),
     "GENEALOGY_BLOCKED": ReasonDefinition(
-        code="GENEALOGY_BLOCKED",
-        category="GENEALOGY",
-        status=PreflightStatus.BLOCKED,
-        explanation="La genealogía contiene volumen sin resolver o una ruptura de cadena.",
-        action="Corregir la genealogía antes de liberar la operación.",
+        "GENEALOGY_BLOCKED", "GENEALOGY", PreflightStatus.BLOCKED,
+        "La genealogía contiene volumen sin resolver o una ruptura de cadena.",
+        "Corregir la genealogía antes de liberar la operación.",
     ),
     "GENEALOGY_PENDING": ReasonDefinition(
-        code="GENEALOGY_PENDING",
-        category="GENEALOGY",
-        status=PreflightStatus.CONDITIONAL,
-        explanation="La genealogía es utilizable pero conserva una condición pendiente.",
-        action="Completar la evidencia o dato pendiente de genealogía.",
+        "GENEALOGY_PENDING", "GENEALOGY", PreflightStatus.CONDITIONAL,
+        "La genealogía es utilizable pero conserva una condición pendiente.",
+        "Completar la evidencia o dato pendiente de genealogía.",
     ),
     "REQUIRED_DOCUMENT_MISSING": ReasonDefinition(
-        code="REQUIRED_DOCUMENT_MISSING",
-        category="DOCUMENTS",
-        status=PreflightStatus.CONDITIONAL,
-        explanation="Falta al menos un documento requerido para cerrar la operación.",
-        action="Adjuntar o vincular el documento requerido y volver a evaluar.",
+        "REQUIRED_DOCUMENT_MISSING", "DOCUMENTS", PreflightStatus.CONDITIONAL,
+        "Falta al menos un documento requerido para cerrar la operación.",
+        "Adjuntar o vincular el documento requerido y volver a evaluar.",
     ),
     "DOCUMENT_EXPIRED_BEFORE_COMMITMENT": ReasonDefinition(
-        code="DOCUMENT_EXPIRED_BEFORE_COMMITMENT",
-        category="DOCUMENTS",
-        status=PreflightStatus.CONDITIONAL,
-        explanation="Un documento perderá vigencia antes de la fecha comprometida.",
-        action="Renovar o reemplazar el documento antes del compromiso.",
+        "DOCUMENT_EXPIRED_BEFORE_COMMITMENT", "DOCUMENTS", PreflightStatus.CONDITIONAL,
+        "Un documento perderá vigencia antes de la fecha comprometida.",
+        "Renovar o reemplazar el documento antes del compromiso.",
     ),
     "CERTIFICATE_EXPIRING_BEFORE_COMMITMENT": ReasonDefinition(
-        code="CERTIFICATE_EXPIRING_BEFORE_COMMITMENT",
-        category="PHYTOSANITARY",
-        status=PreflightStatus.CONDITIONAL,
-        explanation="El certificado fitosanitario vence antes de la fecha comprometida.",
-        action="Renovar o emitir un certificado vigente para la operación.",
+        "CERTIFICATE_EXPIRING_BEFORE_COMMITMENT", "PHYTOSANITARY", PreflightStatus.CONDITIONAL,
+        "El certificado fitosanitario vence antes de la fecha comprometida.",
+        "Renovar o emitir un certificado vigente para la operación.",
     ),
     "PHYTOSANITARY_UNASSESSED": ReasonDefinition(
-        code="PHYTOSANITARY_UNASSESSED",
-        category="PHYTOSANITARY",
-        status=PreflightStatus.BLOCKED,
-        explanation="No existe una evaluación fitosanitaria suficiente para la operación.",
-        action="Evaluar si el destino exige certificación fitosanitaria.",
+        "PHYTOSANITARY_UNASSESSED", "PHYTOSANITARY", PreflightStatus.BLOCKED,
+        "No existe una evaluación fitosanitaria suficiente para la operación.",
+        "Evaluar si el destino exige certificación fitosanitaria.",
     ),
     "PHYTOSANITARY_BLOCKED": ReasonDefinition(
-        code="PHYTOSANITARY_BLOCKED",
-        category="PHYTOSANITARY",
-        status=PreflightStatus.BLOCKED,
-        explanation="La evaluación fitosanitaria tiene un bloqueo vigente.",
-        action="Completar los requisitos fitosanitarios antes de avanzar.",
+        "PHYTOSANITARY_BLOCKED", "PHYTOSANITARY", PreflightStatus.BLOCKED,
+        "La evaluación fitosanitaria tiene un bloqueo vigente.",
+        "Completar los requisitos fitosanitarios antes de avanzar.",
     ),
     "PHYTOSANITARY_PENDING": ReasonDefinition(
-        code="PHYTOSANITARY_PENDING",
-        category="PHYTOSANITARY",
-        status=PreflightStatus.CONDITIONAL,
-        explanation="La condición fitosanitaria es solucionable pero todavía está pendiente.",
-        action="Completar el requisito fitosanitario pendiente.",
+        "PHYTOSANITARY_PENDING", "PHYTOSANITARY", PreflightStatus.CONDITIONAL,
+        "La condición fitosanitaria es solucionable pero todavía está pendiente.",
+        "Completar el requisito fitosanitario pendiente.",
     ),
     "EUDR_UNASSESSED": ReasonDefinition(
-        code="EUDR_UNASSESSED",
-        category="EUDR",
-        status=PreflightStatus.BLOCKED,
-        explanation="La operación con destino UE no tiene evaluación EUDR local suficiente.",
-        action="Preparar y revisar el candidato DDS EUDR correspondiente.",
+        "EUDR_UNASSESSED", "EUDR", PreflightStatus.BLOCKED,
+        "La operación con destino UE no tiene evaluación EUDR local suficiente.",
+        "Preparar y revisar el candidato DDS EUDR correspondiente.",
     ),
     "EUDR_BLOCKED": ReasonDefinition(
-        code="EUDR_BLOCKED",
-        category="EUDR",
-        status=PreflightStatus.BLOCKED,
-        explanation="El control EUDR local tiene requisitos pendientes que impiden avanzar.",
-        action="Resolver los faltantes EUDR antes de liberar la operación.",
+        "EUDR_BLOCKED", "EUDR", PreflightStatus.BLOCKED,
+        "El control EUDR local tiene requisitos pendientes que impiden avanzar.",
+        "Resolver los faltantes EUDR antes de liberar la operación.",
     ),
     "EUDR_PENDING": ReasonDefinition(
-        code="EUDR_PENDING",
-        category="EUDR",
-        status=PreflightStatus.CONDITIONAL,
-        explanation="La evaluación EUDR conserva una condición solucionable.",
-        action="Completar la condición EUDR pendiente.",
+        "EUDR_PENDING", "EUDR", PreflightStatus.CONDITIONAL,
+        "La evaluación EUDR conserva una condición solucionable.",
+        "Completar la condición EUDR pendiente.",
     ),
     "RECONCILIATION_BLOCKING": ReasonDefinition(
-        code="RECONCILIATION_BLOCKING",
-        category="RECONCILIATION",
-        status=PreflightStatus.BLOCKED,
-        explanation="La conciliación detectó una contradicción material no resuelta.",
-        action="Resolver la discrepancia entre documentos o contra el sistema.",
+        "RECONCILIATION_BLOCKING", "RECONCILIATION", PreflightStatus.BLOCKED,
+        "La conciliación detectó una contradicción material no resuelta.",
+        "Resolver la discrepancia entre documentos o contra el sistema.",
     ),
     "RECONCILIATION_WARNING": ReasonDefinition(
-        code="RECONCILIATION_WARNING",
-        category="RECONCILIATION",
-        status=PreflightStatus.CONDITIONAL,
-        explanation="La conciliación detectó una diferencia que requiere revisión humana.",
-        action="Revisar la discrepancia antes del compromiso final.",
+        "RECONCILIATION_WARNING", "RECONCILIATION", PreflightStatus.CONDITIONAL,
+        "La conciliación detectó una diferencia que requiere revisión humana.",
+        "Revisar la discrepancia antes del compromiso final.",
     ),
 }
-
 
 _STATUS_PRIORITY = {
     PreflightStatus.READY: 0,
@@ -230,11 +191,13 @@ _STATUS_PRIORITY = {
 }
 
 
-def _decimal(value: object) -> Decimal:
+def _try_decimal(value: object) -> Decimal | None:
+    if isinstance(value, bool) or value is None:
+        return None
     try:
         return value if isinstance(value, Decimal) else Decimal(str(value))
-    except (InvalidOperation, TypeError, ValueError) as exc:
-        raise ValueError("Cantidad o stock inválido para preflight.") from exc
+    except (InvalidOperation, TypeError, ValueError):
+        return None
 
 
 def _date(value: date | datetime) -> date:
@@ -272,6 +235,8 @@ def _signal_reasons(prefix: str, state: PreflightSignalState) -> tuple[Preflight
 
 
 def _document_reasons(payload: PreflightInput) -> tuple[PreflightReason, ...]:
+    if not isinstance(payload.commitment_date, date):
+        return ()
     reasons: list[PreflightReason] = []
     present_types = {document.document_type.strip().upper() for document in payload.documents}
     for required_type in payload.required_document_types:
@@ -343,38 +308,41 @@ def _reconciliation_reasons(
 
 
 def validate_preflight_input(payload: PreflightInput) -> tuple[str, ...]:
-    missing: list[str] = []
-    if not payload.customer_reference.strip():
-        missing.append("customer_reference")
-    if not payload.market.strip():
-        missing.append("market")
-    if not payload.product.strip():
-        missing.append("product")
-    if _decimal(payload.quantity) <= 0:
-        missing.append("quantity")
-    if _decimal(payload.stock_available) < 0:
-        missing.append("stock_available")
+    invalid: list[str] = []
+    if not str(payload.customer_reference or "").strip():
+        invalid.append("customer_reference")
+    if not str(payload.market or "").strip():
+        invalid.append("market")
+    if not str(payload.product or "").strip():
+        invalid.append("product")
+
+    quantity = _try_decimal(payload.quantity)
+    stock = _try_decimal(payload.stock_available)
+    if quantity is None or quantity <= 0:
+        invalid.append("quantity")
+    if stock is None or stock < 0:
+        invalid.append("stock_available")
     if not isinstance(payload.commitment_date, date):
-        missing.append("commitment_date")
-    return tuple(missing)
+        invalid.append("commitment_date")
+    return tuple(invalid)
 
 
 def evaluate_preflight(payload: PreflightInput) -> PreflightResult:
     """Evaluate one operation with fail-closed, explainable rules."""
     reasons: list[PreflightReason] = []
-    missing = validate_preflight_input(payload)
-    if missing:
+    invalid = validate_preflight_input(payload)
+    if invalid:
         reasons.append(
             _reason(
                 "INVALID_MINIMUM_INPUT",
-                explanation="Faltan o son inválidos: " + ", ".join(missing) + ".",
+                explanation="Faltan o son inválidos: " + ", ".join(invalid) + ".",
                 source="preflight_input",
             )
         )
 
-    quantity = _decimal(payload.quantity)
-    stock = _decimal(payload.stock_available)
-    if quantity > 0 and stock >= 0 and stock < quantity:
+    quantity = _try_decimal(payload.quantity)
+    stock = _try_decimal(payload.stock_available)
+    if quantity is not None and quantity > 0 and stock is not None and stock >= 0 and stock < quantity:
         reasons.append(
             _reason(
                 "INSUFFICIENT_STOCK",
@@ -388,20 +356,36 @@ def evaluate_preflight(payload: PreflightInput) -> PreflightResult:
     reasons.extend(_document_reasons(payload))
     reasons.extend(_signal_reasons("PHYTOSANITARY", payload.phytosanitary_state))
 
-    destination = payload.market.strip().upper()
+    destination = str(payload.market or "").strip().upper()
     if destination in EU_EUDR_DESTINATION_CODES:
-        reasons.extend(_signal_reasons("EUDR", payload.eudr_state))
+        if payload.eudr_state == PreflightSignalState.NOT_APPLICABLE:
+            reasons.append(
+                _reason(
+                    "EUDR_UNASSESSED",
+                    explanation=(
+                        "El destino está dentro del alcance geográfico UE y no puede "
+                        "tratarse como EUDR no aplicable sin una evaluación concreta."
+                    ),
+                    source="eudr_state",
+                )
+            )
+        else:
+            reasons.extend(_signal_reasons("EUDR", payload.eudr_state))
 
     reasons.extend(_reconciliation_reasons(payload.reconciliation_findings))
 
-    # Stable de-duplication: a reason code + source represents one actionable fact.
     deduplicated: dict[tuple[str, str | None], PreflightReason] = {}
     for reason in reasons:
         deduplicated.setdefault((reason.code, reason.source), reason)
     ordered = tuple(
         sorted(
             deduplicated.values(),
-            key=lambda item: (-_STATUS_PRIORITY[item.status], item.category, item.code, item.source or ""),
+            key=lambda item: (
+                -_STATUS_PRIORITY[item.status],
+                item.category,
+                item.code,
+                item.source or "",
+            ),
         )
     )
 
