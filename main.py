@@ -42,6 +42,9 @@ from litoral_trace.config import (
 from litoral_trace.api.admin import (
     router as admin_router,
 )
+from litoral_trace.api.assurance import (
+    router as assurance_router,
+)
 from litoral_trace.api.auth import (
     LoginRequest,
     login_b2b,
@@ -163,6 +166,10 @@ app.include_router(
 
 app.include_router(
     vault_router
+)
+
+app.include_router(
+    assurance_router
 )
 
 app.include_router(
