@@ -126,6 +126,7 @@ def test_preflight_service_does_not_trust_client_supplied_reconciliation_finding
         right_source="client",
         right_value="2",
         explanation="No debe entrar.",
+        evidence=(),
     )
 
     view = AssurancePreflightService(session_factory=factory).evaluate(
