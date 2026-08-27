@@ -186,8 +186,20 @@ def match_candidate_entities(
         )
         if match is None:
             continue
-        key = (match.entity_type, match.entity_reference or match.matched_value)
+        effective = EntityMatch(
+            entity_type=match.entity_type,
+            entity_reference=match.entity_reference,
+            confidence=(
+                0.0
+                if match.ambiguous
+                else min(match.confidence, candidate.confidence)
+            ),
+            method=match.method,
+            matched_value=match.matched_value,
+            ambiguous=match.ambiguous,
+        )
+        key = (effective.entity_type, effective.entity_reference or effective.matched_value)
         current = results.get(key)
-        if current is None or match.confidence > current.confidence:
-            results[key] = match
+        if current is None or effective.confidence > current.confidence:
+            results[key] = effective
     return tuple(results.values())
