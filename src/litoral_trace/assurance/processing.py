@@ -13,6 +13,11 @@ from litoral_trace.assurance.domain import (
     DocumentProcessingStatus,
     ExtractionRunStatus,
 )
+from litoral_trace.assurance.extraction import (
+    classify_document,
+    extract_structured_fields,
+    missing_required_fields,
+)
 from litoral_trace.assurance.parsers import DocumentParseError, ParsedDocument, parse_document
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import (
@@ -27,7 +32,7 @@ from litoral_trace.services.vault import VaultService
 
 SessionFactory = Callable[[], Session | None]
 PARSER_ENGINE = "assurance-deterministic-parser"
-PARSER_ENGINE_VERSION = "1.0.0"
+PARSER_ENGINE_VERSION = "1.1.0"
 
 
 class AssuranceProcessingError(RuntimeError):
@@ -52,7 +57,7 @@ def _serialize_value(value: object) -> str | None:
     return str(value)
 
 
-def _persist_parsed_fields(
+def _persist_raw_parsed_fields(
     session: Session,
     *,
     organization_id: int,
@@ -60,6 +65,7 @@ def _persist_parsed_fields(
     extraction_run: DocumentExtractionRun,
     parsed: ParsedDocument,
 ) -> int:
+    """Keep auditable raw parse output in addition to semantic candidates."""
     field_count = 0
 
     if parsed.text:
@@ -68,7 +74,7 @@ def _persist_parsed_fields(
                 organization_id=organization_id,
                 assurance_document_id=assurance_document.id,
                 extraction_run_id=extraction_run.id,
-                field_name="document_text",
+                field_name="raw.document_text",
                 original_value=parsed.text,
                 normalized_value=parsed.text,
                 value_type="text",
@@ -97,7 +103,7 @@ def _persist_parsed_fields(
                         organization_id=organization_id,
                         assurance_document_id=assurance_document.id,
                         extraction_run_id=extraction_run.id,
-                        field_name=f"table.{table_index}.{header}",
+                        field_name=f"raw.table.{table_index}.{header}",
                         original_value=_serialize_value(value),
                         normalized_value=_serialize_value(value),
                         value_type="cell",
@@ -112,6 +118,36 @@ def _persist_parsed_fields(
                 field_count += 1
 
     return field_count
+
+
+def _persist_structured_fields(
+    session: Session,
+    *,
+    organization_id: int,
+    assurance_document: AssuranceDocument,
+    extraction_run: DocumentExtractionRun,
+    parsed: ParsedDocument,
+) -> int:
+    candidates = extract_structured_fields(parsed)
+    for candidate in candidates:
+        session.add(
+            ExtractedDocumentField(
+                organization_id=organization_id,
+                assurance_document_id=assurance_document.id,
+                extraction_run_id=extraction_run.id,
+                field_name=candidate.field_name,
+                original_value=candidate.original_value,
+                normalized_value=candidate.normalized_value,
+                value_type=candidate.value_type,
+                confidence=candidate.confidence,
+                confidence_level=_confidence_level(candidate.confidence),
+                source_page=candidate.source_page,
+                source_locator=candidate.source_locator,
+                auto_accepted=False,
+                needs_review=True,
+            )
+        )
+    return len(candidates)
 
 
 class AssuranceProcessingService:
@@ -208,6 +244,12 @@ class AssuranceProcessingService:
                 content = b"".join(verified.iter_chunks(chunk_size=1024 * 1024))
 
             parsed = parse_document(vault_document.original_filename, content)
+            classification = classify_document(vault_document.original_filename, parsed)
+            structured_candidates = extract_structured_fields(parsed)
+            missing_fields = missing_required_fields(
+                classification.document_type,
+                structured_candidates,
+            )
 
             set_tenant_db_context(session, int(organization_id))
             assurance_document, _ = self._load_document(
@@ -224,7 +266,17 @@ class AssuranceProcessingService:
             if run is None:
                 raise AssuranceProcessingError("La corrida de extraccion desaparecio.")
 
-            field_count = _persist_parsed_fields(
+            assurance_document.semantic_document_type = classification.document_type.value
+            assurance_document.type_confidence = classification.confidence
+
+            raw_field_count = _persist_raw_parsed_fields(
+                session,
+                organization_id=int(organization_id),
+                assurance_document=assurance_document,
+                extraction_run=run,
+                parsed=parsed,
+            )
+            structured_field_count = _persist_structured_fields(
                 session,
                 organization_id=int(organization_id),
                 assurance_document=assurance_document,
@@ -237,7 +289,12 @@ class AssuranceProcessingService:
                     "file_kind": parsed.file_kind,
                     "ocr_required": parsed.ocr_required,
                     "table_count": len(parsed.tables),
-                    "field_count": field_count,
+                    "raw_field_count": raw_field_count,
+                    "structured_field_count": structured_field_count,
+                    "document_type": classification.document_type.value,
+                    "type_confidence": classification.confidence,
+                    "classification_evidence": list(classification.evidence),
+                    "missing_required_fields": list(missing_fields),
                 }
             )
             run.extraction_metadata = metadata
@@ -248,6 +305,13 @@ class AssuranceProcessingService:
                 assurance_document.processing_status = DocumentProcessingStatus.NEEDS_REVIEW.value
                 assurance_document.last_error_code = "OCR_REQUIRED"
                 assurance_document.last_error_message = "PDF sin texto digital util; requiere OCR controlado."
+            elif missing_fields:
+                run.status = ExtractionRunStatus.NEEDS_REVIEW.value
+                assurance_document.processing_status = DocumentProcessingStatus.NEEDS_REVIEW.value
+                assurance_document.last_error_code = "REQUIRED_FIELDS_MISSING"
+                assurance_document.last_error_message = (
+                    "Faltan campos requeridos por el esquema: " + ", ".join(missing_fields)
+                )[:512]
             else:
                 run.status = ExtractionRunStatus.SUCCEEDED.value
                 assurance_document.processing_status = DocumentProcessingStatus.EXTRACTED.value
@@ -313,18 +377,20 @@ class AssuranceProcessingService:
                 )
                 .order_by(DocumentExtractionRun.id.desc())
             )
-            status = assurance_document.processing_status
+            status_value = assurance_document.processing_status
             progress_percent = {
                 DocumentProcessingStatus.UPLOADED.value: 20,
                 DocumentProcessingStatus.PROCESSING.value: 60,
                 DocumentProcessingStatus.EXTRACTED.value: 100,
                 DocumentProcessingStatus.NEEDS_REVIEW.value: 100,
                 DocumentProcessingStatus.FAILED.value: 100,
-            }.get(status, 0)
+            }.get(status_value, 0)
             return {
                 "assurance_document_id": str(assurance_document.public_id),
-                "processing_status": status,
+                "processing_status": status_value,
                 "progress_percent": progress_percent,
+                "semantic_document_type": assurance_document.semantic_document_type,
+                "type_confidence": assurance_document.type_confidence,
                 "last_error_code": assurance_document.last_error_code,
                 "latest_run": None
                 if latest_run is None
