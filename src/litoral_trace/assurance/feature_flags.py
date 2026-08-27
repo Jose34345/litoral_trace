@@ -30,6 +30,7 @@ class AssuranceFeatureFlags:
     document_intelligence: bool = False
     reconciliation: bool = False
     preflight_v2: bool = False
+    operational_exceptions: bool = False
     market_ready_inventory: bool = False
 
     @classmethod
@@ -45,6 +46,9 @@ class AssuranceFeatureFlags:
             ),
             preflight_v2=_read_flag(
                 "LT_ASSURANCE_PREFLIGHT_V2_ENABLED", default=master
+            ),
+            operational_exceptions=_read_flag(
+                "LT_ASSURANCE_OPERATIONAL_EXCEPTIONS_ENABLED", default=master
             ),
             market_ready_inventory=_read_flag(
                 "LT_ASSURANCE_MARKET_READY_INVENTORY_ENABLED", default=master
