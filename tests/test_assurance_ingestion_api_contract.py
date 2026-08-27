@@ -10,6 +10,9 @@ from litoral_trace.api.assurance import (
     _require_document_intelligence_enabled,
     build_assurance_router,
 )
+from litoral_trace.api.assurance_exceptions import (
+    _require_operational_exceptions_enabled,
+)
 from litoral_trace.api.assurance_preflight import _require_preflight_enabled
 from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
 
@@ -37,13 +40,15 @@ def _main_registers_assurance_router() -> bool:
     return False
 
 
-def test_assurance_universal_upload_progress_and_preflight_routes_are_registered():
+def test_assurance_operational_routes_are_registered_on_each_router_instance():
     assurance_router = build_assurance_router()
     routes = {route.path for route in assurance_router.routes if hasattr(route, "path")}
     assert "/api/v1/assurance/documents" in routes
     assert "/api/v1/assurance/documents/{assurance_document_id}/progress" in routes
     assert "/api/v1/assurance/preflight" in routes
     assert "/api/v1/assurance/preflight/reasons" in routes
+    assert "/api/v1/assurance/exceptions" in routes
+    assert "/api/v1/assurance/exceptions/{exception_id}/resolve" in routes
     assert _main_registers_assurance_router() is True
 
 
@@ -79,3 +84,14 @@ def test_preflight_has_independent_fail_closed_feature_flag(monkeypatch):
 
     monkeypatch.setenv("LT_ASSURANCE_PREFLIGHT_V2_ENABLED", "1")
     _require_preflight_enabled()
+
+
+def test_operational_exceptions_have_independent_fail_closed_feature_flag(monkeypatch):
+    monkeypatch.setenv("LT_ASSURANCE_V1_ENABLED", "1")
+    monkeypatch.setenv("LT_ASSURANCE_OPERATIONAL_EXCEPTIONS_ENABLED", "0")
+    with pytest.raises(HTTPException) as exc_info:
+        _require_operational_exceptions_enabled()
+    assert exc_info.value.status_code == 404
+
+    monkeypatch.setenv("LT_ASSURANCE_OPERATIONAL_EXCEPTIONS_ENABLED", "1")
+    _require_operational_exceptions_enabled()
