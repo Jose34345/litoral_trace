@@ -5,6 +5,8 @@ from typing import Any
 
 from fastapi import Request
 
+from litoral_trace.auth.sessions import ACCESS_TOKEN_COOKIE_KEY
+from litoral_trace.auth.tokens import verify_jwt_token
 from litoral_trace.config import get_settings
 from litoral_trace.web.csrf import (
     CSRF_FORM_FIELD,
@@ -20,6 +22,51 @@ def _session_refresh_after_seconds() -> int:
 
     access_seconds = get_settings().jwt.access_token_expire_seconds
     return max(15, min(10 * 60, access_seconds // 2))
+
+
+def _session_access_expires_at_epoch(
+    request: Request,
+    *,
+    user: Any | None,
+) -> int | None:
+    """Return the verified current access-token expiry for this exact session."""
+
+    if user is None:
+        return None
+
+    token = request.cookies.get(ACCESS_TOKEN_COOKIE_KEY)
+    if not token:
+        return None
+
+    payload = verify_jwt_token(
+        token,
+        expected_token_type="access",
+    )
+    if not payload:
+        return None
+
+    try:
+        expires_at = int(payload.get("exp"))
+        organization_id = int(payload.get("org_id"))
+        session_id = int(payload.get("sid"))
+        expected_organization_id = int(getattr(user, "organization_id"))
+        expected_session_id = int(getattr(user, "session_id"))
+    except (TypeError, ValueError):
+        return None
+
+    username = str(payload.get("sub", "")).strip()
+    expected_username = str(getattr(user, "username", "")).strip()
+
+    if (
+        expires_at <= 0
+        or organization_id != expected_organization_id
+        or session_id != expected_session_id
+        or not username
+        or username != expected_username
+    ):
+        return None
+
+    return expires_at
 
 
 def build_template_context(
@@ -61,6 +108,13 @@ def build_template_context(
             _session_refresh_after_seconds()
             if user is not None
             else None
+        ),
+        # Absolute expiry is derived from the verified HttpOnly access JWT and
+        # matched back to the hydrated tenant/session. Rendering only the epoch
+        # prevents full-page navigation from resetting the refresh deadline.
+        "session_access_expires_at_epoch": _session_access_expires_at_epoch(
+            request,
+            user=user,
         ),
         "csrf_header_name": CSRF_HEADER_NAME,
         "csrf_form_field": CSRF_FORM_FIELD,
