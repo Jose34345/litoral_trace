@@ -2,6 +2,7 @@ const CSRF_META_NAME = "csrf-token";
 const REFRESH_CSRF_META_NAME = "lt-refresh-csrf-token";
 const REFRESH_AFTER_META_NAME = "lt-session-refresh-after";
 const ACCESS_EXPIRES_AT_META_NAME = "lt-session-access-expires-at";
+const SERVER_NOW_META_NAME = "lt-session-server-now";
 const CSRF_HEADER_NAME = "X-CSRF-Token";
 const REFRESH_URL = "/api/v1/auth/refresh";
 const REFRESH_LOCK_NAME = "litoral-trace-session-refresh";
@@ -53,6 +54,9 @@ function extractSecurityMeta(htmlText) {
       ?.getAttribute("content")
       ?.trim() || "",
     accessExpiresAt: parsed.querySelector(`meta[name="${ACCESS_EXPIRES_AT_META_NAME}"]`)
+      ?.getAttribute("content")
+      ?.trim() || "",
+    serverNow: parsed.querySelector(`meta[name="${SERVER_NOW_META_NAME}"]`)
       ?.getAttribute("content")
       ?.trim() || "",
   };
@@ -161,6 +165,7 @@ async function synchronizeSecurityMeta() {
       !securityMeta.csrfToken
       || !securityMeta.refreshCsrfToken
       || !securityMeta.accessExpiresAt
+      || !securityMeta.serverNow
     ) {
       return false;
     }
@@ -168,6 +173,7 @@ async function synchronizeSecurityMeta() {
     updateRenderedCsrfToken(securityMeta.csrfToken);
     updateMeta(REFRESH_CSRF_META_NAME, securityMeta.refreshCsrfToken);
     updateMeta(ACCESS_EXPIRES_AT_META_NAME, securityMeta.accessExpiresAt);
+    updateMeta(SERVER_NOW_META_NAME, securityMeta.serverNow);
     return true;
   } catch (_error) {
     return false;
@@ -208,8 +214,8 @@ async function rotateSession() {
   }
 
   // Set-Cookie has been applied when fetch resolves. Rehydrate this tab's
-  // session-bound CSRF material and the new absolute access expiry without
-  // reloading the page or losing inputs.
+  // session-bound CSRF material and fresh server-relative timing metadata
+  // without reloading the page or losing inputs.
   const synchronized = await synchronizeSecurityMeta();
   if (!synchronized) {
     showSessionWarning("La sesión se renovó, pero la página no pudo sincronizar su protección CSRF.");
@@ -221,12 +227,14 @@ function installSessionRenewal() {
   const refreshCsrfToken = readMeta(REFRESH_CSRF_META_NAME);
   const rawInterval = Number.parseInt(readMeta(REFRESH_AFTER_META_NAME), 10);
   const initialExpiryMs = readEpochMilliseconds(ACCESS_EXPIRES_AT_META_NAME);
+  const initialServerNowMs = readEpochMilliseconds(SERVER_NOW_META_NAME);
 
   if (
     !refreshCsrfToken
     || !Number.isFinite(rawInterval)
     || rawInterval < 15
     || initialExpiryMs === null
+    || initialServerNowMs === null
   ) {
     return;
   }
@@ -247,16 +255,21 @@ function installSessionRenewal() {
   const duplicateSuppressionMs = Math.max(5000, Math.min(30000, Math.floor(intervalMs / 3)));
   const channel = new window.BroadcastChannel(REFRESH_CHANNEL_NAME);
   let renewalTimer = null;
+  let renewalDeadlineMonotonicMs = null;
   let sharedRefreshAt = 0;
   let inFlight = null;
   let peerSyncInFlight = null;
 
-  function accessRefreshDueAtMs() {
+  function serverRelativeRefreshDelayMs() {
     const expiryMs = readEpochMilliseconds(ACCESS_EXPIRES_AT_META_NAME);
-    if (expiryMs === null) {
+    const serverNowMs = readEpochMilliseconds(SERVER_NOW_META_NAME);
+    if (expiryMs === null || serverNowMs === null) {
       return null;
     }
-    return expiryMs - intervalMs;
+
+    // Both values are emitted by the server from the verified authenticated
+    // response. The workstation wall clock never participates in expiry math.
+    return Math.max(0, expiryMs - serverNowMs - intervalMs);
   }
 
   function rememberSharedRefresh(value) {
@@ -273,26 +286,26 @@ function installSessionRenewal() {
     channel.postMessage({type: "refreshed", at: timestamp});
   }
 
-  function scheduleRenewal({retry = false} = {}) {
+  function armRenewalTimer(delay) {
     if (renewalTimer !== null) {
       window.clearTimeout(renewalTimer);
-      renewalTimer = null;
     }
 
-    const dueAt = accessRefreshDueAtMs();
-    if (dueAt === null) {
-      showSessionWarning("No fue posible verificar cuándo vence la sesión actual.");
-      return;
-    }
-
-    const minimumDelay = retry ? retryDelayMs : 0;
-    const delay = Math.max(minimumDelay, dueAt - Date.now(), 0);
-
+    renewalDeadlineMonotonicMs = performance.now() + delay;
     renewalTimer = window.setTimeout(async () => {
       renewalTimer = null;
       const synchronized = await renew();
       scheduleRenewal({retry: !synchronized});
     }, delay);
+  }
+
+  function scheduleRenewal({retry = false} = {}) {
+    const delay = retry ? retryDelayMs : serverRelativeRefreshDelayMs();
+    if (delay === null) {
+      showSessionWarning("No fue posible verificar cuándo vence la sesión actual.");
+      return;
+    }
+    armRenewalTimer(delay);
   }
 
   async function synchronizeFromPeer(timestamp) {
@@ -344,7 +357,7 @@ function installSessionRenewal() {
 
     // A peer may have rotated the shared HttpOnly cookies while this tab waited
     // for the Web Lock. If so, never perform a second immediate rotation: just
-    // rehydrate this tab's session-bound CSRF and expiry metadata.
+    // rehydrate this tab's session-bound CSRF and timing metadata.
     if (sharedRefreshAt && now - sharedRefreshAt < duplicateSuppressionMs) {
       return synchronizeSecurityMeta();
     }
@@ -378,25 +391,25 @@ function installSessionRenewal() {
   }
 
   function renewIfDue() {
-    const dueAt = accessRefreshDueAtMs();
-    if (dueAt === null) {
-      showSessionWarning("No fue posible verificar cuándo vence la sesión actual.");
+    if (renewalDeadlineMonotonicMs === null) {
+      scheduleRenewal();
       return;
     }
 
-    if (Date.now() >= dueAt) {
+    if (performance.now() >= renewalDeadlineMonotonicMs) {
+      if (renewalTimer !== null) {
+        window.clearTimeout(renewalTimer);
+        renewalTimer = null;
+      }
       void renew().then((synchronized) => {
         scheduleRenewal({retry: !synchronized});
       });
-      return;
     }
-
-    scheduleRenewal();
   }
 
-  // The deadline is absolute and comes from the verified JWT expiry. A normal
-  // full-page navigation therefore cannot postpone renewal by starting a fresh
-  // interval from page-load time.
+  // The delay is based on verified JWT expiry minus server render time. A normal
+  // full-page navigation cannot postpone renewal, and workstation clock skew
+  // cannot make the client refresh too late or spin in an immediate loop.
   scheduleRenewal();
 
   document.addEventListener("visibilitychange", () => {
