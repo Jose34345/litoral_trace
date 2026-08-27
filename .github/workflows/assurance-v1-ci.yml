@@ -35,4 +35,5 @@ jobs:
           pytest -q \
             tests/test_assurance_feature_flags.py \
             tests/test_assurance_metrics.py \
-            tests/test_assurance_document_model.py
+            tests/test_assurance_document_model.py \
+            tests/test_document_ingestion.py
