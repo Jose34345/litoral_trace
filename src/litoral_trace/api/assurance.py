@@ -13,7 +13,10 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 
-from litoral_trace.api.assurance_preflight import build_assurance_preflight_router
+from litoral_trace.api.assurance_preflight import (
+    assurance_preflight,
+    assurance_preflight_reason_catalog,
+)
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.assurance.domain import DocumentProcessingStatus
 from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
@@ -240,7 +243,18 @@ def build_assurance_router() -> APIRouter:
         methods=["GET"],
         status_code=status.HTTP_200_OK,
     )
-    api_router.include_router(build_assurance_preflight_router())
+    api_router.add_api_route(
+        "/preflight",
+        assurance_preflight,
+        methods=["POST"],
+        status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
+        "/preflight/reasons",
+        assurance_preflight_reason_catalog,
+        methods=["GET"],
+        status_code=status.HTTP_200_OK,
+    )
     return api_router
 
 
