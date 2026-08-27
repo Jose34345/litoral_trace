@@ -1,8 +1,9 @@
 const REFRESH_URL = "/api/v1/auth/refresh";
 const ACCESS_PROBE_URL = "/api/v1/auth/me";
 const COORDINATION_COOKIE_NAME = "lt_refresh_inflight";
-const COORDINATION_MAX_AGE_SECONDS = 15;
-const COORDINATION_POLL_MS = 150;
+const COORDINATION_WAIT_SECONDS = 30;
+const COORDINATION_POLL_MS = 250;
+const COORDINATION_PROBE_EVERY_POLLS = 4;
 const ACCESS_EXPIRES_AT_META_NAME = "lt-session-access-expires-at";
 const SERVER_NOW_META_NAME = "lt-session-server-now";
 const REFRESH_AFTER_META_NAME = "lt-session-refresh-after";
@@ -19,10 +20,12 @@ function secureCookieSuffix() {
 }
 
 function markRefreshInFlight() {
+  // Session cookie on purpose: there is no wall-clock lease that can expire
+  // while an HTTP keepalive request is still active. The marker is not a
+  // credential and contains no user, tenant, token or business information.
   document.cookie = [
     `${COORDINATION_COOKIE_NAME}=1`,
     "Path=/",
-    `Max-Age=${COORDINATION_MAX_AGE_SECONDS}`,
     "SameSite=Strict",
   ].join("; ") + secureCookieSuffix();
 }
@@ -38,21 +41,6 @@ function clearRefreshInFlight() {
 
 function sleep(milliseconds) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
-}
-
-async function waitForOutstandingRefresh() {
-  const maxPolls = Math.ceil(
-    (COORDINATION_MAX_AGE_SECONDS * 1000) / COORDINATION_POLL_MS,
-  ) + 2;
-
-  for (let poll = 0; poll < maxPolls; poll += 1) {
-    if (!cookieIsPresent(COORDINATION_COOKIE_NAME)) {
-      return true;
-    }
-    await sleep(COORDINATION_POLL_MS);
-  }
-
-  return !cookieIsPresent(COORDINATION_COOKIE_NAME);
 }
 
 function parseEpochSeconds(documentNode, metaName) {
@@ -110,6 +98,53 @@ async function refreshedCookieJarHasFutureRenewalWindow(rawFetch) {
   }
 }
 
+async function waitForOutstandingRefresh(rawFetch) {
+  const maxPolls = Math.ceil(
+    (COORDINATION_WAIT_SECONDS * 1000) / COORDINATION_POLL_MS,
+  );
+
+  for (let poll = 0; poll < maxPolls; poll += 1) {
+    if (!cookieIsPresent(COORDINATION_COOKIE_NAME)) {
+      return "released";
+    }
+
+    if (
+      poll % COORDINATION_PROBE_EVERY_POLLS === 0
+      && await refreshedCookieJarHasFutureRenewalWindow(rawFetch)
+    ) {
+      // The prior keepalive finished after destroying its document. The shared
+      // HttpOnly cookie jar now proves that rotation succeeded, so this
+      // successor document owns cleanup of the non-sensitive marker.
+      clearRefreshInFlight();
+      return "refreshed";
+    }
+
+    await sleep(COORDINATION_POLL_MS);
+  }
+
+  // Important: timeout only bounds how long this document waits. It does NOT
+  // expire or clear the marker and therefore can never authorize a second
+  // rotation while the first request has an unknown outcome.
+  return "ambiguous";
+}
+
+function ambiguousRefreshResponse() {
+  // Use a forbidden response so session-renewal surfaces its existing
+  // reauthentication warning. The marker remains present, so later automatic
+  // retries are intercepted again and never send the old refresh token.
+  return new Response(null, {
+    status: 403,
+    statusText: "Refresh outcome ambiguous",
+  });
+}
+
+function syntheticRefreshSuccess() {
+  return new Response("{}", {
+    status: 200,
+    headers: {"Content-Type": "application/json"},
+  });
+}
+
 function isRefreshRequest(input, init = {}) {
   const method = String(
     init.method || (input instanceof Request ? input.method : "GET"),
@@ -142,36 +177,46 @@ function installCrossDocumentRefreshCoordination() {
     }
 
     if (cookieIsPresent(COORDINATION_COOKIE_NAME)) {
-      const leaseReleased = await waitForOutstandingRefresh();
-      if (!leaseReleased) {
-        // Never race another refresh whose document may have been destroyed.
-        // The normal session-renewal retry path will attempt again after the
-        // short coordination lease expires.
-        return new Response(null, {
-          status: 425,
-          statusText: "Refresh coordination pending",
-        });
+      const outstandingState = await waitForOutstandingRefresh(rawFetch);
+
+      if (outstandingState === "refreshed") {
+        return syntheticRefreshSuccess();
+      }
+
+      if (outstandingState === "ambiguous") {
+        return ambiguousRefreshResponse();
       }
 
       if (await refreshedCookieJarHasFutureRenewalWindow(rawFetch)) {
-        // The previous keepalive already rotated the shared HttpOnly cookies.
-        // Return success so the caller rehydrates its CSRF/timing metadata
-        // without rotating the new refresh token again.
-        return new Response("{}", {
-          status: 200,
-          headers: {"Content-Type": "application/json"},
-        });
+        // A surviving document released the marker after receiving the refresh
+        // response. Revalidate the cookie jar before deciding whether another
+        // rotation is necessary.
+        return syntheticRefreshSuccess();
       }
     }
 
     markRefreshInFlight();
+
+    let response;
     try {
-      return await rawFetch(input, init);
-    } finally {
-      // If this document survives, release immediately. If navigation destroys
-      // it, the browser keeps the non-sensitive marker only until Max-Age.
-      clearRefreshInFlight();
+      response = await rawFetch(input, init);
+    } catch (_error) {
+      // Once the POST was sent, a transport failure cannot prove whether the
+      // server committed rotation and Set-Cookie was lost. Keep the marker and
+      // fail closed; never feed this outcome into the ordinary refresh retry.
+      return ambiguousRefreshResponse();
     }
+
+    if (response.status >= 500) {
+      // A gateway/server failure can also be ambiguous after the request left
+      // the browser. Keep the marker rather than risk replaying the parent token.
+      return ambiguousRefreshResponse();
+    }
+
+    // A concrete success or client-side rejection is a known outcome observed
+    // by this live document, so it can safely release the coordination marker.
+    clearRefreshInFlight();
+    return response;
   };
 
   Object.defineProperty(
