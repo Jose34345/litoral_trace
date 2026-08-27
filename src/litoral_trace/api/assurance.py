@@ -41,6 +41,7 @@ from litoral_trace.assurance.processing import (
 from litoral_trace.assurance.reconciliation_service import AssuranceReconciliationService
 from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.config import get_settings
+from litoral_trace.web.assurance_attention import render_assurance_attention
 
 
 _MAX_FILES_PER_REQUEST = 20
@@ -280,6 +281,12 @@ def build_assurance_router() -> APIRouter:
         resolve_assurance_exception,
         methods=["POST"],
         status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
+        "/attention",
+        render_assurance_attention,
+        methods=["GET"],
+        include_in_schema=False,
     )
     return api_router
 
