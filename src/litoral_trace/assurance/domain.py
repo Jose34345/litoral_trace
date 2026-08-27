@@ -65,3 +65,23 @@ class ReconciliationIssueStatus(StrEnum):
     OPEN = "OPEN"
     ACCEPTED_WITH_JUSTIFICATION = "ACCEPTED_WITH_JUSTIFICATION"
     RESOLVED = "RESOLVED"
+
+
+class OperationalExceptionSource(StrEnum):
+    RECONCILIATION = "RECONCILIATION"
+    PREFLIGHT = "PREFLIGHT"
+    MANUAL = "MANUAL"
+
+
+class OperationalExceptionStatus(StrEnum):
+    OPEN = "OPEN"
+    IN_PROGRESS = "IN_PROGRESS"
+    RESOLVED = "RESOLVED"
+    DISMISSED = "DISMISSED"
+
+
+class OperationalExceptionPriority(StrEnum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
