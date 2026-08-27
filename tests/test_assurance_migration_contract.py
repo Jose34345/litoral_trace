@@ -29,6 +29,6 @@ def test_assurance_tables_use_forced_rls_and_runtime_least_privilege():
     assert "REVOKE ALL PRIVILEGES" in text
 
 
-def test_ci_canonical_head_tracks_assurance_migration():
+def test_ci_canonical_head_tracks_latest_assurance_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "030_assurance_document_intelligence (head)" in text
+    assert "031_assurance_reconciliation (head)" in text
