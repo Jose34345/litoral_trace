@@ -186,7 +186,8 @@ def _present_workspace(
     subjects = service.list_subjects(organization_id=user.organization_id)
     subject_views = tuple(_present_subject(subject) for subject in subjects)
     valid_keys = {subject["key"] for subject in subject_views}
-    selected_key = selected_key if selected_key in valid_keys else (subject_views[0]["key"] if subject_views else None)
+    requested_key = str(selected_key or "").strip()
+    selected_key = requested_key if requested_key in valid_keys else None
     selected_type, selected_reference = _parse_subject_key(selected_key)
 
     evidence = service.list_evidence(
