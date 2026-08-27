@@ -5,6 +5,8 @@ const ACCESS_EXPIRES_AT_META_NAME = "lt-session-access-expires-at";
 const SERVER_NOW_META_NAME = "lt-session-server-now";
 const CSRF_HEADER_NAME = "X-CSRF-Token";
 const REFRESH_URL = "/api/v1/auth/refresh";
+const ACCESS_PROBE_URL = "/api/v1/auth/me";
+const SESSION_CLOCK_URL = "/health";
 const REFRESH_LOCK_NAME = "litoral-trace-session-refresh";
 const REFRESH_CHANNEL_NAME = "litoral-trace-session-refresh-events";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
@@ -31,6 +33,10 @@ function readEpochMilliseconds(name) {
     return null;
   }
   return raw * 1000;
+}
+
+function monotonicEpochMilliseconds() {
+  return performance.timeOrigin + performance.now();
 }
 
 function updateRenderedCsrfToken(nextToken) {
@@ -180,6 +186,52 @@ async function synchronizeSecurityMeta() {
   }
 }
 
+async function refreshServerClock() {
+  try {
+    const response = await window.fetch(
+      SESSION_CLOCK_URL,
+      {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {"Accept": "application/json"},
+      },
+    );
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const serverDate = response.headers.get("Date");
+    const serverNowMs = Date.parse(serverDate || "");
+    if (!Number.isFinite(serverNowMs) || serverNowMs <= 0) {
+      return false;
+    }
+
+    updateMeta(SERVER_NOW_META_NAME, String(Math.floor(serverNowMs / 1000)));
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function accessSessionIsUsable() {
+  try {
+    const response = await window.fetch(
+      ACCESS_PROBE_URL,
+      {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {"Accept": "application/json"},
+      },
+    );
+    return response.ok;
+  } catch (_error) {
+    return false;
+  }
+}
+
 async function rotateSession() {
   const token = readMeta(REFRESH_CSRF_META_NAME);
   if (!token) {
@@ -194,6 +246,7 @@ async function rotateSession() {
         method: "POST",
         credentials: "same-origin",
         cache: "no-store",
+        keepalive: true,
         headers: {
           "Accept": "application/json",
           "Content-Type": "application/json",
@@ -213,9 +266,9 @@ async function rotateSession() {
     return {rotated: false, synchronized: false};
   }
 
-  // Set-Cookie has been applied when fetch resolves. Rehydrate this tab's
-  // session-bound CSRF material and fresh server-relative timing metadata
-  // without reloading the page or losing inputs.
+  // keepalive lets the browser finish the rotation and apply Set-Cookie even if
+  // a navigation starts after the POST reached the server. When this document
+  // survives, rehydrate its session-bound CSRF and timing metadata in place.
   const synchronized = await synchronizeSecurityMeta();
   if (!synchronized) {
     showSessionWarning("La sesión se renovó, pero la página no pudo sincronizar su protección CSRF.");
@@ -255,10 +308,11 @@ function installSessionRenewal() {
   const duplicateSuppressionMs = Math.max(5000, Math.min(30000, Math.floor(intervalMs / 3)));
   const channel = new window.BroadcastChannel(REFRESH_CHANNEL_NAME);
   let renewalTimer = null;
-  let renewalDeadlineMonotonicMs = null;
   let sharedRefreshAt = 0;
   let inFlight = null;
   let peerSyncInFlight = null;
+  let foregroundProbeInFlight = null;
+  let foregroundDueProbe = false;
 
   function serverRelativeRefreshDelayMs() {
     const expiryMs = readEpochMilliseconds(ACCESS_EXPIRES_AT_META_NAME);
@@ -267,8 +321,8 @@ function installSessionRenewal() {
       return null;
     }
 
-    // Both values are emitted by the server from the verified authenticated
-    // response. The workstation wall clock never participates in expiry math.
+    // Both values come from server-controlled responses. The workstation wall
+    // clock never participates in expiry math.
     return Math.max(0, expiryMs - serverNowMs - intervalMs);
   }
 
@@ -291,7 +345,6 @@ function installSessionRenewal() {
       window.clearTimeout(renewalTimer);
     }
 
-    renewalDeadlineMonotonicMs = performance.now() + delay;
     renewalTimer = window.setTimeout(async () => {
       renewalTimer = null;
       const synchronized = await renew();
@@ -348,23 +401,41 @@ function installSessionRenewal() {
   });
 
   // A newly opened tab can ask existing tabs for their latest in-memory
-  // coordination timestamp. Only a timestamp crosses the channel—never access,
-  // refresh or CSRF tokens, tenant IDs, usernames or business data.
+  // coordination timestamp. Only a monotonic timestamp crosses the channel—
+  // never access, refresh or CSRF tokens, tenant IDs, usernames or business data.
   channel.postMessage({type: "state-request"});
 
   async function renewInsideCrossTabLock() {
-    const now = Date.now();
+    const now = monotonicEpochMilliseconds();
 
     // A peer may have rotated the shared HttpOnly cookies while this tab waited
     // for the Web Lock. If so, never perform a second immediate rotation: just
     // rehydrate this tab's session-bound CSRF and timing metadata.
     if (sharedRefreshAt && now - sharedRefreshAt < duplicateSuppressionMs) {
+      foregroundDueProbe = false;
       return synchronizeSecurityMeta();
     }
 
+    // After waking from suspension, multiple tabs can decide that the old access
+    // token is due at the same time. Once the lock is acquired, probe the shared
+    // cookie jar before rotating. If another tab already refreshed, /me succeeds
+    // and the new server metadata moves the deadline forward; if the old access
+    // token is still due/expired, continue with exactly one refresh rotation.
+    if (foregroundDueProbe && await accessSessionIsUsable()) {
+      const synchronized = await synchronizeSecurityMeta();
+      if (synchronized) {
+        const refreshedDelay = serverRelativeRefreshDelayMs();
+        if (refreshedDelay !== null && refreshedDelay > 0) {
+          foregroundDueProbe = false;
+          return true;
+        }
+      }
+    }
+
+    foregroundDueProbe = false;
     const result = await rotateSession();
     if (result.rotated) {
-      const completedAt = Date.now();
+      const completedAt = monotonicEpochMilliseconds();
       // Broadcast immediately after the server rotated the HttpOnly cookies so
       // every peer can refresh its session-bound CSRF token before its next POST.
       announceRefresh(completedAt);
@@ -390,34 +461,71 @@ function installSessionRenewal() {
     }
   }
 
-  function renewIfDue() {
-    if (renewalDeadlineMonotonicMs === null) {
-      scheduleRenewal();
-      return;
+  async function revalidateAfterForeground() {
+    if (foregroundProbeInFlight) {
+      return foregroundProbeInFlight;
     }
 
-    if (performance.now() >= renewalDeadlineMonotonicMs) {
+    foregroundProbeInFlight = (async () => {
+      const clockRefreshed = await refreshServerClock();
+      if (!clockRefreshed) {
+        // If the public server clock cannot be obtained, renewing directly is
+        // safer than trusting a monotonic clock that may have paused in sleep.
+        foregroundDueProbe = true;
+        sharedRefreshAt = 0;
+        const synchronized = await renew();
+        scheduleRenewal({retry: !synchronized});
+        return synchronized;
+      }
+
+      const delay = serverRelativeRefreshDelayMs();
+      if (delay === null) {
+        showSessionWarning("No fue posible verificar cuándo vence la sesión actual.");
+        return false;
+      }
+
+      if (delay > 0) {
+        armRenewalTimer(delay);
+        return true;
+      }
+
       if (renewalTimer !== null) {
         window.clearTimeout(renewalTimer);
         renewalTimer = null;
       }
-      void renew().then((synchronized) => {
-        scheduleRenewal({retry: !synchronized});
-      });
+
+      // The fresh server clock proves the old access token reached its renewal
+      // window. Reset any pre-suspend duplicate marker; the Web Lock plus /me
+      // probe above still prevents two resumed tabs from rotating sequentially.
+      foregroundDueProbe = true;
+      sharedRefreshAt = 0;
+      const synchronized = await renew();
+      scheduleRenewal({retry: !synchronized});
+      return synchronized;
+    })();
+
+    try {
+      return await foregroundProbeInFlight;
+    } finally {
+      foregroundProbeInFlight = null;
     }
   }
 
-  // The delay is based on verified JWT expiry minus server render time. A normal
-  // full-page navigation cannot postpone renewal, and workstation clock skew
-  // cannot make the client refresh too late or spin in an immediate loop.
+  // Initial delay uses verified JWT expiry minus server render time. Normal page
+  // navigation cannot postpone it and workstation clock skew cannot move it.
   scheduleRenewal();
 
+  // performance.now() may pause while a laptop sleeps. On every return to the
+  // foreground, obtain a fresh server Date header before deciding whether the
+  // current access token is still inside its safe renewal window.
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-      renewIfDue();
+      void revalidateAfterForeground();
     }
   });
-  window.addEventListener("focus", renewIfDue);
+  window.addEventListener("focus", () => {
+    void revalidateAfterForeground();
+  });
 }
 
 if (document.readyState === "loading") {
