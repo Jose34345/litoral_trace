@@ -1,0 +1,189 @@
+"""Assurance v1 HTTP surface: one entry point for operational documents."""
+from __future__ import annotations
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
+from fastapi.responses import JSONResponse
+
+from litoral_trace.api.auth import UserTenantContext
+from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
+from litoral_trace.assurance.ingestion import (
+    AssuranceIngestionError,
+    AssuranceIngestionService,
+    AssuranceIngestionValidationError,
+    validate_incoming_file,
+)
+from litoral_trace.assurance.processing import AssuranceProcessingService
+from litoral_trace.auth.rbac import Permission, require_permission
+from litoral_trace.config import get_settings
+
+
+router = APIRouter(
+    prefix="/api/v1/assurance",
+    tags=["Assurance v1"],
+)
+
+_MAX_FILES_PER_REQUEST = 20
+_READ_CHUNK_BYTES = 1024 * 1024
+
+
+def _require_document_intelligence_enabled() -> None:
+    flags = get_assurance_feature_flags()
+    if not flags.assurance_v1 or not flags.document_intelligence:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assurance v1 no esta habilitado para este entorno.",
+        )
+
+
+async def _read_bounded(upload: UploadFile) -> bytes:
+    max_bytes = get_settings().storage.max_upload_bytes
+    payload = bytearray()
+    while True:
+        chunk = await upload.read(_READ_CHUNK_BYTES)
+        if not chunk:
+            break
+        payload.extend(chunk)
+        if len(payload) > max_bytes:
+            raise AssuranceIngestionValidationError(
+                "El archivo excede el tamano maximo permitido."
+            )
+    if not payload:
+        raise AssuranceIngestionValidationError("El archivo no puede estar vacio.")
+    return bytes(payload)
+
+
+def _serialize_ingestion(result) -> dict[str, object]:
+    return {
+        "assurance_document_id": str(result.assurance_public_id),
+        "vault_document_id": str(result.vault_public_id),
+        "filename": result.filename,
+        "content_type": result.content_type,
+        "size_bytes": result.size_bytes,
+        "sha256": result.sha256,
+        "duplicate": result.duplicate,
+        "processing_status": result.processing_status,
+        "progress_url": (
+            f"/api/v1/assurance/documents/{result.assurance_public_id}/progress"
+        ),
+    }
+
+
+@router.post(
+    "/documents",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def ingest_assurance_documents(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    files: list[UploadFile] = File(...),
+    user: UserTenantContext = Depends(require_permission(Permission.VAULT_UPLOAD)),
+) -> JSONResponse:
+    """Accept one or many PDF/XLSX/XLS/CSV files through the same workflow."""
+    del request
+    _require_document_intelligence_enabled()
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Debe adjuntarse al menos un archivo.",
+        )
+    if len(files) > _MAX_FILES_PER_REQUEST:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Se permiten hasta {_MAX_FILES_PER_REQUEST} archivos por solicitud.",
+        )
+
+    buffered: list[tuple[UploadFile, bytes]] = []
+    try:
+        for upload in files:
+            content = await _read_bounded(upload)
+            validate_incoming_file(
+                filename=upload.filename or "document",
+                content_type=upload.content_type or "",
+                content=content,
+            )
+            buffered.append((upload, content))
+    except AssuranceIngestionValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from None
+    finally:
+        for upload in files:
+            await upload.close()
+
+    ingestion_service = AssuranceIngestionService()
+    accepted: list[dict[str, object]] = []
+    duplicates = 0
+    for upload, content in buffered:
+        try:
+            result = ingestion_service.ingest(
+                organization_id=user.organization_id,
+                created_by_user_id=user.user_id,
+                filename=upload.filename or "document",
+                content_type=upload.content_type or "",
+                content=content,
+            )
+        except AssuranceIngestionValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from None
+        except AssuranceIngestionError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="No se pudo almacenar el documento en Evidence Vault.",
+            ) from None
+
+        if result.duplicate:
+            duplicates += 1
+        else:
+            background_tasks.add_task(
+                AssuranceProcessingService().process,
+                organization_id=user.organization_id,
+                assurance_public_id=result.assurance_public_id,
+                force_reprocess=False,
+            )
+        accepted.append(_serialize_ingestion(result))
+
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={
+            "organization_id": user.organization_id,
+            "accepted_count": len(accepted),
+            "duplicate_count": duplicates,
+            "documents": accepted,
+        },
+    )
+
+
+@router.get("/documents/{assurance_document_id}/progress")
+async def assurance_document_progress(
+    assurance_document_id: str,
+    user: UserTenantContext = Depends(require_permission(Permission.VAULT_READ)),
+) -> JSONResponse:
+    _require_document_intelligence_enabled()
+    try:
+        progress = AssuranceProcessingService().progress(
+            organization_id=user.organization_id,
+            assurance_public_id=assurance_document_id,
+        )
+    except (ValueError, AssuranceIngestionError):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Documento Assurance no encontrado.",
+        ) from None
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No se pudo consultar el procesamiento.",
+        ) from None
+    return JSONResponse(status_code=status.HTTP_200_OK, content=progress)
