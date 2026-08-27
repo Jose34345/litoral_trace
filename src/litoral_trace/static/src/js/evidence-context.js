@@ -73,22 +73,49 @@ function findShipmentSubject(selector, shipmentCode) {
   return option?.value || "";
 }
 
+function selectorContainsSubject(selector, subject) {
+  const normalized = String(subject || "").trim();
+  if (!normalized) {
+    return false;
+  }
+  return Array.from(selector.options).some(
+    (option) => option.value === normalized,
+  );
+}
+
+function requireExplicitSelection(selector) {
+  if (!selector.querySelector('option[data-evidence-placeholder="true"]')) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Confirmá un eslabón antes de continuar";
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    placeholder.dataset.evidencePlaceholder = "true";
+    selector.insertBefore(placeholder, selector.firstChild);
+  }
+  selector.value = "";
+}
+
 function disableMutationFormsUntilSubjectConfirmed(selector) {
-  const guard = document.createElement("div");
-  guard.dataset.evidenceContextGuard = "true";
-  guard.setAttribute("role", "status");
-  guard.style.cssText = [
-    "margin-top:0.75rem",
-    "border:1px solid #fcd34d",
-    "border-radius:0.5rem",
-    "background:#fffbeb",
-    "padding:0.75rem",
-    "font-size:0.75rem",
-    "line-height:1.25rem",
-    "color:#78350f",
-  ].join(";");
-  guard.innerHTML = "<strong>Confirmá el eslabón antes de vincular.</strong> La pantalla no reutiliza silenciosamente el primer origen después de un reingreso. Elegí el origen, movimiento, lote o despacho que el documento respalda.";
-  selector.closest("form")?.appendChild(guard);
+  requireExplicitSelection(selector);
+
+  if (!document.querySelector("[data-evidence-context-guard]")) {
+    const guard = document.createElement("div");
+    guard.dataset.evidenceContextGuard = "true";
+    guard.setAttribute("role", "status");
+    guard.style.cssText = [
+      "margin-top:0.75rem",
+      "border:1px solid #fcd34d",
+      "border-radius:0.5rem",
+      "background:#fffbeb",
+      "padding:0.75rem",
+      "font-size:0.75rem",
+      "line-height:1.25rem",
+      "color:#78350f",
+    ].join(";");
+    guard.innerHTML = "<strong>Confirmá el eslabón antes de vincular.</strong> La pantalla no reutiliza silenciosamente el primer origen después de un reingreso. Elegí el origen, movimiento, lote o despacho que el documento respalda.";
+    selector.closest("form")?.appendChild(guard);
+  }
 
   document.querySelectorAll(
     'form[action="/evidence/link"], form[action="/evidence/upload-link"]',
@@ -109,12 +136,24 @@ function resolveOrGuardEvidenceSubject() {
   }
 
   const params = new URLSearchParams(window.location.search);
-  if (params.has(SUBJECT_PARAM)) {
+  const selector = document.querySelector("#subject-select");
+  if (!selector) {
     return;
   }
 
-  const selector = document.querySelector("#subject-select");
-  if (!selector) {
+  const explicitSubject = (params.get(SUBJECT_PARAM) || "").trim();
+  if (explicitSubject) {
+    if (selectorContainsSubject(selector, explicitSubject)) {
+      return;
+    }
+
+    // A stale, malformed or cross-context key must never make the server's
+    // fallback first option look confirmed. Remove it immediately and reload a
+    // neutral evidence workspace before any mutation can be intentionally used.
+    params.delete(SUBJECT_PARAM);
+    params.delete(SHIPMENT_PARAM);
+    const cleanQuery = params.toString();
+    window.location.replace(cleanQuery ? `${EVIDENCE_PATH}?${cleanQuery}` : EVIDENCE_PATH);
     return;
   }
 
