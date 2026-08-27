@@ -13,6 +13,7 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 
+from litoral_trace.api.assurance_preflight import router as assurance_preflight_router
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.assurance.domain import DocumentProcessingStatus
 from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
@@ -222,12 +223,7 @@ async def assurance_document_progress(
 
 
 def build_assurance_router() -> APIRouter:
-    """Create a fully populated router without sharing mutable route state.
-
-    FastAPI copies routes when an ``APIRouter`` is included. Building the
-    Assurance router per application keeps startup deterministic even in test
-    suites or embedding processes that import/reload modules repeatedly.
-    """
+    """Create a fully populated router without sharing mutable route state."""
     api_router = APIRouter(
         prefix="/api/v1/assurance",
         tags=["Assurance v1"],
@@ -244,6 +240,7 @@ def build_assurance_router() -> APIRouter:
         methods=["GET"],
         status_code=status.HTTP_200_OK,
     )
+    api_router.include_router(assurance_preflight_router)
     return api_router
 
 
