@@ -318,7 +318,15 @@ def revoke_session(
     session_id: int | None = None,
     now: datetime | None = None,
 ) -> UserSession | None:
-    revoked_at = now or utc_now()
+    """Revoca una sesión y toda su familia de rotación.
+
+    Una familia representa un único linaje de login/refresh. Revocarla completa
+    garantiza que un logout explícito prevalezca incluso si una renovación
+    keepalive concurrente ya creó un sucesor antes de que el logout obtenga el
+    lock de la sesión padre.
+    """
+
+    revoked_at = ensure_utc_datetime(now or utc_now())
     session_record: UserSession | None = None
 
     if refresh_token:
@@ -328,10 +336,13 @@ def revoke_session(
         )
         if session_lookup is not None:
             set_tenant_db_context(db_session, session_lookup.organization_id)
+            # The bootstrap lookup already takes FOR UPDATE on PostgreSQL. Lock
+            # again through the tenant-scoped path for the same explicit
+            # serialization invariant used by refresh rotation.
             session_record = _get_session_by_id(
                 db_session,
                 session_id=session_lookup.id,
-                for_update=False,
+                for_update=True,
             )
     elif session_id is not None:
         session_record = _get_session_by_id(
@@ -343,8 +354,12 @@ def revoke_session(
     if session_record is None:
         return None
 
-    if session_record.revoked_at is None:
-        session_record.revoked_at = revoked_at
-        db_session.flush()
+    _revoke_family(
+        db_session,
+        family_id=session_record.family_id,
+        organization_id=session_record.organization_id,
+        revoked_at=revoked_at,
+    )
+    db_session.flush()
 
     return session_record
