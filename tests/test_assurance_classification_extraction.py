@@ -97,6 +97,35 @@ def test_table_extraction_keeps_original_normalized_confidence_and_locator():
     assert "sheet:Operacion" in by_field["quantity"].source_locator
 
 
+def test_operational_references_are_extracted_for_exact_matching():
+    parsed = ParsedDocument(
+        file_kind="XLSX",
+        tables=(
+            ParsedTable(
+                name="Operacion",
+                headers=("Codigo despacho", "Orden de compra", "Referencia venta"),
+                rows=(
+                    {
+                        "Codigo despacho": "ship-009",
+                        "Orden de compra": "po-77",
+                        "Referencia venta": "sale-55",
+                    },
+                ),
+                source=SourceLocation(
+                    sheet="Operacion",
+                    row=1,
+                    locator="sheet:Operacion;header_row:1",
+                ),
+            ),
+        ),
+    )
+    candidates = extract_structured_fields(parsed)
+    by_field = {candidate.field_name: candidate for candidate in candidates}
+    assert by_field["shipment_code"].normalized_value == "SHIP-009"
+    assert by_field["order_id"].normalized_value == "PO-77"
+    assert by_field["sale_reference"].normalized_value == "SALE-55"
+
+
 def test_pdf_text_extraction_is_structured_and_missing_required_fields_are_explicit():
     parsed = ParsedDocument(
         file_kind="PDF",
