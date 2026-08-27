@@ -132,8 +132,13 @@ def get_authenticated_html_user(
             exc.status_code
             == status.HTTP_401_UNAUTHORIZED
         ):
+            # An invalid/expired short access JWT does not prove the long-lived
+            # refresh session is invalid. Do not erase refresh or browser-CSRF
+            # cookies here: an in-flight keepalive refresh may be completing
+            # during this navigation, and explicit logout/revocation remains the
+            # authority that clears the full browser session.
             return None, redirect_to_login(
-                clear_cookies=True
+                clear_cookies=False
             )
 
         if (
@@ -209,10 +214,9 @@ def render_web_template(
     response.headers["Pragma"] = "no-cache"
 
     # Authenticated renders are also the synchronization heartbeat used by the
-    # browser session-renewal layer. Re-issuing the same HttpOnly nonce only
-    # slides its Max-Age; it does not expose or rotate the binding. This keeps
-    # the 8-hour browser binding alive while an authenticated application tab is
-    # actively renewing, without extending anonymous cookies unnecessarily.
+    # browser session-renewal layer. Re-issuing the same HttpOnly nonce slides
+    # its Max-Age without exposing or rotating the binding; its lifetime is
+    # aligned to the refresh-session TTL and refreshed during active use.
     if created or user is not None:
         set_csrf_browser_cookie(
             response,
