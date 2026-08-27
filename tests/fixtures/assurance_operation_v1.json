@@ -1,0 +1,75 @@
+{
+  "organization": {
+    "id": 42,
+    "name": "Aserradero Piloto NEA S.R.L."
+  },
+  "supplier": {
+    "external_id": "SUP-019",
+    "name": "Forestal Demo S.A.",
+    "cuit": "30-71234567-8"
+  },
+  "lots": [
+    {
+      "identifier": "LOT-442",
+      "product": "Madera aserrada de pino",
+      "quantity_m3": 80.0,
+      "origin_province": "Corrientes",
+      "status": "AVAILABLE"
+    },
+    {
+      "identifier": "LOT-391",
+      "product": "Madera aserrada de pino",
+      "quantity_m3": 55.0,
+      "origin_province": "Corrientes",
+      "status": "AVAILABLE"
+    }
+  ],
+  "order": {
+    "external_id": "EU-2841",
+    "customer": "Buyer Demo GmbH",
+    "market": "DE",
+    "product": "Madera aserrada de pino",
+    "quantity_m3": 80.0,
+    "commitment_date": "2026-09-18",
+    "value_usd": 84600.0
+  },
+  "shipment": {
+    "external_id": "SHIP-EU-2841",
+    "destination_country": "DE",
+    "planned_date": "2026-09-15",
+    "candidate_lots": ["LOT-442"]
+  },
+  "documents": [
+    {
+      "filename": "factura_e_EU2841.pdf",
+      "semantic_type": "INVOICE",
+      "document_number": "E-0001-00002841",
+      "quantity_m3": 80.0,
+      "issue_date": "2026-08-20"
+    },
+    {
+      "filename": "remito_EU2841.pdf",
+      "semantic_type": "DELIVERY_NOTE",
+      "document_number": "R-0001-00001877",
+      "quantity_m3": 80.0,
+      "issue_date": "2026-08-21"
+    },
+    {
+      "filename": "certificado_fitosanitario_EU2841.pdf",
+      "semantic_type": "PHYTOSANITARY_CERTIFICATE",
+      "document_number": "PHY-2026-019",
+      "valid_from": "2026-08-22",
+      "valid_until": "2026-09-11"
+    },
+    {
+      "filename": "stock_export_20260827.xlsx",
+      "semantic_type": "SPREADSHEET",
+      "source_system": "ERP_DEMO"
+    }
+  ],
+  "expected_preflight": {
+    "status": "CONDITIONAL",
+    "reason_codes": ["CERTIFICATE_EXPIRING_BEFORE_COMMITMENT"],
+    "requires_human_action": true
+  }
+}
