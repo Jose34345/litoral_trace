@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
 from litoral_trace.auth.rbac import Permission, has_permission
 
 
@@ -50,6 +51,14 @@ _NAVIGATION = (
         section="operacion",
         permission=Permission.TRACEABILITY_OPERATE,
         active_prefixes=("/operations",),
+    ),
+    NavigationItem(
+        key="attention",
+        label="Requiere atención",
+        href="/api/v1/assurance/attention",
+        section="operacion",
+        permission=Permission.TRACEABILITY_OPERATE,
+        active_prefixes=("/api/v1/assurance/attention",),
     ),
     NavigationItem(
         key="imports",
@@ -127,6 +136,7 @@ def build_navigation(
 
     visible: list[NavigationView] = []
     role = str(getattr(user, "role", "") or "").strip().lower()
+    assurance_flags = get_assurance_feature_flags()
 
     for item in _NAVIGATION:
         if not has_permission(user, item.permission):
@@ -138,6 +148,13 @@ def build_navigation(
         # access through LOTE_READ without adding onboarding clutter to their
         # sidebar.
         if item.key == "pilot_readiness" and role not in {"admin", "manager"}:
+            continue
+
+        # Assurance is rolled out explicitly. Keep production navigation
+        # unchanged while the feature is disabled, even for operational roles.
+        if item.key == "attention" and not (
+            assurance_flags.assurance_v1 and assurance_flags.operational_exceptions
+        ):
             continue
 
         visible.append(
