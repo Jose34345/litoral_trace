@@ -16,6 +16,9 @@
     {% if session_access_expires_at_epoch %}
     <meta name="lt-session-access-expires-at" content="{{ session_access_expires_at_epoch }}">
     {% endif %}
+    {% if session_server_now_epoch %}
+    <meta name="lt-session-server-now" content="{{ session_server_now_epoch }}">
+    {% endif %}
 
     <title>{% block title %}Litoral Trace | Trazabilidad de origen y cadena de custodia{% endblock %}</title>
 
