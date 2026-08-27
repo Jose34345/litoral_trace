@@ -238,6 +238,7 @@ def test_base_loads_pre_pilot_hardening_layers() -> None:
     assert "lt-refresh-csrf-token" in base
     assert "lt-session-refresh-after" in base
     assert "lt-session-access-expires-at" in base
+    assert "lt-session-server-now" in base
     assert "/src/js/session-renewal.js" in base
     assert "/src/js/evidence-context.js" in base
     assert "/src/js/datetime-local.js" in base
@@ -254,14 +255,16 @@ def test_session_renewal_preserves_forms_and_rotates_rendered_csrf() -> None:
     assert "window.sessionStorage" not in source
 
 
-def test_session_renewal_uses_verified_absolute_expiry_not_page_load_interval() -> None:
+def test_session_renewal_uses_verified_server_relative_expiry_not_client_clock() -> None:
     source = (STATIC_JS / "session-renewal.js").read_text(encoding="utf-8")
     assert 'ACCESS_EXPIRES_AT_META_NAME = "lt-session-access-expires-at"' in source
+    assert 'SERVER_NOW_META_NAME = "lt-session-server-now"' in source
     assert "readEpochMilliseconds(ACCESS_EXPIRES_AT_META_NAME)" in source
-    assert "return expiryMs - intervalMs" in source
-    assert "scheduleRenewal" in source
+    assert "readEpochMilliseconds(SERVER_NOW_META_NAME)" in source
+    assert "return Math.max(0, expiryMs - serverNowMs - intervalMs)" in source
+    assert "renewalDeadlineMonotonicMs = performance.now() + delay" in source
+    assert "performance.now() >= renewalDeadlineMonotonicMs" in source
     assert "window.setTimeout" in source
-    assert "Date.now() >= dueAt" in source
     assert "window.setInterval" not in source
 
 
