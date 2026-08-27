@@ -23,6 +23,8 @@ from litoral_trace.web.csrf import (
     CSRF_HEADER_NAME,
     create_csrf_browser_nonce,
     create_csrf_token,
+    refresh_csrf_max_age_seconds,
+    verify_csrf_browser_binding,
 )
 from litoral_trace.web.middleware import validate_cookie_csrf_request
 
@@ -30,6 +32,7 @@ from litoral_trace.web.middleware import validate_cookie_csrf_request
 ROOT = Path(__file__).resolve().parents[1]
 STATIC_JS = ROOT / "src" / "litoral_trace" / "static" / "src" / "js"
 TEMPLATES = ROOT / "src" / "litoral_trace" / "templates"
+WEB = ROOT / "src" / "litoral_trace" / "web"
 SECRET = "pre-pilot-test-secret-key-with-at-least-32-chars"
 
 
@@ -136,6 +139,44 @@ def test_browser_only_refresh_csrf_is_rejected_on_other_unsafe_api_paths() -> No
         ),
         secret_key=SECRET,
     ) == "csrf_invalid"
+
+
+def test_refresh_csrf_window_matches_refresh_session_ttl() -> None:
+    settings = SimpleNamespace(
+        jwt=SimpleNamespace(refresh_token_expire_days=30)
+    )
+    max_age = refresh_csrf_max_age_seconds(settings)
+    assert max_age == 30 * 24 * 60 * 60
+
+    browser_nonce = create_csrf_browser_nonce()
+    issued_at = 1_000_000
+    refresh_csrf = create_csrf_token(
+        subject=None,
+        browser_nonce=browser_nonce,
+        now_epoch=issued_at,
+        secret_key=SECRET,
+    )
+
+    # The regular one-hour form-CSRF policy remains short-lived.
+    assert not verify_csrf_browser_binding(
+        refresh_csrf,
+        browser_nonce=browser_nonce,
+        now_epoch=issued_at + (2 * 60 * 60),
+        secret_key=SECRET,
+    )
+    # Only refresh explicitly opts into the refresh-session-sized window.
+    assert verify_csrf_browser_binding(
+        refresh_csrf,
+        browser_nonce=browser_nonce,
+        now_epoch=issued_at + (2 * 60 * 60),
+        max_age_seconds=max_age,
+        secret_key=SECRET,
+    )
+
+    csrf_source = (WEB / "csrf.py").read_text(encoding="utf-8")
+    middleware_source = (WEB / "middleware.py").read_text(encoding="utf-8")
+    assert "max_age=refresh_csrf_max_age_seconds(settings)" in csrf_source
+    assert "max_age_seconds=refresh_csrf_max_age_seconds()" in middleware_source
 
 
 def test_production_auth_cookies_are_http_only_secure_lax_and_ttl_bounded() -> None:
@@ -262,10 +303,29 @@ def test_session_renewal_uses_verified_server_relative_expiry_not_client_clock()
     assert "readEpochMilliseconds(ACCESS_EXPIRES_AT_META_NAME)" in source
     assert "readEpochMilliseconds(SERVER_NOW_META_NAME)" in source
     assert "return Math.max(0, expiryMs - serverNowMs - intervalMs)" in source
-    assert "renewalDeadlineMonotonicMs = performance.now() + delay" in source
-    assert "performance.now() >= renewalDeadlineMonotonicMs" in source
+    assert 'SESSION_CLOCK_URL = "/health"' in source
+    assert 'response.headers.get("Date")' in source
+    assert "Date.now()" not in source
     assert "window.setTimeout" in source
     assert "window.setInterval" not in source
+
+
+def test_session_renewal_revalidates_server_time_after_suspend() -> None:
+    source = (STATIC_JS / "session-renewal.js").read_text(encoding="utf-8")
+    assert "revalidateAfterForeground" in source
+    assert "refreshServerClock" in source
+    assert 'document.visibilityState === "visible"' in source
+    assert "foregroundDueProbe = true" in source
+    assert 'ACCESS_PROBE_URL = "/api/v1/auth/me"' in source
+    assert "accessSessionIsUsable" in source
+
+
+def test_session_rotation_survives_navigation_unload() -> None:
+    source = (STATIC_JS / "session-renewal.js").read_text(encoding="utf-8")
+    assert 'REFRESH_URL = "/api/v1/auth/refresh"' in source
+    assert "keepalive: true" in source
+    assert 'body: "{}"' in source
+    assert 'credentials: "same-origin"' in source
 
 
 def test_session_renewal_serializes_tabs_and_rehydrates_peer_csrf() -> None:
@@ -276,6 +336,7 @@ def test_session_renewal_serializes_tabs_and_rehydrates_peer_csrf() -> None:
     assert "synchronizeFromPeer" in source
     assert "synchronizeSecurityMeta" in source
     assert "announceRefresh(completedAt)" in source
+    assert "performance.timeOrigin + performance.now()" in source
 
 
 def test_live_csrf_bridge_overrides_stale_page_headers_after_rotation() -> None:
