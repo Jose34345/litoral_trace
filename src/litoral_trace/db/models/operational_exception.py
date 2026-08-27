@@ -5,6 +5,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     Index,
     Integer,
@@ -75,6 +76,26 @@ class OperationalException(Base):
             "organization_id",
             "fingerprint",
             name="uq_operational_exceptions_tenant_fingerprint",
+        ),
+        CheckConstraint(
+            "length(fingerprint) = 64",
+            name="ck_operational_exceptions_fingerprint",
+        ),
+        CheckConstraint(
+            "source_type IN ('RECONCILIATION','PREFLIGHT','MANUAL')",
+            name="ck_operational_exceptions_source_type",
+        ),
+        CheckConstraint(
+            "impact IN ('INFO','WARNING','BLOCKING')",
+            name="ck_operational_exceptions_impact",
+        ),
+        CheckConstraint(
+            "priority IN ('LOW','MEDIUM','HIGH','CRITICAL')",
+            name="ck_operational_exceptions_priority",
+        ),
+        CheckConstraint(
+            "status IN ('OPEN','IN_PROGRESS','RESOLVED','DISMISSED')",
+            name="ck_operational_exceptions_status",
         ),
         Index("ix_operational_exceptions_organization_id", "organization_id"),
         Index(
