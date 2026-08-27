@@ -21,7 +21,10 @@ from litoral_trace.assurance.ingestion import (
     AssuranceIngestionValidationError,
     validate_incoming_file,
 )
-from litoral_trace.assurance.processing import AssuranceProcessingService
+from litoral_trace.assurance.processing import (
+    AssuranceProcessingError,
+    AssuranceProcessingService,
+)
 from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.config import get_settings
 
@@ -176,7 +179,11 @@ async def assurance_document_progress(
             organization_id=user.organization_id,
             assurance_public_id=assurance_document_id,
         )
-    except (ValueError, AssuranceIngestionError):
+    except (
+        ValueError,
+        AssuranceIngestionError,
+        AssuranceProcessingError,
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Documento Assurance no encontrado.",
