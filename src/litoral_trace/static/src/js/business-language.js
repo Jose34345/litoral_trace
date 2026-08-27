@@ -12,7 +12,7 @@ const PRESENTATION_LABELS = new Map([
   ["IMPORT", "Importación"],
   ["DOMESTIC", "Mercado interno"],
   ["EXPORT", "Exportación"],
-  ["DDS_CANDIDATE", "Candidato DDS"],
+  ["DDS_CANDIDATE", "Candidato DDS configurado"],
   ["LINEAGE_COMPLETE", "Genealogía completa"],
   ["SOURCE_PLOTS", "Parcelas de origen"],
   ["ALL_PLOTS_GEOLOCATED", "Parcelas geolocalizadas"],
@@ -52,40 +52,54 @@ const PRESENTATION_LABELS = new Map([
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "TEXTAREA", "PRE", "CODE"]);
 const ORDERED_LABELS = Array.from(PRESENTATION_LABELS.entries())
   .sort((left, right) => right[0].length - left[0].length);
+const TERMINAL_SEPARATORS = [" · ", ": "];
 
-function presentText(rawText) {
-  const original = String(rawText ?? "");
-  const trimmed = original.trim();
+function translateIsolatedToken(rawText, technical, business) {
+  const leadingLength = rawText.length - rawText.trimStart().length;
+  const trailingLength = rawText.length - rawText.trimEnd().length;
+  const leading = rawText.slice(0, leadingLength);
+  const trailing = trailingLength ? rawText.slice(rawText.length - trailingLength) : "";
+  const trimmed = rawText.trim();
 
-  if (!trimmed) {
-    return original;
+  if (trimmed === technical) {
+    return `${leading}${business}${trailing}`;
   }
 
-  // Exact badges/options are safe to translate because there is no business
-  // identifier around the token. Preserve whitespace emitted by the template.
-  const exact = PRESENTATION_LABELS.get(trimmed);
-  if (exact) {
-    const start = original.indexOf(trimmed);
-    return `${original.slice(0, start)}${exact}${original.slice(start + trimmed.length)}`;
-  }
-
-  // Technical source keys in checklists are rendered as a terminal segment,
-  // usually "Fuente legible · RISK_CONCLUSION". Translate only that terminal
-  // segment. Never replace substrings inside filenames, shipment codes, notes,
-  // hashes or other audit-relevant user/business data.
-  for (const [technical, business] of ORDERED_LABELS) {
-    const suffixes = [` · ${technical}`, `: ${technical}`];
-    for (const suffix of suffixes) {
-      if (trimmed.endsWith(suffix)) {
-        const technicalStart = original.lastIndexOf(technical);
-        if (technicalStart >= 0) {
-          return `${original.slice(0, technicalStart)}${business}${original.slice(technicalStart + technical.length)}`;
-        }
-      }
+  for (const separator of TERMINAL_SEPARATORS) {
+    const suffix = `${separator}${technical}`;
+    if (trimmed.endsWith(suffix)) {
+      const prefix = trimmed.slice(0, -technical.length);
+      return `${leading}${prefix}${business}${trailing}`;
     }
   }
 
-  return original;
+  return rawText;
+}
+
+function presentText(rawText) {
+  const trimmed = String(rawText || "").trim();
+  if (!trimmed) {
+    return rawText;
+  }
+
+  const direct = PRESENTATION_LABELS.get(trimmed);
+  if (direct) {
+    const leadingLength = rawText.length - rawText.trimStart().length;
+    const trailingLength = rawText.length - rawText.trimEnd().length;
+    const leading = rawText.slice(0, leadingLength);
+    const trailing = trailingLength ? rawText.slice(rawText.length - trailingLength) : "";
+    return `${leading}${direct}${trailing}`;
+  }
+
+  let rendered = rawText;
+  for (const [technical, business] of ORDERED_LABELS) {
+    const translated = translateIsolatedToken(rendered, technical, business);
+    if (translated !== rendered) {
+      rendered = translated;
+      break;
+    }
+  }
+  return rendered;
 }
 
 function translateTextNodes(root = document.body) {
