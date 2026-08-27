@@ -5,13 +5,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
+from fastapi import Response
 from starlette.requests import Request
 
+from litoral_trace.api.auth import _set_auth_cookies
 from litoral_trace.auth.sessions import (
     ACCESS_TOKEN_COOKIE_KEY,
     REFRESH_TOKEN_COOKIE_KEY,
 )
 from litoral_trace.services.traceability_evidence import EvidenceSubjectChoice
+from litoral_trace.web import context as context_web
 from litoral_trace.web import eudr_dds_candidate as eudr_web
 from litoral_trace.web import shipment_phytosanitary_case as phytosanitary_web
 from litoral_trace.web import traceability_evidence as evidence_web
@@ -87,6 +90,60 @@ def test_refresh_rejects_browser_token_bound_to_another_browser() -> None:
         _request(browser_nonce=browser_nonce, csrf_token=refresh_csrf),
         secret_key=SECRET,
     ) == "csrf_invalid"
+
+
+def test_production_auth_cookies_are_http_only_secure_lax_and_ttl_bounded() -> None:
+    response = Response()
+    settings = SimpleNamespace(
+        is_production=True,
+        jwt=SimpleNamespace(
+            access_token_expire_seconds=30 * 60,
+            refresh_token_expire_days=30,
+        ),
+    )
+
+    _set_auth_cookies(
+        response=response,
+        access_token="access-token",
+        refresh_token="refresh-token",
+        settings=settings,
+    )
+
+    headers = response.headers.getlist("set-cookie")
+    access_header = next(
+        header for header in headers
+        if header.startswith(f"{ACCESS_TOKEN_COOKIE_KEY}=")
+    )
+    refresh_header = next(
+        header for header in headers
+        if header.startswith(f"{REFRESH_TOKEN_COOKIE_KEY}=")
+    )
+
+    for header in (access_header, refresh_header):
+        lowered = header.lower()
+        assert "httponly" in lowered
+        assert "secure" in lowered
+        assert "samesite=lax" in lowered
+        assert "path=/" in lowered
+
+    assert "max-age=1800" in access_header.lower()
+    assert "max-age=2592000" in refresh_header.lower()
+
+
+def test_session_refresh_cadence_precedes_short_and_default_access_expiry(monkeypatch) -> None:
+    short_settings = SimpleNamespace(
+        jwt=SimpleNamespace(access_token_expire_seconds=4 * 60)
+    )
+    monkeypatch.setattr(context_web, "get_settings", lambda: short_settings)
+    assert context_web._session_refresh_after_seconds() == 2 * 60
+    assert context_web._session_refresh_after_seconds() < 4 * 60
+
+    default_settings = SimpleNamespace(
+        jwt=SimpleNamespace(access_token_expire_seconds=30 * 60)
+    )
+    monkeypatch.setattr(context_web, "get_settings", lambda: default_settings)
+    assert context_web._session_refresh_after_seconds() == 10 * 60
+    assert context_web._session_refresh_after_seconds() < 30 * 60
 
 
 def test_base_loads_pre_pilot_hardening_layers() -> None:
@@ -268,6 +325,7 @@ def test_business_language_layer_translates_internal_codes_without_mutating_valu
     source = (STATIC_JS / "business-language.js").read_text(encoding="utf-8")
     required_pairs = (
         '"CONFORMANCE_READY", "Preparado para conformidad"',
+        '"DDS_CANDIDATE", "Candidato DDS configurado"',
         '"POSTED", "Contabilizado"',
         '"DISPATCHED", "Despachado"',
         '"RISK_CONCLUSION", "Conclusión de riesgo"',
