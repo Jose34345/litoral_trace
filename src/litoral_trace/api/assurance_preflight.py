@@ -23,9 +23,6 @@ from litoral_trace.assurance.preflight_service import (
 from litoral_trace.auth.rbac import Permission, require_permission
 
 
-router = APIRouter(prefix="/preflight", tags=["Assurance Preflight 2.0"])
-
-
 class AssurancePreflightDocumentRequest(BaseModel):
     document_type: str = Field(min_length=1, max_length=64)
     reference: str = Field(min_length=1, max_length=512)
@@ -84,7 +81,6 @@ def _serialize_result(*, organization_id: int, view) -> dict[str, object]:
     }
 
 
-@router.get("/reasons")
 async def assurance_preflight_reason_catalog(
     user: UserTenantContext = Depends(require_permission(Permission.VAULT_READ)),
 ) -> JSONResponse:
@@ -98,7 +94,6 @@ async def assurance_preflight_reason_catalog(
     )
 
 
-@router.post("")
 async def assurance_preflight(
     payload: AssurancePreflightRequest,
     user: UserTenantContext = Depends(require_permission(Permission.VAULT_READ)),
@@ -145,3 +140,25 @@ async def assurance_preflight(
         status_code=status.HTTP_200_OK,
         content=_serialize_result(organization_id=user.organization_id, view=view),
     )
+
+
+def build_assurance_preflight_router() -> APIRouter:
+    """Build an isolated Preflight router for each parent application."""
+    api_router = APIRouter(prefix="/preflight", tags=["Assurance Preflight 2.0"])
+    api_router.add_api_route(
+        "/reasons",
+        assurance_preflight_reason_catalog,
+        methods=["GET"],
+        status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
+        "",
+        assurance_preflight,
+        methods=["POST"],
+        status_code=status.HTTP_200_OK,
+    )
+    return api_router
+
+
+# Compatibility export only. Parent routers should build a fresh instance.
+router = build_assurance_preflight_router()
