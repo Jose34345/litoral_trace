@@ -16,6 +16,7 @@ from litoral_trace.api.auth import (
     refresh_b2b_session,
 )
 from litoral_trace.auth.sessions import (
+    ACCESS_TOKEN_COOKIE_KEY,
     REFRESH_TOKEN_COOKIE_KEY,
 )
 from litoral_trace.db.engine import get_db_session
@@ -85,7 +86,7 @@ def _all_sessions() -> list[UserSession]:
         db_session.close()
 
 
-def test_logout_with_rotated_parent_revokes_active_successor_family():
+def _login_and_rotate() -> tuple[dict[str, str], str]:
     login_response = Response()
     username, password = get_non_production_superadmin_seed()
 
@@ -108,6 +109,11 @@ def test_logout_with_rotated_parent_revokes_active_successor_family():
             refresh_token_cookie=parent_refresh_token,
         )
     )
+    return login_cookies, parent_refresh_token
+
+
+def test_logout_with_rotated_parent_refresh_revokes_active_successor_family():
+    _, parent_refresh_token = _login_and_rotate()
 
     sessions_after_refresh = _all_sessions()
     assert len(sessions_after_refresh) == 2
@@ -116,8 +122,8 @@ def test_logout_with_rotated_parent_revokes_active_successor_family():
         for session in sessions_after_refresh
     ) == 1
 
-    # This models the race where logout was sent with the parent refresh cookie
-    # while a keepalive refresh was already in flight and committed first.
+    # Models logout carrying the parent refresh cookie after a keepalive refresh
+    # committed first. The active descendant must still be revoked.
     logout_response = Response()
     asyncio.run(
         logout_b2b_session(
@@ -125,6 +131,34 @@ def test_logout_with_rotated_parent_revokes_active_successor_family():
             payload=LogoutRequest(
                 refresh_token=parent_refresh_token,
             ),
+        )
+    )
+
+    sessions_after_logout = _all_sessions()
+    assert len(sessions_after_logout) == 2
+    assert all(
+        session.revoked_at is not None
+        for session in sessions_after_logout
+    )
+
+
+def test_logout_with_ancestor_access_token_revokes_active_successor_family():
+    login_cookies, _ = _login_and_rotate()
+
+    sessions_after_refresh = _all_sessions()
+    assert len(sessions_after_refresh) == 2
+    assert sum(
+        session.revoked_at is None
+        for session in sessions_after_refresh
+    ) == 1
+
+    # Models a page whose still-cryptographically-valid access JWT references an
+    # ancestor while another client already rotated to a descendant.
+    logout_response = Response()
+    asyncio.run(
+        logout_b2b_session(
+            logout_response,
+            session_jwt=login_cookies[ACCESS_TOKEN_COOKIE_KEY],
         )
     )
 
@@ -163,14 +197,30 @@ def test_cross_document_marker_has_no_expiring_lease_and_ambiguous_fail_closed()
     assert "catch (_error)" in request_block
 
 
-def test_session_revocation_is_family_scoped_and_row_locked():
+def test_refresh_and_logout_share_family_lock_before_row_lock():
     source = SESSIONS_PY.read_text(encoding="utf-8")
-    revoke_source = source.split(
-        "def revoke_session(",
-        1,
-    )[1]
 
-    assert "for_update=True" in revoke_source
-    assert "_revoke_family(" in revoke_source
-    assert "family_id=session_record.family_id" in revoke_source
-    assert "organization_id=session_record.organization_id" in revoke_source
+    assert "pg_advisory_xact_lock" in source
+    assert "_lookup_session_bootstrap_without_retained_row_lock" in source
+
+    rotation = source.split(
+        "def rotate_refresh_session(",
+        1,
+    )[1].split(
+        "\ndef revoke_session(",
+        1,
+    )[0]
+    rotation_family_lock = rotation.index("_acquire_refresh_family_lock(")
+    rotation_row_lock = rotation.index("current_session = _get_session_by_id(")
+    assert rotation_family_lock < rotation_row_lock
+    assert "for_update=True" in rotation[rotation_row_lock:]
+
+    revocation = source.split("def revoke_session(", 1)[1]
+    revocation_family_lock = revocation.index("_acquire_refresh_family_lock(")
+    revocation_row_lock = revocation.index("session_record = _get_session_by_id(")
+    family_revoke = revocation.index("_revoke_family(")
+
+    assert revocation_family_lock < revocation_row_lock < family_revoke
+    assert "for_update=True" in revocation[revocation_row_lock:family_revoke]
+    assert "family_id=family_id" in revocation[family_revoke:]
+    assert "organization_id=family_organization_id" in revocation[family_revoke:]
