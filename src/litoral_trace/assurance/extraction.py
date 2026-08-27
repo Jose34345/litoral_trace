@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import date
 import re
 import unicodedata
-from typing import Any, Callable
+from typing import Any
 
 from litoral_trace.assurance.domain import AssuranceDocumentType
 from litoral_trace.assurance.normalization import (
@@ -61,12 +61,23 @@ DOCUMENT_SCHEMAS: dict[AssuranceDocumentType, DocumentSchema] = {
             "total_amount",
             "currency",
             "destination",
+            "order_id",
+            "sale_reference",
         ),
     ),
     AssuranceDocumentType.DELIVERY_NOTE: DocumentSchema(
         AssuranceDocumentType.DELIVERY_NOTE,
         required_fields=("document_number", "document_date"),
-        optional_fields=("issuer_cuit", "product", "quantity", "unit", "lot_id"),
+        optional_fields=(
+            "issuer_cuit",
+            "product",
+            "quantity",
+            "unit",
+            "lot_id",
+            "shipment_code",
+            "order_id",
+            "sale_reference",
+        ),
     ),
     AssuranceDocumentType.FOREST_GUIDE: DocumentSchema(
         AssuranceDocumentType.FOREST_GUIDE,
@@ -79,6 +90,7 @@ DOCUMENT_SCHEMAS: dict[AssuranceDocumentType, DocumentSchema] = {
             "unit",
             "origin",
             "lot_id",
+            "shipment_code",
         ),
     ),
     AssuranceDocumentType.PHYTOSANITARY_CERTIFICATE: DocumentSchema(
@@ -92,6 +104,7 @@ DOCUMENT_SCHEMAS: dict[AssuranceDocumentType, DocumentSchema] = {
             "product",
             "quantity",
             "unit",
+            "shipment_code",
         ),
     ),
     AssuranceDocumentType.CUSTOMS_DOCUMENT: DocumentSchema(
@@ -104,6 +117,9 @@ DOCUMENT_SCHEMAS: dict[AssuranceDocumentType, DocumentSchema] = {
             "quantity",
             "unit",
             "product",
+            "shipment_code",
+            "order_id",
+            "sale_reference",
         ),
     ),
     AssuranceDocumentType.SPREADSHEET: DocumentSchema(
@@ -120,6 +136,9 @@ DOCUMENT_SCHEMAS: dict[AssuranceDocumentType, DocumentSchema] = {
             "unit",
             "lot_id",
             "destination",
+            "shipment_code",
+            "order_id",
+            "sale_reference",
         ),
     ),
     AssuranceDocumentType.UNKNOWN: DocumentSchema(
@@ -193,6 +212,28 @@ _HEADER_ALIASES: dict[str, tuple[str, ...]] = {
     "total_amount": ("total", "importe total", "monto total"),
     "currency": ("moneda", "currency"),
     "origin": ("origen", "procedencia", "establecimiento origen"),
+    "shipment_code": (
+        "despacho",
+        "codigo despacho",
+        "codigo de despacho",
+        "shipment",
+        "shipment code",
+    ),
+    "order_id": (
+        "pedido",
+        "pedido id",
+        "orden",
+        "orden compra",
+        "orden de compra",
+        "purchase order",
+        "po",
+    ),
+    "sale_reference": (
+        "referencia venta",
+        "referencia de venta",
+        "sale reference",
+        "pedido cliente",
+    ),
 }
 
 
@@ -268,7 +309,14 @@ def _normalize_candidate(field_name: str, value: object) -> tuple[str, str]:
             return original, str(normalize_argentine_number(original))
     if field_name == "total_amount":
         return original, str(normalize_argentine_number(original))
-    if field_name in {"document_number", "lot_id", "hs_code"}:
+    if field_name in {
+        "document_number",
+        "lot_id",
+        "hs_code",
+        "shipment_code",
+        "order_id",
+        "sale_reference",
+    }:
         return original, normalize_identifier(original)
     return original, re.sub(r"\s+", " ", original).strip()
 
@@ -293,7 +341,16 @@ def _candidate_from_table(
         else "number"
         if field_name in {"quantity", "total_amount"}
         else "identifier"
-        if field_name in {"document_number", "issuer_cuit", "receiver_cuit", "lot_id", "hs_code"}
+        if field_name in {
+            "document_number",
+            "issuer_cuit",
+            "receiver_cuit",
+            "lot_id",
+            "hs_code",
+            "shipment_code",
+            "order_id",
+            "sale_reference",
+        }
         else "text"
     )
     return ExtractedCandidate(
@@ -359,6 +416,8 @@ _TEXT_PATTERNS: dict[str, re.Pattern[str]] = {
     "document_number": re.compile(r"(?:factura|remito|guia|certificado|destinacion|nro\.?|numero)\s*(?:[A-Z]\s*)?[:#-]?\s*([A-Z0-9][A-Z0-9./-]{3,})", re.I),
     "hs_code": re.compile(r"(?:NCM|HS(?:\s+CODE)?|posicion\s+arancelaria)\s*[:#-]?\s*([0-9.]{4,14})", re.I),
     "destination": re.compile(r"(?:destino|pais\s+destino|destination)\s*[:#-]?\s*([^\n\r]{2,80})", re.I),
+    "shipment_code": re.compile(r"(?:codigo\s+de\s+despacho|codigo\s+despacho|shipment\s+code)\s*[:#-]?\s*([A-Z0-9][A-Z0-9./-]{2,})", re.I),
+    "order_id": re.compile(r"(?:orden\s+de\s+compra|purchase\s+order|pedido)\s*[:#-]?\s*([A-Z0-9][A-Z0-9./-]{2,})", re.I),
 }
 
 
