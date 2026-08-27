@@ -14,6 +14,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 
 from litoral_trace.api.auth import UserTenantContext
+from litoral_trace.assurance.domain import DocumentProcessingStatus
 from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
 from litoral_trace.assurance.ingestion import (
     AssuranceIngestionError,
@@ -25,6 +26,7 @@ from litoral_trace.assurance.processing import (
     AssuranceProcessingError,
     AssuranceProcessingService,
 )
+from litoral_trace.assurance.reconciliation_service import AssuranceReconciliationService
 from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.config import get_settings
 
@@ -73,6 +75,39 @@ def _serialize_ingestion(result) -> dict[str, object]:
             f"/api/v1/assurance/documents/{result.assurance_public_id}/progress"
         ),
     }
+
+
+def _process_and_reconcile(
+    *,
+    organization_id: int,
+    assurance_public_id,
+    force_reprocess: bool = False,
+) -> str:
+    """Process a document and reconcile linked operations after extraction.
+
+    Reconciliation is independently feature-flagged and only consumes fields
+    that the extraction pipeline marked as safe for automatic acceptance.
+    """
+    processing_status = AssuranceProcessingService().process(
+        organization_id=organization_id,
+        assurance_public_id=assurance_public_id,
+        force_reprocess=force_reprocess,
+    )
+    flags = get_assurance_feature_flags()
+    if (
+        flags.assurance_v1
+        and flags.reconciliation
+        and processing_status
+        in {
+            DocumentProcessingStatus.EXTRACTED.value,
+            DocumentProcessingStatus.NEEDS_REVIEW.value,
+        }
+    ):
+        AssuranceReconciliationService().reconcile_document(
+            organization_id=organization_id,
+            assurance_public_id=assurance_public_id,
+        )
+    return processing_status
 
 
 async def ingest_assurance_documents(
@@ -141,7 +176,7 @@ async def ingest_assurance_documents(
             duplicates += 1
         else:
             background_tasks.add_task(
-                AssuranceProcessingService().process,
+                _process_and_reconcile,
                 organization_id=user.organization_id,
                 assurance_public_id=result.assurance_public_id,
                 force_reprocess=False,
