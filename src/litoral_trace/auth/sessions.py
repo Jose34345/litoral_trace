@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, select, text
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
 from litoral_trace.config import get_settings
@@ -86,6 +87,114 @@ def sanitize_user_agent(user_agent: str | None) -> str | None:
 def _supports_row_locking(db_session: Session) -> bool:
     bind = db_session.get_bind()
     return bind is not None and bind.dialect.name == "postgresql"
+
+
+def _engine_from_session(db_session: Session) -> Engine | None:
+    bind = db_session.get_bind()
+    if isinstance(bind, Engine):
+        return bind
+    if isinstance(bind, Connection):
+        return bind.engine
+    return None
+
+
+def _lookup_session_bootstrap_without_retained_row_lock(
+    db_session: Session,
+    *,
+    token_hash: str,
+):
+    """Resolve pre-tenant session identity without retaining its bootstrap row lock.
+
+    The legacy SECURITY DEFINER bootstrap function intentionally uses
+    ``FOR UPDATE``. For family-level serialization we must not carry that row
+    lock into the transaction that will acquire the family advisory lock,
+    otherwise logout on an ancestor and refresh on a descendant can deadlock by
+    taking row/family locks in opposite orders.
+
+    PostgreSQL therefore performs the bootstrap lookup in a short independent
+    transaction. Closing that transaction releases its bootstrap row lock before
+    the caller establishes tenant context and acquires the shared family lock.
+    SQLite/non-locking test paths keep the original in-session lookup.
+    """
+
+    if not _supports_row_locking(db_session):
+        return lookup_session_bootstrap_by_token_hash(
+            db_session,
+            token_hash=token_hash,
+        )
+
+    engine = _engine_from_session(db_session)
+    if engine is None:
+        raise SessionSecurityError("Refresh token invalido o expirado.")
+
+    with Session(bind=engine) as bootstrap_session:
+        session_lookup = lookup_session_bootstrap_by_token_hash(
+            bootstrap_session,
+            token_hash=token_hash,
+        )
+        # The lookup is read-only. Rollback is deliberate: it releases the
+        # SECURITY DEFINER FOR UPDATE lock without persisting any state.
+        bootstrap_session.rollback()
+        return session_lookup
+
+
+def _family_advisory_lock_key(*, organization_id: int, family_id: str) -> int:
+    material = f"litoral-trace:user-session-family:{organization_id}:{family_id}"
+    digest = hashlib.sha256(material.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], byteorder="big", signed=True)
+
+
+def _acquire_refresh_family_lock(
+    db_session: Session,
+    *,
+    organization_id: int,
+    family_id: str,
+) -> None:
+    """Serialize every refresh/logout mutation for one session family.
+
+    PostgreSQL transaction advisory locks are independent of which generation
+    (ancestor/descendant) the caller currently holds. This gives rotation and
+    logout one stable mutex for the entire login lineage and avoids the distinct
+    row-lock race identified during pre-pilot review.
+    """
+
+    normalized_family_id = str(family_id).strip()
+    if organization_id <= 0 or not normalized_family_id:
+        raise SessionSecurityError("Refresh token invalido o expirado.")
+
+    if not _supports_row_locking(db_session):
+        return
+
+    db_session.execute(
+        text("SELECT pg_advisory_xact_lock(:family_lock_key)"),
+        {
+            "family_lock_key": _family_advisory_lock_key(
+                organization_id=organization_id,
+                family_id=normalized_family_id,
+            )
+        },
+    )
+
+
+def _get_session_family_reference(
+    db_session: Session,
+    *,
+    session_id: int,
+) -> tuple[str, int] | None:
+    row = db_session.execute(
+        select(
+            UserSession.family_id,
+            UserSession.organization_id,
+        ).where(UserSession.id == session_id)
+    ).one_or_none()
+    if row is None:
+        return None
+
+    family_id = str(row.family_id).strip()
+    organization_id = int(row.organization_id)
+    if not family_id or organization_id <= 0:
+        return None
+    return family_id, organization_id
 
 
 def _build_session_lookup_statement(token_hash: str) -> Select[tuple[UserSession]]:
@@ -228,21 +337,47 @@ def rotate_refresh_session(
     now: datetime | None = None,
 ) -> RotatedSession:
     rotation_time = ensure_utc_datetime(now or utc_now())
-    session_lookup = lookup_session_bootstrap_by_token_hash(
+    token_hash = hash_refresh_token(refresh_token)
+    session_lookup = _lookup_session_bootstrap_without_retained_row_lock(
         db_session,
-        token_hash=hash_refresh_token(refresh_token),
+        token_hash=token_hash,
     )
 
     if session_lookup is None:
         raise SessionSecurityError("Refresh token invalido o expirado.")
 
     set_tenant_db_context(db_session, session_lookup.organization_id)
+    family_reference = _get_session_family_reference(
+        db_session,
+        session_id=session_lookup.id,
+    )
+    if family_reference is None:
+        raise SessionSecurityError("Refresh token invalido o expirado.")
+
+    family_id, family_organization_id = family_reference
+    if family_organization_id != session_lookup.organization_id:
+        raise SessionSecurityError("Refresh token invalido o expirado.")
+
+    # Family lock must precede every tenant-scoped row lock. Logout can target an
+    # ancestor while refresh targets a descendant, so a generation-specific row
+    # lock is not a sufficient mutex for the login lineage.
+    _acquire_refresh_family_lock(
+        db_session,
+        organization_id=family_organization_id,
+        family_id=family_id,
+    )
     current_session = _get_session_by_id(
         db_session,
         session_id=session_lookup.id,
-        for_update=False,
+        for_update=True,
     )
     if current_session is None:
+        raise SessionSecurityError("Refresh token invalido o expirado.")
+    if (
+        current_session.organization_id != family_organization_id
+        or current_session.family_id != family_id
+        or current_session.token_hash != token_hash
+    ):
         raise SessionSecurityError("Refresh token invalido o expirado.")
 
     if current_session.revoked_at is not None:
@@ -313,33 +448,72 @@ def revoke_session(
     session_id: int | None = None,
     now: datetime | None = None,
 ) -> UserSession | None:
-    revoked_at = now or utc_now()
-    session_record: UserSession | None = None
+    """Revoca una sesión y toda su familia de rotación.
+
+    Rotación y logout comparten el mismo advisory lock de familia antes de tomar
+    locks de filas. Por eso un logout dirigido a cualquier ancestro puede esperar
+    una rotación concurrente y luego revocar también su sucesor, o bien ganar
+    primero e impedir que la rotación cree un sucesor válido.
+    """
+
+    revoked_at = ensure_utc_datetime(now or utc_now())
+    target_session_id: int | None = None
+    expected_organization_id: int | None = None
 
     if refresh_token:
-        session_lookup = lookup_session_bootstrap_by_token_hash(
+        token_hash = hash_refresh_token(refresh_token)
+        session_lookup = _lookup_session_bootstrap_without_retained_row_lock(
             db_session,
-            token_hash=hash_refresh_token(refresh_token),
+            token_hash=token_hash,
         )
-        if session_lookup is not None:
-            set_tenant_db_context(db_session, session_lookup.organization_id)
-            session_record = _get_session_by_id(
-                db_session,
-                session_id=session_lookup.id,
-                for_update=False,
-            )
+        if session_lookup is None:
+            return None
+        set_tenant_db_context(db_session, session_lookup.organization_id)
+        target_session_id = session_lookup.id
+        expected_organization_id = session_lookup.organization_id
     elif session_id is not None:
-        session_record = _get_session_by_id(
-            db_session,
-            session_id=session_id,
-            for_update=True,
-        )
-
-    if session_record is None:
+        target_session_id = session_id
+    else:
         return None
 
-    if session_record.revoked_at is None:
-        session_record.revoked_at = revoked_at
-        db_session.flush()
+    family_reference = _get_session_family_reference(
+        db_session,
+        session_id=target_session_id,
+    )
+    if family_reference is None:
+        return None
+
+    family_id, family_organization_id = family_reference
+    if (
+        expected_organization_id is not None
+        and family_organization_id != expected_organization_id
+    ):
+        raise SessionSecurityError("Refresh token invalido o expirado.")
+
+    _acquire_refresh_family_lock(
+        db_session,
+        organization_id=family_organization_id,
+        family_id=family_id,
+    )
+    session_record = _get_session_by_id(
+        db_session,
+        session_id=target_session_id,
+        for_update=True,
+    )
+    if session_record is None:
+        return None
+    if (
+        session_record.organization_id != family_organization_id
+        or session_record.family_id != family_id
+    ):
+        raise SessionSecurityError("Refresh token invalido o expirado.")
+
+    _revoke_family(
+        db_session,
+        family_id=family_id,
+        organization_id=family_organization_id,
+        revoked_at=revoked_at,
+    )
+    db_session.flush()
 
     return session_record

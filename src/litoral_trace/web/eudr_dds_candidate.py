@@ -140,7 +140,7 @@ def _view_payload(conformance) -> dict[str, Any]:
                 "risk_conclusion": candidate.risk_conclusion,
                 "risk_assessment_reference": candidate.risk_assessment_reference or "",
                 "risk_assessed_at": (
-                    candidate.risk_assessed_at.isoformat(timespec="minutes")
+                    candidate.risk_assessed_at.strftime("%Y-%m-%dT%H:%M")
                     if candidate.risk_assessed_at
                     else ""
                 ),
@@ -248,8 +248,7 @@ async def render_eudr_acceptance_candidate(
 )
 async def update_eudr_acceptance_candidate(request: Request):
     user, denied = get_html_route_user(
-        request,
-        required_permission=Permission.TRACEABILITY_EVIDENCE,
+        request, required_permission=Permission.TRACEABILITY_EVIDENCE,
     )
     if denied is not None:
         return denied

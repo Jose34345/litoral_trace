@@ -7,6 +7,18 @@
     {% if csrf_token %}
     <meta name="csrf-token" content="{{ csrf_token }}">
     {% endif %}
+    {% if refresh_csrf_token %}
+    <meta name="lt-refresh-csrf-token" content="{{ refresh_csrf_token }}">
+    {% endif %}
+    {% if session_refresh_after_seconds %}
+    <meta name="lt-session-refresh-after" content="{{ session_refresh_after_seconds }}">
+    {% endif %}
+    {% if session_access_expires_at_epoch %}
+    <meta name="lt-session-access-expires-at" content="{{ session_access_expires_at_epoch }}">
+    {% endif %}
+    {% if session_server_now_epoch %}
+    <meta name="lt-session-server-now" content="{{ session_server_now_epoch }}">
+    {% endif %}
 
     <title>{% block title %}Litoral Trace | Trazabilidad de origen y cadena de custodia{% endblock %}</title>
 
@@ -26,6 +38,11 @@
     <script src="{{ url_for('static', path='/vendor/htmx/htmx.min.js') }}" defer></script>
     <script src="{{ url_for('static', path='/vendor/leaflet/leaflet.js') }}" defer></script>
     <script type="module" src="{{ url_for('static', path='/src/js/app.js') }}"></script>
+    <script type="module" src="{{ url_for('static', path='/src/js/session-refresh-coordination.js') }}"></script>
+    <script type="module" src="{{ url_for('static', path='/src/js/session-renewal.js') }}"></script>
+    <script type="module" src="{{ url_for('static', path='/src/js/evidence-context.js') }}"></script>
+    <script type="module" src="{{ url_for('static', path='/src/js/datetime-local.js') }}"></script>
+    <script type="module" src="{{ url_for('static', path='/src/js/business-language.js') }}"></script>
     <script type="module" src="{{ url_for('static', path='/src/js/dialog.js') }}"></script>
     <script type="module" src="{{ url_for('static', path='/src/js/mobile-motion.js') }}"></script>
     <script type="module" src="{{ url_for('static', path='/src/js/file-input.js') }}"></script>
