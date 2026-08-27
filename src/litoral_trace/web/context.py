@@ -1,6 +1,7 @@
 """Secure base context for every server-rendered Litoral Trace template."""
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from fastapi import Request
@@ -49,8 +50,8 @@ def _session_access_expires_at_epoch(
         expires_at = int(payload.get("exp"))
         organization_id = int(payload.get("org_id"))
         session_id = int(payload.get("sid"))
-        expected_organization_id = int(getattr(user, "organization_id"))
-        expected_session_id = int(getattr(user, "session_id"))
+        expected_organization_id = int(getattr(user, "organization_id", None))
+        expected_session_id = int(getattr(user, "session_id", None))
     except (TypeError, ValueError):
         return None
 
@@ -85,6 +86,10 @@ def build_template_context(
         if user is not None
         else None
     )
+    access_expires_at_epoch = _session_access_expires_at_epoch(
+        request,
+        user=user,
+    )
 
     security_context = {
         "user": user,
@@ -110,11 +115,14 @@ def build_template_context(
             else None
         ),
         # Absolute expiry is derived from the verified HttpOnly access JWT and
-        # matched back to the hydrated tenant/session. Rendering only the epoch
-        # prevents full-page navigation from resetting the refresh deadline.
-        "session_access_expires_at_epoch": _session_access_expires_at_epoch(
-            request,
-            user=user,
+        # matched back to the hydrated tenant/session. Pair it with server time
+        # from the same rendered response so browser clock skew never changes
+        # the renewal delay.
+        "session_access_expires_at_epoch": access_expires_at_epoch,
+        "session_server_now_epoch": (
+            int(time.time())
+            if access_expires_at_epoch is not None
+            else None
         ),
         "csrf_header_name": CSRF_HEADER_NAME,
         "csrf_form_field": CSRF_FORM_FIELD,
