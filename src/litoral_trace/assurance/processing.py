@@ -2,28 +2,40 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Callable, Sequence
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from litoral_trace.assurance.domain import (
+    AssuranceDocumentType,
     ConfidenceLevel,
     DocumentProcessingStatus,
     ExtractionRunStatus,
 )
 from litoral_trace.assurance.extraction import (
+    ExtractedCandidate,
     classify_document,
     extract_structured_fields,
     missing_required_fields,
+)
+from litoral_trace.assurance.matching import (
+    HIGH_CONFIDENCE,
+    EntityRecord,
+    FieldDecisionStatus,
+    decide_field_acceptance,
+    match_candidate_entities,
 )
 from litoral_trace.assurance.parsers import DocumentParseError, ParsedDocument, parse_document
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import (
     AssuranceDocument,
+    DocumentEntityLink,
     DocumentExtractionRun,
     ExtractedDocumentField,
+    Lote,
+    Shipment,
     VaultDocument,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
@@ -32,7 +44,7 @@ from litoral_trace.services.vault import VaultService
 
 SessionFactory = Callable[[], Session | None]
 PARSER_ENGINE = "assurance-deterministic-parser"
-PARSER_ENGINE_VERSION = "1.1.0"
+PARSER_ENGINE_VERSION = "1.2.0"
 
 
 class AssuranceProcessingError(RuntimeError):
@@ -126,10 +138,20 @@ def _persist_structured_fields(
     organization_id: int,
     assurance_document: AssuranceDocument,
     extraction_run: DocumentExtractionRun,
-    parsed: ParsedDocument,
-) -> int:
-    candidates = extract_structured_fields(parsed)
-    for candidate in candidates:
+    candidates: Sequence[ExtractedCandidate],
+) -> dict[str, int]:
+    decisions = decide_field_acceptance(candidates)
+    counts = {
+        "structured": 0,
+        "auto_accepted": 0,
+        "needs_review": 0,
+        "conflicts": 0,
+        "low_confidence": 0,
+    }
+    for decision in decisions:
+        candidate = decision.candidate
+        auto_accepted = decision.status == FieldDecisionStatus.AUTO_ACCEPTED
+        needs_review = not auto_accepted
         session.add(
             ExtractedDocumentField(
                 organization_id=organization_id,
@@ -143,11 +165,166 @@ def _persist_structured_fields(
                 confidence_level=_confidence_level(candidate.confidence),
                 source_page=candidate.source_page,
                 source_locator=candidate.source_locator,
-                auto_accepted=False,
-                needs_review=True,
+                auto_accepted=auto_accepted,
+                needs_review=needs_review,
             )
         )
-    return len(candidates)
+        counts["structured"] += 1
+        if auto_accepted:
+            counts["auto_accepted"] += 1
+        else:
+            counts["needs_review"] += 1
+        if decision.status == FieldDecisionStatus.CONFLICT:
+            counts["conflicts"] += 1
+        if decision.status == FieldDecisionStatus.LOW_CONFIDENCE:
+            counts["low_confidence"] += 1
+    return counts
+
+
+def _entity_records(
+    session: Session,
+    *,
+    organization_id: int,
+) -> tuple[EntityRecord, ...]:
+    """Build exact identifiers from already-known tenant data only."""
+    records: dict[tuple[str, str], EntityRecord] = {}
+
+    lotes = session.scalars(
+        select(Lote).where(Lote.organization_id == organization_id)
+    ).all()
+    for lote in lotes:
+        lot_ref = f"lote:{lote.id}"
+        records[("LOT", lot_ref)] = EntityRecord(
+            entity_type="LOT",
+            entity_reference=lot_ref,
+            identifiers=(lote.identificador,),
+            display_name=lote.identificador,
+        )
+        producer_id = str(lote.productor_id or "").strip()
+        if producer_id:
+            supplier_ref = f"producer:{producer_id}"
+            records[("SUPPLIER", supplier_ref)] = EntityRecord(
+                entity_type="SUPPLIER",
+                entity_reference=supplier_ref,
+                identifiers=(producer_id,),
+                display_name=producer_id,
+            )
+
+    shipments = session.scalars(
+        select(Shipment).where(Shipment.organization_id == organization_id)
+    ).all()
+    for shipment in shipments:
+        shipment_ref = f"shipment:{shipment.public_id}"
+        identifiers = tuple(
+            value
+            for value in (
+                shipment.shipment_code,
+                str(shipment.public_id),
+            )
+            if str(value or "").strip()
+        )
+        records[("SHIPMENT", shipment_ref)] = EntityRecord(
+            entity_type="SHIPMENT",
+            entity_reference=shipment_ref,
+            identifiers=identifiers,
+            display_name=shipment.shipment_code,
+        )
+        if shipment.sale_reference and shipment.sale_reference.strip():
+            order_ref = f"order:{shipment.public_id}"
+            records[("ORDER", order_ref)] = EntityRecord(
+                entity_type="ORDER",
+                entity_reference=order_ref,
+                identifiers=(shipment.sale_reference.strip(),),
+                display_name=shipment.sale_reference.strip(),
+            )
+
+    return tuple(records.values())
+
+
+def _persist_entity_links(
+    session: Session,
+    *,
+    organization_id: int,
+    assurance_document: AssuranceDocument,
+    candidates: Sequence[ExtractedCandidate],
+) -> dict[str, int]:
+    matches = match_candidate_entities(
+        candidates,
+        _entity_records(session, organization_id=organization_id),
+    )
+    counts = {"linked": 0, "ambiguous": 0, "below_threshold": 0}
+    for match in matches:
+        if match.ambiguous:
+            counts["ambiguous"] += 1
+            continue
+        if match.confidence < HIGH_CONFIDENCE:
+            counts["below_threshold"] += 1
+            continue
+        existing = session.scalar(
+            select(DocumentEntityLink).where(
+                DocumentEntityLink.organization_id == organization_id,
+                DocumentEntityLink.assurance_document_id == assurance_document.id,
+                DocumentEntityLink.entity_type == match.entity_type,
+                DocumentEntityLink.entity_reference == match.entity_reference,
+            )
+        )
+        if existing is None:
+            session.add(
+                DocumentEntityLink(
+                    organization_id=organization_id,
+                    assurance_document_id=assurance_document.id,
+                    entity_type=match.entity_type,
+                    entity_reference=match.entity_reference,
+                    link_confidence=match.confidence,
+                    link_method=match.method,
+                    human_confirmed=False,
+                )
+            )
+            counts["linked"] += 1
+    return counts
+
+
+def _mark_processing_failure(
+    session: Session,
+    *,
+    organization_id: int,
+    public_id: UUID,
+    run_id: int | None,
+    error_code: str,
+    detail: str,
+) -> None:
+    """Best-effort terminal state so background failures never stay PROCESSING."""
+    try:
+        session.rollback()
+        set_tenant_db_context(session, organization_id)
+        assurance_document = session.scalar(
+            select(AssuranceDocument).where(
+                AssuranceDocument.organization_id == organization_id,
+                AssuranceDocument.public_id == public_id,
+            )
+        )
+        if assurance_document is not None:
+            assurance_document.processing_status = DocumentProcessingStatus.FAILED.value
+            assurance_document.last_error_code = error_code
+            assurance_document.last_error_message = detail[:512]
+        if run_id is not None:
+            persisted_run = session.scalar(
+                select(DocumentExtractionRun).where(
+                    DocumentExtractionRun.organization_id == organization_id,
+                    DocumentExtractionRun.id == run_id,
+                )
+            )
+            if persisted_run is not None:
+                persisted_run.status = ExtractionRunStatus.FAILED.value
+                persisted_run.error_code = error_code
+                persisted_run.error_detail = detail[:2000]
+                persisted_run.completed_at = _utc_now()
+        session.commit()
+    except Exception:
+        try:
+            session.rollback()
+        except Exception:
+            pass
 
 
 class AssuranceProcessingService:
@@ -205,12 +382,14 @@ class AssuranceProcessingService:
             if isinstance(assurance_public_id, UUID)
             else UUID(str(assurance_public_id))
         )
-        session = self._new_session(int(organization_id))
+        org_id = int(organization_id)
+        session = self._new_session(org_id)
         run: DocumentExtractionRun | None = None
+        run_id: int | None = None
         try:
             assurance_document, vault_document = self._load_document(
                 session,
-                organization_id=int(organization_id),
+                organization_id=org_id,
                 assurance_public_id=public_id,
             )
 
@@ -222,7 +401,7 @@ class AssuranceProcessingService:
                 return assurance_document.processing_status
 
             run = DocumentExtractionRun(
-                organization_id=int(organization_id),
+                organization_id=org_id,
                 assurance_document_id=assurance_document.id,
                 engine=PARSER_ENGINE,
                 engine_version=PARSER_ENGINE_VERSION,
@@ -235,10 +414,11 @@ class AssuranceProcessingService:
             assurance_document.last_error_code = None
             assurance_document.last_error_message = None
             session.flush()
+            run_id = run.id
             session.commit()
 
             with self._vault_service.materialize_verified_download(
-                organization_id=int(organization_id),
+                organization_id=org_id,
                 document_id=vault_document.public_id,
             ) as verified:
                 content = b"".join(verified.iter_chunks(chunk_size=1024 * 1024))
@@ -251,16 +431,16 @@ class AssuranceProcessingService:
                 structured_candidates,
             )
 
-            set_tenant_db_context(session, int(organization_id))
+            set_tenant_db_context(session, org_id)
             assurance_document, _ = self._load_document(
                 session,
-                organization_id=int(organization_id),
+                organization_id=org_id,
                 assurance_public_id=public_id,
             )
             run = session.scalar(
                 select(DocumentExtractionRun).where(
-                    DocumentExtractionRun.organization_id == int(organization_id),
-                    DocumentExtractionRun.id == run.id,
+                    DocumentExtractionRun.organization_id == org_id,
+                    DocumentExtractionRun.id == run_id,
                 )
             )
             if run is None:
@@ -271,17 +451,23 @@ class AssuranceProcessingService:
 
             raw_field_count = _persist_raw_parsed_fields(
                 session,
-                organization_id=int(organization_id),
+                organization_id=org_id,
                 assurance_document=assurance_document,
                 extraction_run=run,
                 parsed=parsed,
             )
-            structured_field_count = _persist_structured_fields(
+            field_counts = _persist_structured_fields(
                 session,
-                organization_id=int(organization_id),
+                organization_id=org_id,
                 assurance_document=assurance_document,
                 extraction_run=run,
-                parsed=parsed,
+                candidates=structured_candidates,
+            )
+            link_counts = _persist_entity_links(
+                session,
+                organization_id=org_id,
+                assurance_document=assurance_document,
+                candidates=structured_candidates,
             )
             metadata = dict(parsed.metadata)
             metadata.update(
@@ -290,7 +476,14 @@ class AssuranceProcessingService:
                     "ocr_required": parsed.ocr_required,
                     "table_count": len(parsed.tables),
                     "raw_field_count": raw_field_count,
-                    "structured_field_count": structured_field_count,
+                    "structured_field_count": field_counts["structured"],
+                    "auto_accepted_field_count": field_counts["auto_accepted"],
+                    "review_field_count": field_counts["needs_review"],
+                    "field_conflict_count": field_counts["conflicts"],
+                    "low_confidence_field_count": field_counts["low_confidence"],
+                    "entity_link_count": link_counts["linked"],
+                    "ambiguous_entity_match_count": link_counts["ambiguous"],
+                    "below_threshold_entity_match_count": link_counts["below_threshold"],
                     "document_type": classification.document_type.value,
                     "type_confidence": classification.confidence,
                     "classification_evidence": list(classification.evidence),
@@ -300,18 +493,37 @@ class AssuranceProcessingService:
             run.extraction_metadata = metadata
             run.completed_at = _utc_now()
 
+            review_code: str | None = None
+            review_message: str | None = None
             if parsed.ocr_required:
-                run.status = ExtractionRunStatus.NEEDS_REVIEW.value
-                assurance_document.processing_status = DocumentProcessingStatus.NEEDS_REVIEW.value
-                assurance_document.last_error_code = "OCR_REQUIRED"
-                assurance_document.last_error_message = "PDF sin texto digital util; requiere OCR controlado."
+                review_code = "OCR_REQUIRED"
+                review_message = "PDF sin texto digital util; requiere OCR controlado."
+            elif classification.document_type == AssuranceDocumentType.UNKNOWN:
+                review_code = "UNCLASSIFIED_DOCUMENT"
+                review_message = "No se pudo clasificar el documento con evidencia suficiente."
             elif missing_fields:
-                run.status = ExtractionRunStatus.NEEDS_REVIEW.value
-                assurance_document.processing_status = DocumentProcessingStatus.NEEDS_REVIEW.value
-                assurance_document.last_error_code = "REQUIRED_FIELDS_MISSING"
-                assurance_document.last_error_message = (
+                review_code = "REQUIRED_FIELDS_MISSING"
+                review_message = (
                     "Faltan campos requeridos por el esquema: " + ", ".join(missing_fields)
                 )[:512]
+            elif field_counts["conflicts"]:
+                review_code = "EXTRACTED_FIELD_CONFLICT"
+                review_message = "Hay valores contradictorios para uno o mas campos extraidos."
+            elif field_counts["needs_review"]:
+                review_code = "EXTRACTED_FIELDS_NEED_REVIEW"
+                review_message = "Uno o mas campos no alcanzan el umbral de autoaceptacion."
+            elif (
+                classification.document_type == AssuranceDocumentType.SPREADSHEET
+                and field_counts["structured"] == 0
+            ):
+                review_code = "NO_STRUCTURED_FIELDS"
+                review_message = "La planilla no contiene encabezados semanticos reconocidos."
+
+            if review_code is not None:
+                run.status = ExtractionRunStatus.NEEDS_REVIEW.value
+                assurance_document.processing_status = DocumentProcessingStatus.NEEDS_REVIEW.value
+                assurance_document.last_error_code = review_code
+                assurance_document.last_error_message = review_message
             else:
                 run.status = ExtractionRunStatus.SUCCEEDED.value
                 assurance_document.processing_status = DocumentProcessingStatus.EXTRACTED.value
@@ -319,35 +531,27 @@ class AssuranceProcessingService:
             return assurance_document.processing_status
 
         except (DocumentParseError, ValueError) as exc:
-            try:
-                session.rollback()
-                set_tenant_db_context(session, int(organization_id))
-                assurance_document = session.scalar(
-                    select(AssuranceDocument).where(
-                        AssuranceDocument.organization_id == int(organization_id),
-                        AssuranceDocument.public_id == public_id,
-                    )
-                )
-                if assurance_document is not None:
-                    assurance_document.processing_status = DocumentProcessingStatus.FAILED.value
-                    assurance_document.last_error_code = "DOCUMENT_PARSE_FAILED"
-                    assurance_document.last_error_message = str(exc)[:512]
-                if run is not None:
-                    persisted_run = session.scalar(
-                        select(DocumentExtractionRun).where(
-                            DocumentExtractionRun.organization_id == int(organization_id),
-                            DocumentExtractionRun.id == run.id,
-                        )
-                    )
-                    if persisted_run is not None:
-                        persisted_run.status = ExtractionRunStatus.FAILED.value
-                        persisted_run.error_code = "DOCUMENT_PARSE_FAILED"
-                        persisted_run.error_detail = str(exc)[:2000]
-                        persisted_run.completed_at = _utc_now()
-                session.commit()
-            finally:
-                pass
+            _mark_processing_failure(
+                session,
+                organization_id=org_id,
+                public_id=public_id,
+                run_id=run_id,
+                error_code="DOCUMENT_PARSE_FAILED",
+                detail=str(exc),
+            )
             return DocumentProcessingStatus.FAILED.value
+        except AssuranceProcessingError:
+            raise
+        except Exception as exc:
+            _mark_processing_failure(
+                session,
+                organization_id=org_id,
+                public_id=public_id,
+                run_id=run_id,
+                error_code="PROCESSING_FAILED",
+                detail="Unexpected Assurance processing failure.",
+            )
+            raise AssuranceProcessingError("No se pudo procesar el documento Assurance.") from exc
         finally:
             session.close()
 
