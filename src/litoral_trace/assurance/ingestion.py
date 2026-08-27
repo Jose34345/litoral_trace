@@ -200,6 +200,59 @@ class AssuranceIngestionService:
             raise AssuranceIngestionStorageError("Evidence Vault no esta configurado.") from exc
         return self._storage
 
+    def _cleanup_uploaded_object(
+        self,
+        *,
+        object_key: str | None,
+        storage_version_id: str | None,
+        storage_written: bool,
+    ) -> bool:
+        if not object_key or not storage_written:
+            return True
+        try:
+            self._get_storage().delete_object(
+                key=object_key,
+                version_id=storage_version_id,
+            )
+            return True
+        except Exception:
+            return False
+
+    def _mark_persistence_failure(
+        self,
+        session: Session,
+        *,
+        organization_id: int,
+        vault_public_id: UUID | None,
+        cleanup_succeeded: bool,
+    ) -> None:
+        if vault_public_id is None:
+            return
+        try:
+            session.rollback()
+            set_tenant_db_context(session, organization_id)
+            persisted = session.scalar(
+                select(VaultDocument).where(
+                    VaultDocument.organization_id == organization_id,
+                    VaultDocument.public_id == vault_public_id,
+                )
+            )
+            if persisted is None:
+                return
+            persisted.status = "upload_failed"
+            persisted.last_error_code = (
+                "ASSURANCE_FINALIZE_FAILED_COMPENSATED"
+                if cleanup_succeeded
+                else "ASSURANCE_FINALIZE_FAILED_CLEANUP_FAILED"
+            )
+            persisted.last_error_message = "Assurance upload finalization failed."
+            session.commit()
+        except Exception:
+            try:
+                session.rollback()
+            except Exception:
+                pass
+
     def _ensure_assurance_document(
         self,
         session: Session,
@@ -269,14 +322,17 @@ class AssuranceIngestionService:
             storage_settings=self._storage_settings,
         )
 
-        session = self._new_session(int(organization_id))
+        org_id = int(organization_id)
+        session = self._new_session(org_id)
         object_key: str | None = None
         storage_version_id: str | None = None
+        storage_written = False
+        vault_public_id: UUID | None = None
         try:
             duplicate = session.scalar(
                 select(VaultDocument)
                 .where(
-                    VaultDocument.organization_id == int(organization_id),
+                    VaultDocument.organization_id == org_id,
                     VaultDocument.sha256 == validated.sha256,
                     VaultDocument.size_bytes == validated.size_bytes,
                     VaultDocument.status != "deleted",
@@ -286,7 +342,7 @@ class AssuranceIngestionService:
             if duplicate is not None:
                 assurance_document = self._ensure_assurance_document(
                     session,
-                    organization_id=int(organization_id),
+                    organization_id=org_id,
                     vault_document=duplicate,
                 )
                 session.commit()
@@ -302,10 +358,10 @@ class AssuranceIngestionService:
 
             object_key = (
                 f"{self._storage_settings.normalized_key_prefix}/tenants/"
-                f"{int(organization_id)}/objects/{uuid4().hex}"
+                f"{org_id}/objects/{uuid4().hex}"
             )
             vault_document = VaultDocument(
-                organization_id=int(organization_id),
+                organization_id=org_id,
                 created_by_user_id=created_by_user_id,
                 original_filename=validated.filename,
                 content_type=validated.content_type,
@@ -337,12 +393,13 @@ class AssuranceIngestionService:
                         "ingestion": "assurance-v1",
                     },
                 )
+                storage_written = True
                 storage_version_id = write.version_id
             except ObjectStorageError as exc:
-                set_tenant_db_context(session, int(organization_id))
+                set_tenant_db_context(session, org_id)
                 persisted = session.scalar(
                     select(VaultDocument).where(
-                        VaultDocument.organization_id == int(organization_id),
+                        VaultDocument.organization_id == org_id,
                         VaultDocument.public_id == vault_public_id,
                     )
                 )
@@ -353,10 +410,10 @@ class AssuranceIngestionService:
                     session.commit()
                 raise AssuranceIngestionStorageError("No se pudo almacenar el archivo original.") from exc
 
-            set_tenant_db_context(session, int(organization_id))
+            set_tenant_db_context(session, org_id)
             vault_document = session.scalar(
                 select(VaultDocument).where(
-                    VaultDocument.organization_id == int(organization_id),
+                    VaultDocument.organization_id == org_id,
                     VaultDocument.public_id == vault_public_id,
                 )
             )
@@ -369,7 +426,7 @@ class AssuranceIngestionService:
             vault_document.last_error_message = None
             assurance_document = self._ensure_assurance_document(
                 session,
-                organization_id=int(organization_id),
+                organization_id=org_id,
                 vault_document=vault_document,
             )
             session.commit()
@@ -378,27 +435,45 @@ class AssuranceIngestionService:
                 assurance_document=assurance_document,
                 duplicate=False,
             )
-        except AssuranceIngestionError:
+        except AssuranceIngestionStorageError:
             raise
-        except SQLAlchemyError as exc:
+        except AssuranceIngestionValidationError:
+            raise
+        except (AssuranceIngestionPersistenceError, SQLAlchemyError) as exc:
             try:
                 session.rollback()
             except Exception:
                 pass
+            cleanup_succeeded = self._cleanup_uploaded_object(
+                object_key=object_key,
+                storage_version_id=storage_version_id,
+                storage_written=storage_written,
+            )
+            self._mark_persistence_failure(
+                session,
+                organization_id=org_id,
+                vault_public_id=vault_public_id,
+                cleanup_succeeded=cleanup_succeeded,
+            )
+            if isinstance(exc, AssuranceIngestionPersistenceError):
+                raise
             raise AssuranceIngestionPersistenceError("No se pudo persistir la carga Assurance.") from exc
         except Exception as exc:
             try:
                 session.rollback()
             except Exception:
                 pass
-            if object_key and storage_version_id:
-                try:
-                    self._get_storage().delete_object(
-                        key=object_key,
-                        version_id=storage_version_id,
-                    )
-                except Exception:
-                    pass
+            cleanup_succeeded = self._cleanup_uploaded_object(
+                object_key=object_key,
+                storage_version_id=storage_version_id,
+                storage_written=storage_written,
+            )
+            self._mark_persistence_failure(
+                session,
+                organization_id=org_id,
+                vault_public_id=vault_public_id,
+                cleanup_succeeded=cleanup_succeeded,
+            )
             raise AssuranceIngestionPersistenceError("No se pudo finalizar la carga Assurance.") from exc
         finally:
             session.close()
