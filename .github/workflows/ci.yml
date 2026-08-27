@@ -63,7 +63,7 @@ jobs:
             echo "Expected exactly one Alembic head."
             exit 1
           fi
-          grep -Fx "031_assurance_reconciliation (head)" alembic-heads.txt
+          grep -Fx "032_assurance_operational_exceptions (head)" alembic-heads.txt
 
       - name: Run pytest suite
         run: python -m pytest -q -rs
