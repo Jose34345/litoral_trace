@@ -4,7 +4,7 @@ import ast
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import HTTPException
 
 from litoral_trace.api.assurance import (
     _require_document_intelligence_enabled,
@@ -37,11 +37,11 @@ def _main_registers_assurance_router() -> bool:
 
 
 def test_assurance_universal_upload_and_progress_routes_are_registered():
-    # Build a fresh router instance so the contract verifies route construction,
-    # not mutable module state shared across the repository's large test suite.
-    probe = FastAPI()
-    probe.include_router(build_assurance_router())
-    routes = {route.path for route in probe.routes if hasattr(route, "path")}
+    # Verify the Assurance router itself. The full legacy suite contains modules
+    # that share FastAPI process state during collection, so using another
+    # application instance here would test that unrelated mutable state too.
+    assurance_router = build_assurance_router()
+    routes = {route.path for route in assurance_router.routes if hasattr(route, "path")}
     assert "/api/v1/assurance/documents" in routes
     assert "/api/v1/assurance/documents/{assurance_document_id}/progress" in routes
     assert _main_registers_assurance_router() is True
