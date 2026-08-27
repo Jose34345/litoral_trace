@@ -29,11 +29,6 @@ from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.config import get_settings
 
 
-router = APIRouter(
-    prefix="/api/v1/assurance",
-    tags=["Assurance v1"],
-)
-
 _MAX_FILES_PER_REQUEST = 20
 _READ_CHUNK_BYTES = 1024 * 1024
 
@@ -80,10 +75,6 @@ def _serialize_ingestion(result) -> dict[str, object]:
     }
 
 
-@router.post(
-    "/documents",
-    status_code=status.HTTP_202_ACCEPTED,
-)
 async def ingest_assurance_documents(
     background_tasks: BackgroundTasks,
     request: Request,
@@ -168,7 +159,6 @@ async def ingest_assurance_documents(
     )
 
 
-@router.get("/documents/{assurance_document_id}/progress")
 async def assurance_document_progress(
     assurance_document_id: str,
     user: UserTenantContext = Depends(require_permission(Permission.VAULT_READ)),
@@ -194,3 +184,34 @@ async def assurance_document_progress(
             detail="No se pudo consultar el procesamiento.",
         ) from None
     return JSONResponse(status_code=status.HTTP_200_OK, content=progress)
+
+
+def build_assurance_router() -> APIRouter:
+    """Create a fully populated router without sharing mutable route state.
+
+    FastAPI copies routes when an ``APIRouter`` is included. Building the
+    Assurance router per application keeps startup deterministic even in test
+    suites or embedding processes that import/reload modules repeatedly.
+    """
+    api_router = APIRouter(
+        prefix="/api/v1/assurance",
+        tags=["Assurance v1"],
+    )
+    api_router.add_api_route(
+        "/documents",
+        ingest_assurance_documents,
+        methods=["POST"],
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    api_router.add_api_route(
+        "/documents/{assurance_document_id}/progress",
+        assurance_document_progress,
+        methods=["GET"],
+        status_code=status.HTTP_200_OK,
+    )
+    return api_router
+
+
+# Compatibility export for modules that historically import ``router``.
+# The application entrypoint deliberately builds its own independent instance.
+router = build_assurance_router()
