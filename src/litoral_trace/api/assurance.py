@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 
 from litoral_trace.api.assurance_exceptions import (
     assurance_attention_queue,
+    assign_assurance_exception,
     resolve_assurance_exception,
 )
 from litoral_trace.api.assurance_preflight import (
@@ -266,6 +267,12 @@ def build_assurance_router() -> APIRouter:
         "/exceptions",
         assurance_attention_queue,
         methods=["GET"],
+        status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
+        "/exceptions/{exception_id}/assign",
+        assign_assurance_exception,
+        methods=["POST"],
         status_code=status.HTTP_200_OK,
     )
     api_router.add_api_route(
