@@ -288,19 +288,15 @@ def test_bearer_api_mutation_does_not_gain_browser_csrf_requirement():
     )
 
 
-def test_refresh_cookie_mutation_accepts_browser_binding_without_access_cookie():
-    subject = CsrfSubject(
-        username="user",
-        organization_id=7,
-        session_id=11,
-    )
-
+def test_refresh_cookie_mutation_accepts_dedicated_browser_binding_without_access_cookie():
     browser_nonce = (
         "e" * 43
     )
 
+    # Refresh has its own anonymous-subject capability. A normal session-bound
+    # CSRF token is intentionally not interchangeable with this token.
     csrf_token = create_csrf_token(
-        subject=subject,
+        subject=None,
         browser_nonce=browser_nonce,
         nonce="n" * 24,
         secret_key=_TEST_SECRET,
