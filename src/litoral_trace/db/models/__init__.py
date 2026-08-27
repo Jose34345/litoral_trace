@@ -5,6 +5,13 @@ from litoral_trace.db.models.lote import Lote
 from litoral_trace.db.models.audit_log import AuditLog
 from litoral_trace.db.models.api_key import ApiKey
 from litoral_trace.db.models.license import License
+from litoral_trace.db.models.assurance_document import (
+    AssuranceDocument,
+    DocumentClaim,
+    DocumentEntityLink,
+    DocumentExtractionRun,
+    ExtractedField,
+)
 
 __all__ = [
     "Organization",
@@ -13,4 +20,9 @@ __all__ = [
     "AuditLog",
     "ApiKey",
     "License",
+    "AssuranceDocument",
+    "DocumentExtractionRun",
+    "ExtractedField",
+    "DocumentClaim",
+    "DocumentEntityLink",
 ]
