@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+
 import pytest
 from fastapi import HTTPException
 
@@ -9,7 +11,15 @@ from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
 
 
 def test_assurance_universal_upload_and_progress_routes_are_registered():
-    routes = {route.path for route in main.app.routes if hasattr(route, "path")}
+    # Some legacy tests import/mutate the module-level FastAPI application during
+    # collection. Reload the entrypoint so this contract verifies the actual
+    # composition produced by main.py rather than shared pytest process state.
+    refreshed_main = importlib.reload(main)
+    routes = {
+        route.path
+        for route in refreshed_main.app.routes
+        if hasattr(route, "path")
+    }
     assert "/api/v1/assurance/documents" in routes
     assert "/api/v1/assurance/documents/{assurance_document_id}/progress" in routes
 
