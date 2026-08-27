@@ -1,27 +1,50 @@
 from __future__ import annotations
 
-import importlib
+import ast
+from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 
-import main
-from litoral_trace.api.assurance import _require_document_intelligence_enabled
+from litoral_trace.api.assurance import (
+    _require_document_intelligence_enabled,
+    router as assurance_router,
+)
 from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
 
 
+ROOT = Path(__file__).resolve().parents[1]
+MAIN_PATH = ROOT / "main.py"
+
+
+def _main_registers_assurance_router() -> bool:
+    tree = ast.parse(MAIN_PATH.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        function = node.func
+        if not (
+            isinstance(function, ast.Attribute)
+            and function.attr == "include_router"
+            and isinstance(function.value, ast.Name)
+            and function.value.id == "app"
+        ):
+            continue
+        if node.args and isinstance(node.args[0], ast.Name):
+            if node.args[0].id == "assurance_router":
+                return True
+    return False
+
+
 def test_assurance_universal_upload_and_progress_routes_are_registered():
-    # Some legacy tests import/mutate the module-level FastAPI application during
-    # collection. Reload the entrypoint so this contract verifies the actual
-    # composition produced by main.py rather than shared pytest process state.
-    refreshed_main = importlib.reload(main)
-    routes = {
-        route.path
-        for route in refreshed_main.app.routes
-        if hasattr(route, "path")
-    }
+    # Build an isolated probe application so this contract is not affected by
+    # legacy tests that share/mutate the repository-level FastAPI instance.
+    probe = FastAPI()
+    probe.include_router(assurance_router)
+    routes = {route.path for route in probe.routes if hasattr(route, "path")}
     assert "/api/v1/assurance/documents" in routes
     assert "/api/v1/assurance/documents/{assurance_document_id}/progress" in routes
+    assert _main_registers_assurance_router() is True
 
 
 def test_assurance_remains_disabled_by_default(monkeypatch):
