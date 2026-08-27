@@ -1,9 +1,20 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 from starlette.requests import Request
 
+from litoral_trace.auth.sessions import (
+    ACCESS_TOKEN_COOKIE_KEY,
+    REFRESH_TOKEN_COOKIE_KEY,
+)
+from litoral_trace.services.traceability_evidence import EvidenceSubjectChoice
+from litoral_trace.web import eudr_dds_candidate as eudr_web
+from litoral_trace.web import shipment_phytosanitary_case as phytosanitary_web
+from litoral_trace.web import traceability_evidence as evidence_web
 from litoral_trace.web.csrf import (
     CSRF_BROWSER_COOKIE_KEY,
     CSRF_HEADER_NAME,
@@ -11,10 +22,6 @@ from litoral_trace.web.csrf import (
     create_csrf_token,
 )
 from litoral_trace.web.middleware import validate_cookie_csrf_request
-from litoral_trace.auth.sessions import (
-    ACCESS_TOKEN_COOKIE_KEY,
-    REFRESH_TOKEN_COOKIE_KEY,
-)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -129,6 +136,46 @@ def test_evidence_context_never_silently_enables_default_subject_mutations() -> 
     assert "button.disabled = true" in source
     assert "target.searchParams.set(SHIPMENT_PARAM, code)" in source
     assert "return option?.value" in source
+    assert "selectorContainsSubject" in source
+    assert "params.delete(SUBJECT_PARAM)" in source
+    assert "data-evidence-placeholder" in source
+
+
+def test_evidence_workspace_fails_closed_for_missing_or_invalid_subject(monkeypatch) -> None:
+    subject = EvidenceSubjectChoice(
+        subject_type="SOURCE_LOTE",
+        reference="RODAL-DEMO-001",
+        label="RODAL-DEMO-001",
+        secondary="PROV-001 · Pino",
+        status="ACTIVE",
+    )
+
+    class FakeService:
+        def list_subjects(self, *, organization_id: int):
+            assert organization_id == 1
+            return (subject,)
+
+        def list_evidence(self, **kwargs):
+            raise AssertionError("No debe consultar evidencia sin un subject confirmado")
+
+        def coverage(self, *, organization_id: int):
+            assert organization_id == 1
+            return SimpleNamespace(
+                subjects_with_evidence=0,
+                total_subjects=1,
+                percentage=0,
+                by_subject_type={},
+            )
+
+    monkeypatch.setattr(evidence_web, "_service", lambda: FakeService())
+    monkeypatch.setattr(evidence_web, "has_permission", lambda *_args, **_kwargs: False)
+    user = SimpleNamespace(organization_id=1)
+
+    for requested in (None, "", "SHIPMENT|stale-or-cross-context"):
+        view = evidence_web._present_workspace(user=user, selected_key=requested)
+        assert view["selected_key"] is None
+        assert view["selected_subject"] is None
+        assert view["evidence"] == ()
 
 
 def test_datetime_local_guard_handles_timestamptz_rendering_without_timezone_shift() -> None:
@@ -137,6 +184,84 @@ def test_datetime_local_guard_handles_timestamptz_rendering_without_timezone_shi
     assert "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}" in source
     assert 'getAttribute("value")' in source
     assert "getTimezoneOffset" not in source
+
+
+def test_phytosanitary_datetime_round_trip_renders_valid_datetime_local() -> None:
+    persisted = datetime(2026, 8, 26, 17, 42, tzinfo=timezone.utc)
+    case = SimpleNamespace(
+        certification_mode="PAPER",
+        requirements_reference="SENASA-REF",
+        requirements_checked_at=persisted,
+        cert_pov_reference="CERT-POV-1",
+        certificate_number="PHYTO-1",
+        ephyto_reference=None,
+        notes=None,
+    )
+    readiness = SimpleNamespace(
+        shipment_code="EXP-001",
+        shipment_public_id=uuid4(),
+        state="READY",
+        ready=True,
+        certification_mode="PAPER",
+        requirements=(),
+        missing=(),
+        evidence_types=(),
+        phytosanitary_case=case,
+    )
+
+    rendered = phytosanitary_web._view_payload(readiness)["case"]["requirements_checked_at"]
+    assert rendered == "2026-08-26T17:42"
+    assert "+00:00" not in rendered
+    assert not rendered.endswith("Z")
+
+
+def test_eudr_risk_datetime_round_trip_renders_valid_datetime_local() -> None:
+    persisted = datetime(2026, 8, 26, 18, 7, tzinfo=timezone.utc)
+    candidate = SimpleNamespace(
+        activity_type="EXPORT",
+        commodity_profile="WOOD",
+        operator_name="Operador UE",
+        operator_address="Dirección",
+        operator_country_code="DE",
+        operator_eori="EORI1",
+        hs_code="4407",
+        trade_name="Madera aserrada",
+        product_description="Producto",
+        common_species_name="Pino",
+        scientific_species_name="Pinus elliottii",
+        net_mass_kg="1000",
+        production_country_code="AR",
+        production_date_from=None,
+        production_date_to=None,
+        relies_on_previous_dds=False,
+        previous_dds_reference=None,
+        previous_dds_verification=None,
+        risk_conclusion="NO_OR_NEGLIGIBLE_RISK",
+        risk_assessment_reference="RISK-1",
+        risk_assessed_at=persisted,
+        spec_profile="EUDR_V3",
+        spec_fingerprint_sha256="abc",
+        notes=None,
+    )
+    conformance = SimpleNamespace(
+        shipment_code="EXP-001",
+        shipment_public_id=uuid4(),
+        state="CONFORMANCE_READY",
+        ready=True,
+        missing=(),
+        lineage_complete=True,
+        requirements=(),
+        plots=(),
+        payload_sha256="payload",
+        target_environment="ACCEPTANCE",
+        legal_effect="NON_LEGAL_ACCEPTANCE",
+        candidate=candidate,
+    )
+
+    rendered = eudr_web._view_payload(conformance)["candidate"]["risk_assessed_at"]
+    assert rendered == "2026-08-26T18:07"
+    assert "+00:00" not in rendered
+    assert not rendered.endswith("Z")
 
 
 def test_business_language_layer_translates_internal_codes_without_mutating_values() -> None:
