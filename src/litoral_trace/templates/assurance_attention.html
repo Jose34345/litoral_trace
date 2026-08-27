@@ -1,0 +1,106 @@
+{% extends "app/base_app.html" %}
+
+{% block title %}Requiere atención | Litoral Trace{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-amber-700">Assurance v1</p>
+        <h1 class="mt-1 text-2xl font-bold text-slate-950">Requiere atención</h1>
+        <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Sólo aparecen problemas que necesitan intervención. Cada excepción conserva su causa, impacto, fuente, responsable, plazo y próxima acción.</p>
+    </div>
+    <a href="/operations" class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">Abrir operaciones</a>
+</div>
+
+{% if attention.error %}
+<section class="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-5">
+    <h2 class="text-sm font-bold text-rose-900">Bandeja temporalmente no disponible</h2>
+    <p class="mt-2 text-sm text-rose-800">{{ attention.error }}</p>
+</section>
+{% endif %}
+
+<div class="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Abiertas</p>
+        <p class="mt-2 text-2xl font-bold text-slate-950">{{ attention.open_count }}</p>
+    </section>
+    <section class="rounded-2xl border border-rose-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wider text-rose-700">Críticas</p>
+        <p class="mt-2 text-2xl font-bold text-rose-900">{{ attention.critical_count }}</p>
+    </section>
+    <section class="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wider text-amber-700">Altas</p>
+        <p class="mt-2 text-2xl font-bold text-amber-900">{{ attention.high_count }}</p>
+    </section>
+    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Sin responsable</p>
+        <p class="mt-2 text-2xl font-bold text-slate-950">{{ attention.unassigned_count }}</p>
+    </section>
+</div>
+
+{% if attention.exceptions %}
+<div class="space-y-4">
+    {% for item in attention.exceptions %}
+    <article class="rounded-2xl border {% if item.priority == 'CRITICAL' %}border-rose-200{% elif item.priority == 'HIGH' %}border-amber-200{% else %}border-slate-200{% endif %} bg-white p-5 shadow-sm">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                    {% if item.priority == "CRITICAL" %}
+                    <span class="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700">CRÍTICA</span>
+                    {% elif item.priority == "HIGH" %}
+                    <span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">ALTA</span>
+                    {% else %}
+                    <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">{{ item.priority }}</span>
+                    {% endif %}
+                    <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{{ item.status }}</span>
+                    <span class="text-xs font-medium text-slate-500">{{ item.operation_reference }}</span>
+                </div>
+                <h2 class="mt-3 text-base font-bold text-slate-950">{{ item.title }}</h2>
+                <p class="mt-1 text-sm leading-6 text-slate-600">{{ item.description }}</p>
+
+                <div class="mt-4 rounded-xl bg-slate-50 p-4">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Próxima acción</p>
+                    <p class="mt-1 text-sm font-medium leading-6 text-slate-800">{{ item.recommended_action }}</p>
+                </div>
+            </div>
+
+            <dl class="grid min-w-0 gap-3 text-sm sm:grid-cols-2 lg:w-80 lg:grid-cols-1">
+                <div>
+                    <dt class="text-xs font-semibold uppercase tracking-wider text-slate-500">Responsable</dt>
+                    <dd class="mt-1 font-semibold text-slate-900">{{ item.assigned_to_name }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-semibold uppercase tracking-wider text-slate-500">Fecha límite</dt>
+                    <dd class="mt-1 font-semibold text-slate-900">{{ item.due_at }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-semibold uppercase tracking-wider text-slate-500">Causa</dt>
+                    <dd class="mt-1 break-words font-mono text-xs text-slate-700">{{ item.cause_code }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-semibold uppercase tracking-wider text-slate-500">Fuente</dt>
+                    <dd class="mt-1 break-words text-xs text-slate-700">{{ item.source_type }} · {{ item.source_reference }}</dd>
+                </div>
+            </dl>
+        </div>
+    </article>
+    {% endfor %}
+</div>
+{% elif not attention.error %}
+<section class="rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center">
+    <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-white text-emerald-700 shadow-sm">
+        <i class="fa-solid fa-check" aria-hidden="true"></i>
+    </div>
+    <h2 class="mt-3 text-base font-bold text-emerald-950">No hay excepciones abiertas</h2>
+    <p class="mt-2 text-sm text-emerald-800">Cuando una conciliación o un Preflight requiera intervención, aparecerá acá con su causa y próxima acción.</p>
+</section>
+{% endif %}
+
+<section class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+    <h2 class="text-sm font-bold text-slate-950">Cómo se cierra una excepción</h2>
+    <p class="mt-2 text-xs leading-5 text-slate-600">Cerrar una tarjeta no fuerza un READY. Las discrepancias requieren justificación y toda resolución operativa vuelve a ejecutar Preflight con el estado actualizado. Si la causa continúa, la excepción vuelve a abrirse.</p>
+    {% if attention.can_operate %}
+    <p class="mt-2 text-xs font-semibold text-slate-700">Los usuarios operativos pueden asignar responsable/plazo y resolver mediante el flujo Assurance autorizado.</p>
+    {% endif %}
+</section>
+{% endblock %}
