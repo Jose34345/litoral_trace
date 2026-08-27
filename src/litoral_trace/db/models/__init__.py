@@ -21,6 +21,7 @@ from litoral_trace.db.models.assurance_document import (
     ExtractedDocumentField,
 )
 from litoral_trace.db.models.reconciliation_issue import ReconciliationIssue
+from litoral_trace.db.models.operational_exception import OperationalException
 from litoral_trace.db.models.traceability_evidence_link import TraceabilityEvidenceLink
 from litoral_trace.db.models.shipment_export_case import ShipmentExportCase
 from litoral_trace.db.models.shipment_phytosanitary_case import ShipmentPhytosanitaryCase
@@ -65,6 +66,7 @@ __all__ = [
     "DocumentClaim",
     "DocumentEntityLink",
     "ReconciliationIssue",
+    "OperationalException",
     "TraceabilityEvidenceLink",
     "ShipmentExportCase",
     "ShipmentPhytosanitaryCase",
