@@ -48,6 +48,7 @@ def test_assurance_operational_routes_are_registered_on_each_router_instance():
     assert "/api/v1/assurance/preflight" in routes
     assert "/api/v1/assurance/preflight/reasons" in routes
     assert "/api/v1/assurance/exceptions" in routes
+    assert "/api/v1/assurance/exceptions/{exception_id}/assign" in routes
     assert "/api/v1/assurance/exceptions/{exception_id}/resolve" in routes
     assert _main_registers_assurance_router() is True
 
