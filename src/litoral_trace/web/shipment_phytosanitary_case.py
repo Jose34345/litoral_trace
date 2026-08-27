@@ -95,7 +95,7 @@ def _view_payload(readiness) -> dict[str, Any]:
                 "certification_mode": case.certification_mode,
                 "requirements_reference": case.requirements_reference or "",
                 "requirements_checked_at": (
-                    case.requirements_checked_at.isoformat(timespec="minutes")
+                    case.requirements_checked_at.strftime("%Y-%m-%dT%H:%M")
                     if case.requirements_checked_at
                     else ""
                 ),
