@@ -237,10 +237,15 @@ def rotate_refresh_session(
         raise SessionSecurityError("Refresh token invalido o expirado.")
 
     set_tenant_db_context(db_session, session_lookup.organization_id)
+    # The bootstrap SECURITY DEFINER function already serializes PostgreSQL
+    # consumers with FOR UPDATE before tenant context exists. Lock the same
+    # parent again under the tenant-scoped ORM path as defense in depth so the
+    # reuse/rotation invariant remains explicit even if bootstrap internals
+    # change later.
     current_session = _get_session_by_id(
         db_session,
         session_id=session_lookup.id,
-        for_update=False,
+        for_update=True,
     )
     if current_session is None:
         raise SessionSecurityError("Refresh token invalido o expirado.")
