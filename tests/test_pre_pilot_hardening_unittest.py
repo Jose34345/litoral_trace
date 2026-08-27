@@ -33,7 +33,13 @@ TEMPLATES = ROOT / "src" / "litoral_trace" / "templates"
 SECRET = "pre-pilot-test-secret-key-with-at-least-32-chars"
 
 
-def _request(*, browser_nonce: str, csrf_token: str, access_token: str = "expired") -> Request:
+def _request(
+    *,
+    browser_nonce: str,
+    csrf_token: str,
+    access_token: str = "expired",
+    path: str = "/api/v1/auth/refresh",
+) -> Request:
     cookies = "; ".join(
         (
             f"{ACCESS_TOKEN_COOKIE_KEY}={access_token}",
@@ -46,8 +52,8 @@ def _request(*, browser_nonce: str, csrf_token: str, access_token: str = "expire
         "http_version": "1.1",
         "method": "POST",
         "scheme": "https",
-        "path": "/api/v1/auth/refresh",
-        "raw_path": b"/api/v1/auth/refresh",
+        "path": path,
+        "raw_path": path.encode("utf-8"),
         "query_string": b"",
         "headers": [
             (b"cookie", cookies.encode("utf-8")),
@@ -88,6 +94,24 @@ def test_refresh_rejects_browser_token_bound_to_another_browser() -> None:
 
     assert validate_cookie_csrf_request(
         _request(browser_nonce=browser_nonce, csrf_token=refresh_csrf),
+        secret_key=SECRET,
+    ) == "csrf_invalid"
+
+
+def test_browser_only_refresh_csrf_is_rejected_on_other_unsafe_api_paths() -> None:
+    browser_nonce = create_csrf_browser_nonce()
+    refresh_csrf = create_csrf_token(
+        subject=None,
+        browser_nonce=browser_nonce,
+        secret_key=SECRET,
+    )
+
+    assert validate_cookie_csrf_request(
+        _request(
+            browser_nonce=browser_nonce,
+            csrf_token=refresh_csrf,
+            path="/api/v1/satellite/jobs",
+        ),
         secret_key=SECRET,
     ) == "csrf_invalid"
 
