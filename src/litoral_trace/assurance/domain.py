@@ -49,3 +49,19 @@ class DocumentLinkMethod(StrEnum):
     NORMALIZED_IDENTIFIER = "NORMALIZED_IDENTIFIER"
     HEURISTIC = "HEURISTIC"
     HUMAN_CONFIRMED = "HUMAN_CONFIRMED"
+
+
+class ReconciliationSeverity(StrEnum):
+    """Operational impact assigned to a deterministic discrepancy."""
+
+    INFO = "INFO"
+    WARNING = "WARNING"
+    BLOCKING = "BLOCKING"
+
+
+class ReconciliationIssueStatus(StrEnum):
+    """Lifecycle of a persisted reconciliation finding."""
+
+    OPEN = "OPEN"
+    ACCEPTED_WITH_JUSTIFICATION = "ACCEPTED_WITH_JUSTIFICATION"
+    RESOLVED = "RESOLVED"
