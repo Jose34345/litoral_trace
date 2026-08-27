@@ -64,7 +64,7 @@ def test_cross_document_coordinator_wraps_refresh_before_session_renewal() -> No
     assert base.index(coordinator) < base.index(renewal)
 
 
-def test_refresh_rotation_relocks_parent_after_tenant_context() -> None:
+def test_refresh_rotation_family_lock_precedes_parent_row_lock() -> None:
     source = SESSIONS.read_text(encoding="utf-8")
     start = source.index("def rotate_refresh_session(")
     end = source.index("\ndef revoke_session(", start)
@@ -73,24 +73,47 @@ def test_refresh_rotation_relocks_parent_after_tenant_context() -> None:
     tenant_context = rotation.index(
         "set_tenant_db_context(db_session, session_lookup.organization_id)"
     )
+    family_reference = rotation.index("family_reference = _get_session_family_reference(")
+    family_lock = rotation.index("_acquire_refresh_family_lock(")
     parent_lookup = rotation.index("current_session = _get_session_by_id(")
     row_lock = rotation.index("for_update=True", parent_lookup)
     reuse_check = rotation.index("if current_session.revoked_at is not None:")
 
-    assert tenant_context < parent_lookup < row_lock < reuse_check
+    assert (
+        tenant_context
+        < family_reference
+        < family_lock
+        < parent_lookup
+        < row_lock
+        < reuse_check
+    )
 
 
-def test_logout_revocation_relocks_parent_and_revokes_whole_family() -> None:
+def test_logout_family_lock_precedes_row_lock_and_revokes_whole_family() -> None:
     source = SESSIONS.read_text(encoding="utf-8")
     revocation = source.split("def revoke_session(", 1)[1]
 
-    tenant_context = revocation.index(
-        "set_tenant_db_context(db_session, session_lookup.organization_id)"
-    )
+    family_reference = revocation.index("family_reference = _get_session_family_reference(")
+    family_lock = revocation.index("_acquire_refresh_family_lock(")
     parent_lookup = revocation.index("session_record = _get_session_by_id(")
     row_lock = revocation.index("for_update=True", parent_lookup)
     family_revoke = revocation.index("_revoke_family(")
 
-    assert tenant_context < parent_lookup < row_lock < family_revoke
-    assert "family_id=session_record.family_id" in revocation
-    assert "organization_id=session_record.organization_id" in revocation
+    assert family_reference < family_lock < parent_lookup < row_lock < family_revoke
+    assert "family_id=family_id" in revocation[family_revoke:]
+    assert "organization_id=family_organization_id" in revocation[family_revoke:]
+
+
+def test_postgres_bootstrap_row_lock_is_released_before_family_lock_transaction() -> None:
+    source = SESSIONS.read_text(encoding="utf-8")
+    helper = source.split(
+        "def _lookup_session_bootstrap_without_retained_row_lock(",
+        1,
+    )[1].split(
+        "\ndef _family_advisory_lock_key(",
+        1,
+    )[0]
+
+    assert "with Session(bind=engine) as bootstrap_session:" in helper
+    assert "bootstrap_session.rollback()" in helper
+    assert "lookup_session_bootstrap_by_token_hash(" in helper
