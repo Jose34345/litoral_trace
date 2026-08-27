@@ -13,6 +13,10 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 
+from litoral_trace.api.assurance_exceptions import (
+    assurance_attention_queue,
+    resolve_assurance_exception,
+)
 from litoral_trace.api.assurance_preflight import (
     assurance_preflight,
     assurance_preflight_reason_catalog,
@@ -25,6 +29,9 @@ from litoral_trace.assurance.ingestion import (
     AssuranceIngestionService,
     AssuranceIngestionValidationError,
     validate_incoming_file,
+)
+from litoral_trace.assurance.operational_exceptions import (
+    AssuranceOperationalExceptionService,
 )
 from litoral_trace.assurance.processing import (
     AssuranceProcessingError,
@@ -87,11 +94,7 @@ def _process_and_reconcile(
     assurance_public_id,
     force_reprocess: bool = False,
 ) -> str:
-    """Process a document and reconcile linked operations after extraction.
-
-    Reconciliation is independently feature-flagged and only consumes fields
-    that the extraction pipeline marked as safe for automatic acceptance.
-    """
+    """Process, reconcile and refresh actionable exceptions after extraction."""
     processing_status = AssuranceProcessingService().process(
         organization_id=organization_id,
         assurance_public_id=assurance_public_id,
@@ -111,6 +114,10 @@ def _process_and_reconcile(
             organization_id=organization_id,
             assurance_public_id=assurance_public_id,
         )
+        if flags.operational_exceptions:
+            AssuranceOperationalExceptionService().sync_reconciliation(
+                organization_id=organization_id
+            )
     return processing_status
 
 
@@ -253,6 +260,18 @@ def build_assurance_router() -> APIRouter:
         "/preflight/reasons",
         assurance_preflight_reason_catalog,
         methods=["GET"],
+        status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
+        "/exceptions",
+        assurance_attention_queue,
+        methods=["GET"],
+        status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
+        "/exceptions/{exception_id}/resolve",
+        resolve_assurance_exception,
+        methods=["POST"],
         status_code=status.HTTP_200_OK,
     )
     return api_router
