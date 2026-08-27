@@ -10,6 +10,10 @@ from pydantic import BaseModel, Field
 
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
+from litoral_trace.assurance.operational_exceptions import (
+    AssuranceOperationalExceptionError,
+    AssuranceOperationalExceptionService,
+)
 from litoral_trace.assurance.preflight import (
     PreflightDocument,
     PreflightInput,
@@ -52,6 +56,31 @@ def _require_preflight_enabled() -> None:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Assurance Preflight 2.0 no está habilitado para este entorno.",
         )
+
+
+def build_preflight_input(payload: AssurancePreflightRequest) -> PreflightInput:
+    """Map one validated API request into the deterministic domain contract."""
+    return PreflightInput(
+        customer_reference=payload.customer_reference,
+        market=payload.market,
+        product=payload.product,
+        quantity=payload.quantity,
+        commitment_date=payload.commitment_date,
+        stock_available=payload.stock_available,
+        documents=tuple(
+            PreflightDocument(
+                document_type=document.document_type,
+                reference=document.reference,
+                valid_until=document.valid_until,
+            )
+            for document in payload.documents
+        ),
+        required_document_types=tuple(payload.required_document_types),
+        origin_state=payload.origin_state,
+        genealogy_state=payload.genealogy_state,
+        phytosanitary_state=payload.phytosanitary_state,
+        eudr_state=payload.eudr_state,
+    )
 
 
 def _serialize_result(*, organization_id: int, view) -> dict[str, object]:
@@ -99,33 +128,19 @@ async def assurance_preflight(
     user: UserTenantContext = Depends(require_permission(Permission.VAULT_READ)),
 ) -> JSONResponse:
     _require_preflight_enabled()
-    domain_payload = PreflightInput(
-        customer_reference=payload.customer_reference,
-        market=payload.market,
-        product=payload.product,
-        quantity=payload.quantity,
-        commitment_date=payload.commitment_date,
-        stock_available=payload.stock_available,
-        documents=tuple(
-            PreflightDocument(
-                document_type=document.document_type,
-                reference=document.reference,
-                valid_until=document.valid_until,
-            )
-            for document in payload.documents
-        ),
-        required_document_types=tuple(payload.required_document_types),
-        origin_state=payload.origin_state,
-        genealogy_state=payload.genealogy_state,
-        phytosanitary_state=payload.phytosanitary_state,
-        eudr_state=payload.eudr_state,
-    )
+    domain_payload = build_preflight_input(payload)
     try:
         view = AssurancePreflightService().evaluate(
             organization_id=user.organization_id,
             operation_reference=payload.operation_reference,
             payload=domain_payload,
         )
+        flags = get_assurance_feature_flags()
+        if flags.assurance_v1 and flags.operational_exceptions:
+            AssuranceOperationalExceptionService().sync_preflight(
+                organization_id=user.organization_id,
+                view=view,
+            )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -135,6 +150,11 @@ async def assurance_preflight(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "ASSURANCE_PREFLIGHT_UNAVAILABLE", "message": str(exc)},
+        ) from None
+    except AssuranceOperationalExceptionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "ASSURANCE_EXCEPTION_SYNC_UNAVAILABLE", "message": str(exc)},
         ) from None
     return JSONResponse(
         status_code=status.HTTP_200_OK,
