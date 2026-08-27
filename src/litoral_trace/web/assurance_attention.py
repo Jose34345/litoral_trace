@@ -9,7 +9,7 @@ from litoral_trace.assurance.operational_exceptions import (
     AssuranceOperationalExceptionError,
     AssuranceOperationalExceptionService,
 )
-from litoral_trace.auth.rbac import Permission, has_permission
+from litoral_trace.auth.rbac import Permission
 from litoral_trace.web.runtime import get_html_route_user, render_web_template
 
 
@@ -18,7 +18,7 @@ def _attention_enabled() -> bool:
     return bool(flags.assurance_v1 and flags.operational_exceptions)
 
 
-def _attention_context(rows, *, can_operate: bool, error: str | None = None) -> dict:
+def _attention_context(rows, *, error: str | None = None) -> dict:
     exceptions = tuple(
         {
             "public_id": str(row.public_id),
@@ -50,17 +50,17 @@ def _attention_context(rows, *, can_operate: bool, error: str | None = None) -> 
             "unassigned_count": sum(
                 1 for row in exceptions if row["assigned_to_name"] == "Sin asignar"
             ),
-            "can_operate": can_operate,
+            "can_operate": True,
             "error": error,
         }
     }
 
 
 async def render_assurance_attention(request: Request) -> HTMLResponse:
-    """Show only actionable tenant exceptions; hidden/fail-closed when disabled."""
+    """Show actionable tenant exceptions only to operational roles."""
     user, denied = get_html_route_user(
         request,
-        required_permission=Permission.VAULT_READ,
+        required_permission=Permission.TRACEABILITY_OPERATE,
     )
     if denied is not None:
         return denied
@@ -83,10 +83,7 @@ async def render_assurance_attention(request: Request) -> HTMLResponse:
             request,
             "assurance_attention.html",
             user=user,
-            context=_attention_context(
-                rows,
-                can_operate=has_permission(user, Permission.TRACEABILITY_OPERATE),
-            ),
+            context=_attention_context(rows),
         )
     except AssuranceOperationalExceptionError:
         return render_web_template(
@@ -95,7 +92,6 @@ async def render_assurance_attention(request: Request) -> HTMLResponse:
             user=user,
             context=_attention_context(
                 (),
-                can_operate=has_permission(user, Permission.TRACEABILITY_OPERATE),
                 error="La bandeja de excepciones no está disponible temporalmente.",
             ),
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
