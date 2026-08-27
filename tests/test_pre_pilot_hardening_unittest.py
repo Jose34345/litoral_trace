@@ -66,6 +66,28 @@ def _request(
     return Request(scope)
 
 
+def _template_request(access_token: str) -> Request:
+    scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "https",
+        "path": "/dashboard",
+        "raw_path": b"/dashboard",
+        "query_string": b"",
+        "headers": [
+            (
+                b"cookie",
+                f"{ACCESS_TOKEN_COOKIE_KEY}={access_token}".encode("utf-8"),
+            )
+        ],
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 443),
+        "root_path": "",
+    }
+    return Request(scope)
+
+
 def test_refresh_accepts_browser_bound_csrf_after_access_token_is_unusable() -> None:
     browser_nonce = create_csrf_browser_nonce()
     refresh_csrf = create_csrf_token(
@@ -170,10 +192,52 @@ def test_session_refresh_cadence_precedes_short_and_default_access_expiry(monkey
     assert context_web._session_refresh_after_seconds() < 30 * 60
 
 
+def test_access_expiry_metadata_is_bound_to_exact_hydrated_session(monkeypatch) -> None:
+    user = SimpleNamespace(
+        username="operator",
+        organization_id=17,
+        session_id=42,
+    )
+    request = _template_request("opaque-access-token")
+
+    valid_payload = {
+        "sub": "operator",
+        "org_id": 17,
+        "sid": 42,
+        "exp": 2_000_000_000,
+    }
+    monkeypatch.setattr(
+        context_web,
+        "verify_jwt_token",
+        lambda *_args, **_kwargs: valid_payload,
+    )
+    assert context_web._session_access_expires_at_epoch(
+        request,
+        user=user,
+    ) == 2_000_000_000
+
+    for mismatched_payload in (
+        {**valid_payload, "sub": "other"},
+        {**valid_payload, "org_id": 18},
+        {**valid_payload, "sid": 43},
+        {**valid_payload, "exp": 0},
+    ):
+        monkeypatch.setattr(
+            context_web,
+            "verify_jwt_token",
+            lambda *_args, payload=mismatched_payload, **_kwargs: payload,
+        )
+        assert context_web._session_access_expires_at_epoch(
+            request,
+            user=user,
+        ) is None
+
+
 def test_base_loads_pre_pilot_hardening_layers() -> None:
     base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
     assert "lt-refresh-csrf-token" in base
     assert "lt-session-refresh-after" in base
+    assert "lt-session-access-expires-at" in base
     assert "/src/js/session-renewal.js" in base
     assert "/src/js/evidence-context.js" in base
     assert "/src/js/datetime-local.js" in base
@@ -188,6 +252,17 @@ def test_session_renewal_preserves_forms_and_rotates_rendered_csrf() -> None:
     assert 'credentials: "same-origin"' in source
     assert "window.localStorage" not in source
     assert "window.sessionStorage" not in source
+
+
+def test_session_renewal_uses_verified_absolute_expiry_not_page_load_interval() -> None:
+    source = (STATIC_JS / "session-renewal.js").read_text(encoding="utf-8")
+    assert 'ACCESS_EXPIRES_AT_META_NAME = "lt-session-access-expires-at"' in source
+    assert "readEpochMilliseconds(ACCESS_EXPIRES_AT_META_NAME)" in source
+    assert "return expiryMs - intervalMs" in source
+    assert "scheduleRenewal" in source
+    assert "window.setTimeout" in source
+    assert "Date.now() >= dueAt" in source
+    assert "window.setInterval" not in source
 
 
 def test_session_renewal_serializes_tabs_and_rehydrates_peer_csrf() -> None:
