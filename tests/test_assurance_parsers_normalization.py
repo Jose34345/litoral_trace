@@ -6,6 +6,7 @@ from io import BytesIO
 import pytest
 from fpdf import FPDF
 from openpyxl import Workbook
+from PIL import Image, ImageDraw, ImageFont
 
 from litoral_trace.assurance.ingestion import (
     AssuranceIngestionValidationError,
@@ -59,6 +60,35 @@ def _pdf_bytes(text: str | None) -> bytes:
     return bytes(output) if not isinstance(output, str) else output.encode("latin-1")
 
 
+def _scanned_pdf_bytes() -> bytes:
+    """Build a PDF with image pixels only: no searchable text layer."""
+    image = Image.new("RGB", (1800, 900), "white")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=56)
+    lines = (
+        "FACTURA E",
+        "Numero 0001 00001234",
+        "Fecha 27/08/2026",
+        "CUIT 30 70832310 8",
+    )
+    y = 90
+    for line in lines:
+        draw.text((90, y), line, fill="black", font=font)
+        y += 170
+
+    image_buffer = BytesIO()
+    image.save(image_buffer, format="PNG")
+    image.close()
+    image_buffer.seek(0)
+
+    pdf = FPDF(unit="pt", format=(1800, 900))
+    pdf.add_page()
+    pdf.image(image_buffer, x=0, y=0, w=1800, h=900)
+    output = pdf.output()
+    image_buffer.close()
+    return bytes(output) if not isinstance(output, str) else output.encode("latin-1")
+
+
 def test_argentine_number_normalization_supports_both_separator_orders():
     assert normalize_argentine_number("1.234,56") == Decimal("1234.56")
     assert normalize_argentine_number("1,234.56") == Decimal("1234.56")
@@ -102,17 +132,31 @@ def test_csv_parser_detects_semicolon_and_cp1252_encoding():
     assert parsed.tables[0].rows[0]["Proveedor"] == "Aserradero Ñandú"
 
 
-def test_pdf_parser_extracts_digital_text():
+def test_pdf_parser_extracts_digital_text_without_ocr():
     parsed = parse_pdf(_pdf_bytes("Factura E 0001-00001234"))
     assert "Factura E" in parsed.text
     assert parsed.ocr_required is False
+    assert parsed.metadata["ocr_attempted"] is False
+    assert parsed.metadata["ocr_applied"] is False
     assert parsed.metadata["page_count"] == 1
 
 
-def test_pdf_without_useful_text_is_marked_for_ocr_only():
+def test_scanned_pdf_executes_real_tesseract_ocr():
+    parsed = parse_pdf(_scanned_pdf_bytes())
+    assert parsed.ocr_required is False
+    assert parsed.metadata["ocr_attempted"] is True
+    assert parsed.metadata["ocr_applied"] is True
+    assert parsed.metadata["ocr_engine"] == "tesseract"
+    assert parsed.metadata["ocr_pages_processed"] == 1
+    assert "FACTURA" in parsed.text.upper()
+
+
+def test_blank_pdf_remains_fail_closed_when_ocr_finds_no_useful_text():
     parsed = parse_pdf(_pdf_bytes(None))
     assert parsed.ocr_required is True
     assert parsed.text == ""
+    assert parsed.metadata["ocr_attempted"] is True
+    assert parsed.metadata["ocr_applied"] is False
 
 
 @pytest.mark.parametrize(
