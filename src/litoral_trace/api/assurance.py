@@ -18,7 +18,11 @@ from litoral_trace.api.assurance_exceptions import (
     assign_assurance_exception,
     resolve_assurance_exception,
 )
-from litoral_trace.api.assurance_metrics import assurance_metrics
+from litoral_trace.api.assurance_metrics import (
+    assurance_metrics,
+    assurance_metrics_report,
+    set_assurance_metrics_baseline,
+)
 from litoral_trace.api.assurance_preflight import (
     assurance_preflight,
     assurance_preflight_reason_catalog,
@@ -26,6 +30,7 @@ from litoral_trace.api.assurance_preflight import (
 from litoral_trace.api.assurance_review import (
     approve_assurance_review_fields,
     assurance_document_review,
+    correct_assurance_review_fields,
 )
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.assurance.domain import DocumentProcessingStatus
@@ -156,7 +161,6 @@ def _process_and_reconcile(
             metadata=reconciliation_metadata,
         )
     except Exception as exc:
-        # Do not leave the UI polling forever if the post-extraction pipeline fails.
         try:
             mark_pipeline_completed(
                 organization_id=organization_id,
@@ -314,6 +318,12 @@ def build_assurance_router() -> APIRouter:
         status_code=status.HTTP_200_OK,
     )
     api_router.add_api_route(
+        "/documents/{assurance_document_id}/review/correct",
+        correct_assurance_review_fields,
+        methods=["POST"],
+        status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
         "/preflight",
         assurance_preflight,
         methods=["POST"],
@@ -350,6 +360,18 @@ def build_assurance_router() -> APIRouter:
         status_code=status.HTTP_200_OK,
     )
     api_router.add_api_route(
+        "/metrics/baseline",
+        set_assurance_metrics_baseline,
+        methods=["POST"],
+        status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
+        "/metrics/report",
+        assurance_metrics_report,
+        methods=["GET"],
+        status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
         "/workspace",
         render_assurance_workspace,
         methods=["GET"],
@@ -364,6 +386,4 @@ def build_assurance_router() -> APIRouter:
     return api_router
 
 
-# Compatibility export for modules that historically import ``router``.
-# The application entrypoint deliberately builds its own independent instance.
 router = build_assurance_router()
