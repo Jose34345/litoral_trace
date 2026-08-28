@@ -47,12 +47,15 @@ def test_assurance_operational_routes_are_registered_on_each_router_instance():
     assert "/api/v1/assurance/documents/{assurance_document_id}/progress" in routes
     assert "/api/v1/assurance/documents/{assurance_document_id}/review" in routes
     assert "/api/v1/assurance/documents/{assurance_document_id}/review/approve" in routes
+    assert "/api/v1/assurance/documents/{assurance_document_id}/review/correct" in routes
     assert "/api/v1/assurance/preflight" in routes
     assert "/api/v1/assurance/preflight/reasons" in routes
     assert "/api/v1/assurance/exceptions" in routes
     assert "/api/v1/assurance/exceptions/{exception_id}/assign" in routes
     assert "/api/v1/assurance/exceptions/{exception_id}/resolve" in routes
     assert "/api/v1/assurance/metrics" in routes
+    assert "/api/v1/assurance/metrics/baseline" in routes
+    assert "/api/v1/assurance/metrics/report" in routes
     assert "/api/v1/assurance/workspace" in routes
     assert "/api/v1/assurance/attention" in routes
     assert _main_registers_assurance_router() is True
