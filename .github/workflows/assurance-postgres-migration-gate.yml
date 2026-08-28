@@ -6,10 +6,12 @@ on:
       - "alembic/versions/030_add_assurance_document_intelligence.py"
       - "alembic/versions/031_add_assurance_reconciliation.py"
       - "alembic/versions/032_add_assurance_operational_exceptions.py"
+      - "alembic/versions/033_add_assurance_suppliers.py"
       - "src/litoral_trace/assurance/**"
       - "src/litoral_trace/db/models/assurance_document.py"
       - "src/litoral_trace/db/models/reconciliation_issue.py"
       - "src/litoral_trace/db/models/operational_exception.py"
+      - "src/litoral_trace/db/models/assurance_supplier.py"
       - "tests/test_assurance_*postgres_integration.py"
       - ".github/workflows/assurance-postgres-migration-gate.yml"
   workflow_dispatch:
@@ -171,22 +173,23 @@ jobs:
                     AND table_name IN (
                       'assurance_documents',
                       'reconciliation_issues',
-                      'operational_exceptions'
+                      'operational_exceptions',
+                      'assurance_suppliers'
                     )
               """)).scalar_one()
           assert count == 0
           engine.dispose()
           PY
 
-      - name: Execute Assurance migrations 030 through 032
+      - name: Execute Assurance migrations 030 through 033
         run: python -m alembic upgrade head
 
-      - name: Verify canonical head 032
+      - name: Verify canonical head 033
         shell: bash
         run: |
           set -euo pipefail
           python -m alembic current | tee alembic-after-assurance.txt
-          grep -F "032_assurance_operational_exceptions" alembic-after-assurance.txt
+          grep -F "033_assurance_suppliers" alembic-after-assurance.txt
 
       - name: Verify Assurance schema and FORCE RLS
         shell: bash
@@ -204,6 +207,7 @@ jobs:
               'document_entity_links',
               'reconciliation_issues',
               'operational_exceptions',
+              'assurance_suppliers',
           }
           engine = create_engine(os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
           with engine.connect() as connection:
@@ -249,6 +253,12 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest -q -rs tests/test_assurance_operational_exceptions_rls_postgres_integration.py
+
+      - name: Gate Assurance Supplier tenant RLS on real PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs tests/test_assurance_suppliers_rls_postgres_integration.py
 
       - name: Fail closed if any Assurance PostgreSQL test is skipped
         shell: bash
