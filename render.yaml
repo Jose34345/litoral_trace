@@ -40,7 +40,7 @@ services:
       - key: STORAGE_BUCKET_NAME
         sync: false
       - key: STORAGE_REGION
-        value: us-east-1
+        value: us-east-2
       - key: STORAGE_ENDPOINT_URL
         sync: false
       - key: STORAGE_ACCESS_KEY_ID
