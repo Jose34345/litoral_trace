@@ -69,6 +69,21 @@ def _serialize_view(view) -> dict[str, object]:
             }
             for link in view.links
         ],
+        "issues": [
+            {
+                "public_id": str(issue.public_id),
+                "operation_reference": issue.operation_reference,
+                "rule_code": issue.rule_code,
+                "severity": issue.severity,
+                "field_name": issue.field_name,
+                "left_source": issue.left_source,
+                "right_source": issue.right_source,
+                "left_value": issue.left_value,
+                "right_value": issue.right_value,
+                "explanation": issue.explanation,
+            }
+            for issue in view.issues
+        ],
     }
 
 
