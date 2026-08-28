@@ -47,6 +47,8 @@ class AuditAction(StrEnum):
     VAULT_DELETE = "vault.delete"
     VAULT_INTEGRITY_FAILURE = "vault.integrity_failure"
     ASSURANCE_EXTRACTION_AUTO_ACCEPT = "assurance.extraction.auto_accept"
+    ASSURANCE_EXTRACTION_COMPLETE = "assurance.extraction.complete"
+    ASSURANCE_EXTRACTION_FAILED = "assurance.extraction.failed"
     ASSURANCE_REVIEW_APPROVE = "assurance.review.approve"
     ASSURANCE_REVIEW_CORRECT = "assurance.review.correct"
     ASSURANCE_PILOT_BASELINE_SET = "assurance.pilot.baseline.set"
