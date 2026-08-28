@@ -1,0 +1,89 @@
+services:
+  - type: web
+    name: litoral-trace-assurance-stg-20260828
+    runtime: docker
+    repo: https://github.com/Jose34345/litoral_trace
+    branch: feature/assurance-v1
+    region: virginia
+    plan: free
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: sh /app/pilot/render_assurance_start.sh
+    healthCheckPath: /ready
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: PORT
+        value: "10000"
+
+      - key: DATABASE_URL
+        sync: false
+
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_ISSUER
+        value: litoral-trace-assurance-pilot
+      - key: JWT_AUDIENCE
+        value: litoral-trace-assurance-pilot
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "30"
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "7"
+      - key: CORS_ALLOW_ORIGINS
+        value: https://litoral-trace-assurance-stg-20260828.onrender.com
+
+      - key: STORAGE_BACKEND
+        value: s3
+      - key: STORAGE_BUCKET_NAME
+        sync: false
+      - key: STORAGE_REGION
+        value: us-east-1
+      - key: STORAGE_ENDPOINT_URL
+        sync: false
+      - key: STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: STORAGE_SECRET_ACCESS_KEY
+        sync: false
+      - key: STORAGE_FORCE_PATH_STYLE
+        value: "0"
+      - key: STORAGE_USE_TLS
+        value: "1"
+      - key: STORAGE_VERIFY_TLS
+        value: "1"
+      - key: STORAGE_KEY_PREFIX
+        value: assurance-pilot/staging-01
+      - key: STORAGE_MAX_UPLOAD_BYTES
+        value: "26214400"
+      - key: STORAGE_ALLOWED_CONTENT_TYPES
+        value: application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv
+
+      - key: LT_ASSURANCE_V1_ENABLED
+        value: "1"
+      - key: LT_ASSURANCE_DOCUMENT_INTELLIGENCE_ENABLED
+        value: "1"
+      - key: LT_ASSURANCE_RECONCILIATION_ENABLED
+        value: "1"
+      - key: LT_ASSURANCE_PREFLIGHT_V2_ENABLED
+        value: "1"
+      - key: LT_ASSURANCE_OPERATIONAL_EXCEPTIONS_ENABLED
+        value: "1"
+      - key: LT_ASSURANCE_MARKET_READY_INVENTORY_ENABLED
+        value: "1"
+      - key: LT_ASSURANCE_PILOT_MODE
+        value: "1"
+      - key: LT_ASSURANCE_PILOT_ORGANIZATION_ID
+        value: "70"
+      - key: LT_ASSURANCE_PILOT_CONFIG_PATH
+        value: /app/pilot/assurance-pilot-staging.bootstrap.json
+
+      - key: WORKERS_ENABLED
+        value: "0"
+      - key: EUDR_ACCEPTANCE_ENABLED
+        value: "0"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: SENTRY_DSN
+        value: ""
