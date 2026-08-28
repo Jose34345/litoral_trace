@@ -5,16 +5,21 @@ from dataclasses import dataclass
 from typing import Callable, Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from litoral_trace.assurance.domain import DocumentProcessingStatus, ExtractionRunStatus
+from litoral_trace.assurance.domain import (
+    DocumentProcessingStatus,
+    ExtractionRunStatus,
+    ReconciliationIssueStatus,
+)
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import (
     AssuranceDocument,
     DocumentEntityLink,
     DocumentExtractionRun,
     ExtractedDocumentField,
+    ReconciliationIssue,
     VaultDocument,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
@@ -59,6 +64,20 @@ class ReviewLink:
 
 
 @dataclass(frozen=True, slots=True)
+class ReviewIssue:
+    public_id: UUID
+    operation_reference: str
+    rule_code: str
+    severity: str
+    field_name: str
+    left_source: str
+    right_source: str | None
+    left_value: str | None
+    right_value: str | None
+    explanation: str
+
+
+@dataclass(frozen=True, slots=True)
 class DocumentReviewView:
     assurance_document_id: UUID
     filename: str
@@ -72,6 +91,7 @@ class DocumentReviewView:
     review_count: int
     fields: tuple[ReviewField, ...]
     links: tuple[ReviewLink, ...]
+    issues: tuple[ReviewIssue, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +192,23 @@ class AssuranceDocumentReviewService:
                     .order_by(DocumentEntityLink.entity_type, DocumentEntityLink.id)
                 ).all()
             )
+            issues = list(
+                session.scalars(
+                    select(ReconciliationIssue)
+                    .where(
+                        ReconciliationIssue.organization_id == org_id,
+                        ReconciliationIssue.status == ReconciliationIssueStatus.OPEN.value,
+                        or_(
+                            ReconciliationIssue.left_document_id == document.id,
+                            ReconciliationIssue.right_document_id == document.id,
+                        ),
+                    )
+                    .order_by(
+                        ReconciliationIssue.severity.asc(),
+                        ReconciliationIssue.id.asc(),
+                    )
+                ).all()
+            )
             field_views = tuple(
                 ReviewField(
                     id=row.id,
@@ -209,6 +246,21 @@ class AssuranceDocumentReviewService:
                         human_confirmed=bool(row.human_confirmed),
                     )
                     for row in links
+                ),
+                issues=tuple(
+                    ReviewIssue(
+                        public_id=row.public_id,
+                        operation_reference=row.operation_reference,
+                        rule_code=row.rule_code,
+                        severity=row.severity,
+                        field_name=row.field_name,
+                        left_source=row.left_source,
+                        right_source=row.right_source,
+                        left_value=row.left_value,
+                        right_value=row.right_value,
+                        explanation=row.explanation,
+                    )
+                    for row in issues
                 ),
             )
         except (ValueError, AssuranceDocumentReviewError):
@@ -304,9 +356,6 @@ class AssuranceDocumentReviewService:
                 ).all()
             )
 
-            # Human approval may close only the narrow "fields need review"
-            # condition. OCR, missing required fields, conflicts or unknown
-            # document type stay NEEDS_REVIEW until their source condition changes.
             if (
                 remaining is None
                 and document.last_error_code == "EXTRACTED_FIELDS_NEED_REVIEW"
