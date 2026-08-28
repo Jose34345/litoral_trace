@@ -6,7 +6,7 @@ services:
     branch: feature/assurance-v1
     region: virginia
     plan: free
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: commit
     dockerfilePath: ./Dockerfile
     dockerContext: .
     dockerCommand: sh /app/pilot/render_assurance_start.sh
