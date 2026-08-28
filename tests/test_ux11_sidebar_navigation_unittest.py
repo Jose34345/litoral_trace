@@ -20,7 +20,30 @@ def test_admin_navigation_exposes_operational_workflow_and_contextual_evidence()
     assert navigation["operations"].active is True
     assert navigation["evidence"].href == "/evidence"
     assert navigation["evidence"].label == "Evidencias"
+    assert "attention" not in navigation
     assert "platform" not in navigation
+
+
+def test_assurance_attention_navigation_is_hidden_until_feature_is_enabled(monkeypatch) -> None:
+    monkeypatch.delenv("LT_ASSURANCE_V1_ENABLED", raising=False)
+    monkeypatch.delenv("LT_ASSURANCE_OPERATIONAL_EXCEPTIONS_ENABLED", raising=False)
+    assert "attention" not in _by_key("admin", "/operations")
+
+    monkeypatch.setenv("LT_ASSURANCE_V1_ENABLED", "1")
+    monkeypatch.setenv("LT_ASSURANCE_OPERATIONAL_EXCEPTIONS_ENABLED", "1")
+    navigation = _by_key("admin", "/api/v1/assurance/attention")
+    assert navigation["attention"].label == "Requiere atención"
+    assert navigation["attention"].href == "/api/v1/assurance/attention"
+    assert navigation["attention"].active is True
+
+
+def test_assurance_attention_navigation_remains_operational_only(monkeypatch) -> None:
+    monkeypatch.setenv("LT_ASSURANCE_V1_ENABLED", "1")
+    monkeypatch.setenv("LT_ASSURANCE_OPERATIONAL_EXCEPTIONS_ENABLED", "1")
+
+    assert "attention" in _by_key("manager", "/dashboard")
+    assert "attention" not in _by_key("auditor", "/dashboard")
+    assert "attention" not in _by_key("cliente", "/dashboard")
 
 
 def test_auditor_keeps_read_only_traceability_and_evidence_without_operations() -> None:
@@ -29,6 +52,7 @@ def test_auditor_keeps_read_only_traceability_and_evidence_without_operations() 
     assert navigation["traceability"].href == "/traceability"
     assert navigation["evidence"].active is True
     assert "operations" not in navigation
+    assert "attention" not in navigation
     assert "imports" not in navigation
     assert "settings" not in navigation
 
