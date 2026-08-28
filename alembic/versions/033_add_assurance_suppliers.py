@@ -98,7 +98,7 @@ def upgrade() -> None:
             ["source_assurance_document_id", "organization_id"],
             ["assurance_documents.id", "assurance_documents.organization_id"],
             name="fk_assurance_suppliers_source_document_tenant",
-            ondelete="SET NULL",
+            ondelete="RESTRICT",
         ),
         sa.CheckConstraint(
             "length(cuit) = 11", name="ck_assurance_suppliers_cuit_length"
