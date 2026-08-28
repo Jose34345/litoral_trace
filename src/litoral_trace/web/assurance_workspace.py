@@ -29,6 +29,7 @@ async def render_assurance_workspace(request: Request) -> HTMLResponse:
         user=user,
         context={
             "assurance_upload_url": "/api/v1/assurance/documents",
+            "assurance_preflight_url": "/api/v1/assurance/preflight",
             "assurance_workspace_enabled": True,
         },
     )
