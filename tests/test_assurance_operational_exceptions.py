@@ -23,11 +23,21 @@ from litoral_trace.assurance.preflight import (
     evaluate_preflight,
 )
 from litoral_trace.assurance.preflight_service import AssurancePreflightView
-from litoral_trace.db.models import OperationalException, ReconciliationIssue
+from litoral_trace.db.models import (
+    AssuranceDocument,
+    DocumentEntityLink,
+    OperationalException,
+    ReconciliationIssue,
+)
 
 
 def _factory():
     engine = create_engine("sqlite+pysqlite:///:memory:")
+    # Resolving an exception can immediately re-run Preflight, which now checks
+    # operation-linked Assurance documents. Keep the unit schema aligned with
+    # that production dependency rather than bypassing the safety gate.
+    AssuranceDocument.__table__.create(engine, checkfirst=True)
+    DocumentEntityLink.__table__.create(engine, checkfirst=True)
     ReconciliationIssue.__table__.create(engine, checkfirst=True)
     OperationalException.__table__.create(engine, checkfirst=True)
     return sessionmaker(bind=engine, expire_on_commit=False)
