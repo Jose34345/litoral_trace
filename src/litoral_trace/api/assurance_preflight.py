@@ -19,6 +19,7 @@ from litoral_trace.assurance.preflight import (
     PreflightInput,
     PreflightSignalState,
     reason_catalog_payload,
+    validate_preflight_input,
 )
 from litoral_trace.assurance.preflight_service import (
     AssurancePreflightError,
@@ -36,7 +37,7 @@ class AssurancePreflightDocumentRequest(BaseModel):
 class AssurancePreflightRequest(BaseModel):
     """Preflight input.
 
-    Only ``operation_reference`` is transport-required.  The deterministic
+    Only ``operation_reference`` is transport-required. The deterministic
     engine remains fail-closed when business inputs are absent, which lets the
     friction-zero workspace launch Preflight immediately after ingestion and
     ask the operator only for facts that were not available from LT-owned data.
@@ -137,6 +138,7 @@ async def assurance_preflight(
 ) -> JSONResponse:
     _require_preflight_enabled()
     domain_payload = build_preflight_input(payload)
+    minimum_input_complete = not validate_preflight_input(domain_payload)
     try:
         view = AssurancePreflightService().evaluate(
             organization_id=user.organization_id,
@@ -144,7 +146,14 @@ async def assurance_preflight(
             payload=domain_payload,
         )
         flags = get_assurance_feature_flags()
-        if flags.assurance_v1 and flags.operational_exceptions:
+        # A provisional automatic Preflight may legitimately be missing facts.
+        # Show its fail-closed result, but do not persist exception noise until
+        # the minimum business input is complete.
+        if (
+            minimum_input_complete
+            and flags.assurance_v1
+            and flags.operational_exceptions
+        ):
             AssuranceOperationalExceptionService().sync_preflight(
                 organization_id=user.organization_id,
                 view=view,
