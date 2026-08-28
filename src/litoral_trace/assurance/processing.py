@@ -39,6 +39,12 @@ from litoral_trace.db.models import (
     VaultDocument,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.services.audit import (
+    AuditAction,
+    AuditActor,
+    AuditOutcome,
+    record_audit_event,
+)
 from litoral_trace.services.vault import VaultService
 
 
@@ -53,6 +59,15 @@ class AssuranceProcessingError(RuntimeError):
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _system_actor(organization_id: int) -> AuditActor:
+    return AuditActor(
+        organization_id=int(organization_id),
+        user_id=None,
+        username="system",
+        role="system",
+    )
 
 
 def _confidence_level(confidence: float) -> str:
@@ -293,7 +308,7 @@ def _mark_processing_failure(
     error_code: str,
     detail: str,
 ) -> None:
-    """Best-effort terminal state so background failures never stay PROCESSING."""
+    """Persist failure state and its safe audit record in one transaction."""
     try:
         session.rollback()
         set_tenant_db_context(session, organization_id)
@@ -303,6 +318,7 @@ def _mark_processing_failure(
                 AssuranceDocument.public_id == public_id,
             )
         )
+        persisted_run: DocumentExtractionRun | None = None
         if assurance_document is not None:
             assurance_document.processing_status = DocumentProcessingStatus.FAILED.value
             assurance_document.last_error_code = error_code
@@ -319,6 +335,27 @@ def _mark_processing_failure(
                 persisted_run.error_code = error_code
                 persisted_run.error_detail = detail[:2000]
                 persisted_run.completed_at = _utc_now()
+        if assurance_document is not None:
+            record_audit_event(
+                session,
+                actor=_system_actor(organization_id),
+                action=AuditAction.ASSURANCE_EXTRACTION_FAILED,
+                entity_type="assurance_document",
+                entity_id=assurance_document.id,
+                outcome=AuditOutcome.FAILURE,
+                metadata={
+                    "extraction_run_id": run_id,
+                    "engine": None if persisted_run is None else persisted_run.engine,
+                    "engine_version": None if persisted_run is None else persisted_run.engine_version,
+                    "error_code": error_code,
+                },
+                before_data={"processing_status": DocumentProcessingStatus.PROCESSING.value},
+                after_data={
+                    "processing_status": DocumentProcessingStatus.FAILED.value,
+                    "error_code": error_code,
+                },
+                detail="Procesamiento automatico Assurance finalizado con error.",
+            )
         session.commit()
     except Exception:
         try:
@@ -528,6 +565,39 @@ class AssuranceProcessingService:
             else:
                 run.status = ExtractionRunStatus.SUCCEEDED.value
                 assurance_document.processing_status = DocumentProcessingStatus.EXTRACTED.value
+
+            record_audit_event(
+                session,
+                actor=_system_actor(org_id),
+                action=AuditAction.ASSURANCE_EXTRACTION_COMPLETE,
+                entity_type="assurance_document",
+                entity_id=assurance_document.id,
+                outcome=AuditOutcome.SUCCESS,
+                metadata={
+                    "extraction_run_id": run.id,
+                    "engine": run.engine,
+                    "engine_version": run.engine_version,
+                    "force_reprocess": bool(force_reprocess),
+                    "raw_field_count": raw_field_count,
+                    "structured_field_count": field_counts["structured"],
+                    "auto_accepted_field_count": field_counts["auto_accepted"],
+                    "review_field_count": field_counts["needs_review"],
+                    "field_conflict_count": field_counts["conflicts"],
+                    "low_confidence_field_count": field_counts["low_confidence"],
+                    "entity_link_count": link_counts["linked"],
+                    "ambiguous_entity_match_count": link_counts["ambiguous"],
+                    "ocr_required": bool(parsed.ocr_required),
+                    "review_code": review_code,
+                },
+                before_data={"processing_status": DocumentProcessingStatus.PROCESSING.value},
+                after_data={
+                    "processing_status": assurance_document.processing_status,
+                    "semantic_document_type": assurance_document.semantic_document_type,
+                    "type_confidence": assurance_document.type_confidence,
+                    "review_code": review_code,
+                },
+                detail="Procesamiento automatico Assurance completado.",
+            )
             session.commit()
             return assurance_document.processing_status
 
