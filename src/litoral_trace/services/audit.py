@@ -48,6 +48,8 @@ class AuditAction(StrEnum):
     VAULT_INTEGRITY_FAILURE = "vault.integrity_failure"
     ASSURANCE_EXTRACTION_AUTO_ACCEPT = "assurance.extraction.auto_accept"
     ASSURANCE_REVIEW_APPROVE = "assurance.review.approve"
+    ASSURANCE_REVIEW_CORRECT = "assurance.review.correct"
+    ASSURANCE_PILOT_BASELINE_SET = "assurance.pilot.baseline.set"
     SETTINGS_INVITE_DEMO = "settings.invite_demo_user"
     PLATFORM_ORGANIZATION_CREATE = "platform.organization.create"
     PLATFORM_ORGANIZATION_STATUS_CHANGE = "platform.organization.status_change"
