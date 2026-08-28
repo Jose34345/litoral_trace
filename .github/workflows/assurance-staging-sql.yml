@@ -1,0 +1,54 @@
+name: Assurance Staging Migration SQL
+
+on:
+  pull_request:
+    paths:
+      - "alembic/versions/029_add_smart_import_profiles.py"
+      - "alembic/versions/030_add_assurance_document_intelligence.py"
+      - "alembic/versions/031_add_assurance_reconciliation.py"
+      - "alembic/versions/032_add_assurance_operational_exceptions.py"
+      - "alembic/versions/033_add_assurance_suppliers.py"
+      - ".github/workflows/assurance-staging-sql.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-staging-sql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ENVIRONMENT: development
+      MIGRATION_DATABASE_URL: postgresql+psycopg://offline:offline@localhost/litoral_trace_offline
+      JWT_SECRET_KEY: assurance-offline-sql-only-secret-2026
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt alembic
+
+      - name: Generate exact Alembic SQL from 028 to head
+        run: |
+          set -euo pipefail
+          python -m alembic upgrade 028_platform_definer_rls:head --sql > assurance-028-to-head.sql
+          test -s assurance-028-to-head.sql
+          grep -F "033_assurance_suppliers" assurance-028-to-head.sql
+
+      - name: Upload migration SQL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: assurance-staging-028-to-head-sql
+          path: assurance-028-to-head.sql
+          if-no-files-found: error
+          retention-days: 7
