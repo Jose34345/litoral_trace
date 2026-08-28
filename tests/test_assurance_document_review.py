@@ -14,6 +14,7 @@ from litoral_trace.db.models import (
     DocumentEntityLink,
     DocumentExtractionRun,
     ExtractedDocumentField,
+    ReconciliationIssue,
     VaultDocument,
 )
 from litoral_trace.services.audit import AuditAction, build_audit_actor
@@ -26,6 +27,7 @@ def factory():
     DocumentExtractionRun.__table__.create(engine, checkfirst=True)
     ExtractedDocumentField.__table__.create(engine, checkfirst=True)
     DocumentEntityLink.__table__.create(engine, checkfirst=True)
+    ReconciliationIssue.__table__.create(engine, checkfirst=True)
     AuditLog.__table__.create(engine, checkfirst=True)
     return sessionmaker(bind=engine, expire_on_commit=False)
 
@@ -163,6 +165,44 @@ def test_review_shows_only_latest_structured_fields_and_links():
     assert view.review_count == 1
     assert {field.field_name for field in view.fields} == {"invoice.number", "supplier.cuit"}
     assert len(view.links) == 1
+    assert view.issues == ()
+
+
+def test_review_exposes_open_discrepancy_that_references_the_document():
+    f = factory()
+    public_id, _, _ = seed(f)
+    session: Session = f()
+    document = session.scalar(
+        select(AssuranceDocument).where(AssuranceDocument.public_id == public_id)
+    )
+    session.add(
+        ReconciliationIssue(
+            organization_id=42,
+            operation_reference="shipment:abc",
+            fingerprint="d" * 64,
+            rule_code="QTY_MISMATCH",
+            severity="BLOCKING",
+            status="OPEN",
+            field_name="quantity",
+            left_document_id=document.id,
+            left_source="factura.pdf [quantity]",
+            right_source="remito.pdf [quantity]",
+            left_value="80",
+            right_value="75",
+            explanation="La cantidad no coincide.",
+        )
+    )
+    session.commit()
+    session.close()
+
+    view = AssuranceDocumentReviewService(session_factory=f).get(
+        organization_id=42,
+        assurance_public_id=public_id,
+    )
+    assert len(view.issues) == 1
+    assert view.issues[0].severity == "BLOCKING"
+    assert view.issues[0].rule_code == "QTY_MISMATCH"
+    assert "no coincide" in view.issues[0].explanation
 
 
 def test_bulk_approval_is_audited_and_closes_only_narrow_review_condition():
