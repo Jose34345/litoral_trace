@@ -142,3 +142,17 @@ def test_pdf_text_extraction_is_structured_and_missing_required_fields_are_expli
     names = {candidate.field_name for candidate in candidates}
     assert {"document_number", "document_date", "issuer_cuit", "destination"}.issubset(names)
     assert missing_required_fields(classification.document_type, candidates) == ()
+
+
+def test_missing_required_invoice_fields_are_reported_explicitly():
+    parsed = ParsedDocument(
+        file_kind="PDF",
+        text="FACTURA E\nNumero: 0001-00001234\n",
+    )
+    classification = classify_document("factura_incompleta.pdf", parsed)
+    candidates = extract_structured_fields(parsed)
+    assert classification.document_type == AssuranceDocumentType.INVOICE
+    assert set(missing_required_fields(classification.document_type, candidates)) == {
+        "document_date",
+        "issuer_cuit",
+    }
