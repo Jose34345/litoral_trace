@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.assurance-pilot-staging.example
 
 # Virtual environments
 .venv/
@@ -52,3 +53,8 @@ tmp_*
 
 # Disaster recovery artifacts
 /backups/postgres/
+
+# Assurance pilot local configuration. The example is safe to commit; the real
+# customer-specific configuration must stay outside Git/Vault and be mounted
+# read-only into staging.
+/pilot/assurance-pilot.json

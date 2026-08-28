@@ -14,6 +14,12 @@ from litoral_trace.assurance.operational_exceptions import (
     AssuranceOperationalExceptionError,
     AssuranceOperationalExceptionService,
 )
+from litoral_trace.assurance.pilot_preparation import (
+    AssurancePilotAccessError,
+    AssurancePilotConfigurationError,
+    AssurancePilotRuleNotFoundError,
+    apply_pilot_policy_to_preflight,
+)
 from litoral_trace.assurance.preflight import (
     PreflightDocument,
     PreflightInput,
@@ -67,9 +73,13 @@ def _require_preflight_enabled() -> None:
         )
 
 
-def build_preflight_input(payload: AssurancePreflightRequest) -> PreflightInput:
-    """Map one validated API request into the deterministic domain contract."""
-    return PreflightInput(
+def build_preflight_input(
+    payload: AssurancePreflightRequest,
+    *,
+    organization_id: int | None = None,
+) -> PreflightInput:
+    """Map one request and optional deployment-owned pilot policy to domain input."""
+    domain_payload = PreflightInput(
         customer_reference=payload.customer_reference,  # type: ignore[arg-type]
         market=payload.market,  # type: ignore[arg-type]
         product=payload.product,  # type: ignore[arg-type]
@@ -89,6 +99,12 @@ def build_preflight_input(payload: AssurancePreflightRequest) -> PreflightInput:
         genealogy_state=payload.genealogy_state,
         phytosanitary_state=payload.phytosanitary_state,
         eudr_state=payload.eudr_state,
+    )
+    if organization_id is None:
+        return domain_payload
+    return apply_pilot_policy_to_preflight(
+        domain_payload,
+        organization_id=organization_id,
     )
 
 
@@ -137,9 +153,12 @@ async def assurance_preflight(
     user: UserTenantContext = Depends(require_permission(Permission.VAULT_READ)),
 ) -> JSONResponse:
     _require_preflight_enabled()
-    domain_payload = build_preflight_input(payload)
-    minimum_input_complete = not validate_preflight_input(domain_payload)
     try:
+        domain_payload = build_preflight_input(
+            payload,
+            organization_id=user.organization_id,
+        )
+        minimum_input_complete = not validate_preflight_input(domain_payload)
         view = AssurancePreflightService().evaluate(
             organization_id=user.organization_id,
             operation_reference=payload.operation_reference,
@@ -158,6 +177,30 @@ async def assurance_preflight(
                 organization_id=user.organization_id,
                 view=view,
             )
+    except AssurancePilotRuleNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": "ASSURANCE_PILOT_RULE_NOT_CONFIGURED",
+                "message": str(exc),
+            },
+        ) from None
+    except AssurancePilotAccessError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "ASSURANCE_PILOT_TENANT_NOT_FOUND",
+                "message": "Assurance no está habilitado para este tenant en staging.",
+            },
+        ) from None
+    except AssurancePilotConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "ASSURANCE_PILOT_CONFIGURATION_INVALID",
+                "message": str(exc),
+            },
+        ) from None
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

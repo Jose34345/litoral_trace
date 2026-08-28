@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "organization_id": 1001,
+  "rules": [
+    {
+      "customer_reference": "CLIENTE-PILOTO-BR",
+      "market": "BR",
+      "product": "Madera aserrada de pino",
+      "required_document_types": [
+        "INVOICE",
+        "DELIVERY_NOTE",
+        "FOREST_GUIDE"
+      ],
+      "phytosanitary_required": false,
+      "eudr_required": false
+    },
+    {
+      "customer_reference": "CLIENTE-PILOTO-UE",
+      "market": "ES",
+      "product": "Madera aserrada de pino",
+      "required_document_types": [
+        "INVOICE",
+        "DELIVERY_NOTE",
+        "FOREST_GUIDE",
+        "PHYTOSANITARY_CERTIFICATE",
+        "CUSTOMS_DOCUMENT"
+      ],
+      "phytosanitary_required": true,
+      "eudr_required": true
+    }
+  ]
+}
