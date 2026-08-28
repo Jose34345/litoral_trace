@@ -11,6 +11,14 @@ from litoral_trace.assurance.document_review import (
     AssuranceDocumentReviewService,
 )
 from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
+from litoral_trace.assurance.operational_exceptions import (
+    AssuranceOperationalExceptionError,
+    AssuranceOperationalExceptionService,
+)
+from litoral_trace.assurance.reconciliation_service import (
+    AssuranceReconciliationError,
+    AssuranceReconciliationService,
+)
 from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.services.audit import (
     build_audit_actor_from_user,
@@ -132,6 +140,45 @@ async def approve_assurance_review_fields(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "ASSURANCE_REVIEW_CONFLICT", "message": str(exc)},
         ) from None
+
+    flags = get_assurance_feature_flags()
+    reconciliation_payload: dict[str, object] = {
+        "enabled": bool(flags.assurance_v1 and flags.reconciliation),
+        "completed": False,
+        "operation_count": 0,
+        "finding_count": 0,
+        "created_count": 0,
+        "refreshed_count": 0,
+        "reopened_count": 0,
+        "auto_resolved_count": 0,
+        "error_code": None,
+    }
+    if flags.assurance_v1 and flags.reconciliation:
+        try:
+            reconciliation = AssuranceReconciliationService().reconcile_document(
+                organization_id=user.organization_id,
+                assurance_public_id=assurance_document_id,
+            )
+            reconciliation_payload.update(
+                {
+                    "completed": True,
+                    "operation_count": reconciliation.operation_count,
+                    "finding_count": reconciliation.finding_count,
+                    "created_count": reconciliation.created_count,
+                    "refreshed_count": reconciliation.refreshed_count,
+                    "reopened_count": reconciliation.reopened_count,
+                    "auto_resolved_count": reconciliation.auto_resolved_count,
+                }
+            )
+            if flags.operational_exceptions:
+                AssuranceOperationalExceptionService().sync_reconciliation(
+                    organization_id=user.organization_id
+                )
+        except (AssuranceReconciliationError, AssuranceOperationalExceptionError) as exc:
+            # The review transaction is already committed. Report the stale
+            # downstream state explicitly instead of pretending the approval failed.
+            reconciliation_payload["error_code"] = type(exc).__name__
+
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={
@@ -139,5 +186,6 @@ async def approve_assurance_review_fields(
             "approved_count": result.approved_count,
             "remaining_review_count": result.remaining_review_count,
             "processing_status": result.processing_status,
+            "reconciliation": reconciliation_payload,
         },
     )
