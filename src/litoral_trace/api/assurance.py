@@ -50,6 +50,7 @@ from litoral_trace.assurance.processing import (
     AssuranceProcessingService,
 )
 from litoral_trace.assurance.reconciliation_service import AssuranceReconciliationService
+from litoral_trace.assurance.suppliers import AssuranceSupplierService
 from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.config import get_settings
 from litoral_trace.web.assurance_attention import render_assurance_attention
@@ -108,7 +109,7 @@ def _process_and_reconcile(
     assurance_public_id,
     force_reprocess: bool = False,
 ) -> str:
-    """Process, reconcile and publish one final pipeline outcome for the workspace."""
+    """Process, link supplier identity, reconcile and publish one final outcome."""
     processing_status = AssuranceProcessingService().process(
         organization_id=organization_id,
         assurance_public_id=assurance_public_id,
@@ -118,7 +119,14 @@ def _process_and_reconcile(
         return processing_status
 
     flags = get_assurance_feature_flags()
-    reconciliation_metadata: dict[str, object] = {
+    pipeline_metadata: dict[str, object] = {
+        "supplier_resolution_enabled": bool(flags.assurance_v1 and flags.document_intelligence),
+        "supplier_created": False,
+        "supplier_enriched": False,
+        "supplier_linked": False,
+        "supplier_needs_review": False,
+        "supplier_resolution_reason": None,
+        "supplier_public_id": None,
         "reconciliation_enabled": bool(flags.assurance_v1 and flags.reconciliation),
         "reconciliation_operation_count": 0,
         "reconciliation_finding_count": 0,
@@ -128,6 +136,34 @@ def _process_and_reconcile(
         "reconciliation_auto_resolved_count": 0,
     }
     try:
+        if (
+            flags.assurance_v1
+            and flags.document_intelligence
+            and processing_status
+            in {
+                DocumentProcessingStatus.EXTRACTED.value,
+                DocumentProcessingStatus.NEEDS_REVIEW.value,
+            }
+        ):
+            supplier = AssuranceSupplierService().resolve_document(
+                organization_id=organization_id,
+                assurance_public_id=assurance_public_id,
+            )
+            pipeline_metadata.update(
+                {
+                    "supplier_created": supplier.created,
+                    "supplier_enriched": supplier.enriched,
+                    "supplier_linked": supplier.linked,
+                    "supplier_needs_review": supplier.needs_review,
+                    "supplier_resolution_reason": supplier.reason,
+                    "supplier_public_id": (
+                        str(supplier.supplier_public_id)
+                        if supplier.supplier_public_id is not None
+                        else None
+                    ),
+                }
+            )
+
         if (
             flags.assurance_v1
             and flags.reconciliation
@@ -141,7 +177,7 @@ def _process_and_reconcile(
                 organization_id=organization_id,
                 assurance_public_id=assurance_public_id,
             )
-            reconciliation_metadata.update(
+            pipeline_metadata.update(
                 {
                     "reconciliation_operation_count": reconciliation.operation_count,
                     "reconciliation_finding_count": reconciliation.finding_count,
@@ -158,7 +194,7 @@ def _process_and_reconcile(
         mark_pipeline_completed(
             organization_id=organization_id,
             assurance_public_id=assurance_public_id,
-            metadata=reconciliation_metadata,
+            metadata=pipeline_metadata,
         )
     except Exception as exc:
         try:
@@ -166,7 +202,7 @@ def _process_and_reconcile(
                 organization_id=organization_id,
                 assurance_public_id=assurance_public_id,
                 metadata={
-                    **reconciliation_metadata,
+                    **pipeline_metadata,
                     "pipeline_error_code": type(exc).__name__,
                 },
             )
