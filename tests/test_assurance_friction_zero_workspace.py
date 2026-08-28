@@ -53,12 +53,21 @@ def test_workspace_supports_document_and_batch_bulk_approval():
 def test_workspace_reports_created_updated_and_immediate_discrepancy_outcome():
     html = TEMPLATE.read_text(encoding="utf-8")
     assert "Registros creados" in html
-    assert "Registros actualizados" in html
+    assert "Registros actualizados automáticamente" in html
     assert "Discrepancias abiertas" in html
     assert "Discrepancias detectadas inmediatamente" in html
     assert "reconciliation_created_count" in html
     assert "reconciliation_refreshed_count" in html
-    assert "review.issues" in html
+    assert "reconciliation.auto_resolved_count" in html
+    assert "rebuildDiscrepancies()" in html
+
+
+def test_human_approved_values_are_reused_without_being_counted_as_automatic_extraction():
+    html = TEMPLATE.read_text(encoding="utf-8")
+    assert ".filter((field) => !field.needs_review && field.field_name === fieldName)" in html
+    assert ".filter((field) => !field.needs_review && field.field_name === 'valid_until')" in html
+    assert "updatedRecords += Number(payload.approved_count" not in html
+    assert "reconciliation.enabled && !reconciliation.completed" in html
 
 
 def test_workspace_waits_for_full_pipeline_then_runs_preflight_automatically():
