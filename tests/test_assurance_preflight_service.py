@@ -17,11 +17,16 @@ from litoral_trace.assurance.preflight import (
 )
 from litoral_trace.assurance.preflight_service import AssurancePreflightService
 from litoral_trace.assurance.reconciliation import ReconciliationFinding
-from litoral_trace.db.models import ReconciliationIssue
+from litoral_trace.db.models import AssuranceDocument, DocumentEntityLink, ReconciliationIssue
 
 
 def _factory():
     engine = create_engine("sqlite+pysqlite:///:memory:")
+    # Preflight now inspects operation-linked Assurance documents before declaring READY.
+    # Keep the unit fixture faithful to that minimum schema instead of teaching the
+    # production service to ignore missing tables.
+    AssuranceDocument.__table__.create(engine, checkfirst=True)
+    DocumentEntityLink.__table__.create(engine, checkfirst=True)
     ReconciliationIssue.__table__.create(engine, checkfirst=True)
     return sessionmaker(bind=engine, expire_on_commit=False)
 
