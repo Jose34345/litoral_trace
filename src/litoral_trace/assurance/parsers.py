@@ -2,7 +2,8 @@
 
 The parser layer extracts what is actually present in the supplied file and
 records source locations. It does not invent missing business facts. OCR is
-explicitly signalled only when a PDF lacks useful digital text.
+attempted only when a PDF lacks useful digital text; failure remains fail-closed
+and is surfaced as ``ocr_required`` for human review.
 """
 from __future__ import annotations
 
@@ -50,6 +51,10 @@ class ParsedDocument:
 _OLE_XLS_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 _MIN_USEFUL_PDF_TEXT_CHARS = 12
 _MIN_USEFUL_PDF_ALPHA_CHARS = 4
+_OCR_MAX_PAGES = 20
+_OCR_RENDER_SCALE = 2.0
+_OCR_TIMEOUT_SECONDS = 20
+_OCR_LANGUAGE = "spa+eng"
 _TOTAL_MARKERS = frozenset(
     {
         "total",
@@ -291,6 +296,78 @@ def _has_useful_pdf_text(text: str) -> bool:
     )
 
 
+def _safe_close(resource: object | None) -> None:
+    close = getattr(resource, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
+
+
+def _ocr_scanned_pdf(content: bytes, *, page_count: int) -> tuple[str, dict[str, Any]]:
+    metadata: dict[str, Any] = {
+        "ocr_attempted": True,
+        "ocr_applied": False,
+        "ocr_engine": "tesseract",
+        "ocr_language": _OCR_LANGUAGE,
+        "ocr_pages_processed": 0,
+    }
+    if page_count <= 0:
+        metadata["ocr_error_code"] = "OCR_NO_PAGES"
+        return "", metadata
+    if page_count > _OCR_MAX_PAGES:
+        metadata["ocr_error_code"] = "OCR_PAGE_LIMIT_EXCEEDED"
+        metadata["ocr_page_limit"] = _OCR_MAX_PAGES
+        return "", metadata
+
+    try:
+        import pypdfium2 as pdfium
+        import pytesseract
+    except Exception:
+        metadata["ocr_error_code"] = "OCR_DEPENDENCY_UNAVAILABLE"
+        return "", metadata
+
+    document = None
+    page_texts: list[str] = []
+    try:
+        document = pdfium.PdfDocument(content)
+        for page_index in range(page_count):
+            page = document[page_index]
+            bitmap = None
+            image = None
+            try:
+                bitmap = page.render(scale=_OCR_RENDER_SCALE)
+                image = bitmap.to_pil().convert("L")
+                extracted = pytesseract.image_to_string(
+                    image,
+                    lang=_OCR_LANGUAGE,
+                    config="--psm 6",
+                    timeout=_OCR_TIMEOUT_SECONDS,
+                )
+                page_texts.append((extracted or "").strip())
+                metadata["ocr_pages_processed"] = page_index + 1
+            finally:
+                _safe_close(image)
+                _safe_close(bitmap)
+                _safe_close(page)
+    except Exception as exc:
+        metadata["ocr_error_code"] = "OCR_EXECUTION_FAILED"
+        metadata["ocr_error_type"] = type(exc).__name__
+        return "", metadata
+    finally:
+        _safe_close(document)
+
+    text = "\n\n".join(value for value in page_texts if value).strip()
+    if not _has_useful_pdf_text(text):
+        metadata["ocr_error_code"] = "OCR_NO_USEFUL_TEXT"
+        return "", metadata
+
+    metadata["ocr_applied"] = True
+    metadata["ocr_pages_with_text"] = sum(bool(value) for value in page_texts)
+    return text, metadata
+
+
 def parse_pdf(content: bytes) -> ParsedDocument:
     if not content.startswith(b"%PDF-"):
         raise DocumentParseError("El archivo no corresponde a un PDF valido.")
@@ -316,6 +393,15 @@ def parse_pdf(content: bytes) -> ParsedDocument:
 
     useful_text = "\n\n".join(text for text in page_texts if text).strip()
     ocr_required = not _has_useful_pdf_text(useful_text)
+    ocr_metadata: dict[str, Any] = {
+        "ocr_attempted": False,
+        "ocr_applied": False,
+    }
+    if ocr_required:
+        ocr_text, ocr_metadata = _ocr_scanned_pdf(content, page_count=len(reader.pages))
+        if _has_useful_pdf_text(ocr_text):
+            useful_text = ocr_text
+            ocr_required = False
 
     tables: list[ParsedTable] = []
     if not ocr_required:
@@ -348,17 +434,19 @@ def parse_pdf(content: bytes) -> ParsedDocument:
                             )
                         )
         except Exception:
-            # Table extraction is best-effort; digital text remains authoritative.
+            # Table extraction is best-effort; extracted/OCR text remains authoritative.
             tables = []
 
+    metadata = {
+        "page_count": len(reader.pages),
+        "pages_with_text": sum(bool(text) for text in page_texts),
+    }
+    metadata.update(ocr_metadata)
     return ParsedDocument(
         file_kind="PDF",
         text=useful_text,
         tables=tuple(tables),
-        metadata={
-            "page_count": len(reader.pages),
-            "pages_with_text": sum(bool(text) for text in page_texts),
-        },
+        metadata=metadata,
         ocr_required=ocr_required,
     )
 
