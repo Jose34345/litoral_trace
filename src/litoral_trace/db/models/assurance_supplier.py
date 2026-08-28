@@ -1,6 +1,6 @@
 """Minimal supplier identity learned from Assurance documents.
 
-This is intentionally not an ERP supplier master.  It exists only so high-
+This is intentionally not an ERP supplier master. It exists only so high-
 confidence documentary identity can be reused and linked across operational
 files without asking the user to re-enter the same supplier.
 """
@@ -26,6 +26,8 @@ from litoral_trace.db.base import Base
 
 
 class AssuranceSupplier(Base):
+    """Tenant-scoped supplier identity inferred from deterministic evidence only."""
+
     __tablename__ = "assurance_suppliers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -50,7 +52,9 @@ class AssuranceSupplier(Base):
             ["source_assurance_document_id", "organization_id"],
             ["assurance_documents.id", "assurance_documents.organization_id"],
             name="fk_assurance_suppliers_source_document_tenant",
-            ondelete="SET NULL",
+            # The provenance document is part of the audit chain. RESTRICT avoids
+            # a composite SET NULL attempting to null the non-null tenant column.
+            ondelete="RESTRICT",
         ),
         CheckConstraint("length(cuit) = 11", name="ck_assurance_suppliers_cuit_length"),
         CheckConstraint(
