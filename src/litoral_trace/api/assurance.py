@@ -18,6 +18,7 @@ from litoral_trace.api.assurance_exceptions import (
     assign_assurance_exception,
     resolve_assurance_exception,
 )
+from litoral_trace.api.assurance_metrics import assurance_metrics
 from litoral_trace.api.assurance_preflight import (
     assurance_preflight,
     assurance_preflight_reason_catalog,
@@ -297,6 +298,12 @@ def build_assurance_router() -> APIRouter:
         "/exceptions/{exception_id}/resolve",
         resolve_assurance_exception,
         methods=["POST"],
+        status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
+        "/metrics",
+        assurance_metrics,
+        methods=["GET"],
         status_code=status.HTTP_200_OK,
     )
     api_router.add_api_route(
