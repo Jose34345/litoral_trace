@@ -1,9 +1,10 @@
 """Persistence bridge for Assurance deterministic reconciliation.
 
-This service turns already accepted extraction output into operation snapshots,
-runs deterministic reconciliation and upserts tenant-scoped issues. Only fields
-that passed automatic acceptance are eligible for automatic reconciliation; data
-still marked for human review cannot silently create blocking conclusions.
+This service turns trusted extraction output into operation snapshots, runs
+deterministic reconciliation and upserts tenant-scoped issues. A field is
+trusted when it was auto-accepted or when a human explicitly completed its
+review. Data still marked for human review cannot silently create blocking
+conclusions.
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from decimal import Decimal
 from typing import Callable, Iterable
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from litoral_trace.assurance.domain import ReconciliationIssueStatus
@@ -129,7 +130,10 @@ def _accepted_fields_by_document(
         .where(
             ExtractedDocumentField.organization_id == organization_id,
             ExtractedDocumentField.extraction_run_id.in_(tuple(latest_runs.values())),
-            ExtractedDocumentField.auto_accepted.is_(True),
+            or_(
+                ExtractedDocumentField.auto_accepted.is_(True),
+                ExtractedDocumentField.needs_review.is_(False),
+            ),
         )
         .order_by(ExtractedDocumentField.id.asc())
     ).all()
