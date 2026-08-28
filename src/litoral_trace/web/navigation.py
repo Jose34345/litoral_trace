@@ -53,6 +53,14 @@ _NAVIGATION = (
         active_prefixes=("/operations",),
     ),
     NavigationItem(
+        key="assurance_workspace",
+        label="Agregar documentos",
+        href="/api/v1/assurance/workspace",
+        section="operacion",
+        permission=Permission.VAULT_UPLOAD,
+        active_prefixes=("/api/v1/assurance/workspace",),
+    ),
+    NavigationItem(
         key="attention",
         label="Requiere atención",
         href="/api/v1/assurance/attention",
@@ -142,16 +150,14 @@ def build_navigation(
         if not has_permission(user, item.permission):
             continue
 
-        # Pilot readiness is an onboarding workspace for the tenant roles that
-        # actually operate the pilot. Superadmin remains a platform control-
-        # plane role, while auditor/cliente retain read-only direct-route/API
-        # access through LOTE_READ without adding onboarding clutter to their
-        # sidebar.
         if item.key == "pilot_readiness" and role not in {"admin", "manager"}:
             continue
 
-        # Assurance is rolled out explicitly. Keep production navigation
-        # unchanged while the feature is disabled, even for operational roles.
+        if item.key == "assurance_workspace" and not (
+            assurance_flags.assurance_v1 and assurance_flags.document_intelligence
+        ):
+            continue
+
         if item.key == "attention" and not (
             assurance_flags.assurance_v1 and assurance_flags.operational_exceptions
         ):
