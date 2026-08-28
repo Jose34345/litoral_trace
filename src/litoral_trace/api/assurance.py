@@ -22,6 +22,10 @@ from litoral_trace.api.assurance_preflight import (
     assurance_preflight,
     assurance_preflight_reason_catalog,
 )
+from litoral_trace.api.assurance_review import (
+    approve_assurance_review_fields,
+    assurance_document_review,
+)
 from litoral_trace.api.auth import UserTenantContext
 from litoral_trace.assurance.domain import DocumentProcessingStatus
 from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
@@ -42,6 +46,7 @@ from litoral_trace.assurance.reconciliation_service import AssuranceReconciliati
 from litoral_trace.auth.rbac import Permission, require_permission
 from litoral_trace.config import get_settings
 from litoral_trace.web.assurance_attention import render_assurance_attention
+from litoral_trace.web.assurance_workspace import render_assurance_workspace
 
 
 _MAX_FILES_PER_REQUEST = 20
@@ -253,6 +258,18 @@ def build_assurance_router() -> APIRouter:
         status_code=status.HTTP_200_OK,
     )
     api_router.add_api_route(
+        "/documents/{assurance_document_id}/review",
+        assurance_document_review,
+        methods=["GET"],
+        status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
+        "/documents/{assurance_document_id}/review/approve",
+        approve_assurance_review_fields,
+        methods=["POST"],
+        status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
         "/preflight",
         assurance_preflight,
         methods=["POST"],
@@ -281,6 +298,12 @@ def build_assurance_router() -> APIRouter:
         resolve_assurance_exception,
         methods=["POST"],
         status_code=status.HTTP_200_OK,
+    )
+    api_router.add_api_route(
+        "/workspace",
+        render_assurance_workspace,
+        methods=["GET"],
+        include_in_schema=False,
     )
     api_router.add_api_route(
         "/attention",
