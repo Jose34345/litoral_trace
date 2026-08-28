@@ -4,6 +4,7 @@ from pathlib import Path
 MIGRATION = Path("alembic/versions/030_add_assurance_document_intelligence.py")
 RECONCILIATION_MIGRATION = Path("alembic/versions/031_add_assurance_reconciliation.py")
 EXCEPTIONS_MIGRATION = Path("alembic/versions/032_add_assurance_operational_exceptions.py")
+SUPPLIERS_MIGRATION = Path("alembic/versions/033_add_assurance_suppliers.py")
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -51,6 +52,20 @@ def test_operational_exceptions_migration_is_chained_and_tenant_hardened():
     assert "REVOKE ALL PRIVILEGES" in text
 
 
+def test_assurance_suppliers_migration_is_chained_and_tenant_hardened():
+    text = SUPPLIERS_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision: str = "033_assurance_suppliers"' in text
+    assert '"032_assurance_operational_exceptions"' in text
+    assert "assurance_suppliers" in text
+    assert "fk_assurance_suppliers_source_document_tenant" in text
+    assert 'ondelete="RESTRICT"' in text
+    assert "ENABLE ROW LEVEL SECURITY" in text
+    assert "FORCE ROW LEVEL SECURITY" in text
+    assert "app.current_organization_id" in text
+    assert "GRANT SELECT, INSERT, UPDATE" in text
+    assert "REVOKE ALL PRIVILEGES" in text
+
+
 def test_ci_canonical_head_tracks_latest_assurance_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "032_assurance_operational_exceptions (head)" in text
+    assert "033_assurance_suppliers (head)" in text
