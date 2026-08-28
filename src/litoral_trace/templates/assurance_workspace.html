@@ -60,7 +60,7 @@
             </div>
             <div class="rounded-xl border border-slate-200 bg-white p-4">
                 <p id="assurance-updated-count" class="text-xl font-bold text-slate-950">0</p>
-                <p class="text-xs text-slate-500">Registros actualizados</p>
+                <p class="text-xs text-slate-500">Registros actualizados automáticamente</p>
             </div>
             <div class="rounded-xl border border-slate-200 bg-white p-4">
                 <p id="assurance-discrepancy-count" class="text-xl font-bold text-slate-950">0</p>
@@ -325,8 +325,11 @@
         area.appendChild(details);
     }
 
-    function registerDiscrepancies(review) {
-        (review.issues || []).forEach((issue) => discrepancyCache.set(issue.public_id, issue));
+    function rebuildDiscrepancies() {
+        discrepancyCache.clear();
+        reviewCache.forEach((review) => {
+            (review.issues || []).forEach((issue) => discrepancyCache.set(issue.public_id, issue));
+        });
         renderDiscrepancies();
     }
 
@@ -379,10 +382,17 @@
         if (!approval.ok) {
             throw new Error(payload?.detail?.message || 'No se pudieron aprobar los campos.');
         }
-        updatedRecords += Number(payload.approved_count || 0);
+        const reconciliation = payload.reconciliation || {};
+        createdRecords += Number(reconciliation.created_count || 0);
+        updatedRecords += Number(reconciliation.refreshed_count || 0);
+        updatedRecords += Number(reconciliation.reopened_count || 0);
+        updatedRecords += Number(reconciliation.auto_resolved_count || 0);
         updateOutcome();
         const card = results.querySelector(`[data-document-id="${CSS.escape(documentId)}"]`);
         if (card) await loadReview(card, documentId);
+        if (reconciliation.enabled && !reconciliation.completed) {
+            showError('La aprobación quedó guardada, pero la conciliación automática no pudo actualizarse. Volvé a intentar antes de liberar la operación.');
+        }
         if (terminalDocuments === totalDocuments) await runAutomaticPreflight();
         return payload;
     }
@@ -394,7 +404,7 @@
         if (!response.ok) return null;
         const review = await response.json();
         reviewCache.set(documentId, review);
-        registerDiscrepancies(review);
+        rebuildDiscrepancies();
         const body = card.querySelector('.assurance-body');
         if (!body) return review;
 
@@ -503,7 +513,7 @@
         const values = new Set();
         reviewCache.forEach((review) => {
             (review.fields || [])
-                .filter((field) => field.auto_accepted && field.field_name === fieldName)
+                .filter((field) => !field.needs_review && field.field_name === fieldName)
                 .forEach((field) => {
                     const value = field.normalized_value ?? field.original_value;
                     if (value !== null && value !== undefined && String(value).trim()) values.add(String(value).trim());
@@ -531,7 +541,7 @@
         const documents = [];
         reviewCache.forEach((review) => {
             const validUntilValues = (review.fields || [])
-                .filter((field) => field.auto_accepted && field.field_name === 'valid_until')
+                .filter((field) => !field.needs_review && field.field_name === 'valid_until')
                 .map((field) => field.normalized_value ?? field.original_value)
                 .filter(Boolean);
             documents.push({
