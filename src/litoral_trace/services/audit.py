@@ -46,6 +46,8 @@ class AuditAction(StrEnum):
     VAULT_DOWNLOAD = "vault.download"
     VAULT_DELETE = "vault.delete"
     VAULT_INTEGRITY_FAILURE = "vault.integrity_failure"
+    ASSURANCE_EXTRACTION_AUTO_ACCEPT = "assurance.extraction.auto_accept"
+    ASSURANCE_REVIEW_APPROVE = "assurance.review.approve"
     SETTINGS_INVITE_DEMO = "settings.invite_demo_user"
     PLATFORM_ORGANIZATION_CREATE = "platform.organization.create"
     PLATFORM_ORGANIZATION_STATUS_CHANGE = "platform.organization.status_change"
