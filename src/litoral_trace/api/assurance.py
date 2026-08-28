@@ -39,6 +39,7 @@ from litoral_trace.assurance.ingestion import (
 from litoral_trace.assurance.operational_exceptions import (
     AssuranceOperationalExceptionService,
 )
+from litoral_trace.assurance.pipeline import mark_pipeline_completed
 from litoral_trace.assurance.processing import (
     AssuranceProcessingError,
     AssuranceProcessingService,
@@ -102,30 +103,72 @@ def _process_and_reconcile(
     assurance_public_id,
     force_reprocess: bool = False,
 ) -> str:
-    """Process, reconcile and refresh actionable exceptions after extraction."""
+    """Process, reconcile and publish one final pipeline outcome for the workspace."""
     processing_status = AssuranceProcessingService().process(
         organization_id=organization_id,
         assurance_public_id=assurance_public_id,
         force_reprocess=force_reprocess,
     )
+    if processing_status == DocumentProcessingStatus.FAILED.value:
+        return processing_status
+
     flags = get_assurance_feature_flags()
-    if (
-        flags.assurance_v1
-        and flags.reconciliation
-        and processing_status
-        in {
-            DocumentProcessingStatus.EXTRACTED.value,
-            DocumentProcessingStatus.NEEDS_REVIEW.value,
-        }
-    ):
-        AssuranceReconciliationService().reconcile_document(
+    reconciliation_metadata: dict[str, object] = {
+        "reconciliation_enabled": bool(flags.assurance_v1 and flags.reconciliation),
+        "reconciliation_operation_count": 0,
+        "reconciliation_finding_count": 0,
+        "reconciliation_created_count": 0,
+        "reconciliation_refreshed_count": 0,
+        "reconciliation_reopened_count": 0,
+        "reconciliation_auto_resolved_count": 0,
+    }
+    try:
+        if (
+            flags.assurance_v1
+            and flags.reconciliation
+            and processing_status
+            in {
+                DocumentProcessingStatus.EXTRACTED.value,
+                DocumentProcessingStatus.NEEDS_REVIEW.value,
+            }
+        ):
+            reconciliation = AssuranceReconciliationService().reconcile_document(
+                organization_id=organization_id,
+                assurance_public_id=assurance_public_id,
+            )
+            reconciliation_metadata.update(
+                {
+                    "reconciliation_operation_count": reconciliation.operation_count,
+                    "reconciliation_finding_count": reconciliation.finding_count,
+                    "reconciliation_created_count": reconciliation.created_count,
+                    "reconciliation_refreshed_count": reconciliation.refreshed_count,
+                    "reconciliation_reopened_count": reconciliation.reopened_count,
+                    "reconciliation_auto_resolved_count": reconciliation.auto_resolved_count,
+                }
+            )
+            if flags.operational_exceptions:
+                AssuranceOperationalExceptionService().sync_reconciliation(
+                    organization_id=organization_id
+                )
+        mark_pipeline_completed(
             organization_id=organization_id,
             assurance_public_id=assurance_public_id,
+            metadata=reconciliation_metadata,
         )
-        if flags.operational_exceptions:
-            AssuranceOperationalExceptionService().sync_reconciliation(
-                organization_id=organization_id
+    except Exception as exc:
+        # Do not leave the UI polling forever if the post-extraction pipeline fails.
+        try:
+            mark_pipeline_completed(
+                organization_id=organization_id,
+                assurance_public_id=assurance_public_id,
+                metadata={
+                    **reconciliation_metadata,
+                    "pipeline_error_code": type(exc).__name__,
+                },
             )
+        except Exception:
+            pass
+        raise
     return processing_status
 
 
