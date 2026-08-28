@@ -469,7 +469,8 @@ class AssuranceProcessingService:
                 assurance_document=assurance_document,
                 candidates=structured_candidates,
             )
-            metadata = dict(parsed.metadata)
+            metadata = dict(run.extraction_metadata or {})
+            metadata.update(parsed.metadata)
             metadata.update(
                 {
                     "file_kind": parsed.file_kind,
