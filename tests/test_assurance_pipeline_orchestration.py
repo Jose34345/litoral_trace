@@ -9,8 +9,13 @@ from litoral_trace.assurance.domain import DocumentProcessingStatus
 
 
 def _flags(*, reconciliation: bool = True):
+    # These orchestration regressions isolate the historical process→reconcile
+    # contract. Supplier resolution has its own service/E2E acceptance tests, so
+    # keep Document Intelligence explicitly disabled here instead of relying on
+    # an incomplete feature-flag mock.
     return SimpleNamespace(
         assurance_v1=True,
+        document_intelligence=False,
         reconciliation=reconciliation,
         operational_exceptions=False,
     )
