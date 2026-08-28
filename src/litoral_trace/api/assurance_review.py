@@ -30,6 +30,15 @@ class AssuranceReviewApproveRequest(BaseModel):
     field_ids: list[int] = Field(min_length=1, max_length=200)
 
 
+class AssuranceReviewCorrectionItem(BaseModel):
+    field_id: int = Field(gt=0)
+    value: str = Field(min_length=1, max_length=4096)
+
+
+class AssuranceReviewCorrectRequest(BaseModel):
+    corrections: list[AssuranceReviewCorrectionItem] = Field(min_length=1, max_length=200)
+
+
 def _require_review_enabled() -> None:
     flags = get_assurance_feature_flags()
     if not flags.assurance_v1 or not flags.document_intelligence:
@@ -95,6 +104,49 @@ def _serialize_view(view) -> dict[str, object]:
     }
 
 
+def _refresh_downstream(*, organization_id: int, assurance_document_id: str) -> dict[str, object]:
+    flags = get_assurance_feature_flags()
+    payload: dict[str, object] = {
+        "enabled": bool(flags.assurance_v1 and flags.reconciliation),
+        "completed": False,
+        "operation_count": 0,
+        "finding_count": 0,
+        "created_count": 0,
+        "refreshed_count": 0,
+        "reopened_count": 0,
+        "auto_resolved_count": 0,
+        "error_code": None,
+    }
+    if not (flags.assurance_v1 and flags.reconciliation):
+        return payload
+
+    try:
+        reconciliation = AssuranceReconciliationService().reconcile_document(
+            organization_id=organization_id,
+            assurance_public_id=assurance_document_id,
+        )
+        payload.update(
+            {
+                "completed": True,
+                "operation_count": reconciliation.operation_count,
+                "finding_count": reconciliation.finding_count,
+                "created_count": reconciliation.created_count,
+                "refreshed_count": reconciliation.refreshed_count,
+                "reopened_count": reconciliation.reopened_count,
+                "auto_resolved_count": reconciliation.auto_resolved_count,
+            }
+        )
+        if flags.operational_exceptions:
+            AssuranceOperationalExceptionService().sync_reconciliation(
+                organization_id=organization_id
+            )
+    except (AssuranceReconciliationError, AssuranceOperationalExceptionError) as exc:
+        # Human review is already committed. Expose stale downstream state rather
+        # than pretending the human action itself failed.
+        payload["error_code"] = type(exc).__name__
+    return payload
+
+
 async def assurance_document_review(
     assurance_document_id: str,
     user: UserTenantContext = Depends(require_permission(Permission.VAULT_READ)),
@@ -141,49 +193,69 @@ async def approve_assurance_review_fields(
             detail={"code": "ASSURANCE_REVIEW_CONFLICT", "message": str(exc)},
         ) from None
 
-    flags = get_assurance_feature_flags()
-    reconciliation_payload: dict[str, object] = {
-        "enabled": bool(flags.assurance_v1 and flags.reconciliation),
-        "completed": False,
-        "operation_count": 0,
-        "finding_count": 0,
-        "created_count": 0,
-        "refreshed_count": 0,
-        "reopened_count": 0,
-        "auto_resolved_count": 0,
-        "error_code": None,
-    }
-    if flags.assurance_v1 and flags.reconciliation:
-        try:
-            reconciliation = AssuranceReconciliationService().reconcile_document(
-                organization_id=user.organization_id,
-                assurance_public_id=assurance_document_id,
-            )
-            reconciliation_payload.update(
-                {
-                    "completed": True,
-                    "operation_count": reconciliation.operation_count,
-                    "finding_count": reconciliation.finding_count,
-                    "created_count": reconciliation.created_count,
-                    "refreshed_count": reconciliation.refreshed_count,
-                    "reopened_count": reconciliation.reopened_count,
-                    "auto_resolved_count": reconciliation.auto_resolved_count,
-                }
-            )
-            if flags.operational_exceptions:
-                AssuranceOperationalExceptionService().sync_reconciliation(
-                    organization_id=user.organization_id
-                )
-        except (AssuranceReconciliationError, AssuranceOperationalExceptionError) as exc:
-            # The review transaction is already committed. Report the stale
-            # downstream state explicitly instead of pretending the approval failed.
-            reconciliation_payload["error_code"] = type(exc).__name__
-
+    reconciliation_payload = _refresh_downstream(
+        organization_id=user.organization_id,
+        assurance_document_id=assurance_document_id,
+    )
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={
             "assurance_document_id": assurance_document_id,
             "approved_count": result.approved_count,
+            "remaining_review_count": result.remaining_review_count,
+            "processing_status": result.processing_status,
+            "reconciliation": reconciliation_payload,
+        },
+    )
+
+
+async def correct_assurance_review_fields(
+    assurance_document_id: str,
+    payload: AssuranceReviewCorrectRequest,
+    request: Request,
+    user: UserTenantContext = Depends(
+        require_permission(Permission.TRACEABILITY_OPERATE)
+    ),
+) -> JSONResponse:
+    """Correct extracted values explicitly and keep their human provenance."""
+    _require_review_enabled()
+    corrections = {item.field_id: item.value for item in payload.corrections}
+    if len(corrections) != len(payload.corrections):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": "ASSURANCE_REVIEW_DUPLICATE_FIELD",
+                "message": "Cada field_id puede corregirse una sola vez por solicitud.",
+            },
+        )
+    try:
+        result = AssuranceDocumentReviewService().correct_fields(
+            organization_id=user.organization_id,
+            assurance_public_id=assurance_document_id,
+            corrections=corrections,
+            actor=build_audit_actor_from_user(user),
+            request_context=build_request_audit_context(request),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "ASSURANCE_REVIEW_CORRECTION_INVALID", "message": str(exc)},
+        ) from None
+    except AssuranceDocumentReviewError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "ASSURANCE_REVIEW_CORRECTION_CONFLICT", "message": str(exc)},
+        ) from None
+
+    reconciliation_payload = _refresh_downstream(
+        organization_id=user.organization_id,
+        assurance_document_id=assurance_document_id,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "assurance_document_id": assurance_document_id,
+            "corrected_count": result.corrected_count,
             "remaining_review_count": result.remaining_review_count,
             "processing_status": result.processing_status,
             "reconciliation": reconciliation_payload,
