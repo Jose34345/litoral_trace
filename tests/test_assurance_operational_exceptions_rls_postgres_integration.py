@@ -34,6 +34,31 @@ def _tenant(conn, organization_id: int) -> None:
     )
 
 
+def _create_tenant_org(conn, *, label: str, suffix: str) -> int:
+    org_id = int(
+        conn.execute(
+            text("SELECT nextval(pg_get_serial_sequence('public.organizations', 'id'))")
+        ).scalar_one()
+    )
+    _tenant(conn, org_id)
+    conn.execute(
+        text("""
+            INSERT INTO organizations (
+                id, name, slug, tax_id, tier, description, is_active
+            ) VALUES (
+                :id, :name, :slug, :tax_id, 'pro', 'Operational exception RLS acceptance', true
+            )
+        """),
+        {
+            "id": org_id,
+            "name": f"Operational RLS {label.upper()} {suffix}",
+            "slug": f"operational-rls-{label}-{suffix}",
+            "tax_id": f"32-{7 if label == 'a' else 8}{suffix[:8]}",
+        },
+    )
+    return org_id
+
+
 @pytest.fixture(scope="module")
 def fixture():
     suffix = uuid4().hex[:10]
@@ -42,20 +67,8 @@ def fixture():
     values: dict[str, int] = {}
     with owner.begin() as conn:
         for label in ("a", "b"):
-            org_id = conn.execute(
-                text("""
-                    INSERT INTO organizations (name, slug, tax_id, tier, description, is_active)
-                    VALUES (:name, :slug, :tax_id, 'pro', 'Operational exception RLS acceptance', true)
-                    RETURNING id
-                """),
-                {
-                    "name": f"Operational RLS {label.upper()} {suffix}",
-                    "slug": f"operational-rls-{label}-{suffix}",
-                    "tax_id": f"32-{7 if label == 'a' else 8}{suffix[:8]}",
-                },
-            ).scalar_one()
+            org_id = _create_tenant_org(conn, label=label, suffix=suffix)
             values[f"org_{label}"] = org_id
-            _tenant(conn, org_id)
             row_id = conn.execute(
                 text("""
                     INSERT INTO operational_exceptions (
