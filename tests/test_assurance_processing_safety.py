@@ -16,9 +16,11 @@ from litoral_trace.assurance.parsers import DocumentParseError
 from litoral_trace.assurance.processing import AssuranceProcessingService
 from litoral_trace.db.models import (
     AssuranceDocument,
+    AuditLog,
     DocumentExtractionRun,
     VaultDocument,
 )
+from litoral_trace.services.audit import AuditAction
 
 
 def factory():
@@ -26,6 +28,7 @@ def factory():
     VaultDocument.__table__.create(engine, checkfirst=True)
     AssuranceDocument.__table__.create(engine, checkfirst=True)
     DocumentExtractionRun.__table__.create(engine, checkfirst=True)
+    AuditLog.__table__.create(engine, checkfirst=True)
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 
@@ -132,6 +135,7 @@ def test_new_extractor_version_can_force_reprocess_without_duplicate_silent_run(
     ) == DocumentProcessingStatus.EXTRACTED.value
     session: Session = f()
     assert session.scalars(select(DocumentExtractionRun)).all() == []
+    assert session.scalars(select(AuditLog)).all() == []
     session.close()
 
     # A deliberate reprocess creates a new reproducible run with the new version.
@@ -142,14 +146,30 @@ def test_new_extractor_version_can_force_reprocess_without_duplicate_silent_run(
     ) == DocumentProcessingStatus.EXTRACTED.value
     session = f()
     runs = session.scalars(select(DocumentExtractionRun)).all()
+    audits = session.scalars(select(AuditLog)).all()
     assert len(runs) == 1
     assert runs[0].engine_version == "9.9.9"
     assert runs[0].status == ExtractionRunStatus.SUCCEEDED.value
     assert runs[0].extraction_metadata["force_reprocess"] is True
+
+    assert len(audits) == 1
+    audit = audits[0]
+    assert audit.organization_id == 42
+    assert audit.user_id is None
+    assert audit.username == "system"
+    assert audit.action == AuditAction.ASSURANCE_EXTRACTION_COMPLETE.value
+    assert audit.before_data == {"processing_status": DocumentProcessingStatus.PROCESSING.value}
+    assert audit.after_data["outcome"] == "success"
+    assert audit.after_data["actor_role"] == "system"
+    assert audit.after_data["metadata"]["engine_version"] == "9.9.9"
+    assert audit.after_data["metadata"]["force_reprocess"] is True
+    assert audit.after_data["state_after"]["processing_status"] == DocumentProcessingStatus.EXTRACTED.value
+    # Audit contains provenance and counts, never extracted document content.
+    assert "factura valida" not in str(audit.after_data)
     session.close()
 
 
-def test_parse_failure_is_terminal_failed_and_never_extracted(monkeypatch):
+def test_parse_failure_is_terminal_failed_never_ready_and_is_safely_audited(monkeypatch):
     f = factory()
     public_id = seed(f, status=DocumentProcessingStatus.UPLOADED.value)
     monkeypatch.setattr(
@@ -178,9 +198,20 @@ def test_parse_failure_is_terminal_failed_and_never_extracted(monkeypatch):
         .where(DocumentExtractionRun.assurance_document_id == document.id)
         .order_by(DocumentExtractionRun.id.desc())
     )
+    audits = session.scalars(select(AuditLog)).all()
     assert document.processing_status == DocumentProcessingStatus.FAILED.value
     assert document.processing_status != DocumentProcessingStatus.EXTRACTED.value
     assert document.last_error_code == "DOCUMENT_PARSE_FAILED"
     assert run.status == ExtractionRunStatus.FAILED.value
     assert run.error_code == "DOCUMENT_PARSE_FAILED"
+
+    assert len(audits) == 1
+    audit = audits[0]
+    assert audit.action == AuditAction.ASSURANCE_EXTRACTION_FAILED.value
+    assert audit.after_data["outcome"] == "failure"
+    assert audit.after_data["metadata"]["error_code"] == "DOCUMENT_PARSE_FAILED"
+    assert audit.after_data["state_after"]["processing_status"] == DocumentProcessingStatus.FAILED.value
+    # Parser exception detail belongs to processing diagnostics, not the audit envelope.
+    assert "corrupto" not in str(audit.after_data)
+    assert "corrupto" not in str(audit.detail)
     session.close()
