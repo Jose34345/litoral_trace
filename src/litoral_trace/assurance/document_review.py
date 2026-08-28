@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import Callable, Mapping, Sequence
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -12,6 +12,13 @@ from litoral_trace.assurance.domain import (
     DocumentProcessingStatus,
     ExtractionRunStatus,
     ReconciliationIssueStatus,
+)
+from litoral_trace.assurance.normalization import (
+    NormalizationError,
+    normalize_argentine_number,
+    normalize_cuit,
+    normalize_date,
+    normalize_identifier,
 )
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import (
@@ -101,6 +108,69 @@ class ReviewApprovalResult:
     processing_status: str
 
 
+@dataclass(frozen=True, slots=True)
+class ReviewCorrectionResult:
+    corrected_count: int
+    remaining_review_count: int
+    processing_status: str
+
+
+def _normalized_human_value(row: ExtractedDocumentField, value: object) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError(f"El campo {row.field_name} no puede quedar vacío.")
+
+    field_name = str(row.field_name or "").lower()
+    value_type = str(row.value_type or "text").lower()
+    try:
+        if "cuit" in field_name:
+            return normalize_cuit(raw)
+        if value_type in {"number", "decimal", "quantity"}:
+            return str(normalize_argentine_number(raw))
+        if value_type in {"date", "datetime"} or field_name.endswith("_date"):
+            return normalize_date(raw).isoformat()
+        if value_type in {"identifier", "code"}:
+            return normalize_identifier(raw)
+    except NormalizationError as exc:
+        raise ValueError(f"Valor inválido para {row.field_name}: {exc}") from exc
+    return raw
+
+
+def _remaining_review_count(
+    session: Session,
+    *,
+    organization_id: int,
+    document_id: int,
+    run_id: int,
+) -> int:
+    return len(
+        session.scalars(
+            select(ExtractedDocumentField.id).where(
+                ExtractedDocumentField.organization_id == organization_id,
+                ExtractedDocumentField.assurance_document_id == document_id,
+                ExtractedDocumentField.extraction_run_id == run_id,
+                ExtractedDocumentField.needs_review.is_(True),
+                ~ExtractedDocumentField.field_name.startswith("raw."),
+            )
+        ).all()
+    )
+
+
+def _finalize_review_state(
+    *,
+    document: AssuranceDocument,
+    latest_run: DocumentExtractionRun,
+    remaining_count: int,
+) -> None:
+    if remaining_count != 0:
+        return
+    if document.last_error_code == "EXTRACTED_FIELDS_NEED_REVIEW":
+        document.processing_status = DocumentProcessingStatus.EXTRACTED.value
+        document.last_error_code = None
+        document.last_error_message = None
+        latest_run.status = ExtractionRunStatus.SUCCEEDED.value
+
+
 class AssuranceDocumentReviewService:
     def __init__(self, *, session_factory: SessionFactory | None = None) -> None:
         self._session_factory = session_factory or get_db_session
@@ -140,6 +210,27 @@ class AssuranceDocumentReviewService:
         if vault is None:
             raise AssuranceDocumentReviewError("Documento Vault no encontrado.")
         return document, vault
+
+    @staticmethod
+    def _latest_run(
+        session: Session,
+        *,
+        organization_id: int,
+        document_id: int,
+    ) -> DocumentExtractionRun:
+        latest_run = session.scalar(
+            select(DocumentExtractionRun)
+            .where(
+                DocumentExtractionRun.organization_id == organization_id,
+                DocumentExtractionRun.assurance_document_id == document_id,
+            )
+            .order_by(DocumentExtractionRun.id.desc())
+        )
+        if latest_run is None:
+            raise AssuranceDocumentReviewError(
+                "El documento todavía no tiene una extracción revisable."
+            )
+        return latest_run
 
     def get(
         self,
@@ -294,17 +385,11 @@ class AssuranceDocumentReviewService:
                 organization_id=org_id,
                 public_id=public_id,
             )
-            latest_run = session.scalar(
-                select(DocumentExtractionRun)
-                .where(
-                    DocumentExtractionRun.organization_id == org_id,
-                    DocumentExtractionRun.assurance_document_id == document.id,
-                )
-                .order_by(DocumentExtractionRun.id.desc())
+            latest_run = self._latest_run(
+                session,
+                organization_id=org_id,
+                document_id=document.id,
             )
-            if latest_run is None:
-                raise AssuranceDocumentReviewError("El documento todavía no tiene una extracción revisable.")
-
             rows = list(
                 session.scalars(
                     select(ExtractedDocumentField).where(
@@ -333,37 +418,17 @@ class AssuranceDocumentReviewService:
                 row.auto_accepted = False
                 approved += 1
 
-            remaining = session.scalar(
-                select(ExtractedDocumentField.id)
-                .where(
-                    ExtractedDocumentField.organization_id == org_id,
-                    ExtractedDocumentField.assurance_document_id == document.id,
-                    ExtractedDocumentField.extraction_run_id == latest_run.id,
-                    ExtractedDocumentField.needs_review.is_(True),
-                    ~ExtractedDocumentField.field_name.startswith("raw."),
-                )
-                .limit(1)
+            remaining_count = _remaining_review_count(
+                session,
+                organization_id=org_id,
+                document_id=document.id,
+                run_id=latest_run.id,
             )
-            remaining_count = len(
-                session.scalars(
-                    select(ExtractedDocumentField.id).where(
-                        ExtractedDocumentField.organization_id == org_id,
-                        ExtractedDocumentField.assurance_document_id == document.id,
-                        ExtractedDocumentField.extraction_run_id == latest_run.id,
-                        ExtractedDocumentField.needs_review.is_(True),
-                        ~ExtractedDocumentField.field_name.startswith("raw."),
-                    )
-                ).all()
+            _finalize_review_state(
+                document=document,
+                latest_run=latest_run,
+                remaining_count=remaining_count,
             )
-
-            if (
-                remaining is None
-                and document.last_error_code == "EXTRACTED_FIELDS_NEED_REVIEW"
-            ):
-                document.processing_status = DocumentProcessingStatus.EXTRACTED.value
-                document.last_error_code = None
-                document.last_error_message = None
-                latest_run.status = ExtractionRunStatus.SUCCEEDED.value
 
             record_audit_event(
                 session,
@@ -397,5 +462,132 @@ class AssuranceDocumentReviewService:
         except Exception as exc:
             session.rollback()
             raise AssuranceDocumentReviewError("No se pudieron aprobar los campos seleccionados.") from exc
+        finally:
+            session.close()
+
+    def correct_fields(
+        self,
+        *,
+        organization_id: int,
+        assurance_public_id: UUID | str,
+        corrections: Mapping[int, object],
+        actor: AuditActor,
+        request_context: AuditRequestContext | None = None,
+    ) -> ReviewCorrectionResult:
+        """Persist explicit human corrections while preserving extracted originals."""
+        org_id = int(organization_id)
+        public_id = self._public_id(assurance_public_id)
+        normalized_input = {int(field_id): value for field_id, value in corrections.items()}
+        if not normalized_input:
+            raise ValueError("Debe enviarse al menos una corrección.")
+        if len(normalized_input) > 200:
+            raise ValueError("Se permiten hasta 200 correcciones por solicitud.")
+        if actor.organization_id != org_id:
+            raise ValueError("El actor de auditoría no pertenece al tenant solicitado.")
+
+        session = self._new_session(org_id)
+        try:
+            document, _ = self._load_document(
+                session,
+                organization_id=org_id,
+                public_id=public_id,
+            )
+            latest_run = self._latest_run(
+                session,
+                organization_id=org_id,
+                document_id=document.id,
+            )
+            rows = list(
+                session.scalars(
+                    select(ExtractedDocumentField).where(
+                        ExtractedDocumentField.organization_id == org_id,
+                        ExtractedDocumentField.assurance_document_id == document.id,
+                        ExtractedDocumentField.extraction_run_id == latest_run.id,
+                        ExtractedDocumentField.id.in_(tuple(normalized_input)),
+                        ~ExtractedDocumentField.field_name.startswith("raw."),
+                    )
+                ).all()
+            )
+            if {row.id for row in rows} != set(normalized_input):
+                raise AssuranceDocumentReviewError(
+                    "Uno o más campos no pertenecen a la última extracción del documento."
+                )
+
+            before_fields: list[dict[str, object]] = []
+            after_fields: list[dict[str, object]] = []
+            corrected = 0
+            for row in rows:
+                previous = row.normalized_value if row.normalized_value is not None else row.original_value
+                corrected_value = _normalized_human_value(row, normalized_input[row.id])
+                before_fields.append(
+                    {
+                        "field_id": row.id,
+                        "field_name": row.field_name,
+                        "effective_value": previous,
+                        "needs_review": bool(row.needs_review),
+                        "auto_accepted": bool(row.auto_accepted),
+                    }
+                )
+                if str(previous or "") != corrected_value:
+                    corrected += 1
+                row.normalized_value = corrected_value
+                row.needs_review = False
+                # A human-corrected field is trusted for downstream deterministic
+                # rules, but its provenance must never be mislabeled as automatic.
+                row.auto_accepted = False
+                after_fields.append(
+                    {
+                        "field_id": row.id,
+                        "field_name": row.field_name,
+                        "effective_value": corrected_value,
+                        "needs_review": False,
+                        "auto_accepted": False,
+                    }
+                )
+
+            remaining_count = _remaining_review_count(
+                session,
+                organization_id=org_id,
+                document_id=document.id,
+                run_id=latest_run.id,
+            )
+            _finalize_review_state(
+                document=document,
+                latest_run=latest_run,
+                remaining_count=remaining_count,
+            )
+            record_audit_event(
+                session,
+                actor=actor,
+                action=AuditAction.ASSURANCE_REVIEW_CORRECT,
+                entity_type="assurance_document",
+                entity_id=document.id,
+                outcome=AuditOutcome.SUCCESS,
+                request_context=request_context,
+                metadata={
+                    "assurance_document_id": str(document.public_id),
+                    "corrected_count": corrected,
+                    "submitted_field_count": len(rows),
+                    "remaining_review_count": remaining_count,
+                },
+                before_data={"fields": before_fields},
+                after_data={
+                    "fields": after_fields,
+                    "processing_status": document.processing_status,
+                    "remaining_review_count": remaining_count,
+                },
+            )
+            session.commit()
+            return ReviewCorrectionResult(
+                corrected_count=corrected,
+                remaining_review_count=remaining_count,
+                processing_status=document.processing_status,
+            )
+        except (ValueError, AssuranceDocumentReviewError):
+            session.rollback()
+            raise
+        except Exception as exc:
+            session.rollback()
+            raise AssuranceDocumentReviewError("No se pudieron corregir los campos seleccionados.") from exc
         finally:
             session.close()
