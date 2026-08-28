@@ -34,13 +34,21 @@ class AssurancePreflightDocumentRequest(BaseModel):
 
 
 class AssurancePreflightRequest(BaseModel):
+    """Preflight input.
+
+    Only ``operation_reference`` is transport-required.  The deterministic
+    engine remains fail-closed when business inputs are absent, which lets the
+    friction-zero workspace launch Preflight immediately after ingestion and
+    ask the operator only for facts that were not available from LT-owned data.
+    """
+
     operation_reference: str = Field(min_length=1, max_length=255)
-    customer_reference: str = Field(min_length=1, max_length=255)
-    market: str = Field(min_length=1, max_length=8)
-    product: str = Field(min_length=1, max_length=255)
-    quantity: Decimal
-    commitment_date: date
-    stock_available: Decimal
+    customer_reference: str | None = Field(default=None, max_length=255)
+    market: str | None = Field(default=None, max_length=8)
+    product: str | None = Field(default=None, max_length=255)
+    quantity: Decimal | None = None
+    commitment_date: date | None = None
+    stock_available: Decimal | None = None
     documents: list[AssurancePreflightDocumentRequest] = Field(default_factory=list)
     required_document_types: list[str] = Field(default_factory=list)
     origin_state: PreflightSignalState = PreflightSignalState.UNASSESSED
@@ -61,12 +69,12 @@ def _require_preflight_enabled() -> None:
 def build_preflight_input(payload: AssurancePreflightRequest) -> PreflightInput:
     """Map one validated API request into the deterministic domain contract."""
     return PreflightInput(
-        customer_reference=payload.customer_reference,
-        market=payload.market,
-        product=payload.product,
-        quantity=payload.quantity,
-        commitment_date=payload.commitment_date,
-        stock_available=payload.stock_available,
+        customer_reference=payload.customer_reference,  # type: ignore[arg-type]
+        market=payload.market,  # type: ignore[arg-type]
+        product=payload.product,  # type: ignore[arg-type]
+        quantity=payload.quantity,  # type: ignore[arg-type]
+        commitment_date=payload.commitment_date,  # type: ignore[arg-type]
+        stock_available=payload.stock_available,  # type: ignore[arg-type]
         documents=tuple(
             PreflightDocument(
                 document_type=document.document_type,
