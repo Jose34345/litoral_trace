@@ -33,7 +33,7 @@ services:
       - key: REFRESH_TOKEN_EXPIRE_DAYS
         value: "7"
       - key: CORS_ALLOW_ORIGINS
-        value: https://litoral-trace-assurance-stg-20260828.onrender.com
+        value: https://litoral-trace-assurance-stg-20260828-ql3b.onrender.com
 
       - key: STORAGE_BACKEND
         value: s3
