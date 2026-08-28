@@ -10,7 +10,7 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     dockerCommand: sh /app/pilot/render_assurance_start.sh
-    healthCheckPath: /health
+    healthCheckPath: /ready
     envVars:
       - key: ENVIRONMENT
         value: staging
