@@ -1,9 +1,9 @@
 """Minimal supplier identity resolution for document-first Assurance workflows.
 
-Only deterministic, high-confidence extracted fields are allowed to create or
-link a supplier.  A valid normalized CUIT is the creation key.  Name-only
-evidence may reuse an existing exact normalized identity but never creates a
-new supplier, which keeps the workflow conservative and avoids fuzzy writes.
+Only deterministic, trusted extracted fields are allowed to create or link a
+supplier. A valid normalized CUIT is the creation key. Name-only evidence may
+reuse an existing exact normalized identity but never creates a new supplier,
+which keeps the workflow conservative and avoids fuzzy writes.
 """
 from __future__ import annotations
 
@@ -13,9 +13,11 @@ import unicodedata
 from typing import Callable
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from litoral_trace.assurance.normalization import NormalizationError, normalize_cuit
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import (
     AssuranceDocument,
@@ -45,10 +47,33 @@ class SupplierResolutionResult:
 
 
 def normalize_supplier_name(value: object) -> str:
+    """Normalize exact business names without introducing fuzzy matching."""
     text = unicodedata.normalize("NFKD", str(value or "").strip().lower())
     text = "".join(character for character in text if not unicodedata.combining(character))
-    text = re.sub(r"[^a-z0-9]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    tokens = re.findall(r"[a-z0-9]+", text)
+    if not tokens:
+        return ""
+
+    # Legal suffixes are frequently written both as ``S.A.`` and ``SA``.
+    # Collapse only consecutive one-letter alphabetic tokens; this keeps the
+    # comparison deterministic while avoiding generic fuzzy-name behaviour.
+    normalized: list[str] = []
+    index = 0
+    while index < len(tokens):
+        if len(tokens[index]) == 1 and tokens[index].isalpha():
+            run: list[str] = []
+            while (
+                index < len(tokens)
+                and len(tokens[index]) == 1
+                and tokens[index].isalpha()
+            ):
+                run.append(tokens[index])
+                index += 1
+            normalized.append("".join(run))
+            continue
+        normalized.append(tokens[index])
+        index += 1
+    return " ".join(normalized)
 
 
 def _unique_values(fields: list[ExtractedDocumentField], field_name: str) -> tuple[str, ...]:
@@ -105,24 +130,38 @@ class AssuranceSupplierService:
             if latest_run is None:
                 return SupplierResolutionResult(None, False, False, False, False, "no_extraction_run")
 
-            accepted_fields = session.scalars(
+            trusted_fields = session.scalars(
                 select(ExtractedDocumentField).where(
                     ExtractedDocumentField.organization_id == org_id,
                     ExtractedDocumentField.assurance_document_id == document.id,
                     ExtractedDocumentField.extraction_run_id == latest_run.id,
-                    ExtractedDocumentField.auto_accepted.is_(True),
+                    or_(
+                        ExtractedDocumentField.auto_accepted.is_(True),
+                        ExtractedDocumentField.needs_review.is_(False),
+                    ),
                     ExtractedDocumentField.field_name.in_(("issuer_cuit", "supplier")),
                 )
             ).all()
-            cuits = _unique_values(accepted_fields, "issuer_cuit")
-            names = _unique_values(accepted_fields, "supplier")
+            cuits = _unique_values(trusted_fields, "issuer_cuit")
+            names = _unique_values(trusted_fields, "supplier")
 
             if len(cuits) > 1 or len(names) > 1:
-                return SupplierResolutionResult(None, False, False, False, True, "ambiguous_document_identity")
+                return SupplierResolutionResult(
+                    None, False, False, False, True, "ambiguous_document_identity"
+                )
 
-            cuit = cuits[0] if cuits else None
+            raw_cuit = cuits[0] if cuits else None
             display_name = names[0] if names else None
             normalized_name = normalize_supplier_name(display_name) if display_name else None
+
+            cuit: str | None = None
+            if raw_cuit is not None:
+                try:
+                    cuit = normalize_cuit(raw_cuit)
+                except NormalizationError:
+                    return SupplierResolutionResult(
+                        None, False, False, False, True, "invalid_normalized_cuit"
+                    )
 
             supplier: AssuranceSupplier | None = None
             created = False
@@ -130,8 +169,6 @@ class AssuranceSupplierService:
             needs_review = False
 
             if cuit is not None:
-                if not (len(cuit) == 11 and cuit.isdigit()):
-                    return SupplierResolutionResult(None, False, False, False, True, "invalid_normalized_cuit")
                 supplier = session.scalar(
                     select(AssuranceSupplier).where(
                         AssuranceSupplier.organization_id == org_id,
@@ -139,7 +176,7 @@ class AssuranceSupplierService:
                     )
                 )
                 if supplier is None:
-                    supplier = AssuranceSupplier(
+                    candidate = AssuranceSupplier(
                         organization_id=org_id,
                         cuit=cuit,
                         display_name=display_name,
@@ -147,14 +184,28 @@ class AssuranceSupplierService:
                         status="AUTO_CREATED",
                         source_assurance_document_id=document.id,
                     )
-                    session.add(supplier)
-                    session.flush()
-                    created = True
-                elif normalized_name:
+                    try:
+                        # A savepoint makes simultaneous first-seen documents for
+                        # the same CUIT converge on the unique tenant identity.
+                        with session.begin_nested():
+                            session.add(candidate)
+                            session.flush()
+                        supplier = candidate
+                        created = True
+                    except IntegrityError:
+                        supplier = session.scalar(
+                            select(AssuranceSupplier).where(
+                                AssuranceSupplier.organization_id == org_id,
+                                AssuranceSupplier.cuit == cuit,
+                            )
+                        )
+                        if supplier is None:
+                            raise
+                if supplier is not None and normalized_name:
                     if supplier.normalized_name is None:
                         supplier.display_name = display_name
                         supplier.normalized_name = normalized_name
-                        enriched = True
+                        enriched = not created
                     elif supplier.normalized_name != normalized_name:
                         supplier.status = "NEEDS_REVIEW"
                         needs_review = True
@@ -168,11 +219,17 @@ class AssuranceSupplierService:
                 if len(matches) == 1:
                     supplier = matches[0]
                 elif len(matches) > 1:
-                    return SupplierResolutionResult(None, False, False, False, True, "ambiguous_name_match")
+                    return SupplierResolutionResult(
+                        None, False, False, False, True, "ambiguous_name_match"
+                    )
                 else:
-                    return SupplierResolutionResult(None, False, False, False, True, "name_only_cannot_create")
+                    return SupplierResolutionResult(
+                        None, False, False, False, True, "name_only_cannot_create"
+                    )
             else:
-                return SupplierResolutionResult(None, False, False, False, False, "no_supplier_evidence")
+                return SupplierResolutionResult(
+                    None, False, False, False, False, "no_supplier_evidence"
+                )
 
             assert supplier is not None
             reference = f"supplier:{supplier.public_id}"
