@@ -38,11 +38,9 @@ services:
       - key: STORAGE_BACKEND
         value: s3
       - key: STORAGE_BUCKET_NAME
-        sync: false
+        value: litoral-trace-assurance-staging-380560899138-us-east-2
       - key: STORAGE_REGION
         value: us-east-2
-      - key: STORAGE_ENDPOINT_URL
-        sync: false
       - key: STORAGE_ACCESS_KEY_ID
         sync: false
       - key: STORAGE_SECRET_ACCESS_KEY
