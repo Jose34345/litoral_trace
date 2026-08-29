@@ -119,10 +119,14 @@ def get_session_factory() -> Any:
         if _session_factory is not None:
             return _session_factory
         if engine:
+            # Tenant context is transaction-local in PostgreSQL. Keeping already
+            # loaded ORM state after commit avoids an implicit post-commit refresh
+            # in a new transaction where the RLS GUC has intentionally expired.
             _session_factory = sessionmaker(
                 bind=engine,
                 autoflush=False,
                 autocommit=False,
+                expire_on_commit=False,
             )
             return _session_factory
     except ImportError:
