@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import csv
 from io import BytesIO, StringIO
+import os
 from pathlib import PurePath
 import re
 from typing import Any, Iterable
@@ -54,6 +55,9 @@ _MIN_USEFUL_PDF_ALPHA_CHARS = 4
 _OCR_MAX_PAGES = 20
 _OCR_RENDER_SCALE = 2.0
 _OCR_TIMEOUT_SECONDS = 20
+_OCR_TIMEOUT_ENV = "LT_ASSURANCE_OCR_TIMEOUT_SECONDS"
+_OCR_TIMEOUT_MIN_SECONDS = 5
+_OCR_TIMEOUT_MAX_SECONDS = 120
 _OCR_LANGUAGE = "spa+eng"
 _TOTAL_MARKERS = frozenset(
     {
@@ -65,6 +69,18 @@ _TOTAL_MARKERS = frozenset(
         "observacion",
     }
 )
+
+
+def _ocr_timeout_seconds() -> int:
+    """Resolve a bounded per-page OCR timeout without changing production defaults."""
+    raw = str(os.getenv(_OCR_TIMEOUT_ENV, "")).strip()
+    if not raw:
+        return _OCR_TIMEOUT_SECONDS
+    try:
+        value = int(raw)
+    except ValueError:
+        return _OCR_TIMEOUT_SECONDS
+    return max(_OCR_TIMEOUT_MIN_SECONDS, min(_OCR_TIMEOUT_MAX_SECONDS, value))
 
 
 def _clean_cell(value: Any) -> Any:
@@ -306,12 +322,14 @@ def _safe_close(resource: object | None) -> None:
 
 
 def _ocr_scanned_pdf(content: bytes, *, page_count: int) -> tuple[str, dict[str, Any]]:
+    timeout_seconds = _ocr_timeout_seconds()
     metadata: dict[str, Any] = {
         "ocr_attempted": True,
         "ocr_applied": False,
         "ocr_engine": "tesseract",
         "ocr_language": _OCR_LANGUAGE,
         "ocr_pages_processed": 0,
+        "ocr_timeout_seconds": timeout_seconds,
     }
     if page_count <= 0:
         metadata["ocr_error_code"] = "OCR_NO_PAGES"
@@ -343,7 +361,7 @@ def _ocr_scanned_pdf(content: bytes, *, page_count: int) -> tuple[str, dict[str,
                     image,
                     lang=_OCR_LANGUAGE,
                     config="--psm 6",
-                    timeout=_OCR_TIMEOUT_SECONDS,
+                    timeout=timeout_seconds,
                 )
                 page_texts.append((extracted or "").strip())
                 metadata["ocr_pages_processed"] = page_index + 1
