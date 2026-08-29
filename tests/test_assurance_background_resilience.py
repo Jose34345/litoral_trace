@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from uuid import UUID
+
 from litoral_trace.api import assurance as assurance_api
 from litoral_trace.assurance.domain import DocumentProcessingStatus
 
@@ -35,3 +38,39 @@ def test_only_incomplete_or_failed_duplicates_are_reprocessed():
     assert assurance_api._duplicate_requires_reprocess(
         DocumentProcessingStatus.NEEDS_REVIEW.value
     ) is False
+
+
+def _duplicate_result(processing_status: str):
+    return SimpleNamespace(
+        assurance_public_id=UUID("00000000-0000-0000-0000-000000000001"),
+        vault_public_id=UUID("00000000-0000-0000-0000-000000000002"),
+        filename="invoice.pdf",
+        content_type="application/pdf",
+        size_bytes=128,
+        sha256="a" * 64,
+        duplicate=True,
+        processing_status=processing_status,
+    )
+
+
+def test_scheduled_duplicate_retry_is_not_serialized_as_terminal_duplicate():
+    payload = assurance_api._serialize_ingestion(
+        _duplicate_result(DocumentProcessingStatus.FAILED.value),
+        reprocess_scheduled=True,
+    )
+
+    assert payload["duplicate"] is False
+    assert payload["reused_original"] is True
+    assert payload["reprocess_scheduled"] is True
+    assert payload["progress_url"].endswith("/progress")
+
+
+def test_completed_duplicate_remains_terminal_for_workspace_reuse():
+    payload = assurance_api._serialize_ingestion(
+        _duplicate_result(DocumentProcessingStatus.NEEDS_REVIEW.value),
+        reprocess_scheduled=False,
+    )
+
+    assert payload["duplicate"] is True
+    assert payload["reused_original"] is True
+    assert payload["reprocess_scheduled"] is False
