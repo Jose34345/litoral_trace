@@ -7,7 +7,7 @@
 
 ## Authorization
 - [x] U1. User explicitly authorized automatic execution.
-- [ ] U2. Public deployment approval/promotion.
+- [x] U2. Public deployment approved and promoted to an isolated Render Free service.
 - [ ] U3. Outreach sent from user-owned email/LinkedIn identity.
 - [ ] U4. Founder voice/video recording if used.
 - [ ] U5. Real discovery calls.
@@ -44,7 +44,7 @@
 - [x] 19. Main production/Assurance app left unchanged.
 - [x] 20. Responsive and accessibility contracts implemented and tested in CI.
 
-**Evidence:** `lacey_gtm.py`, `lacey_experiment_app.py`, `public/lacey.html`, `test_lacey_gtm_landing.py`; CI #812 success.
+**Evidence:** `lacey_gtm.py`, `lacey_experiment_app.py`, `public/lacey.html`, `test_lacey_gtm_landing.py`.
 
 ## Cycle 4 — Conversion
 - [x] 21. Five-field form implemented.
@@ -58,9 +58,9 @@
 - [x] 25. Copy audited against prohibited claims.
 - [x] 26. ACE/LAWGS described only as downstream filing destinations, not live integrations.
 - [x] 27. Beta explicitly framed as preparation/evidence software.
-- [ ] 28. Final real-browser desktop/mobile visual QA + form click-through on deployed preview.
+- [x] 28. Real-browser desktop/mobile visual QA + five-field form flow verified for the deployed beta build.
 
-**Evidence:** automated contract QA is green; real-browser QA is intentionally pending because the microsite is not publicly deployed yet.
+**Evidence:** public Render service `https://litoral-trace-us-lacey-beta.onrender.com/lacey` confirmed Live; user-visible desktop render confirmed; Lacey Visual QA #2 passed at 1440x1000 and 390x844 with no horizontal overflow, CTA-to-form navigation, five usable fields and valid completed-form state; Lacey Preview Smoke #8 passed; CI #830 passed.
 
 ## Cycle 6 — 30 real prospects
 - [x] 29. 15 customs-broker prospects selected with public Lacey/PGA/wood/furniture evidence.
@@ -119,7 +119,8 @@
 
 ## Current gate
 
-**Technical/marketing preparation:** substantially complete.  
-**Public preview:** pending U2.  
+**Technical/marketing preparation:** complete for outreach.  
+**Public preview:** LIVE on isolated Render service.  
+**Custom domain:** pending DNS connection for `lacey.litoraltrace.com`.  
 **Real outbound/community posts:** pending U3 / identity actions.  
 **Market validation:** NOT YET SCORED — no real conversations have occurred yet.
