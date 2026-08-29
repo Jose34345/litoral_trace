@@ -91,15 +91,15 @@ def _serialize_ingestion(
     result,
     *,
     reprocess_scheduled: bool = False,
+    poll_required: bool = False,
 ) -> dict[str, object]:
-    """Serialize ingestion state without hiding a scheduled retry from the UI.
+    """Serialize reuse separately from the workspace polling contract.
 
-    The legacy workspace treats ``duplicate=true`` as a terminal document and
-    skips progress polling. A duplicate whose previous processing status was
-    UPLOADED/FAILED is not terminal: the backend schedules a new processing run.
-    For that response we expose ``duplicate=false`` operationally so the current
-    workspace keeps polling, while ``reused_original`` preserves the provenance
-    fact that no second Vault object was created.
+    ``reused_original`` is immutable provenance: the same Vault evidence was
+    found by hash. ``duplicate`` is intentionally an operational UI hint only:
+    it is true exclusively when the reused document is already terminal and no
+    polling is required. A document that is currently PROCESSING, or that was
+    scheduled for a retry, must keep polling even though its original is reused.
     """
     reused_original = bool(result.duplicate)
     return {
@@ -109,7 +109,7 @@ def _serialize_ingestion(
         "content_type": result.content_type,
         "size_bytes": result.size_bytes,
         "sha256": result.sha256,
-        "duplicate": reused_original and not reprocess_scheduled,
+        "duplicate": reused_original and not poll_required,
         "reused_original": reused_original,
         "reprocess_scheduled": bool(reprocess_scheduled),
         "processing_status": result.processing_status,
@@ -249,11 +249,47 @@ def _process_and_reconcile_safely(
 
 
 def _duplicate_requires_reprocess(processing_status: str) -> bool:
-    """Retry only duplicates that never completed a usable processing pass."""
+    """Retry duplicates that never reached a usable processing pass."""
     return str(processing_status or "").strip().upper() in {
         DocumentProcessingStatus.UPLOADED.value,
         DocumentProcessingStatus.FAILED.value,
     }
+
+
+def _duplicate_processing_decision(
+    *,
+    organization_id: int,
+    result,
+) -> tuple[bool, bool]:
+    """Return ``(reprocess, poll)`` for one reused Vault document.
+
+    Active PROCESSING work is never duplicated: a repeated upload simply joins
+    the existing progress stream. OCR_REQUIRED is special because it represents
+    a technically incomplete pass; after the OCR runtime is fixed it is safe to
+    force a new extraction over the same immutable original.
+    """
+    status_value = str(result.processing_status or "").strip().upper()
+    if _duplicate_requires_reprocess(status_value):
+        return True, True
+    if status_value == DocumentProcessingStatus.PROCESSING.value:
+        return False, True
+    if status_value != DocumentProcessingStatus.NEEDS_REVIEW.value:
+        return False, False
+
+    try:
+        progress = AssuranceProcessingService().progress(
+            organization_id=int(organization_id),
+            assurance_public_id=result.assurance_public_id,
+        )
+    except Exception:
+        # Fail closed: do not create a competing processing run if we cannot
+        # prove that the previous review state is the recoverable OCR case.
+        return False, False
+
+    error_code = str(progress.get("last_error_code") or "").strip().upper()
+    if error_code == "OCR_REQUIRED":
+        return True, True
+    return False, False
 
 
 async def ingest_assurance_documents(
@@ -320,11 +356,14 @@ async def ingest_assurance_documents(
 
         force_reprocess = False
         should_schedule = not result.duplicate
+        poll_required = not result.duplicate
         if result.duplicate:
             duplicates += 1
-            if _duplicate_requires_reprocess(result.processing_status):
-                should_schedule = True
-                force_reprocess = True
+            should_schedule, poll_required = _duplicate_processing_decision(
+                organization_id=user.organization_id,
+                result=result,
+            )
+            force_reprocess = should_schedule
 
         if should_schedule:
             background_tasks.add_task(
@@ -337,6 +376,7 @@ async def ingest_assurance_documents(
             _serialize_ingestion(
                 result,
                 reprocess_scheduled=bool(result.duplicate and should_schedule),
+                poll_required=poll_required,
             )
         )
 
