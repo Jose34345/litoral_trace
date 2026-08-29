@@ -15,6 +15,9 @@ pypdfium2>=5.9.0
 Pillow>=12.2.0
 pytesseract>=0.3.13
 ocrmypdf>=17.10,<18
+rapidfuzz>=3.14,<4
+dateparser>=1.2,<2
+price-parser>=0.5,<1
 plotly>=5.18.0
 sqlalchemy>=2.0.0
 psycopg[binary]
