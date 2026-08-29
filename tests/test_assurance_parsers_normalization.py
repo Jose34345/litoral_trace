@@ -142,13 +142,15 @@ def test_pdf_parser_extracts_digital_text_without_ocr():
     assert parsed.metadata["page_count"] == 1
 
 
-def test_scanned_pdf_executes_real_tesseract_ocr():
+def test_scanned_pdf_executes_real_ocrmypdf_primary_layer():
     parsed = parse_pdf(_scanned_pdf_bytes())
     assert parsed.ocr_required is False
     assert parsed.metadata["ocr_attempted"] is True
     assert parsed.metadata["ocr_applied"] is True
-    assert parsed.metadata["ocr_engine"] == "tesseract"
+    assert parsed.metadata["ocr_engine"] == "ocrmypdf"
+    assert parsed.metadata["ocr_fallback_used"] is False
     assert parsed.metadata["ocr_pages_processed"] == 1
+    assert parsed.metadata["ocr_pages_with_text"] >= 1
     assert "FACTURA" in parsed.text.upper()
 
 
