@@ -14,10 +14,11 @@ pdfplumber>=0.11.0
 pypdfium2>=5.9.0
 Pillow>=12.2.0
 pytesseract>=0.3.13
+ocrmypdf>=17.10,<18
 plotly>=5.18.0
 sqlalchemy>=2.0.0
 psycopg[binary]
-fpdf2>=2.7.0
+fpdf2>=2.8.0,<3
 bcrypt>=4.1.0
 earthengine-api>=0.1.400
 redis>=5.0.0
