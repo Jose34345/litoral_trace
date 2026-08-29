@@ -9,10 +9,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import csv
+from importlib.metadata import PackageNotFoundError, version as package_version
 from io import BytesIO, StringIO
 import os
-from pathlib import PurePath
+from pathlib import Path, PurePath
 import re
+from tempfile import TemporaryDirectory
 from typing import Any, Iterable
 import zipfile
 
@@ -58,7 +60,8 @@ _OCR_TIMEOUT_SECONDS = 20
 _OCR_TIMEOUT_ENV = "LT_ASSURANCE_OCR_TIMEOUT_SECONDS"
 _OCR_TIMEOUT_MIN_SECONDS = 5
 _OCR_TIMEOUT_MAX_SECONDS = 120
-_OCR_LANGUAGE = "spa+eng"
+_OCR_LANGUAGES = ("spa", "eng")
+_OCR_LANGUAGE = "+".join(_OCR_LANGUAGES)
 _TOTAL_MARKERS = frozenset(
     {
         "total",
@@ -321,7 +324,100 @@ def _safe_close(resource: object | None) -> None:
             pass
 
 
-def _ocr_scanned_pdf(content: bytes, *, page_count: int) -> tuple[str, dict[str, Any]]:
+def _extract_pdf_text_pages(content: bytes) -> tuple[str, int, int]:
+    """Extract text from a PDF without logging or persisting document content."""
+    from pypdf import PdfReader
+
+    reader = PdfReader(BytesIO(content), strict=False)
+    page_texts: list[str] = []
+    for page in reader.pages:
+        try:
+            page_texts.append((page.extract_text() or "").strip())
+        except Exception:
+            page_texts.append("")
+    text = "\n\n".join(value for value in page_texts if value).strip()
+    return text, len(reader.pages), sum(bool(value) for value in page_texts)
+
+
+def _ocr_scanned_pdf_with_ocrmypdf(
+    content: bytes,
+    *,
+    page_count: int,
+) -> tuple[str, dict[str, Any]]:
+    """Use OCRmyPDF as the primary OCR layer without mutating the Vault original."""
+    timeout_seconds = _ocr_timeout_seconds()
+    metadata: dict[str, Any] = {
+        "ocr_attempted": True,
+        "ocr_applied": False,
+        "ocr_engine": "ocrmypdf",
+        "ocr_language": _OCR_LANGUAGE,
+        "ocr_pages_processed": 0,
+        "ocr_timeout_seconds": timeout_seconds,
+    }
+    if page_count <= 0:
+        metadata["ocr_error_code"] = "OCR_NO_PAGES"
+        return "", metadata
+    if page_count > _OCR_MAX_PAGES:
+        metadata["ocr_error_code"] = "OCR_PAGE_LIMIT_EXCEEDED"
+        metadata["ocr_page_limit"] = _OCR_MAX_PAGES
+        return "", metadata
+
+    try:
+        import ocrmypdf
+    except Exception as exc:
+        metadata["ocr_error_code"] = "OCRMY_PDF_DEPENDENCY_UNAVAILABLE"
+        metadata["ocr_error_type"] = type(exc).__name__
+        return "", metadata
+
+    try:
+        metadata["ocr_engine_version"] = package_version("ocrmypdf")
+    except PackageNotFoundError:
+        metadata["ocr_engine_version"] = "unknown"
+
+    try:
+        with TemporaryDirectory(prefix="lt-assurance-ocr-") as temporary_directory:
+            workdir = Path(temporary_directory)
+            input_path = workdir / "input.pdf"
+            output_path = workdir / "ocr.pdf"
+            input_path.write_bytes(content)
+
+            exit_code = ocrmypdf.ocr(
+                input_path,
+                output_path,
+                language=list(_OCR_LANGUAGES),
+                output_type="pdf",
+                mode="skip",
+                jobs=1,
+                use_threads=True,
+                optimize=0,
+                tesseract_timeout=float(timeout_seconds),
+                progress_bar=False,
+            )
+            metadata["ocr_exit_code"] = int(exit_code)
+            output_content = output_path.read_bytes()
+            text, output_page_count, pages_with_text = _extract_pdf_text_pages(output_content)
+            metadata["ocr_pages_processed"] = output_page_count
+            metadata["ocr_pages_with_text"] = pages_with_text
+            metadata["ocr_output_size_bytes"] = len(output_content)
+    except Exception as exc:
+        metadata["ocr_error_code"] = "OCRMY_PDF_EXECUTION_FAILED"
+        metadata["ocr_error_type"] = type(exc).__name__
+        return "", metadata
+
+    if not _has_useful_pdf_text(text):
+        metadata["ocr_error_code"] = "OCRMY_PDF_NO_USEFUL_TEXT"
+        return "", metadata
+
+    metadata["ocr_applied"] = True
+    return text, metadata
+
+
+def _ocr_scanned_pdf_with_tesseract(
+    content: bytes,
+    *,
+    page_count: int,
+) -> tuple[str, dict[str, Any]]:
+    """Legacy page-level Tesseract OCR retained only as a fail-closed fallback."""
     timeout_seconds = _ocr_timeout_seconds()
     metadata: dict[str, Any] = {
         "ocr_attempted": True,
@@ -386,6 +482,36 @@ def _ocr_scanned_pdf(content: bytes, *, page_count: int) -> tuple[str, dict[str,
     return text, metadata
 
 
+def _ocr_scanned_pdf(content: bytes, *, page_count: int) -> tuple[str, dict[str, Any]]:
+    """Prefer OCRmyPDF and fall back to the legacy page-level Tesseract path."""
+    primary_text, primary_metadata = _ocr_scanned_pdf_with_ocrmypdf(
+        content,
+        page_count=page_count,
+    )
+    if _has_useful_pdf_text(primary_text):
+        primary_metadata["ocr_fallback_used"] = False
+        return primary_text, primary_metadata
+
+    fallback_text, fallback_metadata = _ocr_scanned_pdf_with_tesseract(
+        content,
+        page_count=page_count,
+    )
+    merged_metadata = dict(fallback_metadata)
+    merged_metadata["ocr_engine"] = "tesseract_fallback"
+    merged_metadata["ocr_fallback_used"] = True
+    merged_metadata["ocr_fallback_engine"] = "tesseract"
+    merged_metadata["ocr_primary_engine"] = "ocrmypdf"
+    if primary_metadata.get("ocr_engine_version"):
+        merged_metadata["ocr_primary_engine_version"] = primary_metadata["ocr_engine_version"]
+    if primary_metadata.get("ocr_error_code"):
+        merged_metadata["ocr_primary_error_code"] = primary_metadata["ocr_error_code"]
+    if primary_metadata.get("ocr_error_type"):
+        merged_metadata["ocr_primary_error_type"] = primary_metadata["ocr_error_type"]
+    if primary_metadata.get("ocr_exit_code") is not None:
+        merged_metadata["ocr_primary_exit_code"] = primary_metadata["ocr_exit_code"]
+    return fallback_text, merged_metadata
+
+
 def parse_pdf(content: bytes) -> ParsedDocument:
     if not content.startswith(b"%PDF-"):
         raise DocumentParseError("El archivo no corresponde a un PDF valido.")
@@ -393,30 +519,19 @@ def parse_pdf(content: bytes) -> ParsedDocument:
         raise DocumentParseError("El PDF no contiene un cierre valido.")
 
     try:
-        from pypdf import PdfReader
-    except Exception as exc:  # pragma: no cover - dependency gate
+        useful_text, page_count, pages_with_text = _extract_pdf_text_pages(content)
+    except ImportError as exc:  # pragma: no cover - dependency gate
         raise DocumentParseError("pypdf no esta disponible.") from exc
-
-    try:
-        reader = PdfReader(BytesIO(content), strict=False)
     except Exception as exc:
         raise DocumentParseError("No se pudo abrir el PDF.") from exc
 
-    page_texts: list[str] = []
-    for page in reader.pages:
-        try:
-            page_texts.append((page.extract_text() or "").strip())
-        except Exception:
-            page_texts.append("")
-
-    useful_text = "\n\n".join(text for text in page_texts if text).strip()
     ocr_required = not _has_useful_pdf_text(useful_text)
     ocr_metadata: dict[str, Any] = {
         "ocr_attempted": False,
         "ocr_applied": False,
     }
     if ocr_required:
-        ocr_text, ocr_metadata = _ocr_scanned_pdf(content, page_count=len(reader.pages))
+        ocr_text, ocr_metadata = _ocr_scanned_pdf(content, page_count=page_count)
         if _has_useful_pdf_text(ocr_text):
             useful_text = ocr_text
             ocr_required = False
@@ -456,8 +571,8 @@ def parse_pdf(content: bytes) -> ParsedDocument:
             tables = []
 
     metadata = {
-        "page_count": len(reader.pages),
-        "pages_with_text": sum(bool(text) for text in page_texts),
+        "page_count": page_count,
+        "pages_with_text": pages_with_text,
     }
     metadata.update(ocr_metadata)
     return ParsedDocument(
