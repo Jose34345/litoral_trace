@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: litoral-trace-us-lacey-beta
+    runtime: python
+    repo: https://github.com/Jose34345/litoral_trace
+    branch: experiment/us-lacey-gtm-weekend
+    region: virginia
+    plan: free
+    autoDeployTrigger: checksPass
+    buildCommand: pip install --no-cache-dir -r requirements-lacey.txt
+    startCommand: uvicorn litoral_trace.web.lacey_experiment_app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    renderSubdomainPolicy: enabled
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONPATH
+        value: /opt/render/project/src/src
