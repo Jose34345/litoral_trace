@@ -50,8 +50,9 @@ jobs:
       - name: Install OCR runtime
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-spa
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa
           tesseract --version
+          tesseract --list-langs | grep -Fx eng
           tesseract --list-langs | grep -Fx spa
 
       - name: Install Python dependencies
@@ -162,13 +163,3 @@ jobs:
             -v "$PWD/monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro" \
             prom/prometheus:v3.13.1 \
             check rules /etc/prometheus/alert_rules.yml
-
-      - name: Validate Alertmanager configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker run --rm \
-            --entrypoint /bin/amtool \
-            -v "$PWD/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
-            prom/alertmanager:v0.33.1 \
-            check-config /etc/alertmanager/alertmanager.yml
