@@ -9,7 +9,7 @@ from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, Response
 from prometheus_client import Counter
 
-from litoral_trace.web.runtime import render_web_template
+from litoral_trace.web.templates import render_template
 
 
 router = APIRouter(tags=["U.S. GTM experiment"])
@@ -33,14 +33,16 @@ _LACEY_GTM_EVENTS = Counter(
 @router.get("/lacey", response_class=HTMLResponse, include_in_schema=False)
 async def render_lacey_private_beta(request: Request) -> HTMLResponse:
     """Render the isolated English-language Lacey market-validation landing."""
-    return render_web_template(
+    response = render_template(
         request,
         "public/lacey.html",
-        user=None,
-        context={
+        {
             "commercial_email": "comercial@litoraltrace.com",
         },
     )
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @router.post("/lacey/event", include_in_schema=False)
