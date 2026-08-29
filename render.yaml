@@ -1,89 +1,22 @@
 services:
   - type: web
-    name: litoral-trace-assurance-stg-20260828
-    runtime: docker
+    name: litoral-trace-us-lacey-beta
+    runtime: python
     repo: https://github.com/Jose34345/litoral_trace
-    branch: feature/assurance-v1
+    branch: experiment/us-lacey-gtm-weekend
     region: virginia
     plan: free
-    autoDeployTrigger: commit
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    dockerCommand: sh /app/pilot/render_assurance_start.sh
-    healthCheckPath: /ready
+    autoDeployTrigger: checksPass
+    buildCommand: pip install --no-cache-dir -r requirements-lacey.txt
+    startCommand: uvicorn litoral_trace.web.lacey_experiment_app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    renderSubdomainPolicy: enabled
     envVars:
-      - key: ENVIRONMENT
-        value: staging
-      - key: PORT
-        value: "10000"
-
-      - key: DATABASE_URL
-        sync: false
-
-      - key: JWT_SECRET_KEY
-        generateValue: true
-      - key: JWT_ALGORITHM
-        value: HS256
-      - key: JWT_ISSUER
-        value: litoral-trace-assurance-pilot
-      - key: JWT_AUDIENCE
-        value: litoral-trace-assurance-pilot
-      - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: "30"
-      - key: REFRESH_TOKEN_EXPIRE_DAYS
-        value: "7"
-      - key: CORS_ALLOW_ORIGINS
-        value: https://litoral-trace-assurance-stg-20260828-ql3b.onrender.com
-
-      - key: STORAGE_BACKEND
-        value: s3
-      - key: STORAGE_BUCKET_NAME
-        value: litoral-trace-assurance-staging-380560899138-us-east-2
-      - key: STORAGE_REGION
-        value: us-east-2
-      - key: STORAGE_ACCESS_KEY_ID
-        sync: false
-      - key: STORAGE_SECRET_ACCESS_KEY
-        sync: false
-      - key: STORAGE_FORCE_PATH_STYLE
-        value: "0"
-      - key: STORAGE_USE_TLS
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: PYTHONUNBUFFERED
         value: "1"
-      - key: STORAGE_VERIFY_TLS
+      - key: PYTHONDONTWRITEBYTECODE
         value: "1"
-      - key: STORAGE_KEY_PREFIX
-        value: assurance-pilot/staging-01
-      - key: STORAGE_MAX_UPLOAD_BYTES
-        value: "26214400"
-      - key: STORAGE_ALLOWED_CONTENT_TYPES
-        value: application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv
-
-      - key: LT_ASSURANCE_V1_ENABLED
-        value: "1"
-      - key: LT_ASSURANCE_DOCUMENT_INTELLIGENCE_ENABLED
-        value: "1"
-      - key: LT_ASSURANCE_RECONCILIATION_ENABLED
-        value: "1"
-      - key: LT_ASSURANCE_PREFLIGHT_V2_ENABLED
-        value: "1"
-      - key: LT_ASSURANCE_OPERATIONAL_EXCEPTIONS_ENABLED
-        value: "1"
-      - key: LT_ASSURANCE_MARKET_READY_INVENTORY_ENABLED
-        value: "1"
-      - key: LT_ASSURANCE_PILOT_MODE
-        value: "1"
-      - key: LT_ASSURANCE_PILOT_ORGANIZATION_ID
-        value: "70"
-      - key: LT_ASSURANCE_PILOT_CONFIG_PATH
-        value: /app/pilot/assurance-pilot-staging.bootstrap.json
-      - key: LT_ASSURANCE_OCR_TIMEOUT_SECONDS
-        value: "60"
-
-      - key: WORKERS_ENABLED
-        value: "0"
-      - key: EUDR_ACCEPTANCE_ENABLED
-        value: "0"
-      - key: LOG_LEVEL
-        value: INFO
-      - key: SENTRY_DSN
-        value: ""
+      - key: PYTHONPATH
+        value: src
