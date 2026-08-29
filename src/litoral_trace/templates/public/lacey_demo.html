@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Illustrative Litoral Trace Lacey document-preparation sample using a synthetic shipment.">
+  <title>Litoral Trace | Sample Lacey shipment</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/lacey_beta.css') }}">
+</head>
+<body class="demo-page">
+<a class="skip" href="#main-content">Skip to content</a>
+<header class="header">
+  <div class="container header-in">
+    <a class="brand" href="/lacey"><span class="mark">▲</span><span><strong>Litoral Trace</strong><small>Sample shipment</small></span></a>
+    <nav class="nav" aria-label="Primary"><a class="navlink" href="/lacey">Back to overview</a><a class="btn btn-dark" href="/lacey#private-beta">Test your shipment</a></nav>
+  </div>
+</header>
+<main id="main-content">
+<section class="demo-hero">
+  <div class="container">
+    <span class="pill" style="color:#047857;background:#ecfdf5;border-color:#a7f3d0">Illustrative sample · no legal determination</span>
+    <h1>Start with the shipment documents, not a completed spreadsheet.</h1>
+    <p class="lead">This synthetic example shows the behavior Litoral Trace is designed to provide: extract what is present, keep the source, compare documents, refuse to invent missing values and export structured data for review.</p>
+  </div>
+</section>
+<section class="demo-shell">
+  <div class="container">
+    <div class="sample-docs" aria-label="Synthetic shipment files">
+      <div class="sample-doc">📄<strong>commercial_invoice.pdf</strong><small>Importer, HTS, value, quantity</small></div>
+      <div class="sample-doc">📦<strong>packing_list.pdf</strong><small>Container, line item, quantity</small></div>
+      <div class="sample-doc">📊<strong>supplier_species.xlsx</strong><small>Genus, species, product</small></div>
+      <div class="sample-doc">🧾<strong>supplier_declaration.pdf</strong><small>Supplier evidence</small></div>
+      <div class="sample-doc">🚢<strong>bill_of_lading.pdf</strong><small>B/L and container reference</small></div>
+    </div>
+    <div class="runbar">
+      <button class="btn btn-dark" id="run-demo" type="button">Analyze sample shipment</button>
+      <span class="progress" id="demo-progress" aria-live="polite">Reading documents → extracting values → comparing evidence…</span>
+    </div>
+
+    <section class="result" id="demo-result" aria-live="polite">
+      <div class="summary">
+        <div class="metric"><strong>25</strong><span>structured review fields</span></div>
+        <div class="metric"><strong>23</strong><span>values found</span></div>
+        <div class="metric"><strong>2</strong><span>missing values</span></div>
+        <div class="metric"><strong>1</strong><span>document conflict</span></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Extracted value</th><th>Source evidence</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>Importer Name</td><td>Northstar Home Imports LLC</td><td class="source">commercial_invoice.pdf</td><td><span class="tag ok">MATCHED</span></td></tr>
+            <tr><td>Bill of Lading</td><td>OAKDEMO260829</td><td class="source">commercial_invoice.pdf ↔ bill_of_lading.pdf</td><td><span class="tag ok">MATCHED</span></td></tr>
+            <tr><td>HTS Code</td><td>9403608081</td><td class="source">commercial_invoice.pdf</td><td><span class="tag ok">FOUND</span></td></tr>
+            <tr><td>Genus / Species</td><td>Quercus / alba</td><td class="source">supplier_species.xlsx</td><td><span class="tag ok">MATCHED</span></td></tr>
+            <tr><td>Plant Quantity</td><td>5,000 kg</td><td class="source">Invoice: 5,000 kg · Packing List: 4,850 kg</td><td><span class="tag review">REVIEW</span></td></tr>
+            <tr><td>Country of Harvest</td><td>—</td><td class="source">No supporting value found</td><td><span class="tag missing">MISSING</span></td></tr>
+            <tr><td>Manufacturer ID</td><td>—</td><td class="source">No supporting value found</td><td><span class="tag missing">MISSING</span></td></tr>
+            <tr><td>Supporting Reference</td><td>INV-DEMO-1001 / SUPPLIER-SHEET-DEMO</td><td class="source">linked source set</td><td><span class="tag ok">FOUND</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note-box"><strong>Why this matters:</strong> the sample does not fill blanks with guesses. The country of harvest and manufacturer ID remain missing, while the quantity difference is surfaced for human review. This is an illustrative workflow, not a Lacey compliance decision.</div>
+      <div class="actions">
+        <a class="btn btn-primary" id="download-demo" href="{{ url_for('static', path='/demo/litoral-trace-lacey-demo-output.xlsx') }}" download>Download prepared XLSX</a>
+        <a class="btn btn-dark" href="/lacey#private-beta">Test one historical shipment</a>
+      </div>
+    </section>
+  </div>
+</section>
+</main>
+<footer class="footer"><div class="container footer-in"><div><strong>Litoral Trace</strong><p>This page uses a synthetic shipment to demonstrate the intended document-to-data workflow.</p></div><div><p>Litoral Trace does not file declarations, provide legal advice, certify Lacey Act compliance, or guarantee acceptance by APHIS, CBP, ACE or LAWGS.</p></div></div></footer>
+<script>
+(() => {
+  const endpoint='/lacey/event';
+  const send=(event)=>fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({event}),keepalive:true}).catch(()=>{});
+  send('lacey_demo_open');
+  const btn=document.getElementById('run-demo');
+  const progress=document.getElementById('demo-progress');
+  const result=document.getElementById('demo-result');
+  btn.addEventListener('click',()=>{
+    send('lacey_demo_run');
+    btn.disabled=true;progress.classList.add('visible');
+    setTimeout(()=>{progress.textContent='Analysis complete — review the exceptions below.';result.classList.add('visible');result.scrollIntoView({behavior:'smooth',block:'start'});},900);
+  });
+  document.getElementById('download-demo').addEventListener('click',()=>send('lacey_demo_download'));
+})();
+</script>
+</body>
+</html>

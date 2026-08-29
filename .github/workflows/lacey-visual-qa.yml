@@ -1,0 +1,103 @@
+name: Lacey Visual QA
+
+on:
+  pull_request:
+    branches:
+      - feature/assurance-v1
+    paths:
+      - "src/litoral_trace/templates/public/lacey*.html"
+      - "src/litoral_trace/static/css/lacey_beta.css"
+      - "src/litoral_trace/static/demo/**"
+      - "src/litoral_trace/web/lacey_*.py"
+      - "requirements-lacey.txt"
+      - ".github/workflows/lacey-visual-qa.yml"
+  push:
+    branches:
+      - experiment/us-lacey-gtm-weekend
+    paths:
+      - "src/litoral_trace/templates/public/lacey*.html"
+      - "src/litoral_trace/static/css/lacey_beta.css"
+      - "src/litoral_trace/static/demo/**"
+      - "src/litoral_trace/web/lacey_*.py"
+      - "requirements-lacey.txt"
+      - ".github/workflows/lacey-visual-qa.yml"
+
+jobs:
+  visual-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install isolated beta runtime + Playwright
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-lacey.txt playwright
+          python -m playwright install --with-deps chromium
+      - name: Start isolated Lacey beta
+        run: |
+          PYTHONPATH=src uvicorn litoral_trace.web.lacey_experiment_app:app --host 127.0.0.1 --port 8765 > /tmp/lacey-visual-qa.log 2>&1 &
+          echo $! > /tmp/lacey-visual-qa.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8765/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/lacey-visual-qa.log
+          exit 1
+      - name: Browser QA landing + demo desktop/mobile
+        run: |
+          mkdir -p visual-qa
+          cat > /tmp/lacey_visual_qa.py <<'PY'
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright
+
+          BASE = "http://127.0.0.1:8765"
+          out = Path("visual-qa")
+
+          def no_overflow(page, label):
+              widths = page.evaluate("() => ({inner: window.innerWidth, scroll: document.documentElement.scrollWidth})")
+              assert widths["scroll"] <= widths["inner"] + 1, f"{label}: horizontal overflow {widths}"
+
+          def check_landing(page, label):
+              page.goto(BASE + "/lacey", wait_until="networkidle")
+              assert page.locator("h1").inner_text().strip() == "Stop manually preparing Lacey spreadsheets."
+              assert page.locator("#lacey-beta-form").count() == 1
+              no_overflow(page, label + "-landing")
+              page.locator('a[href="/lacey/demo"]:visible').first.click()
+              page.wait_for_url("**/lacey/demo")
+              assert page.locator("#run-demo").is_visible()
+              page.screenshot(path=str(out / f"lacey-{label}-demo-top.png"), full_page=True)
+              page.locator("#run-demo").click()
+              page.locator("#demo-result").wait_for(state="visible", timeout=4000)
+              assert page.locator("#download-demo").is_visible()
+              assert page.locator("text=Country of Harvest").count() >= 1
+              no_overflow(page, label + "-demo")
+              page.screenshot(path=str(out / f"lacey-{label}-demo-result.png"), full_page=True)
+              page.goto(BASE + "/lacey", wait_until="networkidle")
+              page.locator('a[href="#private-beta"]').first.click()
+              page.fill("#work_email", "qa@example.com")
+              page.select_option("#role", label="Customs Broker")
+              page.select_option("#volume", label="11–50")
+              page.select_option("#workflow", label="Email + PDFs")
+              page.select_option("#willingness", label="Yes")
+              assert page.evaluate("() => document.getElementById('lacey-beta-form').checkValidity()")
+              page.screenshot(path=str(out / f"lacey-{label}-landing.png"), full_page=True)
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              desktop = browser.new_page(viewport={"width": 1440, "height": 1000}, device_scale_factor=1)
+              check_landing(desktop, "desktop-1440")
+              mobile = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
+              check_landing(mobile, "mobile-390")
+              browser.close()
+          PY
+          PYTHONPATH=src python /tmp/lacey_visual_qa.py
+      - name: Upload visual evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: lacey-visual-qa
+          path: visual-qa/*.png
+          if-no-files-found: error
+          retention-days: 14
