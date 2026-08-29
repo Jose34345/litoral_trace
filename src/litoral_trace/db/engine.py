@@ -119,10 +119,14 @@ def get_session_factory() -> Any:
         if _session_factory is not None:
             return _session_factory
         if engine:
+            # El contexto RLS de tenant es local a cada transacción. En una API
+            # request-scoped no debemos forzar un refresh implícito luego del
+            # commit, porque ese refresh nace en una transacción nueva sin GUC.
             _session_factory = sessionmaker(
                 bind=engine,
                 autoflush=False,
                 autocommit=False,
+                expire_on_commit=False,
             )
             return _session_factory
     except ImportError:

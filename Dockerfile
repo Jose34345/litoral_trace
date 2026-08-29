@@ -39,6 +39,9 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    tesseract-ocr-spa \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local

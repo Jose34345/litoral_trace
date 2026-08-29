@@ -1,0 +1,107 @@
+version: "3.8"
+
+# Dedicated Assurance pilot staging profile.
+# It intentionally does not define a local database, shared production volume,
+# satellite worker, EUDR LIVE transport, or public 0.0.0.0 host binding.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command:
+      [
+        "uvicorn",
+        "main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "1",
+        "--no-access-log",
+        "--log-config",
+        "/app/pilot/logging.json",
+      ]
+    environment:
+      ENVIRONMENT: staging
+      DATABASE_URL: ${ASSURANCE_PILOT_DATABASE_URL:?dedicated pilot DATABASE_URL is required}
+      JWT_SECRET_KEY: ${ASSURANCE_PILOT_JWT_SECRET_KEY:?dedicated pilot JWT secret is required}
+      JWT_ALGORITHM: HS256
+      JWT_ISSUER: litoral-trace-assurance-pilot
+      JWT_AUDIENCE: litoral-trace-assurance-pilot
+      ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+      REFRESH_TOKEN_EXPIRE_DAYS: "7"
+      CORS_ALLOW_ORIGINS: ${ASSURANCE_PILOT_CORS_ALLOW_ORIGINS:?pilot CORS origin is required}
+
+      STORAGE_BACKEND: s3
+      STORAGE_BUCKET_NAME: ${ASSURANCE_PILOT_STORAGE_BUCKET_NAME:?dedicated pilot bucket is required}
+      STORAGE_REGION: ${ASSURANCE_PILOT_STORAGE_REGION:-us-east-1}
+      STORAGE_ENDPOINT_URL: ${ASSURANCE_PILOT_STORAGE_ENDPOINT_URL:-}
+      STORAGE_ACCESS_KEY_ID: ${ASSURANCE_PILOT_STORAGE_ACCESS_KEY_ID:-}
+      STORAGE_SECRET_ACCESS_KEY: ${ASSURANCE_PILOT_STORAGE_SECRET_ACCESS_KEY:-}
+      STORAGE_FORCE_PATH_STYLE: ${ASSURANCE_PILOT_STORAGE_FORCE_PATH_STYLE:-0}
+      STORAGE_USE_TLS: "1"
+      STORAGE_VERIFY_TLS: "1"
+      STORAGE_KEY_PREFIX: assurance-pilot/${ASSURANCE_PILOT_STAGE_ID:-pilot-01}
+      STORAGE_MAX_UPLOAD_BYTES: "26214400"
+      STORAGE_ALLOWED_CONTENT_TYPES: application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv
+
+      LT_ASSURANCE_V1_ENABLED: "1"
+      LT_ASSURANCE_DOCUMENT_INTELLIGENCE_ENABLED: "1"
+      LT_ASSURANCE_RECONCILIATION_ENABLED: "1"
+      LT_ASSURANCE_PREFLIGHT_V2_ENABLED: "1"
+      LT_ASSURANCE_OPERATIONAL_EXCEPTIONS_ENABLED: "1"
+      LT_ASSURANCE_MARKET_READY_INVENTORY_ENABLED: "1"
+      LT_ASSURANCE_PILOT_MODE: "1"
+      LT_ASSURANCE_PILOT_ORGANIZATION_ID: ${ASSURANCE_PILOT_ORGANIZATION_ID:?pilot organization id is required}
+      LT_ASSURANCE_PILOT_CONFIG_PATH: /run/config/assurance-pilot.json
+
+      # Pilot staging does not run satellite workers or EUDR remote transport.
+      WORKERS_ENABLED: "0"
+      EUDR_ACCEPTANCE_ENABLED: "0"
+      LOG_LEVEL: INFO
+      SENTRY_DSN: ""
+    volumes:
+      - type: bind
+        source: ${ASSURANCE_PILOT_CONFIG_FILE:?pilot config file is required}
+        target: /run/config/assurance-pilot.json
+        read_only: true
+    ports:
+      - "127.0.0.1:${ASSURANCE_PILOT_PORT:-8001}:8000"
+    networks:
+      - assurance_pilot_staging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/ready"]
+      interval: 20s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+
+  # One-shot owner capability. This service is never long-lived and is not
+  # started unless the explicit `migration` profile is selected.
+  migrate:
+    profiles: ["migration"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      ENVIRONMENT: staging
+      DATABASE_URL: ${ASSURANCE_PILOT_DATABASE_URL:?dedicated pilot DATABASE_URL is required}
+      MIGRATION_DATABASE_URL: ${ASSURANCE_PILOT_MIGRATION_DATABASE_URL:?dedicated pilot migration owner is required}
+    networks:
+      - assurance_pilot_staging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+networks:
+  assurance_pilot_staging:
+    name: litoral_trace_assurance_pilot_staging
+    driver: bridge

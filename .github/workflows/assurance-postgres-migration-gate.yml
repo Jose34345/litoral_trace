@@ -1,0 +1,277 @@
+name: Assurance PostgreSQL Migration Gate
+
+on:
+  pull_request:
+    paths:
+      - "alembic/versions/030_add_assurance_document_intelligence.py"
+      - "alembic/versions/031_add_assurance_reconciliation.py"
+      - "alembic/versions/032_add_assurance_operational_exceptions.py"
+      - "alembic/versions/033_add_assurance_suppliers.py"
+      - "src/litoral_trace/assurance/**"
+      - "src/litoral_trace/db/models/assurance_document.py"
+      - "src/litoral_trace/db/models/reconciliation_issue.py"
+      - "src/litoral_trace/db/models/operational_exception.py"
+      - "src/litoral_trace/db/models/assurance_supplier.py"
+      - "tests/test_assurance_*postgres_integration.py"
+      - ".github/workflows/assurance-postgres-migration-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: assurance-postgres-migration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  assurance-postgres-migration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: assurance_root_password_2026
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      ENVIRONMENT: development
+      ENABLE_POSTGRES_TESTS: "1"
+      JWT_SECRET_KEY: assurance-ci-only-jwt-secret-key-2026
+      LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD: AssuranceCiBootstrapPassword2026
+      MIGRATION_DATABASE_URL: postgresql+psycopg://lt_assurance_migrator:assurance_migrator_password_2026@127.0.0.1:5432/litoral_trace_assurance_ci
+      TEST_POSTGRES_MIGRATION_DATABASE_URL: postgresql+psycopg://lt_assurance_migrator:assurance_migrator_password_2026@127.0.0.1:5432/litoral_trace_assurance_ci
+      DATABASE_URL: postgresql+psycopg://litoral_trace_app:assurance_runtime_password_2026@127.0.0.1:5432/litoral_trace_assurance_ci
+      TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:assurance_runtime_password_2026@127.0.0.1:5432/litoral_trace_assurance_ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest alembic
+
+      - name: Provision isolated migration owner and runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from sqlalchemy import create_engine
+
+          root = create_engine(
+              "postgresql+psycopg://postgres:assurance_root_password_2026@127.0.0.1:5432/postgres",
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          statements = [
+              """
+              CREATE ROLE lt_assurance_migrator
+                LOGIN
+                PASSWORD 'assurance_migrator_password_2026'
+                NOSUPERUSER
+                NOCREATEDB
+                CREATEROLE
+                INHERIT
+                NOBYPASSRLS
+              """,
+              """
+              CREATE ROLE litoral_trace_app
+                LOGIN
+                PASSWORD 'assurance_runtime_password_2026'
+                NOSUPERUSER
+                NOCREATEDB
+                NOCREATEROLE
+                NOINHERIT
+                NOBYPASSRLS
+              """,
+              "CREATE DATABASE litoral_trace_assurance_ci OWNER lt_assurance_migrator",
+          ]
+          with root.connect() as connection:
+              for statement in statements:
+                  connection.exec_driver_sql(statement)
+          root.dispose()
+
+          target_root = create_engine(
+              "postgresql+psycopg://postgres:assurance_root_password_2026@127.0.0.1:5432/litoral_trace_assurance_ci",
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          with target_root.connect() as connection:
+              connection.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS postgis")
+              connection.exec_driver_sql(
+                  "GRANT CONNECT ON DATABASE litoral_trace_assurance_ci TO litoral_trace_app"
+              )
+              connection.exec_driver_sql(
+                  "GRANT USAGE ON SCHEMA public TO litoral_trace_app"
+              )
+          target_root.dispose()
+          PY
+
+      - name: Verify isolated PostgreSQL shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
+          with engine.connect() as connection:
+              version = connection.execute(text("SHOW server_version_num")).scalar_one()
+              role = connection.execute(text("""
+                  SELECT rolsuper, rolcreatedb, rolcreaterole, rolbypassrls
+                  FROM pg_roles
+                  WHERE rolname = current_user
+              """)).mappings().one()
+          assert int(version) // 10000 == 17
+          assert role["rolsuper"] is False
+          assert role["rolcreatedb"] is False
+          assert role["rolcreaterole"] is True
+          assert role["rolbypassrls"] is False
+          engine.dispose()
+          PY
+
+      - name: Migrate isolated database through 029
+        run: python -m alembic upgrade 029_add_smart_import_profiles
+
+      - name: Prove pre-Assurance baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m alembic current | tee alembic-before-assurance.txt
+          grep -F "029_add_smart_import_profiles" alembic-before-assurance.txt
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
+          with engine.connect() as connection:
+              count = connection.execute(text("""
+                  SELECT count(*)
+                  FROM information_schema.tables
+                  WHERE table_schema = 'public'
+                    AND table_name IN (
+                      'assurance_documents',
+                      'reconciliation_issues',
+                      'operational_exceptions',
+                      'assurance_suppliers'
+                    )
+              """)).scalar_one()
+          assert count == 0
+          engine.dispose()
+          PY
+
+      - name: Execute Assurance migrations 030 through 033
+        run: python -m alembic upgrade head
+
+      - name: Verify canonical head 033
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m alembic current | tee alembic-after-assurance.txt
+          grep -F "033_assurance_suppliers" alembic-after-assurance.txt
+
+      - name: Verify Assurance schema and FORCE RLS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          expected = {
+              'assurance_documents',
+              'document_extraction_runs',
+              'extracted_document_fields',
+              'document_claims',
+              'document_entity_links',
+              'reconciliation_issues',
+              'operational_exceptions',
+              'assurance_suppliers',
+          }
+          engine = create_engine(os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
+          with engine.connect() as connection:
+              rows = connection.execute(text("""
+                  SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
+                  FROM pg_class AS c
+                  JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                  WHERE n.nspname = 'public'
+                    AND c.relname = ANY(:names)
+              """), {"names": sorted(expected)}).mappings().all()
+              policies = connection.execute(text("""
+                  SELECT tablename, count(*) AS policy_count
+                  FROM pg_policies
+                  WHERE schemaname = 'public'
+                    AND tablename = ANY(:names)
+                  GROUP BY tablename
+              """), {"names": sorted(expected)}).mappings().all()
+
+          by_table = {row['relname']: row for row in rows}
+          assert set(by_table) == expected
+          assert all(row['relrowsecurity'] is True for row in by_table.values())
+          assert all(row['relforcerowsecurity'] is True for row in by_table.values())
+          policy_counts = {row['tablename']: row['policy_count'] for row in policies}
+          assert set(policy_counts) == expected
+          assert all(policy_counts[name] >= 3 for name in expected)
+          engine.dispose()
+          PY
+
+      - name: Gate Document Intelligence tenant RLS on real PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs tests/test_assurance_tenant_rls_postgres_integration.py
+
+      - name: Gate Reconciliation tenant RLS on real PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs tests/test_assurance_reconciliation_rls_postgres_integration.py
+
+      - name: Gate Operational Exception tenant RLS on real PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs tests/test_assurance_operational_exceptions_rls_postgres_integration.py
+
+      - name: Gate Assurance Supplier tenant RLS on real PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs tests/test_assurance_suppliers_rls_postgres_integration.py
+
+      - name: Fail closed if any Assurance PostgreSQL test is skipped
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          required = (
+              "ENABLE_POSTGRES_TESTS",
+              "TEST_POSTGRES_DATABASE_URL",
+              "TEST_POSTGRES_MIGRATION_DATABASE_URL",
+          )
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit(f"Assurance PostgreSQL gate missing required env: {missing}")
+          PY

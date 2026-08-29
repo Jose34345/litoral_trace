@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from litoral_trace.assurance.feature_flags import get_assurance_feature_flags
 from litoral_trace.auth.rbac import Permission, has_permission
 
 
@@ -50,6 +51,22 @@ _NAVIGATION = (
         section="operacion",
         permission=Permission.TRACEABILITY_OPERATE,
         active_prefixes=("/operations",),
+    ),
+    NavigationItem(
+        key="assurance_workspace",
+        label="Agregar documentos",
+        href="/api/v1/assurance/workspace",
+        section="operacion",
+        permission=Permission.VAULT_UPLOAD,
+        active_prefixes=("/api/v1/assurance/workspace",),
+    ),
+    NavigationItem(
+        key="attention",
+        label="Requiere atención",
+        href="/api/v1/assurance/attention",
+        section="operacion",
+        permission=Permission.TRACEABILITY_OPERATE,
+        active_prefixes=("/api/v1/assurance/attention",),
     ),
     NavigationItem(
         key="imports",
@@ -127,17 +144,23 @@ def build_navigation(
 
     visible: list[NavigationView] = []
     role = str(getattr(user, "role", "") or "").strip().lower()
+    assurance_flags = get_assurance_feature_flags()
 
     for item in _NAVIGATION:
         if not has_permission(user, item.permission):
             continue
 
-        # Pilot readiness is an onboarding workspace for the tenant roles that
-        # actually operate the pilot. Superadmin remains a platform control-
-        # plane role, while auditor/cliente retain read-only direct-route/API
-        # access through LOTE_READ without adding onboarding clutter to their
-        # sidebar.
         if item.key == "pilot_readiness" and role not in {"admin", "manager"}:
+            continue
+
+        if item.key == "assurance_workspace" and not (
+            assurance_flags.assurance_v1 and assurance_flags.document_intelligence
+        ):
+            continue
+
+        if item.key == "attention" and not (
+            assurance_flags.assurance_v1 and assurance_flags.operational_exceptions
+        ):
             continue
 
         visible.append(

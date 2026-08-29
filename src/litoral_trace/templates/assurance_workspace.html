@@ -1,0 +1,799 @@
+{% extends "app/base_app.html" %}
+
+{% block title %}Agregar documentos | Litoral Trace{% endblock %}
+
+{% block content %}
+<div
+    id="assurance-workspace"
+    data-upload-url="{{ assurance_upload_url }}"
+    data-preflight-url="{{ assurance_preflight_url }}"
+    data-csrf-token="{{ csrf_token }}"
+    data-csrf-header="{{ csrf_header_name }}"
+>
+    <div class="mb-6">
+        <p class="text-xs font-semibold uppercase tracking-wider text-emerald-700">Assurance v1</p>
+        <h1 class="mt-1 text-2xl font-bold text-slate-950">Agregar documentos/datos de operación</h1>
+        <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Subí los PDF, Excel o CSV que la empresa ya usa. Litoral Trace conserva los originales, extrae y reutiliza datos, detecta discrepancias y ejecuta Preflight sin obligarte a repetir información.</p>
+    </div>
+
+    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <form id="assurance-upload-form">
+            <input id="assurance-files" class="sr-only" type="file" multiple accept=".pdf,.xlsx,.xls,.csv,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            <label
+                id="assurance-dropzone"
+                for="assurance-files"
+                class="flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center transition hover:border-emerald-400 hover:bg-emerald-50/40"
+            >
+                <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm" aria-hidden="true"><i class="fa-solid fa-file-arrow-up"></i></span>
+                <span class="mt-3 text-sm font-bold text-slate-950">Arrastrá los archivos acá</span>
+                <span class="mt-1 text-xs text-slate-500">o tocá para elegir varios PDF, XLSX, XLS o CSV</span>
+            </label>
+
+            <div id="assurance-selection" class="mt-4 hidden rounded-xl border border-slate-200 bg-slate-50 p-4" aria-live="polite"></div>
+            <div class="mt-4 flex flex-wrap items-center gap-3">
+                <button id="assurance-submit" type="submit" disabled class="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">
+                    <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                    Procesar documentos
+                </button>
+                <p class="text-xs text-slate-500">No hace falta completar un formulario antes de subirlos.</p>
+            </div>
+        </form>
+    </section>
+
+    <section id="assurance-results-section" class="mt-6 hidden">
+        <div class="mb-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+                <h2 class="text-base font-bold text-slate-950">Resultado automático</h2>
+                <p class="mt-1 text-xs text-slate-500">La carga, extracción, conciliación y Preflight forman un único flujo.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <button id="assurance-select-all-pending" type="button" class="hidden rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700">Seleccionar todos los pendientes</button>
+                <button id="assurance-bulk-approve" type="button" class="hidden rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Aprobar selección masiva</button>
+                <span id="assurance-summary" class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"></span>
+            </div>
+        </div>
+
+        <div id="assurance-outcome" class="mb-4 hidden grid gap-3 sm:grid-cols-3" aria-live="polite">
+            <div class="rounded-xl border border-slate-200 bg-white p-4">
+                <p id="assurance-created-count" class="text-xl font-bold text-slate-950">0</p>
+                <p class="text-xs text-slate-500">Registros creados</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-white p-4">
+                <p id="assurance-updated-count" class="text-xl font-bold text-slate-950">0</p>
+                <p class="text-xs text-slate-500">Registros actualizados automáticamente</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-white p-4">
+                <p id="assurance-discrepancy-count" class="text-xl font-bold text-slate-950">0</p>
+                <p class="text-xs text-slate-500">Discrepancias abiertas</p>
+            </div>
+        </div>
+
+        <div id="assurance-discrepancies" class="mb-4 hidden rounded-2xl border border-amber-200 bg-amber-50 p-4" aria-live="polite"></div>
+        <div id="assurance-results" class="space-y-4" aria-live="polite"></div>
+
+        <section id="assurance-preflight-panel" class="mt-4 hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-live="polite">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Preflight automático</p>
+                    <h2 class="mt-1 text-base font-bold text-slate-950">Preparación operativa</h2>
+                    <p class="mt-1 text-xs text-slate-500">Se ejecuta al terminar el procesamiento. Si falta un dato que Litoral Trace no pudo obtener, se pide únicamente ese dato.</p>
+                </div>
+                <span id="assurance-preflight-status" class="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">Pendiente</span>
+            </div>
+            <div id="assurance-preflight-reasons" class="mt-4 space-y-2"></div>
+            <form id="assurance-preflight-missing" class="mt-4 hidden rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs font-bold text-slate-800">Completar sólo lo que falta</p>
+                <div id="assurance-preflight-missing-fields" class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"></div>
+                <button type="submit" class="mt-3 rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold text-white">Reevaluar Preflight</button>
+            </form>
+            <p id="assurance-preflight-disclaimer" class="mt-3 hidden text-[11px] leading-5 text-slate-400"></p>
+        </section>
+    </section>
+
+    <div id="assurance-global-error" class="mt-5 hidden rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert"></div>
+</div>
+
+<script>
+(() => {
+    const root = document.getElementById('assurance-workspace');
+    if (!root) return;
+
+    const uploadUrl = root.dataset.uploadUrl;
+    const preflightUrl = root.dataset.preflightUrl;
+    const csrfToken = root.dataset.csrfToken;
+    const csrfHeader = root.dataset.csrfHeader;
+    const form = document.getElementById('assurance-upload-form');
+    const input = document.getElementById('assurance-files');
+    const dropzone = document.getElementById('assurance-dropzone');
+    const selection = document.getElementById('assurance-selection');
+    const submit = document.getElementById('assurance-submit');
+    const resultsSection = document.getElementById('assurance-results-section');
+    const results = document.getElementById('assurance-results');
+    const summary = document.getElementById('assurance-summary');
+    const outcome = document.getElementById('assurance-outcome');
+    const createdCount = document.getElementById('assurance-created-count');
+    const updatedCount = document.getElementById('assurance-updated-count');
+    const discrepancyCount = document.getElementById('assurance-discrepancy-count');
+    const discrepanciesPanel = document.getElementById('assurance-discrepancies');
+    const selectAllPending = document.getElementById('assurance-select-all-pending');
+    const bulkApprove = document.getElementById('assurance-bulk-approve');
+    const preflightPanel = document.getElementById('assurance-preflight-panel');
+    const preflightStatus = document.getElementById('assurance-preflight-status');
+    const preflightReasons = document.getElementById('assurance-preflight-reasons');
+    const preflightMissing = document.getElementById('assurance-preflight-missing');
+    const preflightMissingFields = document.getElementById('assurance-preflight-missing-fields');
+    const preflightDisclaimer = document.getElementById('assurance-preflight-disclaimer');
+    const globalError = document.getElementById('assurance-global-error');
+
+    let selectedFiles = [];
+    let terminalDocuments = 0;
+    let totalDocuments = 0;
+    let createdRecords = 0;
+    let updatedRecords = 0;
+    let batchDocuments = [];
+    let preflightOverrides = {};
+    const countedDocuments = new Set();
+    const reviewCache = new Map();
+    const discrepancyCache = new Map();
+
+    const escapeText = (value) => String(value ?? '');
+
+    function showError(message) {
+        globalError.textContent = escapeText(message);
+        globalError.classList.remove('hidden');
+    }
+
+    function clearError() {
+        globalError.textContent = '';
+        globalError.classList.add('hidden');
+    }
+
+    function updateOutcome() {
+        createdCount.textContent = String(createdRecords);
+        updatedCount.textContent = String(updatedRecords);
+        discrepancyCount.textContent = String(discrepancyCache.size);
+        outcome.classList.remove('hidden');
+    }
+
+    function renderSelection() {
+        selection.replaceChildren();
+        if (!selectedFiles.length) {
+            selection.classList.add('hidden');
+            submit.disabled = true;
+            return;
+        }
+        selection.classList.remove('hidden');
+        submit.disabled = false;
+        const title = document.createElement('p');
+        title.className = 'text-xs font-bold text-slate-700';
+        title.textContent = `${selectedFiles.length} archivo${selectedFiles.length === 1 ? '' : 's'} listo${selectedFiles.length === 1 ? '' : 's'} para procesar`;
+        selection.appendChild(title);
+        const list = document.createElement('ul');
+        list.className = 'mt-2 space-y-1 text-xs text-slate-600';
+        selectedFiles.forEach((file) => {
+            const item = document.createElement('li');
+            item.textContent = `${file.name} · ${Math.max(1, Math.round(file.size / 1024))} KB`;
+            list.appendChild(item);
+        });
+        selection.appendChild(list);
+    }
+
+    function setFiles(fileList) {
+        selectedFiles = Array.from(fileList || []).slice(0, 20);
+        renderSelection();
+    }
+
+    input.addEventListener('change', () => setFiles(input.files));
+    ['dragenter', 'dragover'].forEach((eventName) => {
+        dropzone.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            dropzone.classList.add('border-emerald-500', 'bg-emerald-50');
+        });
+    });
+    ['dragleave', 'drop'].forEach((eventName) => {
+        dropzone.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            dropzone.classList.remove('border-emerald-500', 'bg-emerald-50');
+        });
+    });
+    dropzone.addEventListener('drop', (event) => setFiles(event.dataTransfer.files));
+
+    function statusLabel(status) {
+        const labels = {
+            UPLOADED: 'Recibido',
+            PROCESSING: 'Procesando',
+            EXTRACTED: 'Extraído',
+            NEEDS_REVIEW: 'Requiere revisión',
+            FAILED: 'Falló'
+        };
+        return labels[status] || status || 'Pendiente';
+    }
+
+    function createDocumentCard(documentItem) {
+        const card = document.createElement('article');
+        card.className = 'rounded-2xl border border-slate-200 bg-white p-5 shadow-sm';
+        card.dataset.documentId = documentItem.assurance_document_id;
+
+        const header = document.createElement('div');
+        header.className = 'flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between';
+        const info = document.createElement('div');
+        const name = document.createElement('h3');
+        name.className = 'text-sm font-bold text-slate-950';
+        name.textContent = documentItem.filename;
+        const detail = document.createElement('p');
+        detail.className = 'mt-1 text-xs text-slate-500';
+        detail.textContent = documentItem.duplicate ? 'Original ya existente · se reutilizan sus datos' : 'Original guardado en Evidence Vault';
+        info.append(name, detail);
+        const badge = document.createElement('span');
+        badge.className = 'assurance-status rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700';
+        badge.textContent = statusLabel(documentItem.processing_status);
+        header.append(info, badge);
+
+        const progressWrap = document.createElement('div');
+        progressWrap.className = 'mt-4 h-2 overflow-hidden rounded-full bg-slate-100';
+        const progressBar = document.createElement('div');
+        progressBar.className = 'assurance-progress h-full bg-emerald-500 transition-all';
+        progressBar.style.width = documentItem.duplicate ? '100%' : '20%';
+        progressWrap.appendChild(progressBar);
+
+        const body = document.createElement('div');
+        body.className = 'assurance-body mt-4';
+        const initial = document.createElement('p');
+        initial.className = 'text-xs text-slate-500';
+        initial.textContent = documentItem.duplicate ? 'Documento reconocido; recuperando lo ya obtenido.' : 'Extrayendo, vinculando y conciliando información…';
+        body.appendChild(initial);
+        card.append(header, progressWrap, body);
+        return card;
+    }
+
+    function updateRunSummary(body, progress) {
+        const metadata = progress.latest_run?.metadata || {};
+        body.replaceChildren();
+        const metrics = document.createElement('div');
+        metrics.className = 'grid gap-3 sm:grid-cols-3';
+        const values = [
+            ['Datos detectados', metadata.structured_field_count ?? 0],
+            ['Aceptados automáticamente', metadata.auto_accepted_field_count ?? 0],
+            ['Necesitan revisión', metadata.review_field_count ?? 0]
+        ];
+        values.forEach(([label, value]) => {
+            const box = document.createElement('div');
+            box.className = 'rounded-xl bg-slate-50 p-3';
+            const number = document.createElement('p');
+            number.className = 'text-lg font-bold text-slate-950';
+            number.textContent = value;
+            const text = document.createElement('p');
+            text.className = 'text-xs text-slate-500';
+            text.textContent = label;
+            box.append(number, text);
+            metrics.appendChild(box);
+        });
+        body.appendChild(metrics);
+
+        if (metadata.entity_link_count) {
+            const links = document.createElement('p');
+            links.className = 'mt-3 text-xs text-slate-600';
+            links.textContent = `${metadata.entity_link_count} vínculo${metadata.entity_link_count === 1 ? '' : 's'} con datos ya conocidos detectado${metadata.entity_link_count === 1 ? '' : 's'} automáticamente.`;
+            body.appendChild(links);
+        }
+        if (metadata.pipeline_error_code) {
+            const notice = document.createElement('p');
+            notice.className = 'mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-800';
+            notice.textContent = `La extracción terminó, pero el cierre operativo requiere atención: ${metadata.pipeline_error_code}`;
+            body.appendChild(notice);
+        } else if (progress.last_error_code && progress.processing_status !== 'FAILED') {
+            const notice = document.createElement('p');
+            notice.className = 'mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-800';
+            notice.textContent = `Intervención requerida: ${progress.last_error_code}`;
+            body.appendChild(notice);
+        }
+    }
+
+    function renderAutoAccepted(area, review) {
+        const automatic = (review.fields || []).filter((field) => field.auto_accepted);
+        const details = document.createElement('details');
+        details.className = 'mt-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-3';
+        const heading = document.createElement('summary');
+        heading.className = 'cursor-pointer text-xs font-bold text-emerald-800';
+        heading.textContent = `Datos obtenidos automáticamente (${automatic.length})`;
+        details.appendChild(heading);
+        if (!automatic.length) {
+            const empty = document.createElement('p');
+            empty.className = 'mt-2 text-xs text-slate-500';
+            empty.textContent = 'No hubo datos con confianza suficiente para autoaceptar.';
+            details.appendChild(empty);
+        } else {
+            const list = document.createElement('dl');
+            list.className = 'mt-2 grid gap-2 sm:grid-cols-2';
+            automatic.forEach((field) => {
+                const row = document.createElement('div');
+                row.className = 'rounded-lg bg-white p-2';
+                const name = document.createElement('dt');
+                name.className = 'text-[11px] font-bold text-slate-500';
+                name.textContent = field.field_name;
+                const value = document.createElement('dd');
+                value.className = 'mt-1 break-words text-xs text-slate-800';
+                value.textContent = field.normalized_value ?? field.original_value ?? 'Sin valor';
+                const source = document.createElement('p');
+                source.className = 'mt-1 text-[10px] text-slate-400';
+                source.textContent = `Confianza ${Math.round((field.confidence || 0) * 100)}%${field.source_page ? ` · página ${field.source_page}` : ''}`;
+                row.append(name, value, source);
+                list.appendChild(row);
+            });
+            details.appendChild(list);
+        }
+        area.appendChild(details);
+    }
+
+    function rebuildDiscrepancies() {
+        discrepancyCache.clear();
+        reviewCache.forEach((review) => {
+            (review.issues || []).forEach((issue) => discrepancyCache.set(issue.public_id, issue));
+        });
+        renderDiscrepancies();
+    }
+
+    function renderDiscrepancies() {
+        discrepancyCount.textContent = String(discrepancyCache.size);
+        discrepanciesPanel.replaceChildren();
+        if (!discrepancyCache.size) {
+            discrepanciesPanel.classList.add('hidden');
+            return;
+        }
+        discrepanciesPanel.classList.remove('hidden');
+        const title = document.createElement('p');
+        title.className = 'text-xs font-bold text-amber-900';
+        title.textContent = `Discrepancias detectadas inmediatamente (${discrepancyCache.size})`;
+        discrepanciesPanel.appendChild(title);
+        const list = document.createElement('div');
+        list.className = 'mt-2 space-y-2';
+        Array.from(discrepancyCache.values()).forEach((issue) => {
+            const item = document.createElement('div');
+            item.className = 'rounded-lg bg-white/80 p-3';
+            const code = document.createElement('p');
+            code.className = 'text-[11px] font-bold text-amber-900';
+            code.textContent = `${issue.severity} · ${issue.rule_code}`;
+            const explanation = document.createElement('p');
+            explanation.className = 'mt-1 text-xs text-slate-700';
+            explanation.textContent = issue.explanation;
+            item.append(code, explanation);
+            list.appendChild(item);
+        });
+        discrepanciesPanel.appendChild(list);
+    }
+
+    function refreshBulkControls() {
+        const pending = document.querySelectorAll('.assurance-review-check').length;
+        selectAllPending.classList.toggle('hidden', pending === 0);
+        bulkApprove.classList.toggle('hidden', pending === 0);
+    }
+
+    async function approveFields(documentId, fieldIds) {
+        const approval = await fetch(`/api/v1/assurance/documents/${encodeURIComponent(documentId)}/review/approve`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                [csrfHeader]: csrfToken
+            },
+            body: JSON.stringify({ field_ids: fieldIds })
+        });
+        const payload = await approval.json().catch(() => ({}));
+        if (!approval.ok) {
+            throw new Error(payload?.detail?.message || 'No se pudieron aprobar los campos.');
+        }
+        const reconciliation = payload.reconciliation || {};
+        createdRecords += Number(reconciliation.created_count || 0);
+        updatedRecords += Number(reconciliation.refreshed_count || 0);
+        updatedRecords += Number(reconciliation.reopened_count || 0);
+        updatedRecords += Number(reconciliation.auto_resolved_count || 0);
+        updateOutcome();
+        const card = results.querySelector(`[data-document-id="${CSS.escape(documentId)}"]`);
+        if (card) await loadReview(card, documentId);
+        if (reconciliation.enabled && !reconciliation.completed) {
+            showError('La aprobación quedó guardada, pero la conciliación automática no pudo actualizarse. Volvé a intentar antes de liberar la operación.');
+        }
+        if (terminalDocuments === totalDocuments) await runAutomaticPreflight();
+        return payload;
+    }
+
+    async function loadReview(card, documentId) {
+        const response = await fetch(`/api/v1/assurance/documents/${encodeURIComponent(documentId)}/review`, {
+            credentials: 'same-origin'
+        });
+        if (!response.ok) return null;
+        const review = await response.json();
+        reviewCache.set(documentId, review);
+        rebuildDiscrepancies();
+        const body = card.querySelector('.assurance-body');
+        if (!body) return review;
+
+        const prior = body.querySelector('.assurance-review');
+        if (prior) prior.remove();
+        const area = document.createElement('div');
+        area.className = 'assurance-review mt-4 border-t border-slate-200 pt-4';
+
+        const auto = document.createElement('p');
+        auto.className = 'text-xs font-semibold text-emerald-700';
+        auto.textContent = `${review.auto_accepted_count} de ${review.structured_field_count} datos quedaron aceptados automáticamente.`;
+        area.appendChild(auto);
+        renderAutoAccepted(area, review);
+
+        const pending = (review.fields || []).filter((field) => field.needs_review);
+        if (!pending.length) {
+            const done = document.createElement('p');
+            done.className = 'mt-3 text-xs text-slate-500';
+            done.textContent = 'No hay campos individuales pendientes de revisión.';
+            area.appendChild(done);
+            body.appendChild(area);
+            refreshBulkControls();
+            return review;
+        }
+
+        const heading = document.createElement('div');
+        heading.className = 'mt-3 flex items-center justify-between gap-3';
+        const title = document.createElement('h4');
+        title.className = 'text-sm font-bold text-slate-950';
+        title.textContent = 'Sólo requiere tu atención';
+        const selectAll = document.createElement('button');
+        selectAll.type = 'button';
+        selectAll.className = 'text-xs font-semibold text-emerald-700';
+        selectAll.textContent = 'Seleccionar todo';
+        heading.append(title, selectAll);
+        area.appendChild(heading);
+
+        const list = document.createElement('div');
+        list.className = 'mt-2 space-y-2';
+        pending.forEach((field) => {
+            const label = document.createElement('label');
+            label.className = 'flex items-start gap-3 rounded-xl border border-slate-200 p-3';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = field.id;
+            checkbox.dataset.documentId = documentId;
+            checkbox.className = 'assurance-review-check mt-1';
+            const content = document.createElement('span');
+            content.className = 'min-w-0 flex-1';
+            const fieldName = document.createElement('span');
+            fieldName.className = 'block text-xs font-bold text-slate-800';
+            fieldName.textContent = field.field_name;
+            const value = document.createElement('span');
+            value.className = 'mt-1 block break-words text-xs text-slate-600';
+            value.textContent = field.normalized_value ?? field.original_value ?? 'Sin valor';
+            const provenance = document.createElement('span');
+            provenance.className = 'mt-1 block text-[11px] text-slate-400';
+            provenance.textContent = `Confianza ${Math.round((field.confidence || 0) * 100)}%${field.source_page ? ` · página ${field.source_page}` : ''}`;
+            content.append(fieldName, value, provenance);
+            label.append(checkbox, content);
+            list.appendChild(label);
+        });
+        area.appendChild(list);
+
+        const approve = document.createElement('button');
+        approve.type = 'button';
+        approve.className = 'mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white';
+        approve.textContent = 'Aprobar seleccionados';
+        area.appendChild(approve);
+
+        selectAll.addEventListener('click', () => {
+            area.querySelectorAll('.assurance-review-check').forEach((checkbox) => { checkbox.checked = true; });
+        });
+        approve.addEventListener('click', async () => {
+            const fieldIds = Array.from(area.querySelectorAll('.assurance-review-check:checked')).map((checkbox) => Number(checkbox.value));
+            if (!fieldIds.length) return;
+            approve.disabled = true;
+            clearError();
+            try {
+                await approveFields(documentId, fieldIds);
+            } catch (error) {
+                showError(error.message || 'No se pudieron aprobar los campos.');
+            } finally {
+                approve.disabled = false;
+            }
+        });
+        body.appendChild(area);
+        refreshBulkControls();
+        return review;
+    }
+
+    function countPersistedOutcome(documentItem, progress) {
+        if (documentItem.duplicate || countedDocuments.has(documentItem.assurance_document_id)) return;
+        countedDocuments.add(documentItem.assurance_document_id);
+        const metadata = progress.latest_run?.metadata || {};
+        createdRecords += Number(metadata.structured_field_count || 0);
+        createdRecords += Number(metadata.entity_link_count || 0);
+        createdRecords += Number(metadata.reconciliation_created_count || 0);
+        updatedRecords += Number(metadata.reconciliation_refreshed_count || 0);
+        updatedRecords += Number(metadata.reconciliation_reopened_count || 0);
+        updatedRecords += Number(metadata.reconciliation_auto_resolved_count || 0);
+        updateOutcome();
+    }
+
+    function acceptedConsensus(fieldName) {
+        const values = new Set();
+        reviewCache.forEach((review) => {
+            (review.fields || [])
+                .filter((field) => !field.needs_review && field.field_name === fieldName)
+                .forEach((field) => {
+                    const value = field.normalized_value ?? field.original_value;
+                    if (value !== null && value !== undefined && String(value).trim()) values.add(String(value).trim());
+                });
+        });
+        return values.size === 1 ? Array.from(values)[0] : null;
+    }
+
+    function operationReference() {
+        for (const review of reviewCache.values()) {
+            if (review.issues?.length && review.issues[0].operation_reference) return review.issues[0].operation_reference;
+            const link = (review.links || []).find((item) => ['SHIPMENT', 'ORDER', 'OPERATION'].includes(item.entity_type));
+            if (link?.entity_reference) {
+                if (link.entity_type === 'ORDER' && link.entity_reference.startsWith('order:')) {
+                    return `shipment:${link.entity_reference.slice('order:'.length)}`;
+                }
+                return link.entity_reference;
+            }
+        }
+        const first = batchDocuments[0]?.assurance_document_id || 'unknown';
+        return `assurance-batch:${first}`;
+    }
+
+    function preflightDocuments() {
+        const documents = [];
+        reviewCache.forEach((review) => {
+            const validUntilValues = (review.fields || [])
+                .filter((field) => !field.needs_review && field.field_name === 'valid_until')
+                .map((field) => field.normalized_value ?? field.original_value)
+                .filter(Boolean);
+            documents.push({
+                document_type: review.semantic_document_type || 'UNKNOWN',
+                reference: review.filename || String(review.assurance_document_id),
+                valid_until: new Set(validUntilValues).size === 1 ? validUntilValues[0] : null
+            });
+        });
+        return documents;
+    }
+
+    function buildPreflightPayload() {
+        const destination = acceptedConsensus('destination');
+        const normalizedMarket = destination && /^[A-Za-z]{2}$/.test(destination) ? destination.toUpperCase() : null;
+        return {
+            operation_reference: operationReference(),
+            customer_reference: preflightOverrides.customer_reference ?? acceptedConsensus('receiver_cuit') ?? acceptedConsensus('sale_reference') ?? acceptedConsensus('order_id'),
+            market: preflightOverrides.market ?? normalizedMarket,
+            product: preflightOverrides.product ?? acceptedConsensus('product'),
+            quantity: preflightOverrides.quantity ?? acceptedConsensus('quantity'),
+            commitment_date: preflightOverrides.commitment_date ?? null,
+            stock_available: preflightOverrides.stock_available ?? null,
+            documents: preflightDocuments(),
+            required_document_types: [],
+            origin_state: 'UNASSESSED',
+            genealogy_state: 'UNASSESSED',
+            phytosanitary_state: 'UNASSESSED',
+            eudr_state: 'UNASSESSED'
+        };
+    }
+
+    function missingPreflightFields(payload) {
+        const specs = [
+            ['customer_reference', 'Cliente / referencia', 'text'],
+            ['market', 'Mercado (código país)', 'text'],
+            ['product', 'Producto', 'text'],
+            ['quantity', 'Cantidad comprometida', 'number'],
+            ['commitment_date', 'Fecha de compromiso', 'date'],
+            ['stock_available', 'Stock disponible', 'number']
+        ];
+        return specs.filter(([key]) => payload[key] === null || payload[key] === undefined || payload[key] === '');
+    }
+
+    function renderMissingPreflight(payload) {
+        const missing = missingPreflightFields(payload);
+        preflightMissingFields.replaceChildren();
+        preflightMissing.classList.toggle('hidden', missing.length === 0);
+        missing.forEach(([key, labelText, type]) => {
+            const label = document.createElement('label');
+            label.className = 'block';
+            const text = document.createElement('span');
+            text.className = 'text-[11px] font-semibold text-slate-600';
+            text.textContent = labelText;
+            const field = document.createElement('input');
+            field.name = key;
+            field.type = type;
+            if (type === 'number') field.step = 'any';
+            field.required = true;
+            field.className = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900';
+            label.append(text, field);
+            preflightMissingFields.appendChild(label);
+        });
+    }
+
+    function renderPreflight(data, payload) {
+        preflightPanel.classList.remove('hidden');
+        preflightStatus.textContent = data.status || 'Sin resultado';
+        preflightStatus.className = 'rounded-full px-3 py-1 text-xs font-bold ' + (
+            data.status === 'READY' ? 'bg-emerald-100 text-emerald-800' :
+            data.status === 'CONDITIONAL' ? 'bg-amber-100 text-amber-900' :
+            'bg-red-100 text-red-800'
+        );
+        preflightReasons.replaceChildren();
+        (data.reasons || []).forEach((reason) => {
+            const item = document.createElement('div');
+            item.className = 'rounded-xl bg-slate-50 p-3';
+            const code = document.createElement('p');
+            code.className = 'text-[11px] font-bold text-slate-600';
+            code.textContent = `${reason.status} · ${reason.code}`;
+            const explanation = document.createElement('p');
+            explanation.className = 'mt-1 text-xs text-slate-800';
+            explanation.textContent = reason.explanation;
+            const action = document.createElement('p');
+            action.className = 'mt-1 text-xs font-semibold text-slate-600';
+            action.textContent = `Siguiente acción: ${reason.action}`;
+            item.append(code, explanation, action);
+            preflightReasons.appendChild(item);
+        });
+        if (!(data.reasons || []).length) {
+            const ready = document.createElement('p');
+            ready.className = 'text-xs font-semibold text-emerald-700';
+            ready.textContent = 'No se detectaron bloqueos ni condiciones pendientes en este Preflight.';
+            preflightReasons.appendChild(ready);
+        }
+        preflightDisclaimer.textContent = data.legal_disclaimer || '';
+        preflightDisclaimer.classList.toggle('hidden', !data.legal_disclaimer);
+        renderMissingPreflight(payload);
+    }
+
+    async function runAutomaticPreflight() {
+        if (!preflightUrl || !batchDocuments.length) return;
+        const payload = buildPreflightPayload();
+        preflightPanel.classList.remove('hidden');
+        preflightStatus.textContent = 'Evaluando…';
+        try {
+            const response = await fetch(preflightUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    [csrfHeader]: csrfToken
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data?.detail?.message || 'No se pudo ejecutar Preflight.');
+            }
+            renderPreflight(data, payload);
+        } catch (error) {
+            preflightStatus.textContent = 'No disponible';
+            showError(error.message || 'No se pudo ejecutar Preflight.');
+        }
+    }
+
+    async function finalizeBatchIfReady() {
+        if (terminalDocuments !== totalDocuments || totalDocuments === 0) return;
+        summary.textContent = `${terminalDocuments}/${totalDocuments} finalizados · Preflight ejecutado`;
+        await runAutomaticPreflight();
+    }
+
+    async function pollProgress(documentItem, card) {
+        if (documentItem.duplicate) {
+            await loadReview(card, documentItem.assurance_document_id).catch(() => null);
+            terminalDocuments += 1;
+            summary.textContent = `${terminalDocuments}/${totalDocuments} finalizados`;
+            await finalizeBatchIfReady();
+            return;
+        }
+        try {
+            const response = await fetch(documentItem.progress_url, { credentials: 'same-origin' });
+            if (!response.ok) throw new Error('No se pudo consultar el progreso.');
+            const progress = await response.json();
+            const metadata = progress.latest_run?.metadata || {};
+            card.querySelector('.assurance-status').textContent = statusLabel(progress.processing_status);
+            const extractionTerminal = ['EXTRACTED', 'NEEDS_REVIEW'].includes(progress.processing_status);
+            const pipelineCompleted = metadata.pipeline_completed === true;
+            const failed = progress.processing_status === 'FAILED';
+            const shownProgress = extractionTerminal && !pipelineCompleted ? 95 : (progress.progress_percent || 0);
+            card.querySelector('.assurance-progress').style.width = `${shownProgress}%`;
+            updateRunSummary(card.querySelector('.assurance-body'), progress);
+            if (!failed && (!extractionTerminal || !pipelineCompleted)) {
+                window.setTimeout(() => pollProgress(documentItem, card), 900);
+                return;
+            }
+            countPersistedOutcome(documentItem, progress);
+            if (!failed) await loadReview(card, documentItem.assurance_document_id);
+            terminalDocuments += 1;
+            summary.textContent = `${terminalDocuments}/${totalDocuments} finalizados`;
+            await finalizeBatchIfReady();
+        } catch (error) {
+            showError(error.message || 'No se pudo actualizar el procesamiento.');
+        }
+    }
+
+    selectAllPending.addEventListener('click', () => {
+        document.querySelectorAll('.assurance-review-check').forEach((checkbox) => { checkbox.checked = true; });
+    });
+
+    bulkApprove.addEventListener('click', async () => {
+        const selected = Array.from(document.querySelectorAll('.assurance-review-check:checked'));
+        if (!selected.length) return;
+        const grouped = new Map();
+        selected.forEach((checkbox) => {
+            const documentId = checkbox.dataset.documentId;
+            if (!grouped.has(documentId)) grouped.set(documentId, []);
+            grouped.get(documentId).push(Number(checkbox.value));
+        });
+        bulkApprove.disabled = true;
+        clearError();
+        try {
+            for (const [documentId, fieldIds] of grouped.entries()) {
+                await approveFields(documentId, fieldIds);
+            }
+        } catch (error) {
+            showError(error.message || 'No se pudo completar la aprobación masiva.');
+        } finally {
+            bulkApprove.disabled = false;
+            refreshBulkControls();
+        }
+    });
+
+    preflightMissing.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const values = new FormData(preflightMissing);
+        for (const [key, value] of values.entries()) {
+            if (key && String(value).trim()) preflightOverrides[key] = String(value).trim();
+        }
+        await runAutomaticPreflight();
+    });
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!selectedFiles.length) return;
+        clearError();
+        submit.disabled = true;
+        submit.textContent = 'Subiendo…';
+        const payload = new FormData();
+        selectedFiles.forEach((file) => payload.append('files', file, file.name));
+        try {
+            const response = await fetch(uploadUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { [csrfHeader]: csrfToken },
+                body: payload
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(typeof data.detail === 'string' ? data.detail : 'No se pudieron ingresar los documentos.');
+            }
+            resultsSection.classList.remove('hidden');
+            results.replaceChildren();
+            discrepanciesPanel.classList.add('hidden');
+            preflightPanel.classList.add('hidden');
+            reviewCache.clear();
+            discrepancyCache.clear();
+            countedDocuments.clear();
+            preflightOverrides = {};
+            terminalDocuments = 0;
+            batchDocuments = data.documents || [];
+            totalDocuments = batchDocuments.length;
+            createdRecords = Math.max(0, Number(data.accepted_count || 0) - Number(data.duplicate_count || 0));
+            updatedRecords = 0;
+            summary.textContent = `0/${totalDocuments} finalizados`;
+            updateOutcome();
+            renderDiscrepancies();
+            refreshBulkControls();
+            batchDocuments.forEach((documentItem) => {
+                const card = createDocumentCard(documentItem);
+                results.appendChild(card);
+                pollProgress(documentItem, card);
+            });
+            selectedFiles = [];
+            input.value = '';
+            renderSelection();
+        } catch (error) {
+            showError(error.message || 'No se pudieron ingresar los documentos.');
+        } finally {
+            submit.textContent = 'Procesar documentos';
+            submit.disabled = selectedFiles.length === 0;
+        }
+    });
+})();
+</script>
+{% endblock %}

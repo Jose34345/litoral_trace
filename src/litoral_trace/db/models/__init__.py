@@ -13,6 +13,16 @@ from litoral_trace.db.models.vault_document import VaultDocument
 from litoral_trace.db.models.batch_import import BatchImport
 from litoral_trace.db.models.batch_evidence_link import BatchEvidenceLink
 from litoral_trace.db.models.smart_import_profile import SmartImportProfile
+from litoral_trace.db.models.assurance_document import (
+    AssuranceDocument,
+    DocumentClaim,
+    DocumentEntityLink,
+    DocumentExtractionRun,
+    ExtractedDocumentField,
+)
+from litoral_trace.db.models.assurance_supplier import AssuranceSupplier
+from litoral_trace.db.models.reconciliation_issue import ReconciliationIssue
+from litoral_trace.db.models.operational_exception import OperationalException
 from litoral_trace.db.models.traceability_evidence_link import TraceabilityEvidenceLink
 from litoral_trace.db.models.shipment_export_case import ShipmentExportCase
 from litoral_trace.db.models.shipment_phytosanitary_case import ShipmentPhytosanitaryCase
@@ -51,6 +61,14 @@ __all__ = [
     "BatchImport",
     "BatchEvidenceLink",
     "SmartImportProfile",
+    "AssuranceDocument",
+    "DocumentExtractionRun",
+    "ExtractedDocumentField",
+    "DocumentClaim",
+    "DocumentEntityLink",
+    "AssuranceSupplier",
+    "ReconciliationIssue",
+    "OperationalException",
     "TraceabilityEvidenceLink",
     "ShipmentExportCase",
     "ShipmentPhytosanitaryCase",

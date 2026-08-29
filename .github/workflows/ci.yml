@@ -47,6 +47,14 @@ jobs:
           cache: "pip"
           cache-dependency-path: requirements.txt
 
+      - name: Install OCR runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa
+          tesseract --version
+          tesseract --list-langs | grep -Fx eng
+          tesseract --list-langs | grep -Fx spa
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
@@ -63,7 +71,7 @@ jobs:
             echo "Expected exactly one Alembic head."
             exit 1
           fi
-          grep -Fx "029_add_smart_import_profiles (head)" alembic-heads.txt
+          grep -Fx "033_assurance_suppliers (head)" alembic-heads.txt
 
       - name: Run pytest suite
         run: python -m pytest -q -rs

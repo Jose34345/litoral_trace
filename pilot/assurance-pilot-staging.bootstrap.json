@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "organization_id": 70,
+  "rules": [
+    {
+      "customer_reference": "PILOT-STAGING-BR",
+      "market": "BR",
+      "product": "Madera aserrada de pino",
+      "required_document_types": [
+        "INVOICE",
+        "DELIVERY_NOTE",
+        "FOREST_GUIDE"
+      ],
+      "phytosanitary_required": false,
+      "eudr_required": false
+    },
+    {
+      "customer_reference": "PILOT-STAGING-UE",
+      "market": "ES",
+      "product": "Madera aserrada de pino",
+      "required_document_types": [
+        "INVOICE",
+        "DELIVERY_NOTE",
+        "FOREST_GUIDE",
+        "PHYTOSANITARY_CERTIFICATE",
+        "CUSTOMS_DOCUMENT"
+      ],
+      "phytosanitary_required": true,
+      "eudr_required": true
+    }
+  ]
+}
