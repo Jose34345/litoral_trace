@@ -87,7 +87,21 @@ async def _read_bounded(upload: UploadFile) -> bytes:
     return bytes(payload)
 
 
-def _serialize_ingestion(result) -> dict[str, object]:
+def _serialize_ingestion(
+    result,
+    *,
+    reprocess_scheduled: bool = False,
+) -> dict[str, object]:
+    """Serialize ingestion state without hiding a scheduled retry from the UI.
+
+    The legacy workspace treats ``duplicate=true`` as a terminal document and
+    skips progress polling. A duplicate whose previous processing status was
+    UPLOADED/FAILED is not terminal: the backend schedules a new processing run.
+    For that response we expose ``duplicate=false`` operationally so the current
+    workspace keeps polling, while ``reused_original`` preserves the provenance
+    fact that no second Vault object was created.
+    """
+    reused_original = bool(result.duplicate)
     return {
         "assurance_document_id": str(result.assurance_public_id),
         "vault_document_id": str(result.vault_public_id),
@@ -95,7 +109,9 @@ def _serialize_ingestion(result) -> dict[str, object]:
         "content_type": result.content_type,
         "size_bytes": result.size_bytes,
         "sha256": result.sha256,
-        "duplicate": result.duplicate,
+        "duplicate": reused_original and not reprocess_scheduled,
+        "reused_original": reused_original,
+        "reprocess_scheduled": bool(reprocess_scheduled),
         "processing_status": result.processing_status,
         "progress_url": (
             f"/api/v1/assurance/documents/{result.assurance_public_id}/progress"
@@ -317,7 +333,12 @@ async def ingest_assurance_documents(
                 assurance_public_id=result.assurance_public_id,
                 force_reprocess=force_reprocess,
             )
-        accepted.append(_serialize_ingestion(result))
+        accepted.append(
+            _serialize_ingestion(
+                result,
+                reprocess_scheduled=bool(result.duplicate and should_schedule),
+            )
+        )
 
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
