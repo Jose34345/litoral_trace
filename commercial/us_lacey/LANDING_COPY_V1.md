@@ -2,57 +2,88 @@
 
 ## Category
 
-**Document intelligence for Lacey Act readiness**
+**Source-document preparation for Lacey Act review**
 
-Litoral Trace is not positioned as filing software, legal advice, or a replacement for ACE/LAWGS. The experiment tests whether U.S. customs brokers and import teams value a preparation layer between supplier documents and filing.
+Litoral Trace is not positioned as filing software, legal advice, or a replacement for ACE/LAWGS. The experiment tests whether U.S. customs brokers and import teams value a preparation layer that starts **before** a manually prepared spreadsheet: supplier/shipment documents → extraction → comparison → missing/conflicting data → evidence → structured export for human review.
 
 ## Hero
 
 **Eyebrow:** Private Beta · Lacey Act Phase VII
 
-# Stop chasing Lacey data across supplier documents.
+# Stop manually preparing Lacey spreadsheets.
 
-Upload the invoices, packing lists, supplier spreadsheets and supporting files you already receive. Litoral Trace helps extract declaration inputs, flag missing or conflicting information, and keep the evidence behind every field — before your entry reaches ACE or LAWGS.
+Start with the shipment documents you already receive. Litoral Trace extracts the available data, compares the files, keeps every value tied to its source and shows what is missing or inconsistent before filing.
 
-**Primary CTA:** Test one completed shipment
+**Primary CTA:** See a sample shipment
 
-**Trust line:** No ERP access. No production integration. Redact sensitive information if needed.
+**Secondary CTA:** Test one completed shipment
+
+**Trust line:** No ERP access. Historical shipment is enough. Sensitive data can be redacted.
+
+## Core differentiation
+
+### Manual preparation
+1. Receive PDFs, spreadsheets and certificates.
+2. Open each file and find the relevant values.
+3. Copy values into a structured spreadsheet.
+4. Validate and prepare the data for filing.
+
+### With Litoral Trace
+1. Upload the shipment documents already received.
+2. Extract available values with source references.
+3. Compare documents and surface conflicts or missing data.
+4. Export reviewed structured data for the next step.
+
+The commercial claim is deliberately narrow: **reduce the document-to-structured-data work that happens before filing.**
 
 ## Three benefits
 
 ### Extract
-Turn existing supplier files into structured data for review: product references, quantities, shipment references, species and harvest-country evidence when present.
+Read invoices, spreadsheets and supporting PDFs and create structured candidates only for values actually present.
 
-### Reconcile
-Spot missing or conflicting information across invoices, spreadsheets and supporting documents before someone has to chase it manually.
+### Compare
+Check whether quantities, shipment references, species/origin data and other fields agree across available documents.
 
-### Evidence
-Keep every extracted value tied to its source document so your team can review where the information came from.
+### Preserve evidence
+Keep every candidate linked to its source so a reviewer can see where the information came from rather than trusting a black box.
 
-## Workflow
+## Synthetic demo
 
-1. **Upload what you already receive** — invoices, spreadsheets, packing lists and supplier support.
-2. **Litoral Trace extracts and compares** — structured candidates are created with source provenance and confidence.
-3. **Your team reviews exceptions** — missing, conflicting or uncertain information is surfaced instead of silently guessed.
-4. **Prepare for filing** — organize reviewed data and evidence before the entry is handled in ACE or LAWGS.
+Route: `/lacey/demo`
 
-## Pain statements to test
+The public demo is explicitly synthetic and illustrates intended behavior rather than claiming validated U.S. production accuracy.
 
-- Species and harvest-country data arrives late or in a different file from the commercial invoice.
-- Brokers re-key data across line items and repeat follow-up with importers or suppliers.
-- Different documents disagree on product, quantity, shipment reference or origin information.
-- The supporting evidence behind a declared value is hard to reconstruct later.
+Sample package:
+- `commercial_invoice.pdf`
+- `packing_list.pdf`
+- `supplier_species.xlsx`
+- `supplier_declaration.pdf`
+- `bill_of_lading.pdf`
+
+Demo result:
+- 25 structured review fields
+- 23 values found
+- 2 missing values
+- 1 document conflict
+- source evidence shown for visible sample fields
+- prepared XLSX downloadable for inspection
+
+Deliberate exceptions:
+- Plant Quantity: Invoice 5,000 kg vs Packing List 4,850 kg → REVIEW
+- Country of Harvest: missing → MISSING
+- Manufacturer ID: missing → MISSING
 
 ## Proof language
 
-Use only capabilities already demonstrated in Litoral Trace:
+Use only capabilities already demonstrated in Litoral Trace or explicitly label them as synthetic demo behavior:
 
-- PDF, Excel and CSV intake.
-- OCR for scanned PDFs.
+- PDF, Excel and CSV intake in the core product.
+- OCR for scanned PDFs in the core product.
 - Structured field extraction with confidence and provenance.
 - Human review for uncertain/conflicting fields.
 - Evidence Vault with SHA-256 integrity reference.
 - Cross-document reconciliation and operational exceptions.
+- Synthetic U.S. Lacey demo that shows the target field/output workflow.
 
 Do **not** claim that Litoral Trace currently:
 
@@ -60,39 +91,24 @@ Do **not** claim that Litoral Trace currently:
 - integrates with ACE or LAWGS;
 - determines legal compliance;
 - guarantees acceptance by CBP/APHIS;
-- has a complete Lacey rules engine.
+- has a complete Lacey rules engine;
+- has validated extraction accuracy on real U.S. Lacey shipment files.
 
 ## CTA section
 
-# Test one completed shipment.
+# Test one completed historical shipment.
 
-We are looking for a small number of U.S. customs brokers and import teams willing to walk through one historical shipment and show us where Lacey data is collected manually today.
+We are looking for a small number of U.S. customs brokers and import teams willing to show us one completed shipment and the source documents used to prepare its Lacey data.
 
-You can redact customer names, prices or other sensitive information. We do not need ERP credentials or production access.
-
-**CTA:** Request a 15-minute private beta walkthrough
+Sensitive information can be redacted. No ERP credentials, live entry or sales call is required; the next step can be handled by email.
 
 ## Form fields
 
 1. Work email
 2. Role: Customs Broker / Import Compliance / Importer / Other
-3. Approximate Lacey volume per month: 1–10 / 11–50 / 51–200 / 200+
+3. Approximate Lacey volume per month: 1–10 / 11–50 / 51–200 / 200+ / Not sure
 4. Current workflow: Supplier spreadsheets / Email + PDFs / ERP / Broker portal / Mixed
 5. Would you test one completed historical shipment? Yes / Maybe / No
-
-## FAQ
-
-### Does Litoral Trace file Lacey declarations?
-No. The private beta focuses on preparing, extracting, reconciling and reviewing information before filing.
-
-### Is this legal advice?
-No. Litoral Trace is preparation and evidence software. Responsibility for declarations and regulatory decisions remains with the importer and its authorized professionals.
-
-### Do you need ERP access?
-No. The test starts with a completed historical shipment and the files your team already has.
-
-### Can sensitive data be redacted?
-Yes. The goal of the beta is to understand the document workflow and manual work, not to obtain confidential commercial information.
 
 ## Footer disclaimer
 
