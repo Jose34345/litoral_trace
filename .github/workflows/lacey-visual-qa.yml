@@ -65,7 +65,7 @@ jobs:
               assert page.locator("h1").inner_text().strip() == "Stop manually preparing Lacey spreadsheets."
               assert page.locator("#lacey-beta-form").count() == 1
               no_overflow(page, label + "-landing")
-              page.locator('a[href="/lacey/demo"]').first.click()
+              page.locator('a[href="/lacey/demo"]:visible').first.click()
               page.wait_for_url("**/lacey/demo")
               assert page.locator("#run-demo").is_visible()
               page.screenshot(path=str(out / f"lacey-{label}-demo-top.png"), full_page=True)
