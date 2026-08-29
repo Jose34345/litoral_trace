@@ -19,4 +19,4 @@ services:
       - key: PYTHONDONTWRITEBYTECODE
         value: "1"
       - key: PYTHONPATH
-        value: /opt/render/project/src/src
+        value: src
