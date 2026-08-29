@@ -57,6 +57,7 @@ def test_scheduled_duplicate_retry_is_not_serialized_as_terminal_duplicate():
     payload = assurance_api._serialize_ingestion(
         _duplicate_result(DocumentProcessingStatus.FAILED.value),
         reprocess_scheduled=True,
+        poll_required=True,
     )
 
     assert payload["duplicate"] is False
@@ -65,10 +66,85 @@ def test_scheduled_duplicate_retry_is_not_serialized_as_terminal_duplicate():
     assert payload["progress_url"].endswith("/progress")
 
 
+def test_active_processing_duplicate_stays_attached_to_progress_without_new_work():
+    result = _duplicate_result(DocumentProcessingStatus.PROCESSING.value)
+
+    reprocess, poll = assurance_api._duplicate_processing_decision(
+        organization_id=70,
+        result=result,
+    )
+    payload = assurance_api._serialize_ingestion(
+        result,
+        reprocess_scheduled=reprocess,
+        poll_required=poll,
+    )
+
+    assert reprocess is False
+    assert poll is True
+    assert payload["duplicate"] is False
+    assert payload["reused_original"] is True
+    assert payload["reprocess_scheduled"] is False
+
+
+def test_ocr_required_review_is_reprocessed_after_runtime_fix(monkeypatch):
+    result = _duplicate_result(DocumentProcessingStatus.NEEDS_REVIEW.value)
+
+    def fake_progress(self, *, organization_id, assurance_public_id):
+        assert organization_id == 70
+        assert assurance_public_id == result.assurance_public_id
+        return {
+            "processing_status": DocumentProcessingStatus.NEEDS_REVIEW.value,
+            "last_error_code": "OCR_REQUIRED",
+        }
+
+    monkeypatch.setattr(
+        assurance_api.AssuranceProcessingService,
+        "progress",
+        fake_progress,
+    )
+
+    reprocess, poll = assurance_api._duplicate_processing_decision(
+        organization_id=70,
+        result=result,
+    )
+
+    assert reprocess is True
+    assert poll is True
+
+
+def test_non_ocr_review_remains_terminal_reuse(monkeypatch):
+    result = _duplicate_result(DocumentProcessingStatus.NEEDS_REVIEW.value)
+
+    monkeypatch.setattr(
+        assurance_api.AssuranceProcessingService,
+        "progress",
+        lambda self, **kwargs: {
+            "processing_status": DocumentProcessingStatus.NEEDS_REVIEW.value,
+            "last_error_code": "REQUIRED_FIELDS_MISSING",
+        },
+    )
+
+    reprocess, poll = assurance_api._duplicate_processing_decision(
+        organization_id=70,
+        result=result,
+    )
+    payload = assurance_api._serialize_ingestion(
+        result,
+        reprocess_scheduled=reprocess,
+        poll_required=poll,
+    )
+
+    assert reprocess is False
+    assert poll is False
+    assert payload["duplicate"] is True
+    assert payload["reused_original"] is True
+
+
 def test_completed_duplicate_remains_terminal_for_workspace_reuse():
     payload = assurance_api._serialize_ingestion(
         _duplicate_result(DocumentProcessingStatus.NEEDS_REVIEW.value),
         reprocess_scheduled=False,
+        poll_required=False,
     )
 
     assert payload["duplicate"] is True
