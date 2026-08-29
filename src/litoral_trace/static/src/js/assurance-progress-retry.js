@@ -1,6 +1,5 @@
 const ASSURANCE_PROGRESS_PATH = /^\/api\/v1\/assurance\/documents\/[^/]+\/progress$/;
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
-const MAX_ATTEMPTS = 20;
 const BASE_DELAY_MS = 750;
 const MAX_DELAY_MS = 5000;
 
@@ -35,17 +34,29 @@ function isAssuranceProgressRequest(input, init) {
 }
 
 function retryDelay(attempt) {
-  return Math.min(
-    MAX_DELAY_MS,
-    BASE_DELAY_MS * (2 ** Math.max(0, attempt - 1)),
-  );
+  if (attempt <= 1) {
+    return BASE_DELAY_MS;
+  }
+  if (attempt === 2) {
+    return 1500;
+  }
+  if (attempt === 3) {
+    return 3000;
+  }
+  return MAX_DELAY_MS;
 }
 
-function signalWasAborted(input, init) {
-  return Boolean(
-    init?.signal?.aborted
-      || (input instanceof Request && input.signal?.aborted),
-  );
+function requestSignal(input, init) {
+  return init?.signal || (input instanceof Request ? input.signal : null);
+}
+
+function abortError() {
+  if (typeof DOMException === "function") {
+    return new DOMException("The operation was aborted.", "AbortError");
+  }
+  const error = new Error("The operation was aborted.");
+  error.name = "AbortError";
+  return error;
 }
 
 function installAssuranceProgressRetry() {
@@ -63,41 +74,28 @@ function installAssuranceProgressRetry() {
       return priorFetch(input, init);
     }
 
-    let lastResponse = null;
-    let lastError = null;
+    const signal = requestSignal(input, init);
+    let attempt = 1;
 
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-      if (signalWasAborted(input, init)) {
-        if (lastError) {
-          throw lastError;
-        }
-        return priorFetch(input, init);
+    while (true) {
+      if (signal?.aborted) {
+        throw abortError();
       }
 
       try {
         const response = await priorFetch(input, init);
-        lastResponse = response;
-        lastError = null;
-
         if (!TRANSIENT_STATUS.has(response.status)) {
           return response;
         }
       } catch (error) {
-        lastError = error;
+        if (signal?.aborted || error?.name === "AbortError") {
+          throw error;
+        }
       }
 
-      if (attempt < MAX_ATTEMPTS) {
-        await sleep(retryDelay(attempt));
-      }
+      await sleep(retryDelay(attempt));
+      attempt += 1;
     }
-
-    if (lastResponse) {
-      return lastResponse;
-    }
-    if (lastError) {
-      throw lastError;
-    }
-    return priorFetch(input, init);
   };
 
   Object.defineProperty(
