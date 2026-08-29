@@ -1,7 +1,8 @@
 """Public U.S. Lacey Act GTM validation surface.
 
 This module is intentionally isolated from Assurance and regulatory decisioning.
-It measures only aggregate, non-PII funnel events for the weekend market test.
+It serves a narrow marketing landing and a synthetic sample workflow while
+measuring only aggregate, non-PII funnel events.
 """
 from __future__ import annotations
 
@@ -20,6 +21,9 @@ _ALLOWED_EVENTS = frozenset(
         "lacey_cta_click",
         "lacey_form_start",
         "lacey_form_submit",
+        "lacey_demo_open",
+        "lacey_demo_run",
+        "lacey_demo_download",
     }
 )
 
@@ -30,25 +34,32 @@ _LACEY_GTM_EVENTS = Counter(
 )
 
 
+def _no_store(response: HTMLResponse) -> HTMLResponse:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
 @router.get("/lacey", response_class=HTMLResponse, include_in_schema=False)
 async def render_lacey_private_beta(request: Request) -> HTMLResponse:
     """Render the isolated English-language Lacey market-validation landing."""
     response = render_template(
         request,
         "public/lacey.html",
-        {
-            "commercial_email": "comercial@litoraltrace.com",
-        },
+        {"commercial_email": "comercial@litoraltrace.com"},
     )
-    response.headers["Cache-Control"] = "no-store, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    return response
+    return _no_store(response)
+
+
+@router.get("/lacey/demo", response_class=HTMLResponse, include_in_schema=False)
+async def render_lacey_synthetic_demo(request: Request) -> HTMLResponse:
+    """Render a synthetic, non-regulatory document-to-data workflow demo."""
+    response = render_template(request, "public/lacey_demo.html", {})
+    return _no_store(response)
 
 
 @router.post("/lacey/event", include_in_schema=False)
-async def record_lacey_gtm_event(
-    event: str = Form(...),
-) -> Response:
+async def record_lacey_gtm_event(event: str = Form(...)) -> Response:
     """Count one whitelisted funnel event without accepting or storing PII."""
     normalized = str(event or "").strip().lower()
     if normalized not in _ALLOWED_EVENTS:

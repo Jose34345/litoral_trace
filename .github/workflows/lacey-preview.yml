@@ -5,7 +5,9 @@ on:
     paths:
       - "requirements-lacey.txt"
       - "deploy/render-lacey.yaml"
-      - "src/litoral_trace/templates/public/lacey.html"
+      - "src/litoral_trace/templates/public/lacey*.html"
+      - "src/litoral_trace/static/css/lacey_beta.css"
+      - "src/litoral_trace/static/demo/**"
       - "src/litoral_trace/web/lacey_experiment_app.py"
       - "src/litoral_trace/web/lacey_gtm.py"
       - ".github/workflows/lacey-preview.yml"
@@ -15,7 +17,9 @@ on:
     paths:
       - "requirements-lacey.txt"
       - "deploy/render-lacey.yaml"
-      - "src/litoral_trace/templates/public/lacey.html"
+      - "src/litoral_trace/templates/public/lacey*.html"
+      - "src/litoral_trace/static/css/lacey_beta.css"
+      - "src/litoral_trace/static/demo/**"
       - "src/litoral_trace/web/lacey_experiment_app.py"
       - "src/litoral_trace/web/lacey_gtm.py"
       - ".github/workflows/lacey-preview.yml"
@@ -25,24 +29,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: requirements-lacey.txt
-
       - name: Install only microsite dependencies
         run: pip install --no-cache-dir -r requirements-lacey.txt
-
       - name: Import standalone app
         env:
           PYTHONPATH: src
         run: python -c "from litoral_trace.web.lacey_experiment_app import app; print(app.title)"
-
       - name: Start Render-equivalent process
         env:
           PYTHONPATH: src
@@ -51,24 +49,21 @@ jobs:
           uvicorn litoral_trace.web.lacey_experiment_app:app --host 127.0.0.1 --port "$PORT" > /tmp/lacey-preview.log 2>&1 &
           echo $! > /tmp/lacey-preview.pid
           for i in {1..20}; do
-            if curl --fail --silent http://127.0.0.1:10000/health > /dev/null; then
-              exit 0
-            fi
+            if curl --fail --silent http://127.0.0.1:10000/health > /dev/null; then exit 0; fi
             sleep 1
           done
           cat /tmp/lacey-preview.log
           exit 1
-
-      - name: Verify health and landing
+      - name: Verify health, landing, demo and XLSX
         run: |
           curl --fail --silent --show-error http://127.0.0.1:10000/health | grep -q 'healthy'
           curl --fail --silent --show-error http://127.0.0.1:10000/lacey > /tmp/lacey.html
-          grep -q 'Test one completed shipment' /tmp/lacey.html
-          grep -q 'Lacey Act' /tmp/lacey.html
-
+          grep -q 'Stop manually preparing Lacey spreadsheets' /tmp/lacey.html
+          curl --fail --silent --show-error http://127.0.0.1:10000/lacey/demo > /tmp/lacey-demo.html
+          grep -q 'Analyze sample shipment' /tmp/lacey-demo.html
+          curl --fail --silent --show-error http://127.0.0.1:10000/static/demo/litoral-trace-lacey-demo-output.xlsx > /tmp/lacey-demo.xlsx
+          test -s /tmp/lacey-demo.xlsx
       - name: Stop preview process
         if: always()
         run: |
-          if [ -f /tmp/lacey-preview.pid ]; then
-            kill "$(cat /tmp/lacey-preview.pid)" || true
-          fi
+          if [ -f /tmp/lacey-preview.pid ]; then kill "$(cat /tmp/lacey-preview.pid)" || true; fi
