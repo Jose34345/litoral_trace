@@ -21,6 +21,7 @@ from litoral_trace.assurance.normalization import (
     normalize_quantity,
 )
 from litoral_trace.assurance.parsers import (
+    _ocr_timeout_seconds,
     parse_csv,
     parse_pdf,
     parse_xlsx,
@@ -149,6 +150,17 @@ def test_scanned_pdf_executes_real_tesseract_ocr():
     assert parsed.metadata["ocr_engine"] == "tesseract"
     assert parsed.metadata["ocr_pages_processed"] == 1
     assert "FACTURA" in parsed.text.upper()
+
+
+def test_ocr_timeout_can_be_increased_for_slow_staging_cpu(monkeypatch):
+    monkeypatch.setenv("LT_ASSURANCE_OCR_TIMEOUT_SECONDS", "60")
+    assert _ocr_timeout_seconds() == 60
+
+    monkeypatch.setenv("LT_ASSURANCE_OCR_TIMEOUT_SECONDS", "999")
+    assert _ocr_timeout_seconds() == 120
+
+    monkeypatch.setenv("LT_ASSURANCE_OCR_TIMEOUT_SECONDS", "invalid")
+    assert _ocr_timeout_seconds() == 20
 
 
 def test_blank_pdf_remains_fail_closed_when_ocr_finds_no_useful_text():
