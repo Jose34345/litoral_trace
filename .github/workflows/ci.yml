@@ -163,3 +163,13 @@ jobs:
             -v "$PWD/monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro" \
             prom/prometheus:v3.13.1 \
             check rules /etc/prometheus/alert_rules.yml
+
+      - name: Validate Alertmanager configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --entrypoint /bin/amtool \
+            -v "$PWD/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
+            prom/alertmanager:v0.33.1 \
+            check-config /etc/alertmanager/alertmanager.yml
