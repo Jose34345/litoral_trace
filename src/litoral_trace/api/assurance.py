@@ -212,6 +212,34 @@ def _process_and_reconcile(
     return processing_status
 
 
+def _process_and_reconcile_safely(
+    *,
+    organization_id: int,
+    assurance_public_id,
+    force_reprocess: bool = False,
+) -> str:
+    """Isolate one background document so its failure cannot stop the batch."""
+    try:
+        return _process_and_reconcile(
+            organization_id=organization_id,
+            assurance_public_id=assurance_public_id,
+            force_reprocess=force_reprocess,
+        )
+    except Exception:
+        # Processing/pipeline services persist their own sanitized failure state.
+        # BackgroundTasks must not receive the exception, otherwise Starlette
+        # aborts the remaining queued documents in the same request.
+        return DocumentProcessingStatus.FAILED.value
+
+
+def _duplicate_requires_reprocess(processing_status: str) -> bool:
+    """Retry only duplicates that never completed a usable processing pass."""
+    return str(processing_status or "").strip().upper() in {
+        DocumentProcessingStatus.UPLOADED.value,
+        DocumentProcessingStatus.FAILED.value,
+    }
+
+
 async def ingest_assurance_documents(
     background_tasks: BackgroundTasks,
     request: Request,
@@ -274,14 +302,20 @@ async def ingest_assurance_documents(
                 detail="No se pudo almacenar el documento en Evidence Vault.",
             ) from None
 
+        force_reprocess = False
+        should_schedule = not result.duplicate
         if result.duplicate:
             duplicates += 1
-        else:
+            if _duplicate_requires_reprocess(result.processing_status):
+                should_schedule = True
+                force_reprocess = True
+
+        if should_schedule:
             background_tasks.add_task(
-                _process_and_reconcile,
+                _process_and_reconcile_safely,
                 organization_id=user.organization_id,
                 assurance_public_id=result.assurance_public_id,
-                force_reprocess=False,
+                force_reprocess=force_reprocess,
             )
         accepted.append(_serialize_ingestion(result))
 
