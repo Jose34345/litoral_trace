@@ -76,6 +76,8 @@ services:
         value: "70"
       - key: LT_ASSURANCE_PILOT_CONFIG_PATH
         value: /app/pilot/assurance-pilot-staging.bootstrap.json
+      - key: LT_ASSURANCE_OCR_TIMEOUT_SECONDS
+        value: "60"
 
       - key: WORKERS_ENABLED
         value: "0"
