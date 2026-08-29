@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Private beta: turn supplier documents into reviewed Lacey-ready import data before filing in ACE or LAWGS.">
+    <title>Litoral Trace | Lacey Act document readiness</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/vendor/fontawesome/css/all.min.css') }}">
+    <style>
+        :root {
+            --ink: #0f172a;
+            --muted: #64748b;
+            --line: #dbe3ec;
+            --soft: #f8fafc;
+            --panel: #ffffff;
+            --green: #059669;
+            --green-dark: #047857;
+            --green-soft: #ecfdf5;
+            --amber: #b45309;
+            --amber-soft: #fffbeb;
+            --red: #b91c1c;
+            --red-soft: #fef2f2;
+            --navy: #020617;
+            --navy-2: #0f172a;
+        }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body { margin: 0; color: var(--ink); background: white; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+        a { color: inherit; }
+        button, input, select { font: inherit; }
+        .container { width: min(1160px, calc(100% - 32px)); margin: 0 auto; }
+        .header { position: sticky; top: 0; z-index: 30; border-bottom: 1px solid rgba(219,227,236,.9); background: rgba(255,255,255,.94); backdrop-filter: blur(14px); }
+        .header-inner { height: 72px; display: flex; align-items: center; gap: 24px; }
+        .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+        .brand-mark { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: white; background: var(--green); box-shadow: 0 7px 22px rgba(5,150,105,.2); }
+        .brand-name { font-size: 16px; font-weight: 800; letter-spacing: -.02em; }
+        .brand-sub { margin-top: 2px; color: var(--green-dark); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; }
+        .nav { margin-left: auto; display: flex; align-items: center; gap: 24px; }
+        .nav a { color: #475569; font-size: 14px; font-weight: 650; text-decoration: none; }
+        .nav a:hover { color: var(--ink); }
+        .btn { min-height: 44px; border: 0; border-radius: 10px; padding: 12px 18px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; font-weight: 800; text-decoration: none; cursor: pointer; transition: .16s ease; }
+        .btn-primary { color: #052e16; background: #34d399; box-shadow: 0 8px 24px rgba(16,185,129,.18); }
+        .btn-primary:hover { background: #6ee7b7; transform: translateY(-1px); }
+        .btn-dark { color: white; background: var(--ink); }
+        .btn-dark:hover { background: #1e293b; }
+        .hero { position: relative; overflow: hidden; color: white; background: radial-gradient(circle at 80% 10%, rgba(16,185,129,.18), transparent 32%), linear-gradient(145deg, #052e2b 0%, #020617 48%, #020617 100%); border-bottom: 1px solid #1e293b; }
+        .hero-grid { padding: 88px 0 92px; display: grid; grid-template-columns: 1.02fr .98fr; gap: 62px; align-items: center; }
+        .eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid #065f46; border-radius: 999px; color: #a7f3d0; background: rgba(6,78,59,.45); font-size: 12px; font-weight: 800; }
+        .eyebrow-dot { width: 8px; height: 8px; border-radius: 999px; background: #34d399; box-shadow: 0 0 0 4px rgba(52,211,153,.1); }
+        h1 { margin: 22px 0 0; max-width: 720px; font-size: clamp(42px, 5vw, 68px); line-height: 1.02; letter-spacing: -.045em; }
+        .hero-copy { max-width: 680px; margin: 24px 0 0; color: #cbd5e1; font-size: 18px; line-height: 1.7; }
+        .hero-actions { margin-top: 30px; display: flex; flex-wrap: wrap; gap: 12px; }
+        .trust { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 16px; color: #94a3b8; font-size: 12px; font-weight: 650; }
+        .trust span { display: inline-flex; gap: 7px; align-items: center; }
+        .mockup { position: relative; border: 1px solid #334155; border-radius: 24px; background: rgba(15,23,42,.9); box-shadow: 0 30px 80px rgba(2,6,23,.55); overflow: hidden; }
+        .mockup-head { padding: 17px 19px; display: flex; justify-content: space-between; gap: 16px; align-items: center; border-bottom: 1px solid #334155; }
+        .mockup-title { margin: 0; color: white; font-size: 14px; font-weight: 800; }
+        .mockup-sub { margin: 4px 0 0; color: #64748b; font-size: 11px; }
+        .status-pill { padding: 6px 9px; border: 1px solid #92400e; border-radius: 999px; background: rgba(120,53,15,.3); color: #fcd34d; font-size: 10px; font-weight: 850; letter-spacing: .05em; }
+        .mockup-body { padding: 18px; }
+        .doc-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+        .doc { padding: 13px; border: 1px solid #334155; border-radius: 12px; background: #020617; }
+        .doc i { color: #34d399; }
+        .doc strong { display: block; margin-top: 9px; color: #e2e8f0; font-size: 11px; }
+        .doc small { color: #64748b; font-size: 9px; }
+        .field-list { margin-top: 13px; border: 1px solid #334155; border-radius: 14px; overflow: hidden; }
+        .field { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 12px 13px; align-items: center; border-bottom: 1px solid #1e293b; background: rgba(2,6,23,.72); }
+        .field:last-child { border-bottom: 0; }
+        .field-label { color: #cbd5e1; font-size: 11px; font-weight: 700; }
+        .field-source { margin-top: 3px; color: #64748b; font-size: 9px; }
+        .tag { border-radius: 999px; padding: 5px 7px; font-size: 9px; font-weight: 850; letter-spacing: .05em; }
+        .tag-ok { color: #6ee7b7; background: rgba(6,78,59,.65); border: 1px solid #065f46; }
+        .tag-review { color: #fcd34d; background: rgba(120,53,15,.4); border: 1px solid #92400e; }
+        .tag-missing { color: #fca5a5; background: rgba(127,29,29,.36); border: 1px solid #991b1b; }
+        .mockup-note { margin: 12px 0 0; color: #64748b; font-size: 9px; line-height: 1.5; }
+        .section { padding: 82px 0; }
+        .section-soft { background: var(--soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+        .section-dark { color: white; background: var(--navy); border-top: 1px solid #1e293b; border-bottom: 1px solid #1e293b; }
+        .kicker { color: var(--green-dark); font-size: 12px; font-weight: 850; letter-spacing: .15em; text-transform: uppercase; }
+        .section-dark .kicker { color: #34d399; }
+        h2 { margin: 10px 0 0; font-size: clamp(30px, 4vw, 44px); letter-spacing: -.035em; line-height: 1.08; }
+        .section-lead { max-width: 760px; margin: 15px 0 0; color: var(--muted); font-size: 16px; line-height: 1.7; }
+        .section-dark .section-lead { color: #94a3b8; }
+        .cards-3 { margin-top: 34px; display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; }
+        .card { min-height: 210px; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: white; box-shadow: 0 6px 20px rgba(15,23,42,.035); }
+        .card-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; color: var(--green-dark); background: var(--green-soft); }
+        .card h3 { margin: 18px 0 0; font-size: 17px; }
+        .card p { margin: 9px 0 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
+        .steps { margin-top: 34px; display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
+        .step { position: relative; padding: 21px; border: 1px solid var(--line); border-radius: 16px; background: white; }
+        .step-no { color: var(--green-dark); font-size: 12px; font-weight: 900; }
+        .step h3 { margin: 10px 0 0; font-size: 15px; }
+        .step p { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+        .pain-grid { margin-top: 34px; display: grid; grid-template-columns: repeat(2,1fr); gap: 14px; }
+        .pain { padding: 20px; border: 1px solid #334155; border-radius: 15px; background: var(--navy-2); color: #cbd5e1; font-size: 14px; line-height: 1.6; }
+        .pain i { margin-right: 8px; color: #34d399; }
+        .scope-grid { margin-top: 34px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+        .scope { padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: white; }
+        .scope h3 { margin: 0; font-size: 16px; }
+        .scope ul { margin: 16px 0 0; padding: 0; list-style: none; }
+        .scope li { margin-top: 11px; display: flex; align-items: flex-start; gap: 9px; color: #475569; font-size: 13px; line-height: 1.5; }
+        .scope-ok i { color: var(--green); margin-top: 2px; }
+        .scope-no i { color: #94a3b8; margin-top: 2px; }
+        .beta-wrap { display: grid; grid-template-columns: .84fr 1.16fr; gap: 32px; align-items: start; }
+        .beta-copy { padding-top: 8px; }
+        .beta-copy p { color: #cbd5e1; line-height: 1.7; }
+        .beta-points { margin-top: 24px; display: grid; gap: 12px; }
+        .beta-point { display: flex; gap: 10px; color: #94a3b8; font-size: 13px; line-height: 1.55; }
+        .beta-point i { color: #34d399; margin-top: 3px; }
+        .form-card { padding: 26px; border: 1px solid #334155; border-radius: 20px; background: #0f172a; box-shadow: 0 24px 60px rgba(2,6,23,.28); }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .field-control { display: grid; gap: 7px; }
+        .field-control.full { grid-column: 1 / -1; }
+        .field-control label { color: #e2e8f0; font-size: 12px; font-weight: 750; }
+        .field-control input, .field-control select { width: 100%; min-height: 46px; border: 1px solid #475569; border-radius: 10px; padding: 10px 12px; outline: none; color: white; background: #020617; }
+        .field-control input:focus, .field-control select:focus { border-color: #34d399; box-shadow: 0 0 0 3px rgba(52,211,153,.14); }
+        .form-meta { margin: 13px 0 0; color: #64748b; font-size: 10px; line-height: 1.5; }
+        .form-card .btn { margin-top: 18px; width: 100%; }
+        .success { display: none; margin-top: 16px; padding: 14px; border: 1px solid #065f46; border-radius: 12px; color: #a7f3d0; background: rgba(6,78,59,.35); font-size: 12px; line-height: 1.6; }
+        .success.visible { display: block; }
+        .faq { margin-top: 28px; display: grid; gap: 12px; }
+        details { border: 1px solid var(--line); border-radius: 13px; padding: 16px 18px; background: white; }
+        summary { cursor: pointer; font-size: 14px; font-weight: 800; }
+        details p { margin: 10px 0 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+        .footer { padding: 38px 0; color: #94a3b8; background: var(--navy); border-top: 1px solid #1e293b; }
+        .footer-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; }
+        .footer strong { color: white; }
+        .footer p { max-width: 760px; margin: 9px 0 0; font-size: 11px; line-height: 1.6; }
+        .footer a { color: #6ee7b7; text-decoration: none; font-weight: 700; }
+        .skip { position: fixed; left: 16px; top: -80px; z-index: 99; padding: 10px 14px; border-radius: 8px; color: white; background: var(--ink); }
+        .skip:focus { top: 16px; }
+        @media (max-width: 900px) {
+            .hero-grid, .beta-wrap { grid-template-columns: 1fr; }
+            .hero-grid { padding: 70px 0; gap: 42px; }
+            .cards-3 { grid-template-columns: 1fr; }
+            .steps { grid-template-columns: 1fr 1fr; }
+            .nav .nav-link { display: none; }
+        }
+        @media (max-width: 620px) {
+            .container { width: min(100% - 24px, 1160px); }
+            .header-inner { height: 64px; }
+            .brand-sub { display: none; }
+            .nav .btn { min-height: 40px; padding: 9px 12px; font-size: 12px; }
+            .hero-grid { padding: 55px 0 62px; }
+            h1 { font-size: 42px; }
+            .hero-copy { font-size: 16px; }
+            .doc-row { grid-template-columns: 1fr; }
+            .section { padding: 62px 0; }
+            .steps, .pain-grid, .scope-grid, .form-grid { grid-template-columns: 1fr; }
+            .field-control.full { grid-column: auto; }
+            .footer-row { display: grid; }
+        }
+    </style>
+</head>
+<body>
+<a class="skip" href="#main-content">Skip to main content</a>
+<header class="header">
+    <div class="container header-inner">
+        <a class="brand" href="/lacey" aria-label="Litoral Trace Lacey private beta home">
+            <span class="brand-mark" aria-hidden="true"><i class="fa-solid fa-tree"></i></span>
+            <span>
+                <span class="brand-name">Litoral Trace</span>
+                <span class="brand-sub">Document intelligence for import operations</span>
+            </span>
+        </a>
+        <nav class="nav" aria-label="Private beta navigation">
+            <a class="nav-link" href="#how-it-works">How it works</a>
+            <a class="btn btn-dark" href="#private-beta" data-lacey-cta>Test one shipment</a>
+        </nav>
+    </div>
+</header>
+<main id="main-content">
+    <section class="hero">
+        <div class="container hero-grid">
+            <div>
+                <div class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>Private Beta · Lacey Act Phase VII</div>
+                <h1>Stop chasing Lacey data across supplier documents.</h1>
+                <p class="hero-copy">Upload the invoices, packing lists, supplier spreadsheets and supporting files you already receive. Litoral Trace helps extract declaration inputs, flag missing or conflicting information, and keep the evidence behind every field — before your entry reaches ACE or LAWGS.</p>
+                <div class="hero-actions">
+                    <a class="btn btn-primary" href="#private-beta" data-lacey-cta>Test one completed shipment <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+                    <a class="btn" style="color:#e2e8f0;border:1px solid #334155;background:#0f172a" href="#how-it-works">See the workflow</a>
+                </div>
+                <div class="trust" aria-label="Private beta safeguards">
+                    <span><i class="fa-solid fa-lock" aria-hidden="true"></i>No ERP access</span>
+                    <span><i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>No production integration</span>
+                    <span><i class="fa-solid fa-eye-slash" aria-hidden="true"></i>Redact sensitive information if needed</span>
+                </div>
+            </div>
+            <div class="mockup" aria-label="Illustrative shipment evidence review">
+                <div class="mockup-head">
+                    <div><p class="mockup-title">Shipment evidence review</p><p class="mockup-sub">Historical shipment · private beta</p></div>
+                    <span class="status-pill">REVIEW</span>
+                </div>
+                <div class="mockup-body">
+                    <div class="doc-row">
+                        <div class="doc"><i class="fa-solid fa-file-invoice"></i><strong>Commercial Invoice</strong><small>PDF · evidence</small></div>
+                        <div class="doc"><i class="fa-solid fa-file-excel"></i><strong>Supplier Sheet</strong><small>XLSX · product data</small></div>
+                        <div class="doc"><i class="fa-solid fa-boxes-packing"></i><strong>Packing List</strong><small>PDF · shipment data</small></div>
+                    </div>
+                    <div class="field-list">
+                        <div class="field"><div><div class="field-label">Shipment reference</div><div class="field-source">Invoice ↔ Packing List</div></div><span class="tag tag-ok">MATCHED</span></div>
+                        <div class="field"><div><div class="field-label">Quantity</div><div class="field-source">Invoice ↔ Supplier Sheet</div></div><span class="tag tag-ok">MATCHED</span></div>
+                        <div class="field"><div><div class="field-label">Species evidence</div><div class="field-source">Supplier Sheet · needs review</div></div><span class="tag tag-review">REVIEW</span></div>
+                        <div class="field"><div><div class="field-label">Harvest country</div><div class="field-source">No supporting value found</div></div><span class="tag tag-missing">MISSING</span></div>
+                    </div>
+                    <p class="mockup-note">Illustrative private-beta workflow. These statuses are preparation/review signals, not a filing result or legal compliance determination.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" aria-labelledby="outcomes-title">
+        <div class="container">
+            <div class="kicker">Before filing</div>
+            <h2 id="outcomes-title">One preparation layer between supplier files and your entry workflow.</h2>
+            <p class="section-lead">The beta is designed around the manual work that happens before a declaration is filed: finding data, comparing sources and proving where each value came from.</p>
+            <div class="cards-3">
+                <article class="card"><div class="card-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div><h3>Extract</h3><p>Turn existing supplier files into structured data for review — without forcing another form before upload.</p></article>
+                <article class="card"><div class="card-icon"><i class="fa-solid fa-code-compare"></i></div><h3>Reconcile</h3><p>Surface missing or conflicting information across invoices, spreadsheets and supporting documents before somebody has to chase it manually.</p></article>
+                <article class="card"><div class="card-icon"><i class="fa-solid fa-file-shield"></i></div><h3>Evidence</h3><p>Keep extracted values tied to their source document so reviewers can see where the information came from.</p></article>
+            </div>
+        </div>
+    </section>
+
+    <section id="how-it-works" class="section section-soft" aria-labelledby="workflow-title">
+        <div class="container">
+            <div class="kicker">Workflow</div>
+            <h2 id="workflow-title">Use the files your team already receives.</h2>
+            <p class="section-lead">The private beta starts with a completed historical shipment. No ERP project, no process migration and no custom integration are required for the test.</p>
+            <div class="steps">
+                <article class="step"><div class="step-no">01 · UPLOAD</div><h3>Bring existing files</h3><p>Invoices, supplier spreadsheets, packing lists and supporting evidence.</p></article>
+                <article class="step"><div class="step-no">02 · EXTRACT</div><h3>Structure what is present</h3><p>OCR and document parsing create candidates with source provenance and confidence.</p></article>
+                <article class="step"><div class="step-no">03 · REVIEW</div><h3>Focus on exceptions</h3><p>Missing, conflicting or uncertain values are surfaced instead of silently guessed.</p></article>
+                <article class="step"><div class="step-no">04 · PREPARE</div><h3>Organize before filing</h3><p>Review the structured data and evidence before the entry is handled in ACE or LAWGS.</p></article>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark" aria-labelledby="pain-title">
+        <div class="container">
+            <div class="kicker">Where manual work hides</div>
+            <h2 id="pain-title">Does any of this happen in your Lacey workflow?</h2>
+            <p class="section-lead">These are the problems we are testing with U.S. brokers and import teams — not assumptions we want to code around without evidence.</p>
+            <div class="pain-grid">
+                <div class="pain"><i class="fa-solid fa-circle-question"></i>Species or harvest-country information arrives later than the commercial invoice or in a different supplier file.</div>
+                <div class="pain"><i class="fa-solid fa-keyboard"></i>Your team re-keys line-item data and repeats follow-up with importers or suppliers.</div>
+                <div class="pain"><i class="fa-solid fa-triangle-exclamation"></i>Documents disagree on product, quantity, shipment reference or origin information.</div>
+                <div class="pain"><i class="fa-solid fa-magnifying-glass"></i>Weeks later, reconstructing the evidence behind a declared value means searching across folders and email.</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-soft" aria-labelledby="scope-title">
+        <div class="container">
+            <div class="kicker">Private beta scope</div>
+            <h2 id="scope-title">Credible preparation software, not a regulatory shortcut.</h2>
+            <div class="scope-grid">
+                <article class="scope scope-ok"><h3>Capabilities already used by the beta</h3><ul>
+                    <li><i class="fa-solid fa-check"></i><span>PDF, Excel and CSV intake.</span></li>
+                    <li><i class="fa-solid fa-check"></i><span>OCR for scanned PDFs.</span></li>
+                    <li><i class="fa-solid fa-check"></i><span>Structured extraction with confidence and source provenance.</span></li>
+                    <li><i class="fa-solid fa-check"></i><span>Human review for uncertain or conflicting fields.</span></li>
+                    <li><i class="fa-solid fa-check"></i><span>Evidence Vault, integrity references and cross-document reconciliation.</span></li>
+                </ul></article>
+                <article class="scope scope-no"><h3>Claims we deliberately do not make</h3><ul>
+                    <li><i class="fa-solid fa-minus"></i><span>No automated Lacey filing.</span></li>
+                    <li><i class="fa-solid fa-minus"></i><span>No live ACE or LAWGS integration in this beta.</span></li>
+                    <li><i class="fa-solid fa-minus"></i><span>No legal compliance determination.</span></li>
+                    <li><i class="fa-solid fa-minus"></i><span>No guarantee of APHIS or CBP acceptance.</span></li>
+                </ul></article>
+            </div>
+        </div>
+    </section>
+
+    <section id="private-beta" class="section section-dark" aria-labelledby="beta-title">
+        <div class="container beta-wrap">
+            <div class="beta-copy">
+                <div class="kicker">Test the problem, not a sales deck</div>
+                <h2 id="beta-title">Test one completed shipment.</h2>
+                <p>We are looking for a small number of U.S. customs brokers and import teams willing to walk through one historical shipment and show us where Lacey data is collected manually today.</p>
+                <div class="beta-points">
+                    <div class="beta-point"><i class="fa-solid fa-clock"></i><span>15-minute first walkthrough.</span></div>
+                    <div class="beta-point"><i class="fa-solid fa-box-archive"></i><span>Use a completed historical shipment — not a live entry.</span></div>
+                    <div class="beta-point"><i class="fa-solid fa-user-secret"></i><span>Customer names, prices or other sensitive fields may be redacted.</span></div>
+                    <div class="beta-point"><i class="fa-solid fa-handshake"></i><span>The objective is to measure manual work and data friction before proposing a commercial engagement.</span></div>
+                </div>
+            </div>
+            <form class="form-card" id="lacey-beta-form" novalidate>
+                <div class="form-grid">
+                    <div class="field-control full"><label for="work_email">Work email</label><input id="work_email" name="work_email" type="email" autocomplete="email" required placeholder="you@company.com"></div>
+                    <div class="field-control"><label for="role">Role</label><select id="role" name="role" required><option value="">Select</option><option>Customs Broker</option><option>Import Compliance</option><option>Importer</option><option>Other</option></select></div>
+                    <div class="field-control"><label for="volume">Approx. Lacey entries / month</label><select id="volume" name="volume" required><option value="">Select</option><option>1–10</option><option>11–50</option><option>51–200</option><option>200+</option><option>Not sure</option></select></div>
+                    <div class="field-control"><label for="workflow">Current workflow</label><select id="workflow" name="workflow" required><option value="">Select</option><option>Supplier spreadsheets</option><option>Email + PDFs</option><option>ERP</option><option>Broker portal</option><option>Mixed</option></select></div>
+                    <div class="field-control"><label for="willingness">Test one historical shipment?</label><select id="willingness" name="willingness" required><option value="">Select</option><option>Yes</option><option>Maybe</option><option>No</option></select></div>
+                </div>
+                <p class="form-meta">This weekend beta does not store your answers in the application database. After validation, your email client opens a pre-filled message to {{ commercial_email }}. Aggregate funnel events contain no email or form answers.</p>
+                <button class="btn btn-primary" type="submit">Request a 15-minute walkthrough <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
+                <div id="lacey-form-success" class="success" role="status" aria-live="polite">Your request is ready. If your email client did not open automatically, <a id="lacey-mail-link" href="#" style="color:#6ee7b7;font-weight:800">send the pre-filled message here</a>.</div>
+            </form>
+        </div>
+    </section>
+
+    <section class="section" aria-labelledby="faq-title">
+        <div class="container">
+            <div class="kicker">FAQ</div>
+            <h2 id="faq-title">A deliberately narrow private beta.</h2>
+            <div class="faq">
+                <details><summary>Does Litoral Trace file Lacey declarations?</summary><p>No. This beta focuses on preparing, extracting, reconciling and reviewing information before filing.</p></details>
+                <details><summary>Is this legal advice?</summary><p>No. Litoral Trace is preparation and evidence software. Responsibility for declarations and regulatory decisions remains with the importer and its authorized professionals.</p></details>
+                <details><summary>Do you need ERP access?</summary><p>No. The test starts with a completed historical shipment and the files your team already has.</p></details>
+                <details><summary>Can sensitive data be redacted?</summary><p>Yes. The goal is to understand document workflow and manual work, not to obtain confidential commercial information.</p></details>
+            </div>
+        </div>
+    </section>
+</main>
+<footer class="footer">
+    <div class="container footer-row">
+        <div><strong>Litoral Trace</strong><p>Document intelligence, evidence and operational assurance for complex supply-chain workflows.</p></div>
+        <div><a href="mailto:{{ commercial_email }}">{{ commercial_email }}</a><p>Litoral Trace is preparation and evidence software. It does not file declarations, provide legal advice, certify Lacey Act compliance, or guarantee acceptance by APHIS, CBP, ACE or LAWGS.</p></div>
+    </div>
+</footer>
+<script>
+(() => {
+    const endpoint = '/lacey/event';
+    const sendEvent = (eventName) => {
+        const body = new URLSearchParams({ event: eventName });
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon(endpoint, body);
+            return;
+        }
+        fetch(endpoint, { method: 'POST', body, credentials: 'same-origin', keepalive: true }).catch(() => {});
+    };
+
+    sendEvent('lacey_visit');
+
+    document.querySelectorAll('[data-lacey-cta]').forEach((element) => {
+        element.addEventListener('click', () => sendEvent('lacey_cta_click'));
+    });
+
+    const form = document.getElementById('lacey-beta-form');
+    const success = document.getElementById('lacey-form-success');
+    const mailLink = document.getElementById('lacey-mail-link');
+    let formStarted = false;
+
+    form.addEventListener('focusin', () => {
+        if (!formStarted) {
+            formStarted = true;
+            sendEvent('lacey_form_start');
+        }
+    });
+
+    form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        const data = new FormData(form);
+        const email = String(data.get('work_email') || '').trim();
+        const role = String(data.get('role') || '').trim();
+        const volume = String(data.get('volume') || '').trim();
+        const workflow = String(data.get('workflow') || '').trim();
+        const willingness = String(data.get('willingness') || '').trim();
+        const subject = `Lacey Private Beta — ${role}`;
+        const body = [
+            'Hello Litoral Trace,',
+            '',
+            'I would like to discuss the Lacey Act private beta.',
+            '',
+            `Work email: ${email}`,
+            `Role: ${role}`,
+            `Approx. Lacey entries / month: ${volume}`,
+            `Current workflow: ${workflow}`,
+            `Willing to test one completed historical shipment: ${willingness}`,
+            '',
+            'Please contact me to coordinate a 15-minute walkthrough.'
+        ].join('\n');
+        const mailto = `mailto:{{ commercial_email }}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+        sendEvent('lacey_form_submit');
+        mailLink.href = mailto;
+        success.classList.add('visible');
+        window.location.href = mailto;
+    });
+})();
+</script>
+</body>
+</html>
