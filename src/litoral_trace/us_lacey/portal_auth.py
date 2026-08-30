@@ -2,7 +2,8 @@
 
 The portal intentionally does not issue or verify the generic Litoral Trace JWT.
 It uses a high-entropy opaque cookie whose SHA-256 digest is persisted in the
-existing tenant-scoped ``user_sessions`` table inside the U.S.-only database.
+U.S.-only database. All pre-tenant auth operations cross FORCE RLS only through
+narrow SECURITY DEFINER functions owned by the dedicated platform role.
 """
 from __future__ import annotations
 
@@ -13,20 +14,9 @@ import os
 import secrets
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import text
 
 from litoral_trace.auth.passwords import verify_password
-from litoral_trace.db.auth_bootstrap import (
-    lookup_login_bootstrap_user,
-    lookup_session_bootstrap_by_token_hash,
-)
-from litoral_trace.db.models import (
-    Organization,
-    User,
-    UserSession,
-    UsLaceyOrganizationProfile,
-)
-from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
 
@@ -93,20 +83,25 @@ def get_us_lacey_session_ttl_hours() -> int:
     return value
 
 
-def _build_identity(
-    *,
-    user: User,
-    profile: UsLaceyOrganizationProfile,
-) -> UsLaceyPortalIdentity:
+def _identity_from_row(row) -> UsLaceyPortalIdentity:
     return UsLaceyPortalIdentity(
-        user_id=user.id,
-        organization_id=user.organization_id,
-        email=user.email,
-        full_name=(user.full_name or user.email).strip(),
-        legal_name=profile.legal_name,
-        business_type=profile.business_type,
-        account_status=profile.account_status,
+        user_id=int(row["user_id"]),
+        organization_id=int(row["organization_id"]),
+        email=str(row["email"]),
+        full_name=str(row["full_name"]),
+        legal_name=str(row["legal_name"]),
+        business_type=str(row["business_type"]),
+        account_status=str(row["account_status"]),
     )
+
+
+def _lookup_session_row(session, token_hash: str):
+    return session.execute(
+        text(
+            "SELECT * FROM public.us_lacey_portal_session_lookup(:token_hash)"
+        ),
+        {"token_hash": token_hash},
+    ).mappings().one_or_none()
 
 
 def login_us_lacey_user(
@@ -131,70 +126,77 @@ def login_us_lacey_user(
 
     session = get_us_lacey_db_session()
     try:
-        bootstrap = lookup_login_bootstrap_user(session, username=normalized_email)
-        if bootstrap is None or not bootstrap.is_active:
+        login_row = session.execute(
+            text(
+                "SELECT * FROM public.us_lacey_portal_login_lookup(:email)"
+            ),
+            {"email": normalized_email},
+        ).mappings().one_or_none()
+        if login_row is None:
             raise UsLaceyPortalAuthError(
                 "Email or password is incorrect.", code="invalid_credentials"
             )
-        if not verify_password(password, bootstrap.password_hash):
+        if not verify_password(password, str(login_row["password_hash"])):
             raise UsLaceyPortalAuthError(
                 "Email or password is incorrect.", code="invalid_credentials"
             )
-
-        set_tenant_db_context(session, bootstrap.organization_id)
-        user = session.execute(
-            select(User).where(
-                User.id == bootstrap.id,
-                User.organization_id == bootstrap.organization_id,
-            )
-        ).scalar_one_or_none()
-        organization = session.execute(
-            select(Organization).where(Organization.id == bootstrap.organization_id)
-        ).scalar_one_or_none()
-        profile = session.execute(
-            select(UsLaceyOrganizationProfile).where(
-                UsLaceyOrganizationProfile.organization_id == bootstrap.organization_id
-            )
-        ).scalar_one_or_none()
-
-        if user is None or organization is None or profile is None:
-            raise UsLaceyPortalAuthError(
-                "Email or password is incorrect.", code="invalid_credentials"
-            )
-        if not user.is_active or not organization.is_active:
+        if not bool(login_row["user_is_active"]) or not bool(
+            login_row["organization_is_active"]
+        ):
             raise UsLaceyPortalAuthError(
                 "This account is not available.", code="account_disabled"
             )
-        if profile.account_status == "PENDING_EMAIL":
+
+        account_status = str(login_row["account_status"])
+        if account_status == "PENDING_EMAIL":
             raise UsLaceyPortalAuthError(
                 "Verify your email before signing in.", code="email_unverified"
             )
-        if profile.account_status == "SUSPENDED":
+        if account_status == "SUSPENDED":
             raise UsLaceyPortalAuthError(
                 "This account is suspended. Contact support.", code="account_suspended"
             )
-        if profile.account_status not in {"PAYMENT_PENDING", "PILOT", "ACTIVE"}:
+        if account_status not in {"PAYMENT_PENDING", "PILOT", "ACTIVE"}:
             raise UsLaceyPortalAuthError(
                 "This account cannot sign in yet.", code="account_unavailable"
             )
 
-        session_record = UserSession(
-            user_id=user.id,
-            organization_id=organization.id,
-            family_id=str(uuid4()),
-            token_hash=token_hash,
-            issued_at=issued_at,
-            expires_at=expires_at,
-            created_ip=(str(client_ip or "").strip()[:45] or None),
-            user_agent=(str(user_agent or "").strip()[:512] or None),
-        )
-        user.last_login_at = issued_at
-        session.add(session_record)
+        session.execute(
+            text(
+                """
+                SELECT * FROM public.us_lacey_portal_create_session(
+                    :user_id,
+                    :organization_id,
+                    :token_hash,
+                    :family_id,
+                    :expires_at,
+                    :client_ip,
+                    :user_agent
+                )
+                """
+            ),
+            {
+                "user_id": int(login_row["user_id"]),
+                "organization_id": int(login_row["organization_id"]),
+                "token_hash": token_hash,
+                "family_id": str(uuid4()),
+                "expires_at": expires_at,
+                "client_ip": str(client_ip or "").strip()[:45] or None,
+                "user_agent": str(user_agent or "").strip()[:512] or None,
+            },
+        ).mappings().one()
+
+        identity_row = _lookup_session_row(session, token_hash)
+        if identity_row is None:
+            raise UsLaceyPortalAuthError(
+                "Unable to establish your session.", code="auth_unavailable"
+            )
+
         session.commit()
         return UsLaceyPortalLoginResult(
             session_token=raw_token,
             expires_at=expires_at,
-            identity=_build_identity(user=user, profile=profile),
+            identity=_identity_from_row(identity_row),
         )
     except UsLaceyPortalAuthError:
         session.rollback()
@@ -218,59 +220,17 @@ def resolve_us_lacey_session(
     current_time = _ensure_utc(now or _utc_now())
     session = get_us_lacey_db_session()
     try:
-        bootstrap = lookup_session_bootstrap_by_token_hash(
-            session, token_hash=token_hash
-        )
-        if bootstrap is None:
+        row = _lookup_session_row(session, token_hash)
+        if row is None:
             raise UsLaceyPortalAuthError(
                 "Your session is invalid or expired.", code="session_invalid"
             )
-
-        set_tenant_db_context(session, bootstrap.organization_id)
-        session_record = session.execute(
-            select(UserSession).where(
-                UserSession.id == bootstrap.id,
-                UserSession.user_id == bootstrap.user_id,
-                UserSession.organization_id == bootstrap.organization_id,
-            )
-        ).scalar_one_or_none()
-        if (
-            session_record is None
-            or session_record.revoked_at is not None
-            or _ensure_utc(session_record.expires_at) <= current_time
-        ):
+        expires_at = _ensure_utc(row["expires_at"])
+        if expires_at <= current_time:
             raise UsLaceyPortalAuthError(
                 "Your session is invalid or expired.", code="session_invalid"
             )
-
-        user = session.execute(
-            select(User).where(
-                User.id == bootstrap.user_id,
-                User.organization_id == bootstrap.organization_id,
-            )
-        ).scalar_one_or_none()
-        organization = session.execute(
-            select(Organization).where(Organization.id == bootstrap.organization_id)
-        ).scalar_one_or_none()
-        profile = session.execute(
-            select(UsLaceyOrganizationProfile).where(
-                UsLaceyOrganizationProfile.organization_id == bootstrap.organization_id
-            )
-        ).scalar_one_or_none()
-
-        if user is None or organization is None or profile is None:
-            raise UsLaceyPortalAuthError(
-                "Your session is invalid or expired.", code="session_invalid"
-            )
-        if not user.is_active or not organization.is_active:
-            raise UsLaceyPortalAuthError(
-                "This account is not available.", code="account_disabled"
-            )
-        if profile.account_status == "SUSPENDED":
-            raise UsLaceyPortalAuthError(
-                "This account is suspended. Contact support.", code="account_suspended"
-            )
-        return _build_identity(user=user, profile=profile)
+        return _identity_from_row(row)
     except UsLaceyPortalAuthError:
         session.rollback()
         raise
@@ -285,6 +245,7 @@ def resolve_us_lacey_session(
 
 def logout_us_lacey_user(token: str, *, now: datetime | None = None) -> None:
     """Revoke the exact browser session. Logout remains idempotent."""
+    del now  # PostgreSQL supplies the authoritative revocation timestamp.
     try:
         token_hash = _session_token_hash(token)
     except UsLaceyPortalAuthError:
@@ -292,24 +253,13 @@ def logout_us_lacey_user(token: str, *, now: datetime | None = None) -> None:
 
     session = get_us_lacey_db_session()
     try:
-        bootstrap = lookup_session_bootstrap_by_token_hash(
-            session, token_hash=token_hash
+        session.execute(
+            text(
+                "SELECT public.us_lacey_portal_revoke_session(:token_hash)"
+            ),
+            {"token_hash": token_hash},
         )
-        if bootstrap is None:
-            session.rollback()
-            return
-        set_tenant_db_context(session, bootstrap.organization_id)
-        session_record = session.execute(
-            select(UserSession).where(
-                UserSession.id == bootstrap.id,
-                UserSession.organization_id == bootstrap.organization_id,
-            )
-        ).scalar_one_or_none()
-        if session_record is not None and session_record.revoked_at is None:
-            session_record.revoked_at = _ensure_utc(now or _utc_now())
-            session.commit()
-        else:
-            session.rollback()
+        session.commit()
     except Exception:
         session.rollback()
     finally:
