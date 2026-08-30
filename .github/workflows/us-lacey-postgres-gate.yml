@@ -53,6 +53,7 @@ jobs:
       TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       US_LACEY_ENVIRONMENT: test
       US_LACEY_DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      US_LACEY_WORKER_DATABASE_URL: postgresql+psycopg://litoral_trace_us_lacey_worker:us_lacey_worker_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       US_LACEY_STORAGE_BUCKET: us-lacey-ci-private
       US_LACEY_STORAGE_PREFIX: us-lacey/ci
       US_LACEY_APP_HOSTNAME: app.lacey.litoraltrace.com
@@ -69,7 +70,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest alembic
-      - name: Provision migration owner and runtime role
+      - name: Provision migration owner, runtime and worker login
         shell: bash
         run: |
           set -euo pipefail
@@ -93,6 +94,11 @@ jobs:
                 LOGIN PASSWORD 'us_lacey_runtime_password_2026'
                 NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
               """,
+              """
+              CREATE ROLE litoral_trace_us_lacey_worker
+                LOGIN PASSWORD 'us_lacey_worker_password_2026'
+                NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS
+              """,
               "CREATE DATABASE litoral_trace_us_lacey_ci OWNER lt_us_lacey_migrator",
           ]
           with root.connect() as connection:
@@ -110,12 +116,33 @@ jobs:
               connection.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS postgis")
               connection.exec_driver_sql("GRANT CONNECT ON DATABASE litoral_trace_us_lacey_ci TO litoral_trace_app")
               connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO litoral_trace_app")
+              connection.exec_driver_sql("GRANT CONNECT ON DATABASE litoral_trace_us_lacey_ci TO litoral_trace_us_lacey_worker")
+              connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO litoral_trace_us_lacey_worker")
           target.dispose()
           PY
       - name: Migrate through pre-Assurance baseline
         run: python -m alembic upgrade 029_add_smart_import_profiles
       - name: Migrate through US Lacey self-service head
         run: python -m alembic upgrade head
+      - name: Bind dedicated worker login to queue capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from sqlalchemy import create_engine
+
+          root = create_engine(
+              "postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/postgres",
+              isolation_level="AUTOCOMMIT",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          with root.connect() as connection:
+              connection.exec_driver_sql(
+                  "GRANT litoral_trace_worker_executor TO litoral_trace_us_lacey_worker"
+              )
+          root.dispose()
+          PY
       - name: Verify canonical head and tenant hardening
         shell: bash
         run: |
@@ -171,6 +198,31 @@ jobs:
                       'us_lacey_portal_revoke_session'
                     ])
               """)).scalar_one()
+              worker_role = connection.execute(text("""
+                  SELECT rolcanlogin, rolsuper, rolbypassrls
+                  FROM pg_roles WHERE rolname='litoral_trace_us_lacey_worker'
+              """)).mappings().one()
+              worker_membership = connection.execute(text("""
+                  SELECT pg_has_role(
+                      'litoral_trace_us_lacey_worker',
+                      'litoral_trace_worker_executor',
+                      'MEMBER'
+                  )
+              """)).scalar_one()
+              worker_queue_select = connection.execute(text("""
+                  SELECT has_table_privilege(
+                      'litoral_trace_us_lacey_worker',
+                      'public.us_lacey_processing_jobs',
+                      'SELECT'
+                  )
+              """)).scalar_one()
+              worker_users_select = connection.execute(text("""
+                  SELECT has_table_privilege(
+                      'litoral_trace_us_lacey_worker',
+                      'public.users',
+                      'SELECT'
+                  )
+              """)).scalar_one()
           by_table = {row["relname"]: row for row in rows}
           assert set(by_table) == set(expected_policy_counts)
           assert all(row["relrowsecurity"] is True for row in by_table.values())
@@ -181,6 +233,10 @@ jobs:
           assert runtime_verification_privilege is False
           assert runtime_direct_users is False
           assert portal_function_count == 4
+          assert worker_role == {"rolcanlogin": True, "rolsuper": False, "rolbypassrls": False}
+          assert worker_membership is True
+          assert worker_queue_select is True
+          assert worker_users_select is False
           engine.dispose()
           PY
       - name: Prove self-registration and email transition
@@ -237,5 +293,11 @@ jobs:
         run: >-
           python -m pytest -q -rs
           tests/test_us_lacey_portal_http_postgres_e2e.py
+      - name: Prove Upload Queue Worker CSV XLSX PostgreSQL E2E
+        env:
+          DATABASE_URL: ""
+        run: >-
+          python -m pytest -q -rs
+          tests/test_us_lacey_worker_postgres_integration.py
       - name: Prove tenant A/B isolation
         run: python -m pytest -q -rs tests/test_us_lacey_rls_postgres_integration.py
