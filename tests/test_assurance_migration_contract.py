@@ -8,7 +8,7 @@ SUPPLIERS_MIGRATION = Path("alembic/versions/033_add_assurance_suppliers.py")
 US_LACEY_MIGRATION = Path("alembic/versions/034_add_us_lacey_pilot_core.py")
 US_LACEY_SELF_SERVICE_MIGRATION = Path("alembic/versions/035_add_us_lacey_self_service.py")
 US_LACEY_STATUS_FIX_MIGRATION = Path("alembic/versions/036_fix_us_lacey_status_ambiguity.py")
-US_LACEY_PORTAL_AUTH_MIGRATION = Path("alembic/versions/037_us_lacey_portal_auth.py")
+US_LACEY_PORTAL_AUTH_MIGRATION = Path("alembic/versions/037_add_us_lacey_portal_auth_functions.py")
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
