@@ -32,7 +32,7 @@ from litoral_trace.us_lacey.domain import (
 
 
 class UsLaceyOrganizationProfile(Base):
-    """U.S.-pilot commercial profile layered over the existing Organization."""
+    """U.S. commercial profile layered over the existing Organization."""
 
     __tablename__ = "us_lacey_organization_profiles"
 
@@ -52,7 +52,7 @@ class UsLaceyOrganizationProfile(Base):
     admin_contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     billing_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     account_status: Mapped[str] = mapped_column(
-        String(24), nullable=False, default=UsLaceyAccountStatus.PILOT.value
+        String(24), nullable=False, default=UsLaceyAccountStatus.PENDING_EMAIL.value
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -70,7 +70,7 @@ class UsLaceyOrganizationProfile(Base):
             name="ck_us_lacey_org_profiles_business_type",
         ),
         CheckConstraint(
-            "account_status IN ('PILOT','ACTIVE','SUSPENDED')",
+            "account_status IN ('PENDING_EMAIL','PAYMENT_PENDING','PILOT','ACTIVE','SUSPENDED')",
             name="ck_us_lacey_org_profiles_status",
         ),
         Index("ix_us_lacey_org_profiles_organization_id", "organization_id"),
