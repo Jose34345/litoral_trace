@@ -59,6 +59,12 @@ class UsLaceyIngestionService:
             return "OTHER"
         return role
 
+    @staticmethod
+    def _operation_public_id(value: UUID | str) -> UUID:
+        if isinstance(value, UUID):
+            return value
+        return UUID(str(value))
+
     def ingest_document(
         self,
         *,
@@ -74,7 +80,7 @@ class UsLaceyIngestionService:
         # original bytes, deduplicates within the tenant and persists them to Vault.
         result = self._ingestion.ingest(
             organization_id=organization_id,
-            user_id=user_id,
+            created_by_user_id=user_id,
             filename=filename,
             content_type=content_type,
             content=content,
@@ -86,7 +92,7 @@ class UsLaceyIngestionService:
             document_role=self._role(document_role),
         )
         return UsLaceyIngestionResult(
-            operation_public_id=self._operations._public_id(operation_public_id),
+            operation_public_id=self._operation_public_id(operation_public_id),
             operation_document_link_id=link_id,
             assurance_document_id=result.assurance_document_id,
             assurance_public_id=result.assurance_public_id,
