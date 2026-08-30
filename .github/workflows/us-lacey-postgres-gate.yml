@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - "alembic/versions/034_add_us_lacey_pilot_core.py"
+      - "alembic/versions/035_add_us_lacey_self_service.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/db/models/us_lacey.py"
+      - "src/litoral_trace/db/models/us_lacey_commercial.py"
       - "src/litoral_trace/db/models/__init__.py"
       - "src/litoral_trace/db/tenant.py"
       - "tests/test_us_lacey_*"
@@ -103,23 +105,27 @@ jobs:
           PY
       - name: Migrate through pre-Assurance baseline
         run: python -m alembic upgrade 029_add_smart_import_profiles
-      - name: Migrate through US Lacey head
+      - name: Migrate through US Lacey self-service head
         run: python -m alembic upgrade head
-      - name: Verify canonical head and US tables
+      - name: Verify canonical head and tenant hardening
         shell: bash
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -F "034_us_lacey_pilot_core" /tmp/alembic-current.txt
+          grep -F "035_us_lacey_self_service" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
 
-          expected = {
-              "us_lacey_organization_profiles",
-              "us_lacey_operations",
-              "us_lacey_operation_documents",
-              "us_lacey_operation_fields",
+          expected_policy_counts = {
+              "us_lacey_organization_profiles": 5,
+              "us_lacey_operations": 4,
+              "us_lacey_operation_documents": 4,
+              "us_lacey_operation_fields": 4,
+              "us_lacey_subscriptions": 5,
+              "us_lacey_payments": 5,
+              "us_lacey_terms_acceptances": 5,
+              "us_lacey_processing_jobs": 6,
           }
           engine = create_engine(os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
           with engine.connect() as connection:
@@ -128,20 +134,69 @@ jobs:
                   FROM pg_class c
                   JOIN pg_namespace n ON n.oid = c.relnamespace
                   WHERE n.nspname = 'public' AND c.relname = ANY(:names)
-              """), {"names": sorted(expected)}).mappings().all()
+              """), {"names": sorted(expected_policy_counts)}).mappings().all()
               policies = connection.execute(text("""
                   SELECT tablename, count(*) AS policy_count
                   FROM pg_policies
                   WHERE schemaname = 'public' AND tablename = ANY(:names)
                   GROUP BY tablename
-              """), {"names": sorted(expected)}).mappings().all()
+              """), {"names": sorted(expected_policy_counts)}).mappings().all()
+              verification_table = connection.execute(text("""
+                  SELECT to_regclass('public.us_lacey_email_verifications') IS NOT NULL
+              """)).scalar_one()
+              runtime_verification_privilege = connection.execute(text("""
+                  SELECT has_table_privilege('litoral_trace_app', 'public.us_lacey_email_verifications', 'SELECT')
+              """)).scalar_one()
           by_table = {row["relname"]: row for row in rows}
-          assert set(by_table) == expected
+          assert set(by_table) == set(expected_policy_counts)
           assert all(row["relrowsecurity"] is True for row in by_table.values())
           assert all(row["relforcerowsecurity"] is True for row in by_table.values())
           counts = {row["tablename"]: row["policy_count"] for row in policies}
-          assert set(counts) == expected
-          assert all(counts[name] == 4 for name in expected)
+          assert counts == expected_policy_counts
+          assert verification_table is True
+          assert runtime_verification_privilege is False
+          engine.dispose()
+          PY
+      - name: Prove self-registration and email transition
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+          verification_hash = "a" * 64
+          fake_bcrypt_hash = "$2b$12$" + ("x" * 53)
+          with engine.begin() as connection:
+              registered = connection.execute(text("""
+                  SELECT * FROM public.us_lacey_self_register(
+                      :legal_name, :business_type, :admin_name, :email,
+                      :password_hash, :verification_hash, :price_cents,
+                      :monthly_limit, :provider, :terms_version,
+                      :privacy_version, :beta_version
+                  )
+              """), {
+                  "legal_name": "US Lacey Gate Imports LLC",
+                  "business_type": "IMPORTER",
+                  "admin_name": "Gate Admin",
+                  "email": "gate-admin@example.com",
+                  "password_hash": fake_bcrypt_hash,
+                  "verification_hash": verification_hash,
+                  "price_cents": 10000,
+                  "monthly_limit": 25,
+                  "provider": "WISE",
+                  "terms_version": "gate-terms-v1",
+                  "privacy_version": "gate-privacy-v1",
+                  "beta_version": "gate-beta-v1",
+              }).mappings().one()
+              assert registered["account_status"] == "PENDING_EMAIL"
+              assert registered["payment_reference"].startswith("LT-US-")
+              verified = connection.execute(text("""
+                  SELECT * FROM public.us_lacey_verify_email(:token_hash)
+              """), {"token_hash": verification_hash}).mappings().one()
+              assert verified["organization_id"] == registered["organization_id"]
+              assert verified["account_status"] == "PAYMENT_PENDING"
           engine.dispose()
           PY
       - name: Prove tenant A/B isolation
