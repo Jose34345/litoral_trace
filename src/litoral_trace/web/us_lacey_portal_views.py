@@ -14,22 +14,22 @@ def money(cents: int, currency: str = "USD") -> str:
 
 def shell(title: str, body: str, *, authenticated: bool = False) -> str:
     nav = (
-        '<a href="/billing">Billing</a> <form method="post" action="/logout" style="display:inline"><button type="submit">Sign out</button></form>'
+        '<a href="/operations">Operations</a> <a href="/billing">Billing</a> <form method="post" action="/logout" style="display:inline"><button type="submit">Sign out</button></form>'
         if authenticated
         else '<a href="/login">Sign in</a> <a href="/signup">Create account</a>'
     )
     css = """
     body{margin:0;background:#f5f7f6;color:#12231c;font-family:system-ui,-apple-system,sans-serif;line-height:1.5}
-    a{color:#174d36;font-weight:650}.wrap{width:min(880px,calc(100% - 32px));margin:auto}
-    nav{display:flex;justify-content:space-between;align-items:center;padding:22px 0}main{padding:36px 0 70px}
-    .card{background:#fff;border:1px solid #dce4df;border-radius:16px;padding:28px;margin-top:22px}
-    h1{font-size:clamp(34px,5vw,52px);line-height:1.05;letter-spacing:-.04em}p{color:#617068}
-    label{display:block;font-weight:700;margin:14px 0 6px}input,select{width:100%;box-sizing:border-box;padding:12px;border:1px solid #cbd7d0;border-radius:9px;font:inherit}
-    button,.button{display:inline-block;background:#174d36;color:#fff;border:0;border-radius:9px;padding:12px 17px;font:inherit;font-weight:750;text-decoration:none;cursor:pointer}
+    a{color:#174d36;font-weight:650}.wrap{width:min(1040px,calc(100% - 32px));margin:auto}
+    nav{display:flex;justify-content:space-between;align-items:center;padding:22px 0;gap:18px}nav div{display:flex;align-items:center;gap:14px}nav form{margin:0}main{padding:36px 0 70px}
+    .card{background:#fff;border:1px solid #dce4df;border-radius:16px;padding:28px;margin-top:22px}.compact{padding:18px}
+    h1{font-size:clamp(34px,5vw,52px);line-height:1.05;letter-spacing:-.04em}h2{margin-top:0}p{color:#617068}
+    label{display:block;font-weight:700;margin:14px 0 6px}input,select,textarea{width:100%;box-sizing:border-box;padding:12px;border:1px solid #cbd7d0;border-radius:9px;font:inherit;background:#fff}
+    button,.button{display:inline-block;background:#174d36;color:#fff;border:0;border-radius:9px;padding:12px 17px;font:inherit;font-weight:750;text-decoration:none;cursor:pointer}.button.secondary,button.secondary{background:#eef3f0;color:#174d36}.button.danger,button.danger{background:#8f2727}
     .error{background:#fff0f0;color:#8f2727;padding:12px;border-radius:9px}.ok{background:#edf8f1;color:#17603b;padding:12px;border-radius:9px}.warn{background:#fff8e8;color:#7d5814;padding:12px;border-radius:9px}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:12px}.metric{border:1px solid #dce4df;border-radius:10px;padding:15px}.reference{font-family:monospace;font-size:18px;font-weight:800;word-break:break-all}.instructions{white-space:pre-wrap;border:1px solid #dce4df;padding:14px;border-radius:9px;background:#fafcfa}
-    .check{display:flex;gap:9px;align-items:flex-start;margin:12px 0;color:#617068}.check input{width:auto;margin-top:5px}
-    @media(max-width:700px){.row,.meta{grid-template-columns:1fr}}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}.meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.metric{border:1px solid #dce4df;border-radius:10px;padding:15px}.reference{font-family:monospace;font-size:18px;font-weight:800;word-break:break-all}.instructions{white-space:pre-wrap;border:1px solid #dce4df;padding:14px;border-radius:9px;background:#fafcfa}
+    .check{display:flex;gap:9px;align-items:flex-start;margin:12px 0;color:#617068}.check input{width:auto;margin-top:5px}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.muted{color:#617068;font-size:14px}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;word-break:break-word}.list{display:grid;gap:12px}.item{border:1px solid #dce4df;border-radius:12px;padding:16px;background:#fff}.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#eef3f0;font-size:12px;font-weight:800}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;border-bottom:1px solid #e6ece8;padding:10px;vertical-align:top}th{background:#fafcfa;position:sticky;top:0}.field-review{display:grid;grid-template-columns:minmax(160px,1.2fr) minmax(180px,1.5fr) minmax(160px,1fr);gap:12px;align-items:start}.field-review form{margin:0}.field-review input{margin-bottom:8px}
+    @media(max-width:760px){.row,.meta,.field-review{grid-template-columns:1fr}nav{align-items:flex-start;flex-direction:column}nav div{flex-wrap:wrap}}
     """
     return f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{safe(title)} · Litoral Trace</title><style>{css}</style></head><body><div class="wrap"><nav><strong>Litoral Trace · U.S. Lacey</strong><div>{nav}</div></nav><main>{body}</main></div></body></html>'
 
@@ -107,7 +107,7 @@ def render_billing(*, identity, billing, commercial) -> str:
     if identity.account_status == "PAYMENT_PENDING":
         notice = '<div class="warn"><strong>Payment pending.</strong> Your email is verified, but document processing stays locked until payment is confirmed.</div>'
     elif identity.account_status in {"ACTIVE", "PILOT"}:
-        notice = '<div class="ok"><strong>Account active.</strong> Billing is verified for this workspace.</div>'
+        notice = '<div class="ok"><strong>Account active.</strong> Billing is verified for this workspace. <a href="/operations">Open operations</a>.</div>'
     else:
         notice = f'<div class="warn">Account status: {safe(identity.account_status)}</div>'
 
