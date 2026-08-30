@@ -24,8 +24,9 @@ from litoral_trace.us_lacey.self_service import (
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("ENABLE_POSTGRES_TESTS") != "1"
-    or not os.environ.get("US_LACEY_DATABASE_URL"),
-    reason="requires the isolated U.S. PostgreSQL integration database",
+    or not os.environ.get("US_LACEY_DATABASE_URL")
+    or not os.environ.get("TEST_POSTGRES_MIGRATION_DATABASE_URL"),
+    reason="requires the isolated U.S. PostgreSQL runtime and migration databases",
 )
 
 
@@ -75,10 +76,11 @@ def test_verified_customer_gets_isolated_opaque_session_and_billing():
     assert resolved.organization_id == registered.organization_id
     assert resolved.email == email
 
-    # Inspect persistence with the migration principal only inside the tenant
-    # context. The web runtime intentionally has no direct SELECT grant on users.
+    # conftest deliberately strips MIGRATION_DATABASE_URL from the pytest process.
+    # The isolated PostgreSQL gate exposes its owner URL through the explicit test
+    # variable so this inspection cannot accidentally bind to a production owner.
     migration_engine = create_engine(
-        os.environ["MIGRATION_DATABASE_URL"],
+        os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
         pool_pre_ping=True,
         hide_parameters=True,
     )
