@@ -1,4 +1,4 @@
-"""Domain constants for the U.S. Lacey document-preparation pilot.
+"""Domain constants for the U.S. Lacey document-preparation product.
 
 The field catalog mirrors the structured review/export shape used by the public
 synthetic demo. It is a preparation schema, not a legal determination of what a
@@ -33,9 +33,33 @@ class UsLaceyBusinessType(StrEnum):
 
 
 class UsLaceyAccountStatus(StrEnum):
-    PILOT = "PILOT"
+    PENDING_EMAIL = "PENDING_EMAIL"
+    PAYMENT_PENDING = "PAYMENT_PENDING"
+    PILOT = "PILOT"  # legacy/manual pilot accounts
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"
+
+
+class UsLaceySubscriptionStatus(StrEnum):
+    PENDING = "PENDING"
+    ACTIVE = "ACTIVE"
+    PAST_DUE = "PAST_DUE"
+    CANCELED = "CANCELED"
+
+
+class UsLaceyPaymentStatus(StrEnum):
+    PENDING = "PENDING"
+    VERIFIED = "VERIFIED"
+    REJECTED = "REJECTED"
+    REFUNDED = "REFUNDED"
+
+
+class UsLaceyProcessingJobStatus(StrEnum):
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    RETRY = "RETRY"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 
 # Stable internal keys -> user-facing labels. Keeping these names centralized
