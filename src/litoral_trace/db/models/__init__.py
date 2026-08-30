@@ -34,6 +34,12 @@ from litoral_trace.db.models.us_lacey import (
     UsLaceyOperationField,
     UsLaceyOrganizationProfile,
 )
+from litoral_trace.db.models.us_lacey_commercial import (
+    UsLaceyPayment,
+    UsLaceyProcessingJob,
+    UsLaceySubscription,
+    UsLaceyTermsAcceptance,
+)
 from litoral_trace.db.models.integration import (
     ExternalEntity,
     ExternalEntityVersion,
@@ -84,6 +90,10 @@ __all__ = [
     "UsLaceyOperation",
     "UsLaceyOperationDocument",
     "UsLaceyOperationField",
+    "UsLaceySubscription",
+    "UsLaceyPayment",
+    "UsLaceyTermsAcceptance",
+    "UsLaceyProcessingJob",
     "TraceabilityBatch",
     "TraceabilityEvent",
     "TraceabilityEventInput",
