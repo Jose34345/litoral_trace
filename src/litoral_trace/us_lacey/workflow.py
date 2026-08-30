@@ -45,7 +45,10 @@ def create_us_lacey_customer_operation(
     operations: UsLaceyOperationService | None = None,
 ) -> OperationSnapshot:
     """Create one billable operation after server-side entitlement verification."""
-    require_us_lacey_operational_access(organization_id=organization_id)
+    require_us_lacey_operational_access(
+        organization_id=organization_id,
+        require_operation_slot=True,
+    )
     service = operations or UsLaceyOperationService()
     return service.create_operation(
         organization_id=organization_id,
@@ -100,7 +103,12 @@ def upload_and_enqueue_us_lacey_document(
     operations: UsLaceyOperationService | None = None,
 ) -> UsLaceyQueuedUpload:
     """Persist the immutable original, link it to the operation, then queue processing."""
-    require_us_lacey_operational_access(organization_id=organization_id)
+    # This operation has already consumed its plan slot. Customers must always be
+    # able to finish uploads/review/exports for existing work, even at quota.
+    require_us_lacey_operational_access(
+        organization_id=organization_id,
+        require_operation_slot=False,
+    )
     operation_service = operations or UsLaceyOperationService()
     operation_id = operation_service.get_internal_id(
         organization_id=organization_id,
