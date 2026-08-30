@@ -30,7 +30,7 @@ class UsLaceyOperationalEntitlement:
 def require_us_lacey_operational_access(
     *,
     organization_id: int,
-    require_operation_slot: bool = True,
+    require_operation_slot: bool = False,
 ) -> UsLaceyOperationalEntitlement:
     """Verify paid/pilot entitlement and optionally require a new-operation slot.
 
@@ -38,6 +38,11 @@ def require_us_lacey_operational_access(
     persisted and tenant-scoped. Quota limits creation of *new* operations; once
     an operation exists, its upload/review/export lifecycle remains accessible so
     the customer can finish work already counted against the plan.
+
+    Slot enforcement is deliberately opt-in. Callers that create a new billable
+    operation must pass ``require_operation_slot=True``; ordinary workspace,
+    upload, review and export access must not be blocked merely because the final
+    paid slot has already been consumed.
     """
     org_id = int(organization_id)
     if org_id <= 0:
