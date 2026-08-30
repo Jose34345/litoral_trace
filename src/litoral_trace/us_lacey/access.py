@@ -28,12 +28,16 @@ class UsLaceyOperationalEntitlement:
 
 
 def require_us_lacey_operational_access(
-    *, organization_id: int
+    *,
+    organization_id: int,
+    require_operation_slot: bool = True,
 ) -> UsLaceyOperationalEntitlement:
-    """Allow customer operations only after verified payment or explicit pilot access.
+    """Verify paid/pilot entitlement and optionally require a new-operation slot.
 
-    Browser state is never authoritative.  The decision is made from the tenant's
-    persisted U.S. account/subscription records on every operational entry point.
+    Browser state is never authoritative. The account/subscription decision is
+    persisted and tenant-scoped. Quota limits creation of *new* operations; once
+    an operation exists, its upload/review/export lifecycle remains accessible so
+    the customer can finish work already counted against the plan.
     """
     org_id = int(organization_id)
     if org_id <= 0:
@@ -68,7 +72,7 @@ def require_us_lacey_operational_access(
 
         limit = int(subscription.monthly_operation_limit)
         used = int(subscription.used_operations)
-        if used >= limit:
+        if require_operation_slot and used >= limit:
             raise UsLaceyOperationalAccessError(
                 "This workspace has reached its current operation limit."
             )
