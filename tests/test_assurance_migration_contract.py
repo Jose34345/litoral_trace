@@ -5,6 +5,7 @@ MIGRATION = Path("alembic/versions/030_add_assurance_document_intelligence.py")
 RECONCILIATION_MIGRATION = Path("alembic/versions/031_add_assurance_reconciliation.py")
 EXCEPTIONS_MIGRATION = Path("alembic/versions/032_add_assurance_operational_exceptions.py")
 SUPPLIERS_MIGRATION = Path("alembic/versions/033_add_assurance_suppliers.py")
+US_LACEY_MIGRATION = Path("alembic/versions/034_add_us_lacey_pilot_core.py")
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -66,6 +67,12 @@ def test_assurance_suppliers_migration_is_chained_and_tenant_hardened():
     assert "REVOKE ALL PRIVILEGES" in text
 
 
-def test_ci_canonical_head_tracks_latest_assurance_migration():
+def test_us_lacey_migration_follows_assurance_suppliers():
+    text = US_LACEY_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision: str = "034_us_lacey_pilot_core"' in text
+    assert '"033_assurance_suppliers"' in text
+
+
+def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "033_assurance_suppliers (head)" in text
+    assert "034_us_lacey_pilot_core (head)" in text
