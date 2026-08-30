@@ -299,5 +299,11 @@ jobs:
         run: >-
           python -m pytest -q -rs
           tests/test_us_lacey_worker_postgres_integration.py
+      - name: Prove ACTIVE Operations Review Export HTTP E2E
+        env:
+          DATABASE_URL: ""
+        run: >-
+          python -m pytest -q -rs
+          tests/test_us_lacey_active_portal_postgres_e2e.py
       - name: Prove tenant A/B isolation
         run: python -m pytest -q -rs tests/test_us_lacey_rls_postgres_integration.py
