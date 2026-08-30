@@ -24,6 +24,8 @@ services:
         value: pilot
       - key: US_LACEY_APP_HOSTNAME
         value: app.lacey.litoraltrace.com
+      - key: US_LACEY_SESSION_TTL_HOURS
+        value: "12"
       - key: US_LACEY_STORAGE_PREFIX
         value: us-lacey/pilot
       - key: US_LACEY_DATABASE_URL
@@ -36,3 +38,37 @@ services:
         sync: false
       - key: US_LACEY_STORAGE_SECRET_ACCESS_KEY
         sync: false
+      - key: US_LACEY_PRIVATE_BETA_PRICE_CENTS
+        sync: false
+      - key: US_LACEY_MONTHLY_OPERATION_LIMIT
+        sync: false
+      - key: US_LACEY_PAYMENT_PROVIDER
+        sync: false
+      - key: US_LACEY_BANK_TRANSFER_INSTRUCTIONS
+        sync: false
+      - key: US_LACEY_TERMS_VERSION
+        sync: false
+      - key: US_LACEY_PRIVACY_VERSION
+        sync: false
+      - key: US_LACEY_BETA_TERMS_VERSION
+        sync: false
+      - key: US_LACEY_TERMS_URL
+        sync: false
+      - key: US_LACEY_PRIVACY_URL
+        sync: false
+      - key: US_LACEY_BETA_TERMS_URL
+        sync: false
+      - key: US_LACEY_SUPPORT_EMAIL
+        value: support@litoraltrace.com
+      - key: US_LACEY_SMTP_HOST
+        sync: false
+      - key: US_LACEY_SMTP_PORT
+        value: "587"
+      - key: US_LACEY_SMTP_USERNAME
+        sync: false
+      - key: US_LACEY_SMTP_PASSWORD
+        sync: false
+      - key: US_LACEY_EMAIL_FROM
+        sync: false
+      - key: US_LACEY_SMTP_STARTTLS
+        value: "1"
