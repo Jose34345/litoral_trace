@@ -5,7 +5,7 @@ services:
     repo: https://github.com/Jose34345/litoral_trace
     branch: feature/us-lacey-pilot-platform
     region: virginia
-    plan: free
+    plan: 0.5c-512mb
     autoDeployTrigger: checksPass
     buildCommand: pip install --no-cache-dir -r requirements.txt
     startCommand: uvicorn litoral_trace.web.us_lacey_pilot_app:app --host 0.0.0.0 --port $PORT
@@ -21,19 +21,19 @@ services:
       - key: PYTHONPATH
         value: src
       - key: US_LACEY_ENVIRONMENT
-        value: pilot
+        value: production
       - key: US_LACEY_APP_HOSTNAME
         value: app.lacey.litoraltrace.com
       - key: US_LACEY_SESSION_TTL_HOURS
         value: "12"
+      - key: US_LACEY_STORAGE_BUCKET
+        value: litoral-trace-us-lacey-pilot-380560899138-us-east-2
+      - key: US_LACEY_STORAGE_REGION
+        value: us-east-2
       - key: US_LACEY_STORAGE_PREFIX
         value: us-lacey/pilot
       - key: US_LACEY_DATABASE_URL
         sync: false
-      - key: US_LACEY_STORAGE_BUCKET
-        sync: false
-      - key: US_LACEY_STORAGE_REGION
-        value: us-east-1
       - key: US_LACEY_STORAGE_ACCESS_KEY_ID
         sync: false
       - key: US_LACEY_STORAGE_SECRET_ACCESS_KEY
@@ -72,3 +72,47 @@ services:
         sync: false
       - key: US_LACEY_SMTP_STARTTLS
         value: "1"
+
+  - type: worker
+    name: litoral-trace-us-lacey-worker
+    runtime: python
+    repo: https://github.com/Jose34345/litoral_trace
+    branch: feature/us-lacey-pilot-platform
+    region: virginia
+    plan: 0.5c-512mb
+    autoDeployTrigger: checksPass
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: python -m litoral_trace.us_lacey.worker_runner
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONPATH
+        value: src
+      - key: US_LACEY_ENVIRONMENT
+        value: production
+      - key: US_LACEY_APP_HOSTNAME
+        value: app.lacey.litoraltrace.com
+      - key: US_LACEY_STORAGE_BUCKET
+        value: litoral-trace-us-lacey-pilot-380560899138-us-east-2
+      - key: US_LACEY_STORAGE_REGION
+        value: us-east-2
+      - key: US_LACEY_STORAGE_PREFIX
+        value: us-lacey/pilot
+      - key: US_LACEY_DATABASE_URL
+        sync: false
+      - key: US_LACEY_WORKER_DATABASE_URL
+        sync: false
+      - key: US_LACEY_STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: US_LACEY_STORAGE_SECRET_ACCESS_KEY
+        sync: false
+      - key: US_LACEY_WORKER_POLL_SECONDS
+        value: "2"
+      - key: US_LACEY_WORKER_RECOVERY_EVERY_SECONDS
+        value: "60"
+      - key: US_LACEY_WORKER_STALE_AFTER_SECONDS
+        value: "600"
