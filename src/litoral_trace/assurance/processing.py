@@ -370,9 +370,11 @@ class AssuranceProcessingService:
         *,
         session_factory: SessionFactory | None = None,
         vault_service: VaultService | None = None,
+        enable_entity_matching: bool = True,
     ) -> None:
         self._session_factory = session_factory or get_db_session
         self._vault_service = vault_service or VaultService()
+        self._enable_entity_matching = bool(enable_entity_matching)
 
     def _new_session(self, organization_id: int) -> Session:
         session = self._session_factory()
@@ -444,7 +446,10 @@ class AssuranceProcessingService:
                 engine_version=PARSER_ENGINE_VERSION,
                 status=ExtractionRunStatus.RUNNING.value,
                 started_at=_utc_now(),
-                extraction_metadata={"force_reprocess": bool(force_reprocess)},
+                extraction_metadata={
+                    "force_reprocess": bool(force_reprocess),
+                    "entity_matching_enabled": self._enable_entity_matching,
+                },
             )
             session.add(run)
             assurance_document.processing_status = DocumentProcessingStatus.PROCESSING.value
@@ -500,12 +505,16 @@ class AssuranceProcessingService:
                 extraction_run=run,
                 candidates=structured_candidates,
             )
-            link_counts = _persist_entity_links(
-                session,
-                organization_id=org_id,
-                assurance_document=assurance_document,
-                candidates=structured_candidates,
-            )
+            if self._enable_entity_matching:
+                link_counts = _persist_entity_links(
+                    session,
+                    organization_id=org_id,
+                    assurance_document=assurance_document,
+                    candidates=structured_candidates,
+                )
+            else:
+                link_counts = {"linked": 0, "ambiguous": 0, "below_threshold": 0}
+
             metadata = dict(run.extraction_metadata or {})
             metadata.update(parsed.metadata)
             metadata.update(
@@ -519,6 +528,7 @@ class AssuranceProcessingService:
                     "review_field_count": field_counts["needs_review"],
                     "field_conflict_count": field_counts["conflicts"],
                     "low_confidence_field_count": field_counts["low_confidence"],
+                    "entity_matching_enabled": self._enable_entity_matching,
                     "entity_link_count": link_counts["linked"],
                     "ambiguous_entity_match_count": link_counts["ambiguous"],
                     "below_threshold_entity_match_count": link_counts["below_threshold"],
@@ -584,6 +594,7 @@ class AssuranceProcessingService:
                     "review_field_count": field_counts["needs_review"],
                     "field_conflict_count": field_counts["conflicts"],
                     "low_confidence_field_count": field_counts["low_confidence"],
+                    "entity_matching_enabled": self._enable_entity_matching,
                     "entity_link_count": link_counts["linked"],
                     "ambiguous_entity_match_count": link_counts["ambiguous"],
                     "ocr_required": bool(parsed.ocr_required),
