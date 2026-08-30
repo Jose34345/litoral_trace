@@ -6,6 +6,7 @@ RECONCILIATION_MIGRATION = Path("alembic/versions/031_add_assurance_reconciliati
 EXCEPTIONS_MIGRATION = Path("alembic/versions/032_add_assurance_operational_exceptions.py")
 SUPPLIERS_MIGRATION = Path("alembic/versions/033_add_assurance_suppliers.py")
 US_LACEY_MIGRATION = Path("alembic/versions/034_add_us_lacey_pilot_core.py")
+US_LACEY_SELF_SERVICE_MIGRATION = Path("alembic/versions/035_add_us_lacey_self_service.py")
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -73,6 +74,22 @@ def test_us_lacey_migration_follows_assurance_suppliers():
     assert '"033_assurance_suppliers"' in text
 
 
+def test_us_lacey_self_service_follows_pilot_core():
+    text = US_LACEY_SELF_SERVICE_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision: str = "035_us_lacey_self_service"' in text
+    assert '"034_us_lacey_pilot_core"' in text
+    for table in (
+        "us_lacey_subscriptions",
+        "us_lacey_payments",
+        "us_lacey_terms_acceptances",
+        "us_lacey_processing_jobs",
+    ):
+        assert table in text
+    assert "FORCE ROW LEVEL SECURITY" in text
+    assert "us_lacey_self_register" in text
+    assert "us_lacey_verify_email" in text
+
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "034_us_lacey_pilot_core (head)" in text
+    assert "035_us_lacey_self_service (head)" in text
