@@ -1,6 +1,7 @@
 """Transactional self-service primitives for U.S. Lacey onboarding and billing."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import hashlib
 import secrets
@@ -64,6 +65,9 @@ class UsLaceyPaymentActivationResult:
     account_status: str
 
 
+VerificationDelivery = Callable[[str, str, str], None]
+
+
 def _verification_token_hash(token: str) -> str:
     normalized = str(token or "").strip()
     if not normalized:
@@ -104,11 +108,14 @@ def register_us_lacey_company(
     admin_email: str,
     password: str,
     commercial_config: UsLaceyCommercialConfig | None = None,
+    verification_delivery: VerificationDelivery | None = None,
 ) -> UsLaceyRegistrationResult:
-    """Atomically create company, admin, subscription, payment and legal record.
+    """Create the company and optionally deliver verification before commit.
 
     The raw email-verification token is returned exactly once to the delivery
-    layer. PostgreSQL receives and persists only its SHA-256 digest.
+    layer. PostgreSQL receives and persists only its SHA-256 digest. When a
+    verification delivery callback is supplied, a delivery failure rolls back
+    the database transaction so the customer can safely retry signup.
     """
     legal_name = _normalize_legal_name(legal_name)
     email = _normalize_email(admin_email)
@@ -160,6 +167,16 @@ def register_us_lacey_company(
                 "beta_terms_version": config.beta_terms_version,
             },
         ).mappings().one()
+
+        if verification_delivery is not None:
+            try:
+                verification_delivery(email, legal_name, verification_token)
+            except Exception as exc:
+                session.rollback()
+                raise UsLaceySelfServiceError(
+                    "Unable to send the verification email. No account was created."
+                ) from exc
+
         session.commit()
         return UsLaceyRegistrationResult(
             organization_id=int(row["organization_id"]),
