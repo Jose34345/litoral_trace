@@ -52,6 +52,9 @@ def _processing_service() -> AssuranceProcessingService:
     return AssuranceProcessingService(
         session_factory=get_us_lacey_db_session,
         vault_service=vault,
+        # The U.S. product is intentionally isolated from Argentina lot/shipment
+        # entities. Document extraction stays shared; legacy entity matching does not.
+        enable_entity_matching=False,
     )
 
 
