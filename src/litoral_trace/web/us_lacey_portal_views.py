@@ -28,6 +28,76 @@ def shell(title: str, body: str, *, authenticated: bool = False) -> str:
     button,.button{display:inline-block;background:#174d36;color:#fff;border:0;border-radius:9px;padding:12px 17px;font:inherit;font-weight:750;text-decoration:none;cursor:pointer}
     .error{background:#fff0f0;color:#8f2727;padding:12px;border-radius:9px}.ok{background:#edf8f1;color:#17603b;padding:12px;border-radius:9px}.warn{background:#fff8e8;color:#7d5814;padding:12px;border-radius:9px}
     .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:12px}.metric{border:1px solid #dce4df;border-radius:10px;padding:15px}.reference{font-family:monospace;font-size:18px;font-weight:800;word-break:break-all}.instructions{white-space:pre-wrap;border:1px solid #dce4df;padding:14px;border-radius:9px;background:#fafcfa}
+    .check{display:flex;gap:9px;align-items:flex-start;margin:12px 0;color:#617068}.check input{width:auto;margin-top:5px}
     @media(max-width:700px){.row,.meta{grid-template-columns:1fr}}
     """
     return f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{safe(title)} · Litoral Trace</title><style>{css}</style></head><body><div class="wrap"><nav><strong>Litoral Trace · U.S. Lacey</strong><div>{nav}</div></nav><main>{body}</main></div></body></html>'
+
+
+def render_login(*, error: str | None = None, verified: bool = False) -> str:
+    notice = ""
+    if verified:
+        notice = '<div class="ok">Email verified. Sign in to continue to billing.</div>'
+    elif error:
+        notice = f'<div class="error">{safe(error)}</div>'
+    body = f"""
+    <h1>Sign in to your U.S. Lacey workspace.</h1>
+    <p>Verified accounts can access their company billing status.</p>
+    <section class="card">{notice}
+      <form method="post" action="/login">
+        <label for="email">Business email</label>
+        <input id="email" name="email" type="email" required maxlength="255" autocomplete="username">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required autocomplete="current-password">
+        <p><button type="submit">Sign in</button> &nbsp; <a href="/signup">Create an account</a></p>
+      </form>
+    </section>
+    """
+    return shell("Sign in", body)
+
+
+def render_signup(*, commercial, portal, error: str | None = None) -> str:
+    notice = f'<div class="error">{safe(error)}</div>' if error else ""
+    body = f"""
+    <h1>Create your private U.S. Lacey account.</h1>
+    <p>Private beta: {safe(money(commercial.price_cents))} for up to {safe(commercial.monthly_operation_limit)} operations under the configured billing period.</p>
+    <section class="card">{notice}
+      <form method="post" action="/signup">
+        <label for="legal_name">Company legal name</label>
+        <input id="legal_name" name="legal_name" required maxlength="255" autocomplete="organization">
+        <div class="row"><div>
+          <label for="business_type">Business type</label>
+          <select id="business_type" name="business_type" required><option value="IMPORTER">Importer</option><option value="CUSTOMS_BROKER">Customs broker</option><option value="OTHER">Other</option></select>
+        </div><div>
+          <label for="admin_name">Administrator name</label>
+          <input id="admin_name" name="admin_name" required maxlength="255" autocomplete="name">
+        </div></div>
+        <label for="admin_email">Business email</label>
+        <input id="admin_email" name="admin_email" type="email" required maxlength="255" autocomplete="email">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required minlength="12" autocomplete="new-password">
+        <label class="check"><input type="checkbox" name="accept_terms" value="yes" required><span>I accept the <a target="_blank" rel="noopener" href="{safe(portal.terms_url)}">Terms of Service</a> ({safe(commercial.terms_version)}).</span></label>
+        <label class="check"><input type="checkbox" name="accept_privacy" value="yes" required><span>I acknowledge the <a target="_blank" rel="noopener" href="{safe(portal.privacy_url)}">Privacy Policy</a> ({safe(commercial.privacy_version)}).</span></label>
+        <label class="check"><input type="checkbox" name="accept_beta" value="yes" required><span>I accept the <a target="_blank" rel="noopener" href="{safe(portal.beta_terms_url)}">Private Beta Terms</a> ({safe(commercial.beta_terms_version)}).</span></label>
+        <p><button type="submit">Create account</button> &nbsp; <a href="/login">Already registered?</a></p>
+      </form>
+    </section>
+    """
+    return shell("Create account", body)
+
+
+def render_check_email(email: str) -> str:
+    body = f"""
+    <h1>Check your email.</h1>
+    <p>We sent a verification link to <strong>{safe(email)}</strong>. It expires in 24 hours.</p>
+    <section class="card"><h2>Next step</h2><p>After verification your account moves to <strong>Payment Pending</strong>. You can then sign in and view the exact payment reference and instructions.</p><a class="button" href="/login">Go to sign in</a></section>
+    """
+    return shell("Check your email", body)
+
+
+def render_verification_error(message: str) -> str:
+    body = f"""
+    <h1>We could not verify this link.</h1>
+    <section class="card"><div class="error">{safe(message)}</div><p>The link may be invalid or expired.</p><a class="button" href="/login">Return to sign in</a></section>
+    """
+    return shell("Verification failed", body)
