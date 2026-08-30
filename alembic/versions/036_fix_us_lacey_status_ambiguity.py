@@ -47,7 +47,11 @@ def _replace_functions(*, qualified: bool) -> None:
         else "account_status"
     )
 
+    # CREATE OR REPLACE still requires CREATE on the containing schema for the
+    # effective function owner. Mirror the bounded ownership pattern from 028/035:
+    # grant only for this transactional replacement, then revoke before return.
     _grant_temp_platform_set()
+    op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")
     op.execute(f"SET LOCAL ROLE {PLATFORM_ROLE}")
 
     op.execute(
@@ -162,6 +166,7 @@ def _replace_functions(*, qualified: bool) -> None:
     )
 
     op.execute("RESET ROLE")
+    op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
     _revoke_temp_platform_set()
 
 
