@@ -27,6 +27,21 @@ def _safe_env() -> dict[str, str]:
         "US_LACEY_STORAGE_BUCKET": "litoral-trace-us-lacey-private",
         "US_LACEY_STORAGE_PREFIX": "us-lacey/pilot",
         "US_LACEY_APP_HOSTNAME": "app.lacey.litoraltrace.com",
+        "US_LACEY_PRIVATE_BETA_PRICE_CENTS": "12500",
+        "US_LACEY_MONTHLY_OPERATION_LIMIT": "25",
+        "US_LACEY_PAYMENT_PROVIDER": "WISE",
+        "US_LACEY_BANK_TRANSFER_INSTRUCTIONS": "Use the payment reference shown in Billing.",
+        "US_LACEY_TERMS_VERSION": "terms-2026-08",
+        "US_LACEY_PRIVACY_VERSION": "privacy-2026-08",
+        "US_LACEY_BETA_TERMS_VERSION": "beta-2026-08",
+        "US_LACEY_TERMS_URL": "https://litoraltrace.com/legal/us-terms",
+        "US_LACEY_PRIVACY_URL": "https://litoraltrace.com/legal/privacy",
+        "US_LACEY_BETA_TERMS_URL": "https://litoraltrace.com/legal/us-private-beta",
+        "US_LACEY_SMTP_HOST": "smtp.example.com",
+        "US_LACEY_SMTP_PORT": "587",
+        "US_LACEY_SMTP_USERNAME": "mailer",
+        "US_LACEY_SMTP_PASSWORD": "test-only-password",
+        "US_LACEY_EMAIL_FROM": "support@litoraltrace.com",
     }
 
 
@@ -152,13 +167,7 @@ def test_existing_tenant_helpers_scope_us_operations():
 
 
 def test_private_pilot_health_is_live_but_ready_fails_closed_without_us_config(monkeypatch):
-    for name in (
-        "US_LACEY_ENVIRONMENT",
-        "US_LACEY_DATABASE_URL",
-        "US_LACEY_STORAGE_BUCKET",
-        "US_LACEY_STORAGE_PREFIX",
-        "US_LACEY_APP_HOSTNAME",
-    ):
+    for name in _safe_env():
         monkeypatch.delenv(name, raising=False)
     client = TestClient(app)
     assert client.get("/health").status_code == 200
