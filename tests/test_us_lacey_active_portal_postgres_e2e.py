@@ -372,9 +372,10 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
         assert "spreadsheetml.sheet" in xlsx_export.headers["content-type"]
         workbook = load_workbook(BytesIO(xlsx_export.content), read_only=True, data_only=True)
         try:
+            assert "Read Me" in workbook.sheetnames
             assert "Preparation Data" in workbook.sheetnames
             assert "Evidence" in workbook.sheetnames
-            assert "Review Summary" in workbook.sheetnames
+            assert "Exceptions" in workbook.sheetnames
         finally:
             workbook.close()
 
