@@ -345,12 +345,16 @@ def _create_self_service_functions() -> None:
         op.execute(f"REVOKE ALL ON FUNCTION {signature} FROM PUBLIC")
         op.execute(f"GRANT EXECUTE ON FUNCTION {signature} TO {RUNTIME_ROLE}")
 
+    # ALTER FUNCTION ... OWNER requires both SET ROLE capability and CREATE on
+    # the containing schema for the target owner. Mirror the hardened handoff
+    # already proven by migration 028, and revoke both temporary capabilities
+    # before this transaction can complete.
     _grant_temp_platform_set()
-    try:
-        for signature in signatures:
-            op.execute(f"ALTER FUNCTION {signature} OWNER TO {PLATFORM_ROLE}")
-    finally:
-        _revoke_temp_platform_set()
+    op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")
+    for signature in signatures:
+        op.execute(f"ALTER FUNCTION {signature} OWNER TO {PLATFORM_ROLE}")
+    op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
+    _revoke_temp_platform_set()
 
 
 def upgrade() -> None:
@@ -524,14 +528,25 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    for signature in (
+    signatures = (
         "public.us_lacey_verify_payment(text,integer,uuid)",
         "public.us_lacey_verify_email(text)",
         "public.us_lacey_self_register(text,text,text,text,text,text,integer,integer,text,text,text,text)",
-    ):
+    )
+    _grant_temp_platform_set()
+    op.execute(f"SET LOCAL ROLE {PLATFORM_ROLE}")
+    for signature in signatures:
         op.execute(f"DROP FUNCTION IF EXISTS {signature}")
+    op.execute("RESET ROLE")
+    _revoke_temp_platform_set()
 
     op.execute("DROP POLICY IF EXISTS us_lacey_org_profiles_platform_all ON public.us_lacey_organization_profiles")
+    op.execute(
+        f"REVOKE SELECT, INSERT, UPDATE ON TABLE public.us_lacey_organization_profiles FROM {PLATFORM_ROLE}"
+    )
+    op.execute(
+        f"REVOKE USAGE, SELECT ON SEQUENCE public.us_lacey_organization_profiles_id_seq FROM {PLATFORM_ROLE}"
+    )
     op.execute("DROP POLICY IF EXISTS us_lacey_processing_jobs_worker_all ON public.us_lacey_processing_jobs")
     for table_name in reversed(TENANT_TABLES):
         op.drop_table(table_name)
