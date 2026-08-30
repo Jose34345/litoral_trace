@@ -33,8 +33,7 @@ from litoral_trace.us_lacey.workflow import (
 pytestmark = pytest.mark.skipif(
     os.environ.get("ENABLE_POSTGRES_TESTS") != "1"
     or not os.environ.get("US_LACEY_DATABASE_URL")
-    or not os.environ.get("US_LACEY_WORKER_DATABASE_URL")
-    or not os.environ.get("TEST_POSTGRES_MIGRATION_DATABASE_URL"),
+    or not os.environ.get("US_LACEY_WORKER_DATABASE_URL"),
     reason="requires isolated U.S. PostgreSQL runtime and worker credentials",
 )
 
@@ -109,18 +108,18 @@ def _commercial_config() -> UsLaceyCommercialConfig:
 
 
 def _activate_account(organization_id: int) -> None:
-    """Test-only activation that still obeys FORCE RLS tenant context."""
-    owner = create_engine(
-        os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
+    """Test-only activation through the normal tenant-scoped runtime RLS role."""
+    runtime = create_engine(
+        os.environ["US_LACEY_DATABASE_URL"],
         pool_pre_ping=True,
         hide_parameters=True,
     )
-    with owner.begin() as connection:
+    with runtime.begin() as connection:
         connection.execute(
             text("SELECT set_config('app.current_organization_id', :organization_id, true)"),
             {"organization_id": str(organization_id)},
         )
-        profile_count = connection.execute(
+        profile_id = connection.execute(
             text(
                 "UPDATE public.us_lacey_organization_profiles "
                 "SET account_status='ACTIVE', updated_at=now() "
@@ -128,7 +127,7 @@ def _activate_account(organization_id: int) -> None:
             ),
             {"organization_id": organization_id},
         ).scalar_one_or_none()
-        subscription_count = connection.execute(
+        subscription_id = connection.execute(
             text(
                 "UPDATE public.us_lacey_subscriptions "
                 "SET status='ACTIVE', started_at=coalesce(started_at, now()), updated_at=now() "
@@ -136,7 +135,7 @@ def _activate_account(organization_id: int) -> None:
             ),
             {"organization_id": organization_id},
         ).scalar_one_or_none()
-        payment_count = connection.execute(
+        payment_id = connection.execute(
             text(
                 "UPDATE public.us_lacey_payments "
                 "SET status='VERIFIED', verified_at=now(), paid_at=now(), updated_at=now() "
@@ -144,10 +143,10 @@ def _activate_account(organization_id: int) -> None:
             ),
             {"organization_id": organization_id},
         ).scalar_one_or_none()
-        assert profile_count is not None
-        assert subscription_count is not None
-        assert payment_count is not None
-    owner.dispose()
+        assert profile_id is not None
+        assert subscription_id is not None
+        assert payment_id is not None
+    runtime.dispose()
 
 
 def _register_active_customer():
