@@ -6,6 +6,7 @@ on:
       - "alembic/versions/034_add_us_lacey_pilot_core.py"
       - "alembic/versions/035_add_us_lacey_self_service.py"
       - "src/litoral_trace/us_lacey/**"
+      - "src/litoral_trace/web/us_lacey_*"
       - "src/litoral_trace/db/models/us_lacey.py"
       - "src/litoral_trace/db/models/us_lacey_commercial.py"
       - "src/litoral_trace/db/models/__init__.py"
@@ -48,6 +49,12 @@ jobs:
       TEST_POSTGRES_MIGRATION_DATABASE_URL: postgresql+psycopg://lt_us_lacey_migrator:us_lacey_migrator_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      US_LACEY_ENVIRONMENT: test
+      US_LACEY_DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      US_LACEY_STORAGE_BUCKET: us-lacey-ci-private
+      US_LACEY_STORAGE_PREFIX: us-lacey/ci
+      US_LACEY_APP_HOSTNAME: app.lacey.litoraltrace.com
+      US_LACEY_SESSION_TTL_HOURS: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -199,5 +206,11 @@ jobs:
               assert verified["account_status"] == "PAYMENT_PENDING"
           engine.dispose()
           PY
+      - name: Prove portal login, opaque session and logout
+        env:
+          DATABASE_URL: ""
+        run: >-
+          python -m pytest -q -rs
+          tests/test_us_lacey_portal_postgres_integration.py
       - name: Prove tenant A/B isolation
         run: python -m pytest -q -rs tests/test_us_lacey_rls_postgres_integration.py
