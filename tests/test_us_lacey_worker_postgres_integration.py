@@ -10,7 +10,6 @@ from sqlalchemy import create_engine, text
 
 import litoral_trace.us_lacey.ingestion as ingestion_module
 import litoral_trace.us_lacey.worker as worker_module
-from litoral_trace.config.settings import StorageSettings
 from litoral_trace.storage import (
     ObjectDeleteResult,
     ObjectHead,
@@ -23,7 +22,7 @@ from litoral_trace.us_lacey.db import reset_us_lacey_engine_state
 from litoral_trace.us_lacey.ingestion import UsLaceyIngestionService
 from litoral_trace.us_lacey.operations import UsLaceyOperationService
 from litoral_trace.us_lacey.self_service import register_us_lacey_company, verify_us_lacey_email
-from litoral_trace.us_lacey.worker import process_next_us_lacey_job
+from litoral_trace.us_lacey.worker import process_one_us_lacey_job
 from litoral_trace.us_lacey.worker_db import reset_us_lacey_worker_engine_state
 from litoral_trace.us_lacey.workflow import (
     create_us_lacey_customer_operation,
@@ -207,14 +206,17 @@ def _assert_processed_fields(*, organization_id: int, operation_public_id, expec
     )
     assert detail.status == "REVIEW_REQUIRED"
     assert detail.documents
-    assert all(document.processing_status in {"EXTRACTED", "NEEDS_REVIEW"} for document in detail.documents)
+    assert all(
+        document.processing_status in {"EXTRACTED", "NEEDS_REVIEW"}
+        for document in detail.documents
+    )
     by_name = {field.field_name: field for field in detail.fields}
     for field_name, value in expected.items():
         field = by_name[field_name]
         assert field.proposed_value == value
         assert field.status == "REVIEW"
         assert field.confidence >= 0.89
-        assert field.source_document_id is not None
+        assert field.source_assurance_document_id is not None
         assert field.source_locator
     return by_name
 
@@ -251,11 +253,13 @@ def test_worker_processes_csv_and_xlsx_with_real_postgres_and_simulated_storage(
     )
     assert queued_csv.job.status == "QUEUED"
 
-    csv_result = process_next_us_lacey_job(worker_id="ci-worker-1")
-    assert csv_result is not None
-    assert csv_result.job_public_id == queued_csv.job.public_id
-    assert csv_result.queue_status == "COMPLETED"
-    assert csv_result.processing_status in {"EXTRACTED", "NEEDS_REVIEW"}
+    csv_result = process_one_us_lacey_job(worker_id="ci-worker-1")
+    assert csv_result.claimed is True
+    assert csv_result.job_id == queued_csv.job.id
+    assert csv_result.job_status == "COMPLETED"
+    assert csv_result.document_status in {"EXTRACTED", "NEEDS_REVIEW"}
+    assert csv_result.operation_status == "REVIEW_REQUIRED"
+    assert csv_result.projected_count >= 7
     csv_fields = _assert_processed_fields(
         organization_id=registered.organization_id,
         operation_public_id=csv_operation.public_id,
@@ -294,11 +298,13 @@ def test_worker_processes_csv_and_xlsx_with_real_postgres_and_simulated_storage(
     )
     assert queued_xlsx.job.status == "QUEUED"
 
-    xlsx_result = process_next_us_lacey_job(worker_id="ci-worker-1")
-    assert xlsx_result is not None
-    assert xlsx_result.job_public_id == queued_xlsx.job.public_id
-    assert xlsx_result.queue_status == "COMPLETED"
-    assert xlsx_result.processing_status in {"EXTRACTED", "NEEDS_REVIEW"}
+    xlsx_result = process_one_us_lacey_job(worker_id="ci-worker-1")
+    assert xlsx_result.claimed is True
+    assert xlsx_result.job_id == queued_xlsx.job.id
+    assert xlsx_result.job_status == "COMPLETED"
+    assert xlsx_result.document_status in {"EXTRACTED", "NEEDS_REVIEW"}
+    assert xlsx_result.operation_status == "REVIEW_REQUIRED"
+    assert xlsx_result.projected_count >= 8
     _assert_processed_fields(
         organization_id=registered.organization_id,
         operation_public_id=xlsx_operation.public_id,
