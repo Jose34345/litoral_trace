@@ -11,6 +11,8 @@ import os
 import smtplib
 import ssl
 
+from litoral_trace.us_lacey.config import load_us_lacey_runtime_config
+
 
 class UsLaceyEmailConfigurationError(RuntimeError):
     pass
@@ -65,6 +67,7 @@ def send_us_lacey_verification_email(
     company_name: str,
     verification_token: str,
     config: UsLaceyEmailConfig | None = None,
+    public_origin: str | None = None,
 ) -> None:
     recipient = str(recipient or "").strip().lower()
     if not recipient or "@" not in recipient:
@@ -73,9 +76,13 @@ def send_us_lacey_verification_email(
     if not token:
         raise UsLaceyEmailDeliveryError("Verification token is missing.")
     settings = config or load_us_lacey_email_config()
-    verification_url = (
-        "https://app.lacey.litoraltrace.com/verify-email?token=" + token
-    )
+    origin = str(public_origin or "").strip().rstrip("/")
+    if not origin:
+        runtime = load_us_lacey_runtime_config()
+        origin = f"https://{runtime.app_hostname.strip().lower()}"
+    if not origin.lower().startswith("https://"):
+        raise UsLaceyEmailDeliveryError("Verification origin must use HTTPS.")
+    verification_url = f"{origin}/verify-email?token={token}"
 
     message = EmailMessage()
     message["Subject"] = "Verify your Litoral Trace account"
