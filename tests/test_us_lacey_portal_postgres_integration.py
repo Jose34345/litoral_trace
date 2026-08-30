@@ -5,12 +5,10 @@ import os
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import create_engine, text
 
-from litoral_trace.db.models import UserSession
-from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.commercial import UsLaceyCommercialConfig
-from litoral_trace.us_lacey.db import get_us_lacey_db_session, reset_us_lacey_engine_state
+from litoral_trace.us_lacey.db import reset_us_lacey_engine_state
 from litoral_trace.us_lacey.portal_auth import (
     UsLaceyPortalAuthError,
     login_us_lacey_user,
@@ -77,23 +75,40 @@ def test_verified_customer_gets_isolated_opaque_session_and_billing():
     assert resolved.organization_id == registered.organization_id
     assert resolved.email == email
 
-    session = get_us_lacey_db_session()
-    try:
-        set_tenant_db_context(session, registered.organization_id)
-        persisted = session.execute(
-            select(UserSession).where(
-                UserSession.organization_id == registered.organization_id,
-                UserSession.user_id == registered.user_id,
-            ).order_by(UserSession.id.desc())
-        ).scalars().first()
-        assert persisted is not None
-        assert persisted.token_hash == hashlib.sha256(
-            logged_in.session_token.encode("utf-8")
-        ).hexdigest()
-        assert persisted.token_hash != logged_in.session_token
-    finally:
-        session.rollback()
-        session.close()
+    # Inspect persistence with the migration principal only inside the tenant
+    # context. The web runtime intentionally has no direct SELECT grant on users.
+    migration_engine = create_engine(
+        os.environ["MIGRATION_DATABASE_URL"],
+        pool_pre_ping=True,
+        hide_parameters=True,
+    )
+    with migration_engine.begin() as connection:
+        connection.execute(
+            text("SELECT set_config('app.current_organization_id', :org_id, true)"),
+            {"org_id": str(registered.organization_id)},
+        )
+        persisted_hash = connection.execute(
+            text(
+                """
+                SELECT token_hash
+                FROM public.user_sessions
+                WHERE organization_id = :organization_id
+                  AND user_id = :user_id
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ),
+            {
+                "organization_id": registered.organization_id,
+                "user_id": registered.user_id,
+            },
+        ).scalar_one()
+    migration_engine.dispose()
+
+    assert persisted_hash == hashlib.sha256(
+        logged_in.session_token.encode("utf-8")
+    ).hexdigest()
+    assert persisted_hash != logged_in.session_token
 
     billing = get_us_lacey_billing_summary(
         organization_id=registered.organization_id
