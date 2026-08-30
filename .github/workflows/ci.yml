@@ -71,7 +71,7 @@ jobs:
             echo "Expected exactly one Alembic head."
             exit 1
           fi
-          grep -Fx "036_fix_us_lacey_status_ambiguity (head)" alembic-heads.txt
+          grep -Fx "037_us_lacey_portal_auth (head)" alembic-heads.txt
 
       - name: Run pytest suite
         run: python -m pytest -q -rs
@@ -85,7 +85,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"
