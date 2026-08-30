@@ -6,8 +6,10 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import sessionmaker
 
 from litoral_trace.config.settings import normalize_database_url
+from litoral_trace.us_lacey.operations import UsLaceyOperationService
 
 
 def _truthy(value: str | None) -> bool:
@@ -89,7 +91,7 @@ def fixture():
                 {"org": org_id, "reference": f"RLS-{label.upper()}-{suffix}"},
             ).scalar_one()
             values[f"operation_{label}"] = int(operation_id)
-    yield {**values, "owner": owner, "runtime": runtime}
+    yield {**values, "owner": owner, "runtime": runtime, "suffix": suffix}
     runtime.dispose()
     owner.dispose()
 
@@ -146,3 +148,44 @@ def test_company_a_cannot_update_company_b_operation(fixture):
             {"operation_b": fixture["operation_b"]},
         )
         assert result.rowcount == 0
+
+
+def test_new_two_line_operation_starts_with_50_missing_fields_and_no_guesses(fixture):
+    SessionFactory = sessionmaker(
+        bind=fixture["runtime"],
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    service = UsLaceyOperationService(session_factory=SessionFactory)
+    snapshot = service.create_operation(
+        organization_id=fixture["org_a"],
+        created_by_user_id=None,
+        client_reference=f"NO-GUESSES-{fixture['suffix']}",
+        line_references=("1", "2"),
+    )
+
+    assert snapshot.merchandise_line_count == 2
+    assert snapshot.missing_field_count == 50
+    assert snapshot.review_field_count == 0
+
+    with fixture["runtime"].begin() as conn:
+        _tenant(conn, fixture["org_a"])
+        row = conn.execute(
+            text("""
+                SELECT
+                    count(*) AS total_fields,
+                    count(*) FILTER (WHERE field_status = 'MISSING') AS missing_fields,
+                    count(*) FILTER (WHERE normalized_value IS NOT NULL) AS guessed_values,
+                    max(confidence) AS max_confidence
+                FROM us_lacey_operation_fields
+                WHERE operation_id = (
+                    SELECT id FROM us_lacey_operations
+                    WHERE organization_id = :org AND public_id = :public_id
+                )
+            """),
+            {"org": fixture["org_a"], "public_id": snapshot.public_id},
+        ).mappings().one()
+    assert row["total_fields"] == 50
+    assert row["missing_fields"] == 50
+    assert row["guessed_values"] == 0
+    assert float(row["max_confidence"]) == 0.0
