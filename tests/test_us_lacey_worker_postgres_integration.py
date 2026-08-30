@@ -109,6 +109,7 @@ def _commercial_config() -> UsLaceyCommercialConfig:
 
 
 def _activate_account(organization_id: int) -> None:
+    """Test-only activation that still obeys FORCE RLS tenant context."""
     owner = create_engine(
         os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"],
         pool_pre_ping=True,
@@ -116,29 +117,36 @@ def _activate_account(organization_id: int) -> None:
     )
     with owner.begin() as connection:
         connection.execute(
+            text("SELECT set_config('app.current_organization_id', :organization_id, true)"),
+            {"organization_id": str(organization_id)},
+        )
+        profile_count = connection.execute(
             text(
                 "UPDATE public.us_lacey_organization_profiles "
                 "SET account_status='ACTIVE', updated_at=now() "
-                "WHERE organization_id=:organization_id"
+                "WHERE organization_id=:organization_id RETURNING id"
             ),
             {"organization_id": organization_id},
-        )
-        connection.execute(
+        ).scalar_one_or_none()
+        subscription_count = connection.execute(
             text(
                 "UPDATE public.us_lacey_subscriptions "
                 "SET status='ACTIVE', started_at=coalesce(started_at, now()), updated_at=now() "
-                "WHERE organization_id=:organization_id"
+                "WHERE organization_id=:organization_id RETURNING id"
             ),
             {"organization_id": organization_id},
-        )
-        connection.execute(
+        ).scalar_one_or_none()
+        payment_count = connection.execute(
             text(
                 "UPDATE public.us_lacey_payments "
                 "SET status='VERIFIED', verified_at=now(), paid_at=now(), updated_at=now() "
-                "WHERE organization_id=:organization_id"
+                "WHERE organization_id=:organization_id RETURNING id"
             ),
             {"organization_id": organization_id},
-        )
+        ).scalar_one_or_none()
+        assert profile_count is not None
+        assert subscription_count is not None
+        assert payment_count is not None
     owner.dispose()
 
 
@@ -273,10 +281,7 @@ def test_worker_processes_csv_and_xlsx_with_real_postgres_and_simulated_storage(
             "container_number": "MSCU1234567",
         },
     )
-    # Generic Origin must not silently replace the explicit Country of Harvest.
     assert csv_fields["country_of_harvest"].proposed_value != "Canada"
-    # Genus is a deterministic proposal derived from the binomial species and
-    # intentionally remains human-reviewable.
     assert csv_fields["genus"].proposed_value == "Pinus"
     assert csv_fields["genus"].status == "REVIEW"
 
