@@ -101,3 +101,32 @@ def render_verification_error(message: str) -> str:
     <section class="card"><div class="error">{safe(message)}</div><p>The link may be invalid or expired.</p><a class="button" href="/login">Return to sign in</a></section>
     """
     return shell("Verification failed", body)
+
+
+def render_billing(*, identity, billing, commercial) -> str:
+    if identity.account_status == "PAYMENT_PENDING":
+        notice = '<div class="warn"><strong>Payment pending.</strong> Your email is verified, but document processing stays locked until payment is confirmed.</div>'
+    elif identity.account_status in {"ACTIVE", "PILOT"}:
+        notice = '<div class="ok"><strong>Account active.</strong> Billing is verified for this workspace.</div>'
+    else:
+        notice = f'<div class="warn">Account status: {safe(identity.account_status)}</div>'
+
+    body = f"""
+    <h1>{safe(identity.legal_name)}</h1>
+    <p>Billing status for {safe(identity.email)}.</p>
+    <section class="card">{notice}
+      <div class="meta">
+        <div class="metric"><small>Private beta price</small><br><strong>{safe(money(billing.price_cents, billing.currency))}</strong></div>
+        <div class="metric"><small>Operations</small><br><strong>{safe(billing.used_operations)} / {safe(billing.monthly_operation_limit)}</strong></div>
+        <div class="metric"><small>Subscription</small><br><strong>{safe(billing.subscription_status)}</strong></div>
+        <div class="metric"><small>Payment</small><br><strong>{safe(billing.payment_status)}</strong></div>
+      </div>
+      <h2>Payment reference</h2>
+      <p>Include this exact reference with the payment:</p>
+      <div class="reference">{safe(billing.payment_reference)}</div>
+      <h3>{safe(billing.payment_provider.replace("_", " ").title())}</h3>
+      <div class="instructions">{safe(commercial.bank_transfer_instructions)}</div>
+      <p>Activation occurs only after server-side payment verification. The browser cannot activate its own account.</p>
+    </section>
+    """
+    return shell("Billing", body, authenticated=True)
