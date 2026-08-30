@@ -32,12 +32,15 @@ services:
         value: us-east-2
       - key: US_LACEY_STORAGE_PREFIX
         value: us-lacey/pilot
+      # Production DB must be the migrated isolated Neon USA database.
       - key: US_LACEY_DATABASE_URL
         sync: false
+      # Generate these outside source control for the dedicated least-privilege web IAM identity.
       - key: US_LACEY_STORAGE_ACCESS_KEY_ID
         sync: false
       - key: US_LACEY_STORAGE_SECRET_ACCESS_KEY
         sync: false
+      # Commercial values are intentionally fail-closed until explicitly approved.
       - key: US_LACEY_PRIVATE_BETA_PRICE_CENTS
         sync: false
       - key: US_LACEY_MONTHLY_OPERATION_LIMIT
@@ -46,6 +49,7 @@ services:
         sync: false
       - key: US_LACEY_BANK_TRANSFER_INSTRUCTIONS
         sync: false
+      # Publish approved legal documents before customer signup is enabled.
       - key: US_LACEY_TERMS_VERSION
         sync: false
       - key: US_LACEY_PRIVACY_VERSION
@@ -60,6 +64,7 @@ services:
         sync: false
       - key: US_LACEY_SUPPORT_EMAIL
         value: support@litoraltrace.com
+      # SMTP is provider-neutral and must be supplied from the chosen transactional-email account.
       - key: US_LACEY_SMTP_HOST
         sync: false
       - key: US_LACEY_SMTP_PORT
@@ -102,10 +107,12 @@ services:
         value: us-east-2
       - key: US_LACEY_STORAGE_PREFIX
         value: us-lacey/pilot
+      # Runtime URL is needed for tenant-scoped Assurance processing; worker URL must use a distinct DB role.
       - key: US_LACEY_DATABASE_URL
         sync: false
       - key: US_LACEY_WORKER_DATABASE_URL
         sync: false
+      # Generate outside source control for the dedicated least-privilege worker IAM identity.
       - key: US_LACEY_STORAGE_ACCESS_KEY_ID
         sync: false
       - key: US_LACEY_STORAGE_SECRET_ACCESS_KEY
