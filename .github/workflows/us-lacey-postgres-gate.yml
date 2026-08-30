@@ -231,5 +231,11 @@ jobs:
         run: >-
           python -m pytest -q -rs
           tests/test_us_lacey_portal_postgres_integration.py
+      - name: Prove Signup Verify Login Billing HTTP E2E
+        env:
+          DATABASE_URL: ""
+        run: >-
+          python -m pytest -q -rs
+          tests/test_us_lacey_portal_http_postgres_e2e.py
       - name: Prove tenant A/B isolation
         run: python -m pytest -q -rs tests/test_us_lacey_rls_postgres_integration.py
