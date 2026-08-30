@@ -6,6 +6,7 @@ on:
       - "alembic/versions/034_add_us_lacey_pilot_core.py"
       - "alembic/versions/035_add_us_lacey_self_service.py"
       - "alembic/versions/036_fix_us_lacey_status_ambiguity.py"
+      - "alembic/versions/037_add_us_lacey_portal_auth_functions.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/web/us_lacey_*"
       - "src/litoral_trace/db/models/us_lacey.py"
@@ -120,7 +121,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -F "036_fix_us_lacey_status_ambiguity" /tmp/alembic-current.txt
+          grep -F "037_us_lacey_portal_auth" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -155,6 +156,21 @@ jobs:
               runtime_verification_privilege = connection.execute(text("""
                   SELECT has_table_privilege('litoral_trace_app', 'public.us_lacey_email_verifications', 'SELECT')
               """)).scalar_one()
+              runtime_direct_users = connection.execute(text("""
+                  SELECT has_table_privilege('litoral_trace_app', 'public.users', 'SELECT')
+              """)).scalar_one()
+              portal_function_count = connection.execute(text("""
+                  SELECT count(*)
+                  FROM pg_proc p
+                  JOIN pg_namespace n ON n.oid = p.pronamespace
+                  WHERE n.nspname = 'public'
+                    AND p.proname = ANY(ARRAY[
+                      'us_lacey_portal_login_lookup',
+                      'us_lacey_portal_create_session',
+                      'us_lacey_portal_session_lookup',
+                      'us_lacey_portal_revoke_session'
+                    ])
+              """)).scalar_one()
           by_table = {row["relname"]: row for row in rows}
           assert set(by_table) == set(expected_policy_counts)
           assert all(row["relrowsecurity"] is True for row in by_table.values())
@@ -163,6 +179,8 @@ jobs:
           assert counts == expected_policy_counts
           assert verification_table is True
           assert runtime_verification_privilege is False
+          assert runtime_direct_users is False
+          assert portal_function_count == 4
           engine.dispose()
           PY
       - name: Prove self-registration and email transition
