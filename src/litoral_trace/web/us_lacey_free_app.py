@@ -11,6 +11,7 @@ processing pauses and resumes on the next wake-up.
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import logging
 import os
 import socket
@@ -144,5 +145,20 @@ def _stop_inline_worker() -> None:
         thread.join(timeout=10.0)
 
 
-app.add_event_handler("startup", _start_inline_worker)
-app.add_event_handler("shutdown", _stop_inline_worker)
+# FastAPI/Starlette's current lifecycle API is lifespan-based. Preserve the
+# portal's existing lifespan context and wrap only the free-tier queue runner
+# around it so future portal startup/shutdown behavior is not discarded.
+_original_lifespan_context = app.router.lifespan_context
+
+
+@asynccontextmanager
+async def _free_lifespan(application):
+    async with _original_lifespan_context(application) as state:
+        _start_inline_worker()
+        try:
+            yield state
+        finally:
+            _stop_inline_worker()
+
+
+app.router.lifespan_context = _free_lifespan
