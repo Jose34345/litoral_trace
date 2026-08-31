@@ -65,6 +65,14 @@ class UsLaceyPaymentActivationResult:
     account_status: str
 
 
+@dataclass(frozen=True)
+class UsLaceyPilotActivationResult:
+    organization_id: int
+    previous_account_status: str
+    account_status: str
+    idempotent: bool
+
+
 VerificationDelivery = Callable[[str, str, str], None]
 
 
@@ -300,5 +308,33 @@ def activate_us_lacey_payment(
     except Exception as exc:
         session.rollback()
         raise UsLaceySelfServiceError("Unable to verify this payment.") from exc
+    finally:
+        session.close()
+
+
+def activate_us_lacey_pilot(
+    *, platform_refresh_token: str, organization_id: int, reason: str
+) -> UsLaceyPilotActivationResult:
+    """Activate a non-paid, audited PILOT entitlement through the control plane."""
+    if organization_id <= 0:
+        raise UsLaceySelfServiceError("Organization is invalid.")
+    normalized_reason = " ".join(str(reason or "").split())
+    if not normalized_reason or len(normalized_reason) > 500:
+        raise UsLaceySelfServiceError("Pilot activation reason is invalid.")
+    session = get_us_lacey_db_session()
+    try:
+        row = session.execute(
+            text("SELECT * FROM public.us_lacey_activate_pilot(:token_hash, :organization_id, :reason)"),
+            {"token_hash": hash_refresh_token(platform_refresh_token), "organization_id": organization_id, "reason": normalized_reason},
+        ).mappings().one()
+        session.commit()
+        return UsLaceyPilotActivationResult(
+            organization_id=int(row["organization_id"]),
+            previous_account_status=str(row["previous_account_status"]),
+            account_status=str(row["account_status"]), idempotent=bool(row["idempotent"]),
+        )
+    except Exception as exc:
+        session.rollback()
+        raise UsLaceySelfServiceError("Unable to activate this organization as PILOT.") from exc
     finally:
         session.close()

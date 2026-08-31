@@ -9,6 +9,7 @@ US_LACEY_MIGRATION = Path("alembic/versions/034_add_us_lacey_pilot_core.py")
 US_LACEY_SELF_SERVICE_MIGRATION = Path("alembic/versions/035_add_us_lacey_self_service.py")
 US_LACEY_STATUS_FIX_MIGRATION = Path("alembic/versions/036_fix_us_lacey_status_ambiguity.py")
 US_LACEY_PORTAL_AUTH_MIGRATION = Path("alembic/versions/037_add_us_lacey_portal_auth_functions.py")
+US_LACEY_PILOT_ACTIVATION_MIGRATION = Path("alembic/versions/038_us_lacey_pilot_activation.py")
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -107,4 +108,10 @@ def test_us_lacey_portal_auth_is_chained_after_status_fix():
 
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "037_us_lacey_portal_auth (head)" in text
+    assert "038_us_lacey_pilot_activation (head)" in text
+
+
+def test_us_lacey_pilot_activation_follows_portal_auth():
+    text = US_LACEY_PILOT_ACTIVATION_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "038_us_lacey_pilot_activation"' in text
+    assert 'down_revision = "037_us_lacey_portal_auth"' in text
