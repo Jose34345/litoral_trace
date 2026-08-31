@@ -12,12 +12,15 @@ processing pauses and resumes on the next wake-up.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import html
 import logging
 import os
 import socket
 import threading
 import time
 from uuid import uuid4
+
+from fastapi.responses import HTMLResponse
 
 from litoral_trace.us_lacey.jobs import recover_stale_us_lacey_jobs
 from litoral_trace.us_lacey.worker import process_one_us_lacey_job
@@ -162,3 +165,91 @@ async def _free_lifespan(application):
 
 
 app.router.lifespan_context = _free_lifespan
+
+
+def _legal_response(title: str, version_env: str, sections: list[tuple[str, str]]) -> HTMLResponse:
+    version = html.escape(str(os.environ.get(version_env, "2026-08-30-v1")).strip())
+    section_html = "".join(
+        f"<h2>{html.escape(heading)}</h2><p>{body}</p>" for heading, body in sections
+    )
+    content = f"""
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{html.escape(title)} · Litoral Trace</title>
+        <style>
+          body {{ font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; color: #11261c; background: #f7faf8; }}
+          main {{ max-width: 860px; margin: 0 auto; padding: 48px 24px 72px; }}
+          a {{ color: #155d3b; }}
+          h1 {{ font-size: clamp(2rem, 5vw, 3rem); line-height: 1.05; }}
+          h2 {{ margin-top: 2rem; }}
+          .meta {{ color: #52635b; }}
+          .notice {{ background: white; border: 1px solid #d8e2dc; border-radius: 14px; padding: 18px 20px; }}
+        </style>
+      </head>
+      <body>
+        <main>
+          <p><a href="/signup">← Back to account creation</a></p>
+          <h1>{html.escape(title)}</h1>
+          <p class="meta">Version {version} · Private U.S. Lacey beta</p>
+          <div class="notice"><strong>Important:</strong> Litoral Trace is a software workflow and evidence-management tool. It does not provide legal advice, does not make an automatic legal-compliance determination, and does not represent that it has a live ACE/LAWGS filing integration.</div>
+          {section_html}
+          <p>Questions about this beta can be sent to <a href="mailto:comercial@litoraltrace.com">comercial@litoraltrace.com</a>.</p>
+        </main>
+      </body>
+    </html>
+    """
+    response = HTMLResponse(content=content)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
+
+
+@app.get("/legal/terms", response_class=HTMLResponse)
+def us_lacey_terms() -> HTMLResponse:
+    return _legal_response(
+        "Terms of Service",
+        "US_LACEY_TERMS_VERSION",
+        [
+            ("Purpose", "The service helps authorized business users organize shipment and supplier documents, extract structured data, reconcile fields, surface missing or conflicting information, retain evidence, support human review, and prepare export or pre-filing work products."),
+            ("Customer responsibility", "You are responsible for the accuracy, completeness, legality, and authorization of the information and documents you submit, and for all filing, import, customs, regulatory, and legal decisions made using the service."),
+            ("No legal determination", "Outputs are operational assistance only. They must be reviewed by an appropriately qualified person before being relied upon for a filing, declaration, compliance decision, or representation to a regulator, broker, customer, or other third party."),
+            ("Private beta", "Features, workflows, limits, and availability may change during the private beta. Beta access may be suspended when necessary to protect security, data integrity, or service reliability."),
+            ("Fees and activation", "Any applicable private-beta fee, operation limit, and activation status are shown in the account billing workflow. Access to operational features may remain blocked until the agreed payment or manual activation is confirmed."),
+        ],
+    )
+
+
+@app.get("/legal/privacy", response_class=HTMLResponse)
+def us_lacey_privacy() -> HTMLResponse:
+    return _legal_response(
+        "Privacy Notice",
+        "US_LACEY_PRIVACY_VERSION",
+        [
+            ("Information processed", "The service may process company and account details, uploaded business documents, extracted document data, operation metadata, audit records, technical request information such as IP address and user agent, and support communications."),
+            ("Why it is processed", "Information is used to provide the requested workflow, authenticate users, isolate organizations, process and store evidence, troubleshoot the service, prevent abuse, maintain auditability, and provide support."),
+            ("Infrastructure", "The private U.S. beta uses isolated U.S.-region cloud infrastructure for application hosting, database services, and evidence storage. Service providers may process data solely as needed to operate those components."),
+            ("Sharing", "Litoral Trace does not sell customer conversation or business-document data to advertisers. Data may be disclosed when necessary to operate the service, comply with law, protect rights or security, or when directed by an authorized customer."),
+            ("Retention and deletion", "Data is retained as needed to provide the beta, preserve required audit evidence, investigate incidents, and satisfy legitimate contractual or legal obligations. Deletion requests for beta data can be submitted to the contact address below and will be evaluated against those obligations."),
+            ("Security", "The service uses tenant isolation, least-privilege database roles, row-level security, private object storage, transport encryption, and audit controls. No Internet service can guarantee absolute security."),
+        ],
+    )
+
+
+@app.get("/legal/private-beta", response_class=HTMLResponse)
+def us_lacey_private_beta_terms() -> HTMLResponse:
+    return _legal_response(
+        "Private Beta Terms",
+        "US_LACEY_BETA_TERMS_VERSION",
+        [
+            ("Beta status", "This environment is an early private beta intended for controlled evaluation with authorized businesses. It is not offered with a production service-level commitment."),
+            ("Free-tier behavior", "During the free infrastructure phase, the web instance can sleep after inactivity. Background document processing pauses while the instance is asleep and resumes after the service wakes."),
+            ("Authorized documents only", "You may upload only documents and data that your organization is authorized to provide and process. Do not upload unrelated personal, confidential, export-controlled, or regulated material unless its use is specifically authorized and appropriate for the service."),
+            ("Human review required", "Extraction, reconciliation, exception detection, and generated work products can contain errors or omissions. A qualified human must review material outputs before they are used operationally."),
+            ("No live government filing", "The private beta does not claim live ACE/LAWGS submission. Exported or prepared data is a work product for review and downstream use, not proof that a government filing was accepted."),
+            ("Changes and feedback", "Because this is a beta, functionality and limits may change. Operational feedback may be used to improve the product, while customer documents and tenant data remain subject to the Privacy Notice."),
+        ],
+    )
