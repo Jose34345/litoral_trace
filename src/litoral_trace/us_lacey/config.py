@@ -86,9 +86,13 @@ def load_us_lacey_runtime_config(
             )
 
     hostname = str(env.get("US_LACEY_APP_HOSTNAME", "app.lacey.litoraltrace.com")).strip().lower()
-    if hostname != "app.lacey.litoraltrace.com" and environment in {"pilot", "production"}:
+    allowed_pilot_hostnames = {
+        "app.lacey.litoraltrace.com",
+        "litoral-trace-us-lacey-pilot-free.onrender.com",
+    }
+    if environment in {"pilot", "production"} and hostname not in allowed_pilot_hostnames:
         raise UsLaceyConfigurationError(
-            "Pilot/production hostname must be app.lacey.litoraltrace.com."
+            "Pilot/production hostname must be an explicitly approved U.S. Lacey hostname."
         )
 
     return UsLaceyRuntimeConfig(
