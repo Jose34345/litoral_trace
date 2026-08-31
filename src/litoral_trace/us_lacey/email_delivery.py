@@ -7,11 +7,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from email.message import EmailMessage
+import logging
 import os
 import smtplib
 import ssl
 
 from litoral_trace.us_lacey.config import load_us_lacey_runtime_config
+
+
+_LOG = logging.getLogger("litoral_trace.us_lacey.email_delivery")
 
 
 class UsLaceyEmailConfigurationError(RuntimeError):
@@ -105,4 +109,15 @@ def send_us_lacey_verification_email(
             client.login(settings.username, settings.password)
             client.send_message(message)
     except Exception as exc:
+        # Log only protocol/error metadata. Never emit credentials, recipient,
+        # verification token, SMTP response text, or message contents.
+        _LOG.error(
+            "us_lacey_smtp_delivery_failed error_type=%s smtp_code=%s errno=%s host=%s port=%s starttls=%s",
+            type(exc).__name__,
+            getattr(exc, "smtp_code", None),
+            getattr(exc, "errno", None),
+            settings.host,
+            settings.port,
+            settings.use_starttls,
+        )
         raise UsLaceyEmailDeliveryError("Unable to send the verification email.") from exc
