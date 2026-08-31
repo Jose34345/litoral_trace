@@ -147,6 +147,22 @@ def _send_via_smtp(
         raise UsLaceyEmailDeliveryError("Unable to send the verification email.") from exc
 
 
+def _safe_brevo_error_metadata(exc: urllib_error.HTTPError) -> tuple[str | None, str | None]:
+    """Return only Brevo's documented error code/message, never request data."""
+    try:
+        raw = exc.read(4096)
+        payload = json.loads(raw.decode("utf-8", errors="replace"))
+    except Exception:
+        return None, None
+    if not isinstance(payload, dict):
+        return None, None
+    code = payload.get("code")
+    message = payload.get("message")
+    safe_code = str(code)[:120] if isinstance(code, (str, int, float)) else None
+    safe_message = str(message)[:240] if isinstance(message, (str, int, float)) else None
+    return safe_code, safe_message
+
+
 def _send_via_brevo_api(
     *,
     settings: UsLaceyEmailConfig,
@@ -179,10 +195,13 @@ def _send_via_brevo_api(
             if status_code < 200 or status_code >= 300:
                 raise UsLaceyEmailDeliveryError("Unable to send the verification email.")
     except urllib_error.HTTPError as exc:
+        error_code, error_message = _safe_brevo_error_metadata(exc)
         _LOG.error(
-            "us_lacey_email_api_delivery_failed provider=brevo_api error_type=%s http_status=%s",
+            "us_lacey_email_api_delivery_failed provider=brevo_api error_type=%s http_status=%s brevo_code=%s brevo_message=%s",
             type(exc).__name__,
             getattr(exc, "code", None),
+            error_code,
+            error_message,
         )
         raise UsLaceyEmailDeliveryError("Unable to send the verification email.") from exc
     except urllib_error.URLError as exc:
