@@ -87,7 +87,7 @@ services:
       - key: US_LACEY_BETA_TERMS_URL
         sync: false
       - key: US_LACEY_SUPPORT_EMAIL
-        value: support@litoraltrace.com
+        value: comercial@litoraltrace.com
 
       # Transactional email remains provider-neutral and fail-closed.
       - key: US_LACEY_SMTP_HOST
