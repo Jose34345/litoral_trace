@@ -88,7 +88,9 @@ def test_signup_verify_login_billing_logout_real_http_and_postgres(
             },
         )
         assert signup.status_code == 201
-        assert "Check your email." in signup.text
+        # Keep this E2E assertion semantic rather than punctuation-sensitive so
+        # canonical UI copy refinements do not invalidate a working signup flow.
+        assert "Check your email" in signup.text
         assert email in signup.text
         assert delivered["recipient"] == email
         assert delivered["company_name"] == legal_name
@@ -101,7 +103,7 @@ def test_signup_verify_login_billing_logout_real_http_and_postgres(
             "/login", data={"email": email, "password": password}
         )
         assert before_verification.status_code == 403
-        assert "Verify your email before signing in." in before_verification.text
+        assert "Verify your email before signing in" in before_verification.text
         assert "us_lacey_session=" not in before_verification.headers.get("set-cookie", "")
 
         verified = client.get(f"/verify-email?token={verification_token}")
@@ -122,14 +124,14 @@ def test_signup_verify_login_billing_logout_real_http_and_postgres(
         billing = client.get("/billing")
         assert billing.status_code == 200
         assert legal_name in billing.text
-        assert "Payment pending." in billing.text
+        assert "Payment pending" in billing.text
         assert "USD 125.00" in billing.text
         assert "0 / 25" in billing.text
         assert "LT-US-" in billing.text
         assert "Wise" in billing.text
         assert "CI-only Wise USD transfer instructions" in billing.text
         assert "document processing stays locked until payment is confirmed" in billing.text
-        assert "The browser cannot activate its own account." in billing.text
+        assert "The browser cannot activate its own account" in billing.text
         assert "verify-payment" not in billing.text.lower()
 
         logout = client.post("/logout")
