@@ -8,6 +8,7 @@ on:
       - "alembic/versions/036_fix_us_lacey_status_ambiguity.py"
       - "alembic/versions/037_add_us_lacey_portal_auth_functions.py"
       - "alembic/versions/038_us_lacey_pilot_activation.py"
+      - "alembic/versions/039_fix_us_lacey_pilot_activation.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/web/us_lacey_*"
       - "src/litoral_trace/db/models/us_lacey.py"
@@ -149,7 +150,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -F "038_us_lacey_pilot_activation" /tmp/alembic-current.txt
+          grep -F "039_us_lacey_pilot_fix" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
