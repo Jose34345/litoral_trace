@@ -183,6 +183,11 @@ def _csrf_for(html: str, action: str) -> str:
     return match.group(1)
 
 
+def _assert_href(html: str, href: str) -> None:
+    """Assert stable navigation contracts without coupling E2E to display copy."""
+    assert f'href="{href}"' in html, f"Link target not rendered: {href}"
+
+
 def _csv_bytes() -> bytes:
     return (
         "HTS Code,Merchandise Description,Genus,Species,Country of Harvest,Plant Quantity,Metric Unit,Bill of Lading\n"
@@ -193,7 +198,13 @@ def _csv_bytes() -> bytes:
 def test_active_customer_operations_upload_review_complete_exports_and_history(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Full ACTIVE browser journey with real PostgreSQL, queue and worker processing."""
+    """Full ACTIVE browser journey with real PostgreSQL, queue and worker processing.
+
+    This integration test protects behavioral contracts (HTTP transitions,
+    persisted operation state, queue/worker execution and export artifacts).
+    Human-facing wording is covered separately by UI/template/visual tests and
+    is intentionally not used here as a proxy for application correctness.
+    """
     _configure(monkeypatch)
     reset_us_lacey_engine_state()
     reset_us_lacey_worker_engine_state()
@@ -248,8 +259,7 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
         operations = client.get("/operations")
         assert operations.status_code == 200
         assert legal_name in operations.text
-        assert "1 remaining" in operations.text
-        assert "New operation" in operations.text
+        _assert_href(operations.text, "/operations/new")
 
         new_page = client.get("/operations/new")
         assert new_page.status_code == 200
@@ -272,19 +282,24 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
         assert operation_path.startswith("/operations/")
         operation_public_id = operation_path.rsplit("/", 1)[-1]
 
+        operation_service = UsLaceyOperationService()
+        initial_detail = operation_service.get_detail(
+            organization_id=organization_id,
+            operation_public_id=operation_public_id,
+        )
+        assert initial_detail.document_count == 0
+        assert initial_detail.status != "COMPLETED"
+
         # The only slot is now consumed. Creating another operation is blocked,
         # but the existing operation must remain fully usable.
         after_create = client.get("/operations")
         assert after_create.status_code == 200
         assert reference in after_create.text
-        assert "0 remaining" in after_create.text
         blocked_new = client.get("/operations/new")
         assert blocked_new.status_code == 409
 
         detail = client.get(operation_path)
         assert detail.status_code == 200
-        assert "exception-first preparation review" in detail.text
-        assert "No documents uploaded yet." in detail.text
         upload_action = f"{operation_path}/upload"
         upload_csrf = _csrf_for(detail.text, upload_action)
 
@@ -308,14 +323,14 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
         review_page = client.get(operation_path)
         assert review_page.status_code == 200
         assert "shipment.csv" in review_page.text
-        assert "Exceptions to resolve" in review_page.text
         assert "Country of Harvest" in review_page.text
         assert "Brazil" in review_page.text
 
-        operation_detail = UsLaceyOperationService().get_detail(
+        operation_detail = operation_service.get_detail(
             organization_id=organization_id,
             operation_public_id=operation_public_id,
         )
+        assert operation_detail.document_count == 1
         exceptions = [
             field
             for field in operation_detail.fields
@@ -346,19 +361,36 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
 
         ready_to_complete = client.get(operation_path)
         assert ready_to_complete.status_code == 200
-        assert "No unresolved preparation fields remain." in ready_to_complete.text
+        ready_detail = operation_service.get_detail(
+            organization_id=organization_id,
+            operation_public_id=operation_public_id,
+        )
+        unresolved = [
+            field
+            for field in ready_detail.fields
+            if field.status in {"MISSING", "REVIEW"}
+        ]
+        assert unresolved == []
+
         complete_action = f"{operation_path}/complete"
         complete_csrf = _csrf_for(ready_to_complete.text, complete_action)
         completed = client.post(complete_action, data={"csrf_token": complete_csrf})
         assert completed.status_code == 303
         assert completed.headers["location"] == f"{operation_path}?completed=1"
 
+        completed_detail = operation_service.get_detail(
+            organization_id=organization_id,
+            operation_public_id=operation_public_id,
+        )
+        assert completed_detail.status == "COMPLETED"
+
         complete_page = client.get(operation_path)
         assert complete_page.status_code == 200
-        assert "COMPLETED" in complete_page.text
-        assert "Download XLSX" in complete_page.text
-        assert "Download CSV" in complete_page.text
+        _assert_href(complete_page.text, f"{operation_path}/export.xlsx")
+        _assert_href(complete_page.text, f"{operation_path}/export.csv")
+        # This safety disclaimer is itself a product contract and should remain visible.
         assert "not a legal compliance determination" in complete_page.text
+        assert "ACE/LAWGS" in complete_page.text
 
         csv_export = client.get(f"{operation_path}/export.csv")
         assert csv_export.status_code == 200
@@ -390,7 +422,7 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
         history = client.get("/operations")
         assert history.status_code == 200
         assert reference in history.text
-        assert "COMPLETED" in history.text
         historical_detail = client.get(operation_path)
         assert historical_detail.status_code == 200
-        assert "Download XLSX" in historical_detail.text
+        _assert_href(historical_detail.text, f"{operation_path}/export.xlsx")
+        _assert_href(historical_detail.text, f"{operation_path}/export.csv")
