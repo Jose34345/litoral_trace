@@ -567,6 +567,8 @@ def operation_review_submit(
     request: Request,
     action: str = Form(...),
     value: str = Form(""),
+    candidate_id: int | None = Form(None),
+    reason_code: str = Form(""),
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
@@ -585,6 +587,8 @@ def operation_review_submit(
             user_email=identity.email,
             action=action,
             value=value or None,
+            candidate_id=candidate_id,
+            reason_code=reason_code or None,
         )
         return RedirectResponse(f"/operations/{operation_public_id}", status_code=303)
     except UsLaceyPortalAuthError:

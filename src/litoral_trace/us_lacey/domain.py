@@ -62,34 +62,12 @@ class UsLaceyProcessingJobStatus(StrEnum):
     FAILED = "FAILED"
 
 
-# Stable internal keys -> user-facing labels. Keeping these names centralized
-# prevents every parser/exporter from inventing a slightly different schema.
-US_LACEY_REVIEW_FIELDS: tuple[tuple[str, str], ...] = (
-    ("filing_entry_reference", "Filing / Entry Reference"),
-    ("entry_type", "Entry Type"),
-    ("importer_name", "Importer Name"),
-    ("importer_identifier", "Importer Identifier"),
-    ("importer_address", "Importer Address"),
-    ("consignee_name", "Consignee Name"),
-    ("consignee_address", "Consignee Address"),
-    ("filer_name", "Filer Name"),
-    ("filer_contact", "Filer Contact"),
-    ("bill_of_lading", "Bill of Lading"),
-    ("container_number", "Container Number"),
-    ("manufacturer_id", "Manufacturer ID"),
-    ("shipment_description", "Shipment Description"),
-    ("source_line_id", "Source Line ID"),
-    ("hts_code", "HTS Code"),
-    ("article_component", "Article / Component"),
-    ("merchandise_description", "Merchandise Description"),
-    ("entered_value", "Entered Value"),
-    ("genus", "Genus"),
-    ("species", "Species"),
-    ("country_of_harvest", "Country of Harvest"),
-    ("plant_quantity", "Plant Quantity"),
-    ("metric_unit", "Metric Unit"),
-    ("percent_recycled", "Percent Recycled"),
-    ("supporting_reference", "Supporting Reference"),
+from litoral_trace.us_lacey.ppq505 import PPQ505_FIELDS
+
+
+# Backwards-compatible public catalog, now driven by the explicit PPQ contract.
+US_LACEY_REVIEW_FIELDS: tuple[tuple[str, str], ...] = tuple(
+    (field.key, field.label) for field in PPQ505_FIELDS
 )
 
 US_LACEY_REVIEW_FIELD_KEYS = frozenset(key for key, _label in US_LACEY_REVIEW_FIELDS)

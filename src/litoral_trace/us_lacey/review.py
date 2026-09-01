@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from litoral_trace.db.models import (
     AssuranceDocument,
     ReconciliationIssue,
+    UsLaceyFieldCandidate,
     UsLaceyOperation,
     UsLaceyOperationField,
     UsLaceyProcessingJob,
@@ -29,6 +30,14 @@ from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.domain import US_LACEY_REVIEW_FIELDS
 from litoral_trace.us_lacey.operations import UsLaceyOperationNotFound
 from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
+from litoral_trace.us_lacey.ppq505 import (
+    PPQ505_FIELDS,
+    PPQ505_PLANT_FIELDS,
+    PPQ505_SHIPMENT_FIELDS,
+    PPQ505_SHIPMENT_REFERENCE,
+    not_required_allowed,
+    validate_ppq_value,
+)
 
 
 class UsLaceyReviewError(RuntimeError):
@@ -108,6 +117,8 @@ def review_us_lacey_field(
     user_email: str,
     action: str,
     value: str | None = None,
+    candidate_id: int | None = None,
+    reason_code: str | None = None,
 ) -> UsLaceyReviewResult:
     """Accept, edit or explicitly mark one preparation field as not required.
 
@@ -138,7 +149,23 @@ def review_us_lacey_field(
         if field is None:
             raise UsLaceyReviewError("Review field was not found for this operation.")
 
-        proposed = field.normalized_value or field.original_value
+        selected_candidate = None
+        if candidate_id is not None:
+            selected_candidate = session.scalar(
+                select(UsLaceyFieldCandidate).where(
+                    UsLaceyFieldCandidate.organization_id == org_id,
+                    UsLaceyFieldCandidate.operation_id == operation.id,
+                    UsLaceyFieldCandidate.operation_field_id == field.id,
+                    UsLaceyFieldCandidate.id == int(candidate_id),
+                )
+            )
+            if selected_candidate is None:
+                raise UsLaceyReviewError("The selected source candidate was not found.")
+        proposed = (
+            (selected_candidate.normalized_value or selected_candidate.original_value)
+            if selected_candidate is not None
+            else (field.normalized_value or field.original_value)
+        )
         before = {
             "field_id": field.id,
             "field_name": field.field_name,
@@ -148,22 +175,54 @@ def review_us_lacey_field(
         if normalized_action == "accept":
             if proposed is None or not str(proposed).strip():
                 raise UsLaceyReviewError("There is no extracted value to accept.")
-            field.human_value = str(proposed).strip()
+            validation = validate_ppq_value(field.field_name, proposed)
+            if validation.status.value in {"INVALID", "MISSING", "REVIEW_REQUIRED"}:
+                raise UsLaceyReviewError(validation.error or "This value requires further review.")
+            field.human_value = validation.normalized_value
             field.field_status = "MATCHED"
+            field.validation_status = "VALID"
+            field.validation_error = None
+            field.not_required_reason_code = None
         elif normalized_action == "edit":
             human = str(value or "").strip()
             if not human:
                 raise UsLaceyReviewError("Enter a value before saving this review.")
             if len(human) > 4000:
                 raise UsLaceyReviewError("Reviewed value is too long.")
-            field.human_value = human
+            validation = validate_ppq_value(field.field_name, human)
+            if validation.status.value in {"INVALID", "MISSING", "REVIEW_REQUIRED"}:
+                raise UsLaceyReviewError(validation.error or "This value requires further review.")
+            field.human_value = validation.normalized_value
             field.field_status = "MATCHED"
+            field.validation_status = "VALID"
+            field.validation_error = None
+            field.not_required_reason_code = None
         else:
+            normalized_reason = str(reason_code or "").strip().upper()
+            if not not_required_allowed(field.field_name, normalized_reason):
+                raise UsLaceyReviewError(
+                    "NOT_REQUIRED is not allowed for this PPQ field and context."
+                )
             field.human_value = None
             field.field_status = "NOT_REQUIRED"
+            field.validation_status = "VALID"
+            field.validation_error = None
+            field.not_required_reason_code = normalized_reason
 
         field.reviewed_by_user_id = int(user_id)
         field.reviewed_at = _utc_now()
+
+        if selected_candidate is not None:
+            related_candidates = session.scalars(
+                select(UsLaceyFieldCandidate).where(
+                    UsLaceyFieldCandidate.organization_id == org_id,
+                    UsLaceyFieldCandidate.operation_field_id == field.id,
+                )
+            ).all()
+            for candidate in related_candidates:
+                candidate.decision = "SELECTED" if candidate.id == selected_candidate.id else "REJECTED"
+                candidate.decided_by_user_id = int(user_id)
+                candidate.decided_at = field.reviewed_at
 
         open_issues = session.scalars(
             select(ReconciliationIssue).where(
@@ -398,15 +457,18 @@ def export_us_lacey_csv(
         organization_id=organization_id,
         operation_public_id=operation_public_id,
     )
-    line_refs = tuple(dict.fromkeys(field.merchandise_line_reference for field in fields))
+    line_refs = tuple(dict.fromkeys(
+        field.merchandise_line_reference for field in fields if field.field_scope == "PLANT_LINE"
+    ))
     by_key = {(field.merchandise_line_reference, field.field_name): field for field in fields}
     output = StringIO(newline="")
     writer = csv.writer(output)
-    writer.writerow(["Line Reference", *[label for _key, label in US_LACEY_REVIEW_FIELDS]])
-    for line in line_refs:
+    writer.writerow(["Plant Line Reference", *[f"PPQ #{field.number} {field.label}" for field in PPQ505_FIELDS]])
+    for line in line_refs or ("",):
         values = []
-        for key, _label in US_LACEY_REVIEW_FIELDS:
-            field = by_key.get((line, key))
+        for contract in PPQ505_FIELDS:
+            reference = PPQ505_SHIPMENT_REFERENCE if contract.scope.value == "SHIPMENT" else line
+            field = by_key.get((reference, contract.key))
             values.append("" if field is None else (field.human_value or field.normalized_value or field.original_value or ""))
         writer.writerow([line, *values])
     return output.getvalue().encode("utf-8-sig")
@@ -419,27 +481,70 @@ def export_us_lacey_xlsx(
         organization_id=organization_id,
         operation_public_id=operation_public_id,
     )
-    line_refs = tuple(dict.fromkeys(field.merchandise_line_reference for field in fields))
+    line_refs = tuple(dict.fromkeys(
+        field.merchandise_line_reference for field in fields if field.field_scope == "PLANT_LINE"
+    ))
     by_key = {(field.merchandise_line_reference, field.field_name): field for field in fields}
 
     workbook = Workbook()
-    data_sheet = workbook.active
-    data_sheet.title = "Preparation Data"
-    data_sheet.append(["Line Reference", *[label for _key, label in US_LACEY_REVIEW_FIELDS]])
+    readme = workbook.active
+    readme.title = "Read Me"
+    readme.append(["Litoral Trace — PPQ Form 505 preparation workbook"])
+    readme.append(["Operation", operation.client_reference])
+    readme.append(["Workspace status", operation.status])
+    readme.append(["Classification", "PREPARATION WORK PRODUCT"])
+    readme.append(["Filing status", "NOT FILED"])
+    readme.append(["Review requirement", "HUMAN REVIEW REQUIRED"])
+    readme.append(["Submission status", "NO ACE/LAWGS SUBMISSION"])
+    readme.append(["Important", "This workbook organizes source evidence. It is not a legal compliance determination, certification, government filing, or government acceptance."])
+    readme.append(["Signature", "No preparer signature is generated or simulated."])
+
+    shipment_sheet = workbook.create_sheet("Shipment Summary")
+    shipment_sheet.append(["PPQ Number", "Field", "Value", "Review Status", "Validation"])
+    for contract in PPQ505_SHIPMENT_FIELDS:
+        field = by_key.get((PPQ505_SHIPMENT_REFERENCE, contract.key))
+        shipment_sheet.append([
+            contract.number, contract.label,
+            "" if field is None else (field.human_value or field.normalized_value or field.original_value or ""),
+            "MISSING" if field is None else field.field_status,
+            "MISSING" if field is None else field.validation_status,
+        ])
+    shipment_sheet.freeze_panes = "A2"
+
+    contract_sheet = workbook.create_sheet("PPQ 505 Fields")
+    contract_sheet.append(["PPQ Number", "Scope", "Plant Line", "Field", "Value", "Review Status", "Validation", "Validation Error"])
+    for contract in PPQ505_FIELDS:
+        references = (PPQ505_SHIPMENT_REFERENCE,) if contract.scope.value == "SHIPMENT" else line_refs
+        for reference in references:
+            field = by_key.get((reference, contract.key))
+            contract_sheet.append([
+                contract.number, contract.scope.value,
+                "" if reference == PPQ505_SHIPMENT_REFERENCE else reference,
+                contract.label,
+                "" if field is None else (field.human_value or field.normalized_value or field.original_value or ""),
+                "MISSING" if field is None else field.field_status,
+                "MISSING" if field is None else field.validation_status,
+                "" if field is None else (field.validation_error or ""),
+            ])
+    contract_sheet.freeze_panes = "A2"
+    contract_sheet.auto_filter.ref = contract_sheet.dimensions
+
+    plant_sheet = workbook.create_sheet("Plant Lines")
+    plant_sheet.append(["Plant Line Reference", *[f"PPQ #{field.number} {field.label}" for field in PPQ505_PLANT_FIELDS]])
     for line in line_refs:
         row = [line]
-        for key, _label in US_LACEY_REVIEW_FIELDS:
-            field = by_key.get((line, key))
+        for contract in PPQ505_PLANT_FIELDS:
+            field = by_key.get((line, contract.key))
             row.append("" if field is None else (field.human_value or field.normalized_value or field.original_value or ""))
-        data_sheet.append(row)
-    data_sheet.freeze_panes = "A2"
-    data_sheet.auto_filter.ref = data_sheet.dimensions
+        plant_sheet.append(row)
+    plant_sheet.freeze_panes = "A2"
+    plant_sheet.auto_filter.ref = plant_sheet.dimensions
 
     evidence_sheet = workbook.create_sheet("Evidence")
     evidence_sheet.append(
         [
-            "Line Reference",
-            "Field",
+            "Scope", "Line Reference", "PPQ Number", "Field",
+            "Original Source Value", "Normalized / Human Value",
             "Value",
             "Review Status",
             "Confidence",
@@ -455,9 +560,12 @@ def export_us_lacey_xlsx(
     for field in fields:
         evidence_sheet.append(
             [
-                field.merchandise_line_reference,
+                field.field_scope,
+                "" if field.field_scope == "SHIPMENT" else field.merchandise_line_reference,
+                next((item.number for item in PPQ505_FIELDS if item.key == field.field_name), ""),
                 _LABELS.get(field.field_name, field.field_name),
-                field.human_value or field.normalized_value or field.original_value or "",
+                field.original_value or "",
+                field.human_value or field.normalized_value or "",
                 field.field_status,
                 float(field.confidence),
                 filenames.get(field.source_assurance_document_id or -1, ""),
@@ -472,7 +580,7 @@ def export_us_lacey_xlsx(
     evidence_sheet.freeze_panes = "A2"
     evidence_sheet.auto_filter.ref = evidence_sheet.dimensions
 
-    exception_sheet = workbook.create_sheet("Exceptions")
+    exception_sheet = workbook.create_sheet("Exceptions / Human Decisions")
     exception_sheet.append(
         [
             "Status",
@@ -482,6 +590,7 @@ def export_us_lacey_xlsx(
             "Right Value",
             "Explanation",
             "Resolution",
+            "Reviewed / Resolved At",
         ]
     )
     for issue in issues:
@@ -494,29 +603,9 @@ def export_us_lacey_xlsx(
                 issue.right_value or "",
                 issue.explanation,
                 issue.resolution_justification or "",
+                issue.resolved_at.isoformat() if issue.resolved_at else "",
             ]
         )
-
-    readme = workbook.create_sheet("Read Me", 0)
-    readme.append(["Litoral Trace — U.S. document preparation export"])
-    readme.append(["Operation", operation.client_reference])
-    readme.append(["Workspace status", operation.status])
-    readme.append(
-        [
-            "Review statement",
-            (
-                "Document review complete; ready for export."
-                if operation.status == "COMPLETED"
-                else "Draft export; human review remains required."
-            ),
-        ]
-    )
-    readme.append(
-        [
-            "Important",
-            "This workbook organizes source evidence for human review. It is not a legal compliance determination and is not an ACE/LAWGS filing.",
-        ]
-    )
 
     output = BytesIO()
     workbook.save(output)
