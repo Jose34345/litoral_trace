@@ -24,7 +24,7 @@ def test_lacey_landing_leads_with_document_to_data_differentiation():
     assert response.headers["cache-control"] == "no-store, max-age=0"
 
     html = response.text
-    assert '<html lang="en">' in html
+    assert '<html lang="en"' in html
     assert "Stop manually preparing Lacey spreadsheets." in html
     assert "Start before the spreadsheet" in html
     assert "Upload the shipment documents you already receive" in html

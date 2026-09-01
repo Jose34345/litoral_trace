@@ -225,3 +225,140 @@ def test_payment_pending_account_can_view_billing_but_not_self_activate(monkeypa
     assert "Send USD and include the exact reference" in response.text
     assert "activate" not in response.text.lower() or "cannot activate" in response.text.lower()
     assert "/verify-payment" not in response.text
+
+
+def test_public_auth_pages_preserve_get_forms_and_verification_error(monkeypatch):
+    _portal_env(monkeypatch)
+    client = TestClient(app)
+
+    signup = client.get("/signup")
+    assert signup.status_code == 200
+    for field in (
+        "legal_name",
+        "business_type",
+        "admin_name",
+        "admin_email",
+        "password",
+        "accept_terms",
+        "accept_privacy",
+        "accept_beta",
+    ):
+        assert f'name="{field}"' in signup.text
+    assert 'method="post" action="/signup"' in signup.text
+
+    login = client.get("/login")
+    assert login.status_code == 200
+    assert 'method="post" action="/login"' in login.text
+    assert 'name="email"' in login.text
+    assert 'name="password"' in login.text
+
+    invalid_verify = client.get("/verify-email")
+    assert invalid_verify.status_code == 400
+    assert "Verification token is missing" in invalid_verify.text
+
+
+def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypatch):
+    _portal_env(monkeypatch)
+    identity = UsLaceyPortalIdentity(
+        user_id=7,
+        organization_id=41,
+        email="pilot@example.com",
+        full_name="Pilot User",
+        legal_name="Pilot Imports LLC",
+        business_type="IMPORTER",
+        account_status="PILOT",
+    )
+    entitlement = SimpleNamespace(
+        used_operations=2,
+        monthly_operation_limit=5,
+        remaining_operations=3,
+    )
+    billing = SimpleNamespace(
+        price_cents=12500,
+        currency="USD",
+        used_operations=2,
+        monthly_operation_limit=5,
+        subscription_status="PILOT",
+        payment_status="WAIVED",
+        payment_reference="LT-US-PILOT",
+        payment_provider="WISE",
+    )
+    detail = SimpleNamespace(
+        public_id="OP-DEMO",
+        status="DRAFT",
+        client_reference="Synthetic shipment",
+        document_count=0,
+        merchandise_line_count=1,
+        importer_name="Pilot Imports LLC",
+        supplier_name="Synthetic Supplier",
+        documents=[],
+        fields=[],
+    )
+
+    class FakeOperations:
+        def list_operations(self, **_kwargs):
+            return []
+
+        def get_detail(self, **_kwargs):
+            return detail
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.resolve_us_lacey_session",
+        lambda _token: identity,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.require_us_lacey_operational_access",
+        lambda **_kwargs: entitlement,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.get_us_lacey_billing_summary",
+        lambda **_kwargs: billing,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.UsLaceyOperationService",
+        FakeOperations,
+    )
+
+    client = TestClient(app)
+    client.cookies.set(US_LACEY_SESSION_COOKIE, "opaque-us-session-token")
+
+    billing_page = client.get("/billing")
+    assert billing_page.status_code == 200
+    assert "Account active" in billing_page.text
+    assert "PILOT" in billing_page.text
+
+    operations = client.get("/operations")
+    assert operations.status_code == 200
+    assert 'href="/operations/new"' in operations.text
+    assert "3 remaining" in operations.text
+
+    new_operation = client.get("/operations/new")
+    assert new_operation.status_code == 200
+    assert 'method="post" action="/operations/new"' in new_operation.text
+    for field in ("csrf_token", "client_reference", "importer_name", "line_references"):
+        assert f'name="{field}"' in new_operation.text
+
+    operation = client.get("/operations/OP-DEMO")
+    assert operation.status_code == 200
+    assert 'enctype="multipart/form-data"' in operation.text
+    assert 'action="/operations/OP-DEMO/upload"' in operation.text
+    assert 'name="document"' in operation.text
+    assert 'action="/operations/OP-DEMO/complete"' in operation.text
+
+
+def test_logout_preserves_session_cookie_contract(monkeypatch):
+    _portal_env(monkeypatch)
+    observed: list[str] = []
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.logout_us_lacey_user",
+        observed.append,
+    )
+    client = TestClient(app, follow_redirects=False)
+    client.cookies.set(US_LACEY_SESSION_COOKIE, "opaque-us-session-token")
+
+    response = client.post("/logout")
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+    assert observed == ["opaque-us-session-token"]
+    assert f"{US_LACEY_SESSION_COOKIE}=" in response.headers["set-cookie"]

@@ -1,0 +1,27 @@
+{% extends "public/base_public.html" %}
+{% from "components/ui.html" import button, badge, status_badge, alert, page_header, empty_state %}
+
+{% block title %}{% block lacey_title %}U.S. Lacey{% endblock %} | Litoral Trace{% endblock %}
+
+{% block content %}
+<section class="bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-6xl">
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+      <p class="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Litoral Trace · U.S. Lacey private beta</p>
+      {% if authenticated %}
+      <nav class="flex flex-wrap items-center gap-2" aria-label="U.S. Lacey workspace">
+        {{ button("Operations", "/operations", "ghost", "fa-briefcase") }}
+        {{ button("Billing", "/billing", "ghost", "fa-receipt") }}
+        <form method="post" action="/logout" class="inline">{{ button("Sign out", variant="secondary", icon="fa-right-from-bracket", button_type="submit") }}</form>
+      </nav>
+      {% else %}
+      <nav class="flex flex-wrap items-center gap-2" aria-label="U.S. Lacey account">
+        {{ button("Sign in", "/login", "ghost") }}
+        {{ button("Create account", "/signup", "primary") }}
+      </nav>
+      {% endif %}
+    </div>
+    <div class="lt-page">{% block lacey_content %}{% endblock %}</div>
+  </div>
+</section>
+{% endblock %}

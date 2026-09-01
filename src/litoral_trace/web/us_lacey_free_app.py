@@ -12,7 +12,6 @@ processing pauses and resumes on the next wake-up.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-import html
 import logging
 import os
 import socket
@@ -20,12 +19,14 @@ import threading
 import time
 from uuid import uuid4
 
+from fastapi import Request
 from fastapi.responses import HTMLResponse
 
 from litoral_trace.us_lacey.jobs import recover_stale_us_lacey_jobs
 from litoral_trace.us_lacey.worker import process_one_us_lacey_job
 from litoral_trace.us_lacey.worker_db import get_us_lacey_worker_database_url
 from litoral_trace.web.us_lacey_pilot_app import app
+from litoral_trace.web.templates import templates
 
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.inline_worker")
@@ -167,40 +168,9 @@ async def _free_lifespan(application):
 app.router.lifespan_context = _free_lifespan
 
 
-def _legal_response(title: str, version_env: str, sections: list[tuple[str, str]]) -> HTMLResponse:
-    version = html.escape(str(os.environ.get(version_env, "2026-08-30-v1")).strip())
-    section_html = "".join(
-        f"<h2>{html.escape(heading)}</h2><p>{body}</p>" for heading, body in sections
-    )
-    content = f"""
-    <!doctype html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>{html.escape(title)} · Litoral Trace</title>
-        <style>
-          body {{ font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; color: #11261c; background: #f7faf8; }}
-          main {{ max-width: 860px; margin: 0 auto; padding: 48px 24px 72px; }}
-          a {{ color: #155d3b; }}
-          h1 {{ font-size: clamp(2rem, 5vw, 3rem); line-height: 1.05; }}
-          h2 {{ margin-top: 2rem; }}
-          .meta {{ color: #52635b; }}
-          .notice {{ background: white; border: 1px solid #d8e2dc; border-radius: 14px; padding: 18px 20px; }}
-        </style>
-      </head>
-      <body>
-        <main>
-          <p><a href="/signup">← Back to account creation</a></p>
-          <h1>{html.escape(title)}</h1>
-          <p class="meta">Version {version} · Private U.S. Lacey beta</p>
-          <div class="notice"><strong>Important:</strong> Litoral Trace is a software workflow and evidence-management tool. It does not provide legal advice, does not make an automatic legal-compliance determination, and does not represent that it has a live ACE/LAWGS filing integration.</div>
-          {section_html}
-          <p>Questions about this beta can be sent to <a href="mailto:comercial@litoraltrace.com">comercial@litoraltrace.com</a>.</p>
-        </main>
-      </body>
-    </html>
-    """
+def _legal_response(request: Request, title: str, version_env: str, sections: list[tuple[str, str]]) -> HTMLResponse:
+    version = str(os.environ.get(version_env, "2026-08-30-v1")).strip()
+    content = templates.get_template("us_lacey/legal.html").render(request=request, title=title, version=version, sections=sections)
     response = HTMLResponse(content=content)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -209,8 +179,9 @@ def _legal_response(title: str, version_env: str, sections: list[tuple[str, str]
 
 
 @app.get("/legal/terms", response_class=HTMLResponse)
-def us_lacey_terms() -> HTMLResponse:
+def us_lacey_terms(request: Request) -> HTMLResponse:
     return _legal_response(
+        request,
         "Terms of Service",
         "US_LACEY_TERMS_VERSION",
         [
@@ -224,8 +195,9 @@ def us_lacey_terms() -> HTMLResponse:
 
 
 @app.get("/legal/privacy", response_class=HTMLResponse)
-def us_lacey_privacy() -> HTMLResponse:
+def us_lacey_privacy(request: Request) -> HTMLResponse:
     return _legal_response(
+        request,
         "Privacy Notice",
         "US_LACEY_PRIVACY_VERSION",
         [
@@ -240,8 +212,9 @@ def us_lacey_privacy() -> HTMLResponse:
 
 
 @app.get("/legal/private-beta", response_class=HTMLResponse)
-def us_lacey_private_beta_terms() -> HTMLResponse:
+def us_lacey_private_beta_terms(request: Request) -> HTMLResponse:
     return _legal_response(
+        request,
         "Private Beta Terms",
         "US_LACEY_BETA_TERMS_VERSION",
         [
