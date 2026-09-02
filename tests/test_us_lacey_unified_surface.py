@@ -25,9 +25,10 @@ def test_anonymous_root_is_professional_us_lacey_landing():
     assert 'href="/signup"' in html
     assert 'href="/login"' in html
     assert 'href="/demo"' in html
-    assert "USD 199 private beta" in html
+    assert "USD 199 Early Access" in html
     assert "Up to 25 operations" in html
     assert "Human review required" in html
+    assert "Phase VII" not in html
 
     prohibited_regional_copy = (
         "Trazabilidad de origen",
