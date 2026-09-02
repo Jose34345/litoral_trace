@@ -166,7 +166,8 @@ def upgrade() -> None:
             IF target_organization_id IS NULL OR target_organization_id <= 0
                OR target_payment_public_id IS NULL
                OR normalized_order_id = '' OR char_length(normalized_order_id) > 128
-               OR target_event_name <> 'order_created'
+               OR coalesce(target_event_name, '') <> 'order_created'
+               OR target_payload_sha256 IS NULL
                OR target_payload_sha256 !~ '^[0-9a-f]{64}$'
                OR target_amount_cents IS NULL OR target_amount_cents <= 0
                OR upper(btrim(coalesce(target_currency, ''))) <> 'USD'
@@ -233,8 +234,7 @@ def upgrade() -> None:
 
             UPDATE public.us_lacey_payments
             SET status = 'VERIFIED', paid_at = coalesce(paid_at, now()),
-                verified_at = now(), customer_reference = normalized_order_id,
-                updated_at = now()
+                verified_at = now(), updated_at = now()
             WHERE id = payment_row_id
               AND organization_id = target_organization_id;
 
