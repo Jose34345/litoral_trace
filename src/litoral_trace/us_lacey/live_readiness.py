@@ -69,13 +69,9 @@ def probe_storage_roundtrip() -> str:
     return "not_ready"
 
 
-def live_runtime_status(*, worker_thread, storage_roundtrip: str) -> dict[str, str]:
+def live_runtime_status(*, worker_ready: bool, storage_roundtrip: str) -> dict[str, str]:
     """Return a secret-free status document for the deployed free-tier workload."""
-    inline_worker = (
-        "ready"
-        if worker_thread is not None and worker_thread.is_alive()
-        else "not_ready"
-    )
+    inline_worker = "ready" if worker_ready else "not_ready"
     storage = "ready" if storage_roundtrip == "ready" else "not_ready"
     overall = "ready" if inline_worker == "ready" and storage == "ready" else "not_ready"
     return {
