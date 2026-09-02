@@ -47,6 +47,7 @@ class ReconciliationIssue(Base):
         String(32), nullable=False, default=ReconciliationIssueStatus.OPEN.value
     )
     field_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    us_lacey_operation_field_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     left_document_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     right_document_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -115,5 +116,10 @@ class ReconciliationIssue(Base):
             "ix_reconciliation_issues_tenant_rule",
             "organization_id",
             "rule_code",
+        ),
+        Index(
+            "ix_reconciliation_issues_us_lacey_field",
+            "organization_id",
+            "us_lacey_operation_field_id",
         ),
     )

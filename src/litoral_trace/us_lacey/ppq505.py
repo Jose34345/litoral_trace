@@ -21,6 +21,7 @@ class PpqScope(StrEnum):
 
 class PpqRequirement(StrEnum):
     REQUIRED = "REQUIRED"
+    OPTIONAL = "OPTIONAL"
     CONDITIONAL = "CONDITIONAL"
 
 
@@ -55,8 +56,8 @@ class PpqField:
 PPQ505_FIELDS: tuple[PpqField, ...] = (
     PpqField(1, "estimated_arrival_date", "Estimated Date of Arrival", PpqScope.SHIPMENT),
     PpqField(2, "filing_entry_reference", "Entry Number", PpqScope.SHIPMENT),
-    PpqField(3, "container_number", "Container Number(s)", PpqScope.SHIPMENT),
-    PpqField(4, "bill_of_lading", "Bill of Lading", PpqScope.SHIPMENT),
+    PpqField(3, "container_number", "Container Number(s)", PpqScope.SHIPMENT, PpqRequirement.OPTIONAL),
+    PpqField(4, "bill_of_lading", "Bill of Lading", PpqScope.SHIPMENT, PpqRequirement.OPTIONAL),
     PpqField(5, "manufacturer_id", "Manufacturer Identification Code (MID)", PpqScope.SHIPMENT),
     PpqField(6, "importer_name", "Importer's Name", PpqScope.SHIPMENT),
     PpqField(7, "consignee_name", "Consignee's Name", PpqScope.SHIPMENT),
@@ -81,16 +82,27 @@ PPQ505_SHIPMENT_REFERENCE = "__shipment__"
 
 # Units accepted by the preparation contract. Values are normalized to the
 # codes used in the workbook, without guessing from an unknown unit.
-PPQ505_ALLOWED_UNITS = frozenset({"KG", "M", "M2", "M3", "NO"})
+PPQ505_ALLOWED_UNITS = frozenset({
+    "kg", "g", "cg", "mg", "kl", "l", "ml", "mm", "mm2", "mm3",
+    "cm", "cm2", "cm3", "m", "m2", "m3", "km",
+})
 _UNIT_ALIASES = {
-    "KILOGRAM": "KG", "KILOGRAMS": "KG", "KGS": "KG",
-    "METER": "M", "METERS": "M", "METRE": "M", "METRES": "M",
-    "SQUARE METER": "M2", "SQUARE METERS": "M2", "M^2": "M2", "M²": "M2",
-    "CUBIC METER": "M3", "CUBIC METERS": "M3", "M^3": "M3", "M³": "M3",
-    "NUMBER": "NO", "COUNT": "NO", "PIECES": "NO", "PCS": "NO",
+    "kilogram": "kg", "kilograms": "kg", "kgs": "kg",
+    "gram": "g", "grams": "g", "centigram": "cg", "centigrams": "cg",
+    "milligram": "mg", "milligrams": "mg", "kiloliter": "kl", "kiloliters": "kl",
+    "liter": "l", "liters": "l", "litre": "l", "litres": "l",
+    "milliliter": "ml", "milliliters": "ml", "millilitre": "ml", "millilitres": "ml",
+    "millimeter": "mm", "millimeters": "mm", "centimeter": "cm", "centimeters": "cm",
+    "meter": "m", "meters": "m", "metre": "m", "metres": "m", "kilometer": "km", "kilometers": "km",
+    "square millimeter": "mm2", "square millimeters": "mm2", "mm^2": "mm2", "mm²": "mm2",
+    "square centimeter": "cm2", "square centimeters": "cm2", "cm^2": "cm2", "cm²": "cm2",
+    "square meter": "m2", "square meters": "m2", "m^2": "m2", "m²": "m2",
+    "cubic millimeter": "mm3", "cubic millimeters": "mm3", "mm^3": "mm3", "mm³": "mm3",
+    "cubic centimeter": "cm3", "cubic centimeters": "cm3", "cm^3": "cm3", "cm³": "cm3",
+    "cubic meter": "m3", "cubic meters": "m3", "m^3": "m3", "m³": "m3",
 }
 
-NOT_REQUIRED_REASON_CODES = frozenset({"NO_RECYCLED_MATERIAL"})
+NOT_REQUIRED_REASON_CODES = frozenset({"NOT_PAPER_OR_PAPERBOARD"})
 
 
 def _missing(value: object) -> bool:
@@ -135,10 +147,11 @@ def normalize_arrival_date(value: object) -> PpqValidation:
 def normalize_entry_number(value: object) -> PpqValidation:
     if missing := _required(value):
         return missing
-    normalized = re.sub(r"[\s-]+", "", str(value).upper())
-    if not re.fullmatch(r"[A-Z0-9]{6,20}", normalized):
-        return _result(normalized or None, "Entry number must contain 6–20 letters or digits.")
-    return _result(normalized)
+    raw = str(value).strip().upper()
+    compact = re.sub(r"[-\s]+", "", raw)
+    if not re.fullmatch(r"[A-Z0-9]{11}", compact):
+        return _result(compact or None, "Entry number must use the xxx-xxxxxxx-x structure.")
+    return _result(f"{compact[:3]}-{compact[3:10]}-{compact[10]}")
 
 
 def normalize_hts(value: object) -> PpqValidation:
@@ -182,10 +195,10 @@ def normalize_percent_recycled(value: object) -> PpqValidation:
 def normalize_unit(value: object) -> PpqValidation:
     if missing := _required(value):
         return missing
-    raw = re.sub(r"\s+", " ", str(value).strip().upper())
+    raw = re.sub(r"\s+", " ", str(value).strip().lower())
     normalized = _UNIT_ALIASES.get(raw, raw)
     if normalized not in PPQ505_ALLOWED_UNITS:
-        return _result(normalized, "Unit must be one of: KG, M, M2, M3, NO.")
+        return _result(normalized, "Unit must be one of the PPQ 505 metric units.")
     return _result(normalized)
 
 
@@ -247,17 +260,25 @@ def validate_ppq_value(field_key: str, value: object) -> PpqValidation:
     validator = _VALIDATORS.get(field_key)
     if validator:
         return validator(value)
-    if missing := _required(value):
-        return missing
+    if _missing(value):
+        if field.requirement is PpqRequirement.OPTIONAL:
+            return PpqValidation(PpqValidationStatus.VALID, None)
+        return _required(value)  # type: ignore[return-value]
     normalized = re.sub(r"\s+", " ", str(value).strip())
     if len(normalized) > 4000:
         return _result(None, f"{field.label} is too long.")
     return _result(normalized)
 
 
-def not_required_allowed(field_key: str, reason_code: str | None) -> bool:
+def is_paper_or_paperboard(article_or_product: object) -> bool:
+    return bool(re.search(r"\b(paper|paperboard)\b", str(article_or_product or ""), re.I))
+
+
+def not_required_allowed(
+    field_key: str, reason_code: str | None, *, article_or_product: object = None
+) -> bool:
     return (
         field_key == "percent_recycled"
         and str(reason_code or "").strip().upper() in NOT_REQUIRED_REASON_CODES
+        and not is_paper_or_paperboard(article_or_product)
     )
-

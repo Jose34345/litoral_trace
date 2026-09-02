@@ -36,6 +36,7 @@ from litoral_trace.db.models.us_lacey import (
     UsLaceyOrganizationProfile,
     UsLaceyPpqPlantLine,
     UsLaceyPpqShipment,
+    UsLaceyPlantDeclaration,
 )
 from litoral_trace.db.models.us_lacey_commercial import (
     UsLaceyPayment,
@@ -96,6 +97,7 @@ __all__ = [
     "UsLaceyOperationField",
     "UsLaceyPpqPlantLine",
     "UsLaceyPpqShipment",
+    "UsLaceyPlantDeclaration",
     "UsLaceySubscription",
     "UsLaceyPayment",
     "UsLaceyTermsAcceptance",

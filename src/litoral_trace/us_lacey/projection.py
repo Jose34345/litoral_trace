@@ -189,6 +189,7 @@ def _upsert_conflict(
                 severity="BLOCKING",
                 status="OPEN",
                 field_name=field.field_name,
+                us_lacey_operation_field_id=field.id,
                 left_document_id=left_document_id,
                 right_document_id=new_document_id,
                 left_source=(
@@ -212,6 +213,7 @@ def _upsert_conflict(
         existing.left_value = left_value
         existing.right_value = new_value
         existing.evidence_json = evidence
+        existing.us_lacey_operation_field_id = field.id
         existing.resolution_justification = None
         existing.resolved_at = None
 

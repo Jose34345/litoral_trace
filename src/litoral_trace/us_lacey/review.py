@@ -16,6 +16,8 @@ from litoral_trace.db.models import (
     UsLaceyFieldCandidate,
     UsLaceyOperation,
     UsLaceyOperationField,
+    UsLaceyPpqPlantLine,
+    UsLaceyPlantDeclaration,
     UsLaceyProcessingJob,
     VaultDocument,
 )
@@ -35,6 +37,7 @@ from litoral_trace.us_lacey.ppq505 import (
     PPQ505_PLANT_FIELDS,
     PPQ505_SHIPMENT_FIELDS,
     PPQ505_SHIPMENT_REFERENCE,
+    is_paper_or_paperboard,
     not_required_allowed,
     validate_ppq_value,
 )
@@ -199,7 +202,21 @@ def review_us_lacey_field(
             field.not_required_reason_code = None
         else:
             normalized_reason = str(reason_code or "").strip().upper()
-            if not not_required_allowed(field.field_name, normalized_reason):
+            context_field = session.scalar(
+                select(UsLaceyOperationField).where(
+                    UsLaceyOperationField.organization_id == org_id,
+                    UsLaceyOperationField.operation_id == operation.id,
+                    UsLaceyOperationField.merchandise_line_reference == field.merchandise_line_reference,
+                    UsLaceyOperationField.field_name == "article_component",
+                )
+            )
+            article_or_product = (
+                None if context_field is None
+                else (context_field.human_value or context_field.normalized_value or context_field.original_value)
+            )
+            if not not_required_allowed(
+                field.field_name, normalized_reason, article_or_product=article_or_product
+            ):
                 raise UsLaceyReviewError(
                     "NOT_REQUIRED is not allowed for this PPQ field and context."
                 )
@@ -213,6 +230,16 @@ def review_us_lacey_field(
         field.reviewed_at = _utc_now()
 
         if selected_candidate is not None:
+            # The selected evidence, not a previously displayed candidate,
+            # becomes the final field provenance.
+            field.original_value = selected_candidate.original_value
+            field.normalized_value = selected_candidate.normalized_value
+            field.source_assurance_document_id = selected_candidate.source_assurance_document_id
+            field.source_page = selected_candidate.source_page
+            field.source_locator = selected_candidate.source_locator
+            field.extractor = selected_candidate.extractor
+            field.extractor_version = selected_candidate.extractor_version
+            field.confidence = selected_candidate.confidence
             related_candidates = session.scalars(
                 select(UsLaceyFieldCandidate).where(
                     UsLaceyFieldCandidate.organization_id == org_id,
@@ -228,7 +255,7 @@ def review_us_lacey_field(
             select(ReconciliationIssue).where(
                 ReconciliationIssue.organization_id == org_id,
                 ReconciliationIssue.operation_reference == f"us_lacey:{operation.public_id}",
-                ReconciliationIssue.field_name == field.field_name,
+                ReconciliationIssue.us_lacey_operation_field_id == field.id,
                 ReconciliationIssue.status == "OPEN",
             )
         ).all()
@@ -336,12 +363,24 @@ def finalize_us_lacey_review(
             organization_id=org_id,
             operation=operation,
         )
+        plant_line_count = session.scalar(
+            select(func.count(UsLaceyPlantDeclaration.id))
+            .join(UsLaceyPpqPlantLine, UsLaceyPpqPlantLine.id == UsLaceyPlantDeclaration.plant_line_id)
+            .where(
+                UsLaceyPlantDeclaration.organization_id == org_id,
+                UsLaceyPpqPlantLine.operation_id == operation.id,
+            )
+        ) or 0
         if int(operation.document_count) <= 0:
             raise UsLaceyReviewError("Upload at least one document before completing review.")
         if int(active_jobs):
             raise UsLaceyReviewError("Document processing is still in progress.")
         if int(failed_jobs):
             raise UsLaceyReviewError("A document-processing failure must be resolved first.")
+        if int(plant_line_count) <= 0:
+            raise UsLaceyReviewError(
+                "At least one explicit plant declaration line is required before completion."
+            )
         if review_count or missing_count or conflict_count:
             raise UsLaceyReviewError(
                 "Resolve every missing field, review item and contradiction before completing review."
@@ -410,6 +449,13 @@ def _export_rows(*, organization_id: int, operation_public_id: UUID | str):
                 UsLaceyOperationField.id.asc(),
             )
         ).all()
+        candidates = session.scalars(
+            select(UsLaceyFieldCandidate).where(
+                UsLaceyFieldCandidate.organization_id == org_id,
+                UsLaceyFieldCandidate.operation_id == operation.id,
+                UsLaceyFieldCandidate.decision != "PENDING",
+            ).order_by(UsLaceyFieldCandidate.id.asc())
+        ).all()
         documents = session.scalars(
             select(AssuranceDocument).where(
                 AssuranceDocument.organization_id == org_id,
@@ -420,6 +466,9 @@ def _export_rows(*, organization_id: int, operation_public_id: UUID | str):
                                 field.source_assurance_document_id
                                 for field in fields
                                 if field.source_assurance_document_id is not None
+                            } | {
+                                candidate.source_assurance_document_id
+                                for candidate in candidates
                             }
                         )
                     )
@@ -445,7 +494,7 @@ def _export_rows(*, organization_id: int, operation_public_id: UUID | str):
             )
             .order_by(ReconciliationIssue.created_at.asc(), ReconciliationIssue.id.asc())
         ).all()
-        return operation, tuple(fields), filenames, tuple(issues)
+        return operation, tuple(fields), filenames, tuple(issues), tuple(candidates)
     finally:
         session.close()
 
@@ -453,7 +502,7 @@ def _export_rows(*, organization_id: int, operation_public_id: UUID | str):
 def export_us_lacey_csv(
     *, organization_id: int, operation_public_id: UUID | str
 ) -> bytes:
-    operation, fields, _filenames, _issues = _export_rows(
+    operation, fields, _filenames, _issues, _candidates = _export_rows(
         organization_id=organization_id,
         operation_public_id=operation_public_id,
     )
@@ -477,7 +526,7 @@ def export_us_lacey_csv(
 def export_us_lacey_xlsx(
     *, organization_id: int, operation_public_id: UUID | str
 ) -> bytes:
-    operation, fields, filenames, issues = _export_rows(
+    operation, fields, filenames, issues, candidates = _export_rows(
         organization_id=organization_id,
         operation_public_id=operation_public_id,
     )
@@ -566,6 +615,7 @@ def export_us_lacey_xlsx(
                 _LABELS.get(field.field_name, field.field_name),
                 field.original_value or "",
                 field.human_value or field.normalized_value or "",
+                field.human_value or field.normalized_value or field.original_value or "",
                 field.field_status,
                 float(field.confidence),
                 filenames.get(field.source_assurance_document_id or -1, ""),
@@ -604,6 +654,34 @@ def export_us_lacey_xlsx(
                 issue.explanation,
                 issue.resolution_justification or "",
                 issue.resolved_at.isoformat() if issue.resolved_at else "",
+            ]
+        )
+    for candidate in candidates:
+        exception_sheet.append(
+            [
+                candidate.decision,
+                "HUMAN_DECISION",
+                f"Candidate #{candidate.id}",
+                candidate.original_value,
+                candidate.normalized_value or "",
+                f"Source document: {filenames.get(candidate.source_assurance_document_id, '')}",
+                "Selected/rejected candidate",
+                candidate.decided_at.isoformat() if candidate.decided_at else "",
+            ]
+        )
+    for field in fields:
+        if field.reviewed_at is None or field.field_status not in {"MATCHED", "NOT_REQUIRED"}:
+            continue
+        exception_sheet.append(
+            [
+                field.field_status,
+                "HUMAN_DECISION",
+                _LABELS.get(field.field_name, field.field_name),
+                field.original_value or "",
+                field.human_value or "",
+                "Manual review" if field.human_value else "Contextual applicability",
+                field.not_required_reason_code or "Manual override / accepted value",
+                field.reviewed_at.isoformat(),
             ]
         )
 

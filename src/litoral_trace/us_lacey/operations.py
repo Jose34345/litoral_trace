@@ -18,6 +18,7 @@ from litoral_trace.db.models import (
     UsLaceyOperationField,
     UsLaceyPpqPlantLine,
     UsLaceyPpqShipment,
+    UsLaceyPlantDeclaration,
     UsLaceyProcessingJob,
     UsLaceySubscription,
     VaultDocument,
@@ -125,6 +126,24 @@ class FieldCandidateView:
 
 
 @dataclass(frozen=True, slots=True)
+class PlantDeclarationView:
+    line_reference: str
+    ordinal: int
+    genus: str | None
+    species: str | None
+    country_of_harvest: str | None
+    quantity: str | None
+    unit: str | None
+    original_values: dict | None
+    source_assurance_document_id: int | None
+    source_page: int | None
+    source_locator: str | None
+    extractor: str | None
+    extractor_version: str | None
+    confidence: float
+
+
+@dataclass(frozen=True, slots=True)
 class ConflictView:
     id: int
     field_name: str | None
@@ -155,10 +174,12 @@ class OperationDetail:
     created_at: datetime
     documents: tuple[OperationDocumentView, ...]
     fields: tuple[OperationFieldView, ...]
+    plant_declarations: tuple[PlantDeclarationView, ...]
     conflicts: tuple[ConflictView, ...]
 
 
 _FIELD_LABELS = dict(US_LACEY_REVIEW_FIELDS)
+_UNSET = object()
 
 
 class UsLaceyOperationService:
@@ -284,7 +305,10 @@ class UsLaceyOperationService:
                         plant_line_id=None,
                         original_value=operator_value,
                         normalized_value=validation.normalized_value,
-                        field_status=("REVIEW" if operator_value else "MISSING"),
+                        field_status=(
+                            "REVIEW" if operator_value
+                            else ("MATCHED" if field.requirement.value == "OPTIONAL" else "MISSING")
+                        ),
                         validation_status=validation.status.value,
                         validation_error=validation.error,
                         confidence=(1.0 if operator_value else 0.0),
@@ -302,6 +326,15 @@ class UsLaceyOperationService:
                 )
                 session.add(plant_line)
                 session.flush()
+                # A user-supplied plant line is an explicit declaration slot;
+                # it is never inferred from an unrelated shipment field.
+                session.add(
+                    UsLaceyPlantDeclaration(
+                        organization_id=org_id,
+                        plant_line_id=plant_line.id,
+                        ordinal=1,
+                    )
+                )
                 for field in PPQ505_PLANT_FIELDS:
                     session.add(
                         UsLaceyOperationField(
@@ -359,6 +392,117 @@ class UsLaceyOperationService:
                     operation_public_id=operation_public_id,
                 ).id
             )
+        finally:
+            session.close()
+
+    def upsert_plant_declaration(
+        self,
+        *,
+        organization_id: int,
+        operation_public_id: UUID | str,
+        line_reference: str,
+        ordinal: int | None = None,
+        genus: str | None | object = _UNSET,
+        species: str | None | object = _UNSET,
+        country_of_harvest: str | None | object = _UNSET,
+        quantity: str | None | object = _UNSET,
+        unit: str | None | object = _UNSET,
+        original_values: dict | None | object = _UNSET,
+        source_assurance_document_id: int | None | object = _UNSET,
+        source_page: int | None | object = _UNSET,
+        source_locator: str | None | object = _UNSET,
+        extractor: str | None | object = _UNSET,
+        extractor_version: str | None | object = _UNSET,
+        confidence: float | object = _UNSET,
+    ) -> PlantDeclarationView:
+        """Create or update exactly one explicit declaration by its line/ordinal identity."""
+        org_id = int(organization_id)
+        reference = str(line_reference or "").strip()
+        if not reference:
+            raise ValueError("line_reference is required")
+        if ordinal is not None and int(ordinal) <= 0:
+            raise ValueError("ordinal must be positive")
+
+        session = self._session(org_id)
+        try:
+            operation = self._get_model(
+                session,
+                organization_id=org_id,
+                operation_public_id=operation_public_id,
+            )
+            plant_line = session.scalar(
+                select(UsLaceyPpqPlantLine)
+                .where(
+                    UsLaceyPpqPlantLine.organization_id == org_id,
+                    UsLaceyPpqPlantLine.operation_id == operation.id,
+                    UsLaceyPpqPlantLine.line_reference == reference,
+                )
+                .with_for_update()
+            )
+            if plant_line is None:
+                raise UsLaceyOperationNotFound("Plant line not found.")
+
+            resolved_ordinal = int(ordinal) if ordinal is not None else int(
+                session.scalar(
+                    select(func.coalesce(func.max(UsLaceyPlantDeclaration.ordinal), 0)).where(
+                        UsLaceyPlantDeclaration.organization_id == org_id,
+                        UsLaceyPlantDeclaration.plant_line_id == plant_line.id,
+                    )
+                ) or 0
+            ) + 1
+            declaration = session.scalar(
+                select(UsLaceyPlantDeclaration)
+                .where(
+                    UsLaceyPlantDeclaration.organization_id == org_id,
+                    UsLaceyPlantDeclaration.plant_line_id == plant_line.id,
+                    UsLaceyPlantDeclaration.ordinal == resolved_ordinal,
+                )
+                .with_for_update()
+            )
+            if declaration is None:
+                declaration = UsLaceyPlantDeclaration(
+                    organization_id=org_id,
+                    plant_line_id=plant_line.id,
+                    ordinal=resolved_ordinal,
+                )
+                session.add(declaration)
+
+            for attribute, value in (
+                ("genus", genus),
+                ("species", species),
+                ("country_of_harvest", country_of_harvest),
+                ("quantity", quantity),
+                ("unit", unit),
+                ("original_values", original_values),
+                ("source_assurance_document_id", source_assurance_document_id),
+                ("source_page", source_page),
+                ("source_locator", source_locator),
+                ("extractor", extractor),
+                ("extractor_version", extractor_version),
+                ("confidence", confidence),
+            ):
+                if value is not _UNSET:
+                    setattr(declaration, attribute, value)
+            session.commit()
+            return PlantDeclarationView(
+                line_reference=reference,
+                ordinal=int(declaration.ordinal),
+                genus=declaration.genus,
+                species=declaration.species,
+                country_of_harvest=declaration.country_of_harvest,
+                quantity=declaration.quantity,
+                unit=declaration.unit,
+                original_values=declaration.original_values,
+                source_assurance_document_id=declaration.source_assurance_document_id,
+                source_page=declaration.source_page,
+                source_locator=declaration.source_locator,
+                extractor=declaration.extractor,
+                extractor_version=declaration.extractor_version,
+                confidence=float(declaration.confidence),
+            )
+        except Exception:
+            session.rollback()
+            raise
         finally:
             session.close()
 
@@ -555,6 +699,41 @@ class UsLaceyOperationService:
                 )
                 for row in field_rows
             )
+            declaration_rows = session.execute(
+                select(UsLaceyPlantDeclaration, UsLaceyPpqPlantLine.line_reference)
+                .join(
+                    UsLaceyPpqPlantLine,
+                    UsLaceyPpqPlantLine.id == UsLaceyPlantDeclaration.plant_line_id,
+                )
+                .where(
+                    UsLaceyPlantDeclaration.organization_id == org_id,
+                    UsLaceyPpqPlantLine.organization_id == org_id,
+                    UsLaceyPpqPlantLine.operation_id == operation.id,
+                )
+                .order_by(
+                    UsLaceyPpqPlantLine.ordinal.asc(),
+                    UsLaceyPlantDeclaration.ordinal.asc(),
+                )
+            ).all()
+            declarations = tuple(
+                PlantDeclarationView(
+                    line_reference=line_reference,
+                    ordinal=int(declaration.ordinal),
+                    genus=declaration.genus,
+                    species=declaration.species,
+                    country_of_harvest=declaration.country_of_harvest,
+                    quantity=declaration.quantity,
+                    unit=declaration.unit,
+                    original_values=declaration.original_values,
+                    source_assurance_document_id=declaration.source_assurance_document_id,
+                    source_page=declaration.source_page,
+                    source_locator=declaration.source_locator,
+                    extractor=declaration.extractor,
+                    extractor_version=declaration.extractor_version,
+                    confidence=float(declaration.confidence),
+                )
+                for declaration, line_reference in declaration_rows
+            )
             conflict_rows = session.scalars(
                 select(ReconciliationIssue).where(
                     ReconciliationIssue.organization_id == org_id,
@@ -592,6 +771,7 @@ class UsLaceyOperationService:
                 created_at=operation.created_at,
                 documents=tuple(documents),
                 fields=fields,
+                plant_declarations=declarations,
                 conflicts=conflicts,
             )
         finally:

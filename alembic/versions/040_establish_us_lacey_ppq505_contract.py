@@ -23,6 +23,7 @@ TENANT = "NULLIF(current_setting('app.current_organization_id', true), '')::inte
 NEW_TABLES = (
     "us_lacey_ppq_shipments",
     "us_lacey_ppq_plant_lines",
+    "us_lacey_plant_declarations",
     "us_lacey_field_candidates",
 )
 
@@ -52,7 +53,6 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("organization_id", sa.Integer(), nullable=False),
         sa.Column("operation_id", sa.Integer(), nullable=False),
-        sa.Column("estimated_arrival_date", sa.Date(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
         sa.ForeignKeyConstraint(["operation_id", "organization_id"], ["us_lacey_operations.id", "us_lacey_operations.organization_id"], name="fk_us_lacey_ppq_shipments_operation_tenant", ondelete="CASCADE"),
@@ -82,14 +82,69 @@ def upgrade() -> None:
     )
     op.create_index("ix_us_lacey_ppq_plant_lines_org_operation", "us_lacey_ppq_plant_lines", ["organization_id", "operation_id"])
 
+    op.create_table(
+        "us_lacey_plant_declarations",
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("organization_id", sa.Integer(), nullable=False),
+        sa.Column("plant_line_id", sa.Integer(), nullable=False),
+        sa.Column("ordinal", sa.Integer(), nullable=False),
+        sa.Column("genus", sa.String(length=128), nullable=True),
+        sa.Column("species", sa.String(length=256), nullable=True),
+        sa.Column("country_of_harvest", sa.String(length=128), nullable=True),
+        sa.Column("quantity", sa.String(length=64), nullable=True),
+        sa.Column("unit", sa.String(length=16), nullable=True),
+        sa.Column("original_values", sa.JSON(), nullable=True),
+        sa.Column("source_assurance_document_id", sa.Integer(), nullable=True),
+        sa.Column("source_page", sa.Integer(), nullable=True),
+        sa.Column("source_locator", sa.Text(), nullable=True),
+        sa.Column("extractor", sa.String(length=100), nullable=True),
+        sa.Column("extractor_version", sa.String(length=100), nullable=True),
+        sa.Column("confidence", sa.Float(), server_default="0", nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+        sa.ForeignKeyConstraint(["plant_line_id", "organization_id"], ["us_lacey_ppq_plant_lines.id", "us_lacey_ppq_plant_lines.organization_id"], name="fk_us_lacey_plant_declarations_line_tenant", ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["source_assurance_document_id", "organization_id"], ["assurance_documents.id", "assurance_documents.organization_id"], name="fk_us_lacey_plant_declarations_document_tenant", ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id", name="pk_us_lacey_plant_declarations"),
+        sa.UniqueConstraint("id", "organization_id", name="uq_us_lacey_plant_declarations_id_org"),
+        sa.UniqueConstraint("organization_id", "plant_line_id", "ordinal", name="uq_us_lacey_plant_declarations_ordinal"),
+        sa.CheckConstraint("ordinal > 0", name="ck_us_lacey_plant_declarations_ordinal"),
+        sa.CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_us_lacey_plant_declarations_confidence"),
+    )
+    op.create_index("ix_us_lacey_plant_declarations_org_line", "us_lacey_plant_declarations", ["organization_id", "plant_line_id"])
+
     op.add_column("us_lacey_operation_fields", sa.Column("field_scope", sa.String(length=16), server_default="PLANT_LINE", nullable=False))
     op.add_column("us_lacey_operation_fields", sa.Column("plant_line_id", sa.Integer(), nullable=True))
     op.add_column("us_lacey_operation_fields", sa.Column("validation_status", sa.String(length=24), server_default="MISSING", nullable=False))
     op.add_column("us_lacey_operation_fields", sa.Column("validation_error", sa.Text(), nullable=True))
     op.add_column("us_lacey_operation_fields", sa.Column("not_required_reason_code", sa.String(length=64), nullable=True))
+    # Classify legacy rows before enforcing the scope/line invariant. Shipment
+    # rows stay represented by their original evidence rows; new operations use
+    # the canonical __shipment__ reference exactly once.
+    shipment_keys = "'estimated_arrival_date','filing_entry_reference','container_number','bill_of_lading','manufacturer_id','importer_name','consignee_name','importer_address','consignee_address','merchandise_description'"
+    op.execute(f"UPDATE public.us_lacey_operation_fields SET field_scope = 'SHIPMENT', plant_line_id = NULL, validation_status = CASE WHEN coalesce(human_value, normalized_value, original_value) IS NULL THEN 'MISSING' ELSE 'REVIEW_REQUIRED' END WHERE field_name IN ({shipment_keys})")
+    op.execute("""
+        INSERT INTO public.us_lacey_ppq_plant_lines (organization_id, operation_id, line_reference, ordinal)
+        SELECT organization_id, operation_id, merchandise_line_reference,
+               row_number() OVER (PARTITION BY organization_id, operation_id ORDER BY merchandise_line_reference)
+        FROM (SELECT DISTINCT organization_id, operation_id, merchandise_line_reference FROM public.us_lacey_operation_fields WHERE field_scope = 'PLANT_LINE') legacy
+    """)
+    op.execute("""
+        UPDATE public.us_lacey_operation_fields field
+        SET plant_line_id = line.id,
+            validation_status = CASE WHEN coalesce(field.human_value, field.normalized_value, field.original_value) IS NULL THEN 'MISSING' ELSE 'REVIEW_REQUIRED' END
+        FROM public.us_lacey_ppq_plant_lines line
+        WHERE field.field_scope = 'PLANT_LINE'
+          AND line.organization_id = field.organization_id
+          AND line.operation_id = field.operation_id
+          AND line.line_reference = field.merchandise_line_reference
+    """)
+    op.execute("""
+        INSERT INTO public.us_lacey_plant_declarations (organization_id, plant_line_id, ordinal)
+        SELECT organization_id, id, 1 FROM public.us_lacey_ppq_plant_lines
+    """)
     op.create_foreign_key("fk_us_lacey_operation_fields_plant_line_tenant", "us_lacey_operation_fields", "us_lacey_ppq_plant_lines", ["plant_line_id", "organization_id"], ["id", "organization_id"], ondelete="CASCADE")
     op.create_check_constraint("ck_us_lacey_fields_scope", "us_lacey_operation_fields", "field_scope IN ('SHIPMENT','PLANT_LINE')")
     op.create_check_constraint("ck_us_lacey_fields_validation_status", "us_lacey_operation_fields", "validation_status IN ('VALID','INVALID','MISSING','REVIEW_REQUIRED')")
+    op.create_check_constraint("ck_us_lacey_fields_scope_line", "us_lacey_operation_fields", "(field_scope = 'SHIPMENT' AND plant_line_id IS NULL) OR (field_scope = 'PLANT_LINE' AND plant_line_id IS NOT NULL)")
 
     op.create_table(
         "us_lacey_field_candidates",
@@ -130,6 +185,8 @@ def upgrade() -> None:
     # retained untouched as legacy compatibility data; new operations use the
     # canonical shipment/plant scopes immediately.
     op.execute("INSERT INTO public.us_lacey_ppq_shipments (organization_id, operation_id) SELECT organization_id, id FROM public.us_lacey_operations ON CONFLICT DO NOTHING")
+    op.add_column("reconciliation_issues", sa.Column("us_lacey_operation_field_id", sa.Integer(), nullable=True))
+    op.create_index("ix_reconciliation_issues_us_lacey_field", "reconciliation_issues", ["organization_id", "us_lacey_operation_field_id"])
 
     for table in NEW_TABLES:
         _secure(table)
@@ -148,6 +205,7 @@ def downgrade() -> None:
     op.drop_index("ix_us_lacey_field_candidates_org_field", table_name="us_lacey_field_candidates")
     op.drop_table("us_lacey_field_candidates")
     op.drop_constraint("ck_us_lacey_fields_validation_status", "us_lacey_operation_fields", type_="check")
+    op.drop_constraint("ck_us_lacey_fields_scope_line", "us_lacey_operation_fields", type_="check")
     op.drop_constraint("ck_us_lacey_fields_scope", "us_lacey_operation_fields", type_="check")
     op.drop_constraint("fk_us_lacey_operation_fields_plant_line_tenant", "us_lacey_operation_fields", type_="foreignkey")
     op.drop_column("us_lacey_operation_fields", "not_required_reason_code")
@@ -156,6 +214,10 @@ def downgrade() -> None:
     op.drop_column("us_lacey_operation_fields", "plant_line_id")
     op.drop_column("us_lacey_operation_fields", "field_scope")
     op.drop_index("ix_us_lacey_ppq_plant_lines_org_operation", table_name="us_lacey_ppq_plant_lines")
+    op.drop_index("ix_us_lacey_plant_declarations_org_line", table_name="us_lacey_plant_declarations")
+    op.drop_table("us_lacey_plant_declarations")
     op.drop_table("us_lacey_ppq_plant_lines")
     op.drop_index("ix_us_lacey_ppq_shipments_org_operation", table_name="us_lacey_ppq_shipments")
     op.drop_table("us_lacey_ppq_shipments")
+    op.drop_index("ix_reconciliation_issues_us_lacey_field", table_name="reconciliation_issues")
+    op.drop_column("reconciliation_issues", "us_lacey_operation_field_id")

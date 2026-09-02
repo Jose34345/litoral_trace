@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -184,7 +185,6 @@ class UsLaceyPpqShipment(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     organization_id: Mapped[int] = mapped_column(Integer, nullable=False)
     operation_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    estimated_arrival_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -228,6 +228,40 @@ class UsLaceyPpqPlantLine(Base):
         UniqueConstraint("organization_id", "operation_id", "ordinal", name="uq_us_lacey_ppq_plant_lines_ordinal"),
         CheckConstraint("ordinal > 0", name="ck_us_lacey_ppq_plant_lines_ordinal"),
         Index("ix_us_lacey_ppq_plant_lines_org_operation", "organization_id", "operation_id"),
+    )
+
+
+class UsLaceyPlantDeclaration(Base):
+    """One explicit species/country/quantity PPQ declaration under a plant line."""
+
+    __tablename__ = "us_lacey_plant_declarations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    plant_line_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    genus: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    species: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    country_of_harvest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    quantity: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    original_values: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_assurance_document_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_locator: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extractor: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    extractor_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(["plant_line_id", "organization_id"], ["us_lacey_ppq_plant_lines.id", "us_lacey_ppq_plant_lines.organization_id"], name="fk_us_lacey_plant_declarations_line_tenant", ondelete="CASCADE"),
+        ForeignKeyConstraint(["source_assurance_document_id", "organization_id"], ["assurance_documents.id", "assurance_documents.organization_id"], name="fk_us_lacey_plant_declarations_document_tenant", ondelete="RESTRICT"),
+        UniqueConstraint("id", "organization_id", name="uq_us_lacey_plant_declarations_id_org"),
+        UniqueConstraint("organization_id", "plant_line_id", "ordinal", name="uq_us_lacey_plant_declarations_ordinal"),
+        CheckConstraint("ordinal > 0", name="ck_us_lacey_plant_declarations_ordinal"),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_us_lacey_plant_declarations_confidence"),
+        Index("ix_us_lacey_plant_declarations_org_line", "organization_id", "plant_line_id"),
     )
 
 
