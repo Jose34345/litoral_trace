@@ -1,0 +1,46 @@
+name: U.S. Lacey UI Live Probe
+
+on:
+  push:
+    branches:
+      - probe/us-lacey-ui-live
+    paths:
+      - .github/workflows/us-lacey-ui-live-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  ui-live-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORIGIN: https://lacey.litoraltrace.com
+      EXPECTED_BUILD: 43c45110
+    steps:
+      - name: Wait for regenerated CSS on live custom domain
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 72); do
+            root_code="$(curl -sS -o /tmp/root.html -w '%{http_code}' --max-time 20 "$ORIGIN/?probe=$EXPECTED_BUILD" || true)"
+            css_code="$(curl -sS -o /tmp/app.css -w '%{http_code}' --max-time 20 "$ORIGIN/static/dist/app.css?probe=$EXPECTED_BUILD" || true)"
+            if [ "$root_code" = "200" ] && [ "$css_code" = "200" ] \
+              && grep -Fq 'Stop manually preparing Lacey spreadsheets.' /tmp/root.html \
+              && grep -Fq 'How it works' /tmp/root.html \
+              && grep -Fq 'Sample shipment' /tmp/root.html \
+              && grep -Fq 'Private Beta Terms' /tmp/root.html \
+              && grep -Fq '.gap-x-5{' /tmp/app.css \
+              && grep -Fq '.md\:order-none{' /tmp/app.css \
+              && grep -Fq '.md\:ml-auto{' /tmp/app.css \
+              && grep -Fq '.md\:w-auto{' /tmp/app.css \
+              && grep -Fq '.md\:border-0{' /tmp/app.css \
+              && grep -Fq '.md\:pt-0{' /tmp/app.css; then
+              echo "live_ui_css=PASS attempt=$attempt"
+              exit 0
+            fi
+            echo "attempt=$attempt root=${root_code:-network-error} css=${css_code:-network-error}; waiting for Render deploy/cache refresh"
+            sleep 5
+          done
+          echo 'Live custom domain did not serve the regenerated responsive CSS in time.'
+          exit 1
