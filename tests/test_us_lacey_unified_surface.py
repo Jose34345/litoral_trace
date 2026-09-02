@@ -48,11 +48,9 @@ def test_signed_in_root_keeps_original_portal_redirect(monkeypatch):
         "resolve_us_lacey_session",
         lambda token: SimpleNamespace(account_status="PILOT"),
     )
-    response = client.get(
-        "/",
-        cookies={US_LACEY_SESSION_COOKIE: "opaque-test-session"},
-        follow_redirects=False,
-    )
+    with TestClient(app) as signed_in_client:
+        signed_in_client.cookies.set(US_LACEY_SESSION_COOKIE, "opaque-test-session")
+        response = signed_in_client.get("/", follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"] == "/operations"
 
