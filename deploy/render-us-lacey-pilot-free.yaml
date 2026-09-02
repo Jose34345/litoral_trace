@@ -14,7 +14,7 @@ services:
     plan: free
     autoDeployTrigger: checksPass
     buildCommand: pip install --no-cache-dir -r requirements.txt
-    startCommand: uvicorn litoral_trace.web.us_lacey_free_app:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn litoral_trace.web.us_lacey_unified_app:app --host 0.0.0.0 --port $PORT
     # Infrastructure liveness only. /ready remains fail-closed until commercial,
     # legal and transactional-email settings are explicitly supplied.
     healthCheckPath: /health
@@ -30,8 +30,8 @@ services:
         value: src
       - key: US_LACEY_ENVIRONMENT
         value: production
-      # Free-beta public origin. Replace with app.lacey.litoraltrace.com when a
-      # custom-domain slot is available.
+      # Transitional Render origin. Replace with lacey.litoraltrace.com only
+      # after the custom domain has been moved to this unified service.
       - key: US_LACEY_APP_HOSTNAME
         value: litoral-trace-us-lacey-pilot-free.onrender.com
       - key: US_LACEY_SESSION_TTL_HOURS
