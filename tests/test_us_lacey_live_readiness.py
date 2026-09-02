@@ -77,10 +77,9 @@ def test_storage_roundtrip_fails_closed_when_cleanup_fails(monkeypatch):
     assert storage.delete_key == storage.put_key
 
 
-def test_live_runtime_status_requires_live_worker_and_storage():
-    worker = SimpleNamespace(is_alive=lambda: True)
+def test_live_runtime_status_requires_successful_worker_heartbeat_and_storage():
     assert live_readiness.live_runtime_status(
-        worker_thread=worker,
+        worker_ready=True,
         storage_roundtrip="ready",
     ) == {
         "status": "ready",
@@ -89,10 +88,9 @@ def test_live_runtime_status_requires_live_worker_and_storage():
     }
 
 
-def test_live_runtime_status_fails_closed():
-    worker = SimpleNamespace(is_alive=lambda: False)
+def test_live_runtime_status_fails_closed_without_worker_heartbeat():
     assert live_readiness.live_runtime_status(
-        worker_thread=worker,
+        worker_ready=False,
         storage_roundtrip="ready",
     ) == {
         "status": "not_ready",
