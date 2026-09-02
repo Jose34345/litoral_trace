@@ -1,0 +1,47 @@
+name: Rebuild U.S. Lacey CSS Once
+
+on:
+  push:
+    branches:
+      - fix/us-lacey-tailwind-drift
+    paths:
+      - .github/workflows/rebuild-us-lacey-css-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild-css:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/us-lacey-tailwind-drift
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Rebuild Tailwind CSS from current templates
+        run: npm run build:css
+
+      - name: Commit regenerated tracked CSS
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add src/litoral_trace/static/dist/app.css
+          if git diff --cached --quiet; then
+            echo "No CSS drift detected."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build(ui): regenerate Tailwind CSS"
+          git push origin HEAD:fix/us-lacey-tailwind-drift
