@@ -19,10 +19,14 @@ import threading
 import time
 from uuid import uuid4
 
-from fastapi import Request
+from fastapi import Request, Response, status
 from fastapi.responses import HTMLResponse
 
 from litoral_trace.us_lacey.jobs import recover_stale_us_lacey_jobs
+from litoral_trace.us_lacey.live_readiness import (
+    live_runtime_status,
+    probe_storage_roundtrip,
+)
 from litoral_trace.us_lacey.worker import process_one_us_lacey_job
 from litoral_trace.us_lacey.worker_db import get_us_lacey_worker_database_url
 from litoral_trace.web.us_lacey_pilot_app import app
@@ -159,6 +163,7 @@ _original_lifespan_context = app.router.lifespan_context
 async def _free_lifespan(application):
     async with _original_lifespan_context(application) as state:
         _start_inline_worker()
+        application.state.us_lacey_storage_roundtrip = probe_storage_roundtrip()
         try:
             yield state
         finally:
@@ -166,6 +171,20 @@ async def _free_lifespan(application):
 
 
 app.router.lifespan_context = _free_lifespan
+
+
+@app.get("/live-readiness")
+def us_lacey_live_readiness(response: Response) -> dict[str, str]:
+    result = live_runtime_status(
+        worker_thread=getattr(app.state, "us_lacey_inline_worker_thread", None),
+        storage_roundtrip=str(
+            getattr(app.state, "us_lacey_storage_roundtrip", "not_ready")
+        ),
+    )
+    if result["status"] != "ready":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return result
 
 
 def _legal_response(request: Request, title: str, version_env: str, sections: list[tuple[str, str]]) -> HTMLResponse:
