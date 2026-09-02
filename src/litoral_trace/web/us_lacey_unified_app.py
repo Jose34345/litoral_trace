@@ -11,7 +11,7 @@ landing -> sample -> signup -> verification -> login -> billing -> operations.
 """
 from __future__ import annotations
 
-from fastapi import Request
+from fastapi import Request, Response
 
 from litoral_trace.us_lacey.portal_auth import US_LACEY_SESSION_COOKIE
 from litoral_trace.web.lacey_gtm import render_lacey_landing, router as lacey_router
@@ -21,6 +21,19 @@ from litoral_trace.web.us_lacey_free_app import app
 # Public marketing/sample routes are additive and do not shadow the certified
 # portal endpoints (/signup, /login, /billing, /operations, /ready, ...).
 app.include_router(lacey_router)
+
+
+@app.head("/health", include_in_schema=False)
+def health_head() -> Response:
+    """Lightweight HEAD liveness probe for external uptime monitors.
+
+    The portal's canonical GET /health contract remains owned by the certified
+    portal app. UptimeRobot uses HEAD for HTTP monitors by default, so accepting
+    HEAD here prevents a healthy service from being reported as HTTP 405/DOWN.
+    """
+    response = Response(status_code=200)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 @app.middleware("http")
