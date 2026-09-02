@@ -30,10 +30,9 @@ services:
         value: src
       - key: US_LACEY_ENVIRONMENT
         value: production
-      # Transitional Render origin. Replace with lacey.litoraltrace.com only
-      # after the custom domain has been moved to this unified service.
+      # Canonical public origin after the custom-domain cutover.
       - key: US_LACEY_APP_HOSTNAME
-        value: litoral-trace-us-lacey-pilot-free.onrender.com
+        value: lacey.litoraltrace.com
       - key: US_LACEY_SESSION_TTL_HOURS
         value: "12"
       - key: US_LACEY_STORAGE_BUCKET
@@ -82,13 +81,13 @@ services:
         sync: false
       - key: US_LACEY_BETA_TERMS_VERSION
         sync: false
-      # Legal pages are served by the same free Render service during the beta.
+      # Legal pages live on the same canonical U.S. Lacey origin.
       - key: US_LACEY_TERMS_URL
-        value: https://litoral-trace-us-lacey-pilot-free.onrender.com/legal/terms
+        value: https://lacey.litoraltrace.com/legal/terms
       - key: US_LACEY_PRIVACY_URL
-        value: https://litoral-trace-us-lacey-pilot-free.onrender.com/legal/privacy
+        value: https://lacey.litoraltrace.com/legal/privacy
       - key: US_LACEY_BETA_TERMS_URL
-        value: https://litoral-trace-us-lacey-pilot-free.onrender.com/legal/private-beta
+        value: https://lacey.litoraltrace.com/legal/private-beta
       - key: US_LACEY_SUPPORT_EMAIL
         value: comercial@litoraltrace.com
 
