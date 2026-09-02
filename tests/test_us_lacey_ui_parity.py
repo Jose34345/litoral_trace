@@ -20,25 +20,38 @@ def test_us_lacey_views_delegate_html_to_shared_jinja_templates() -> None:
         assert "background:#" not in source
 
 
-def test_us_lacey_templates_use_shared_design_system_with_an_isolated_english_shell() -> None:
-    base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
-    assert '{% extends "base.html" %}' in base
-    assert '{% extends "public/base_public.html" %}' not in base
-    assert '{% from "components/ui.html" import' in base
-    assert 'lang="en"' in base
-    assert "U.S. Lacey Act workspace" in base
-    assert "PPQ 505 preparation" in base
-    assert "Trazabilidad de origen" not in base
-    assert "Debida diligencia" not in base
+def test_us_lacey_templates_use_shared_design_system_with_isolated_english_shells() -> None:
+    private_base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
+    assert '{% extends "base.html" %}' in private_base
+    assert '{% extends "public/base_public.html" %}' not in private_base
+    assert '{% from "components/ui.html" import' in private_base
+    assert 'lang="en"' in private_base
+    assert "U.S. Lacey Act workspace" in private_base
+    assert "PPQ 505 preparation" in private_base
+    assert "Trazabilidad de origen" not in private_base
+    assert "Debida diligencia" not in private_base
+
+    marketing_base = (TEMPLATES / "marketing_base.html").read_text(encoding="utf-8")
+    assert '{% extends "base.html" %}' in marketing_base
+    assert '{% extends "public/base_public.html" %}' not in marketing_base
+    assert 'lang="en-US"' in marketing_base
+    assert "U.S. Lacey Act document preparation" in marketing_base
+    assert "U.S. Lacey Act workspace" in marketing_base
+    assert 'href="/signup"' in marketing_base
+    assert 'href="/login"' in marketing_base
+    assert "Trazabilidad de origen" not in marketing_base
+    assert "Debida diligencia" not in marketing_base
 
     for path in TEMPLATES.glob("*.html"):
-        if path.name != "base.html":
+        if path.name not in {"base.html", "marketing_base.html"}:
             assert '{% extends "us_lacey/base.html" %}' in path.read_text(encoding="utf-8")
 
-    # Public marketing/demo pages remain on the canonical public shell; only the
-    # private U.S. customer portal is isolated from its regional navigation copy.
+    # Public Lacey marketing/demo pages use the dedicated U.S. shell rather than
+    # inheriting the Argentina/regional public navigation.
     for path in PUBLIC_LACEY_TEMPLATES:
-        assert '{% extends "public/base_public.html" %}' in path.read_text(encoding="utf-8")
+        source = path.read_text(encoding="utf-8")
+        assert '{% extends "us_lacey/marketing_base.html" %}' in source
+        assert '{% extends "public/base_public.html" %}' not in source
 
 
 def test_us_lacey_operation_date_keeps_native_iso_control_with_us_guidance() -> None:
