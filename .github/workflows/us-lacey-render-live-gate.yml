@@ -3,9 +3,17 @@ name: US Lacey Render Live Gate
 on:
   push:
     branches:
-      - wip/us-lacey-live-readiness
+      - feature/us-lacey-pilot-platform
     paths:
       - .github/workflows/us-lacey-render-live-gate.yml
+      - deploy/render-us-lacey-pilot-free.yaml
+      - requirements.txt
+      - alembic/versions/*us_lacey*.py
+      - src/litoral_trace/db/models/us_lacey*.py
+      - src/litoral_trace/db/models/reconciliation_issue.py
+      - src/litoral_trace/templates/us_lacey/**
+      - src/litoral_trace/us_lacey/**
+      - src/litoral_trace/web/us_lacey_*.py
   workflow_dispatch:
 
 permissions:
@@ -14,7 +22,7 @@ permissions:
 jobs:
   render-live-gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     env:
       ORIGIN: https://litoral-trace-us-lacey-pilot-free.onrender.com
     steps:
@@ -38,6 +46,163 @@ jobs:
           assert body.get('status') == 'healthy', body
           assert body.get('service') == 'us-lacey-pilot', body
           print('render_health=PASS')
+          PY
+
+      - name: Wait for unified landing deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 72); do
+            code="$(curl -sS -D /tmp/root.headers -o /tmp/root.html -w '%{http_code}' --max-time 20 "$ORIGIN/" || true)"
+            if [ "$code" = "200" ] \
+              && grep -Fq 'U.S. Lacey Act document preparation' /tmp/root.html \
+              && grep -Fq 'Stop manually preparing Lacey spreadsheets.' /tmp/root.html \
+              && grep -Fq 'href="/signup"' /tmp/root.html \
+              && grep -Fq 'href="/login"' /tmp/root.html \
+              && grep -Fq 'href="/demo"' /tmp/root.html; then
+              break
+            fi
+            echo "unified landing attempt $attempt not deployed yet (HTTP ${code:-network-error}); waiting"
+            sleep 5
+          done
+
+          test "${code:-}" = "200"
+          grep -Fq 'U.S. Lacey Act document preparation' /tmp/root.html
+          grep -Fq 'Stop manually preparing Lacey spreadsheets.' /tmp/root.html
+          grep -Fq 'USD 199 private beta' /tmp/root.html
+          grep -Fq 'Up to 25 operations' /tmp/root.html
+          grep -Fq 'Human review required' /tmp/root.html
+          grep -Fq 'href="/signup"' /tmp/root.html
+          grep -Fq 'href="/login"' /tmp/root.html
+          grep -Fq 'href="/demo"' /tmp/root.html
+
+          grep -Eiq '^cache-control: .*no-store' /tmp/root.headers
+          grep -Eiq '^x-content-type-options: *nosniff' /tmp/root.headers
+          grep -Eiq '^x-frame-options: *DENY' /tmp/root.headers
+          grep -Eiq '^referrer-policy: *same-origin' /tmp/root.headers
+
+          banned=(
+            'Trazabilidad de origen'
+            'Debida diligencia'
+            'Contexto regional'
+            'Auditabilidad'
+            'Acceso de clientes'
+            'Solicitar demostración'
+            'Argentina · Cadenas forestales · Comercio exterior'
+          )
+          for phrase in "${banned[@]}"; do
+            if grep -Fq "$phrase" /tmp/root.html; then
+              echo "Forbidden regional/Spanish landing copy found: $phrase"
+              exit 1
+            fi
+          done
+          echo 'render_unified_landing=PASS'
+
+      - name: Verify canonical and legacy marketing routes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for path in /demo /lacey/demo; do
+            code="$(curl -sS -o /tmp/demo.html -w '%{http_code}' --max-time 20 "$ORIGIN$path")"
+            test "$code" = "200"
+            grep -Fq 'Illustrative sample' /tmp/demo.html
+            grep -Fq 'href="/signup"' /tmp/demo.html
+            echo "marketing_route_${path//\//_}=PASS"
+          done
+
+          code="$(curl -sS -o /tmp/legacy.html -w '%{http_code}' --max-time 20 "$ORIGIN/lacey")"
+          test "$code" = "200"
+          grep -Fq 'Create account' /tmp/legacy.html
+          echo 'marketing_route_legacy_landing=PASS'
+
+          for path in /event /lacey/event; do
+            code="$(curl -sS -o /tmp/event.out -w '%{http_code}' --max-time 20 -X POST -H 'Content-Type: application/x-www-form-urlencoded' --data 'event=lacey_visit' "$ORIGIN$path")"
+            test "$code" = "204"
+            echo "marketing_route_${path//\//_}=PASS"
+          done
+
+      - name: Verify deployed English-only U.S. portal shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            code="$(curl -sS -o /tmp/login.html -w '%{http_code}' --max-time 20 "$ORIGIN/login" || true)"
+            if [ "$code" = "200" ] \
+              && grep -Fq 'U.S. Lacey Act workspace' /tmp/login.html \
+              && grep -Fq 'lang="en"' /tmp/login.html; then
+              break
+            fi
+            echo "English-shell attempt $attempt not deployed yet (HTTP ${code:-network-error}); waiting"
+            sleep 5
+          done
+          test "${code:-}" = "200"
+          grep -Fq 'U.S. Lacey Act workspace' /tmp/login.html
+          grep -Fq 'Litoral Trace · U.S. Lacey Private Beta' /tmp/login.html
+          grep -Fq 'lang="en"' /tmp/login.html
+          grep -Fq 'Skip to main content' /tmp/login.html
+
+          banned=(
+            'Trazabilidad de origen'
+            'Plataforma'
+            'Debida diligencia'
+            'Contexto regional'
+            'Auditabilidad'
+            'Acceso de clientes'
+            'Solicitar demostración'
+            'Solicitar demo'
+            'Ir al contenido principal'
+            'Navegación pública'
+            'Argentina · Cadenas forestales · Comercio exterior'
+          )
+
+          for path in /login /signup /legal/terms /legal/privacy /legal/private-beta; do
+            code="$(curl -sS -o /tmp/portal.html -w '%{http_code}' --max-time 20 "$ORIGIN$path")"
+            test "$code" = "200"
+            grep -Fq 'U.S. Lacey Act workspace' /tmp/portal.html
+            grep -Fq 'lang="en"' /tmp/portal.html
+            for phrase in "${banned[@]}"; do
+              if grep -Fq "$phrase" /tmp/portal.html; then
+                echo "Forbidden regional/Spanish portal copy found at $path: $phrase"
+                exit 1
+              fi
+            done
+            echo "english_shell_${path##*/}=PASS"
+          done
+
+      - name: Verify unauthenticated workspace guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -D /tmp/operations.headers -o /tmp/operations.body -w '%{http_code}' --max-time 20 "$ORIGIN/operations")"
+          test "$code" = "303"
+          grep -Eiq '^location: */login' /tmp/operations.headers
+          echo 'render_operations_auth_guard=PASS'
+
+      - name: Verify deployed worker and storage roundtrip
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 48); do
+            code="$(curl -sS -o /tmp/live.json -w '%{http_code}' --max-time 20 "$ORIGIN/live-readiness" || true)"
+            if [ "$code" = "200" ]; then
+              break
+            fi
+            echo "live-readiness attempt $attempt returned HTTP ${code:-network-error}; waiting for Render deployment/runtime readiness"
+            sleep 5
+          done
+          test "${code:-}" = "200"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          body = json.loads(Path('/tmp/live.json').read_text())
+          assert body == {
+              'status': 'ready',
+              'inline_worker': 'ready',
+              'storage_roundtrip': 'ready',
+          }, body
+          print('render_inline_worker=PASS')
+          print('render_storage_roundtrip=PASS')
           PY
 
       - name: Verify readiness contract
