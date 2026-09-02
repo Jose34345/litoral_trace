@@ -37,6 +37,9 @@ _LACEY_GTM_EVENTS = Counter(
 def _no_store(response: HTMLResponse) -> HTMLResponse:
     response.headers["Cache-Control"] = "no-store, max-age=0"
     response.headers["Pragma"] = "no-cache"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "same-origin"
     return response
 
 
