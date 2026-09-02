@@ -81,8 +81,8 @@ def test_us_storage_adapter_uses_only_us_namespace():
     assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in settings.allowed_content_types
 
 
-def test_review_schema_has_stable_25_fields():
-    assert len(US_LACEY_REVIEW_FIELDS) == 25
+def test_review_schema_has_ppq505_fields():
+    assert len(US_LACEY_REVIEW_FIELDS) == 19
     keys = {key for key, _label in US_LACEY_REVIEW_FIELDS}
     assert {
         "importer_name",
@@ -93,7 +93,7 @@ def test_review_schema_has_stable_25_fields():
         "country_of_harvest",
         "plant_quantity",
         "metric_unit",
-        "supporting_reference",
+        "estimated_arrival_date",
     }.issubset(keys)
 
 

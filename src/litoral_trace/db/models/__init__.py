@@ -29,10 +29,14 @@ from litoral_trace.db.models.shipment_phytosanitary_case import ShipmentPhytosan
 from litoral_trace.db.models.eudr_dds_candidate import EudrDdsCandidate
 from litoral_trace.db.models.eudr_acceptance_attempt import EudrAcceptanceAttempt
 from litoral_trace.db.models.us_lacey import (
+    UsLaceyFieldCandidate,
     UsLaceyOperation,
     UsLaceyOperationDocument,
     UsLaceyOperationField,
     UsLaceyOrganizationProfile,
+    UsLaceyPpqPlantLine,
+    UsLaceyPpqShipment,
+    UsLaceyPlantDeclaration,
 )
 from litoral_trace.db.models.us_lacey_commercial import (
     UsLaceyPayment,
@@ -87,9 +91,13 @@ __all__ = [
     "EudrDdsCandidate",
     "EudrAcceptanceAttempt",
     "UsLaceyOrganizationProfile",
+    "UsLaceyFieldCandidate",
     "UsLaceyOperation",
     "UsLaceyOperationDocument",
     "UsLaceyOperationField",
+    "UsLaceyPpqPlantLine",
+    "UsLaceyPpqShipment",
+    "UsLaceyPlantDeclaration",
     "UsLaceySubscription",
     "UsLaceyPayment",
     "UsLaceyTermsAcceptance",

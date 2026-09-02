@@ -150,7 +150,7 @@ def test_company_a_cannot_update_company_b_operation(fixture):
         assert result.rowcount == 0
 
 
-def test_new_two_line_operation_starts_with_50_missing_fields_and_no_guesses(fixture):
+def test_new_two_line_operation_starts_with_ppq_missing_fields_and_no_guesses(fixture):
     SessionFactory = sessionmaker(
         bind=fixture["runtime"],
         autoflush=False,
@@ -165,7 +165,7 @@ def test_new_two_line_operation_starts_with_50_missing_fields_and_no_guesses(fix
     )
 
     assert snapshot.merchandise_line_count == 2
-    assert snapshot.missing_field_count == 50
+    assert snapshot.missing_field_count == 26
     assert snapshot.review_field_count == 0
 
     with fixture["runtime"].begin() as conn:
@@ -185,7 +185,112 @@ def test_new_two_line_operation_starts_with_50_missing_fields_and_no_guesses(fix
             """),
             {"org": fixture["org_a"], "public_id": snapshot.public_id},
         ).mappings().one()
-    assert row["total_fields"] == 50
-    assert row["missing_fields"] == 50
+    assert row["total_fields"] == 28
+    assert row["missing_fields"] == 26
     assert row["guessed_values"] == 0
     assert float(row["max_confidence"]) == 0.0
+
+
+def test_plant_line_supports_ordered_multi_declarations_without_overwriting(fixture):
+    SessionFactory = sessionmaker(
+        bind=fixture["runtime"],
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    service = UsLaceyOperationService(session_factory=SessionFactory)
+    snapshot = service.create_operation(
+        organization_id=fixture["org_a"],
+        created_by_user_id=None,
+        client_reference=f"MULTI-DECLARATION-{fixture['suffix']}",
+        line_references=("1",),
+    )
+
+    initial = service.get_detail(
+        organization_id=fixture["org_a"], operation_public_id=snapshot.public_id
+    )
+    assert [(item.line_reference, item.ordinal, item.species) for item in initial.plant_declarations] == [
+        ("1", 1, None)
+    ]
+    assert initial.plant_declarations[0].country_of_harvest is None
+    optional_fields = {
+        field.field_name: field for field in initial.fields if field.scope == "SHIPMENT"
+    }
+    assert optional_fields["container_number"].status == "MATCHED"
+    assert optional_fields["container_number"].effective_value is None
+    assert optional_fields["bill_of_lading"].status == "MATCHED"
+
+    second = service.upsert_plant_declaration(
+        organization_id=fixture["org_a"],
+        operation_public_id=snapshot.public_id,
+        line_reference="1",
+        genus="Quercus",
+        species="Quercus rubra",
+        country_of_harvest="Canada",
+        quantity="12",
+        unit="kg",
+        original_values={"species": "Quercus rubra", "country_of_harvest": "Canada"},
+        source_locator="sheet:Plants;data_row:2",
+        extractor="test-evidence",
+        extractor_version="1",
+        confidence=0.91,
+    )
+    assert second.ordinal == 2
+    service.upsert_plant_declaration(
+        organization_id=fixture["org_a"],
+        operation_public_id=snapshot.public_id,
+        line_reference="1",
+        ordinal=1,
+        genus="Quercus",
+        species="Quercus alba",
+        country_of_harvest="United States",
+        quantity="10",
+        unit="kg",
+        original_values={"species": "Quercus alba", "country_of_harvest": "United States"},
+        source_locator="sheet:Plants;data_row:1",
+        extractor="test-evidence",
+        extractor_version="1",
+        confidence=0.92,
+    )
+    service.upsert_plant_declaration(
+        organization_id=fixture["org_a"],
+        operation_public_id=snapshot.public_id,
+        line_reference="1",
+        ordinal=2,
+        species="Quercus rubra updated",
+        country_of_harvest="Mexico",
+    )
+    with fixture["runtime"].begin() as conn:
+        _tenant(conn, fixture["org_a"])
+        conn.execute(
+            text("""
+                UPDATE us_lacey_operation_fields
+                SET human_value = 'Human-reviewed species',
+                    field_status = 'MATCHED',
+                    validation_status = 'VALID'
+                WHERE organization_id = :org
+                  AND operation_id = (
+                      SELECT id FROM us_lacey_operations
+                      WHERE organization_id = :org AND public_id = :public_id
+                  )
+                  AND field_name = 'species'
+            """),
+            {"org": fixture["org_a"], "public_id": snapshot.public_id},
+        )
+
+    detail = service.get_detail(
+        organization_id=fixture["org_a"], operation_public_id=snapshot.public_id
+    )
+    declarations = [item for item in detail.plant_declarations if item.line_reference == "1"]
+    assert [(item.ordinal, item.species, item.country_of_harvest) for item in declarations] == [
+        (1, "Quercus alba", "United States"),
+        (2, "Quercus rubra updated", "Mexico"),
+    ]
+    assert declarations[1].quantity == "12"
+    assert declarations[1].unit == "kg"
+    assert declarations[1].original_values == {
+        "species": "Quercus rubra", "country_of_harvest": "Canada"
+    }
+    assert declarations[1].source_locator == "sheet:Plants;data_row:2"
+    assert declarations[1].confidence == 0.91
+    reviewed_species = next(field for field in detail.fields if field.field_name == "species")
+    assert reviewed_species.effective_value == "Human-reviewed species"

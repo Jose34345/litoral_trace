@@ -19,12 +19,19 @@ from litoral_trace.db.models import (
     DocumentExtractionRun,
     ExtractedDocumentField,
     ReconciliationIssue,
+    UsLaceyFieldCandidate,
     UsLaceyOperation,
     UsLaceyOperationField,
     UsLaceyProcessingJob,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
+from litoral_trace.us_lacey.ppq505 import (
+    PPQ505_FIELDS_BY_KEY,
+    PPQ505_SHIPMENT_REFERENCE,
+    PpqScope,
+    validate_ppq_value,
+)
 
 
 class UsLaceyProjectionError(RuntimeError):
@@ -47,6 +54,9 @@ _SAFE_GENERIC_MAP = {
 }
 
 _EXPLICIT_HEADER_ALIASES = {
+    "estimated date of arrival": "estimated_arrival_date",
+    "estimated arrival date": "estimated_arrival_date",
+    "eta": "estimated_arrival_date",
     "filing entry reference": "filing_entry_reference",
     "entry reference": "filing_entry_reference",
     "entry type": "entry_type",
@@ -69,9 +79,7 @@ _EXPLICIT_HEADER_ALIASES = {
     "container number": "container_number",
     "manufacturer id": "manufacturer_id",
     "manufacturer identification": "manufacturer_id",
-    "shipment description": "shipment_description",
-    "source line id": "source_line_id",
-    "line id": "source_line_id",
+    "shipment description": "merchandise_description",
     "hts": "hts_code",
     "hts code": "hts_code",
     "hts number": "hts_code",
@@ -90,8 +98,6 @@ _EXPLICIT_HEADER_ALIASES = {
     "plant unit": "metric_unit",
     "percent recycled": "percent_recycled",
     "recycled percentage": "percent_recycled",
-    "supporting reference": "supporting_reference",
-    "shipment reference": "supporting_reference",
 }
 
 _RAW_TABLE_FIELD = re.compile(r"^raw\.table\.\d+\.(?P<header>.+)$")
@@ -117,16 +123,19 @@ def _target_field(row: ExtractedDocumentField) -> tuple[str | None, int]:
 
 
 def _line_reference(
-    *, source_locator: str | None, line_references: tuple[str, ...]
+    *, target: str, source_locator: str | None, line_references: tuple[str, ...]
 ) -> str:
+    contract = PPQ505_FIELDS_BY_KEY[target]
+    if contract.scope is PpqScope.SHIPMENT:
+        return PPQ505_SHIPMENT_REFERENCE
     if not line_references:
-        return "1"
+        return ""
     match = _DATA_ROW.search(str(source_locator or ""))
     if match:
         row_number = int(match.group("row"))
         if 1 <= row_number <= len(line_references):
             return line_references[row_number - 1]
-    return line_references[0]
+    return line_references[0] if len(line_references) == 1 else ""
 
 
 def _fingerprint(*parts: object) -> str:
@@ -180,6 +189,7 @@ def _upsert_conflict(
                 severity="BLOCKING",
                 status="OPEN",
                 field_name=field.field_name,
+                us_lacey_operation_field_id=field.id,
                 left_document_id=left_document_id,
                 right_document_id=new_document_id,
                 left_source=(
@@ -203,6 +213,7 @@ def _upsert_conflict(
         existing.left_value = left_value
         existing.right_value = new_value
         existing.evidence_json = evidence
+        existing.us_lacey_operation_field_id = field.id
         existing.resolution_justification = None
         existing.resolved_at = None
 
@@ -296,9 +307,11 @@ def project_assurance_document_to_us_lacey(
                 UsLaceyOperationField.operation_id == operation.id,
             )
         ).all()
-        line_references = tuple(
-            dict.fromkeys(row.merchandise_line_reference for row in operation_fields)
-        )
+        line_references = tuple(dict.fromkeys(
+            row.merchandise_line_reference
+            for row in operation_fields
+            if row.field_scope == "PLANT_LINE"
+        ))
         indexed = {
             (row.merchandise_line_reference, row.field_name): row
             for row in operation_fields
@@ -313,38 +326,92 @@ def project_assurance_document_to_us_lacey(
             .order_by(ExtractedDocumentField.id.asc())
         ).all()
 
-        candidates: dict[tuple[str, str], tuple[int, ExtractedDocumentField]] = {}
+        candidates: dict[tuple[str, str], list[tuple[int, ExtractedDocumentField]]] = {}
         for row in extracted:
             target, priority = _target_field(row)
             value = row.normalized_value or row.original_value
             if target is None or value is None or not str(value).strip():
                 continue
             line = _line_reference(
+                target=target,
                 source_locator=row.source_locator,
                 line_references=line_references,
             )
+            if not line:
+                # Evidence cannot be assigned to a declaration line safely.
+                continue
             key = (line, target)
-            previous = candidates.get(key)
-            score = (priority, float(row.confidence), -int(row.id))
-            if previous is None:
-                candidates[key] = (priority, row)
-            else:
-                previous_priority, previous_row = previous
-                previous_score = (
-                    previous_priority,
-                    float(previous_row.confidence),
-                    -int(previous_row.id),
-                )
-                if score > previous_score:
-                    candidates[key] = (priority, row)
+            candidates.setdefault(key, []).append((priority, row))
 
         projected = matched = review = conflicts = 0
         species_for_genus: list[tuple[str, ExtractedDocumentField]] = []
-        for (line, target), (_priority, source) in candidates.items():
+        for (line, target), sources in candidates.items():
             field = indexed.get((line, target))
             if field is None:
                 continue
-            new_value = str(source.normalized_value or source.original_value).strip()
+            distinct: dict[str, ExtractedDocumentField] = {}
+            for _priority, source in sources:
+                raw = str(source.original_value or source.normalized_value or "").strip()
+                validation = validate_ppq_value(target, raw)
+                fingerprint = _fingerprint(
+                    "US_LACEY_FIELD_CANDIDATE", operation.public_id, field.id,
+                    document.id, source.id, raw, source.source_locator,
+                )
+                candidate = session.scalar(
+                    select(UsLaceyFieldCandidate).where(
+                        UsLaceyFieldCandidate.organization_id == org_id,
+                        UsLaceyFieldCandidate.fingerprint == fingerprint,
+                    )
+                )
+                if candidate is None:
+                    session.add(UsLaceyFieldCandidate(
+                        organization_id=org_id,
+                        operation_id=operation.id,
+                        operation_field_id=field.id,
+                        source_assurance_document_id=document.id,
+                        original_value=raw,
+                        normalized_value=validation.normalized_value,
+                        validation_status=validation.status.value,
+                        validation_error=validation.error,
+                        confidence=float(source.confidence),
+                        source_page=source.source_page,
+                        source_locator=source.source_locator,
+                        extractor=latest_run.engine,
+                        extractor_version=latest_run.engine_version,
+                        fingerprint=fingerprint,
+                    ))
+                candidate_value = validation.normalized_value or raw
+                distinct.setdefault(candidate_value, source)
+
+            if len(distinct) > 1:
+                alternatives = list(distinct.items())
+                left_value, left_source = alternatives[0]
+                field.original_value = str(left_source.original_value or left_value)
+                field.normalized_value = None
+                field.field_status = "REVIEW"
+                field.validation_status = "REVIEW_REQUIRED"
+                field.validation_error = "Multiple supported source candidates require a human decision."
+                for new_value, new_source in alternatives[1:]:
+                    _upsert_conflict(
+                        session,
+                        organization_id=org_id,
+                        operation=operation,
+                        field=field,
+                        new_document_id=document.id,
+                        new_value=new_value,
+                        new_locator=new_source.source_locator,
+                        new_confidence=float(new_source.confidence),
+                    )
+                    conflicts += 1
+                review += 1
+                continue
+
+            if not distinct:
+                continue
+            source = next(iter(distinct.values()))
+            raw_value = str(source.original_value or source.normalized_value).strip()
+            validation = validate_ppq_value(target, raw_value)
+            new_value = validation.normalized_value or raw_value
             existing_value = field.human_value or field.normalized_value or field.original_value
             if existing_value and str(existing_value).strip() != new_value:
                 _upsert_conflict(
@@ -362,15 +429,20 @@ def project_assurance_document_to_us_lacey(
                 review += 1
                 continue
 
-            field.original_value = source.original_value
+            field.original_value = raw_value
             field.normalized_value = new_value
+            field.validation_status = validation.status.value
+            field.validation_error = validation.error
             field.confidence = float(source.confidence)
             field.source_assurance_document_id = document.id
             field.source_page = source.source_page
             field.source_locator = source.source_locator
             field.extractor = latest_run.engine
             field.extractor_version = latest_run.engine_version
-            if existing_value:
+            if validation.status.value in {"INVALID", "REVIEW_REQUIRED"}:
+                field.field_status = "REVIEW"
+                review += 1
+            elif existing_value:
                 field.field_status = "MATCHED"
                 matched += 1
             elif float(source.confidence) >= 0.90 and not bool(source.needs_review):

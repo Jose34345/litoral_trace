@@ -195,6 +195,18 @@ def _csv_bytes() -> bytes:
     ).encode("utf-8")
 
 
+_REQUIRED_REVIEW_VALUES = {
+    "estimated_arrival_date": "2026-09-15",
+    "filing_entry_reference": "123-4567890-1",
+    "manufacturer_id": "USWOOD12345",
+    "importer_address": "100 Test Ave, Miami FL 33101",
+    "consignee_address": "200 Test Blvd, Savannah GA 31401",
+    "entered_value": "12500",
+    "article_component": "Pine boards",
+    "percent_recycled": "0",
+}
+
+
 def test_active_customer_operations_upload_review_complete_exports_and_history(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -339,7 +351,9 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
         assert exceptions
 
         # Every human decision is submitted through the actual browser route and
-        # the CSRF token rendered for that exact operation+field form.
+        # the CSRF token rendered for that exact operation+field form. Missing
+        # PPQ fields receive explicit values that satisfy their field contract;
+        # the test must never bypass production validation with generic strings.
         for field in exceptions:
             review_action = f"{operation_path}/review/{field.id}"
             field_csrf = _csrf_for(review_page.text, review_action)
@@ -350,10 +364,13 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
                     "value": "",
                 }
             else:
+                assert field.field_name in _REQUIRED_REVIEW_VALUES, (
+                    f"Unexpected missing PPQ field without an explicit E2E value: {field.field_name}"
+                )
                 payload = {
                     "csrf_token": field_csrf,
                     "action": "edit",
-                    "value": f"E2E reviewed {field.field_name}",
+                    "value": _REQUIRED_REVIEW_VALUES[field.field_name],
                 }
             reviewed = client.post(review_action, data=payload)
             assert reviewed.status_code == 303

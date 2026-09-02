@@ -271,12 +271,12 @@ def test_worker_processes_csv_and_xlsx_with_real_postgres_and_simulated_storage(
         organization_id=registered.organization_id,
         operation_public_id=csv_operation.public_id,
         expected={
-            "hts_code": "4407.11",
+            "hts_code": "440711",
             "merchandise_description": "Pine boards",
             "species": "Pinus taeda",
             "country_of_harvest": "Brazil",
             "plant_quantity": "1000",
-            "metric_unit": "KG",
+            "metric_unit": "kg",
             "container_number": "MSCU1234567",
         },
     )
@@ -313,13 +313,13 @@ def test_worker_processes_csv_and_xlsx_with_real_postgres_and_simulated_storage(
         organization_id=registered.organization_id,
         operation_public_id=xlsx_operation.public_id,
         expected={
-            "hts_code": "4412.31",
+            "hts_code": "441231",
             "merchandise_description": "Plywood panels",
             "genus": "Eucalyptus",
             "species": "Eucalyptus grandis",
             "country_of_harvest": "Uruguay",
             "plant_quantity": "250",
-            "metric_unit": "M3",
+            "metric_unit": "m3",
             "bill_of_lading": "BOL-TEST-9001",
         },
     )

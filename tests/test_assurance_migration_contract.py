@@ -108,7 +108,7 @@ def test_us_lacey_portal_auth_is_chained_after_status_fix():
 
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "039_us_lacey_pilot_fix (head)" in text
+    assert "040_us_lacey_ppq505 (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():
