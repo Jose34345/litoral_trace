@@ -96,11 +96,7 @@ jobs:
           if url.drivername in {"postgresql", "postgres", "postgresql+psycopg2"}:
               url = url.set(drivername="postgresql+psycopg")
 
-          engine = create_engine(
-              url,
-              pool_pre_ping=True,
-              hide_parameters=True,
-          )
+          engine = create_engine(url, pool_pre_ping=True, hide_parameters=True)
           with engine.connect() as conn:
               db = conn.execute(text("select current_database()" )).scalar_one()
               user = conn.execute(text("select current_user" )).scalar_one()
@@ -134,11 +130,7 @@ jobs:
           if url.drivername in {"postgresql", "postgres", "postgresql+psycopg2"}:
               url = url.set(drivername="postgresql+psycopg")
 
-          engine = create_engine(
-              url,
-              pool_pre_ping=True,
-              hide_parameters=True,
-          )
+          engine = create_engine(url, pool_pre_ping=True, hide_parameters=True)
           with engine.connect() as conn:
               version = conn.execute(text("select version_num from alembic_version" )).scalar_one()
               print(f"alembic_version_after={version}")
@@ -189,6 +181,51 @@ jobs:
                       if policy_counts.get(table) != 4:
                           raise SystemExit(f"Expected 4 tenant policies on {table}; got {policy_counts.get(table)}")
                   print("ppq_rls_force_policies=PASS")
+
+                  table_privs = ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
+                  for table in tables:
+                      qualified = f'public.{table}'
+                      for privilege in table_privs:
+                          runtime_has = conn.execute(
+                              text("select has_table_privilege('litoral_trace_app', :obj, :priv)"),
+                              {'obj': qualified, 'priv': privilege},
+                          ).scalar_one()
+                          worker_has = conn.execute(
+                              text("select has_table_privilege('litoral_trace_us_lacey_worker', :obj, :priv)"),
+                              {'obj': qualified, 'priv': privilege},
+                          ).scalar_one()
+                          public_has = conn.execute(
+                              text("select has_table_privilege('public', :obj, :priv)"),
+                              {'obj': qualified, 'priv': privilege},
+                          ).scalar_one()
+                          if not runtime_has:
+                              raise SystemExit(f"Runtime missing {privilege} on {table}")
+                          if worker_has:
+                              raise SystemExit(f"Worker unexpectedly has {privilege} on {table}")
+                          if public_has:
+                              raise SystemExit(f"PUBLIC unexpectedly has {privilege} on {table}")
+
+                      sequence = f'public.{table}_id_seq'
+                      for privilege in ('USAGE', 'SELECT'):
+                          runtime_has = conn.execute(
+                              text("select has_sequence_privilege('litoral_trace_app', :obj, :priv)"),
+                              {'obj': sequence, 'priv': privilege},
+                          ).scalar_one()
+                          worker_has = conn.execute(
+                              text("select has_sequence_privilege('litoral_trace_us_lacey_worker', :obj, :priv)"),
+                              {'obj': sequence, 'priv': privilege},
+                          ).scalar_one()
+                          public_has = conn.execute(
+                              text("select has_sequence_privilege('public', :obj, :priv)"),
+                              {'obj': sequence, 'priv': privilege},
+                          ).scalar_one()
+                          if not runtime_has:
+                              raise SystemExit(f"Runtime missing sequence {privilege} on {table}")
+                          if worker_has:
+                              raise SystemExit(f"Worker unexpectedly has sequence {privilege} on {table}")
+                          if public_has:
+                              raise SystemExit(f"PUBLIC unexpectedly has sequence {privilege} on {table}")
+                  print("ppq_effective_privileges=PASS")
               else:
                   print("ppq_040_checks=NOT_APPLICABLE_BEFORE_MIGRATION")
           engine.dispose()
