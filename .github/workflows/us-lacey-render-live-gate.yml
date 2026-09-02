@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
-      ORIGIN: https://litoral-trace-us-lacey-pilot-free.onrender.com
+      ORIGIN: https://lacey.litoraltrace.com
     steps:
       - name: Wake service and verify health
         shell: bash
@@ -219,7 +219,7 @@ jobs:
           assert body.get('status') == 'ready', body
           assert body.get('service') == 'us-lacey-pilot', body
           assert body.get('environment') == 'production', body
-          assert body.get('hostname') == 'litoral-trace-us-lacey-pilot-free.onrender.com', body
+          assert body.get('hostname') == 'lacey.litoraltrace.com', body
           print('render_ready=PASS')
           PY
           elif [ "$code" = "503" ]; then
