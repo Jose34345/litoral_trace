@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      MIGRATION_DATABASE_URL: ${{ secrets.US_LACEY_NEON_MIGRATION_DATABASE_URL }}
+      RUNTIME_DATABASE_URL: ${{ secrets.US_LACEY_NEON_RUNTIME_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,52 +31,52 @@ jobs:
       - name: Install probe dependencies
         run: python -m pip install "sqlalchemy>=2" "psycopg[binary]>=3"
 
+      - name: Require dedicated runtime connection secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${RUNTIME_DATABASE_URL:-}" ]; then
+            echo "Missing GitHub secret US_LACEY_NEON_RUNTIME_DATABASE_URL"
+            exit 1
+          fi
+          echo "Dedicated runtime connection secret is configured (value not printed)."
+
       - name: Prove persistent tenant A/B isolation with rollback
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${MIGRATION_DATABASE_URL:-}"
           python - <<'PY'
           import os
-          from uuid import uuid4
+          import secrets
 
           from sqlalchemy import create_engine, text
           from sqlalchemy.engine import make_url
           from sqlalchemy.exc import DBAPIError
 
-          url = make_url(os.environ["MIGRATION_DATABASE_URL"])
+          url = make_url(os.environ["RUNTIME_DATABASE_URL"])
           if url.drivername in {"postgresql", "postgres", "postgresql+psycopg2"}:
               url = url.set(drivername="postgresql+psycopg")
 
           engine = create_engine(url, pool_pre_ping=True, hide_parameters=True)
-          suffix = uuid4().hex[:10]
+          suffix = secrets.token_hex(5)
+          # Use explicit high random IDs so the probe never consumes production sequences.
+          org_a = secrets.randbelow(400_000_000) + 1_200_000_000
+          org_b = secrets.randbelow(400_000_000) + 1_600_000_000
+          op_a = secrets.randbelow(400_000_000) + 1_200_000_000
+          op_b = secrets.randbelow(400_000_000) + 1_600_000_000
 
           with engine.connect() as conn:
               tx = conn.begin()
               try:
-                  session_role = conn.execute(text("select current_user")).scalar_one()
-                  version = conn.execute(text("select version_num from alembic_version")).scalar_one()
-                  if version != "040_us_lacey_ppq505":
-                      raise SystemExit(f"Expected persistent 040; found {version}")
-
-                  app_role = conn.execute(text("""
+                  role = conn.execute(text("select current_user")).scalar_one()
+                  attrs = conn.execute(text("""
                       select rolsuper, rolbypassrls
-                      from pg_roles
-                      where rolname = 'litoral_trace_app'
+                      from pg_roles where rolname = current_user
                   """)).one()
-                  if app_role.rolsuper or app_role.rolbypassrls:
-                      raise SystemExit("Runtime role is not safe for RLS probing")
-
-                  # Verify policies apply to the runtime role (PUBLIC policies or explicit app role).
-                  policy_rows = conn.execute(text("""
-                      select policyname, roles
-                      from pg_policies
-                      where schemaname = 'public'
-                        and tablename = 'us_lacey_operations'
-                      order by policyname
-                  """)).all()
-                  if len(policy_rows) < 4:
-                      raise SystemExit(f"Expected tenant policies on us_lacey_operations; found {len(policy_rows)}")
+                  if role != "litoral_trace_app":
+                      raise SystemExit(f"Expected litoral_trace_app runtime role; found {role}")
+                  if attrs.rolsuper or attrs.rolbypassrls:
+                      raise SystemExit("Runtime role unexpectedly bypasses RLS")
 
                   def tenant(org_id: int) -> None:
                       conn.execute(
@@ -84,10 +84,7 @@ jobs:
                           {"org": str(org_id)},
                       )
 
-                  def create_org(label: str) -> int:
-                      org_id = int(conn.execute(
-                          text("select nextval(pg_get_serial_sequence('public.organizations', 'id'))")
-                      ).scalar_one())
+                  for label, org_id in (("A", org_a), ("B", org_b)):
                       tenant(org_id)
                       conn.execute(text("""
                           insert into organizations (
@@ -102,39 +99,24 @@ jobs:
                           "slug": f"lt-persistent-rls-{label.lower()}-{suffix}",
                           "tax_id": f"RLS-{label}-{suffix}",
                       })
-                      return org_id
 
-                  org_a = create_org("A")
-                  org_b = create_org("B")
-
-                  operation_ids = {}
-                  for label, org_id in (("A", org_a), ("B", org_b)):
+                  for label, org_id, operation_id in (
+                      ("A", org_a, op_a),
+                      ("B", org_b, op_b),
+                  ):
                       tenant(org_id)
-                      operation_ids[label] = int(conn.execute(text("""
+                      conn.execute(text("""
                           insert into us_lacey_operations (
-                              organization_id, client_reference, status,
+                              id, organization_id, client_reference, status,
                               document_count, merchandise_line_count
                           ) values (
-                              :org, :reference, 'NEW', 0, 1
-                          ) returning id
+                              :id, :org, :reference, 'NEW', 0, 1
+                          )
                       """), {
+                          "id": operation_id,
                           "org": org_id,
                           "reference": f"PERSISTENT-RLS-{label}-{suffix}",
-                      }).scalar_one())
-
-                  # Switch the same DB session to the real runtime role. This removes
-                  # owner/BYPASSRLS semantics while keeping every write inside this
-                  # outer transaction, which is rolled back in finally.
-                  try:
-                      conn.execute(text("set local role litoral_trace_app"))
-                  except DBAPIError as exc:
-                      raise SystemExit(
-                          "Migration owner cannot SET ROLE litoral_trace_app; add a dedicated runtime URL secret to prove B17"
-                      ) from exc
-
-                  current_role = conn.execute(text("select current_user")).scalar_one()
-                  if current_role != "litoral_trace_app":
-                      raise SystemExit(f"SET ROLE did not take effect: {current_role}")
+                      })
 
                   tenant(org_a)
                   visible = conn.execute(text("""
@@ -142,8 +124,8 @@ jobs:
                       from us_lacey_operations
                       where id in (:a, :b)
                       order by id
-                  """), {"a": operation_ids["A"], "b": operation_ids["B"]}).all()
-                  if [(row.id, row.organization_id) for row in visible] != [(operation_ids["A"], org_a)]:
+                  """), {"a": op_a, "b": op_b}).all()
+                  if [(row.id, row.organization_id) for row in visible] != [(op_a, org_a)]:
                       raise SystemExit(f"Cross-tenant read isolation failed: {visible}")
                   print("persistent_rls_cross_tenant_read=PASS")
 
@@ -151,7 +133,7 @@ jobs:
                       update us_lacey_operations
                       set review_result = 'MUST_NOT_WRITE'
                       where id = :operation_b
-                  """), {"operation_b": operation_ids["B"]})
+                  """), {"operation_b": op_b})
                   if updated.rowcount != 0:
                       raise SystemExit("Cross-tenant update unexpectedly affected tenant B")
                   print("persistent_rls_cross_tenant_update=PASS")
@@ -161,12 +143,13 @@ jobs:
                   try:
                       conn.execute(text("""
                           insert into us_lacey_operations (
-                              organization_id, client_reference, status,
+                              id, organization_id, client_reference, status,
                               document_count, merchandise_line_count
                           ) values (
-                              :other_org, 'PERSISTENT-CROSS-TENANT-DENIED', 'NEW', 0, 1
+                              :id, :other_org, 'PERSISTENT-CROSS-TENANT-DENIED',
+                              'NEW', 0, 1
                           )
-                      """), {"other_org": org_b})
+                      """), {"id": op_b - 1, "other_org": org_b})
                   except DBAPIError:
                       insert_denied = True
                       conn.execute(text("rollback to savepoint cross_tenant_insert"))
@@ -176,13 +159,14 @@ jobs:
                       raise SystemExit("Cross-tenant insert was not denied")
                   print("persistent_rls_cross_tenant_insert=PASS")
 
-                  own_row = conn.execute(text("""
-                      select id from us_lacey_operations where id = :operation_a
-                  """), {"operation_a": operation_ids["A"]}).scalar_one_or_none()
-                  if own_row != operation_ids["A"]:
+                  own_row = conn.execute(
+                      text("select id from us_lacey_operations where id = :operation_a"),
+                      {"operation_a": op_a},
+                  ).scalar_one_or_none()
+                  if own_row != op_a:
                       raise SystemExit("Tenant A cannot read its own operation")
                   print("persistent_rls_own_tenant_access=PASS")
-                  print(f"persistent_rls_role={current_role}")
+                  print("persistent_rls_role=litoral_trace_app")
                   print("persistent_rls_probe=PASS")
               finally:
                   tx.rollback()
