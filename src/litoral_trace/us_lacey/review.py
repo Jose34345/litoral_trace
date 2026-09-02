@@ -548,6 +548,18 @@ def export_us_lacey_xlsx(
     readme.append(["Important", "This workbook organizes source evidence. It is not a legal compliance determination, certification, government filing, or government acceptance."])
     readme.append(["Signature", "No preparer signature is generated or simulated."])
 
+    preparation_sheet = workbook.create_sheet("Preparation Data")
+    preparation_sheet.append(["Plant Line Reference", *[f"PPQ #{field.number} {field.label}" for field in PPQ505_FIELDS]])
+    for line in line_refs or ("",):
+        row = [line]
+        for contract in PPQ505_FIELDS:
+            reference = PPQ505_SHIPMENT_REFERENCE if contract.scope.value == "SHIPMENT" else line
+            field = by_key.get((reference, contract.key))
+            row.append("" if field is None else (field.human_value or field.normalized_value or field.original_value or ""))
+        preparation_sheet.append(row)
+    preparation_sheet.freeze_panes = "A2"
+    preparation_sheet.auto_filter.ref = preparation_sheet.dimensions
+
     shipment_sheet = workbook.create_sheet("Shipment Summary")
     shipment_sheet.append(["PPQ Number", "Field", "Value", "Review Status", "Validation"])
     for contract in PPQ505_SHIPMENT_FIELDS:
