@@ -630,7 +630,7 @@ def export_us_lacey_xlsx(
     evidence_sheet.freeze_panes = "A2"
     evidence_sheet.auto_filter.ref = evidence_sheet.dimensions
 
-    exception_sheet = workbook.create_sheet("Exceptions / Human Decisions")
+    exception_sheet = workbook.create_sheet("Exceptions")
     exception_sheet.append(
         [
             "Status",
