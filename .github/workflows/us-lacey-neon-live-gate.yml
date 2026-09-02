@@ -90,9 +90,14 @@ jobs:
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
+          from sqlalchemy.engine import make_url
+
+          url = make_url(os.environ["MIGRATION_DATABASE_URL"])
+          if url.drivername in {"postgresql", "postgres", "postgresql+psycopg2"}:
+              url = url.set(drivername="postgresql+psycopg")
 
           engine = create_engine(
-              os.environ["MIGRATION_DATABASE_URL"],
+              url,
               pool_pre_ping=True,
               hide_parameters=True,
           )
@@ -123,9 +128,14 @@ jobs:
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
+          from sqlalchemy.engine import make_url
+
+          url = make_url(os.environ["MIGRATION_DATABASE_URL"])
+          if url.drivername in {"postgresql", "postgres", "postgresql+psycopg2"}:
+              url = url.set(drivername="postgresql+psycopg")
 
           engine = create_engine(
-              os.environ["MIGRATION_DATABASE_URL"],
+              url,
               pool_pre_ping=True,
               hide_parameters=True,
           )
