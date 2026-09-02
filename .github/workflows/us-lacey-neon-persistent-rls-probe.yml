@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      OWNER_DATABASE_URL: ${{ secrets.US_LACEY_NEON_MIGRATION_DATABASE_URL }}
       RUNTIME_DATABASE_URL: ${{ secrets.US_LACEY_NEON_RUNTIME_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
@@ -31,17 +32,21 @@ jobs:
       - name: Install probe dependencies
         run: python -m pip install "sqlalchemy>=2" "psycopg[binary]>=3"
 
-      - name: Require dedicated runtime connection secret
+      - name: Require isolated owner and runtime connection secrets
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${OWNER_DATABASE_URL:-}" ]; then
+            echo "Missing GitHub secret US_LACEY_NEON_MIGRATION_DATABASE_URL"
+            exit 1
+          fi
           if [ -z "${RUNTIME_DATABASE_URL:-}" ]; then
             echo "Missing GitHub secret US_LACEY_NEON_RUNTIME_DATABASE_URL"
             exit 1
           fi
-          echo "Dedicated runtime connection secret is configured (value not printed)."
+          echo "Owner and runtime connection secrets are configured (values not printed)."
 
-      - name: Prove persistent tenant A/B isolation with rollback
+      - name: Prove persistent tenant A/B isolation with owner-staged fixtures
         shell: bash
         run: |
           set -euo pipefail
@@ -53,45 +58,62 @@ jobs:
           from sqlalchemy.engine import make_url
           from sqlalchemy.exc import DBAPIError
 
-          url = make_url(os.environ["RUNTIME_DATABASE_URL"])
-          if url.drivername in {"postgresql", "postgres", "postgresql+psycopg2"}:
-              url = url.set(drivername="postgresql+psycopg")
+          def normalized_url(name: str):
+              url = make_url(os.environ[name])
+              if url.drivername in {"postgresql", "postgres", "postgresql+psycopg2"}:
+                  url = url.set(drivername="postgresql+psycopg")
+              return url
 
-          engine = create_engine(url, pool_pre_ping=True, hide_parameters=True)
+          owner_engine = create_engine(
+              normalized_url("OWNER_DATABASE_URL"),
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          runtime_engine = create_engine(
+              normalized_url("RUNTIME_DATABASE_URL"),
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+
           suffix = secrets.token_hex(5)
-          # Use explicit high random IDs so the probe never consumes production sequences.
-          org_a = secrets.randbelow(400_000_000) + 1_200_000_000
-          org_b = secrets.randbelow(400_000_000) + 1_600_000_000
-          op_a = secrets.randbelow(400_000_000) + 1_200_000_000
-          op_b = secrets.randbelow(400_000_000) + 1_600_000_000
+          org_a = secrets.randbelow(150_000_000) + 1_200_000_000
+          org_b = secrets.randbelow(150_000_000) + 1_500_000_000
+          op_a = secrets.randbelow(150_000_000) + 1_200_000_000
+          op_b = secrets.randbelow(150_000_000) + 1_500_000_000
+          op_cross = secrets.randbelow(150_000_000) + 1_800_000_000
 
-          with engine.connect() as conn:
-              tx = conn.begin()
-              try:
-                  role = conn.execute(text("select current_user")).scalar_one()
-                  attrs = conn.execute(text("""
-                      select rolsuper, rolbypassrls
-                      from pg_roles where rolname = current_user
-                  """)).one()
-                  if role != "litoral_trace_app":
-                      raise SystemExit(f"Expected litoral_trace_app runtime role; found {role}")
-                  if attrs.rolsuper or attrs.rolbypassrls:
-                      raise SystemExit("Runtime role unexpectedly bypasses RLS")
+          fixture_ids = {
+              "org_a": org_a,
+              "org_b": org_b,
+              "op_a": op_a,
+              "op_b": op_b,
+          }
+          setup_committed = False
 
-                  def tenant(org_id: int) -> None:
-                      conn.execute(
-                          text("select set_config('app.current_organization_id', :org, true)"),
-                          {"org": str(org_id)},
-                      )
+          def tenant(conn, org_id: int) -> None:
+              conn.execute(
+                  text("select set_config('app.current_organization_id', :org, true)"),
+                  {"org": str(org_id)},
+              )
+
+          try:
+              # Stage only the minimum parent/operation rows with the migration owner.
+              # The runtime role intentionally has no INSERT permission on organizations.
+              with owner_engine.begin() as conn:
+                  owner_role = conn.execute(text("select current_user")).scalar_one()
+                  if owner_role in {"litoral_trace_app", "litoral_trace_us_lacey_worker"}:
+                      raise SystemExit("Refusing fixture setup with runtime/worker role")
+                  version = conn.execute(text("select version_num from alembic_version")).scalar_one()
+                  if version != "040_us_lacey_ppq505":
+                      raise SystemExit(f"Expected persistent 040; found {version}")
 
                   for label, org_id in (("A", org_a), ("B", org_b)):
-                      tenant(org_id)
                       conn.execute(text("""
                           insert into organizations (
                               id, name, slug, tax_id, tier, description, is_active
                           ) values (
                               :id, :name, :slug, :tax_id, 'pro',
-                              'Transactional persistent RLS probe', true
+                              'Ephemeral persistent RLS acceptance fixture', true
                           )
                       """), {
                           "id": org_id,
@@ -104,7 +126,6 @@ jobs:
                       ("A", org_a, op_a),
                       ("B", org_b, op_b),
                   ):
-                      tenant(org_id)
                       conn.execute(text("""
                           insert into us_lacey_operations (
                               id, organization_id, client_reference, status,
@@ -117,60 +138,110 @@ jobs:
                           "org": org_id,
                           "reference": f"PERSISTENT-RLS-{label}-{suffix}",
                       })
+              setup_committed = True
+              print("persistent_rls_fixture_setup=PASS")
 
-                  tenant(org_a)
-                  visible = conn.execute(text("""
-                      select id, organization_id
-                      from us_lacey_operations
-                      where id in (:a, :b)
-                      order by id
-                  """), {"a": op_a, "b": op_b}).all()
-                  if [(row.id, row.organization_id) for row in visible] != [(op_a, org_a)]:
-                      raise SystemExit(f"Cross-tenant read isolation failed: {visible}")
-                  print("persistent_rls_cross_tenant_read=PASS")
-
-                  updated = conn.execute(text("""
-                      update us_lacey_operations
-                      set review_result = 'MUST_NOT_WRITE'
-                      where id = :operation_b
-                  """), {"operation_b": op_b})
-                  if updated.rowcount != 0:
-                      raise SystemExit("Cross-tenant update unexpectedly affected tenant B")
-                  print("persistent_rls_cross_tenant_update=PASS")
-
-                  conn.execute(text("savepoint cross_tenant_insert"))
-                  insert_denied = False
+              with runtime_engine.connect() as conn:
+                  tx = conn.begin()
                   try:
-                      conn.execute(text("""
-                          insert into us_lacey_operations (
-                              id, organization_id, client_reference, status,
-                              document_count, merchandise_line_count
-                          ) values (
-                              :id, :other_org, 'PERSISTENT-CROSS-TENANT-DENIED',
-                              'NEW', 0, 1
-                          )
-                      """), {"id": op_b - 1, "other_org": org_b})
-                  except DBAPIError:
-                      insert_denied = True
-                      conn.execute(text("rollback to savepoint cross_tenant_insert"))
+                      role = conn.execute(text("select current_user")).scalar_one()
+                      attrs = conn.execute(text("""
+                          select rolsuper, rolbypassrls
+                          from pg_roles where rolname = current_user
+                      """)).one()
+                      if role != "litoral_trace_app":
+                          raise SystemExit(f"Expected litoral_trace_app runtime role; found {role}")
+                      if attrs.rolsuper or attrs.rolbypassrls:
+                          raise SystemExit("Runtime role unexpectedly bypasses RLS")
+                      print("persistent_rls_role=litoral_trace_app")
+
+                      # With no tenant context, neither ephemeral operation may be visible.
+                      no_tenant = conn.execute(text("""
+                          select id from us_lacey_operations
+                          where id in (:a, :b)
+                      """), {"a": op_a, "b": op_b}).all()
+                      if no_tenant:
+                          raise SystemExit(f"Runtime saw operations without tenant context: {no_tenant}")
+                      print("persistent_rls_no_tenant_context=PASS")
+
+                      tenant(conn, org_a)
+                      visible = conn.execute(text("""
+                          select id, organization_id
+                          from us_lacey_operations
+                          where id in (:a, :b)
+                          order by id
+                      """), {"a": op_a, "b": op_b}).all()
+                      if [(row.id, row.organization_id) for row in visible] != [(op_a, org_a)]:
+                          raise SystemExit(f"Cross-tenant read isolation failed: {visible}")
+                      print("persistent_rls_cross_tenant_read=PASS")
+
+                      updated = conn.execute(text("""
+                          update us_lacey_operations
+                          set review_result = 'MUST_NOT_WRITE'
+                          where id = :operation_b
+                      """), {"operation_b": op_b})
+                      if updated.rowcount != 0:
+                          raise SystemExit("Cross-tenant update unexpectedly affected tenant B")
+                      print("persistent_rls_cross_tenant_update=PASS")
+
+                      conn.execute(text("savepoint cross_tenant_insert"))
+                      insert_denied = False
+                      try:
+                          conn.execute(text("""
+                              insert into us_lacey_operations (
+                                  id, organization_id, client_reference, status,
+                                  document_count, merchandise_line_count
+                              ) values (
+                                  :id, :other_org, 'PERSISTENT-CROSS-TENANT-DENIED',
+                                  'NEW', 0, 1
+                              )
+                          """), {"id": op_cross, "other_org": org_b})
+                      except DBAPIError:
+                          insert_denied = True
+                          conn.execute(text("rollback to savepoint cross_tenant_insert"))
+                      finally:
+                          conn.execute(text("release savepoint cross_tenant_insert"))
+                      if not insert_denied:
+                          raise SystemExit("Cross-tenant insert was not denied")
+                      print("persistent_rls_cross_tenant_insert=PASS")
+
+                      own_row = conn.execute(
+                          text("select id from us_lacey_operations where id = :operation_a"),
+                          {"operation_a": op_a},
+                      ).scalar_one_or_none()
+                      if own_row != op_a:
+                          raise SystemExit("Tenant A cannot read its own operation")
+                      print("persistent_rls_own_tenant_access=PASS")
+                      print("persistent_rls_probe=PASS")
                   finally:
-                      conn.execute(text("release savepoint cross_tenant_insert"))
-                  if not insert_denied:
-                      raise SystemExit("Cross-tenant insert was not denied")
-                  print("persistent_rls_cross_tenant_insert=PASS")
+                      # Runtime writes from the probe are never committed.
+                      tx.rollback()
+                      print("persistent_rls_runtime_cleanup=ROLLBACK")
+          finally:
+              # Owner fixtures are committed briefly so the independent runtime
+              # connection can see them, then removed even when the assertion fails.
+              if setup_committed:
+                  with owner_engine.begin() as conn:
+                      conn.execute(
+                          text("delete from us_lacey_operations where id in (:a, :b)"),
+                          {"a": op_a, "b": op_b},
+                      )
+                      conn.execute(
+                          text("delete from organizations where id in (:a, :b)"),
+                          {"a": org_a, "b": org_b},
+                      )
+                      remaining_ops = conn.execute(
+                          text("select count(*) from us_lacey_operations where id in (:a, :b)"),
+                          {"a": op_a, "b": op_b},
+                      ).scalar_one()
+                      remaining_orgs = conn.execute(
+                          text("select count(*) from organizations where id in (:a, :b)"),
+                          {"a": org_a, "b": org_b},
+                      ).scalar_one()
+                      if remaining_ops or remaining_orgs:
+                          raise SystemExit("Persistent RLS fixture cleanup failed")
+                  print("persistent_rls_fixture_cleanup=PASS")
 
-                  own_row = conn.execute(
-                      text("select id from us_lacey_operations where id = :operation_a"),
-                      {"operation_a": op_a},
-                  ).scalar_one_or_none()
-                  if own_row != op_a:
-                      raise SystemExit("Tenant A cannot read its own operation")
-                  print("persistent_rls_own_tenant_access=PASS")
-                  print("persistent_rls_role=litoral_trace_app")
-                  print("persistent_rls_probe=PASS")
-              finally:
-                  tx.rollback()
-
-          engine.dispose()
-          print("persistent_rls_cleanup=ROLLBACK")
+              owner_engine.dispose()
+              runtime_engine.dispose()
           PY
