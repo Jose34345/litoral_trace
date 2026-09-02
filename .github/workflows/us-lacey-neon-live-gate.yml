@@ -1,6 +1,12 @@
 name: US Lacey Neon Live Gate
 
 on:
+  push:
+    branches:
+      - wip/us-lacey-live-readiness
+    paths:
+      - ".github/workflows/us-lacey-neon-live-gate.yml"
+      - ".github/us-lacey-*.trigger"
   workflow_dispatch:
     inputs:
       mode:
@@ -28,6 +34,24 @@ jobs:
       MIGRATION_DATABASE_URL: ${{ secrets.US_LACEY_NEON_MIGRATION_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve safe mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ inputs.mode }}"
+          elif [ -f ".github/us-lacey-migrate-040.trigger" ]; then
+            MODE="migrate"
+          else
+            MODE="inspect"
+          fi
+          if [ "$MODE" != "inspect" ] && [ "$MODE" != "migrate" ]; then
+            echo "Invalid mode: $MODE"
+            exit 1
+          fi
+          echo "US_LACEY_NEON_MODE=$MODE" >> "$GITHUB_ENV"
+          echo "Resolved mode: $MODE"
 
       - uses: actions/setup-python@v5
         with:
@@ -85,7 +109,7 @@ jobs:
           PY
 
       - name: Migrate persistent Neon to canonical head
-        if: ${{ inputs.mode == 'migrate' }}
+        if: ${{ env.US_LACEY_NEON_MODE == 'migrate' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -161,7 +185,7 @@ jobs:
           PY
 
       - name: Require canonical 040 after migrate mode
-        if: ${{ inputs.mode == 'migrate' }}
+        if: ${{ env.US_LACEY_NEON_MODE == 'migrate' }}
         shell: bash
         run: |
           set -euo pipefail
