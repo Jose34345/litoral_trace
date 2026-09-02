@@ -1,0 +1,79 @@
+name: US Lacey Render Live Gate
+
+on:
+  push:
+    branches:
+      - wip/us-lacey-live-readiness
+    paths:
+      - .github/workflows/us-lacey-render-live-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render-live-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORIGIN: https://litoral-trace-us-lacey-pilot-free.onrender.com
+    steps:
+      - name: Wake service and verify health
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 18); do
+            code="$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 20 "$ORIGIN/health" || true)"
+            if [ "$code" = "200" ]; then
+              break
+            fi
+            echo "health attempt $attempt returned HTTP ${code:-network-error}; waiting for free-tier wake-up"
+            sleep 5
+          done
+          test "${code:-}" = "200"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          body = json.loads(Path('/tmp/health.json').read_text())
+          assert body.get('status') == 'healthy', body
+          assert body.get('service') == 'us-lacey-pilot', body
+          print('render_health=PASS')
+          PY
+
+      - name: Verify readiness contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/ready.json -w '%{http_code}' --max-time 20 "$ORIGIN/ready")"
+          echo "render_ready_http=$code"
+          if [ "$code" = "200" ]; then
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          body = json.loads(Path('/tmp/ready.json').read_text())
+          assert body.get('status') == 'ready', body
+          assert body.get('service') == 'us-lacey-pilot', body
+          assert body.get('environment') == 'production', body
+          assert body.get('hostname') == 'litoral-trace-us-lacey-pilot-free.onrender.com', body
+          print('render_ready=PASS')
+          PY
+          elif [ "$code" = "503" ]; then
+            echo "render_ready=FAIL_CLOSED_503"
+            cat /tmp/ready.json
+            exit 1
+          else
+            echo "Unexpected /ready HTTP $code"
+            cat /tmp/ready.json
+            exit 1
+          fi
+
+      - name: Verify legal pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /legal/terms /legal/privacy /legal/private-beta; do
+            code="$(curl -sS -o /tmp/legal.html -w '%{http_code}' --max-time 20 "$ORIGIN$path")"
+            test "$code" = "200"
+            grep -qi '<html' /tmp/legal.html
+            echo "legal_page_${path##*/}=PASS"
+          done
