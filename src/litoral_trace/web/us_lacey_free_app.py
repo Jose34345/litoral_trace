@@ -63,6 +63,10 @@ def _int_env(name: str, default: int, *, minimum: int, maximum: int) -> int:
     return value
 
 
+def _record_worker_success() -> None:
+    app.state.us_lacey_inline_worker_last_success_monotonic = time.monotonic()
+
+
 def _inline_worker_loop(stop_event: threading.Event) -> None:
     poll_seconds = _float_env(
         "US_LACEY_WORKER_POLL_SECONDS", 2.0, minimum=0.25, maximum=30.0
@@ -84,6 +88,7 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
                 retried, failed = recover_stale_us_lacey_jobs(
                     stale_after_seconds=stale_after
                 )
+                _record_worker_success()
                 if retried or failed:
                     _LOG.warning(
                         "stale_jobs_recovered retried=%s failed=%s",
@@ -96,6 +101,7 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
 
         try:
             result = process_one_us_lacey_job(worker_id=worker_id)
+            _record_worker_success()
             if result.claimed:
                 _LOG.info(
                     "job_processed job_id=%s job_status=%s document_status=%s "
@@ -141,7 +147,24 @@ def _start_inline_worker() -> None:
     )
     app.state.us_lacey_inline_worker_stop = stop_event
     app.state.us_lacey_inline_worker_thread = thread
+    app.state.us_lacey_inline_worker_last_success_monotonic = 0.0
     thread.start()
+
+
+def _inline_worker_ready() -> bool:
+    thread = getattr(app.state, "us_lacey_inline_worker_thread", None)
+    if thread is None or not thread.is_alive():
+        return False
+    last_success = float(
+        getattr(app.state, "us_lacey_inline_worker_last_success_monotonic", 0.0)
+    )
+    if last_success <= 0:
+        return False
+    poll_seconds = _float_env(
+        "US_LACEY_WORKER_POLL_SECONDS", 2.0, minimum=0.25, maximum=30.0
+    )
+    maximum_heartbeat_age = max(15.0, poll_seconds * 4.0)
+    return (time.monotonic() - last_success) <= maximum_heartbeat_age
 
 
 def _stop_inline_worker() -> None:
@@ -176,7 +199,7 @@ app.router.lifespan_context = _free_lifespan
 @app.get("/live-readiness")
 def us_lacey_live_readiness(response: Response) -> dict[str, str]:
     result = live_runtime_status(
-        worker_thread=getattr(app.state, "us_lacey_inline_worker_thread", None),
+        worker_ready=_inline_worker_ready(),
         storage_roundtrip=str(
             getattr(app.state, "us_lacey_storage_roundtrip", "not_ready")
         ),
