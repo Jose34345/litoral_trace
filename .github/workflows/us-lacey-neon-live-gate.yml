@@ -163,8 +163,8 @@ jobs:
                   tables = [
                       'us_lacey_ppq_shipments',
                       'us_lacey_ppq_plant_lines',
-                      'us_lacey_ppq_plant_declarations',
-                      'us_lacey_ppq_operation_fields',
+                      'us_lacey_plant_declarations',
+                      'us_lacey_field_candidates',
                   ]
                   rows = conn.execute(text("""
                       select c.relname, c.relrowsecurity, c.relforcerowsecurity
