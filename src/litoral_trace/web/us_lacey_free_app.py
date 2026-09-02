@@ -19,10 +19,14 @@ import threading
 import time
 from uuid import uuid4
 
-from fastapi import Request
+from fastapi import Request, Response, status
 from fastapi.responses import HTMLResponse
 
 from litoral_trace.us_lacey.jobs import recover_stale_us_lacey_jobs
+from litoral_trace.us_lacey.live_readiness import (
+    live_runtime_status,
+    probe_storage_roundtrip,
+)
 from litoral_trace.us_lacey.worker import process_one_us_lacey_job
 from litoral_trace.us_lacey.worker_db import get_us_lacey_worker_database_url
 from litoral_trace.web.us_lacey_pilot_app import app
@@ -59,6 +63,10 @@ def _int_env(name: str, default: int, *, minimum: int, maximum: int) -> int:
     return value
 
 
+def _record_worker_success() -> None:
+    app.state.us_lacey_inline_worker_last_success_monotonic = time.monotonic()
+
+
 def _inline_worker_loop(stop_event: threading.Event) -> None:
     poll_seconds = _float_env(
         "US_LACEY_WORKER_POLL_SECONDS", 2.0, minimum=0.25, maximum=30.0
@@ -80,6 +88,7 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
                 retried, failed = recover_stale_us_lacey_jobs(
                     stale_after_seconds=stale_after
                 )
+                _record_worker_success()
                 if retried or failed:
                     _LOG.warning(
                         "stale_jobs_recovered retried=%s failed=%s",
@@ -92,6 +101,7 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
 
         try:
             result = process_one_us_lacey_job(worker_id=worker_id)
+            _record_worker_success()
             if result.claimed:
                 _LOG.info(
                     "job_processed job_id=%s job_status=%s document_status=%s "
@@ -137,7 +147,24 @@ def _start_inline_worker() -> None:
     )
     app.state.us_lacey_inline_worker_stop = stop_event
     app.state.us_lacey_inline_worker_thread = thread
+    app.state.us_lacey_inline_worker_last_success_monotonic = 0.0
     thread.start()
+
+
+def _inline_worker_ready() -> bool:
+    thread = getattr(app.state, "us_lacey_inline_worker_thread", None)
+    if thread is None or not thread.is_alive():
+        return False
+    last_success = float(
+        getattr(app.state, "us_lacey_inline_worker_last_success_monotonic", 0.0)
+    )
+    if last_success <= 0:
+        return False
+    poll_seconds = _float_env(
+        "US_LACEY_WORKER_POLL_SECONDS", 2.0, minimum=0.25, maximum=30.0
+    )
+    maximum_heartbeat_age = max(15.0, poll_seconds * 4.0)
+    return (time.monotonic() - last_success) <= maximum_heartbeat_age
 
 
 def _stop_inline_worker() -> None:
@@ -159,6 +186,7 @@ _original_lifespan_context = app.router.lifespan_context
 async def _free_lifespan(application):
     async with _original_lifespan_context(application) as state:
         _start_inline_worker()
+        application.state.us_lacey_storage_roundtrip = probe_storage_roundtrip()
         try:
             yield state
         finally:
@@ -166,6 +194,20 @@ async def _free_lifespan(application):
 
 
 app.router.lifespan_context = _free_lifespan
+
+
+@app.get("/live-readiness")
+def us_lacey_live_readiness(response: Response) -> dict[str, str]:
+    result = live_runtime_status(
+        worker_ready=_inline_worker_ready(),
+        storage_roundtrip=str(
+            getattr(app.state, "us_lacey_storage_roundtrip", "not_ready")
+        ),
+    )
+    if result["status"] != "ready":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return result
 
 
 def _legal_response(request: Request, title: str, version_env: str, sections: list[tuple[str, str]]) -> HTMLResponse:
