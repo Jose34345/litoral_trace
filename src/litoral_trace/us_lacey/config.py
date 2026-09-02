@@ -85,8 +85,9 @@ def load_us_lacey_runtime_config(
                 "U.S. Lacey storage must use a distinct bucket or an explicitly distinct prefix."
             )
 
-    hostname = str(env.get("US_LACEY_APP_HOSTNAME", "app.lacey.litoraltrace.com")).strip().lower()
+    hostname = str(env.get("US_LACEY_APP_HOSTNAME", "lacey.litoraltrace.com")).strip().lower()
     allowed_pilot_hostnames = {
+        "lacey.litoraltrace.com",
         "app.lacey.litoraltrace.com",
         "litoral-trace-us-lacey-pilot-free.onrender.com",
     }

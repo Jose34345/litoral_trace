@@ -26,7 +26,7 @@ def _safe_env() -> dict[str, str]:
         "US_LACEY_DATABASE_URL": "postgresql://us_user:secret@us-db.example.com/us_lacey",
         "US_LACEY_STORAGE_BUCKET": "litoral-trace-us-lacey-private",
         "US_LACEY_STORAGE_PREFIX": "us-lacey/pilot",
-        "US_LACEY_APP_HOSTNAME": "app.lacey.litoraltrace.com",
+        "US_LACEY_APP_HOSTNAME": "lacey.litoraltrace.com",
         "US_LACEY_PRIVATE_BETA_PRICE_CENTS": "12500",
         "US_LACEY_MONTHLY_OPERATION_LIMIT": "25",
         "US_LACEY_PAYMENT_PROVIDER": "WISE",
@@ -71,6 +71,23 @@ def test_runtime_allows_same_bucket_only_with_distinct_prefix():
     env["STORAGE_KEY_PREFIX"] = "argentina/production"
     cfg = load_us_lacey_runtime_config(env)
     assert cfg.storage_prefix == "us-lacey/pilot"
+
+
+def test_runtime_defaults_to_canonical_customer_domain():
+    env = _safe_env()
+    env.pop("US_LACEY_APP_HOSTNAME")
+    cfg = load_us_lacey_runtime_config(env)
+    assert cfg.app_hostname == "lacey.litoraltrace.com"
+
+
+def test_runtime_keeps_transition_hostnames_approved():
+    for hostname in (
+        "app.lacey.litoraltrace.com",
+        "litoral-trace-us-lacey-pilot-free.onrender.com",
+    ):
+        env = _safe_env()
+        env["US_LACEY_APP_HOSTNAME"] = hostname
+        assert load_us_lacey_runtime_config(env).app_hostname == hostname
 
 
 def test_us_storage_adapter_uses_only_us_namespace():
@@ -189,5 +206,5 @@ def test_private_pilot_ready_with_explicit_isolated_config(monkeypatch):
         "status": "ready",
         "service": "us-lacey-pilot",
         "environment": "pilot",
-        "hostname": "app.lacey.litoraltrace.com",
+        "hostname": "lacey.litoraltrace.com",
     }
