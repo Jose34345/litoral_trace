@@ -22,9 +22,11 @@ def test_lacey_landing_leads_with_document_to_data_differentiation():
     response = client.get("/lacey")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store, max-age=0"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
 
     html = response.text
-    assert '<html lang="en"' in html
+    assert '<html lang="en-US"' in html
     assert "Stop manually preparing Lacey spreadsheets." in html
     assert "Start before the spreadsheet" in html
     assert "Upload the shipment documents you already receive" in html
@@ -32,7 +34,10 @@ def test_lacey_landing_leads_with_document_to_data_differentiation():
     assert "Extract" in html
     assert "Compare" in html
     assert "Preserve evidence" in html
-    assert "No ERP access" in html
+    assert "USD 199 private beta" in html
+    assert "Up to 25 operations" in html
+    assert 'href="/signup"' in html
+    assert 'href="/login"' in html
     assert "comercial@litoraltrace.com" in html
 
 
