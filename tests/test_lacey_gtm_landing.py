@@ -34,8 +34,10 @@ def test_lacey_landing_leads_with_document_to_data_differentiation():
     assert "Extract" in html
     assert "Compare" in html
     assert "Preserve evidence" in html
-    assert "USD 199 private beta" in html
+    assert "Early Access · U.S. Lacey Act" in html
+    assert "USD 199 Early Access" in html
     assert "Up to 25 operations" in html
+    assert "Phase VII" not in html
     assert 'href="/signup"' in html
     assert 'href="/login"' in html
     assert "comercial@litoraltrace.com" in html
