@@ -20,6 +20,15 @@ depends_on: Union[str, Sequence[str], None] = None
 RUNTIME_ROLE = "litoral_trace_app"
 PLATFORM_ROLE = "litoral_trace_platform_definer"
 WORKER_ROLE = "litoral_trace_worker_executor"
+REGISTER_SIGNATURE = (
+    "public.us_lacey_self_register(text,text,text,text,text,text,integer,integer,text,text,text,text)"
+)
+REGISTER_LEGACY_SIGNATURE = (
+    "public.us_lacey_self_register_legacy(text,text,text,text,text,text,integer,integer,text,text,text,text)"
+)
+APPLY_SIGNATURE = (
+    "public.us_lacey_apply_lemon_order(integer,uuid,text,text,text,integer,text,integer,integer,boolean)"
+)
 
 
 def _grant_temp_platform_set() -> None:
@@ -31,6 +40,18 @@ def _grant_temp_platform_set() -> None:
 
 def _revoke_temp_platform_set() -> None:
     op.execute(f"REVOKE {PLATFORM_ROLE} FROM CURRENT_USER GRANTED BY CURRENT_USER")
+
+
+def _enter_platform_role() -> None:
+    _grant_temp_platform_set()
+    op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")
+    op.execute(f"SET ROLE {PLATFORM_ROLE}")
+
+
+def _leave_platform_role() -> None:
+    op.execute("RESET ROLE")
+    op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
+    _revoke_temp_platform_set()
 
 
 def upgrade() -> None:
@@ -125,6 +146,98 @@ def upgrade() -> None:
     op.execute(
         f"GRANT USAGE, SELECT ON SEQUENCE public.us_lacey_payment_events_id_seq TO {PLATFORM_ROLE}"
     )
+
+    # The original registration function remains the proven account-creation
+    # implementation. Rename it behind a same-signature facade so Python callers
+    # do not change and Lemon can be introduced without duplicating that contract.
+    _enter_platform_role()
+    op.execute(
+        "ALTER FUNCTION public.us_lacey_self_register(text,text,text,text,text,text,integer,integer,text,text,text,text) "
+        "RENAME TO us_lacey_self_register_legacy"
+    )
+    op.execute(f"REVOKE ALL ON FUNCTION {REGISTER_LEGACY_SIGNATURE} FROM PUBLIC")
+    op.execute(f"REVOKE ALL ON FUNCTION {REGISTER_LEGACY_SIGNATURE} FROM {RUNTIME_ROLE}")
+    op.execute(f"GRANT EXECUTE ON FUNCTION {REGISTER_LEGACY_SIGNATURE} TO {PLATFORM_ROLE}")
+
+    op.execute(
+        """
+        CREATE FUNCTION public.us_lacey_self_register(
+            requested_legal_name text,
+            requested_business_type text,
+            requested_admin_name text,
+            requested_admin_email text,
+            requested_password_hash text,
+            requested_verification_token_hash text,
+            requested_price_cents integer,
+            requested_monthly_operation_limit integer,
+            requested_payment_provider text,
+            requested_terms_version text,
+            requested_privacy_version text,
+            requested_beta_version text
+        )
+        RETURNS TABLE (
+            organization_id integer,
+            user_id integer,
+            payment_public_id uuid,
+            payment_reference text,
+            amount_cents integer,
+            account_status text
+        )
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path = public, pg_temp
+        AS $$
+        DECLARE
+            normalized_provider text := upper(btrim(coalesce(requested_payment_provider, '')));
+            registration record;
+        BEGIN
+            IF normalized_provider NOT IN ('MANUAL_BANK_TRANSFER','LEMON_SQUEEZY') THEN
+                RAISE EXCEPTION 'invalid initial payment provider' USING ERRCODE = '22023';
+            END IF;
+
+            SELECT * INTO registration
+            FROM public.us_lacey_self_register_legacy(
+                requested_legal_name,
+                requested_business_type,
+                requested_admin_name,
+                requested_admin_email,
+                requested_password_hash,
+                requested_verification_token_hash,
+                requested_price_cents,
+                requested_monthly_operation_limit,
+                CASE
+                    WHEN normalized_provider = 'LEMON_SQUEEZY' THEN 'MANUAL_BANK_TRANSFER'
+                    ELSE normalized_provider
+                END,
+                requested_terms_version,
+                requested_privacy_version,
+                requested_beta_version
+            );
+
+            IF normalized_provider = 'LEMON_SQUEEZY' THEN
+                UPDATE public.us_lacey_payments
+                SET provider = 'LEMON_SQUEEZY', updated_at = now()
+                WHERE organization_id = registration.organization_id
+                  AND public_id = registration.payment_public_id
+                  AND status = 'PENDING';
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION 'registered Lemon payment not found' USING ERRCODE = 'P0002';
+                END IF;
+            END IF;
+
+            RETURN QUERY SELECT
+                registration.organization_id::integer,
+                registration.user_id::integer,
+                registration.payment_public_id::uuid,
+                registration.payment_reference::text,
+                registration.amount_cents::integer,
+                registration.account_status::text;
+        END;
+        $$;
+        """
+    )
+    op.execute(f"REVOKE ALL ON FUNCTION {REGISTER_SIGNATURE} FROM PUBLIC")
+    op.execute(f"GRANT EXECUTE ON FUNCTION {REGISTER_SIGNATURE} TO {RUNTIME_ROLE}")
 
     op.execute(
         """
@@ -263,25 +376,23 @@ def upgrade() -> None:
         $$;
         """
     )
-
-    signature = (
-        "public.us_lacey_apply_lemon_order(integer,uuid,text,text,text,integer,text,integer,integer,boolean)"
-    )
-    op.execute(f"REVOKE ALL ON FUNCTION {signature} FROM PUBLIC")
-    op.execute(f"GRANT EXECUTE ON FUNCTION {signature} TO {RUNTIME_ROLE}")
-
-    _grant_temp_platform_set()
-    op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")
-    op.execute(f"ALTER FUNCTION {signature} OWNER TO {PLATFORM_ROLE}")
-    op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
-    _revoke_temp_platform_set()
+    op.execute(f"REVOKE ALL ON FUNCTION {APPLY_SIGNATURE} FROM PUBLIC")
+    op.execute(f"GRANT EXECUTE ON FUNCTION {APPLY_SIGNATURE} TO {RUNTIME_ROLE}")
+    _leave_platform_role()
 
 
 def downgrade() -> None:
-    signature = (
-        "public.us_lacey_apply_lemon_order(integer,uuid,text,text,text,integer,text,integer,integer,boolean)"
+    _enter_platform_role()
+    op.execute(f"DROP FUNCTION IF EXISTS {APPLY_SIGNATURE}")
+    op.execute(f"DROP FUNCTION IF EXISTS {REGISTER_SIGNATURE}")
+    op.execute(
+        "ALTER FUNCTION public.us_lacey_self_register_legacy(text,text,text,text,text,text,integer,integer,text,text,text,text) "
+        "RENAME TO us_lacey_self_register"
     )
-    op.execute(f"DROP FUNCTION IF EXISTS {signature}")
+    op.execute(f"REVOKE ALL ON FUNCTION {REGISTER_SIGNATURE} FROM PUBLIC")
+    op.execute(f"GRANT EXECUTE ON FUNCTION {REGISTER_SIGNATURE} TO {RUNTIME_ROLE}")
+    _leave_platform_role()
+
     op.drop_index(
         "ix_us_lacey_payment_events_org_payment", table_name="us_lacey_payment_events"
     )
