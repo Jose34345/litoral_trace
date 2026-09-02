@@ -41,6 +41,14 @@ def test_us_lacey_templates_use_shared_design_system_with_an_isolated_english_sh
         assert '{% extends "public/base_public.html" %}' in path.read_text(encoding="utf-8")
 
 
+def test_us_lacey_operation_date_keeps_native_iso_control_with_us_guidance() -> None:
+    source = (TEMPLATES / "new_operation.html").read_text(encoding="utf-8")
+    assert 'name="operation_date" type="date"' in source
+    assert 'lang="en-US"' in source
+    assert "U.S. reference format: MM/DD/YYYY" in source
+    assert "Your browser may display the date using your device locale." in source
+
+
 def test_us_lacey_has_no_parallel_stylesheet_or_hardcoded_palette() -> None:
     assert not (ROOT / "src" / "litoral_trace" / "static" / "css" / "us-lacey.css").exists()
     assert not (ROOT / "src" / "litoral_trace" / "static" / "css" / "lacey_beta.css").exists()
