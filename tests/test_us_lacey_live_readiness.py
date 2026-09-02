@@ -97,3 +97,22 @@ def test_live_runtime_status_fails_closed_without_worker_heartbeat():
         "inline_worker": "not_ready",
         "storage_roundtrip": "ready",
     }
+
+
+def test_free_tier_worker_readiness_requires_fresh_successful_db_heartbeat(monkeypatch):
+    from litoral_trace.web import us_lacey_free_app
+
+    class _Thread:
+        @staticmethod
+        def is_alive() -> bool:
+            return True
+
+    monkeypatch.setenv("US_LACEY_WORKER_POLL_SECONDS", "2")
+    monkeypatch.setattr(us_lacey_free_app.time, "monotonic", lambda: 100.0)
+    us_lacey_free_app.app.state.us_lacey_inline_worker_thread = _Thread()
+
+    us_lacey_free_app.app.state.us_lacey_inline_worker_last_success_monotonic = 99.0
+    assert us_lacey_free_app._inline_worker_ready() is True
+
+    us_lacey_free_app.app.state.us_lacey_inline_worker_last_success_monotonic = 80.0
+    assert us_lacey_free_app._inline_worker_ready() is False
