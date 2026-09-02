@@ -14,7 +14,7 @@ permissions:
 jobs:
   render-live-gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     env:
       ORIGIN: https://litoral-trace-us-lacey-pilot-free.onrender.com
     steps:
@@ -39,6 +39,56 @@ jobs:
           assert body.get('service') == 'us-lacey-pilot', body
           print('render_health=PASS')
           PY
+
+      - name: Verify deployed English-only U.S. portal shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Render deploys only after branch checks pass. Wait until the merged
+          # English-only shell is actually serving before asserting its copy.
+          for attempt in $(seq 1 60); do
+            code="$(curl -sS -o /tmp/login.html -w '%{http_code}' --max-time 20 "$ORIGIN/login" || true)"
+            if [ "$code" = "200" ] \
+              && grep -Fq 'U.S. Lacey Act workspace' /tmp/login.html \
+              && grep -Fq 'lang="en"' /tmp/login.html; then
+              break
+            fi
+            echo "English-shell attempt $attempt not deployed yet (HTTP ${code:-network-error}); waiting"
+            sleep 5
+          done
+          test "${code:-}" = "200"
+          grep -Fq 'U.S. Lacey Act workspace' /tmp/login.html
+          grep -Fq 'Litoral Trace · U.S. Lacey Private Beta' /tmp/login.html
+          grep -Fq 'lang="en"' /tmp/login.html
+          grep -Fq 'Skip to main content' /tmp/login.html
+
+          banned=(
+            'Trazabilidad de origen'
+            'Plataforma'
+            'Debida diligencia'
+            'Contexto regional'
+            'Auditabilidad'
+            'Acceso de clientes'
+            'Solicitar demostración'
+            'Solicitar demo'
+            'Ir al contenido principal'
+            'Navegación pública'
+            'Argentina · Cadenas forestales · Comercio exterior'
+          )
+
+          for path in /login /signup /legal/terms /legal/privacy /legal/private-beta; do
+            code="$(curl -sS -o /tmp/portal.html -w '%{http_code}' --max-time 20 "$ORIGIN$path")"
+            test "$code" = "200"
+            grep -Fq 'U.S. Lacey Act workspace' /tmp/portal.html
+            grep -Fq 'lang="en"' /tmp/portal.html
+            for phrase in "${banned[@]}"; do
+              if grep -Fq "$phrase" /tmp/portal.html; then
+                echo "Forbidden regional/Spanish portal copy found at $path: $phrase"
+                exit 1
+              fi
+            done
+            echo "english_shell_${path##*/}=PASS"
+          done
 
       - name: Verify deployed worker and storage roundtrip
         shell: bash
