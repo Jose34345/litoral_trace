@@ -5,7 +5,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from litoral_trace.api.auth import UserTenantContext
@@ -18,6 +18,8 @@ from litoral_trace.services.admin import (
     listar_empresas_superadmin,
     upsert_license_superadmin,
 )
+from litoral_trace.services.us_lacey_admin import list_us_lacey_accounts_superadmin
+from litoral_trace.web.templates import templates
 
 router = APIRouter(prefix="/api/v1/admin", tags=["SuperAdmin B2B"])
 
@@ -111,6 +113,55 @@ async def listar_organizaciones_endpoint(
         status_code=status.HTTP_200_OK,
         content={"total": len(empresas), "organizations": empresas},
     )
+
+
+@router.get("/us-lacey/accounts", tags=["SuperAdmin B2B", "U.S. Lacey"])
+async def listar_cuentas_us_lacey_endpoint(
+    refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY),
+    admin: UserTenantContext = Depends(require_superadmin_role),
+) -> JSONResponse:
+    """Return the read-only owner overview for U.S. Lacey customer accounts."""
+    accounts = list_us_lacey_accounts_superadmin(refresh_token=refresh_token_cookie)
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder({"total": len(accounts), "accounts": accounts}),
+    )
+
+
+@router.get(
+    "/us-lacey/accounts/fragment",
+    response_class=HTMLResponse,
+    tags=["SuperAdmin B2B", "U.S. Lacey"],
+)
+async def render_cuentas_us_lacey_fragment_endpoint(
+    request: Request,
+    refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY),
+    admin: UserTenantContext = Depends(require_superadmin_role),
+) -> HTMLResponse:
+    """Render the read-only U.S. account console inside the existing admin page."""
+    accounts = list_us_lacey_accounts_superadmin(refresh_token=refresh_token_cookie)
+    active_count = sum(1 for account in accounts if account.get("account_status") == "ACTIVE")
+    pilot_count = sum(1 for account in accounts if account.get("account_status") == "PILOT")
+    pending_count = sum(
+        1
+        for account in accounts
+        if account.get("account_status") in {"PENDING_EMAIL", "PAYMENT_PENDING"}
+    )
+    failed_job_count = sum(int(account.get("failed_jobs") or 0) for account in accounts)
+    content = templates.get_template("admin_us_lacey_accounts.html").render(
+        request=request,
+        accounts=accounts,
+        account_count=len(accounts),
+        active_count=active_count,
+        pilot_count=pilot_count,
+        pending_count=pending_count,
+        failed_job_count=failed_job_count,
+    )
+    response = HTMLResponse(content=content, status_code=status.HTTP_200_OK)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
 
 
 @router.post("/organizations", tags=["SuperAdmin B2B"])
