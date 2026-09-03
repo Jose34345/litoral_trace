@@ -30,6 +30,15 @@ APPLY_SIGNATURE = (
     "public.us_lacey_apply_lemon_order(integer,uuid,text,text,text,integer,text,integer,integer,boolean)"
 )
 
+_SHA256_HEX_REMAINDER_SQL = "payload_sha256"
+for _hex_char in "0123456789abcdef":
+    _SHA256_HEX_REMAINDER_SQL = (
+        f"replace({_SHA256_HEX_REMAINDER_SQL}, '{_hex_char}', '')"
+    )
+_SHA256_HEX_CHECK_SQL = (
+    f"length(payload_sha256) = 64 AND {_SHA256_HEX_REMAINDER_SQL} = ''"
+)
+
 
 def _grant_temp_platform_set() -> None:
     op.execute(
@@ -101,7 +110,7 @@ def upgrade() -> None:
             "event_name = 'order_created'", name="ck_us_lacey_payment_events_name"
         ),
         sa.CheckConstraint(
-            "payload_sha256 ~ '^[0-9a-f]{64}$'",
+            _SHA256_HEX_CHECK_SQL,
             name="ck_us_lacey_payment_events_payload_sha256",
         ),
         sa.CheckConstraint(
