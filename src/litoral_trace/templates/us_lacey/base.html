@@ -26,12 +26,12 @@
         {% if authenticated %}
           {{ button("Operations", "/operations", "ghost", "fa-briefcase") }}
           {{ button("Billing", "/billing", "ghost", "fa-receipt") }}
-          {{ button("Private Beta Terms", "/legal/private-beta", "ghost", "fa-scale-balanced") }}
+          {{ button("Early Access Terms", "/legal/private-beta", "ghost", "fa-scale-balanced") }}
           <form method="post" action="/logout" class="inline">{{ button("Sign out", variant="secondary", icon="fa-right-from-bracket", button_type="submit") }}</form>
         {% else %}
           {{ button("Terms", "/legal/terms", "ghost") }}
           {{ button("Privacy", "/legal/privacy", "ghost") }}
-          {{ button("Private Beta Terms", "/legal/private-beta", "ghost") }}
+          {{ button("Early Access Terms", "/legal/private-beta", "ghost") }}
           {{ button("Sign in", "/login", "secondary") }}
           {{ button("Create account", "/signup", "primary") }}
         {% endif %}
@@ -73,7 +73,7 @@
         <div class="mt-5 flex flex-wrap gap-4 md:justify-end">
           <a href="/legal/terms" class="text-xs font-semibold text-slate-400 hover:text-white">Terms</a>
           <a href="/legal/privacy" class="text-xs font-semibold text-slate-400 hover:text-white">Privacy</a>
-          <a href="/legal/private-beta" class="text-xs font-semibold text-slate-400 hover:text-white">Private Beta Terms</a>
+          <a href="/legal/private-beta" class="text-xs font-semibold text-slate-400 hover:text-white">Early Access Terms</a>
           <a href="mailto:comercial@litoraltrace.com" class="text-xs font-semibold text-emerald-400 hover:text-emerald-300">comercial@litoraltrace.com</a>
         </div>
       </div>
