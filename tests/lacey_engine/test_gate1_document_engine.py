@@ -88,11 +88,12 @@ def test_page_count_is_not_derived_from_last_block_page():
 
 def test_layout_ocr_decision_is_per_page_and_keeps_pdf_page_count(monkeypatch):
     class Page:
-        def extract_text_lines(self, **_kwargs): return []
+        def __init__(self, digital=False): self.digital = digital
+        def extract_text_lines(self, **_kwargs): return [{"text": "Commercial Invoice", "x0": 0, "top": 0, "x1": 100, "bottom": 10}] if self.digital else []
         def extract_words(self, **_kwargs): return []
         def find_tables(self): return []
     class Pdf:
-        pages = [Page(), Page()]
+        pages = [Page(True), Page()]
         def __enter__(self): return self
         def __exit__(self, *_args): return None
     calls = []
@@ -100,8 +101,8 @@ def test_layout_ocr_decision_is_per_page_and_keeps_pdf_page_count(monkeypatch):
     monkeypatch.setattr(layout_parser, "_ocr_blocks", lambda _content, pages: calls.append(pages) or [LayoutBlock(f"ocr-p{next(iter(pages))}-l1", next(iter(pages)), None, "OCR", "OCR_LINE")])
     parsed = layout_parser._pdf_layout(b"%PDF-test")
     assert parsed.page_count == 2
-    assert calls == [{1}, {2}]
-    assert [block.block_id for block in parsed.blocks] == ["ocr-p1-l1", "ocr-p2-l1"]
+    assert calls == [{2}]
+    assert [block.block_id for block in parsed.blocks] == ["p1-l1", "ocr-p2-l1"]
 
 
 def test_country_of_harvest_is_not_inferred_from_new_zealand_context():
