@@ -10,6 +10,7 @@ US_LACEY_SELF_SERVICE_MIGRATION = Path("alembic/versions/035_add_us_lacey_self_s
 US_LACEY_STATUS_FIX_MIGRATION = Path("alembic/versions/036_fix_us_lacey_status_ambiguity.py")
 US_LACEY_PORTAL_AUTH_MIGRATION = Path("alembic/versions/037_add_us_lacey_portal_auth_functions.py")
 US_LACEY_PILOT_ACTIVATION_MIGRATION = Path("alembic/versions/038_us_lacey_pilot_activation.py")
+US_LACEY_OWNER_ADMIN_MIGRATION = Path("alembic/versions/042_add_us_lacey_owner_admin_overview.py")
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -106,9 +107,16 @@ def test_us_lacey_portal_auth_is_chained_after_status_fix():
     assert "us_lacey_portal_revoke_session" in portal_auth
 
 
+def test_us_lacey_owner_admin_follows_lemon_head():
+    text = US_LACEY_OWNER_ADMIN_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision: str = "042_us_lacey_owner_admin"' in text
+    assert '"041_us_lacey_lemon"' in text
+    assert "platform_us_lacey_account_overview" in text
+
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "041_us_lacey_lemon (head)" in text
+    assert "042_us_lacey_owner_admin (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():
