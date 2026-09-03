@@ -224,11 +224,11 @@ def upgrade() -> None:
             );
 
             IF normalized_provider = 'LEMON_SQUEEZY' THEN
-                UPDATE public.us_lacey_payments
+                UPDATE public.us_lacey_payments AS payment
                 SET provider = 'LEMON_SQUEEZY', updated_at = now()
-                WHERE organization_id = registration.organization_id
-                  AND public_id = registration.payment_public_id
-                  AND status = 'PENDING';
+                WHERE payment.organization_id = registration.organization_id
+                  AND payment.public_id = registration.payment_public_id
+                  AND payment.status = 'PENDING';
                 IF NOT FOUND THEN
                     RAISE EXCEPTION 'registered Lemon payment not found' USING ERRCODE = 'P0002';
                 END IF;
@@ -354,22 +354,22 @@ def upgrade() -> None:
                 target_test_mode, now()
             );
 
-            UPDATE public.us_lacey_payments
-            SET status = 'VERIFIED', paid_at = coalesce(paid_at, now()),
+            UPDATE public.us_lacey_payments AS payment
+            SET status = 'VERIFIED', paid_at = coalesce(payment.paid_at, now()),
                 verified_at = now(), updated_at = now()
-            WHERE id = payment_row_id
-              AND organization_id = target_organization_id;
+            WHERE payment.id = payment_row_id
+              AND payment.organization_id = target_organization_id;
 
-            UPDATE public.us_lacey_subscriptions
-            SET status = 'ACTIVE', started_at = coalesce(started_at, now()),
+            UPDATE public.us_lacey_subscriptions AS subscription
+            SET status = 'ACTIVE', started_at = coalesce(subscription.started_at, now()),
                 updated_at = now()
-            WHERE id = payment_subscription_id
-              AND organization_id = target_organization_id;
+            WHERE subscription.id = payment_subscription_id
+              AND subscription.organization_id = target_organization_id;
 
-            UPDATE public.us_lacey_organization_profiles
+            UPDATE public.us_lacey_organization_profiles AS profile
             SET account_status = 'ACTIVE', updated_at = now()
-            WHERE organization_id = target_organization_id
-              AND account_status IN ('PAYMENT_PENDING','PILOT');
+            WHERE profile.organization_id = target_organization_id
+              AND profile.account_status IN ('PAYMENT_PENDING','PILOT');
 
             SELECT s.status INTO current_subscription_status
             FROM public.us_lacey_subscriptions s
