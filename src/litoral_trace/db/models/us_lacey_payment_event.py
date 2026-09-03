@@ -19,6 +19,16 @@ from sqlalchemy.orm import Mapped, mapped_column
 from litoral_trace.db.base import Base
 
 
+_SHA256_HEX_REMAINDER_SQL = "payload_sha256"
+for _hex_char in "0123456789abcdef":
+    _SHA256_HEX_REMAINDER_SQL = (
+        f"replace({_SHA256_HEX_REMAINDER_SQL}, '{_hex_char}', '')"
+    )
+_SHA256_HEX_CHECK_SQL = (
+    f"length(payload_sha256) = 64 AND {_SHA256_HEX_REMAINDER_SQL} = ''"
+)
+
+
 class UsLaceyPaymentEvent(Base):
     __tablename__ = "us_lacey_payment_events"
 
@@ -55,7 +65,7 @@ class UsLaceyPaymentEvent(Base):
             "event_name = 'order_created'", name="ck_us_lacey_payment_events_name"
         ),
         CheckConstraint(
-            "payload_sha256 ~ '^[0-9a-f]{64}$'",
+            _SHA256_HEX_CHECK_SQL,
             name="ck_us_lacey_payment_events_payload_sha256",
         ),
         CheckConstraint(
