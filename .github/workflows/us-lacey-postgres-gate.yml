@@ -11,8 +11,13 @@ on:
       - "alembic/versions/039_fix_us_lacey_pilot_activation.py"
       - "alembic/versions/040_establish_us_lacey_ppq505_contract.py"
       - "alembic/versions/041_add_us_lacey_lemon_squeezy_billing.py"
+      - "alembic/versions/042_add_us_lacey_owner_admin_overview.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/web/us_lacey_*"
+      - "src/litoral_trace/services/us_lacey_admin.py"
+      - "src/litoral_trace/api/admin.py"
+      - "src/litoral_trace/templates/admin_organizations.html"
+      - "src/litoral_trace/templates/admin_us_lacey_accounts.html"
       - "src/litoral_trace/db/models/us_lacey.py"
       - "src/litoral_trace/db/models/us_lacey_commercial.py"
       - "src/litoral_trace/db/models/us_lacey_payment_event.py"
@@ -128,7 +133,7 @@ jobs:
           PY
       - name: Migrate through pre-Assurance baseline
         run: python -m alembic upgrade 029_add_smart_import_profiles
-      - name: Migrate through US Lacey Lemon head
+      - name: Migrate through US Lacey Owner Admin head
         run: python -m alembic upgrade head
       - name: Bind dedicated worker login to queue capability
         shell: bash
@@ -154,7 +159,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -F "041_us_lacey_lemon" /tmp/alembic-current.txt
+          grep -F "042_us_lacey_owner_admin" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -338,6 +343,31 @@ jobs:
                       'EXECUTE'
                   )
               """)).scalar_one()
+              owner_overview = connection.execute(text("""
+                  SELECT
+                      p.prosecdef,
+                      owner_role.rolname AS owner_role,
+                      has_function_privilege(
+                          'litoral_trace_app',
+                          'public.platform_us_lacey_account_overview(text)',
+                          'EXECUTE'
+                      ) AS runtime_execute,
+                      has_function_privilege(
+                          'litoral_trace_us_lacey_worker',
+                          'public.platform_us_lacey_account_overview(text)',
+                          'EXECUTE'
+                      ) AS worker_execute,
+                      EXISTS (
+                          SELECT 1
+                          FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) AS acl
+                          WHERE acl.grantee = 0 AND acl.privilege_type = 'EXECUTE'
+                      ) AS public_execute
+                  FROM pg_proc p
+                  JOIN pg_namespace n ON n.oid = p.pronamespace
+                  JOIN pg_roles owner_role ON owner_role.oid = p.proowner
+                  WHERE n.nspname = 'public'
+                    AND p.proname = 'platform_us_lacey_account_overview'
+              """)).mappings().one()
           by_table = {row["relname"]: row for row in rows}
           assert set(by_table) == set(expected_policy_counts)
           assert all(row["relrowsecurity"] is True for row in by_table.values())
@@ -382,6 +412,13 @@ jobs:
               "public_privilege": False,
           }
           assert runtime_apply_execute is True
+          assert owner_overview == {
+              "prosecdef": True,
+              "owner_role": "litoral_trace_platform_definer",
+              "runtime_execute": True,
+              "worker_execute": False,
+              "public_execute": False,
+          }
           engine.dispose()
           PY
       - name: Prove self-registration and email transition
@@ -548,6 +585,103 @@ jobs:
               assert count == 1
           runtime.dispose()
           migrator.dispose()
+          audit.dispose()
+          PY
+      - name: Prove owner admin overview is superadmin-only and curated
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.exc import DBAPIError
+
+          runtime = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+          audit = create_engine(
+              "postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          token_hash = "d" * 64
+          fake_bcrypt_hash = "$2b$12$" + ("z" * 53)
+
+          with audit.begin() as connection:
+              org_id = connection.execute(text("""
+                  INSERT INTO public.organizations (
+                      name, slug, tax_id, tier, description, is_active, created_at, updated_at
+                  ) VALUES (
+                      'Owner Console Gate', 'owner-console-gate', 'OWNER-CONSOLE-GATE',
+                      'enterprise', 'CI platform actor', true, now(), now()
+                  ) RETURNING id
+              """)).scalar_one()
+              user_id = connection.execute(text("""
+                  INSERT INTO public.users (
+                      organization_id, email, username, password_hash, role,
+                      full_name, is_active, created_at, updated_at
+                  ) VALUES (
+                      :org_id, 'owner-console@example.com', 'owner_console_gate',
+                      :password_hash, 'superadmin', 'Owner Console Gate', true, now(), now()
+                  ) RETURNING id
+              """), {"org_id": org_id, "password_hash": fake_bcrypt_hash}).scalar_one()
+              connection.execute(text("""
+                  INSERT INTO public.user_sessions (
+                      user_id, organization_id, family_id, token_hash,
+                      issued_at, expires_at, revoked_at, replaced_by_session_id,
+                      created_ip, user_agent, created_at, updated_at
+                  ) VALUES (
+                      :user_id, :org_id, '00000000-0000-0000-0000-000000000042',
+                      :token_hash, now(), now() + interval '1 hour', null, null,
+                      '127.0.0.1', 'owner-admin-gate', now(), now()
+                  )
+              """), {"user_id": user_id, "org_id": org_id, "token_hash": token_hash})
+
+          try:
+              with runtime.begin() as connection:
+                  connection.execute(
+                      text("SELECT * FROM public.platform_us_lacey_account_overview(:token)"),
+                      {"token": "e" * 64},
+                  ).mappings().all()
+          except DBAPIError as exc:
+              assert getattr(exc.orig, "sqlstate", None) == "28000"
+          else:
+              raise AssertionError("owner overview accepted an invalid platform session")
+
+          with runtime.begin() as connection:
+              rows = connection.execute(
+                  text("SELECT * FROM public.platform_us_lacey_account_overview(:token)"),
+                  {"token": token_hash},
+              ).mappings().all()
+
+          assert len(rows) == 2
+          by_name = {row["legal_name"]: dict(row) for row in rows}
+          manual = by_name["US Lacey Gate Imports LLC"]
+          lemon = by_name["US Lacey Lemon Gate LLC"]
+          assert manual["account_status"] == "PAYMENT_PENDING"
+          assert manual["payment_provider"] == "MANUAL_BANK_TRANSFER"
+          assert manual["payment_status"] == "PENDING"
+          assert lemon["account_status"] == "ACTIVE"
+          assert lemon["payment_provider"] == "LEMON_SQUEEZY"
+          assert lemon["payment_status"] == "VERIFIED"
+          assert lemon["subscription_status"] == "ACTIVE"
+          assert lemon["payment_amount_cents"] == 19900
+          assert lemon["last_payment_event_at"] is not None
+
+          expected_keys = {
+              "organization_id", "organization_name", "legal_name", "business_type",
+              "admin_contact_email", "account_status", "payment_provider",
+              "payment_status", "payment_amount_cents", "subscription_status",
+              "monthly_operation_limit", "used_operations", "queued_jobs",
+              "running_jobs", "retry_jobs", "failed_jobs", "last_payment_event_at",
+              "account_created_at",
+          }
+          assert set(lemon) == expected_keys
+          for forbidden in (
+              "payload_sha256", "provider_order_id", "store_id", "variant_id",
+              "payment_reference", "password_hash", "token_hash",
+          ):
+              assert forbidden not in lemon
+
+          runtime.dispose()
           audit.dispose()
           PY
       - name: Prove Lemon fail-closed parsing contracts
