@@ -1,10 +1,10 @@
 """Unified free-tier entrypoint for the customer-facing U.S. Lacey product.
 
 This module composes the already-certified private portal/inline-worker runtime
-with the public U.S. Lacey marketing and synthetic-demo routes. It deliberately
-keeps the operational application unchanged: authenticated traffic, PostgreSQL
-RLS, S3 probes, worker lifecycle, billing and review routes continue to be owned
-by ``us_lacey_free_app``.
+with the public U.S. Lacey marketing, synthetic-demo and hosted-billing routes.
+It deliberately keeps the operational application unchanged: authenticated
+traffic, PostgreSQL RLS, S3 probes, worker lifecycle and review routes continue
+to be owned by ``us_lacey_free_app``.
 
 The composition exists so one customer-facing hostname can serve the full flow:
 landing -> sample -> signup -> verification -> login -> billing -> operations.
@@ -16,11 +16,13 @@ from fastapi import Request, Response
 from litoral_trace.us_lacey.portal_auth import US_LACEY_SESSION_COOKIE
 from litoral_trace.web.lacey_gtm import render_lacey_landing, router as lacey_router
 from litoral_trace.web.us_lacey_free_app import app
+from litoral_trace.web.us_lacey_lemon_billing import router as lemon_billing_router
 
 
-# Public marketing/sample routes are additive and do not shadow the certified
-# portal endpoints (/signup, /login, /billing, /operations, /ready, ...).
+# Public marketing/sample and payment-provider routes are additive and do not
+# shadow the certified portal endpoints (/signup, /login, /billing, ...).
 app.include_router(lacey_router)
+app.include_router(lemon_billing_router)
 
 
 @app.head("/health", include_in_schema=False)

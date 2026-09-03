@@ -81,6 +81,20 @@ services:
         sync: false
       - key: US_LACEY_BETA_TERMS_VERSION
         sync: false
+
+      # Lemon Squeezy remains dormant until Test Mode is explicitly configured.
+      # No API key is required for the hosted-checkout + signed-webhook path.
+      - key: US_LACEY_LEMON_CHECKOUT_URL
+        sync: false
+      - key: US_LACEY_LEMON_WEBHOOK_SECRET
+        sync: false
+      - key: US_LACEY_LEMON_STORE_ID
+        sync: false
+      - key: US_LACEY_LEMON_VARIANT_ID
+        sync: false
+      - key: US_LACEY_LEMON_TEST_MODE
+        sync: false
+
       # Legal pages live on the same canonical U.S. Lacey origin.
       - key: US_LACEY_TERMS_URL
         value: https://lacey.litoraltrace.com/legal/terms

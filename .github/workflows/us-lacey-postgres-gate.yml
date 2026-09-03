@@ -10,10 +10,12 @@ on:
       - "alembic/versions/038_us_lacey_pilot_activation.py"
       - "alembic/versions/039_fix_us_lacey_pilot_activation.py"
       - "alembic/versions/040_establish_us_lacey_ppq505_contract.py"
+      - "alembic/versions/041_add_us_lacey_lemon_squeezy_billing.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/web/us_lacey_*"
       - "src/litoral_trace/db/models/us_lacey.py"
       - "src/litoral_trace/db/models/us_lacey_commercial.py"
+      - "src/litoral_trace/db/models/us_lacey_payment_event.py"
       - "src/litoral_trace/db/models/reconciliation_issue.py"
       - "src/litoral_trace/db/models/__init__.py"
       - "src/litoral_trace/db/tenant.py"
@@ -126,7 +128,7 @@ jobs:
           PY
       - name: Migrate through pre-Assurance baseline
         run: python -m alembic upgrade 029_add_smart_import_profiles
-      - name: Migrate through US Lacey self-service head
+      - name: Migrate through US Lacey Lemon head
         run: python -m alembic upgrade head
       - name: Bind dedicated worker login to queue capability
         shell: bash
@@ -152,7 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -F "040_us_lacey_ppq505" /tmp/alembic-current.txt
+          grep -F "041_us_lacey_lemon" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -170,6 +172,7 @@ jobs:
               "us_lacey_ppq_plant_lines": 4,
               "us_lacey_plant_declarations": 4,
               "us_lacey_field_candidates": 4,
+              "us_lacey_payment_events": 1,
           }
           ppq_tables = (
               "us_lacey_ppq_shipments",
@@ -187,6 +190,17 @@ jobs:
               "ck_us_lacey_field_candidates_confidence",
               "ck_us_lacey_field_candidates_validation",
               "ck_us_lacey_field_candidates_decision",
+          }
+          expected_lemon_constraints = {
+              "ck_us_lacey_payment_events_provider",
+              "ck_us_lacey_payment_events_name",
+              "ck_us_lacey_payment_events_payload_sha256",
+              "ck_us_lacey_payment_events_amount_positive",
+              "ck_us_lacey_payment_events_currency_usd",
+              "ck_us_lacey_payment_events_store_positive",
+              "ck_us_lacey_payment_events_variant_positive",
+              "uq_us_lacey_payment_events_provider_order",
+              "fk_us_lacey_payment_events_payment_tenant",
           }
           engine = create_engine(os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
           with engine.connect() as connection:
@@ -271,6 +285,59 @@ jobs:
                   FROM pg_constraint
                   WHERE conname = ANY(:names) AND contype = 'c'
               """), {"names": sorted(expected_check_constraints)}).scalars().all()
+              lemon_constraints = connection.execute(text("""
+                  SELECT conname
+                  FROM pg_constraint
+                  WHERE conname = ANY(:names)
+              """), {"names": sorted(expected_lemon_constraints)}).scalars().all()
+              payment_provider_constraint = connection.execute(text("""
+                  SELECT pg_get_constraintdef(oid)
+                  FROM pg_constraint
+                  WHERE conname = 'ck_us_lacey_payments_provider'
+                    AND conrelid = 'public.us_lacey_payments'::regclass
+                    AND contype = 'c'
+              """)).scalar_one()
+              lemon_privileges = connection.execute(text("""
+                  SELECT
+                      has_table_privilege('litoral_trace_platform_definer', c.oid, 'SELECT') AS platform_select,
+                      has_table_privilege('litoral_trace_platform_definer', c.oid, 'INSERT') AS platform_insert,
+                      has_table_privilege('litoral_trace_platform_definer', c.oid, 'UPDATE') AS platform_update,
+                      has_table_privilege('litoral_trace_platform_definer', c.oid, 'DELETE') AS platform_delete,
+                      has_table_privilege('litoral_trace_app', c.oid, 'SELECT') AS runtime_select,
+                      has_table_privilege('litoral_trace_us_lacey_worker', c.oid, 'SELECT') AS worker_select,
+                      EXISTS (
+                          SELECT 1
+                          FROM aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) AS acl
+                          WHERE acl.grantee = 0
+                            AND acl.privilege_type IN ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
+                      ) AS public_privilege
+                  FROM pg_class c
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                  WHERE n.nspname = 'public' AND c.relname = 'us_lacey_payment_events'
+              """)).mappings().one()
+              lemon_sequence_privileges = connection.execute(text("""
+                  SELECT
+                      has_sequence_privilege('litoral_trace_platform_definer', c.oid, 'USAGE') AS platform_usage,
+                      has_sequence_privilege('litoral_trace_platform_definer', c.oid, 'SELECT') AS platform_select,
+                      has_sequence_privilege('litoral_trace_app', c.oid, 'USAGE') AS runtime_usage,
+                      has_sequence_privilege('litoral_trace_us_lacey_worker', c.oid, 'USAGE') AS worker_usage,
+                      EXISTS (
+                          SELECT 1
+                          FROM aclexplode(coalesce(c.relacl, acldefault('S', c.relowner))) AS acl
+                          WHERE acl.grantee = 0
+                      ) AS public_privilege
+                  FROM pg_class c
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                  WHERE n.nspname = 'public'
+                    AND c.relname = 'us_lacey_payment_events_id_seq'
+              """)).mappings().one()
+              runtime_apply_execute = connection.execute(text("""
+                  SELECT has_function_privilege(
+                      'litoral_trace_app',
+                      'public.us_lacey_apply_lemon_order(integer,uuid,text,text,text,integer,text,integer,integer,boolean)',
+                      'EXECUTE'
+                  )
+              """)).scalar_one()
           by_table = {row["relname"]: row for row in rows}
           assert set(by_table) == set(expected_policy_counts)
           assert all(row["relrowsecurity"] is True for row in by_table.values())
@@ -296,6 +363,25 @@ jobs:
               for row in ppq_privileges
           )
           assert set(check_constraints) == expected_check_constraints
+          assert set(lemon_constraints) == expected_lemon_constraints
+          assert "LEMON_SQUEEZY" in payment_provider_constraint
+          assert lemon_privileges == {
+              "platform_select": True,
+              "platform_insert": True,
+              "platform_update": False,
+              "platform_delete": False,
+              "runtime_select": False,
+              "worker_select": False,
+              "public_privilege": False,
+          }
+          assert lemon_sequence_privileges == {
+              "platform_usage": True,
+              "platform_select": True,
+              "runtime_usage": False,
+              "worker_usage": False,
+              "public_privilege": False,
+          }
+          assert runtime_apply_execute is True
           engine.dispose()
           PY
       - name: Prove self-registration and email transition
@@ -326,7 +412,7 @@ jobs:
                   "verification_hash": verification_hash,
                   "price_cents": 10000,
                   "monthly_limit": 25,
-                  "provider": "WISE",
+                  "provider": "MANUAL_BANK_TRANSFER",
                   "terms_version": "gate-terms-v1",
                   "privacy_version": "gate-privacy-v1",
                   "beta_version": "gate-beta-v1",
@@ -340,6 +426,132 @@ jobs:
               assert verified["account_status"] == "PAYMENT_PENDING"
           engine.dispose()
           PY
+      - name: Prove Lemon registration activation and idempotency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          runtime = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+          migrator = create_engine(os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
+          audit = create_engine(
+              "postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
+          verification_hash = "b" * 64
+          payload_hash = "c" * 64
+          fake_bcrypt_hash = "$2b$12$" + ("y" * 53)
+          values = {
+              "legal_name": "US Lacey Lemon Gate LLC",
+              "business_type": "IMPORTER",
+              "admin_name": "Lemon Gate Admin",
+              "email": "lemon-gate@example.com",
+              "password_hash": fake_bcrypt_hash,
+              "verification_hash": verification_hash,
+              "price_cents": 19900,
+              "monthly_limit": 25,
+              "provider": "LEMON_SQUEEZY",
+              "terms_version": "gate-terms-v1",
+              "privacy_version": "gate-privacy-v1",
+              "beta_version": "gate-beta-v1",
+          }
+          with runtime.begin() as connection:
+              registered = connection.execute(text("""
+                  SELECT * FROM public.us_lacey_self_register(
+                      :legal_name, :business_type, :admin_name, :email,
+                      :password_hash, :verification_hash, :price_cents,
+                      :monthly_limit, :provider, :terms_version,
+                      :privacy_version, :beta_version
+                  )
+              """), values).mappings().one()
+              assert registered["account_status"] == "PENDING_EMAIL"
+              verified = connection.execute(text("""
+                  SELECT * FROM public.us_lacey_verify_email(:token_hash)
+              """), {"token_hash": verification_hash}).mappings().one()
+              assert verified["account_status"] == "PAYMENT_PENDING"
+              activation_args = {
+                  "organization_id": registered["organization_id"],
+                  "payment_public_id": registered["payment_public_id"],
+                  "provider_order_id": "gate-lemon-order-1",
+                  "event_name": "order_created",
+                  "payload_sha256": payload_hash,
+                  "amount_cents": 19900,
+                  "currency": "USD",
+                  "store_id": 321,
+                  "variant_id": 654,
+                  "test_mode": True,
+              }
+              first = connection.execute(text("""
+                  SELECT * FROM public.us_lacey_apply_lemon_order(
+                      :organization_id, :payment_public_id, :provider_order_id,
+                      :event_name, :payload_sha256, :amount_cents, :currency,
+                      :store_id, :variant_id, :test_mode
+                  )
+              """), activation_args).mappings().one()
+              assert first == {
+                  "payment_status": "VERIFIED",
+                  "subscription_status": "ACTIVE",
+                  "account_status": "ACTIVE",
+                  "idempotent": False,
+              }
+              second = connection.execute(text("""
+                  SELECT * FROM public.us_lacey_apply_lemon_order(
+                      :organization_id, :payment_public_id, :provider_order_id,
+                      :event_name, :payload_sha256, :amount_cents, :currency,
+                      :store_id, :variant_id, :test_mode
+                  )
+              """), activation_args).mappings().one()
+              assert second["idempotent"] is True
+              assert second["payment_status"] == "VERIFIED"
+              assert second["subscription_status"] == "ACTIVE"
+              assert second["account_status"] == "ACTIVE"
+
+          # FORCE RLS must hide the append-only ledger even from its table owner
+          # because no policy is granted to the migration role.
+          with migrator.connect() as connection:
+              visible_to_migrator = connection.execute(text("""
+                  SELECT count(*) FROM public.us_lacey_payment_events
+                  WHERE provider_order_id = 'gate-lemon-order-1'
+              """)).scalar_one()
+              assert visible_to_migrator == 0
+
+          # The ephemeral CI superuser is used only as an external auditor so the
+          # gate can prove the hidden ledger row exists without weakening RLS.
+          with audit.connect() as connection:
+              event = connection.execute(text("""
+                  SELECT provider, provider_order_id, payload_sha256, amount_cents,
+                         currency, store_id, variant_id, test_mode
+                  FROM public.us_lacey_payment_events
+                  WHERE organization_id = :organization_id
+                    AND provider_order_id = :provider_order_id
+              """), {
+                  "organization_id": registered["organization_id"],
+                  "provider_order_id": "gate-lemon-order-1",
+              }).mappings().one()
+              assert event == {
+                  "provider": "LEMON_SQUEEZY",
+                  "provider_order_id": "gate-lemon-order-1",
+                  "payload_sha256": payload_hash,
+                  "amount_cents": 19900,
+                  "currency": "USD",
+                  "store_id": 321,
+                  "variant_id": 654,
+                  "test_mode": True,
+              }
+              count = connection.execute(text("""
+                  SELECT count(*) FROM public.us_lacey_payment_events
+                  WHERE provider_order_id = 'gate-lemon-order-1'
+              """)).scalar_one()
+              assert count == 1
+          runtime.dispose()
+          migrator.dispose()
+          audit.dispose()
+          PY
+      - name: Prove Lemon fail-closed parsing contracts
+        run: python -m pytest -q -rs tests/test_us_lacey_lemon_squeezy.py
       - name: Prove portal login, opaque session and logout
         env:
           DATABASE_URL: ""

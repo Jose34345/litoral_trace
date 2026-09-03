@@ -97,7 +97,7 @@ class UsLaceyPayment(Base):
         CheckConstraint("amount_cents > 0", name="ck_us_lacey_payments_amount_positive"),
         CheckConstraint("currency = 'USD'", name="ck_us_lacey_payments_currency_usd"),
         CheckConstraint(
-            "provider IN ('MANUAL_BANK_TRANSFER','WISE','STRIPE')",
+            "provider IN ('MANUAL_BANK_TRANSFER','WISE','STRIPE','LEMON_SQUEEZY')",
             name="ck_us_lacey_payments_provider",
         ),
         CheckConstraint(
