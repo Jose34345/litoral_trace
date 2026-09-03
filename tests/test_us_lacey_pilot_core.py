@@ -29,7 +29,7 @@ def _safe_env() -> dict[str, str]:
         "US_LACEY_APP_HOSTNAME": "lacey.litoraltrace.com",
         "US_LACEY_PRIVATE_BETA_PRICE_CENTS": "12500",
         "US_LACEY_MONTHLY_OPERATION_LIMIT": "25",
-        "US_LACEY_PAYMENT_PROVIDER": "WISE",
+        "US_LACEY_PAYMENT_PROVIDER": "MANUAL_BANK_TRANSFER",
         "US_LACEY_BANK_TRANSFER_INSTRUCTIONS": "Use the payment reference shown in Billing.",
         "US_LACEY_TERMS_VERSION": "terms-2026-08",
         "US_LACEY_PRIVACY_VERSION": "privacy-2026-08",
