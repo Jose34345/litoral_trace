@@ -16,6 +16,7 @@ from litoral_trace.us_lacey.portal_auth import (
     resolve_us_lacey_session,
 )
 from litoral_trace.us_lacey.self_service import (
+    UsLaceySelfServiceError,
     get_us_lacey_billing_summary,
     register_us_lacey_company,
     verify_us_lacey_email,
@@ -41,6 +42,36 @@ def _commercial_config() -> UsLaceyCommercialConfig:
         beta_terms_version="beta-ci-v1",
         support_email="support@litoraltrace.com",
     )
+
+
+def test_043_postgres_registration_rejects_wise_fail_closed():
+    """Prove the database front door rejects WISE even if Python is bypassed."""
+    reset_us_lacey_engine_state()
+    suffix = uuid4().hex[:12]
+    wise_config = UsLaceyCommercialConfig(
+        price_cents=12500,
+        monthly_operation_limit=25,
+        payment_provider="WISE",
+        bank_transfer_instructions="must never be used",
+        terms_version="terms-ci-v1",
+        privacy_version="privacy-ci-v1",
+        beta_terms_version="beta-ci-v1",
+        support_email="support@litoraltrace.com",
+    )
+
+    with pytest.raises(UsLaceySelfServiceError, match="Unable to create") as rejected:
+        register_us_lacey_company(
+            legal_name=f"Rejected Wise Signup {suffix} LLC",
+            business_type="IMPORTER",
+            admin_name="Rejected Wise Admin",
+            admin_email=f"wise-rejected-{suffix}@example.com",
+            password="correct-horse-wise-rejected-123",
+            commercial_config=wise_config,
+        )
+
+    db_error = rejected.value.__cause__
+    assert db_error is not None
+    assert getattr(getattr(db_error, "orig", None), "sqlstate", None) == "22023"
 
 
 def test_verified_customer_gets_isolated_opaque_session_and_billing():
