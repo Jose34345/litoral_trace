@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+import sys
 
 import pytest
 
@@ -8,8 +10,12 @@ from litoral_trace.lacey_engine.admission import admit
 from litoral_trace.lacey_engine.domain import (
     EvidenceClass, FieldStatus, LayoutBlock, ParsedLayout, RawCandidate, ResolvedField,
 )
+import litoral_trace.lacey_engine.layout_parser as layout_parser
 from litoral_trace.lacey_engine.layout_parser import layout_from_key_value_rows
 from litoral_trace.lacey_engine.pipeline import _extract, process_document
+from litoral_trace.lacey_engine.classifier import classify
+from litoral_trace.lacey_engine.segmentation import segment
+from litoral_trace.lacey_engine.domain import DocumentType
 
 
 def _raw(field: str, value: str, label: str) -> RawCandidate:
@@ -46,6 +52,56 @@ def test_scientific_taxon_yields_explicit_species_and_derived_genus():
     assert extracted["genus"][0].normalized_value == "Pinus"
     assert extracted["genus"][0].evidence_class is EvidenceClass.DERIVED
     assert extracted["genus"][0].derived_from_field_key == "species"
+
+
+def test_split_taxon_is_missing_and_never_cross_block_crashes():
+    layout = ParsedLayout((LayoutBlock("a", 1, None, "SINGLE PACKS OF PINUS", "TEXT_LINE"), LayoutBlock("b", 1, None, "RADIATA TIMBER", "TEXT_LINE")), 1)
+    extracted = _extract(layout)
+    assert extracted["species"] == []
+    assert extracted["genus"] == []
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("COMMERCIAL INVOICE\nInvoice Number 12345\nMaster BOL MAEU123456789", DocumentType.COMMERCIAL_INVOICE),
+    ("ARRIVAL NOTICE\nEstimated Arrival Date 2026-09-01\nMaster BOL MAEU123456789", DocumentType.ARRIVAL_NOTICE),
+    ("OCEAN BILL OF LADING\nMaster BOL MAEU123456789", DocumentType.BILL_OF_LADING),
+])
+def test_title_scoring_beats_referenced_fields(text, expected):
+    layout = ParsedLayout((LayoutBlock("p1", 1, None, text, "TEXT_LINE"),), 1)
+    assert classify(layout)[0] is expected
+
+
+def test_packet_segmentation_keeps_continuation_and_uses_section_type():
+    layout = ParsedLayout((
+        LayoutBlock("p1", 1, None, "COMMERCIAL INVOICE Invoice Number 1001 Master BOL MAEU111111111", "TEXT_LINE"),
+        LayoutBlock("p2", 2, None, "invoice continuation", "TEXT_LINE"),
+        LayoutBlock("p3", 3, None, "OCEAN BILL OF LADING Master BOL MAEU111111111", "TEXT_LINE"),
+    ), 3)
+    sections = segment(layout, DocumentType.COMMERCIAL_INVOICE)
+    assert [(section.page_start, section.page_end, section.document_type) for section in sections] == [(1, 2, DocumentType.COMMERCIAL_INVOICE), (3, 3, DocumentType.BILL_OF_LADING)]
+
+
+def test_page_count_is_not_derived_from_last_block_page():
+    layout = ParsedLayout((LayoutBlock("p1", 1, None, "COMMERCIAL INVOICE", "TEXT_LINE"),), 5)
+    assert segment(layout, DocumentType.COMMERCIAL_INVOICE)[-1].page_end == 5
+
+
+def test_layout_ocr_decision_is_per_page_and_keeps_pdf_page_count(monkeypatch):
+    class Page:
+        def extract_text_lines(self, **_kwargs): return []
+        def extract_words(self, **_kwargs): return []
+        def find_tables(self): return []
+    class Pdf:
+        pages = [Page(), Page()]
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+    calls = []
+    monkeypatch.setitem(sys.modules, "pdfplumber", SimpleNamespace(open=lambda _source: Pdf()))
+    monkeypatch.setattr(layout_parser, "_ocr_blocks", lambda _content, pages: calls.append(pages) or [LayoutBlock(f"ocr-p{next(iter(pages))}-l1", next(iter(pages)), None, "OCR", "OCR_LINE")])
+    parsed = layout_parser._pdf_layout(b"%PDF-test")
+    assert parsed.page_count == 2
+    assert calls == [{1}, {2}]
+    assert [block.block_id for block in parsed.blocks] == ["ocr-p1-l1", "ocr-p2-l1"]
 
 
 def test_country_of_harvest_is_not_inferred_from_new_zealand_context():

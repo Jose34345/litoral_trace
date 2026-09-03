@@ -65,14 +65,12 @@ def _extract(layout):
             value = " ".join(match.group(1).split())
             if value:
                 found["consignee_name"].append(_candidate("consignee_name", value, block, "Consignee Name"))
-    # Commodity prose is independent from key/value table layout.
-    all_text = " ".join(block.text for block in layout.blocks)
-    taxon = next((match for match in re.finditer(r"\b([A-Za-z]{3,})\s+([A-Za-z]{3,})\b", all_text)
-                  if match.group(1).casefold() in {"pinus", "eucalyptus", "quercus", "acer", "betula", "fagus", "fraxinus", "populus", "tectona"}), None)
-    if taxon:
-        source = next(block for block in layout.blocks if taxon.group(0) in block.text)
-        found["species"].append(_candidate("species", taxon.group(2).lower(), source, "scientific taxon"))
-        found["genus"].append(_candidate("genus", taxon.group(1).capitalize(), source, "scientific taxon", EvidenceClass.DERIVED, "species"))
+    genera = {"pinus", "eucalyptus", "quercus", "acer", "betula", "fagus", "fraxinus", "populus", "tectona"}
+    for source in layout.blocks:
+        taxon = next((match for match in re.finditer(r"\b([A-Za-z]{3,})\s+([A-Za-z]{3,})\b", source.text) if match.group(1).casefold() in genera), None)
+        if taxon:
+            found["species"].append(_candidate("species", taxon.group(2).lower(), source, "scientific taxon"))
+            found["genus"].append(_candidate("genus", taxon.group(1).capitalize(), source, "scientific taxon", EvidenceClass.DERIVED, "species"))
     # Reconstruct a party address only from explicit, adjacent labelled
     # components in the consignee record. It is a deterministic DERIVED value;
     # isolated address labels elsewhere in a report are never a consignee.
@@ -114,11 +112,14 @@ def _extract(layout):
 def process_document(*, filename: str, content: bytes, role_hint: str | None = None) -> DocumentResolution:
     layout = parse_layout(filename, content)
     document_type, confidence = classify(layout, role_hint)
+    sections = segment(layout, document_type)
+    section_type = {block_id: section.document_type for section in sections for block_id in section.block_ids}
     extracted = _extract(layout)
 
     def make(raw, source_score):
         provenance = Provenance(filename, raw.source_block.page, raw.source_block.bbox, raw.source_block.block_id, raw.source_block.text, raw.extractor_name, raw.extractor_version, raw.evidence_class)
-        return AdmittedCandidate(raw, provenance, 60 + source_score + (10 if raw.label else 0), document_type)
-    make.document_type = document_type
+        source_type = section_type.get(raw.source_block.block_id, document_type)
+        return AdmittedCandidate(raw, provenance, 60 + source_score + (10 if raw.label else 0), source_type)
+    make.document_type_for = lambda raw: section_type.get(raw.source_block.block_id, document_type)
     fields = {key: resolve(key, [raw for raw in candidates if admit(raw)], make) for key, candidates in extracted.items()}
-    return DocumentResolution(filename, ENGINE_VERSION, document_type, confidence, layout, segment(layout, document_type), fields)
+    return DocumentResolution(filename, ENGINE_VERSION, document_type, confidence, layout, sections, fields)

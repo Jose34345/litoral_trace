@@ -4,7 +4,7 @@ from .source_authority import authority
 
 
 def resolve(field_key: str, raw_candidates: list[RawCandidate], make_candidate) -> ResolvedField:
-    candidates = sorted((make_candidate(raw, authority(field_key, make_candidate.document_type)) for raw in raw_candidates), key=lambda item: item.score, reverse=True)
+    candidates = sorted((make_candidate(raw, authority(field_key, make_candidate.document_type_for(raw))) for raw in raw_candidates), key=lambda item: item.score, reverse=True)
     if not candidates:
         return ResolvedField(field_key, FieldStatus.MISSING, None, None)
     distinct = {candidate.raw.normalized_value for candidate in candidates}

@@ -16,7 +16,7 @@ def _bbox(item: dict) -> BoundingBox:
     return BoundingBox(float(item["x0"]), float(item["top"]), float(item["x1"]), float(item["bottom"]))
 
 
-def _ocr_blocks(content: bytes) -> list[LayoutBlock]:
+def _ocr_blocks(content: bytes, page_numbers: set[int] | None = None) -> list[LayoutBlock]:
     """Coordinate-preserving OCR fallback for image-only shipment documents."""
     try:
         import pypdfium2 as pdfium
@@ -28,6 +28,8 @@ def _ocr_blocks(content: bytes) -> list[LayoutBlock]:
     blocks: list[LayoutBlock] = []
     try:
         for page_index in range(len(document)):
+            if page_numbers is not None and page_index + 1 not in page_numbers:
+                continue
             page = document[page_index]
             bitmap = page.render(scale=2)
             image = bitmap.to_pil().convert("L")
@@ -60,9 +62,12 @@ def _pdf_layout(content: bytes) -> ParsedLayout:
     except ImportError as exc:  # pragma: no cover - runtime dependency
         raise LaceyEngineError("pdfplumber is required to read PDF documents") from exc
     blocks: list[LayoutBlock] = []
+    page_count = 0
     try:
         with pdfplumber.open(BytesIO(content)) as pdf:
+            page_count = len(pdf.pages)
             for page_number, page in enumerate(pdf.pages, start=1):
+                page_start = len(blocks)
                 # Text lines preserve label/value relationships even when a PDF has
                 # no detectable ruled table.  They also give every extraction a
                 # highlightable page coordinate.
@@ -117,13 +122,14 @@ def _pdf_layout(content: bytes) -> ParsedLayout:
                                     f"{key}: {value}", "TABLE_ROW", LayoutStructureType.KEY_VALUE_TABLE,
                                     table_id, row_index, None, key, key, value,
                                 ))
+                # Mixed PDFs need OCR only for pages without digital layout.
+                if len(blocks) == page_start:
+                    blocks.extend(_ocr_blocks(content, {page_number}))
     except Exception as exc:
         raise LaceyEngineError("Unable to read PDF layout") from exc
     if not blocks:
-        blocks = _ocr_blocks(content)
-    if not blocks:
         raise LaceyEngineError("PDF contains no usable text after OCR")
-    return ParsedLayout(tuple(blocks), max(block.page for block in blocks))
+    return ParsedLayout(tuple(blocks), page_count)
 
 
 def parse_layout(filename: str, content: bytes) -> ParsedLayout:
