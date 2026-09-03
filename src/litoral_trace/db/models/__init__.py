@@ -44,6 +44,7 @@ from litoral_trace.db.models.us_lacey_commercial import (
     UsLaceySubscription,
     UsLaceyTermsAcceptance,
 )
+from litoral_trace.db.models.us_lacey_payment_event import UsLaceyPaymentEvent
 from litoral_trace.db.models.integration import (
     ExternalEntity,
     ExternalEntityVersion,
@@ -100,6 +101,7 @@ __all__ = [
     "UsLaceyPlantDeclaration",
     "UsLaceySubscription",
     "UsLaceyPayment",
+    "UsLaceyPaymentEvent",
     "UsLaceyTermsAcceptance",
     "UsLaceyProcessingJob",
     "TraceabilityBatch",

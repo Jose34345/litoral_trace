@@ -1,7 +1,7 @@
 """Fail-closed commercial configuration for the U.S. Lacey self-service launch.
 
-No price, bank destination or legal version is hard-coded here. Production must
-provide each value explicitly so a deploy cannot silently charge the wrong
+No price, payment destination or legal version is hard-coded here. Production
+must provide each value explicitly so a deploy cannot silently charge the wrong
 amount or accept the wrong legal text.
 """
 from __future__ import annotations
@@ -50,9 +50,18 @@ def load_us_lacey_commercial_config(
 ) -> UsLaceyCommercialConfig:
     env = os.environ if environ is None else environ
     provider = _required(env, "US_LACEY_PAYMENT_PROVIDER").upper()
-    if provider not in {"MANUAL_BANK_TRANSFER", "WISE"}:
+    # WISE remains accepted only as a backward-compatible deployment value so
+    # an existing environment cannot become unready during the Lemon cutover.
+    # New commercial configuration is intended to use LEMON_SQUEEZY.
+    if provider not in {"MANUAL_BANK_TRANSFER", "WISE", "LEMON_SQUEEZY"}:
         raise UsLaceyCommercialConfigurationError(
-            "US_LACEY_PAYMENT_PROVIDER must be MANUAL_BANK_TRANSFER or WISE for launch."
+            "US_LACEY_PAYMENT_PROVIDER must be MANUAL_BANK_TRANSFER, WISE, or LEMON_SQUEEZY."
+        )
+
+    bank_instructions = str(env.get("US_LACEY_BANK_TRANSFER_INSTRUCTIONS", "")).strip()
+    if provider in {"MANUAL_BANK_TRANSFER", "WISE"} and not bank_instructions:
+        raise UsLaceyCommercialConfigurationError(
+            "US_LACEY_BANK_TRANSFER_INSTRUCTIONS is required for transfer-based payment."
         )
 
     support_email = str(env.get("US_LACEY_SUPPORT_EMAIL", "support@litoraltrace.com")).strip().lower()
@@ -63,7 +72,7 @@ def load_us_lacey_commercial_config(
         price_cents=_positive_int(env, "US_LACEY_PRIVATE_BETA_PRICE_CENTS"),
         monthly_operation_limit=_positive_int(env, "US_LACEY_MONTHLY_OPERATION_LIMIT"),
         payment_provider=provider,
-        bank_transfer_instructions=_required(env, "US_LACEY_BANK_TRANSFER_INSTRUCTIONS"),
+        bank_transfer_instructions=bank_instructions,
         terms_version=_required(env, "US_LACEY_TERMS_VERSION"),
         privacy_version=_required(env, "US_LACEY_PRIVACY_VERSION"),
         beta_terms_version=_required(env, "US_LACEY_BETA_TERMS_VERSION"),
