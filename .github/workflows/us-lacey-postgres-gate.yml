@@ -436,6 +436,11 @@ jobs:
 
           runtime = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
           migrator = create_engine(os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
+          audit = create_engine(
+              "postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci",
+              pool_pre_ping=True,
+              hide_parameters=True,
+          )
           verification_hash = "b" * 64
           payload_hash = "c" * 64
           fake_bcrypt_hash = "$2b$12$" + ("y" * 53)
@@ -503,7 +508,19 @@ jobs:
               assert second["payment_status"] == "VERIFIED"
               assert second["subscription_status"] == "ACTIVE"
               assert second["account_status"] == "ACTIVE"
+
+          # FORCE RLS must hide the append-only ledger even from its table owner
+          # because no policy is granted to the migration role.
           with migrator.connect() as connection:
+              visible_to_migrator = connection.execute(text("""
+                  SELECT count(*) FROM public.us_lacey_payment_events
+                  WHERE provider_order_id = 'gate-lemon-order-1'
+              """)).scalar_one()
+              assert visible_to_migrator == 0
+
+          # The ephemeral CI superuser is used only as an external auditor so the
+          # gate can prove the hidden ledger row exists without weakening RLS.
+          with audit.connect() as connection:
               event = connection.execute(text("""
                   SELECT provider, provider_order_id, payload_sha256, amount_cents,
                          currency, store_id, variant_id, test_mode
@@ -531,6 +548,7 @@ jobs:
               assert count == 1
           runtime.dispose()
           migrator.dispose()
+          audit.dispose()
           PY
       - name: Prove Lemon fail-closed parsing contracts
         run: python -m pytest -q -rs tests/test_us_lacey_lemon_squeezy.py
