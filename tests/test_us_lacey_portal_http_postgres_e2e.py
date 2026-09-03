@@ -128,10 +128,11 @@ def test_signup_verify_login_billing_logout_real_http_and_postgres(
         assert "USD 125.00" in billing.text
         assert "0 / 25" in billing.text
         assert "LT-US-" in billing.text
-        assert "Wise" in billing.text
+        assert "How to complete the payment" in billing.text
+        assert "Payment matching code" in billing.text
+        assert "bank account, payment link or destination address" in billing.text
         assert "CI-only Wise USD transfer instructions" in billing.text
-        assert "document processing stays locked until payment is confirmed" in billing.text
-        assert "The browser cannot activate its own account" in billing.text
+        assert "Document processing unlocks only after Litoral Trace verifies the payment server-side" in billing.text
         assert "verify-payment" not in billing.text.lower()
 
         logout = client.post("/logout")
