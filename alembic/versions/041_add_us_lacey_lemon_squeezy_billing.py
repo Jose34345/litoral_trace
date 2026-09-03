@@ -200,7 +200,10 @@ def upgrade() -> None:
             normalized_provider text := upper(btrim(coalesce(requested_payment_provider, '')));
             registration record;
         BEGIN
-            IF normalized_provider NOT IN ('MANUAL_BANK_TRANSFER','LEMON_SQUEEZY') THEN
+            -- 041 is additive: preserve both manual providers already supported
+            -- by the certified portal while introducing Lemon as a new path.
+            -- STRIPE remains schema-history only and is not valid for new signup.
+            IF normalized_provider NOT IN ('MANUAL_BANK_TRANSFER','WISE','LEMON_SQUEEZY') THEN
                 RAISE EXCEPTION 'invalid initial payment provider' USING ERRCODE = '22023';
             END IF;
 
