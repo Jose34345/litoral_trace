@@ -26,8 +26,8 @@ def _configure_customer_portal(monkeypatch: pytest.MonkeyPatch) -> None:
         "US_LACEY_SESSION_TTL_HOURS": "1",
         "US_LACEY_PRIVATE_BETA_PRICE_CENTS": "12500",
         "US_LACEY_MONTHLY_OPERATION_LIMIT": "25",
-        "US_LACEY_PAYMENT_PROVIDER": "WISE",
-        "US_LACEY_BANK_TRANSFER_INSTRUCTIONS": "CI-only Wise USD transfer instructions",
+        "US_LACEY_PAYMENT_PROVIDER": "MANUAL_BANK_TRANSFER",
+        "US_LACEY_BANK_TRANSFER_INSTRUCTIONS": "CI-only manual USD transfer instructions",
         "US_LACEY_TERMS_VERSION": "terms-http-e2e-v1",
         "US_LACEY_PRIVACY_VERSION": "privacy-http-e2e-v1",
         "US_LACEY_BETA_TERMS_VERSION": "beta-http-e2e-v1",
@@ -131,7 +131,7 @@ def test_signup_verify_login_billing_logout_real_http_and_postgres(
         assert "How to complete the payment" in billing.text
         assert "Payment matching code" in billing.text
         assert "bank account, payment link or destination address" in billing.text
-        assert "CI-only Wise USD transfer instructions" in billing.text
+        assert "CI-only manual USD transfer instructions" in billing.text
         assert "Document processing unlocks only after Litoral Trace verifies the payment server-side" in billing.text
         assert "verify-payment" not in billing.text.lower()
 

@@ -50,18 +50,15 @@ def load_us_lacey_commercial_config(
 ) -> UsLaceyCommercialConfig:
     env = os.environ if environ is None else environ
     provider = _required(env, "US_LACEY_PAYMENT_PROVIDER").upper()
-    # WISE remains accepted only as a backward-compatible deployment value so
-    # an existing environment cannot become unready during the Lemon cutover.
-    # New commercial configuration is intended to use LEMON_SQUEEZY.
-    if provider not in {"MANUAL_BANK_TRANSFER", "WISE", "LEMON_SQUEEZY"}:
+    if provider not in {"MANUAL_BANK_TRANSFER", "LEMON_SQUEEZY"}:
         raise UsLaceyCommercialConfigurationError(
-            "US_LACEY_PAYMENT_PROVIDER must be MANUAL_BANK_TRANSFER, WISE, or LEMON_SQUEEZY."
+            "US_LACEY_PAYMENT_PROVIDER must be MANUAL_BANK_TRANSFER or LEMON_SQUEEZY."
         )
 
     bank_instructions = str(env.get("US_LACEY_BANK_TRANSFER_INSTRUCTIONS", "")).strip()
-    if provider in {"MANUAL_BANK_TRANSFER", "WISE"} and not bank_instructions:
+    if provider == "MANUAL_BANK_TRANSFER" and not bank_instructions:
         raise UsLaceyCommercialConfigurationError(
-            "US_LACEY_BANK_TRANSFER_INSTRUCTIONS is required for transfer-based payment."
+            "US_LACEY_BANK_TRANSFER_INSTRUCTIONS is required for manual bank transfer."
         )
 
     support_email = str(env.get("US_LACEY_SUPPORT_EMAIL", "support@litoraltrace.com")).strip().lower()

@@ -100,8 +100,8 @@ def _configure(monkeypatch: pytest.MonkeyPatch) -> None:
         "US_LACEY_PRIVATE_BETA_PRICE_CENTS": "12500",
         # Deliberately one slot: upload/review/export must keep working after it is consumed.
         "US_LACEY_MONTHLY_OPERATION_LIMIT": "1",
-        "US_LACEY_PAYMENT_PROVIDER": "WISE",
-        "US_LACEY_BANK_TRANSFER_INSTRUCTIONS": "CI-only Wise USD transfer instructions",
+        "US_LACEY_PAYMENT_PROVIDER": "MANUAL_BANK_TRANSFER",
+        "US_LACEY_BANK_TRANSFER_INSTRUCTIONS": "CI-only manual USD transfer instructions",
         "US_LACEY_TERMS_VERSION": "terms-active-e2e-v1",
         "US_LACEY_PRIVACY_VERSION": "privacy-active-e2e-v1",
         "US_LACEY_BETA_TERMS_VERSION": "beta-active-e2e-v1",
