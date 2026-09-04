@@ -433,6 +433,8 @@ jobs:
           python -m pytest -q -rs \
             tests/test_us_lacey_engine2_persistence.py \
             tests/test_us_lacey_engine2_rls.py \
+            tests/test_us_lacey_engine2_dossier_postgres.py \
+            tests/test_us_lacey_engine2_dossier_http.py \
             | tee /tmp/engine2-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/engine2-postgres.txt; then
             echo "Engine 2 PostgreSQL acceptance tests must not skip in CI."
