@@ -34,7 +34,7 @@ def create_test_graph(factory, *, role="BILL_OF_LADING", content=b"engine2-test"
     org = Organization(name=f"Engine2 {suffix}", slug=f"engine2-{suffix}", tax_id=f"e2-{suffix}", tier="pro", is_active=True); session.add(org); session.flush(); set_tenant_db_context(session, org.id)
     vault = VaultDocument(organization_id=org.id, original_filename="bill.pdf", content_type="application/pdf", size_bytes=len(content), sha256=hashlib.sha256(content).hexdigest(), object_key=f"tests/{suffix}", storage_backend="s3", storage_bucket="tests", document_type="OTHER_EVIDENCE", status="available")
     session.add(vault); session.flush()
-    assurance = AssuranceDocument(organization_id=org.id, vault_document_id=vault.id, semantic_document_type="UNKNOWN", processing_status="COMPLETED"); session.add(assurance); session.flush()
+    assurance = AssuranceDocument(organization_id=org.id, vault_document_id=vault.id, semantic_document_type="UNKNOWN", processing_status="EXTRACTED"); session.add(assurance); session.flush()
     operation = UsLaceyOperation(organization_id=org.id, client_reference=f"engine2-{suffix}", status="NEW", document_count=1, merchandise_line_count=0); session.add(operation); session.flush()
     link = UsLaceyOperationDocument(organization_id=org.id, operation_id=operation.id, assurance_document_id=assurance.id, document_role=role, version_number=1, is_current=True); session.add(link); session.commit()
     return org.id, operation.id, link.id, assurance.id, vault.id, vault.sha256
@@ -52,7 +52,7 @@ def add_test_document(factory, *, organization_id, operation_id, role, filename,
         status="available")
     session.add(vault); session.flush()
     assurance = AssuranceDocument(organization_id=organization_id, vault_document_id=vault.id,
-        semantic_document_type="UNKNOWN", processing_status="COMPLETED")
+        semantic_document_type="UNKNOWN", processing_status="EXTRACTED")
     session.add(assurance); session.flush()
     link = UsLaceyOperationDocument(organization_id=organization_id, operation_id=operation_id,
         assurance_document_id=assurance.id, document_role=role,
