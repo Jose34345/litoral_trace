@@ -16,6 +16,7 @@ from litoral_trace.lacey_engine.pipeline import _extract, process_document
 from litoral_trace.lacey_engine.classifier import classify
 from litoral_trace.lacey_engine.segmentation import segment
 from litoral_trace.lacey_engine.domain import DocumentType
+from litoral_trace.lacey_engine.shipment import ReconciliationState, ShipmentDocumentInput, process_shipment
 
 
 def _raw(field: str, value: str, label: str) -> RawCandidate:
@@ -42,6 +43,23 @@ def test_container_admission_rejects_labels_and_accepts_explicit_iso_shape():
     assert admit(_raw("container_number", "MSKU9228574", "Container Number"))
     assert not admit(_raw("container_number", "Seal Number 1", "Container Number"))
     assert not admit(_raw("container_number", "Container Height", "Container Number"))
+
+
+@pytest.mark.parametrize("label", ("Commodity Description", "Cargo Description 1"))
+def test_explicit_merchandise_description_is_extracted_and_admitted(monkeypatch, label):
+    layout = layout_from_key_value_rows([(label, "SINGLE PACKS OF PINUS RADIATA TIMBER")])
+    monkeypatch.setattr("litoral_trace.lacey_engine.pipeline.parse_layout", lambda *_: layout)
+    resolution = process_document(filename="description.pdf", content=b"unused")
+    field = resolution.field("description")
+    assert field.status is FieldStatus.MATCHED and "PINUS RADIATA TIMBER" in field.effective_value
+    assert field.winning_candidate.raw.evidence_class is EvidenceClass.EXPLICIT and field.winning_candidate.raw.label == label
+
+
+@pytest.mark.parametrize("label", ("Equipment Description", "Description"))
+def test_non_merchandise_description_labels_remain_missing(monkeypatch, label):
+    layout = layout_from_key_value_rows([(label, "Opening(s) at one end or both ends.")])
+    monkeypatch.setattr("litoral_trace.lacey_engine.pipeline.parse_layout", lambda *_: layout)
+    assert process_document(filename="equipment.pdf", content=b"unused").field("description").status is FieldStatus.MISSING
 
 
 def test_scientific_taxon_yields_explicit_species_and_derived_genus():
@@ -151,3 +169,14 @@ def test_real_import_info_gate1_regression_fixture():
     assert resolution.field("consignee_address").effective_value == "SUITE 130 5285 MEADOWS RD LAKE OSWE; LAKE OSWEGO, OR 97035"
     for key in ("filing_entry_reference", "manufacturer_id", "hts_code", "country_of_harvest"):
         assert resolution.field(key).status is FieldStatus.MISSING
+    description = resolution.field("description")
+    assert description.status is FieldStatus.MATCHED
+    assert "PINUS RADIATA TIMBER" in description.effective_value
+    assert "Opening(s) at one end or both ends." not in description.effective_value
+    assert resolution.field("plant_quantity").status is FieldStatus.MISSING
+    shipment = process_shipment(documents=[ShipmentDocumentInput("golden-001", fixture.name, resolution=resolution)])
+    assert shipment.canonical_fields["description"].state in {ReconciliationState.SUPPORTED, ReconciliationState.SUPPORTED_MULTIPLE}
+    assert any("PINUS RADIATA TIMBER" in value.value for value in shipment.canonical_fields["description"].values)
+    assert shipment.canonical_fields["country_of_harvest"].state is ReconciliationState.MISSING
+    assert shipment.canonical_fields["plant_quantity"].state is ReconciliationState.MISSING
+    assert shipment.metrics["fields_conflicting"] == 0

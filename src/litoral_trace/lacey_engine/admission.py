@@ -4,6 +4,7 @@ from .domain import RawCandidate
 from .garbage_patterns import is_label_garbage
 
 _CONTAINER = re.compile(r"^[A-Z]{4}\d{7}$")
+_MERCHANDISE_DESCRIPTION_LABEL = re.compile(r"(?:commodity description|cargo description(?:\s+\d+)?|description of goods|goods description)", re.I)
 
 
 def admit(raw: RawCandidate) -> bool:
@@ -29,6 +30,8 @@ def admit(raw: RawCandidate) -> bool:
             and not any(x in value.casefold() for x in ("address line", "city", "state province", "zip code", "country code"))
             and any(character.isalpha() for character in value)
         )
+    if raw.field_key == "description":
+        return raw.label is not None and bool(_MERCHANDISE_DESCRIPTION_LABEL.fullmatch(raw.label.strip()))
     if raw.field_key == "country_of_harvest":
         return raw.label is not None and bool(re.search(r"(?:country of harvest|harvest country|harvested in)", raw.label, re.I))
     if raw.field_key == "plant_quantity":
