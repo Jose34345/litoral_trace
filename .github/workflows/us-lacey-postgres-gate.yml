@@ -12,6 +12,7 @@ on:
       - "alembic/versions/040_establish_us_lacey_ppq505_contract.py"
       - "alembic/versions/041_add_us_lacey_lemon_squeezy_billing.py"
       - "alembic/versions/042_add_us_lacey_owner_admin_overview.py"
+      - "alembic/versions/043_add_us_lacey_engine2_shadow.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/web/us_lacey_*"
       - "src/litoral_trace/services/us_lacey_admin.py"
@@ -62,6 +63,7 @@ jobs:
       TEST_POSTGRES_MIGRATION_DATABASE_URL: postgresql+psycopg://lt_us_lacey_migrator:us_lacey_migrator_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      US_LACEY_POSTGRES_TEST_DATABASE_URL: postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       US_LACEY_ENVIRONMENT: test
       US_LACEY_DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       US_LACEY_WORKER_DATABASE_URL: postgresql+psycopg://litoral_trace_us_lacey_worker:us_lacey_worker_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
@@ -133,7 +135,7 @@ jobs:
           PY
       - name: Migrate through pre-Assurance baseline
         run: python -m alembic upgrade 029_add_smart_import_profiles
-      - name: Migrate through US Lacey Owner Admin head
+      - name: Migrate through current U.S. Lacey head
         run: python -m alembic upgrade head
       - name: Bind dedicated worker login to queue capability
         shell: bash
@@ -159,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -F "042_us_lacey_owner_admin" /tmp/alembic-current.txt
+          grep -Fx "043_us_lacey_engine2_shadow (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -177,6 +179,8 @@ jobs:
               "us_lacey_ppq_plant_lines": 4,
               "us_lacey_plant_declarations": 4,
               "us_lacey_field_candidates": 4,
+              "us_lacey_engine_document_runs": 4,
+              "us_lacey_engine_shipment_runs": 4,
               "us_lacey_payment_events": 1,
           }
           ppq_tables = (
@@ -421,6 +425,23 @@ jobs:
           }
           engine.dispose()
           PY
+      - name: Prove Engine 2 shadow persistence and tenant isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs \
+            tests/test_us_lacey_engine2_persistence.py \
+            tests/test_us_lacey_engine2_rls.py \
+            | tee /tmp/engine2-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/engine2-postgres.txt; then
+            echo "Engine 2 PostgreSQL acceptance tests must not skip in CI."
+            exit 1
+          fi
+      - name: Prove Engine 2 shadow-worker contracts
+        run: python -m pytest -q -rs tests/test_us_lacey_engine2_shadow_worker.py
+      - name: Prove Engine 2 static schema contracts
+        run: python -m pytest -q -rs tests/test_us_lacey_engine2_shadow_schema.py
       - name: Prove self-registration and email transition
         shell: bash
         run: |
