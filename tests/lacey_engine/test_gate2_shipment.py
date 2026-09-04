@@ -182,6 +182,43 @@ def test_master_house_labels_survive_gate1_and_route_end_to_end():
     assert result.canonical_fields["house_bill_of_lading"].values[0].value == "GPXGG10013119"
 
 
+def test_typed_bol_preparation_requirement_accepts_master_generic_and_house():
+    master = _shipment(_document("master", {"bill_of_lading": ("MAEU274342495", "Master B/L")}))
+    generic = _shipment(_document("generic", {"bill_of_lading": "MAEU274342495"}))
+    both = _shipment(_document("both", {"bill_of_lading": ("MAEU274342495", "Master BOL")}), _document("house", {"bill_of_lading": ("GPXGG10013119", "House BOL")}))
+    missing = _shipment(_document("none", {"container_number": "MSKU9228574"}))
+    assert master.readiness is not ShipmentReadiness.BLOCKED
+    assert generic.readiness is not ShipmentReadiness.BLOCKED
+    assert both.readiness is not ShipmentReadiness.BLOCKED
+    assert missing.readiness is ShipmentReadiness.BLOCKED
+    assert not any(issue.issue_type == "MISSING_REQUIRED" for issue in master.issues)
+
+
+def test_all_master_house_label_variants_route_end_to_end():
+    variants = (("Master BOL", "master_bill_of_lading"), ("Master B/L", "master_bill_of_lading"), ("Master Bill of Lading", "master_bill_of_lading"), ("House BOL", "house_bill_of_lading"), ("House B/L", "house_bill_of_lading"), ("House Bill of Lading", "house_bill_of_lading"))
+    for label, field_key in variants:
+        document = process_document(filename="variant.pdf", content=_text_pdf(f"OCEAN BILL OF LADING\n{label}: MAEU274342495"))
+        assert any(label.casefold() == (candidate.raw.label or "").casefold() for candidate in document.fields["bill_of_lading"].candidates)
+        result = process_shipment(documents=[ShipmentDocumentInput("variant", "variant.pdf", resolution=document)])
+        assert result.canonical_fields[field_key].values[0].value == "MAEU274342495"
+
+
+def test_dossier_1_real_multi_document_preparation_readiness():
+    result = _shipment(
+        _document("invoice", {"country_of_origin": "NEW ZEALAND", "container_number": "MSKU9228574"}, DocumentType.COMMERCIAL_INVOICE),
+        _document("packing", {"container_number": "MSKU9228574"}, DocumentType.PACKING_LIST),
+        _document("bol", {"bill_of_lading": "MAEU274342495", "container_number": "MSKU9228574"}, DocumentType.BILL_OF_LADING),
+        _document("supplier", {"species": ("radiata", "Component A"), "genus": ("Pinus", "Component A")}, DocumentType.SUPPLIER_DECLARATION),
+        _document("harvest", {"country_of_harvest": ("CHILE", "Component A")}, DocumentType.HARVEST_DECLARATION),
+    )
+    assert result.readiness is ShipmentReadiness.READY
+    assert result.canonical_fields["bill_of_lading"].state is ReconciliationState.SUPPORTED
+    assert result.canonical_fields["container_number"].state is ReconciliationState.SUPPORTED_MULTIPLE
+    assert result.canonical_fields["species"].state is ReconciliationState.SUPPORTED
+    assert result.canonical_fields["country_of_harvest"].values[0].value == "CHILE"
+    assert not result.issues
+
+
 def test_document_level_conflict_propagates_all_candidates():
     document = _document("a", {"bill_of_lading": "MAEU111"})
     first = document.fields["bill_of_lading"].winning_candidate

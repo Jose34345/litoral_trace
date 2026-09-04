@@ -57,7 +57,7 @@ def _extract(layout):
             date = _normalized_date(match.group(1))
             if date:
                 found["estimated_arrival_date"].append(_candidate("estimated_arrival_date", date, block, "Estimated Arrival Date"))
-        for match in re.finditer(r"(?P<label>Master\s+(?:BOL|B/L)(?:\s*#)?|House\s+(?:BOL|B/L)(?:\s*#)?|Bill of Lading|B/L\s*No\.?|\bBOL)\s*[:#-]?\s*(?P<value>[A-Z0-9-]{6,})", text, re.I):
+        for match in re.finditer(r"(?P<label>Master\s+(?:Bill of Lading|BOL|B/L)(?:\s*#)?|House\s+(?:Bill of Lading|BOL|B/L)(?:\s*#)?|Bill of Lading|B/L\s*No\.?|\bBOL)\s*[:#-]?\s*(?P<value>[A-Z0-9-]{6,})", text, re.I):
             found["bill_of_lading"].append(_candidate("bill_of_lading", match.group("value").upper(), block, match.group("label")))
         for match in re.finditer(r"\bContainer(?:\s+(?:Number|No\.?)?)?\s*[:#-]?\s*([A-Z]{4}\d{7})\b", text, re.I):
             found["container_number"].append(_candidate("container_number", match.group(1).upper(), block, "Container Number"))

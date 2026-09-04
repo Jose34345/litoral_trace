@@ -106,8 +106,17 @@ class ShipmentIssue:
 
 
 @dataclass(frozen=True, slots=True)
+class PreparationRequirement:
+    """A preparation requirement satisfied by any acceptable canonical field."""
+    requirement_id: str
+    acceptable_fields: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ShipmentPreparationContext:
-    required_fields: tuple[str, ...] = ("bill_of_lading",)
+    requirements: tuple[PreparationRequirement, ...] = (
+        PreparationRequirement("BILL_OF_LADING_PRESENT", ("master_bill_of_lading", "bill_of_lading", "house_bill_of_lading")),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,9 +325,10 @@ def process_shipment(*, documents: list[ShipmentDocumentInput], ruleset: LaceyRu
         if key in _IMPORTANT and evidence and max(item.source_authority for item in evidence) < 10:
             issues.append(ShipmentIssue(f"low-authority:{key}", key, _scope(_CATALOG[key]).value, "MEDIUM", "LOW_AUTHORITY_ONLY", f"Only low-authority evidence is available for {key}.", ids, docs))
             fields[key] = ReconciliationResult(key, ReconciliationState.REVIEW_REQUIRED, (), evidence)
-    for key in ruleset.preparation.required_fields:
-        if fields.get(key, ReconciliationResult(key, ReconciliationState.MISSING, (), ())).state is ReconciliationState.MISSING:
-            issues.append(ShipmentIssue(f"missing:{key}", key, EvidenceScope.SHIPMENT.value, "HIGH", "MISSING_REQUIRED", f"Required preparation evidence missing for {key}.", (), ()))
+    for requirement in ruleset.preparation.requirements:
+        acceptable = [fields[key] for key in requirement.acceptable_fields]
+        if not any(result.state is not ReconciliationState.MISSING for result in acceptable):
+            issues.append(ShipmentIssue(f"missing:{requirement.requirement_id}", "bill_of_lading", EvidenceScope.SHIPMENT.value, "HIGH", "MISSING_REQUIRED", f"Required preparation evidence missing for {requirement.requirement_id}.", (), ()))
     blocking = any(issue.severity == "HIGH" for issue in issues)
     review = any(issue.severity == "MEDIUM" for issue in issues) or any(result.state in {ReconciliationState.NEAR_MATCH, ReconciliationState.REVIEW_REQUIRED} for result in fields.values())
     readiness = ShipmentReadiness.BLOCKED if blocking else (ShipmentReadiness.REVIEW_REQUIRED if review else ShipmentReadiness.READY)

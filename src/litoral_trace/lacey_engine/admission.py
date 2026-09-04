@@ -18,7 +18,7 @@ def admit(raw: RawCandidate) -> bool:
         # nearby table headings such as "Voyage" into the candidate pool.
         return (
             raw.label is not None
-            and bool(re.fullmatch(r"(?:master\s+(?:bol|b/l)(?:\s*#)?|house\s+bol(?:\s*#)?|bill of lading|b/l\s*no\.?|bol)", raw.label, re.I))
+            and bool(re.fullmatch(r"(?:master\s+(?:bill of lading|bol|b/l)(?:\s*#)?|house\s+(?:bill of lading|bol|b/l)(?:\s*#)?|bill of lading|b/l\s*no\.?|bol)", raw.label, re.I))
             and bool(re.fullmatch(r"[A-Z0-9][A-Z0-9-]{5,34}", value, re.I))
             and any(character.isdigit() for character in value)
         )
