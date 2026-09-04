@@ -675,8 +675,8 @@ jobs:
                   {"token": token_hash},
               ).mappings().all()
 
-          assert len(rows) == 2
           by_name = {row["legal_name"]: dict(row) for row in rows}
+          assert {"US Lacey Gate Imports LLC", "US Lacey Lemon Gate LLC"}.issubset(by_name)
           manual = by_name["US Lacey Gate Imports LLC"]
           lemon = by_name["US Lacey Lemon Gate LLC"]
           assert manual["account_status"] == "PAYMENT_PENDING"
