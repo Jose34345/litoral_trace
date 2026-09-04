@@ -1,6 +1,7 @@
 from litoral_trace.lacey_engine.domain import AdmittedCandidate, DocumentResolution, DocumentType, EvidenceClass, FieldStatus, LayoutBlock, ParsedLayout, Provenance, RawCandidate, ResolvedField
 from litoral_trace.lacey_engine.shipment import LaceyRuleset, ReconciliationState, ShipmentDocumentInput, ShipmentPreparationContext, ShipmentReadiness, normalize_mass, normalize_money, normalize_quantity, process_shipment
 from litoral_trace.lacey_engine.pipeline import process_document
+from litoral_trace.lacey_engine.serialization import deserialize_document_resolution, deserialize_shipment_resolution, serialize_document_resolution, serialize_shipment_resolution
 
 
 def _document(identifier, values, document_type=DocumentType.BILL_OF_LADING):
@@ -228,3 +229,11 @@ def test_document_level_conflict_propagates_all_candidates():
     document.fields["bill_of_lading"] = ResolvedField("bill_of_lading", FieldStatus.CONFLICT, None, None, (first, second))
     result = process_shipment(documents=[ShipmentDocumentInput("a", "a.pdf", resolution=document)])
     assert {item.normalized_value for item in result.canonical_fields["bill_of_lading"].supporting_evidence} == {"MAEU111", "MAEU222"}
+
+
+def test_resolution_serialization_round_trips_without_infrastructure():
+    document = _document("a", {"bill_of_lading": "MAEU274342495", "container_number": "MSKU9228574"})
+    restored_document = deserialize_document_resolution(serialize_document_resolution(document))
+    restored_shipment = deserialize_shipment_resolution(serialize_shipment_resolution(_shipment(document)))
+    assert restored_document.fields["bill_of_lading"].winning_candidate.raw.normalized_value == "MAEU274342495"
+    assert restored_shipment.canonical_fields["container_number"].supporting_evidence[0].candidate_id

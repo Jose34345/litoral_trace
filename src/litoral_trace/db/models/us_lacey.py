@@ -145,37 +145,64 @@ class UsLaceyOperationDocument(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["operation_id", "organization_id"],
-            ["us_lacey_operations.id", "us_lacey_operations.organization_id"],
-            name="fk_us_lacey_operation_documents_operation_tenant",
-            ondelete="CASCADE",
-        ),
-        ForeignKeyConstraint(
-            ["assurance_document_id", "organization_id"],
-            ["assurance_documents.id", "assurance_documents.organization_id"],
-            name="fk_us_lacey_operation_documents_assurance_tenant",
-            ondelete="RESTRICT",
-        ),
+        ForeignKeyConstraint(["operation_id", "organization_id"], ["us_lacey_operations.id", "us_lacey_operations.organization_id"], name="fk_us_lacey_operation_documents_operation_tenant", ondelete="CASCADE"),
+        ForeignKeyConstraint(["assurance_document_id", "organization_id"], ["assurance_documents.id", "assurance_documents.organization_id"], name="fk_us_lacey_operation_documents_assurance_tenant", ondelete="RESTRICT"),
         UniqueConstraint("id", "organization_id", name="uq_us_lacey_operation_documents_id_org"),
-        UniqueConstraint(
-            "organization_id",
-            "operation_id",
-            "assurance_document_id",
-            "version_number",
-            name="uq_us_lacey_operation_documents_version",
-        ),
+        UniqueConstraint("organization_id", "operation_id", "assurance_document_id", "version_number", name="uq_us_lacey_operation_documents_version"),
         CheckConstraint("version_number > 0", name="ck_us_lacey_operation_documents_version"),
         Index("ix_us_lacey_operation_documents_organization_id", "organization_id"),
-        Index(
-            "ix_us_lacey_operation_documents_org_operation",
-            "organization_id",
-            "operation_id",
-        ),
+        Index("ix_us_lacey_operation_documents_org_operation", "organization_id", "operation_id"),
     )
 
+
+class UsLaceyEngineDocumentRun(Base):
+    """Immutable Engine 2 shadow result; never feeds the authoritative projection."""
+    __tablename__ = "us_lacey_engine_document_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    operation_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    operation_document_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    assurance_document_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    engine_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    role_hint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    resolution_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    safe_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    safe_error_message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (
+        ForeignKeyConstraint(["operation_id", "organization_id"], ["us_lacey_operations.id", "us_lacey_operations.organization_id"], name="fk_lacey_e2_docrun_operation_tenant", ondelete="CASCADE"),
+        ForeignKeyConstraint(["operation_document_id", "organization_id"], ["us_lacey_operation_documents.id", "us_lacey_operation_documents.organization_id"], name="fk_lacey_e2_docrun_link_tenant", ondelete="CASCADE"),
+        ForeignKeyConstraint(["assurance_document_id", "organization_id"], ["assurance_documents.id", "assurance_documents.organization_id"], name="fk_lacey_e2_docrun_assurance_tenant", ondelete="RESTRICT"),
+        UniqueConstraint("organization_id", "assurance_document_id", "source_sha256", "engine_version", "schema_version", "role_hint", "status", name="uq_lacey_e2_docrun_identity"),
+        CheckConstraint("status IN ('SUCCEEDED','FAILED')", name="ck_lacey_e2_docrun_status"),
+        Index("ix_lacey_e2_docrun_org_operation", "organization_id", "operation_id"),
+    )
+
+
+class UsLaceyEngineShipmentRun(Base):
+    """Immutable operation-source-set snapshot from the Engine 2 shadow path."""
+    __tablename__ = "us_lacey_engine_shipment_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    operation_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    engine_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    ruleset_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    source_set_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    document_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    readiness: Mapped[str] = mapped_column(String(24), nullable=False)
+    resolution_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (
+        ForeignKeyConstraint(["operation_id", "organization_id"], ["us_lacey_operations.id", "us_lacey_operations.organization_id"], name="fk_lacey_e2_shiprun_operation_tenant", ondelete="CASCADE"),
+        UniqueConstraint("organization_id", "operation_id", "source_set_fingerprint", name="uq_lacey_e2_shiprun_fingerprint"),
+        CheckConstraint("readiness IN ('READY','REVIEW_REQUIRED','BLOCKED')", name="ck_lacey_e2_shiprun_readiness"),
+        Index("ix_lacey_e2_shiprun_org_operation", "organization_id", "operation_id"),
+    )
 
 class UsLaceyPpqShipment(Base):
     """Exactly one PPQ shipment header (fields 1–10) per operation."""
