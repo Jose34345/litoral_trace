@@ -66,4 +66,8 @@ class FakeVault:
     def __init__(self, content): self.content = content
     @contextmanager
     def materialize_verified_download(self, **_):
-        yield type("Download", (), {"iter_chunks": lambda self: iter((self.content,))})()
+        content = self.content
+        class Download:
+            def iter_chunks(self):
+                return iter((content,))
+        yield Download()
