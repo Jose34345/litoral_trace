@@ -6,6 +6,7 @@ uses U.S.-database opaque sessions rather than the generic Litoral Trace JWT.
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import logging
 import re
 
 from fastapi import Cookie, FastAPI, File, Form, HTTPException, Request, UploadFile, status
@@ -39,6 +40,7 @@ from litoral_trace.us_lacey.operations import (
     UsLaceyOperationNotFound,
     UsLaceyOperationService,
 )
+from litoral_trace.us_lacey.lacey_engine_dossier import Engine2DossierAvailability, Engine2DossierView, UsLaceyEngineDossierService
 from litoral_trace.us_lacey.portal_auth import (
     US_LACEY_SESSION_COOKIE,
     UsLaceyPortalAuthError,
@@ -82,6 +84,8 @@ from litoral_trace.web.us_lacey_portal_views import (
     render_message_page,
 )
 from litoral_trace.web.templates import STATIC_DIR
+
+LOGGER = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -144,6 +148,13 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
         organization_id=identity.organization_id,
         operation_public_id=operation_public_id,
     )
+    try:
+        engine2_dossier = UsLaceyEngineDossierService().get_dossier(
+            organization_id=identity.organization_id, operation_public_id=detail.public_id
+        )
+    except Exception:
+        LOGGER.exception("Engine 2 dossier preview failed", extra={"organization_id": identity.organization_id})
+        engine2_dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
     review_tokens = {
         field.id: us_lacey_csrf_token(
             session_token=us_session,
@@ -157,6 +168,7 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
             request=request,
             identity=identity,
             detail=detail,
+            engine2_dossier=engine2_dossier,
             upload_csrf=us_lacey_csrf_token(
                 session_token=us_session,
                 purpose=f"upload:{detail.public_id}",

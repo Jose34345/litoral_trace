@@ -11,7 +11,8 @@ from .ranking import resolve
 from .segmentation import segment
 
 ENGINE_VERSION = "lacey-engine-2.0.0"
-_FIELDS = ("estimated_arrival_date", "bill_of_lading", "container_number", "consignee_name", "consignee_address", "species", "genus", "filing_entry_reference", "manufacturer_id", "hts_code", "country_of_harvest", "plant_quantity", "metric_unit")
+_FIELDS = ("estimated_arrival_date", "bill_of_lading", "container_number", "consignee_name", "consignee_address", "description", "species", "genus", "filing_entry_reference", "manufacturer_id", "hts_code", "country_of_harvest", "plant_quantity", "metric_unit")
+_MERCHANDISE_DESCRIPTION_LABEL = re.compile(r"(?:commodity description|cargo description(?:\s+\d+)?|description of goods|goods description)", re.I)
 
 
 def _candidate(field: str, value: str, block, label: str, evidence=EvidenceClass.EXPLICIT, derived_from=None) -> RawCandidate:
@@ -48,6 +49,8 @@ def _extract(layout):
                 found["container_number"].append(_candidate("container_number", value.upper(), block, key))
             elif "consignee" in lower and "address" not in lower:
                 found["consignee_name"].append(_candidate("consignee_name", value.upper(), block, key))
+            elif _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(key):
+                found["description"].append(_candidate("description", value, block, key))
             elif re.search(r"country of harvest|harvest country|harvested in", lower):
                 found["country_of_harvest"].append(_candidate("country_of_harvest", value, block, key))
         # Web-print PDFs often position labels and values on the same visual line
@@ -65,6 +68,10 @@ def _extract(layout):
             value = " ".join(match.group(1).split())
             if value:
                 found["consignee_name"].append(_candidate("consignee_name", value, block, "Consignee Name"))
+        for match in re.finditer(r"(?P<label>Commodity Description|Cargo Description\s+\d+|Description of Goods|Goods Description)\s*[:#-]?\s*(?P<value>[^\n]{1,240})", text, re.I):
+            value = " ".join(match.group("value").split())
+            if value:
+                found["description"].append(_candidate("description", value, block, match.group("label")))
     genera = {"pinus", "eucalyptus", "quercus", "acer", "betula", "fagus", "fraxinus", "populus", "tectona"}
     for source in layout.blocks:
         taxon = next((match for match in re.finditer(r"\b([A-Za-z]{3,})\s+([A-Za-z]{3,})\b", source.text) if match.group(1).casefold() in genera), None)
