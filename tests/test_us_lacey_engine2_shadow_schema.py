@@ -34,14 +34,15 @@ def test_source_set_fingerprint_is_order_independent_and_version_sensitive():
     assert baseline == source_set_fingerprint(organization_id=1, operation_id=9, documents=[second, first])
     changed = (SimpleNamespace(id=8, assurance_document_id=4, version_number=3), SimpleNamespace(sha256="a" * 64))
     assert baseline != source_set_fingerprint(organization_id=1, operation_id=9, documents=[changed, second])
+    assert baseline != source_set_fingerprint(organization_id=1, operation_id=9, documents=[first, second], shipment_schema_version="lacey_shipment_resolution_v2")
 
 
 def test_engine2_orm_and_migration_share_status_scoped_document_identity():
     source = MIGRATION.read_text(encoding="utf-8")
-    expected = ("organization_id", "assurance_document_id", "source_sha256", "engine_version", "role_hint", "status")
+    expected = ("organization_id", "assurance_document_id", "source_sha256", "engine_version", "schema_version", "role_hint", "status")
     unique = next(item for item in UsLaceyEngineDocumentRun.__table_args__ if getattr(item, "name", None) == "uq_lacey_e2_docrun_identity")
     assert tuple(column.name for column in unique.columns) == expected
-    assert 'sa.UniqueConstraint("organization_id", "assurance_document_id", "source_sha256", "engine_version", "role_hint", "status", name="uq_lacey_e2_docrun_identity")' in source
+    assert 'sa.UniqueConstraint("organization_id", "assurance_document_id", "source_sha256", "engine_version", "schema_version", "role_hint", "status", name="uq_lacey_e2_docrun_identity")' in source
     # Retry policy intentionally retains one FAILED and one SUCCEEDED row per identity.
 
 

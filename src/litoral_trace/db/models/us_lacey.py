@@ -177,7 +177,7 @@ class UsLaceyEngineDocumentRun(Base):
         ForeignKeyConstraint(["operation_id", "organization_id"], ["us_lacey_operations.id", "us_lacey_operations.organization_id"], name="fk_lacey_e2_docrun_operation_tenant", ondelete="CASCADE"),
         ForeignKeyConstraint(["operation_document_id", "organization_id"], ["us_lacey_operation_documents.id", "us_lacey_operation_documents.organization_id"], name="fk_lacey_e2_docrun_link_tenant", ondelete="CASCADE"),
         ForeignKeyConstraint(["assurance_document_id", "organization_id"], ["assurance_documents.id", "assurance_documents.organization_id"], name="fk_lacey_e2_docrun_assurance_tenant", ondelete="RESTRICT"),
-        UniqueConstraint("organization_id", "assurance_document_id", "source_sha256", "engine_version", "role_hint", "status", name="uq_lacey_e2_docrun_identity"),
+        UniqueConstraint("organization_id", "assurance_document_id", "source_sha256", "engine_version", "schema_version", "role_hint", "status", name="uq_lacey_e2_docrun_identity"),
         CheckConstraint("status IN ('SUCCEEDED','FAILED')", name="ck_lacey_e2_docrun_status"),
         Index("ix_lacey_e2_docrun_org_operation", "organization_id", "operation_id"),
     )

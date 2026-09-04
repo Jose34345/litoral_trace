@@ -24,9 +24,9 @@ class ShadowAggregationResult:
     status: str
     shipment_run_id: int | None = None
 
-def source_set_fingerprint(*, organization_id: int, operation_id: int, documents: list[tuple[UsLaceyOperationDocument, VaultDocument]], ruleset_version: str = "lacey_ruleset_2026_01", engine_version: str = ENGINE_VERSION) -> str:
+def source_set_fingerprint(*, organization_id: int, operation_id: int, documents: list[tuple[UsLaceyOperationDocument, VaultDocument]], ruleset_version: str = "lacey_ruleset_2026_01", engine_version: str = ENGINE_VERSION, shipment_schema_version: str = SHIPMENT_RESOLUTION_SCHEMA_VERSION) -> str:
     items = [{"operation_document_id": link.id, "assurance_document_id": link.assurance_document_id, "version": link.version_number, "sha256": vault.sha256} for link, vault in sorted(documents, key=lambda pair: pair[0].id)]
-    encoded = json.dumps({"organization_id": organization_id, "operation_id": operation_id, "documents": items, "engine_version": engine_version, "ruleset_version": ruleset_version}, sort_keys=True, separators=(",", ":")).encode()
+    encoded = json.dumps({"organization_id": organization_id, "operation_id": operation_id, "documents": items, "engine_version": engine_version, "ruleset_version": ruleset_version, "shipment_schema_version": shipment_schema_version}, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 class UsLaceyEngine2Service:
@@ -41,11 +41,11 @@ class UsLaceyEngine2Service:
             rows = session.execute(select(UsLaceyOperationDocument, AssuranceDocument, VaultDocument).join(AssuranceDocument, (AssuranceDocument.id == UsLaceyOperationDocument.assurance_document_id) & (AssuranceDocument.organization_id == UsLaceyOperationDocument.organization_id)).join(VaultDocument, (VaultDocument.id == AssuranceDocument.vault_document_id) & (VaultDocument.organization_id == AssuranceDocument.organization_id)).where(UsLaceyOperationDocument.organization_id == organization_id, UsLaceyOperationDocument.operation_id == operation_id, UsLaceyOperationDocument.is_current.is_(True)).order_by(UsLaceyOperationDocument.id)).all()
             pairs = [(row[0], row[2]) for row in rows]
             fingerprint = source_set_fingerprint(organization_id=organization_id, operation_id=operation_id, documents=pairs, engine_version=self._engine_version, ruleset_version=self._ruleset.version)
-            existing = session.scalar(select(UsLaceyEngineShipmentRun).where(UsLaceyEngineShipmentRun.organization_id == organization_id, UsLaceyEngineShipmentRun.operation_id == operation_id, UsLaceyEngineShipmentRun.source_set_fingerprint == fingerprint))
+            existing = session.scalar(select(UsLaceyEngineShipmentRun).where(UsLaceyEngineShipmentRun.organization_id == organization_id, UsLaceyEngineShipmentRun.operation_id == operation_id, UsLaceyEngineShipmentRun.source_set_fingerprint == fingerprint, UsLaceyEngineShipmentRun.schema_version == SHIPMENT_RESOLUTION_SCHEMA_VERSION))
             if existing: return ShadowAggregationResult("SUCCEEDED", existing.id)
             inputs = []
             for link, assurance, vault in rows:
-                run = session.scalar(select(UsLaceyEngineDocumentRun).where(UsLaceyEngineDocumentRun.organization_id == organization_id, UsLaceyEngineDocumentRun.assurance_document_id == assurance.id, UsLaceyEngineDocumentRun.source_sha256 == vault.sha256, UsLaceyEngineDocumentRun.engine_version == self._engine_version, UsLaceyEngineDocumentRun.role_hint == link.document_role, UsLaceyEngineDocumentRun.status == "SUCCEEDED"))
+                run = session.scalar(select(UsLaceyEngineDocumentRun).where(UsLaceyEngineDocumentRun.organization_id == organization_id, UsLaceyEngineDocumentRun.assurance_document_id == assurance.id, UsLaceyEngineDocumentRun.source_sha256 == vault.sha256, UsLaceyEngineDocumentRun.engine_version == self._engine_version, UsLaceyEngineDocumentRun.schema_version == DOCUMENT_RESOLUTION_SCHEMA_VERSION, UsLaceyEngineDocumentRun.role_hint == link.document_role, UsLaceyEngineDocumentRun.status == "SUCCEEDED"))
                 if run is None:
                     try:
                         with self._vault.materialize_verified_download(organization_id=organization_id, document_id=vault.public_id) as download:

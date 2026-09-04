@@ -3,15 +3,16 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
+from types import SimpleNamespace
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from litoral_trace.db.models import ReconciliationIssue, UsLaceyEngineDocumentRun, UsLaceyEngineShipmentRun, UsLaceyOperation, UsLaceyOperationDocument, UsLaceyOperationField, UsLaceyFieldCandidate, User
 from litoral_trace.lacey_engine.domain import AdmittedCandidate, DocumentResolution, DocumentType, EvidenceClass, FieldStatus, LayoutBlock, ParsedLayout, Provenance, RawCandidate, ResolvedField
-from litoral_trace.lacey_engine.serialization import SHIPMENT_RESOLUTION_SCHEMA_VERSION, deserialize_shipment_resolution
+from litoral_trace.lacey_engine.serialization import DOCUMENT_RESOLUTION_SCHEMA_VERSION, SHIPMENT_RESOLUTION_SCHEMA_VERSION, deserialize_shipment_resolution, serialize_document_resolution
 from litoral_trace.lacey_engine.shipment import LaceyRuleset
 from litoral_trace.us_lacey import lacey_engine_service as service_module
-from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
+from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service, source_set_fingerprint
 from tests.us_lacey_engine2_postgres import FakeVault, add_test_document, create_test_graph, engine2_postgres_engine, engine2_postgres_session_factory, tenant_session
 
 
@@ -63,6 +64,26 @@ def test_engine2_document_run_reuses_identical_success(engine2_postgres_session_
     monkeypatch.setattr(service_module, "process_document", lambda **_: (calls.append(1), _resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"}))[1])
     service = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"x")); service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     session = tenant_session(engine2_postgres_session_factory, org); assert session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=link, status="SUCCEEDED").count() == 1 and len(calls) == 1; session.close()
+
+
+def test_engine2_schema_versions_do_not_reuse_document_or_shipment_caches(engine2_postgres_session_factory, monkeypatch):
+    org, operation, link, assurance, _, sha = create_test_graph(engine2_postgres_session_factory, content=b"schema")
+    resolution = _resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"})
+    session = tenant_session(engine2_postgres_session_factory, org)
+    session.add(UsLaceyEngineDocumentRun(organization_id=org, operation_id=operation, operation_document_id=link, assurance_document_id=assurance, engine_version=service_module.ENGINE_VERSION, schema_version="lacey_document_resolution_v0", source_sha256=sha, role_hint="BILL_OF_LADING", status="SUCCEEDED", resolution_json=serialize_document_resolution(resolution)))
+    old_fingerprint = source_set_fingerprint(organization_id=org, operation_id=operation, documents=[(SimpleNamespace(id=link, assurance_document_id=assurance, version_number=1), SimpleNamespace(sha256=sha))], shipment_schema_version="lacey_shipment_resolution_v0")
+    session.add(UsLaceyEngineShipmentRun(organization_id=org, operation_id=operation, engine_version=service_module.ENGINE_VERSION, ruleset_version="lacey_ruleset_2026_01", schema_version="lacey_shipment_resolution_v0", source_set_fingerprint=old_fingerprint, document_count=0, readiness="BLOCKED", resolution_json={"historical": True}))
+    session.commit(); session.close()
+    calls = []; monkeypatch.setattr(service_module, "process_document", lambda **_: (calls.append(1), resolution)[1])
+    service = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"schema"))
+    first = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); second = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
+    session = tenant_session(engine2_postgres_session_factory, org)
+    assert first.shipment_run_id == second.shipment_run_id and len(calls) == 1
+    assert session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=link, status="SUCCEEDED").count() == 2
+    assert {row.schema_version for row in session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=link)} == {"lacey_document_resolution_v0", DOCUMENT_RESOLUTION_SCHEMA_VERSION}
+    assert session.query(UsLaceyEngineShipmentRun).filter_by(organization_id=org, operation_id=operation).count() == 2
+    assert _snapshot(engine2_postgres_session_factory, org, first.shipment_run_id).schema_version == SHIPMENT_RESOLUTION_SCHEMA_VERSION
+    session.close()
 
 
 def test_engine2_same_sha_is_never_reused_cross_tenant(engine2_postgres_session_factory, monkeypatch):
