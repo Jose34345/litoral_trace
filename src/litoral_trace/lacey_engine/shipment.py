@@ -68,6 +68,7 @@ class ShipmentEvidence:
     scope: EvidenceScope = EvidenceScope.SHIPMENT
     line_key: str | None = None
     component_key: str | None = None
+    quantity_semantic_type: QuantitySemanticType = QuantitySemanticType.OTHER
 
     @property
     def authority(self) -> float:
@@ -141,7 +142,7 @@ def normalize_money(value: str) -> tuple[str | None, Decimal | None]:
     if not match:
         return None, None
     try:
-        return match.group(1), Decimal(match.group(2).replace(",", ""))
+        return match.group(1), Decimal(match.group(2).replace(",", "")).normalize()
     except InvalidOperation:
         return None, None
 
@@ -175,10 +176,10 @@ def _normal(field_key: str, value: str) -> str:
         return re.sub(r"\D", "", text)
     if field_key == "entered_value":
         currency, amount = normalize_money(text)
-        return f"{currency} {amount}" if currency and amount is not None else text
+        return f"{currency} {amount.normalize()}" if currency and amount is not None else text
     if field_key == "plant_quantity":
         quantity = normalize_quantity(text)
-        return f"{quantity} KG" if quantity is not None else text
+        return f"{quantity.normalize()} KG" if quantity is not None else text
     return text
 
 
@@ -193,6 +194,25 @@ def _association(label: str, scope: EvidenceScope) -> tuple[str | None, str | No
     return (match.group(1), None) if scope is EvidenceScope.PLANT_COMPONENT else (None, match.group(1))
 
 
+def _quantity_semantic_type(label: str) -> QuantitySemanticType:
+    label = label.casefold()
+    for phrase, semantic in (("plant material", QuantitySemanticType.PLANT_MATERIAL_QUANTITY), ("gross weight", QuantitySemanticType.GROSS_WEIGHT), ("net weight", QuantitySemanticType.NET_WEIGHT), ("package", QuantitySemanticType.PACKAGE_COUNT), ("piece", QuantitySemanticType.PIECE_COUNT), ("volume", QuantitySemanticType.VOLUME)):
+        if phrase in label:
+            return semantic
+    return QuantitySemanticType.OTHER
+
+
+def _atomic_state(field_key: str, evidence: list[ShipmentEvidence]) -> ReconciliationState:
+    groups = {_normal(field_key, item.normalized_value) for item in evidence}
+    if len(groups) == 1:
+        return ReconciliationState.SUPPORTED_MULTIPLE if len(evidence) > 1 else ReconciliationState.SUPPORTED
+    if field_key == "entered_value":
+        currencies = {normalize_money(item.normalized_value)[0] for item in evidence}
+        if len(currencies) > 1:
+            return ReconciliationState.REVIEW_REQUIRED
+    return ReconciliationState.REVIEW_REQUIRED if len({item.source_authority for item in evidence}) > 1 else ReconciliationState.CONFLICT
+
+
 def _reconcile(field_key: str, evidence: list[ShipmentEvidence]) -> ReconciliationResult:
     if not evidence:
         return ReconciliationResult(field_key, ReconciliationState.MISSING, (), ())
@@ -203,13 +223,27 @@ def _reconcile(field_key: str, evidence: list[ShipmentEvidence]) -> Reconciliati
     cardinality = _CATALOG[field_key]
     if cardinality is FieldCardinality.SET:
         return ReconciliationResult(field_key, ReconciliationState.SUPPORTED_MULTIPLE if len(evidence) > 1 else ReconciliationState.SUPPORTED, values, tuple(evidence))
+    if cardinality in {FieldCardinality.PER_MERCHANDISE_LINE, FieldCardinality.PER_PLANT_COMPONENT}:
+        association_keys = [item.line_key if cardinality is FieldCardinality.PER_MERCHANDISE_LINE else item.component_key for item in evidence]
+        if None in association_keys:
+            state = ReconciliationState.REVIEW_REQUIRED if len(groups) > 1 else _atomic_state(field_key, evidence)
+            return ReconciliationResult(field_key, state, values, tuple(evidence))
+        partitions: dict[str, list[ShipmentEvidence]] = {}
+        for item, key in zip(evidence, association_keys):
+            partitions.setdefault(key or "", []).append(item)
+        states = [_atomic_state(field_key, items) for items in partitions.values()]
+        if ReconciliationState.CONFLICT in states:
+            state = ReconciliationState.CONFLICT
+        elif ReconciliationState.REVIEW_REQUIRED in states:
+            state = ReconciliationState.REVIEW_REQUIRED
+        elif len(partitions) > 1:
+            state = ReconciliationState.SUPPORTED_MULTIPLE
+        else:
+            state = states[0]
+        return ReconciliationResult(field_key, state, values, tuple(evidence))
     if len(groups) == 1:
         raw_values = {item.normalized_value for item in evidence}
         state = ReconciliationState.NEAR_MATCH if field_key in _PARTY_KEYS and len(raw_values) > 1 else (ReconciliationState.SUPPORTED_MULTIPLE if len(evidence) > 1 else ReconciliationState.SUPPORTED)
-        return ReconciliationResult(field_key, state, values, tuple(evidence))
-    if cardinality is FieldCardinality.PER_PLANT_COMPONENT:
-        keys = {item.component_key for item in evidence}
-        state = ReconciliationState.SUPPORTED_MULTIPLE if None not in keys and len(keys) == len(evidence) else (ReconciliationState.CONFLICT if len(keys) == 1 and None not in keys else ReconciliationState.REVIEW_REQUIRED)
         return ReconciliationResult(field_key, state, values, tuple(evidence))
     # A material authority gap is a reviewable discrepancy, unlike equal authority facts.
     strengths = {item.source_authority for item in evidence}
@@ -262,7 +296,10 @@ def process_shipment(*, documents: list[ShipmentDocumentInput], ruleset: LaceyRu
                 scope = _scope(_CATALOG[field_key])
                 component_key, line_key = _association(candidate.raw.label or "", scope)
                 authority_key = "bill_of_lading" if field_key in {"master_bill_of_lading", "house_bill_of_lading"} else field_key
-                record = ShipmentEvidence(f"{item.document_id}:{field_key}:{candidate.provenance.block_id}:{index}", item.document_id, field_key, candidate.raw.normalized_value, candidate, candidate.score, authority(authority_key, candidate.document_type), scope, line_key, component_key)
+                semantic = _quantity_semantic_type(candidate.raw.label or "")
+                if field_key == "plant_quantity" and semantic is not QuantitySemanticType.PLANT_MATERIAL_QUANTITY:
+                    continue
+                record = ShipmentEvidence(f"{item.document_id}:{field_key}:{candidate.provenance.block_id}:{index}", item.document_id, field_key, candidate.raw.normalized_value, candidate, candidate.score, authority(authority_key, candidate.document_type), scope, line_key, component_key, semantic)
                 evidence_by_field.setdefault(field_key, []).append(record)
     fields = {key: _reconcile(key, evidence_by_field.get(key, [])) for key in _CATALOG}
     issues: list[ShipmentIssue] = []
