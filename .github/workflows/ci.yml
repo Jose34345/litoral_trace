@@ -48,9 +48,31 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Install OCR runtime
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa
+          set -euo pipefail
+          UBUNTU_SOURCES="/etc/apt/sources.list.d/ubuntu.sources"
+          if [ -f "$UBUNTU_SOURCES" ]; then
+            APT_UBUNTU_ONLY=(
+              -o Dir::Etc::sourcelist="sources.list.d/ubuntu.sources"
+              -o Dir::Etc::sourceparts="-"
+              -o APT::Get::List-Cleanup="0"
+            )
+            sudo apt-get update "${APT_UBUNTU_ONLY[@]}"
+            sudo apt-get install -y --no-install-recommends "${APT_UBUNTU_ONLY[@]}" \
+              tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa
+          else
+            # Hosted runners occasionally include unavailable Microsoft feeds.
+            # Disable only those third-party definitions for this ephemeral job.
+            for source in /etc/apt/sources.list.d/*.{list,sources}; do
+              [ -f "$source" ] || continue
+              if grep -qi 'packages.microsoft.com' "$source"; then
+                sudo mv "$source" "$source.disabled"
+              fi
+            done
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa
+          fi
           tesseract --version
           tesseract --list-langs | grep -Fx eng
           tesseract --list-langs | grep -Fx spa
