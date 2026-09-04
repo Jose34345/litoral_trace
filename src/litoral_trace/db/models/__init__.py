@@ -30,6 +30,8 @@ from litoral_trace.db.models.eudr_dds_candidate import EudrDdsCandidate
 from litoral_trace.db.models.eudr_acceptance_attempt import EudrAcceptanceAttempt
 from litoral_trace.db.models.us_lacey import (
     UsLaceyFieldCandidate,
+    UsLaceyEngineDocumentRun,
+    UsLaceyEngineShipmentRun,
     UsLaceyOperation,
     UsLaceyOperationDocument,
     UsLaceyOperationField,
@@ -93,6 +95,8 @@ __all__ = [
     "EudrAcceptanceAttempt",
     "UsLaceyOrganizationProfile",
     "UsLaceyFieldCandidate",
+    "UsLaceyEngineDocumentRun",
+    "UsLaceyEngineShipmentRun",
     "UsLaceyOperation",
     "UsLaceyOperationDocument",
     "UsLaceyOperationField",

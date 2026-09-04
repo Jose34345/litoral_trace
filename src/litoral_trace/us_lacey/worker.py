@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 
 from sqlalchemy import select
 
@@ -20,6 +21,7 @@ from litoral_trace.us_lacey.projection import (
     project_assurance_document_to_us_lacey,
     refresh_us_lacey_operation_status,
 )
+from litoral_trace.us_lacey.lacey_engine_service import ENGINE2_SHADOW, UsLaceyEngine2Service, engine2_mode
 from litoral_trace.us_lacey.storage import (
     build_us_lacey_storage_settings,
     get_us_lacey_storage_client,
@@ -28,6 +30,9 @@ from litoral_trace.us_lacey.storage import (
 
 class UsLaceyWorkerError(RuntimeError):
     pass
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +61,21 @@ def _processing_service() -> AssuranceProcessingService:
         # entities. Document extraction stays shared; legacy entity matching does not.
         enable_entity_matching=False,
     )
+
+
+def _shadow_engine2(*, organization_id: int, operation_id: int) -> None:
+    """Best-effort only: never changes authoritative job/projection semantics."""
+    if engine2_mode() != ENGINE2_SHADOW:
+        return
+    settings = build_us_lacey_storage_settings()
+    vault = VaultService(storage_settings=settings, storage=get_us_lacey_storage_client(), session_factory=get_us_lacey_db_session)
+    try:
+        UsLaceyEngine2Service(vault_service=vault).resolve_operation_with_engine2(organization_id=organization_id, operation_id=operation_id)
+    except Exception:
+        # The isolated service records per-document safe failures where possible;
+        # shadow faults intentionally cannot fail the authoritative worker job.
+        LOGGER.exception("Lacey Engine 2 shadow resolution failed", extra={"organization_id": organization_id, "operation_id": operation_id})
+        return
 
 
 def _assurance_public_id(*, organization_id: int, document_id: int):
@@ -161,6 +181,7 @@ def process_one_us_lacey_job(
             operation_id=job.operation_id,
             assurance_document_id=job.assurance_document_id,
         )
+        _shadow_engine2(organization_id=job.organization_id, operation_id=job.operation_id)
         if not complete_us_lacey_job(job_id=job.id, worker_id=worker_id):
             raise UsLaceyWorkerError("Processing job could not be completed atomically.")
         operation_status = _refresh_operation(
