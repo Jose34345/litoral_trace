@@ -49,33 +49,45 @@ def _login_redirect(*, clear_cookie: bool = False) -> RedirectResponse:
     return response
 
 
-def _access_denied() -> HTMLResponse:
+def _admin_message(
+    *,
+    title: str,
+    message: str,
+    return_href: str,
+    return_label: str,
+    status_code: int,
+) -> HTMLResponse:
+    content = templates.get_template("us_lacey/admin_message.html").render(
+        authenticated=True,
+        title=title,
+        message=message,
+        return_href=return_href,
+        return_label=return_label,
+    )
     return HTMLResponse(
-        status_code=status.HTTP_403_FORBIDDEN,
-        content=(
-            "<!doctype html><html><head><meta charset='utf-8'>"
-            "<title>Access denied</title></head><body>"
-            "<h1>Access denied</h1>"
-            "<p>This account does not have platform-administration access.</p>"
-            "<p><a href='/operations'>Return to operations</a></p>"
-            "</body></html>"
-        ),
+        status_code=status_code,
+        content=content,
         headers={"Cache-Control": "no-store, max-age=0"},
     )
 
 
+def _access_denied() -> HTMLResponse:
+    return _admin_message(
+        title="Access denied",
+        message="This account does not have platform-administration access.",
+        return_href="/operations",
+        return_label="Return to operations",
+        status_code=status.HTTP_403_FORBIDDEN,
+    )
+
+
 def _safe_error(message: str, *, status_code: int = 400) -> HTMLResponse:
-    return HTMLResponse(
+    return _admin_message(
+        title="Admin action unavailable",
+        message=message,
+        return_href="/admin",
+        return_label="Return to admin",
         status_code=status_code,
-        content=(
-            "<!doctype html><html><head><meta charset='utf-8'>"
-            "<title>Admin action unavailable</title></head><body>"
-            "<h1>Admin action unavailable</h1>"
-            f"<p>{message}</p>"
-            "<p><a href='/admin'>Return to admin</a></p>"
-            "</body></html>"
-        ),
-        headers={"Cache-Control": "no-store, max-age=0"},
     )
 
 
