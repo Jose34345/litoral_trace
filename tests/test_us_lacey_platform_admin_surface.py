@@ -190,8 +190,9 @@ def test_admin_surface_does_not_create_synthetic_generic_sessions():
         encoding="utf-8"
     )
     assert "create_user_session" not in source
-    assert "revoke_session" not in source
     assert "session_jwt" not in source
+    assert "from litoral_trace.auth.sessions" not in source
+    assert "get_db_session" not in source
 
 
 def test_admin_surface_preserves_us_database_collision_sentinel():
