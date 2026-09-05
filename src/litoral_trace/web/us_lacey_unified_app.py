@@ -1,13 +1,12 @@
 """Unified free-tier entrypoint for the customer-facing U.S. Lacey product.
 
 This module composes the already-certified private portal/inline-worker runtime
-with the public U.S. Lacey marketing, synthetic-demo and hosted-billing routes.
-It deliberately keeps the operational application unchanged: authenticated
-traffic, PostgreSQL RLS, S3 probes, worker lifecycle and review routes continue
-to be owned by ``us_lacey_free_app``.
+with the public U.S. Lacey marketing, synthetic-demo, hosted-billing and
+superadmin-only owner-control routes.
 
 The composition exists so one customer-facing hostname can serve the full flow:
-landing -> sample -> signup -> verification -> login -> billing -> operations.
+landing -> sample -> signup -> verification -> login -> billing -> operations,
+plus /admin for an authenticated persisted platform superadmin.
 """
 from __future__ import annotations
 
@@ -17,12 +16,16 @@ from litoral_trace.us_lacey.portal_auth import US_LACEY_SESSION_COOKIE
 from litoral_trace.web.lacey_gtm import render_lacey_landing, router as lacey_router
 from litoral_trace.web.us_lacey_free_app import app
 from litoral_trace.web.us_lacey_lemon_billing import router as lemon_billing_router
+from litoral_trace.web.us_lacey_platform_admin import router as platform_admin_router
 
 
-# Public marketing/sample and payment-provider routes are additive and do not
-# shadow the certified portal endpoints (/signup, /login, /billing, ...).
+# Public marketing/sample, payment-provider and superadmin routes are additive
+# and do not shadow the certified customer portal endpoints. The admin router
+# uses get_us_lacey_db_session() directly so DATABASE_URL remains untouched and
+# the existing U.S.-vs-generic database collision sentinel keeps working.
 app.include_router(lacey_router)
 app.include_router(lemon_billing_router)
+app.include_router(platform_admin_router)
 
 
 @app.head("/health", include_in_schema=False)
