@@ -88,6 +88,7 @@ class OperationDocumentView:
 
 @dataclass(frozen=True, slots=True)
 class OperationProcessingSnapshot:
+    public_id: UUID
     status: str
     documents: tuple[OperationDocumentView, ...]
 
@@ -824,7 +825,7 @@ class UsLaceyOperationService:
                     job_status=None if job is None else job.status,
                     last_error_code=assurance.last_error_code,
                 ))
-            return OperationProcessingSnapshot(status=operation.status, documents=tuple(documents))
+            return OperationProcessingSnapshot(public_id=operation.public_id, status=operation.status, documents=tuple(documents))
         finally:
             session.close()
 

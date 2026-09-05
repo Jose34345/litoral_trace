@@ -150,6 +150,12 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
         organization_id=identity.organization_id,
         operation_public_id=operation_public_id,
     )
+    try:
+        dossier = UsLaceyEngineDossierService().get_dossier(organization_id=identity.organization_id, operation_public_id=detail.public_id)
+    except Exception:
+        dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
+    tokens = {field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}") for field in detail.fields if field.status in {"MISSING", "REVIEW"}}
+    return _html(render_operation_detail(request=request, identity=identity, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, error=error, notice=notice), status_code=status_code)
 
 
 def _workspace_fragment(*, request: Request, identity, operation_public_id: str, us_session: str) -> HTMLResponse:
@@ -175,15 +181,11 @@ def _workspace_fragment(*, request: Request, identity, operation_public_id: str,
         if field.status in {"MISSING", "REVIEW"}
     }
     return _html(
-        render_operation_detail(
+        render_operation_workspace(
             request=request,
             identity=identity,
             detail=detail,
             engine2_dossier=engine2_dossier,
-            upload_csrf=us_lacey_csrf_token(
-                session_token=us_session,
-                purpose=f"upload:{detail.public_id}",
-            ),
             complete_csrf=us_lacey_csrf_token(
                 session_token=us_session,
                 purpose=f"complete:{detail.public_id}",

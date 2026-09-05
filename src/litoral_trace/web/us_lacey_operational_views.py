@@ -38,6 +38,8 @@ def processing_view(detail) -> ProcessingView:
         return ProcessingView(60, "RUNNING", "Extracting shipment information", False, False)
     if statuses & {"QUEUED", "RETRY"}:
         return ProcessingView(35, "QUEUED", "Document queued for secure analysis", False, False)
+    if "COMPLETED" in statuses:
+        return ProcessingView(100, "READY_FOR_REVIEW", "Document analysis complete", True, False)
     if documents and document_states & {"EXTRACTED", "EXTRACTION_COMPLETE", "RECONCILED"}:
         return ProcessingView(90, "RECONCILING", "Reconciling document evidence", False, False)
     if documents and not statuses:
