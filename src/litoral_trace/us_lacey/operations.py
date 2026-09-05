@@ -87,6 +87,12 @@ class OperationDocumentView:
 
 
 @dataclass(frozen=True, slots=True)
+class OperationProcessingSnapshot:
+    status: str
+    documents: tuple[OperationDocumentView, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class OperationFieldView:
     id: int
     line_reference: str
@@ -774,6 +780,51 @@ class UsLaceyOperationService:
                 plant_declarations=declarations,
                 conflicts=conflicts,
             )
+        finally:
+            session.close()
+
+    def get_processing_snapshot(
+        self,
+        *,
+        organization_id: int,
+        operation_public_id: UUID | str,
+    ) -> OperationProcessingSnapshot:
+        """Return only durable processing checkpoints for the polling route."""
+        org_id = int(organization_id)
+        session = self._session(org_id)
+        try:
+            operation = self._get_model(session, organization_id=org_id, operation_public_id=operation_public_id)
+            links = session.scalars(
+                select(UsLaceyOperationDocument).where(
+                    UsLaceyOperationDocument.organization_id == org_id,
+                    UsLaceyOperationDocument.operation_id == operation.id,
+                    UsLaceyOperationDocument.is_current.is_(True),
+                ).order_by(UsLaceyOperationDocument.id.asc())
+            ).all()
+            documents: list[OperationDocumentView] = []
+            for link in links:
+                assurance = session.scalar(select(AssuranceDocument).where(
+                    AssuranceDocument.organization_id == org_id,
+                    AssuranceDocument.id == link.assurance_document_id,
+                ))
+                if assurance is None:
+                    continue
+                job = session.scalar(select(UsLaceyProcessingJob).where(
+                    UsLaceyProcessingJob.organization_id == org_id,
+                    UsLaceyProcessingJob.operation_id == operation.id,
+                    UsLaceyProcessingJob.assurance_document_id == assurance.id,
+                ).order_by(UsLaceyProcessingJob.id.desc()))
+                documents.append(OperationDocumentView(
+                    assurance_public_id=assurance.public_id,
+                    vault_public_id=UUID(int=0),
+                    filename="Source document",
+                    document_role=link.document_role,
+                    version_number=int(link.version_number),
+                    processing_status=assurance.processing_status,
+                    job_status=None if job is None else job.status,
+                    last_error_code=assurance.last_error_code,
+                ))
+            return OperationProcessingSnapshot(status=operation.status, documents=tuple(documents))
         finally:
             session.close()
 

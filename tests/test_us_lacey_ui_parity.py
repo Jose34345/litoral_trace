@@ -27,7 +27,7 @@ def test_us_lacey_templates_use_shared_design_system_with_isolated_english_shell
     assert '{% from "components/ui.html" import' in private_base
     assert 'lang="en"' in private_base
     assert "U.S. Lacey Act workspace" in private_base
-    assert "PPQ 505 preparation" in private_base
+    assert "Declaration preparation" in private_base
     assert "Trazabilidad de origen" not in private_base
     assert "Debida diligencia" not in private_base
 

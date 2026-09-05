@@ -73,7 +73,9 @@ from litoral_trace.us_lacey.workflow import (
 from litoral_trace.web.us_lacey_operational_views import (
     render_new_operation,
     render_operation_detail,
+    render_operation_workspace,
     render_operations,
+    render_processing_fragment,
 )
 from litoral_trace.web.us_lacey_portal_views import (
     render_billing,
@@ -148,6 +150,15 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
         organization_id=identity.organization_id,
         operation_public_id=operation_public_id,
     )
+
+
+def _workspace_fragment(*, request: Request, identity, operation_public_id: str, us_session: str) -> HTMLResponse:
+    """Render the heavier review UI only after the progress poll is terminal."""
+    service = UsLaceyOperationService()
+    detail = service.get_detail(
+        organization_id=identity.organization_id,
+        operation_public_id=operation_public_id,
+    )
     try:
         engine2_dossier = UsLaceyEngineDossierService().get_dossier(
             organization_id=identity.organization_id, operation_public_id=detail.public_id
@@ -182,6 +193,29 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
             notice=notice,
         ),
         status_code=status_code,
+    )
+    try:
+        dossier = UsLaceyEngineDossierService().get_dossier(
+            organization_id=identity.organization_id,
+            operation_public_id=detail.public_id,
+        )
+    except Exception:
+        LOGGER.exception("Engine 2 dossier preview failed", extra={"organization_id": identity.organization_id})
+        dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
+    tokens = {
+        field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}")
+        for field in detail.fields
+        if field.status in {"MISSING", "REVIEW"}
+    }
+    return _html(
+        render_operation_workspace(
+            request=request,
+            identity=identity,
+            detail=detail,
+            engine2_dossier=dossier,
+            complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"),
+            review_csrf=tokens,
+        )
     )
 
 
@@ -509,6 +543,50 @@ def operation_detail_page(
     try:
         identity, _entitlement = _operational_context(us_session)
         return _detail_page(
+            request=request,
+            identity=identity,
+            operation_public_id=operation_public_id,
+            us_session=us_session or "",
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except UsLaceyOperationNotFound:
+        return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.get("/operations/{operation_public_id}/processing-fragment", response_class=HTMLResponse)
+def operation_processing_fragment(
+    operation_public_id: str,
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Tenant-scoped, lightweight HTMX status fragment; it never creates work."""
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        detail = UsLaceyOperationService().get_processing_snapshot(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+        )
+        return _html(render_processing_fragment(request=request, detail=detail))
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except UsLaceyOperationNotFound:
+        return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.get("/operations/{operation_public_id}/workspace-fragment", response_class=HTMLResponse)
+def operation_workspace_fragment(
+    operation_public_id: str,
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        return _workspace_fragment(
             request=request,
             identity=identity,
             operation_public_id=operation_public_id,

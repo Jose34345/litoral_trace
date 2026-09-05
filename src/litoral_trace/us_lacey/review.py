@@ -512,7 +512,7 @@ def export_us_lacey_csv(
     by_key = {(field.merchandise_line_reference, field.field_name): field for field in fields}
     output = StringIO(newline="")
     writer = csv.writer(output)
-    writer.writerow(["Plant Line Reference", *[f"PPQ #{field.number} {field.label}" for field in PPQ505_FIELDS]])
+    writer.writerow(["Plant Line Reference", *[f"Declaration field {field.number}: {field.label}" for field in PPQ505_FIELDS]])
     for line in line_refs or ("",):
         values = []
         for contract in PPQ505_FIELDS:
@@ -538,7 +538,7 @@ def export_us_lacey_xlsx(
     workbook = Workbook()
     readme = workbook.active
     readme.title = "Read Me"
-    readme.append(["Litoral Trace — PPQ Form 505 preparation workbook"])
+    readme.append(["Litoral Trace — Lacey Act Declaration Preparation Package"])
     readme.append(["Operation", operation.client_reference])
     readme.append(["Workspace status", operation.status])
     readme.append(["Classification", "PREPARATION WORK PRODUCT"])
@@ -549,7 +549,7 @@ def export_us_lacey_xlsx(
     readme.append(["Signature", "No preparer signature is generated or simulated."])
 
     preparation_sheet = workbook.create_sheet("Preparation Data")
-    preparation_sheet.append(["Plant Line Reference", *[f"PPQ #{field.number} {field.label}" for field in PPQ505_FIELDS]])
+    preparation_sheet.append(["Plant Line Reference", *[f"Declaration field {field.number}: {field.label}" for field in PPQ505_FIELDS]])
     for line in line_refs or ("",):
         row = [line]
         for contract in PPQ505_FIELDS:
@@ -561,7 +561,7 @@ def export_us_lacey_xlsx(
     preparation_sheet.auto_filter.ref = preparation_sheet.dimensions
 
     shipment_sheet = workbook.create_sheet("Shipment Summary")
-    shipment_sheet.append(["PPQ Number", "Field", "Value", "Review Status", "Validation"])
+    shipment_sheet.append(["Declaration Field", "Field", "Value", "Review Status", "Validation"])
     for contract in PPQ505_SHIPMENT_FIELDS:
         field = by_key.get((PPQ505_SHIPMENT_REFERENCE, contract.key))
         shipment_sheet.append([
@@ -572,8 +572,8 @@ def export_us_lacey_xlsx(
         ])
     shipment_sheet.freeze_panes = "A2"
 
-    contract_sheet = workbook.create_sheet("PPQ 505 Fields")
-    contract_sheet.append(["PPQ Number", "Scope", "Plant Line", "Field", "Value", "Review Status", "Validation", "Validation Error"])
+    contract_sheet = workbook.create_sheet("Declaration Fields")
+    contract_sheet.append(["Declaration Field", "Scope", "Plant Line", "Field", "Value", "Review Status", "Validation", "Validation Error"])
     for contract in PPQ505_FIELDS:
         references = (PPQ505_SHIPMENT_REFERENCE,) if contract.scope.value == "SHIPMENT" else line_refs
         for reference in references:
@@ -591,7 +591,7 @@ def export_us_lacey_xlsx(
     contract_sheet.auto_filter.ref = contract_sheet.dimensions
 
     plant_sheet = workbook.create_sheet("Plant Lines")
-    plant_sheet.append(["Plant Line Reference", *[f"PPQ #{field.number} {field.label}" for field in PPQ505_PLANT_FIELDS]])
+    plant_sheet.append(["Plant Line Reference", *[f"Declaration field {field.number}: {field.label}" for field in PPQ505_PLANT_FIELDS]])
     for line in line_refs:
         row = [line]
         for contract in PPQ505_PLANT_FIELDS:
@@ -604,7 +604,7 @@ def export_us_lacey_xlsx(
     evidence_sheet = workbook.create_sheet("Evidence")
     evidence_sheet.append(
         [
-            "Scope", "Line Reference", "PPQ Number", "Field",
+            "Scope", "Line Reference", "Declaration Field", "Field",
             "Original Source Value", "Normalized / Human Value",
             "Value",
             "Review Status",
