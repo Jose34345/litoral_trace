@@ -10,18 +10,6 @@ plus /admin for an authenticated persisted platform superadmin.
 """
 from __future__ import annotations
 
-import os
-
-# The U.S. deployment intentionally stores its runtime URL under the isolated
-# US_LACEY_* namespace. The reviewed 042/044 owner-control services reuse the
-# generic PostgreSQL session factory, so on this unified process only we alias
-# the already-present runtime URL internally. No secret leaves the process and
-# no migration/owner credential is introduced.
-if not os.environ.get("DATABASE_URL") and os.environ.get("US_LACEY_DATABASE_URL"):
-    os.environ["DATABASE_URL"] = os.environ["US_LACEY_DATABASE_URL"]
-if not os.environ.get("ENVIRONMENT") and os.environ.get("US_LACEY_ENVIRONMENT"):
-    os.environ["ENVIRONMENT"] = os.environ["US_LACEY_ENVIRONMENT"]
-
 from fastapi import Request, Response
 
 from litoral_trace.us_lacey.portal_auth import US_LACEY_SESSION_COOKIE
@@ -32,7 +20,9 @@ from litoral_trace.web.us_lacey_platform_admin import router as platform_admin_r
 
 
 # Public marketing/sample, payment-provider and superadmin routes are additive
-# and do not shadow the certified customer portal endpoints.
+# and do not shadow the certified customer portal endpoints. The admin router
+# uses get_us_lacey_db_session() directly so DATABASE_URL remains untouched and
+# the existing U.S.-vs-generic database collision sentinel keeps working.
 app.include_router(lacey_router)
 app.include_router(lemon_billing_router)
 app.include_router(platform_admin_router)
