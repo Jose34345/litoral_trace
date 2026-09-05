@@ -10,14 +10,14 @@ from sqlalchemy.exc import DBAPIError
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("ENABLE_POSTGRES_TESTS") != "1" or not os.environ.get("MIGRATION_DATABASE_URL") or not os.environ.get("DATABASE_URL"),
+    os.environ.get("ENABLE_POSTGRES_TESTS") != "1" or not (os.environ.get("TEST_POSTGRES_MIGRATION_DATABASE_URL") or os.environ.get("MIGRATION_DATABASE_URL")) or not (os.environ.get("US_LACEY_DATABASE_URL") or os.environ.get("TEST_POSTGRES_DATABASE_URL")),
     reason="requires the isolated PostgreSQL gate",
 )
 
 
 def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> None:
-    owner = create_engine(os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
-    runtime = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    owner = create_engine(os.environ.get("TEST_POSTGRES_MIGRATION_DATABASE_URL") or os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
+    runtime = create_engine(os.environ.get("US_LACEY_DATABASE_URL") or os.environ["TEST_POSTGRES_DATABASE_URL"], pool_pre_ping=True)
     suffix = uuid4().hex[:10]
     ids: list[int] = []
     actor_token, normal_token = ("a" * 54 + suffix[:10], "b" * 54 + suffix[:10])
