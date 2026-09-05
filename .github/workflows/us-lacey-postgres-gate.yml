@@ -161,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "043_us_lacey_engine2_shadow (head)" /tmp/alembic-current.txt
+          grep -Fx "044_platform_admin_control_plane (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
