@@ -62,7 +62,7 @@ def upgrade() -> None:
       UPDATE public.user_sessions AS s SET revoked_at=coalesce(s.revoked_at, now()) WHERE s.user_id=target.id AND s.organization_id=target.organization_id AND s.revoked_at IS NULL AND (target.id <> actor.actor_user_id OR s.id <> actor.actor_session_id);
       GET DIAGNOSTICS revoked = ROW_COUNT;
       PERFORM public._platform_insert_audit_log(actor.actor_user_id, NULL, 'superadmin', actor.actor_organization_id, target.organization_id, 'FOUNDER_PROMOTED', 'user', target.id, jsonb_build_object('email', target.email, 'role', 'superadmin', 'revoked_session_count', revoked));
-      RETURN QUERY SELECT target.id, target.organization_id, target.email, 'superadmin'::text, revoked;
+      RETURN QUERY SELECT target.id, target.organization_id, target.email::text, 'superadmin'::text, revoked;
     END $$;
     """)
     op.execute("""

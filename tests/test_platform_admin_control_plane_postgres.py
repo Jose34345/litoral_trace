@@ -47,8 +47,10 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
             assert c.execute(text("SELECT * FROM public.platform_admin_promote_existing_user(:t,:e)"), {"t":actor_token,"e":f"founder-{suffix}@example.com"}).mappings().one()["user_id"] == founder
             assert c.execute(text("SELECT * FROM public.platform_admin_set_us_lacey_account_status(:t,:o,'PILOT')"), {"t":actor_token,"o":tenant_a}).mappings().one()["account_status"] == "PILOT"
             assert c.execute(text("SELECT * FROM public.platform_admin_set_us_lacey_operation_limit(:t,:o,9)"), {"t":actor_token,"o":tenant_a}).mappings().one()["monthly_operation_limit"] == 9
-            with pytest.raises(DBAPIError): c.execute(text("SELECT * FROM public.platform_admin_set_us_lacey_operation_limit(:t,:o,0)"), {"t":actor_token,"o":tenant_a})
             assert c.execute(text("SELECT * FROM public.platform_admin_reset_pilot_account(:t,:o)"), {"t":actor_token,"o":tenant_a}).mappings().one()["operations_deleted"] == 1
+        with runtime.begin() as c:
+            with pytest.raises(DBAPIError): c.execute(text("SELECT * FROM public.platform_admin_set_us_lacey_operation_limit(:t,:o,0)"), {"t":actor_token,"o":tenant_a})
+        with runtime.begin() as c:
             with pytest.raises(DBAPIError): c.execute(text("SELECT * FROM public.platform_admin_set_us_lacey_account_status(:t,:o,'PILOT')"), {"t":normal_token,"o":tenant_b})
         with audit.connect() as c:
             assert c.execute(text("SELECT role FROM public.users WHERE id=:u"), {"u":founder}).scalar_one() == "superadmin"
@@ -59,5 +61,12 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
             assert c.execute(text("SELECT count(*) FROM public.audit_logs WHERE organization_id=:o AND action IN ('FOUNDER_PROMOTED','ACCOUNT_STATUS_CHANGED','OPERATION_LIMIT_CHANGED','PILOT_TEST_RESET')"), {"o":tenant_a}).scalar_one() >= 4
     finally:
         with audit.begin() as c:
-            if ids: c.execute(text("DELETE FROM public.organizations WHERE id = ANY(:ids)"), {"ids": ids})
+            if ids:
+                c.execute(text("DELETE FROM public.us_lacey_operations WHERE organization_id = ANY(:ids)"), {"ids": ids})
+                c.execute(text("DELETE FROM public.us_lacey_subscriptions WHERE organization_id = ANY(:ids)"), {"ids": ids})
+                c.execute(text("DELETE FROM public.us_lacey_organization_profiles WHERE organization_id = ANY(:ids)"), {"ids": ids})
+                c.execute(text("DELETE FROM public.user_sessions WHERE organization_id = ANY(:ids)"), {"ids": ids})
+                c.execute(text("DELETE FROM public.audit_logs WHERE organization_id = ANY(:ids)"), {"ids": ids})
+                c.execute(text("DELETE FROM public.users WHERE organization_id = ANY(:ids)"), {"ids": ids})
+                c.execute(text("DELETE FROM public.organizations WHERE id = ANY(:ids)"), {"ids": ids})
         audit.dispose(); runtime.dispose()
