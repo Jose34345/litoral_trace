@@ -194,11 +194,16 @@ def test_admin_surface_does_not_create_synthetic_generic_sessions():
     assert "session_jwt" not in source
 
 
-def test_unified_entrypoint_aliases_existing_us_runtime_database_without_literal_secret():
-    source = Path("src/litoral_trace/web/us_lacey_unified_app.py").read_text(
+def test_admin_surface_preserves_us_database_collision_sentinel():
+    unified = Path("src/litoral_trace/web/us_lacey_unified_app.py").read_text(
         encoding="utf-8"
     )
-    assert 'os.environ["DATABASE_URL"] = os.environ["US_LACEY_DATABASE_URL"]' in source
-    assert 'os.environ["ENVIRONMENT"] = os.environ["US_LACEY_ENVIRONMENT"]' in source
-    assert "postgresql://" not in source
-    assert "MIGRATION_DATABASE_URL" not in source
+    admin = Path("src/litoral_trace/web/us_lacey_platform_admin.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'os.environ["DATABASE_URL"]' not in unified
+    assert "US_LACEY_DATABASE_URL" not in unified
+    assert "get_us_lacey_db_session" in admin
+    assert "get_db_session" not in admin
+    assert "MIGRATION_DATABASE_URL" not in unified
+    assert "postgresql://" not in unified
