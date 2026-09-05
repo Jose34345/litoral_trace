@@ -135,8 +135,6 @@ async def listar_cuentas_us_lacey_endpoint(
 ) -> JSONResponse:
     """Return the read-only owner overview for U.S. Lacey customer accounts."""
     accounts = list_us_lacey_accounts_superadmin(refresh_token=refresh_token_cookie)
-    users = list_platform_users_superadmin(refresh_token=refresh_token_cookie)
-    failed_jobs = list_failed_jobs_superadmin(refresh_token=refresh_token_cookie)
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content=jsonable_encoder({"total": len(accounts), "accounts": accounts}),
@@ -155,6 +153,8 @@ async def render_cuentas_us_lacey_fragment_endpoint(
 ) -> HTMLResponse:
     """Render the read-only U.S. account console inside the existing admin page."""
     accounts = list_us_lacey_accounts_superadmin(refresh_token=refresh_token_cookie)
+    users = list_platform_users_superadmin(refresh_token=refresh_token_cookie)
+    failed_jobs = list_failed_jobs_superadmin(refresh_token=refresh_token_cookie)
     active_count = sum(1 for account in accounts if account.get("account_status") == "ACTIVE")
     pilot_count = sum(1 for account in accounts if account.get("account_status") == "PILOT")
     pending_count = sum(

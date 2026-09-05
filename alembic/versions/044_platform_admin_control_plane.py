@@ -42,6 +42,10 @@ def _reset_platform_role() -> None:
 
 def upgrade() -> None:
     _set_platform_role()
+    # Promotion is the one new users mutation.  The grant and FORCE-RLS policy
+    # belong only to the non-login platform definer, never the runtime role.
+    op.execute(f"GRANT UPDATE ON TABLE public.users TO {PLATFORM_ROLE}")
+    op.execute("CREATE POLICY users_platform_update_044 ON public.users FOR UPDATE TO litoral_trace_platform_definer USING (true) WITH CHECK (true)")
     # Each function first validates a non-revoked superadmin persistent session.
     # The runtime receives EXECUTE only; it never gains cross-tenant table grants.
     op.execute("""
@@ -51,11 +55,11 @@ def upgrade() -> None:
     DECLARE actor record; target record; matches integer; revoked integer;
     BEGIN
       SELECT * INTO actor FROM public._platform_superadmin_session_actor(actor_refresh_token_hash);
-      SELECT count(*) INTO matches FROM public.users WHERE lower(btrim(email)) = lower(btrim(target_email));
+      SELECT count(*) INTO matches FROM public.users AS u WHERE lower(btrim(u.email)) = lower(btrim(target_email));
       IF matches <> 1 THEN RAISE EXCEPTION 'founder identity must match exactly one existing user' USING ERRCODE='22023'; END IF;
-      SELECT id, organization_id, email INTO target FROM public.users WHERE lower(btrim(email)) = lower(btrim(target_email));
-      UPDATE public.users SET role='superadmin', is_active=true WHERE id=target.id AND organization_id=target.organization_id;
-      UPDATE public.user_sessions SET revoked_at=coalesce(revoked_at, now()) WHERE user_id=target.id AND organization_id=target.organization_id AND revoked_at IS NULL;
+      SELECT u.id, u.organization_id, u.email INTO target FROM public.users AS u WHERE lower(btrim(u.email)) = lower(btrim(target_email));
+      UPDATE public.users AS u SET role='superadmin', is_active=true WHERE u.id=target.id AND u.organization_id=target.organization_id;
+      UPDATE public.user_sessions AS s SET revoked_at=coalesce(s.revoked_at, now()) WHERE s.user_id=target.id AND s.organization_id=target.organization_id AND s.revoked_at IS NULL AND (target.id <> actor.actor_user_id OR s.id <> actor.actor_session_id);
       GET DIAGNOSTICS revoked = ROW_COUNT;
       PERFORM public._platform_insert_audit_log(actor.actor_user_id, NULL, 'superadmin', actor.actor_organization_id, target.organization_id, 'FOUNDER_PROMOTED', 'user', target.id, jsonb_build_object('email', target.email, 'role', 'superadmin', 'revoked_session_count', revoked));
       RETURN QUERY SELECT target.id, target.organization_id, target.email, 'superadmin'::text, revoked;
@@ -70,9 +74,9 @@ def upgrade() -> None:
       SELECT * INTO actor FROM public._platform_superadmin_session_actor(actor_refresh_token_hash);
       normalized := upper(btrim(coalesce(requested_status,'')));
       IF normalized NOT IN ('PILOT','ACTIVE','SUSPENDED') THEN RAISE EXCEPTION 'unsupported account status' USING ERRCODE='22023'; END IF;
-      SELECT account_status INTO previous FROM public.us_lacey_organization_profiles WHERE organization_id=target_organization_id FOR UPDATE;
+      SELECT profile.account_status INTO previous FROM public.us_lacey_organization_profiles AS profile WHERE profile.organization_id=target_organization_id FOR UPDATE;
       IF previous IS NULL THEN RAISE EXCEPTION 'U.S. Lacey account not found' USING ERRCODE='22023'; END IF;
-      UPDATE public.us_lacey_organization_profiles SET account_status=normalized WHERE organization_id=target_organization_id;
+      UPDATE public.us_lacey_organization_profiles AS profile SET account_status=normalized WHERE profile.organization_id=target_organization_id;
       PERFORM public._platform_insert_audit_log(actor.actor_user_id, NULL, 'superadmin', actor.actor_organization_id, target_organization_id, 'ACCOUNT_STATUS_CHANGED', 'us_lacey_account', target_organization_id, jsonb_build_object('before', previous, 'after', normalized));
       RETURN QUERY SELECT target_organization_id, normalized;
     END $$;
@@ -85,9 +89,9 @@ def upgrade() -> None:
     BEGIN
       SELECT * INTO actor FROM public._platform_superadmin_session_actor(actor_refresh_token_hash);
       IF requested_limit IS NULL OR requested_limit < 1 OR requested_limit > 100000 THEN RAISE EXCEPTION 'operation limit is outside safe bounds' USING ERRCODE='22023'; END IF;
-      SELECT monthly_operation_limit INTO previous FROM public.us_lacey_subscriptions WHERE organization_id=target_organization_id FOR UPDATE;
+      SELECT subscription.monthly_operation_limit INTO previous FROM public.us_lacey_subscriptions AS subscription WHERE subscription.organization_id=target_organization_id FOR UPDATE;
       IF previous IS NULL THEN RAISE EXCEPTION 'U.S. Lacey subscription not found' USING ERRCODE='22023'; END IF;
-      UPDATE public.us_lacey_subscriptions SET monthly_operation_limit=requested_limit WHERE organization_id=target_organization_id;
+      UPDATE public.us_lacey_subscriptions AS subscription SET monthly_operation_limit=requested_limit WHERE subscription.organization_id=target_organization_id;
       PERFORM public._platform_insert_audit_log(actor.actor_user_id, NULL, 'superadmin', actor.actor_organization_id, target_organization_id, 'OPERATION_LIMIT_CHANGED', 'us_lacey_subscription', target_organization_id, jsonb_build_object('before', previous, 'after', requested_limit));
       RETURN QUERY SELECT target_organization_id, requested_limit;
     END $$;
@@ -99,9 +103,9 @@ def upgrade() -> None:
     DECLARE actor record; target_org integer; revoked integer;
     BEGIN
       SELECT * INTO actor FROM public._platform_superadmin_session_actor(actor_refresh_token_hash);
-      SELECT organization_id INTO target_org FROM public.users WHERE id=target_user_id;
+      SELECT u.organization_id INTO target_org FROM public.users AS u WHERE u.id=target_user_id;
       IF target_org IS NULL THEN RAISE EXCEPTION 'user not found' USING ERRCODE='22023'; END IF;
-      UPDATE public.user_sessions SET revoked_at=now() WHERE user_id=target_user_id AND revoked_at IS NULL;
+      UPDATE public.user_sessions AS s SET revoked_at=now() WHERE s.user_id=target_user_id AND s.revoked_at IS NULL;
       GET DIAGNOSTICS revoked = ROW_COUNT;
       PERFORM public._platform_insert_audit_log(actor.actor_user_id, NULL, 'superadmin', actor.actor_organization_id, target_org, 'SESSIONS_REVOKED', 'user', target_user_id, jsonb_build_object('revoked_session_count', revoked));
       RETURN QUERY SELECT target_user_id, target_org, revoked;
@@ -116,12 +120,12 @@ def upgrade() -> None:
     DECLARE actor record; status_value text; paid_exists boolean; jobs integer; operations integer;
     BEGIN
       SELECT * INTO actor FROM public._platform_superadmin_session_actor(actor_refresh_token_hash);
-      SELECT account_status INTO status_value FROM public.us_lacey_organization_profiles WHERE organization_id=target_organization_id FOR UPDATE;
+      SELECT profile.account_status INTO status_value FROM public.us_lacey_organization_profiles AS profile WHERE profile.organization_id=target_organization_id FOR UPDATE;
       IF status_value IS DISTINCT FROM 'PILOT' THEN RAISE EXCEPTION 'only PILOT accounts can be reset' USING ERRCODE='42501'; END IF;
-      SELECT EXISTS(SELECT 1 FROM public.us_lacey_payments WHERE organization_id=target_organization_id AND provider='LEMON_SQUEEZY' AND status='VERIFIED') INTO paid_exists;
+      SELECT EXISTS(SELECT 1 FROM public.us_lacey_payments AS payment WHERE payment.organization_id=target_organization_id AND payment.provider='LEMON_SQUEEZY' AND payment.status='VERIFIED') INTO paid_exists;
       IF paid_exists THEN RAISE EXCEPTION 'commercial account cannot be reset' USING ERRCODE='42501'; END IF;
-      SELECT count(*)::integer INTO jobs FROM public.us_lacey_processing_jobs WHERE organization_id=target_organization_id;
-      DELETE FROM public.us_lacey_operations WHERE organization_id=target_organization_id;
+      SELECT count(*)::integer INTO jobs FROM public.us_lacey_processing_jobs AS job WHERE job.organization_id=target_organization_id;
+      DELETE FROM public.us_lacey_operations AS operation WHERE operation.organization_id=target_organization_id;
       GET DIAGNOSTICS operations = ROW_COUNT;
       PERFORM public._platform_insert_audit_log(actor.actor_user_id, NULL, 'superadmin', actor.actor_organization_id, target_organization_id, 'PILOT_TEST_RESET', 'us_lacey_account', target_organization_id, jsonb_build_object('operations_deleted', operations, 'jobs_deleted', jobs));
       RETURN QUERY SELECT operations, jobs;
@@ -154,4 +158,6 @@ def downgrade() -> None:
     _set_platform_role()
     for signature in FUNCTIONS:
         op.execute(f"DROP FUNCTION IF EXISTS {signature}")
+    op.execute("DROP POLICY IF EXISTS users_platform_update_044 ON public.users")
+    op.execute(f"REVOKE UPDATE ON TABLE public.users FROM {PLATFORM_ROLE}")
     _reset_platform_role()

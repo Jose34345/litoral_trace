@@ -28,6 +28,9 @@ def main(argv: list[str] | None = None) -> int:
         founder = db.execute(text("SELECT * FROM public.platform_admin_promote_existing_user(:actor, :email)"), {"actor": actor_hash, "email": args.email}).mappings().one()
         if args.set_pilot:
             db.execute(text("SELECT * FROM public.platform_admin_set_us_lacey_account_status(:actor, :organization_id, 'PILOT')"), {"actor": actor_hash, "organization_id": founder["organization_id"]}).one()
+        # A founder using their own session remains valid only until this final
+        # call, so PILOT setup can complete before every session is revoked.
+        db.execute(text("SELECT * FROM public.platform_admin_revoke_user_sessions(:actor, :user_id)"), {"actor": actor_hash, "user_id": founder["user_id"]}).one()
         db.commit()
         print(f"Founder provisioned: user_id={founder['user_id']} organization_id={founder['organization_id']} role=superadmin pilot={args.set_pilot}")
         return 0

@@ -34,7 +34,7 @@ def test_044_has_only_capability_specific_mutations_and_pilot_guard() -> None:
         assert capability in source
     assert "account_status == PILOT" not in source  # SQL compares the fixed value below.
     assert "status_value IS DISTINCT FROM 'PILOT'" in source
-    assert "provider='LEMON_SQUEEZY' AND status='VERIFIED'" in source
+    assert "payment.provider='LEMON_SQUEEZY' AND payment.status='VERIFIED'" in source
     assert "admin_update_anything" not in source
 
 
