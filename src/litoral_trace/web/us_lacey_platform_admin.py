@@ -51,6 +51,7 @@ def _login_redirect(*, clear_cookie: bool = False) -> RedirectResponse:
 
 def _admin_message(
     *,
+    request: Request,
     title: str,
     message: str,
     return_href: str,
@@ -58,6 +59,7 @@ def _admin_message(
     status_code: int,
 ) -> HTMLResponse:
     content = templates.get_template("us_lacey/admin_message.html").render(
+        request=request,
         authenticated=True,
         title=title,
         message=message,
@@ -71,8 +73,9 @@ def _admin_message(
     )
 
 
-def _access_denied() -> HTMLResponse:
+def _access_denied(request: Request) -> HTMLResponse:
     return _admin_message(
+        request=request,
         title="Access denied",
         message="This account does not have platform-administration access.",
         return_href="/operations",
@@ -81,8 +84,14 @@ def _access_denied() -> HTMLResponse:
     )
 
 
-def _safe_error(message: str, *, status_code: int = 400) -> HTMLResponse:
+def _safe_error(
+    request: Request,
+    message: str,
+    *,
+    status_code: int = 400,
+) -> HTMLResponse:
     return _admin_message(
+        request=request,
         title="Admin action unavailable",
         message=message,
         return_href="/admin",
@@ -334,12 +343,13 @@ def platform_admin_page(
         return _login_redirect(clear_cookie=bool(us_session))
     except HTTPException as exc:
         if exc.status_code == status.HTTP_403_FORBIDDEN:
-            return _access_denied()
+            return _access_denied(request)
         raise
 
 
 @router.post("/admin/us-lacey/accounts/{organization_id}/status")
 def platform_admin_set_status(
+    request: Request,
     organization_id: int,
     account_status: str = Form(...),
     csrf_token: str = Form(...),
@@ -359,6 +369,7 @@ def platform_admin_set_status(
             and organization_id == identity.organization_id
         ):
             return _safe_error(
+                request,
                 "You cannot suspend the organization that owns your current admin session.",
                 status_code=status.HTTP_409_CONFLICT,
             )
@@ -374,11 +385,16 @@ def platform_admin_set_status(
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
     except UsLaceyCsrfError:
-        return _safe_error("The admin form expired. Refresh and try again.", status_code=403)
+        return _safe_error(
+            request,
+            "The admin form expired. Refresh and try again.",
+            status_code=403,
+        )
 
 
 @router.post("/admin/us-lacey/accounts/{organization_id}/operation-limit")
 def platform_admin_set_limit(
+    request: Request,
     organization_id: int,
     monthly_operation_limit: int = Form(...),
     csrf_token: str = Form(...),
@@ -404,11 +420,16 @@ def platform_admin_set_limit(
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
     except UsLaceyCsrfError:
-        return _safe_error("The admin form expired. Refresh and try again.", status_code=403)
+        return _safe_error(
+            request,
+            "The admin form expired. Refresh and try again.",
+            status_code=403,
+        )
 
 
 @router.post("/admin/us-lacey/accounts/{organization_id}/reset-pilot")
 def platform_admin_reset_pilot(
+    request: Request,
     organization_id: int,
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
@@ -432,11 +453,16 @@ def platform_admin_reset_pilot(
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
     except UsLaceyCsrfError:
-        return _safe_error("The admin form expired. Refresh and try again.", status_code=403)
+        return _safe_error(
+            request,
+            "The admin form expired. Refresh and try again.",
+            status_code=403,
+        )
 
 
 @router.post("/admin/users/{user_id}/revoke-sessions")
 def platform_admin_revoke_sessions(
+    request: Request,
     user_id: int,
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
@@ -460,4 +486,8 @@ def platform_admin_revoke_sessions(
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
     except UsLaceyCsrfError:
-        return _safe_error("The admin form expired. Refresh and try again.", status_code=403)
+        return _safe_error(
+            request,
+            "The admin form expired. Refresh and try again.",
+            status_code=403,
+        )
