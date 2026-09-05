@@ -39,8 +39,15 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
             for oid, email in ((tenant_a, f"founder-{suffix}@example.com"), (tenant_b, f"other-{suffix}@example.com")):
                 c.execute(text("INSERT INTO public.us_lacey_organization_profiles(organization_id,legal_name,country_code,business_type,admin_contact_email,account_status) VALUES(:o,:n,'US','IMPORTER',:e,'PAYMENT_PENDING')"), {"o":oid,"n":f"Legal {oid}","e":email})
                 c.execute(text("INSERT INTO public.us_lacey_subscriptions(public_id,organization_id,plan_code,currency,price_cents,monthly_operation_limit,used_operations,status) VALUES(:p,:o,'TEST','USD',100,5,0,'PENDING')"), {"p":str(uuid4()),"o":oid})
-            c.execute(text("INSERT INTO public.us_lacey_operations(public_id,organization_id,created_by_user_id,client_reference,status,document_count,merchandise_line_count) VALUES(:p,:o,:u,:r,'NEW',0,0)"), {"p":str(uuid4()),"o":tenant_a,"u":founder,"r":f"a-{suffix}"})
+            operation_a = c.execute(text("INSERT INTO public.us_lacey_operations(public_id,organization_id,created_by_user_id,client_reference,status,document_count,merchandise_line_count) VALUES(:p,:o,:u,:r,'NEW',0,0) RETURNING id"), {"p":str(uuid4()),"o":tenant_a,"u":founder,"r":f"a-{suffix}"}).scalar_one()
+            c.execute(text("INSERT INTO public.us_lacey_operation_fields(organization_id,operation_id,merchandise_line_reference,field_name) VALUES(:o,:operation_id,'1','cascade-proof')"), {"o": tenant_a, "operation_id": operation_a})
             c.execute(text("INSERT INTO public.us_lacey_operations(public_id,organization_id,created_by_user_id,client_reference,status,document_count,merchandise_line_count) VALUES(:p,:o,:u,:r,'NEW',0,0)"), {"p":str(uuid4()),"o":tenant_b,"u":other,"r":f"b-{suffix}"})
+            paid_subscription = c.execute(text("INSERT INTO public.us_lacey_subscriptions(public_id,organization_id,plan_code,currency,price_cents,monthly_operation_limit,used_operations,status) VALUES(:p,:o,'PAID','USD',100,5,0,'ACTIVE') RETURNING id"), {"p": str(uuid4()), "o": platform}).scalar_one()
+            c.execute(text("INSERT INTO public.us_lacey_organization_profiles(organization_id,legal_name,country_code,business_type,admin_contact_email,account_status) VALUES(:o,:n,'US','IMPORTER',:e,'PILOT')"), {"o": platform, "n": f"Paid {platform}", "e": f"paid-{suffix}@example.com"})
+            c.execute(text("INSERT INTO public.us_lacey_payments(public_id,organization_id,subscription_id,provider,amount_cents,currency,payment_reference,status) VALUES(:p,:o,:s,'LEMON_SQUEEZY',100,'USD',:reference,'VERIFIED')"), {"p": str(uuid4()), "o": platform, "s": paid_subscription, "reference": f"paid-{suffix}"})
+        with runtime.begin() as c:
+            with pytest.raises(DBAPIError):
+                c.execute(text("DELETE FROM public.us_lacey_operations WHERE id=:operation_id"), {"operation_id": operation_a})
         with runtime.begin() as c:
             promoted = c.execute(text("SELECT * FROM public.platform_admin_promote_existing_user(:t,:e)"), {"t":actor_token,"e":f"founder-{suffix}@example.com"}).mappings().one()
             assert promoted["user_id"] == founder
@@ -52,6 +59,9 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
             with pytest.raises(DBAPIError): c.execute(text("SELECT * FROM public.platform_admin_set_us_lacey_operation_limit(:t,:o,0)"), {"t":actor_token,"o":tenant_a})
         with runtime.begin() as c:
             with pytest.raises(DBAPIError): c.execute(text("SELECT * FROM public.platform_admin_set_us_lacey_account_status(:t,:o,'PILOT')"), {"t":normal_token,"o":tenant_b})
+        with runtime.begin() as c:
+            with pytest.raises(DBAPIError):
+                c.execute(text("SELECT * FROM public.platform_admin_reset_pilot_account(:t,:o)"), {"t": actor_token, "o": platform})
         with audit.connect() as c:
             privileges = c.execute(text("SELECT has_table_privilege('litoral_trace_platform_definer','public.us_lacey_operations','DELETE') AS definer_delete, has_table_privilege('litoral_trace_app','public.us_lacey_operations','DELETE') AS runtime_delete, has_table_privilege('litoral_trace_us_lacey_worker','public.us_lacey_operations','DELETE') AS worker_delete, has_table_privilege('public','public.us_lacey_operations','DELETE') AS public_delete")).mappings().one()
             assert dict(privileges) == {"definer_delete": True, "runtime_delete": False, "worker_delete": False, "public_delete": False}
@@ -62,12 +72,16 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
             assert c.execute(text("SELECT password_hash FROM public.users WHERE id=:u"), {"u":founder}).scalar_one() == "unchanged-password-hash"
             assert c.execute(text("SELECT count(*) FROM public.user_sessions WHERE user_id=:u AND revoked_at IS NOT NULL"), {"u":founder}).scalar_one() == 1
             assert c.execute(text("SELECT count(*) FROM public.us_lacey_operations WHERE organization_id=:o"), {"o":tenant_a}).scalar_one() == 0
+            assert c.execute(text("SELECT count(*) FROM public.us_lacey_operation_fields WHERE organization_id=:o"), {"o":tenant_a}).scalar_one() == 0
             assert c.execute(text("SELECT count(*) FROM public.us_lacey_operations WHERE organization_id=:o"), {"o":tenant_b}).scalar_one() == 1
+            assert c.execute(text("SELECT count(*) FROM public.us_lacey_payments WHERE organization_id=:o AND status='VERIFIED'"), {"o": platform}).scalar_one() == 1
             assert c.execute(text("SELECT count(*) FROM public.audit_logs WHERE organization_id=:o AND action IN ('FOUNDER_PROMOTED','ACCOUNT_STATUS_CHANGED','OPERATION_LIMIT_CHANGED','PILOT_TEST_RESET')"), {"o":tenant_a}).scalar_one() >= 4
     finally:
         with audit.begin() as c:
             if ids:
+                c.execute(text("DELETE FROM public.us_lacey_operation_fields WHERE organization_id = ANY(:ids)"), {"ids": ids})
                 c.execute(text("DELETE FROM public.us_lacey_operations WHERE organization_id = ANY(:ids)"), {"ids": ids})
+                c.execute(text("DELETE FROM public.us_lacey_payments WHERE organization_id = ANY(:ids)"), {"ids": ids})
                 c.execute(text("DELETE FROM public.us_lacey_subscriptions WHERE organization_id = ANY(:ids)"), {"ids": ids})
                 c.execute(text("DELETE FROM public.us_lacey_organization_profiles WHERE organization_id = ANY(:ids)"), {"ids": ids})
                 c.execute(text("DELETE FROM public.user_sessions WHERE organization_id = ANY(:ids)"), {"ids": ids})

@@ -45,6 +45,10 @@ def upgrade() -> None:
     # belong only to the non-login platform definer, never the runtime role.
     op.execute(f"GRANT UPDATE ON TABLE public.users TO {PLATFORM_ROLE}")
     op.execute("CREATE POLICY users_platform_update_044 ON public.users FOR UPDATE TO litoral_trace_platform_definer USING (true) WITH CHECK (true)")
+    # Migration 034 granted tenant-scoped runtime DELETE.  Reset is now a
+    # capability-scoped platform operation, so runtime keeps normal CRUD
+    # except direct operation deletion.
+    op.execute(f"REVOKE DELETE ON TABLE public.us_lacey_operations FROM {RUNTIME_ROLE}")
     op.execute(f"GRANT DELETE ON TABLE public.us_lacey_operations TO {PLATFORM_ROLE}")
     op.execute("CREATE POLICY us_lacey_operations_platform_delete_044 ON public.us_lacey_operations FOR DELETE TO litoral_trace_platform_definer USING (true)")
     _set_platform_role()
@@ -162,6 +166,8 @@ def downgrade() -> None:
     op.execute(f"REVOKE UPDATE ON TABLE public.users FROM {PLATFORM_ROLE}")
     op.execute("DROP POLICY IF EXISTS us_lacey_operations_platform_delete_044 ON public.us_lacey_operations")
     op.execute(f"REVOKE DELETE ON TABLE public.us_lacey_operations FROM {PLATFORM_ROLE}")
+    # Restore the exact pre-044 runtime privilege from Migration 034.
+    op.execute(f"GRANT DELETE ON TABLE public.us_lacey_operations TO {RUNTIME_ROLE}")
     _set_platform_role()
     for signature in FUNCTIONS:
         op.execute(f"DROP FUNCTION IF EXISTS {signature}")
