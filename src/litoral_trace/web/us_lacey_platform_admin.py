@@ -1,25 +1,22 @@
 """Superadmin-only control surface on the deployed U.S. Lacey hostname.
 
-The U.S. portal keeps its opaque-session authentication boundary. For each admin
-request we verify that opaque session, verify the persisted platform role inside
-the tenant, create a short-lived internal generic refresh session only long
-enough to call the already-reviewed SECURITY DEFINER control-plane functions,
-and revoke that bridge session before returning.
+The U.S. portal keeps its opaque-session authentication boundary. Migration 037
+stores that opaque session in ``public.user_sessions``, the same persistent
+session table validated by the 042/044 platform control plane. Admin requests
+therefore verify the U.S. session, verify the persisted platform role inside the
+tenant, and pass that same opaque token server-side to the reviewed
+SECURITY DEFINER capabilities.
 
-No generic JWT is issued to the browser and no cross-tenant table access is
-performed directly in application code.
+No generic JWT or synthetic bridge session is issued, and no cross-tenant table
+access is performed directly in application code.
 """
 from __future__ import annotations
-
-from contextlib import contextmanager
-from typing import Iterator
 
 from fastapi import APIRouter, Cookie, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 
 from litoral_trace.auth.rbac import Permission, has_permission
-from litoral_trace.auth.sessions import create_user_session, revoke_session
 from litoral_trace.db.models import Organization, User
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.services.us_lacey_admin import (
@@ -111,57 +108,15 @@ def _verified_platform_admin(us_session: str):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Platform administration is not available for this account.",
             )
-        return identity, user, organization
+        return identity
     finally:
         db.close()
 
 
-@contextmanager
-def _platform_admin_refresh_token(us_session: str) -> Iterator[str]:
-    """Create and always revoke an internal bridge session for one admin request."""
-    identity = resolve_us_lacey_session(us_session)
-    db = get_us_lacey_db_session()
-    issued = None
-    try:
-        set_tenant_db_context(db, identity.organization_id)
-        user = db.execute(
-            select(User).where(
-                User.id == identity.user_id,
-                User.organization_id == identity.organization_id,
-            )
-        ).scalar_one_or_none()
-        organization = db.execute(
-            select(Organization).where(Organization.id == identity.organization_id)
-        ).scalar_one_or_none()
-        if (
-            user is None
-            or organization is None
-            or not user.is_active
-            or not organization.is_active
-            or not has_permission(user.role, Permission.PLATFORM_ADMIN)
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Platform administration is not available for this account.",
-            )
-
-        issued = create_user_session(
-            db,
-            user=user,
-            organization=organization,
-            created_ip=None,
-            user_agent="us-lacey-platform-admin-bridge",
-        )
-        db.commit()
-        yield issued.refresh_token
-    finally:
-        if issued is not None:
-            try:
-                revoke_session(db, refresh_token=issued.refresh_token)
-                db.commit()
-            except Exception:
-                db.rollback()
-        db.close()
+def _platform_admin_refresh_token(us_session: str) -> str:
+    """Return the already-persisted U.S. opaque session after role verification."""
+    _verified_platform_admin(us_session)
+    return us_session
 
 
 def _require_us_session(us_session: str | None) -> str:
@@ -172,10 +127,10 @@ def _require_us_session(us_session: str | None) -> str:
 
 
 def _admin_context(*, request: Request, us_session: str, notice: str | None = None):
-    with _platform_admin_refresh_token(us_session) as refresh_token:
-        accounts = list_us_lacey_accounts_superadmin(refresh_token=refresh_token)
-        users = list_platform_users_superadmin(refresh_token=refresh_token)
-        failed_jobs = list_failed_jobs_superadmin(refresh_token=refresh_token)
+    refresh_token = _platform_admin_refresh_token(us_session)
+    accounts = list_us_lacey_accounts_superadmin(refresh_token=refresh_token)
+    users = list_platform_users_superadmin(refresh_token=refresh_token)
+    failed_jobs = list_failed_jobs_superadmin(refresh_token=refresh_token)
 
     active_count = sum(1 for account in accounts if account.get("account_status") == "ACTIVE")
     pilot_count = sum(1 for account in accounts if account.get("account_status") == "PILOT")
@@ -236,7 +191,6 @@ def platform_admin_page(
 ):
     try:
         session_token = _require_us_session(us_session)
-        _verified_platform_admin(session_token)
         context = _admin_context(
             request=request,
             us_session=session_token,
@@ -270,12 +224,12 @@ def platform_admin_set_status(
             purpose=f"platform-admin-status:{organization_id}",
             submitted_token=csrf_token,
         )
-        with _platform_admin_refresh_token(session_token) as refresh_token:
-            set_us_lacey_account_status_superadmin(
-                refresh_token=refresh_token,
-                organization_id=organization_id,
-                account_status=account_status,
-            )
+        refresh_token = _platform_admin_refresh_token(session_token)
+        set_us_lacey_account_status_superadmin(
+            refresh_token=refresh_token,
+            organization_id=organization_id,
+            account_status=account_status,
+        )
         return RedirectResponse(
             "/admin?notice=Account%20status%20updated",
             status_code=status.HTTP_303_SEE_OTHER,
@@ -300,12 +254,12 @@ def platform_admin_set_limit(
             purpose=f"platform-admin-limit:{organization_id}",
             submitted_token=csrf_token,
         )
-        with _platform_admin_refresh_token(session_token) as refresh_token:
-            set_us_lacey_operation_limit_superadmin(
-                refresh_token=refresh_token,
-                organization_id=organization_id,
-                monthly_operation_limit=monthly_operation_limit,
-            )
+        refresh_token = _platform_admin_refresh_token(session_token)
+        set_us_lacey_operation_limit_superadmin(
+            refresh_token=refresh_token,
+            organization_id=organization_id,
+            monthly_operation_limit=monthly_operation_limit,
+        )
         return RedirectResponse(
             "/admin?notice=Operation%20limit%20updated",
             status_code=status.HTTP_303_SEE_OTHER,
@@ -329,11 +283,11 @@ def platform_admin_reset_pilot(
             purpose=f"platform-admin-reset:{organization_id}",
             submitted_token=csrf_token,
         )
-        with _platform_admin_refresh_token(session_token) as refresh_token:
-            reset_pilot_account_superadmin(
-                refresh_token=refresh_token,
-                organization_id=organization_id,
-            )
+        refresh_token = _platform_admin_refresh_token(session_token)
+        reset_pilot_account_superadmin(
+            refresh_token=refresh_token,
+            organization_id=organization_id,
+        )
         return RedirectResponse(
             "/admin?notice=Pilot%20test%20data%20reset",
             status_code=status.HTTP_303_SEE_OTHER,
@@ -357,11 +311,11 @@ def platform_admin_revoke_sessions(
             purpose=f"platform-admin-revoke:{user_id}",
             submitted_token=csrf_token,
         )
-        with _platform_admin_refresh_token(session_token) as refresh_token:
-            revoke_user_sessions_superadmin(
-                refresh_token=refresh_token,
-                user_id=user_id,
-            )
+        refresh_token = _platform_admin_refresh_token(session_token)
+        revoke_user_sessions_superadmin(
+            refresh_token=refresh_token,
+            user_id=user_id,
+        )
         return RedirectResponse(
             "/admin?notice=User%20sessions%20revoked",
             status_code=status.HTTP_303_SEE_OTHER,
