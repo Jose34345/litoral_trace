@@ -1,0 +1,120 @@
+# Free-tier private-beta deployment.
+#
+# This intentionally runs the durable U.S. Lacey queue consumer inside the web
+# process while the Render instance is awake. It preserves the dedicated worker
+# PostgreSQL role via US_LACEY_WORKER_DATABASE_URL, but it is not a substitute
+# for the paid always-on web + background-worker topology in production.
+services:
+  - type: web
+    name: litoral-trace-us-lacey-pilot-free
+    runtime: python
+    repo: https://github.com/Jose34345/litoral_trace
+    branch: feature/us-lacey-pilot-platform
+    region: virginia
+    plan: free
+    autoDeployTrigger: checksPass
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: uvicorn litoral_trace.web.us_lacey_unified_app:app --host 0.0.0.0 --port $PORT
+    # Infrastructure liveness only. /ready remains fail-closed until commercial,
+    # legal and transactional-email settings are explicitly supplied.
+    healthCheckPath: /health
+    renderSubdomainPolicy: enabled
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONPATH
+        value: src
+      - key: US_LACEY_ENVIRONMENT
+        value: production
+      # Canonical public origin after the custom-domain cutover.
+      - key: US_LACEY_APP_HOSTNAME
+        value: lacey.litoraltrace.com
+      - key: US_LACEY_SESSION_TTL_HOURS
+        value: "12"
+      - key: US_LACEY_STORAGE_BUCKET
+        value: litoral-trace-us-lacey-pilot-380560899138-us-east-2
+      - key: US_LACEY_STORAGE_REGION
+        value: us-east-2
+      - key: US_LACEY_STORAGE_PREFIX
+        value: us-lacey/pilot
+
+      # Dedicated pooled Neon URLs. The runtime and worker MUST use distinct DB roles.
+      - key: US_LACEY_DATABASE_URL
+        sync: false
+      - key: US_LACEY_WORKER_DATABASE_URL
+        sync: false
+
+      # Free-tier queue runner. Processing pauses while Render spins the web down
+      # and resumes when the service wakes again.
+      - key: US_LACEY_INLINE_WORKER_ENABLED
+        value: "1"
+      - key: US_LACEY_WORKER_POLL_SECONDS
+        value: "2"
+      - key: US_LACEY_WORKER_RECOVERY_EVERY_SECONDS
+        value: "60"
+      - key: US_LACEY_WORKER_STALE_AFTER_SECONDS
+        value: "600"
+
+      # The web IAM identity already has private read/write access to the same
+      # isolated prefix used by document ingestion and processing.
+      - key: US_LACEY_STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: US_LACEY_STORAGE_SECRET_ACCESS_KEY
+        sync: false
+
+      # Customer signup remains fail-closed until these values are approved.
+      - key: US_LACEY_PRIVATE_BETA_PRICE_CENTS
+        sync: false
+      - key: US_LACEY_MONTHLY_OPERATION_LIMIT
+        sync: false
+      - key: US_LACEY_PAYMENT_PROVIDER
+        sync: false
+      - key: US_LACEY_BANK_TRANSFER_INSTRUCTIONS
+        sync: false
+      - key: US_LACEY_TERMS_VERSION
+        sync: false
+      - key: US_LACEY_PRIVACY_VERSION
+        sync: false
+      - key: US_LACEY_BETA_TERMS_VERSION
+        sync: false
+
+      # Lemon Squeezy remains dormant until Test Mode is explicitly configured.
+      # No API key is required for the hosted-checkout + signed-webhook path.
+      - key: US_LACEY_LEMON_CHECKOUT_URL
+        sync: false
+      - key: US_LACEY_LEMON_WEBHOOK_SECRET
+        sync: false
+      - key: US_LACEY_LEMON_STORE_ID
+        sync: false
+      - key: US_LACEY_LEMON_VARIANT_ID
+        sync: false
+      - key: US_LACEY_LEMON_TEST_MODE
+        sync: false
+
+      # Legal pages live on the same canonical U.S. Lacey origin.
+      - key: US_LACEY_TERMS_URL
+        value: https://lacey.litoraltrace.com/legal/terms
+      - key: US_LACEY_PRIVACY_URL
+        value: https://lacey.litoraltrace.com/legal/privacy
+      - key: US_LACEY_BETA_TERMS_URL
+        value: https://lacey.litoraltrace.com/legal/private-beta
+      - key: US_LACEY_SUPPORT_EMAIL
+        value: comercial@litoraltrace.com
+
+      # Transactional email remains provider-neutral and fail-closed.
+      - key: US_LACEY_SMTP_HOST
+        sync: false
+      - key: US_LACEY_SMTP_PORT
+        value: "587"
+      - key: US_LACEY_SMTP_USERNAME
+        sync: false
+      - key: US_LACEY_SMTP_PASSWORD
+        sync: false
+      - key: US_LACEY_EMAIL_FROM
+        sync: false
+      - key: US_LACEY_SMTP_STARTTLS
+        value: "1"

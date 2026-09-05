@@ -45,7 +45,7 @@
         {{ badge(status, 'positive', True, extra_classes=extra_classes) }}
     {% elif normalized in ['PENDING', 'REVIEW', 'STAGED', 'PARTIAL', 'PROCESSING', 'QUEUED', 'UNASSESSED'] %}
         {{ badge(status, 'warning', True, extra_classes=extra_classes) }}
-    {% elif normalized in ['BLOCKED', 'CONFLICT', 'FAILED', 'REJECTED', 'ERROR', 'INVALID'] %}
+    {% elif normalized in ['BLOCKED', 'CONFLICT', 'FAILED', 'REJECTED', 'ERROR', 'INVALID', 'MISSING'] %}
         {{ badge(status, 'danger', True, extra_classes=extra_classes) }}
     {% elif normalized in ['INACTIVE', 'DISABLED', 'UNKNOWN', 'NONE'] %}
         {{ badge(status, 'neutral', True, extra_classes=extra_classes) }}

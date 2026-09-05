@@ -1,0 +1,6 @@
+{% extends "us_lacey/base.html" %}{% set authenticated = false %}{% block lacey_title %}Sign in{% endblock %}
+{% block lacey_content %}
+{{ page_header("Sign in to your U.S. Lacey workspace", "Private beta", "Verified accounts can access their company billing status.", icon="fa-lock") }}
+{% if verified %}{{ alert("Email verified", "Sign in to continue to billing.", "positive") }}{% elif error %}{{ alert("Sign in unavailable", error, "danger") }}{% endif %}
+<section class="lt-card mx-auto w-full max-w-xl p-6 sm:p-8"><form method="post" action="/login" class="lt-form space-y-5"><label class="lt-field"><span class="lt-field__label">Business email</span><input id="email" class="lt-control" name="email" type="email" required maxlength="255" autocomplete="username"></label><label class="lt-field"><span class="lt-field__label">Password</span><input id="password" class="lt-control" name="password" type="password" required autocomplete="current-password"></label><div class="lt-form__actions">{{ button("Sign in", variant="primary", icon="fa-right-to-bracket", button_type="submit") }}{{ button("Create an account", "/signup", "secondary") }}</div></form></section>
+{% endblock %}

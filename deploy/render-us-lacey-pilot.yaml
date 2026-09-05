@@ -1,0 +1,125 @@
+services:
+  - type: web
+    name: litoral-trace-us-lacey-pilot
+    runtime: python
+    repo: https://github.com/Jose34345/litoral_trace
+    branch: feature/us-lacey-pilot-platform
+    region: virginia
+    plan: 0.5c-512mb
+    autoDeployTrigger: checksPass
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: uvicorn litoral_trace.web.us_lacey_pilot_app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /ready
+    renderSubdomainPolicy: enabled
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONPATH
+        value: src
+      - key: US_LACEY_ENVIRONMENT
+        value: production
+      - key: US_LACEY_APP_HOSTNAME
+        value: app.lacey.litoraltrace.com
+      - key: US_LACEY_SESSION_TTL_HOURS
+        value: "12"
+      - key: US_LACEY_STORAGE_BUCKET
+        value: litoral-trace-us-lacey-pilot-380560899138-us-east-2
+      - key: US_LACEY_STORAGE_REGION
+        value: us-east-2
+      - key: US_LACEY_STORAGE_PREFIX
+        value: us-lacey/pilot
+      # Production DB must be the migrated isolated Neon USA database.
+      - key: US_LACEY_DATABASE_URL
+        sync: false
+      # Generate these outside source control for the dedicated least-privilege web IAM identity.
+      - key: US_LACEY_STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: US_LACEY_STORAGE_SECRET_ACCESS_KEY
+        sync: false
+      # Commercial values are intentionally fail-closed until explicitly approved.
+      - key: US_LACEY_PRIVATE_BETA_PRICE_CENTS
+        sync: false
+      - key: US_LACEY_MONTHLY_OPERATION_LIMIT
+        sync: false
+      - key: US_LACEY_PAYMENT_PROVIDER
+        sync: false
+      - key: US_LACEY_BANK_TRANSFER_INSTRUCTIONS
+        sync: false
+      # Publish approved legal documents before customer signup is enabled.
+      - key: US_LACEY_TERMS_VERSION
+        sync: false
+      - key: US_LACEY_PRIVACY_VERSION
+        sync: false
+      - key: US_LACEY_BETA_TERMS_VERSION
+        sync: false
+      - key: US_LACEY_TERMS_URL
+        sync: false
+      - key: US_LACEY_PRIVACY_URL
+        sync: false
+      - key: US_LACEY_BETA_TERMS_URL
+        sync: false
+      - key: US_LACEY_SUPPORT_EMAIL
+        value: support@litoraltrace.com
+      # SMTP is provider-neutral and must be supplied from the chosen transactional-email account.
+      - key: US_LACEY_SMTP_HOST
+        sync: false
+      - key: US_LACEY_SMTP_PORT
+        value: "587"
+      - key: US_LACEY_SMTP_USERNAME
+        sync: false
+      - key: US_LACEY_SMTP_PASSWORD
+        sync: false
+      - key: US_LACEY_EMAIL_FROM
+        sync: false
+      - key: US_LACEY_SMTP_STARTTLS
+        value: "1"
+
+  - type: worker
+    name: litoral-trace-us-lacey-worker
+    runtime: python
+    repo: https://github.com/Jose34345/litoral_trace
+    branch: feature/us-lacey-pilot-platform
+    region: virginia
+    plan: 0.5c-512mb
+    autoDeployTrigger: checksPass
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: python -m litoral_trace.us_lacey.worker_runner
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONPATH
+        value: src
+      - key: US_LACEY_ENVIRONMENT
+        value: production
+      - key: US_LACEY_APP_HOSTNAME
+        value: app.lacey.litoraltrace.com
+      - key: US_LACEY_STORAGE_BUCKET
+        value: litoral-trace-us-lacey-pilot-380560899138-us-east-2
+      - key: US_LACEY_STORAGE_REGION
+        value: us-east-2
+      - key: US_LACEY_STORAGE_PREFIX
+        value: us-lacey/pilot
+      # Runtime URL is needed for tenant-scoped Assurance processing; worker URL must use a distinct DB role.
+      - key: US_LACEY_DATABASE_URL
+        sync: false
+      - key: US_LACEY_WORKER_DATABASE_URL
+        sync: false
+      # Generate outside source control for the dedicated least-privilege worker IAM identity.
+      - key: US_LACEY_STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: US_LACEY_STORAGE_SECRET_ACCESS_KEY
+        sync: false
+      - key: US_LACEY_WORKER_POLL_SECONDS
+        value: "2"
+      - key: US_LACEY_WORKER_RECOVERY_EVERY_SECONDS
+        value: "60"
+      - key: US_LACEY_WORKER_STALE_AFTER_SECONDS
+        value: "600"
