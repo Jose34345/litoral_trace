@@ -45,6 +45,8 @@ def upgrade() -> None:
     # belong only to the non-login platform definer, never the runtime role.
     op.execute(f"GRANT UPDATE ON TABLE public.users TO {PLATFORM_ROLE}")
     op.execute("CREATE POLICY users_platform_update_044 ON public.users FOR UPDATE TO litoral_trace_platform_definer USING (true) WITH CHECK (true)")
+    op.execute(f"GRANT DELETE ON TABLE public.us_lacey_operations TO {PLATFORM_ROLE}")
+    op.execute("CREATE POLICY us_lacey_operations_platform_delete_044 ON public.us_lacey_operations FOR DELETE TO litoral_trace_platform_definer USING (true)")
     _set_platform_role()
     # Each function first validates a non-revoked superadmin persistent session.
     # The runtime receives EXECUTE only; it never gains cross-tenant table grants.
@@ -158,6 +160,8 @@ def downgrade() -> None:
     # Policies can be changed only by the table owner, not the definer role.
     op.execute("DROP POLICY IF EXISTS users_platform_update_044 ON public.users")
     op.execute(f"REVOKE UPDATE ON TABLE public.users FROM {PLATFORM_ROLE}")
+    op.execute("DROP POLICY IF EXISTS us_lacey_operations_platform_delete_044 ON public.us_lacey_operations")
+    op.execute(f"REVOKE DELETE ON TABLE public.us_lacey_operations FROM {PLATFORM_ROLE}")
     _set_platform_role()
     for signature in FUNCTIONS:
         op.execute(f"DROP FUNCTION IF EXISTS {signature}")
