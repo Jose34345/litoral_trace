@@ -45,7 +45,9 @@ def upgrade() -> None:
     # capability-scoped platform operation, so runtime keeps normal CRUD
     # except direct operation deletion.
     op.execute(f"REVOKE DELETE ON TABLE public.us_lacey_operations FROM {RUNTIME_ROLE}")
-    op.execute(f"GRANT DELETE ON TABLE public.us_lacey_operations TO {PLATFORM_ROLE}")
+    # DELETE predicates read organization_id, so PostgreSQL also requires
+    # SELECT on this same table for the capability-scoped reset function.
+    op.execute(f"GRANT SELECT, DELETE ON TABLE public.us_lacey_operations TO {PLATFORM_ROLE}")
     op.execute("CREATE POLICY us_lacey_operations_platform_delete_044 ON public.us_lacey_operations FOR DELETE TO litoral_trace_platform_definer USING (true)")
     # Each function first validates a non-revoked superadmin persistent session.
     # The runtime receives EXECUTE only; it never gains cross-tenant table grants.
@@ -168,7 +170,7 @@ def downgrade() -> None:
     op.execute("DROP POLICY IF EXISTS users_platform_update_044 ON public.users")
     op.execute(f"REVOKE UPDATE ON TABLE public.users FROM {PLATFORM_ROLE}")
     op.execute("DROP POLICY IF EXISTS us_lacey_operations_platform_delete_044 ON public.us_lacey_operations")
-    op.execute(f"REVOKE DELETE ON TABLE public.us_lacey_operations FROM {PLATFORM_ROLE}")
+    op.execute(f"REVOKE SELECT, DELETE ON TABLE public.us_lacey_operations FROM {PLATFORM_ROLE}")
     # Restore the exact pre-044 runtime privilege from Migration 034.
     op.execute(f"GRANT DELETE ON TABLE public.us_lacey_operations TO {RUNTIME_ROLE}")
     _grant_temp_platform_set()

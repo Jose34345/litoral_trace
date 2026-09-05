@@ -45,6 +45,9 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
             paid_subscription = c.execute(text("INSERT INTO public.us_lacey_subscriptions(public_id,organization_id,plan_code,currency,price_cents,monthly_operation_limit,used_operations,status) VALUES(:p,:o,'PAID','USD',100,5,0,'ACTIVE') RETURNING id"), {"p": str(uuid4()), "o": platform}).scalar_one()
             c.execute(text("INSERT INTO public.us_lacey_organization_profiles(organization_id,legal_name,country_code,business_type,admin_contact_email,account_status) VALUES(:o,:n,'US','IMPORTER',:e,'PILOT')"), {"o": platform, "n": f"Paid {platform}", "e": f"paid-{suffix}@example.com"})
             c.execute(text("INSERT INTO public.us_lacey_payments(public_id,organization_id,subscription_id,provider,amount_cents,currency,payment_reference,status) VALUES(:p,:o,:s,'LEMON_SQUEEZY',100,'USD',:reference,'VERIFIED')"), {"p": str(uuid4()), "o": platform, "s": paid_subscription, "reference": f"paid-{suffix}"})
+        with audit.connect() as c:
+            reset_function = c.execute(text("SELECT p.prosecdef, owner_role.rolname AS owner_role FROM pg_proc AS p JOIN pg_roles AS owner_role ON owner_role.oid=p.proowner WHERE p.oid='public.platform_admin_reset_pilot_account(text,integer)'::regprocedure")).mappings().one()
+            assert dict(reset_function) == {"prosecdef": True, "owner_role": "litoral_trace_platform_definer"}
         with runtime.begin() as c:
             with pytest.raises(DBAPIError):
                 c.execute(text("DELETE FROM public.us_lacey_operations WHERE id=:operation_id"), {"operation_id": operation_a})
@@ -63,8 +66,8 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
             with pytest.raises(DBAPIError):
                 c.execute(text("SELECT * FROM public.platform_admin_reset_pilot_account(:t,:o)"), {"t": actor_token, "o": platform})
         with audit.connect() as c:
-            privileges = c.execute(text("SELECT has_table_privilege('litoral_trace_platform_definer','public.us_lacey_operations','DELETE') AS definer_delete, has_table_privilege('litoral_trace_app','public.us_lacey_operations','DELETE') AS runtime_delete, has_table_privilege('litoral_trace_us_lacey_worker','public.us_lacey_operations','DELETE') AS worker_delete, has_table_privilege('public','public.us_lacey_operations','DELETE') AS public_delete")).mappings().one()
-            assert dict(privileges) == {"definer_delete": True, "runtime_delete": False, "worker_delete": False, "public_delete": False}
+            privileges = c.execute(text("SELECT has_table_privilege('litoral_trace_platform_definer','public.us_lacey_operations','SELECT') AS definer_select, has_table_privilege('litoral_trace_platform_definer','public.us_lacey_operations','DELETE') AS definer_delete, has_table_privilege('litoral_trace_app','public.us_lacey_operations','DELETE') AS runtime_delete, has_table_privilege('litoral_trace_us_lacey_worker','public.us_lacey_operations','DELETE') AS worker_delete, has_table_privilege('public','public.us_lacey_operations','DELETE') AS public_delete")).mappings().one()
+            assert dict(privileges) == {"definer_select": True, "definer_delete": True, "runtime_delete": False, "worker_delete": False, "public_delete": False}
             assert c.execute(text("SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='us_lacey_operations' AND policyname='us_lacey_operations_platform_delete_044'" )).scalar_one() == 1
             assert c.execute(text("SELECT owner_role.rolname FROM pg_proc AS p JOIN pg_roles AS owner_role ON owner_role.oid=p.proowner WHERE p.oid='public.platform_admin_reset_pilot_account(text,integer)'::regprocedure")).scalar_one() == "litoral_trace_platform_definer"
             assert c.execute(text("SELECT rolcanlogin FROM pg_roles WHERE rolname='litoral_trace_platform_definer'")).scalar_one() is False
