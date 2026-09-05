@@ -2,12 +2,14 @@
 
 Migration 037 stores the U.S. opaque session in ``public.user_sessions``, the
 same persistent session table validated by the 042/044 platform control plane.
-Admin requests verify that U.S. session and the persisted PLATFORM_ADMIN role,
-then invoke only the reviewed SECURITY DEFINER capabilities through the existing
-isolated U.S. runtime database session.
+Admin requests reuse that U.S. session and invoke only the reviewed
+SECURITY DEFINER capabilities through the existing isolated U.S. runtime
+database session. Those capabilities validate the persisted platform-admin role
+before returning cross-tenant data or applying a mutation.
 
-No generic DATABASE_URL alias, generic JWT, synthetic bridge session, or direct
-cross-tenant table access is introduced.
+No generic DATABASE_URL alias, generic JWT, synthetic bridge session, direct
+cross-tenant table access, or direct runtime SELECT on protected identity tables
+is introduced.
 """
 from __future__ import annotations
 
@@ -15,12 +17,9 @@ from typing import Any
 
 from fastapi import APIRouter, Cookie, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from litoral_trace.auth.rbac import Permission, has_permission
-from litoral_trace.db.models import Organization, User
-from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.services.admin import (
     _map_platform_db_error,
     _require_platform_refresh_token_hash,
@@ -100,40 +99,9 @@ def _safe_error(
     )
 
 
-def _verified_platform_admin(us_session: str):
-    """Resolve the U.S. session and verify persisted PLATFORM_ADMIN capability."""
-    identity = resolve_us_lacey_session(us_session)
-    db = get_us_lacey_db_session()
-    try:
-        set_tenant_db_context(db, identity.organization_id)
-        user = db.execute(
-            select(User).where(
-                User.id == identity.user_id,
-                User.organization_id == identity.organization_id,
-            )
-        ).scalar_one_or_none()
-        organization = db.execute(
-            select(Organization).where(Organization.id == identity.organization_id)
-        ).scalar_one_or_none()
-        if (
-            user is None
-            or organization is None
-            or not user.is_active
-            or not organization.is_active
-            or not has_permission(user.role, Permission.PLATFORM_ADMIN)
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Platform administration is not available for this account.",
-            )
-        return identity
-    finally:
-        db.close()
-
-
 def _platform_admin_refresh_token(us_session: str) -> str:
-    """Return the persisted U.S. opaque session after platform-role verification."""
-    _verified_platform_admin(us_session)
+    """Reuse a valid U.S. session; DB capabilities enforce PLATFORM_ADMIN."""
+    resolve_us_lacey_session(us_session)
     return us_session
 
 
