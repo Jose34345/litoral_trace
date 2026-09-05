@@ -191,32 +191,6 @@ def _workspace_fragment(*, request: Request, identity, operation_public_id: str,
                 purpose=f"complete:{detail.public_id}",
             ),
             review_csrf=review_tokens,
-            error=error,
-            notice=notice,
-        ),
-        status_code=status_code,
-    )
-    try:
-        dossier = UsLaceyEngineDossierService().get_dossier(
-            organization_id=identity.organization_id,
-            operation_public_id=detail.public_id,
-        )
-    except Exception:
-        LOGGER.exception("Engine 2 dossier preview failed", extra={"organization_id": identity.organization_id})
-        dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
-    tokens = {
-        field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}")
-        for field in detail.fields
-        if field.status in {"MISSING", "REVIEW"}
-    }
-    return _html(
-        render_operation_workspace(
-            request=request,
-            identity=identity,
-            detail=detail,
-            engine2_dossier=dossier,
-            complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"),
-            review_csrf=tokens,
         )
     )
 

@@ -1,1 +1,0 @@
-<div id="processing-panel" {% if not processing.terminal %}hx-get="/operations/{{ detail.public_id }}/processing-fragment" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>{% include "us_lacey/processing_fragment_body.html" %}</div>

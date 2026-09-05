@@ -65,10 +65,10 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
 
 
 def render_processing_fragment(*, request, detail) -> str:
-    return _render(request, "processing_fragment", detail=detail, processing=processing_view(detail))
+    return _render(request, "fragments/processing_fragment", detail=detail, processing=processing_view(detail))
 
 
 def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str]) -> str:
     exception_fields = [field for field in detail.fields if field.status in {"MISSING", "REVIEW"}]
     settled_fields = [field for field in detail.fields if field.status not in {"MISSING", "REVIEW"}]
-    return _render(request, "operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields)
+    return _render(request, "fragments/operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields)
