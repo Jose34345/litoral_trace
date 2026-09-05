@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Cookie, Depends, Form, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, ValidationError
@@ -18,7 +18,12 @@ from litoral_trace.services.admin import (
     listar_empresas_superadmin,
     upsert_license_superadmin,
 )
-from litoral_trace.services.us_lacey_admin import list_us_lacey_accounts_superadmin
+from litoral_trace.services.us_lacey_admin import (
+    list_us_lacey_accounts_superadmin, list_platform_users_superadmin,
+    list_failed_jobs_superadmin, reset_pilot_account_superadmin,
+    revoke_user_sessions_superadmin, set_us_lacey_account_status_superadmin,
+    set_us_lacey_operation_limit_superadmin,
+)
 from litoral_trace.web.templates import templates
 
 router = APIRouter(prefix="/api/v1/admin", tags=["SuperAdmin B2B"])
@@ -65,6 +70,14 @@ class UpsertOrganizationLicenseRequest(BaseModel):
     max_batch_rows: int = Field(default=500, ge=1)
     valid_until: datetime | None = None
     is_active: bool = True
+
+
+class UsLaceyStatusRequest(BaseModel):
+    account_status: str
+
+
+class UsLaceyLimitRequest(BaseModel):
+    monthly_operation_limit: int = Field(..., ge=1, le=100000)
 
 
 async def _coerce_create_payload(
@@ -122,6 +135,8 @@ async def listar_cuentas_us_lacey_endpoint(
 ) -> JSONResponse:
     """Return the read-only owner overview for U.S. Lacey customer accounts."""
     accounts = list_us_lacey_accounts_superadmin(refresh_token=refresh_token_cookie)
+    users = list_platform_users_superadmin(refresh_token=refresh_token_cookie)
+    failed_jobs = list_failed_jobs_superadmin(refresh_token=refresh_token_cookie)
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content=jsonable_encoder({"total": len(accounts), "accounts": accounts}),
@@ -156,12 +171,44 @@ async def render_cuentas_us_lacey_fragment_endpoint(
         pilot_count=pilot_count,
         pending_count=pending_count,
         failed_job_count=failed_job_count,
+        users=users,
+        failed_jobs=failed_jobs,
     )
     response = HTMLResponse(content=content, status_code=status.HTTP_200_OK)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     return response
+
+
+@router.get("/users", tags=["SuperAdmin B2B"])
+async def listar_usuarios_platform_endpoint(refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY), admin: UserTenantContext = Depends(require_superadmin_role)) -> JSONResponse:
+    return JSONResponse(content=jsonable_encoder({"users": list_platform_users_superadmin(refresh_token=refresh_token_cookie)}))
+
+
+@router.get("/us-lacey/failed-jobs", tags=["SuperAdmin B2B", "U.S. Lacey"])
+async def listar_fallas_us_lacey_endpoint(refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY), admin: UserTenantContext = Depends(require_superadmin_role)) -> JSONResponse:
+    return JSONResponse(content=jsonable_encoder({"jobs": list_failed_jobs_superadmin(refresh_token=refresh_token_cookie)}))
+
+
+@router.post("/us-lacey/accounts/{organization_id}/status", tags=["SuperAdmin B2B", "U.S. Lacey"])
+async def cambiar_estado_us_lacey_endpoint(organization_id: int, request: Request, account_status: str = Form(...), refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY), admin: UserTenantContext = Depends(require_superadmin_role)) -> JSONResponse:
+    return JSONResponse(content=set_us_lacey_account_status_superadmin(refresh_token=refresh_token_cookie, organization_id=organization_id, account_status=account_status))
+
+
+@router.post("/us-lacey/accounts/{organization_id}/operation-limit", tags=["SuperAdmin B2B", "U.S. Lacey"])
+async def cambiar_limite_us_lacey_endpoint(organization_id: int, request: Request, monthly_operation_limit: int = Form(...), refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY), admin: UserTenantContext = Depends(require_superadmin_role)) -> JSONResponse:
+    return JSONResponse(content=set_us_lacey_operation_limit_superadmin(refresh_token=refresh_token_cookie, organization_id=organization_id, monthly_operation_limit=monthly_operation_limit))
+
+
+@router.post("/users/{user_id}/revoke-sessions", tags=["SuperAdmin B2B"])
+async def revocar_sesiones_endpoint(user_id: int, request: Request, refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY), admin: UserTenantContext = Depends(require_superadmin_role)) -> JSONResponse:
+    return JSONResponse(content=revoke_user_sessions_superadmin(refresh_token=refresh_token_cookie, user_id=user_id))
+
+
+@router.post("/us-lacey/accounts/{organization_id}/reset-pilot", tags=["SuperAdmin B2B", "U.S. Lacey"])
+async def resetear_pilot_endpoint(organization_id: int, request: Request, refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_KEY), admin: UserTenantContext = Depends(require_superadmin_role)) -> JSONResponse:
+    return JSONResponse(content=reset_pilot_account_superadmin(refresh_token=refresh_token_cookie, organization_id=organization_id))
 
 
 @router.post("/organizations", tags=["SuperAdmin B2B"])
