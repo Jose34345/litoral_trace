@@ -353,6 +353,15 @@ def platform_admin_set_status(
             submitted_token=csrf_token,
         )
         refresh_token = _platform_admin_refresh_token(session_token)
+        identity = resolve_us_lacey_session(session_token)
+        if (
+            account_status.strip().upper() == "SUSPENDED"
+            and organization_id == identity.organization_id
+        ):
+            return _safe_error(
+                "You cannot suspend the organization that owns your current admin session.",
+                status_code=status.HTTP_409_CONFLICT,
+            )
         set_us_lacey_account_status_superadmin(
             refresh_token=refresh_token,
             organization_id=organization_id,
