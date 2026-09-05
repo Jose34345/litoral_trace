@@ -11,6 +11,7 @@ from enum import Enum
 import json
 import re
 import unicodedata
+from datetime import datetime
 from typing import Mapping, Protocol
 
 from .domain import BoundingBox, DocumentResolution, EvidenceClass, FieldStatus
@@ -118,6 +119,12 @@ def comparison_key(field_key: str, value: str | None) -> str | None:
     if value is None:
         return None
     normalized = normalize_ai_value(field_key, value)
+    if field_key == "estimated_arrival_date":
+        for pattern in ("%Y-%m-%d", "%m/%d/%Y", "%m-%d-%Y"):
+            try:
+                return datetime.strptime(normalized, pattern).date().isoformat()
+            except ValueError:
+                pass
     return normalized.upper() if field_key in _IDENTIFIER_FIELDS else _fold(normalized)
 
 def _bbox_from_payload(payload: object) -> BoundingBox | None:

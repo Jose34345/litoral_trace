@@ -9,6 +9,7 @@ from litoral_trace.lacey_engine.ai_providers import (
     AIProviderConfig,
     MistralOcrProvider,
     QwenOllamaProvider,
+    ai_shadow_engine_version,
     build_ai_provider,
 )
 from litoral_trace.lacey_engine.ai_shadow import (
@@ -19,6 +20,7 @@ from litoral_trace.lacey_engine.ai_shadow import (
     evaluate_golden,
     extraction_result_from_payload,
     reconcile_engine2_with_ai,
+    comparison_key,
 )
 from litoral_trace.lacey_engine.domain import (
     AdmittedCandidate,
@@ -236,3 +238,30 @@ def test_mistral_adapter_uses_document_annotation_schema_without_network(monkeyp
     assert payload["document_annotation_format"]["type"] == "json_schema"
     assert payload["document"]["document_url"].startswith("data:application/pdf;base64,")
     assert result.candidates[0].value == "MSKU9228574"
+
+
+@pytest.mark.parametrize("url", ["http://localhost:11434/api/chat", "http://127.0.0.1:11434/api/chat", "http://[::1]:11434/api/chat"])
+def test_qwen_loopback_targets_are_allowed_without_external_opt_in(url):
+    assert isinstance(QwenOllamaProvider(AIProviderConfig("SHADOW", "qwen_ollama", "qwen", url, None, 30, 8, False)), QwenOllamaProvider)
+
+
+@pytest.mark.parametrize("url", ["https://example.com/api/chat", "http://10.0.0.8:11434/api/chat", "file:///tmp/chat", "not a url"])
+def test_qwen_non_loopback_or_invalid_targets_are_blocked_without_external_opt_in(url):
+    with pytest.raises(AIShadowError, match="disabled by policy"):
+        QwenOllamaProvider(AIProviderConfig("SHADOW", "qwen_ollama", "qwen", url, None, 30, 8, False))
+
+
+def test_qwen_remote_target_requires_and_honors_external_opt_in():
+    assert isinstance(QwenOllamaProvider(AIProviderConfig("SHADOW", "qwen_ollama", "qwen", "https://example.com/api/chat", None, 30, 8, True)), QwenOllamaProvider)
+
+
+def test_arrival_date_comparison_uses_the_engine2_unambiguous_date_contract():
+    assert comparison_key("estimated_arrival_date", "2026-09-05") == comparison_key("estimated_arrival_date", "09/05/2026")
+
+
+def test_ai_cache_identity_changes_for_page_coverage_and_is_idempotent():
+    base = AIProviderConfig("SHADOW", "qwen_ollama", "qwen", "http://localhost:11434/api/chat", None, 30, 1, False)
+    expanded = AIProviderConfig("SHADOW", "qwen_ollama", "qwen", "http://localhost:11434/api/chat", None, 30, 8, False)
+    assert ai_shadow_engine_version(base) != ai_shadow_engine_version(expanded)
+    assert ai_shadow_engine_version(base) == ai_shadow_engine_version(base)
+    assert len(ai_shadow_engine_version(base)) <= 100

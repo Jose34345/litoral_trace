@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import base64
+import hashlib
 from io import BytesIO
 import json
 import mimetypes
@@ -14,6 +15,7 @@ import os
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlparse
 
 from .ai_shadow import (
     AI_FIELDS,
@@ -73,8 +75,17 @@ def ai_shadow_enabled(config: AIProviderConfig | None = None) -> bool:
 
 
 def ai_shadow_engine_version(config: AIProviderConfig) -> str:
-    raw = f"ai-shadow-v1:{config.provider}:{config.model}"
-    return raw[:100]
+    # This is a bounded cache identity, not a customer-visible version. Never
+    # include endpoints, credentials, or document data in it.
+    identity = f"v1|{config.provider}|{config.model}|pages={config.max_pages}|schema=lacey_ai_shadow_v1"
+    return f"ai-shadow-v1:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:32]}"
+
+
+def _is_loopback_qwen_target(base_url: str) -> bool:
+    parsed = urlparse(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    return parsed.hostname.casefold() == "localhost" or parsed.hostname in {"127.0.0.1", "::1"}
 
 
 _CANDIDATE_SCHEMA = {
@@ -179,6 +190,8 @@ class QwenOllamaProvider:
     name = PROVIDER_QWEN_OLLAMA
 
     def __init__(self, config: AIProviderConfig) -> None:
+        if not config.allow_external and not _is_loopback_qwen_target(config.base_url):
+            raise AIShadowError("External AI provider is disabled by policy.")
         self.config = config
         self.model = config.model
 
