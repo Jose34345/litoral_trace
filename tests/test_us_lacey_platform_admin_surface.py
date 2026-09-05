@@ -156,6 +156,37 @@ def test_admin_status_mutation_requires_valid_session_bound_csrf(monkeypatch):
     assert valid.headers["location"].startswith("/admin?notice=")
 
 
+def test_admin_rejects_suspending_acting_admin_organization(monkeypatch):
+    monkeypatch.setattr(admin_surface, "resolve_us_lacey_session", lambda token: _identity())
+    monkeypatch.setattr(admin_surface, "_platform_admin_refresh_token", lambda token: token)
+    calls: list[tuple[str, int, str]] = []
+
+    def set_status(*, refresh_token: str, organization_id: int, account_status: str):
+        calls.append((refresh_token, organization_id, account_status))
+        return {"organization_id": organization_id, "account_status": account_status}
+
+    monkeypatch.setattr(admin_surface, "set_us_lacey_account_status_superadmin", set_status)
+    client.cookies.set(US_LACEY_SESSION_COOKIE, SESSION)
+    try:
+        response = client.post(
+            "/admin/us-lacey/accounts/14/status",
+            data={
+                "account_status": "SUSPENDED",
+                "csrf_token": us_lacey_csrf_token(
+                    session_token=SESSION,
+                    purpose="platform-admin-status:14",
+                ),
+            },
+            follow_redirects=False,
+        )
+    finally:
+        client.cookies.delete(US_LACEY_SESSION_COOKIE)
+
+    assert response.status_code == 409
+    assert "cannot suspend" in response.text.lower()
+    assert calls == []
+
+
 def test_admin_reset_uses_reviewed_control_plane_with_same_session(monkeypatch):
     monkeypatch.setattr(admin_surface, "resolve_us_lacey_session", lambda token: _identity())
     monkeypatch.setattr(admin_surface, "_platform_admin_refresh_token", lambda token: token)
