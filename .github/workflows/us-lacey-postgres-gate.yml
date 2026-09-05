@@ -64,6 +64,7 @@ jobs:
       DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       US_LACEY_POSTGRES_TEST_DATABASE_URL: postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      US_LACEY_TEST_AUDIT_DATABASE_URL: postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       US_LACEY_ENVIRONMENT: test
       US_LACEY_DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       US_LACEY_WORKER_DATABASE_URL: postgresql+psycopg://litoral_trace_us_lacey_worker:us_lacey_worker_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
@@ -161,14 +162,14 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "043_us_lacey_engine2_shadow (head)" /tmp/alembic-current.txt
+          grep -Fx "044_platform_admin_control_plane (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
 
           expected_policy_counts = {
               "us_lacey_organization_profiles": 5,
-              "us_lacey_operations": 4,
+              "us_lacey_operations": 6,
               "us_lacey_operation_documents": 4,
               "us_lacey_operation_fields": 4,
               "us_lacey_subscriptions": 5,
@@ -372,6 +373,26 @@ jobs:
                   WHERE n.nspname = 'public'
                     AND p.proname = 'platform_us_lacey_account_overview'
               """)).mappings().one()
+              reset_policies = connection.execute(text("""
+                  SELECT policyname, cmd, roles
+                  FROM pg_policies
+                  WHERE schemaname='public'
+                    AND tablename='us_lacey_operations'
+                    AND policyname IN ('us_lacey_operations_platform_select_044', 'us_lacey_operations_platform_delete_044')
+              """)).mappings().all()
+              reset_privileges = connection.execute(text("""
+                  SELECT
+                    has_column_privilege('litoral_trace_platform_definer', 'public.us_lacey_operations', 'organization_id', 'SELECT') AS definer_column_select,
+                    has_table_privilege('litoral_trace_platform_definer', 'public.us_lacey_operations', 'SELECT') AS definer_table_select,
+                    has_table_privilege('litoral_trace_platform_definer', 'public.us_lacey_operations', 'DELETE') AS definer_delete,
+                    has_table_privilege('litoral_trace_app', 'public.us_lacey_operations', 'DELETE') AS runtime_delete,
+                    has_table_privilege('litoral_trace_us_lacey_worker', 'public.us_lacey_operations', 'DELETE') AS worker_delete,
+                    has_table_privilege('public', 'public.us_lacey_operations', 'DELETE') AS public_delete
+              """)).mappings().one()
+              definer_role = connection.execute(text("""
+                  SELECT rolcanlogin, rolsuper, rolbypassrls
+                  FROM pg_roles WHERE rolname='litoral_trace_platform_definer'
+              """)).mappings().one()
           by_table = {row["relname"]: row for row in rows}
           assert set(by_table) == set(expected_policy_counts)
           assert all(row["relrowsecurity"] is True for row in by_table.values())
@@ -423,6 +444,10 @@ jobs:
               "worker_execute": False,
               "public_execute": False,
           }
+          assert {row["policyname"]: row["cmd"] for row in reset_policies} == {"us_lacey_operations_platform_select_044": "SELECT", "us_lacey_operations_platform_delete_044": "DELETE"}
+          assert all(row["roles"] == ["litoral_trace_platform_definer"] for row in reset_policies)
+          assert reset_privileges == {"definer_column_select": True, "definer_table_select": False, "definer_delete": True, "runtime_delete": False, "worker_delete": False, "public_delete": False}
+          assert definer_role == {"rolcanlogin": False, "rolsuper": False, "rolbypassrls": False}
           engine.dispose()
           PY
       - name: Prove Engine 2 shadow persistence and tenant isolation
@@ -438,6 +463,15 @@ jobs:
             | tee /tmp/engine2-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/engine2-postgres.txt; then
             echo "Engine 2 PostgreSQL acceptance tests must not skip in CI."
+            exit 1
+          fi
+      - name: Prove platform-admin control-plane capabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs tests/test_platform_admin_control_plane_postgres.py | tee /tmp/platform-admin-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/platform-admin-postgres.txt; then
+            echo "Platform-admin PostgreSQL acceptance must not skip in CI."
             exit 1
           fi
       - name: Prove Engine 2 shadow-worker contracts

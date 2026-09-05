@@ -63,7 +63,7 @@ def test_owner_api_reuses_platform_admin_permission_and_persistent_session() -> 
     assert "list_us_lacey_accounts_superadmin" in text
 
 
-def test_existing_admin_page_mounts_read_only_us_lacey_console() -> None:
+def test_existing_admin_page_mounts_control_plane_us_lacey_console() -> None:
     page = ADMIN_PAGE.read_text(encoding="utf-8")
     fragment = ADMIN_FRAGMENT.read_text(encoding="utf-8")
 
@@ -71,5 +71,7 @@ def test_existing_admin_page_mounts_read_only_us_lacey_console() -> None:
     assert "Owner / Admin Console" in fragment
     assert "Vista global de solo lectura" in fragment
     assert "no puede activar pagos" in fragment
-    assert "hx-post" not in fragment
+    assert "hx-post" in fragment
+    assert "X-CSRF-Token" in fragment
+    assert "reset-pilot" in fragment
     assert "verify-payment" not in fragment.lower()

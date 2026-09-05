@@ -116,7 +116,7 @@ def test_us_lacey_owner_admin_follows_lemon_head():
 
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "043_us_lacey_engine2_shadow (head)" in text
+    assert "044_platform_admin_control_plane (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():
