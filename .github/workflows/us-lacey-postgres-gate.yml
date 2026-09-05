@@ -64,6 +64,7 @@ jobs:
       DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       US_LACEY_POSTGRES_TEST_DATABASE_URL: postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      US_LACEY_TEST_AUDIT_DATABASE_URL: postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       US_LACEY_ENVIRONMENT: test
       US_LACEY_DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
       US_LACEY_WORKER_DATABASE_URL: postgresql+psycopg://litoral_trace_us_lacey_worker:us_lacey_worker_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci

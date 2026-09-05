@@ -10,20 +10,20 @@ from sqlalchemy.exc import DBAPIError
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("ENABLE_POSTGRES_TESTS") != "1" or not (os.environ.get("TEST_POSTGRES_MIGRATION_DATABASE_URL") or os.environ.get("MIGRATION_DATABASE_URL")) or not (os.environ.get("US_LACEY_DATABASE_URL") or os.environ.get("TEST_POSTGRES_DATABASE_URL")),
+    os.environ.get("ENABLE_POSTGRES_TESTS") != "1" or not os.environ.get("US_LACEY_TEST_AUDIT_DATABASE_URL") or not (os.environ.get("US_LACEY_DATABASE_URL") or os.environ.get("TEST_POSTGRES_DATABASE_URL")),
     reason="requires the isolated PostgreSQL gate",
 )
 
 
 def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> None:
-    owner = create_engine(os.environ.get("TEST_POSTGRES_MIGRATION_DATABASE_URL") or os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
+    audit = create_engine(os.environ["US_LACEY_TEST_AUDIT_DATABASE_URL"], pool_pre_ping=True)
     runtime = create_engine(os.environ.get("US_LACEY_DATABASE_URL") or os.environ["TEST_POSTGRES_DATABASE_URL"], pool_pre_ping=True)
     suffix = uuid4().hex[:10]
     ids: list[int] = []
     actor_token, normal_token = ("a" * 54 + suffix[:10], "b" * 54 + suffix[:10])
     actor_token, normal_token = actor_token[:64], normal_token[:64]
     try:
-        with owner.begin() as c:
+        with audit.begin() as c:
             def org(label: str) -> int:
                 value = c.execute(text("INSERT INTO public.organizations(name,slug,tax_id,tier,is_active) VALUES(:n,:s,:t,'pro',true) RETURNING id"), {"n": f"044 {label} {suffix}", "s": f"p044-{label}-{suffix}", "t": f"44{len(ids)}{suffix[:7]}"}).scalar_one()
                 ids.append(value); return value
@@ -50,7 +50,7 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
             with pytest.raises(DBAPIError): c.execute(text("SELECT * FROM public.platform_admin_set_us_lacey_operation_limit(:t,:o,0)"), {"t":actor_token,"o":tenant_a})
             assert c.execute(text("SELECT * FROM public.platform_admin_reset_pilot_account(:t,:o)"), {"t":actor_token,"o":tenant_a}).mappings().one()["operations_deleted"] == 1
             with pytest.raises(DBAPIError): c.execute(text("SELECT * FROM public.platform_admin_set_us_lacey_account_status(:t,:o,'PILOT')"), {"t":normal_token,"o":tenant_b})
-        with owner.connect() as c:
+        with audit.connect() as c:
             assert c.execute(text("SELECT role FROM public.users WHERE id=:u"), {"u":founder}).scalar_one() == "superadmin"
             assert c.execute(text("SELECT password_hash FROM public.users WHERE id=:u"), {"u":founder}).scalar_one() == "unchanged-password-hash"
             assert c.execute(text("SELECT count(*) FROM public.user_sessions WHERE user_id=:u AND revoked_at IS NOT NULL"), {"u":founder}).scalar_one() == 1
@@ -58,6 +58,6 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
             assert c.execute(text("SELECT count(*) FROM public.us_lacey_operations WHERE organization_id=:o"), {"o":tenant_b}).scalar_one() == 1
             assert c.execute(text("SELECT count(*) FROM public.audit_logs WHERE organization_id=:o AND action IN ('FOUNDER_PROMOTED','ACCOUNT_STATUS_CHANGED','OPERATION_LIMIT_CHANGED','PILOT_TEST_RESET')"), {"o":tenant_a}).scalar_one() >= 4
     finally:
-        with owner.begin() as c:
+        with audit.begin() as c:
             if ids: c.execute(text("DELETE FROM public.organizations WHERE id = ANY(:ids)"), {"ids": ids})
-        owner.dispose(); runtime.dispose()
+        audit.dispose(); runtime.dispose()
