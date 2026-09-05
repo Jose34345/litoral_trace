@@ -28,15 +28,11 @@ FUNCTIONS = (
 )
 
 
-def _set_platform_role() -> None:
+def _grant_temp_platform_set() -> None:
     op.execute(f"GRANT {PLATFORM_ROLE} TO CURRENT_USER WITH ADMIN FALSE, INHERIT FALSE, SET TRUE GRANTED BY CURRENT_USER")
-    op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")
-    op.execute(f"SET ROLE {PLATFORM_ROLE}")
 
 
-def _reset_platform_role() -> None:
-    op.execute("RESET ROLE")
-    op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
+def _revoke_temp_platform_set() -> None:
     op.execute(f"REVOKE {PLATFORM_ROLE} FROM CURRENT_USER GRANTED BY CURRENT_USER")
 
 
@@ -51,7 +47,6 @@ def upgrade() -> None:
     op.execute(f"REVOKE DELETE ON TABLE public.us_lacey_operations FROM {RUNTIME_ROLE}")
     op.execute(f"GRANT DELETE ON TABLE public.us_lacey_operations TO {PLATFORM_ROLE}")
     op.execute("CREATE POLICY us_lacey_operations_platform_delete_044 ON public.us_lacey_operations FOR DELETE TO litoral_trace_platform_definer USING (true)")
-    _set_platform_role()
     # Each function first validates a non-revoked superadmin persistent session.
     # The runtime receives EXECUTE only; it never gains cross-tenant table grants.
     op.execute("""
@@ -157,7 +152,15 @@ def upgrade() -> None:
         op.execute(f"REVOKE ALL ON FUNCTION {signature} FROM PUBLIC")
         op.execute(f"REVOKE ALL ON FUNCTION {signature} FROM {WORKER_ROLE}")
         op.execute(f"GRANT EXECUTE ON FUNCTION {signature} TO {RUNTIME_ROLE}")
-    _reset_platform_role()
+    # Use the proven explicit ownership handoff.  SECURITY DEFINER executes
+    # with this non-login role, whose narrowly-scoped DELETE capability is
+    # required by the pilot reset function.
+    _grant_temp_platform_set()
+    op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")
+    for signature in FUNCTIONS:
+        op.execute(f"ALTER FUNCTION {signature} OWNER TO {PLATFORM_ROLE}")
+    op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
+    _revoke_temp_platform_set()
 
 
 def downgrade() -> None:
@@ -168,7 +171,9 @@ def downgrade() -> None:
     op.execute(f"REVOKE DELETE ON TABLE public.us_lacey_operations FROM {PLATFORM_ROLE}")
     # Restore the exact pre-044 runtime privilege from Migration 034.
     op.execute(f"GRANT DELETE ON TABLE public.us_lacey_operations TO {RUNTIME_ROLE}")
-    _set_platform_role()
+    _grant_temp_platform_set()
+    op.execute(f"SET ROLE {PLATFORM_ROLE}")
     for signature in FUNCTIONS:
         op.execute(f"DROP FUNCTION IF EXISTS {signature}")
-    _reset_platform_role()
+    op.execute("RESET ROLE")
+    _revoke_temp_platform_set()

@@ -66,6 +66,7 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
             privileges = c.execute(text("SELECT has_table_privilege('litoral_trace_platform_definer','public.us_lacey_operations','DELETE') AS definer_delete, has_table_privilege('litoral_trace_app','public.us_lacey_operations','DELETE') AS runtime_delete, has_table_privilege('litoral_trace_us_lacey_worker','public.us_lacey_operations','DELETE') AS worker_delete, has_table_privilege('public','public.us_lacey_operations','DELETE') AS public_delete")).mappings().one()
             assert dict(privileges) == {"definer_delete": True, "runtime_delete": False, "worker_delete": False, "public_delete": False}
             assert c.execute(text("SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='us_lacey_operations' AND policyname='us_lacey_operations_platform_delete_044'" )).scalar_one() == 1
+            assert c.execute(text("SELECT owner_role.rolname FROM pg_proc AS p JOIN pg_roles AS owner_role ON owner_role.oid=p.proowner WHERE p.oid='public.platform_admin_reset_pilot_account(text,integer)'::regprocedure")).scalar_one() == "litoral_trace_platform_definer"
             assert c.execute(text("SELECT rolcanlogin FROM pg_roles WHERE rolname='litoral_trace_platform_definer'")).scalar_one() is False
             assert c.execute(text("SELECT rolbypassrls FROM pg_roles WHERE rolname='litoral_trace_app'")).scalar_one() is False
             assert c.execute(text("SELECT role FROM public.users WHERE id=:u"), {"u":founder}).scalar_one() == "superadmin"
