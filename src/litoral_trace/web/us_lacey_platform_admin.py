@@ -1,32 +1,29 @@
 """Superadmin-only control surface on the deployed U.S. Lacey hostname.
 
-The U.S. portal keeps its opaque-session authentication boundary. Migration 037
-stores that opaque session in ``public.user_sessions``, the same persistent
-session table validated by the 042/044 platform control plane. Admin requests
-therefore verify the U.S. session, verify the persisted platform role inside the
-tenant, and pass that same opaque token server-side to the reviewed
-SECURITY DEFINER capabilities.
+Migration 037 stores the U.S. opaque session in ``public.user_sessions``, the
+same persistent session table validated by the 042/044 platform control plane.
+Admin requests verify that U.S. session and the persisted PLATFORM_ADMIN role,
+then invoke only the reviewed SECURITY DEFINER capabilities through the existing
+isolated U.S. runtime database session.
 
-No generic JWT or synthetic bridge session is issued, and no cross-tenant table
-access is performed directly in application code.
+No generic DATABASE_URL alias, generic JWT, synthetic bridge session, or direct
+cross-tenant table access is introduced.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Cookie, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 
 from litoral_trace.auth.rbac import Permission, has_permission
 from litoral_trace.db.models import Organization, User
 from litoral_trace.db.tenant import set_tenant_db_context
-from litoral_trace.services.us_lacey_admin import (
-    list_failed_jobs_superadmin,
-    list_platform_users_superadmin,
-    list_us_lacey_accounts_superadmin,
-    reset_pilot_account_superadmin,
-    revoke_user_sessions_superadmin,
-    set_us_lacey_account_status_superadmin,
-    set_us_lacey_operation_limit_superadmin,
+from litoral_trace.services.admin import (
+    _map_platform_db_error,
+    _require_platform_refresh_token_hash,
 )
 from litoral_trace.us_lacey.csrf import (
     UsLaceyCsrfError,
@@ -114,9 +111,128 @@ def _verified_platform_admin(us_session: str):
 
 
 def _platform_admin_refresh_token(us_session: str) -> str:
-    """Return the already-persisted U.S. opaque session after role verification."""
+    """Return the persisted U.S. opaque session after platform-role verification."""
     _verified_platform_admin(us_session)
     return us_session
+
+
+def _control_plane_call(
+    *,
+    refresh_token: str,
+    statement: str,
+    values: dict[str, Any] | None = None,
+    commit: bool = False,
+) -> list[dict[str, Any]]:
+    """Invoke one 042/044 capability through the isolated U.S. runtime session."""
+    db = get_us_lacey_db_session()
+    try:
+        token_hash = _require_platform_refresh_token_hash(refresh_token)
+        parameters = {
+            **(values or {}),
+            "actor_refresh_token_hash": token_hash,
+        }
+        rows = db.execute(text(statement), parameters).mappings().all()
+        if commit:
+            db.commit()
+        return [dict(row) for row in rows]
+    except DBAPIError as exc:
+        db.rollback()
+        _map_platform_db_error(exc)
+        raise
+    finally:
+        db.close()
+
+
+def list_us_lacey_accounts_superadmin(*, refresh_token: str) -> list[dict[str, Any]]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM public.platform_us_lacey_account_overview("
+            ":actor_refresh_token_hash) ORDER BY organization_id"
+        ),
+    )
+
+
+def list_platform_users_superadmin(*, refresh_token: str) -> list[dict[str, Any]]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM public.platform_admin_users("
+            ":actor_refresh_token_hash)"
+        ),
+    )
+
+
+def list_failed_jobs_superadmin(*, refresh_token: str) -> list[dict[str, Any]]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM public.platform_admin_failed_jobs("
+            ":actor_refresh_token_hash)"
+        ),
+    )
+
+
+def set_us_lacey_account_status_superadmin(
+    *, refresh_token: str, organization_id: int, account_status: str
+) -> dict[str, Any]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM public.platform_admin_set_us_lacey_account_status("
+            ":actor_refresh_token_hash, :organization_id, :account_status)"
+        ),
+        values={
+            "organization_id": organization_id,
+            "account_status": account_status,
+        },
+        commit=True,
+    )[0]
+
+
+def set_us_lacey_operation_limit_superadmin(
+    *, refresh_token: str, organization_id: int, monthly_operation_limit: int
+) -> dict[str, Any]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM public.platform_admin_set_us_lacey_operation_limit("
+            ":actor_refresh_token_hash, :organization_id, :monthly_operation_limit)"
+        ),
+        values={
+            "organization_id": organization_id,
+            "monthly_operation_limit": monthly_operation_limit,
+        },
+        commit=True,
+    )[0]
+
+
+def reset_pilot_account_superadmin(
+    *, refresh_token: str, organization_id: int
+) -> dict[str, Any]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM public.platform_admin_reset_pilot_account("
+            ":actor_refresh_token_hash, :organization_id)"
+        ),
+        values={"organization_id": organization_id},
+        commit=True,
+    )[0]
+
+
+def revoke_user_sessions_superadmin(
+    *, refresh_token: str, user_id: int
+) -> dict[str, Any]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM public.platform_admin_revoke_user_sessions("
+            ":actor_refresh_token_hash, :user_id)"
+        ),
+        values={"user_id": user_id},
+        commit=True,
+    )[0]
 
 
 def _require_us_session(us_session: str | None) -> str:
