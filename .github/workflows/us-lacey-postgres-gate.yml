@@ -440,6 +440,15 @@ jobs:
             echo "Engine 2 PostgreSQL acceptance tests must not skip in CI."
             exit 1
           fi
+      - name: Prove platform-admin control-plane capabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs tests/test_platform_admin_control_plane_postgres.py | tee /tmp/platform-admin-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/platform-admin-postgres.txt; then
+            echo "Platform-admin PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
       - name: Prove Engine 2 shadow-worker contracts
         run: python -m pytest -q -rs tests/test_us_lacey_engine2_shadow_worker.py
       - name: Prove Engine 2 static schema contracts
