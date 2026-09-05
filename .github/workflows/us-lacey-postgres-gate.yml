@@ -169,7 +169,7 @@ jobs:
 
           expected_policy_counts = {
               "us_lacey_organization_profiles": 5,
-              "us_lacey_operations": 4,
+              "us_lacey_operations": 5,
               "us_lacey_operation_documents": 4,
               "us_lacey_operation_fields": 4,
               "us_lacey_subscriptions": 5,
@@ -373,6 +373,24 @@ jobs:
                   WHERE n.nspname = 'public'
                     AND p.proname = 'platform_us_lacey_account_overview'
               """)).mappings().one()
+              reset_policy = connection.execute(text("""
+                  SELECT cmd, roles
+                  FROM pg_policies
+                  WHERE schemaname='public'
+                    AND tablename='us_lacey_operations'
+                    AND policyname='us_lacey_operations_platform_delete_044'
+              """)).mappings().one()
+              reset_privileges = connection.execute(text("""
+                  SELECT
+                    has_table_privilege('litoral_trace_platform_definer', 'public.us_lacey_operations', 'DELETE') AS definer_delete,
+                    has_table_privilege('litoral_trace_app', 'public.us_lacey_operations', 'DELETE') AS runtime_delete,
+                    has_table_privilege('litoral_trace_us_lacey_worker', 'public.us_lacey_operations', 'DELETE') AS worker_delete,
+                    has_table_privilege('public', 'public.us_lacey_operations', 'DELETE') AS public_delete
+              """)).mappings().one()
+              definer_role = connection.execute(text("""
+                  SELECT rolcanlogin, rolsuper, rolbypassrls
+                  FROM pg_roles WHERE rolname='litoral_trace_platform_definer'
+              """)).mappings().one()
           by_table = {row["relname"]: row for row in rows}
           assert set(by_table) == set(expected_policy_counts)
           assert all(row["relrowsecurity"] is True for row in by_table.values())
@@ -424,6 +442,9 @@ jobs:
               "worker_execute": False,
               "public_execute": False,
           }
+          assert reset_policy == {"cmd": "DELETE", "roles": ["litoral_trace_platform_definer"]}
+          assert reset_privileges == {"definer_delete": True, "runtime_delete": False, "worker_delete": False, "public_delete": False}
+          assert definer_role == {"rolcanlogin": False, "rolsuper": False, "rolbypassrls": False}
           engine.dispose()
           PY
       - name: Prove Engine 2 shadow persistence and tenant isolation
