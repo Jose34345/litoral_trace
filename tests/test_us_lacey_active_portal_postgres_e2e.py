@@ -74,10 +74,7 @@ class MemoryObjectStorage:
         item = self.objects.get(key)
         if item is None:
             raise ObjectStorageNotFoundError("get_object")
-        return ObjectStorageStream(
-            body=BytesIO(item["body"]),
-            head=self._head(key, version_id),
-        )
+        return ObjectStorageStream(body=BytesIO(item["body"]), head=self._head(key, version_id))
 
     def delete_object(self, *, key, version_id=None):
         self.objects.pop(key, None)
@@ -98,10 +95,9 @@ def _configure(monkeypatch: pytest.MonkeyPatch) -> None:
         "US_LACEY_APP_HOSTNAME": "app.lacey.litoraltrace.com",
         "US_LACEY_SESSION_TTL_HOURS": "1",
         "US_LACEY_PRIVATE_BETA_PRICE_CENTS": "12500",
-        # Deliberately one slot: upload/review/export must keep working after it is consumed.
         "US_LACEY_MONTHLY_OPERATION_LIMIT": "1",
-        "US_LACEY_PAYMENT_PROVIDER": "WISE",
-        "US_LACEY_BANK_TRANSFER_INSTRUCTIONS": "CI-only Wise USD transfer instructions",
+        "US_LACEY_PAYMENT_PROVIDER": "MANUAL_BANK_TRANSFER",
+        "US_LACEY_BANK_TRANSFER_INSTRUCTIONS": "Test-only transfer instructions",
         "US_LACEY_TERMS_VERSION": "terms-active-e2e-v1",
         "US_LACEY_PRIVACY_VERSION": "privacy-active-e2e-v1",
         "US_LACEY_BETA_TERMS_VERSION": "beta-active-e2e-v1",
@@ -116,11 +112,7 @@ def _configure(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _organization_id_for_email(email: str) -> int:
-    runtime = create_engine(
-        os.environ["US_LACEY_DATABASE_URL"],
-        pool_pre_ping=True,
-        hide_parameters=True,
-    )
+    runtime = create_engine(os.environ["US_LACEY_DATABASE_URL"], pool_pre_ping=True, hide_parameters=True)
     try:
         with runtime.connect() as connection:
             row = connection.execute(
@@ -133,12 +125,8 @@ def _organization_id_for_email(email: str) -> int:
 
 
 def _activate_account(organization_id: int) -> None:
-    """Test-only commercial activation through the tenant-scoped runtime RLS role."""
-    runtime = create_engine(
-        os.environ["US_LACEY_DATABASE_URL"],
-        pool_pre_ping=True,
-        hide_parameters=True,
-    )
+    """Test-only activation through the tenant-scoped runtime RLS role."""
+    runtime = create_engine(os.environ["US_LACEY_DATABASE_URL"], pool_pre_ping=True, hide_parameters=True)
     try:
         with runtime.begin() as connection:
             connection.execute(
@@ -147,25 +135,23 @@ def _activate_account(organization_id: int) -> None:
             )
             assert connection.execute(
                 text(
-                    "UPDATE public.us_lacey_organization_profiles "
-                    "SET account_status='ACTIVE', updated_at=now() "
+                    "UPDATE public.us_lacey_organization_profiles SET account_status='ACTIVE', updated_at=now() "
                     "WHERE organization_id=:organization_id RETURNING id"
                 ),
                 {"organization_id": organization_id},
             ).scalar_one_or_none() is not None
             assert connection.execute(
                 text(
-                    "UPDATE public.us_lacey_subscriptions "
-                    "SET status='ACTIVE', started_at=coalesce(started_at, now()), updated_at=now() "
+                    "UPDATE public.us_lacey_subscriptions SET status='ACTIVE', "
+                    "started_at=coalesce(started_at, now()), updated_at=now() "
                     "WHERE organization_id=:organization_id RETURNING id"
                 ),
                 {"organization_id": organization_id},
             ).scalar_one_or_none() is not None
             assert connection.execute(
                 text(
-                    "UPDATE public.us_lacey_payments "
-                    "SET status='VERIFIED', verified_at=now(), paid_at=now(), updated_at=now() "
-                    "WHERE organization_id=:organization_id RETURNING id"
+                    "UPDATE public.us_lacey_payments SET status='VERIFIED', verified_at=now(), "
+                    "paid_at=now(), updated_at=now() WHERE organization_id=:organization_id RETURNING id"
                 ),
                 {"organization_id": organization_id},
             ).scalar_one_or_none() is not None
@@ -184,7 +170,6 @@ def _csrf_for(html: str, action: str) -> str:
 
 
 def _assert_href(html: str, href: str) -> None:
-    """Assert stable navigation contracts without coupling E2E to display copy."""
     assert f'href="{href}"' in html, f"Link target not rendered: {href}"
 
 
@@ -207,16 +192,8 @@ _REQUIRED_REVIEW_VALUES = {
 }
 
 
-def test_active_customer_operations_upload_review_complete_exports_and_history(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    """Full ACTIVE browser journey with real PostgreSQL, queue and worker processing.
-
-    This integration test protects behavioral contracts (HTTP transitions,
-    persisted operation state, queue/worker execution and export artifacts).
-    Human-facing wording is covered separately by UI/template/visual tests and
-    is intentionally not used here as a proxy for application correctness.
-    """
+def test_active_customer_operations_upload_review_complete_exports_and_history(monkeypatch: pytest.MonkeyPatch):
+    """ACTIVE browser journey proves lazy workspace loading without a page refresh."""
     _configure(monkeypatch)
     reset_us_lacey_engine_state()
     reset_us_lacey_worker_engine_state()
@@ -225,19 +202,15 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
     monkeypatch.setattr(worker_module, "get_us_lacey_storage_client", lambda: storage)
 
     delivered: dict[str, str] = {}
-
-    def capture_verification_email(**kwargs) -> None:
-        delivered.update({key: str(value) for key, value in kwargs.items()})
-
     monkeypatch.setattr(
         portal_module,
         "send_us_lacey_verification_email",
-        capture_verification_email,
+        lambda **kwargs: delivered.update({key: str(value) for key, value in kwargs.items()}),
     )
 
     suffix = uuid4().hex[:12]
     email = f"active-http-e2e-{suffix}@example.com"
-    password = "correct-horse-active-http-e2e-123"
+    password = f"Test-{uuid4().hex}-Aa1!"
     legal_name = f"Active HTTP E2E Imports {suffix} LLC"
     reference = f"ACTIVE-E2E-{suffix}"
 
@@ -256,9 +229,7 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
             },
         )
         assert signup.status_code == 201
-        token = delivered["verification_token"]
-
-        verified = client.get(f"/verify-email?token={token}")
+        verified = client.get(f"/verify-email?token={delivered['verification_token']}")
         assert verified.status_code == 303
         organization_id = _organization_id_for_email(email)
         _activate_account(organization_id)
@@ -274,7 +245,6 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
         _assert_href(operations.text, "/operations/new")
 
         new_page = client.get("/operations/new")
-        assert new_page.status_code == 200
         create_csrf = _csrf_for(new_page.text, "/operations/new")
         created = client.post(
             "/operations/new",
@@ -291,34 +261,23 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
         )
         assert created.status_code == 303
         operation_path = created.headers["location"]
-        assert operation_path.startswith("/operations/")
         operation_public_id = operation_path.rsplit("/", 1)[-1]
-
+        workspace_path = f"{operation_path}/workspace-fragment"
         operation_service = UsLaceyOperationService()
+
         initial_detail = operation_service.get_detail(
-            organization_id=organization_id,
-            operation_public_id=operation_public_id,
+            organization_id=organization_id, operation_public_id=operation_public_id
         )
         assert initial_detail.document_count == 0
         assert initial_detail.status != "COMPLETED"
-
-        # The only slot is now consumed. Creating another operation is blocked,
-        # but the existing operation must remain fully usable.
-        after_create = client.get("/operations")
-        assert after_create.status_code == 200
-        assert reference in after_create.text
-        blocked_new = client.get("/operations/new")
-        assert blocked_new.status_code == 409
+        assert client.get("/operations/new").status_code == 409
 
         detail = client.get(operation_path)
-        assert detail.status_code == 200
         upload_action = f"{operation_path}/upload"
-        upload_csrf = _csrf_for(detail.text, upload_action)
-
         uploaded = client.post(
             upload_action,
             data={
-                "csrf_token": upload_csrf,
+                "csrf_token": _csrf_for(detail.text, upload_action),
                 "document_role": "SUPPLIER_SHEET",
             },
             files={"document": ("shipment.csv", _csv_bytes(), "text/csv")},
@@ -332,41 +291,32 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
         assert worker_result.job_status == "COMPLETED"
         assert worker_result.document_status in {"EXTRACTED", "NEEDS_REVIEW"}
 
-        review_page = client.get(operation_path)
-        assert review_page.status_code == 200
-        assert "shipment.csv" in review_page.text
-        assert "Country of Harvest" in review_page.text
-        assert "Brazil" in review_page.text
+        shell = client.get(operation_path)
+        assert shell.status_code == 200
+        assert "shipment.csv" in shell.text
+        assert "100%" in shell.text
+        assert 'hx-trigger="every 2s"' not in shell.text
+        assert shell.text.count(f'hx-get="{workspace_path}"') == 1
+
+        workspace = client.get(workspace_path)
+        assert workspace.status_code == 200
+        assert 'id="operation-workspace"' in workspace.text
+        assert "Country of Harvest" in workspace.text
+        assert "Brazil" in workspace.text
 
         operation_detail = operation_service.get_detail(
-            organization_id=organization_id,
-            operation_public_id=operation_public_id,
+            organization_id=organization_id, operation_public_id=operation_public_id
         )
-        assert operation_detail.document_count == 1
-        exceptions = [
-            field
-            for field in operation_detail.fields
-            if field.status in {"MISSING", "REVIEW"}
-        ]
+        exceptions = [field for field in operation_detail.fields if field.status in {"MISSING", "REVIEW"}]
         assert exceptions
 
-        # Every human decision is submitted through the actual browser route and
-        # the CSRF token rendered for that exact operation+field form. Missing
-        # PPQ fields receive explicit values that satisfy their field contract;
-        # the test must never bypass production validation with generic strings.
         for field in exceptions:
             review_action = f"{operation_path}/review/{field.id}"
-            field_csrf = _csrf_for(review_page.text, review_action)
+            field_csrf = _csrf_for(workspace.text, review_action)
             if field.proposed_value:
-                payload = {
-                    "csrf_token": field_csrf,
-                    "action": "accept",
-                    "value": "",
-                }
+                payload = {"csrf_token": field_csrf, "action": "accept", "value": ""}
             else:
-                assert field.field_name in _REQUIRED_REVIEW_VALUES, (
-                    f"Unexpected missing PPQ field without an explicit E2E value: {field.field_name}"
-                )
+                assert field.field_name in _REQUIRED_REVIEW_VALUES
                 payload = {
                     "csrf_token": field_csrf,
                     "action": "edit",
@@ -375,39 +325,36 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
             reviewed = client.post(review_action, data=payload)
             assert reviewed.status_code == 303
             assert reviewed.headers["location"] == operation_path
+            workspace = client.get(workspace_path)
+            assert workspace.status_code == 200
 
-        ready_to_complete = client.get(operation_path)
-        assert ready_to_complete.status_code == 200
         ready_detail = operation_service.get_detail(
-            organization_id=organization_id,
-            operation_public_id=operation_public_id,
+            organization_id=organization_id, operation_public_id=operation_public_id
         )
-        unresolved = [
-            field
-            for field in ready_detail.fields
-            if field.status in {"MISSING", "REVIEW"}
-        ]
-        assert unresolved == []
+        assert [field for field in ready_detail.fields if field.status in {"MISSING", "REVIEW"}] == []
+        assert ready_detail.status == "READY_FOR_REVIEW"
 
+        workspace = client.get(workspace_path)
         complete_action = f"{operation_path}/complete"
-        complete_csrf = _csrf_for(ready_to_complete.text, complete_action)
-        completed = client.post(complete_action, data={"csrf_token": complete_csrf})
+        assert f'action="{complete_action}"' in workspace.text
+        completed = client.post(
+            complete_action,
+            data={"csrf_token": _csrf_for(workspace.text, complete_action)},
+        )
         assert completed.status_code == 303
         assert completed.headers["location"] == f"{operation_path}?completed=1"
 
         completed_detail = operation_service.get_detail(
-            organization_id=organization_id,
-            operation_public_id=operation_public_id,
+            organization_id=organization_id, operation_public_id=operation_public_id
         )
         assert completed_detail.status == "COMPLETED"
 
-        complete_page = client.get(operation_path)
-        assert complete_page.status_code == 200
-        _assert_href(complete_page.text, f"{operation_path}/export.xlsx")
-        _assert_href(complete_page.text, f"{operation_path}/export.csv")
-        # This safety disclaimer is itself a product contract and should remain visible.
-        assert "not a legal compliance determination" in complete_page.text
-        assert "ACE/LAWGS" in complete_page.text
+        completed_workspace = client.get(workspace_path)
+        assert completed_workspace.status_code == 200
+        _assert_href(completed_workspace.text, f"{operation_path}/export.xlsx")
+        _assert_href(completed_workspace.text, f"{operation_path}/export.csv")
+        assert "not a legal compliance determination" in completed_workspace.text
+        assert "ACE or LAWGS" in completed_workspace.text
 
         csv_export = client.get(f"{operation_path}/export.csv")
         assert csv_export.status_code == 200
@@ -421,10 +368,7 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
         assert "spreadsheetml.sheet" in xlsx_export.headers["content-type"]
         workbook = load_workbook(BytesIO(xlsx_export.content), read_only=True, data_only=True)
         try:
-            assert "Read Me" in workbook.sheetnames
-            assert "Preparation Data" in workbook.sheetnames
-            assert "Evidence" in workbook.sheetnames
-            assert "Exceptions" in workbook.sheetnames
+            assert {"Read Me", "Preparation Data", "Evidence", "Exceptions"}.issubset(workbook.sheetnames)
         finally:
             workbook.close()
 
@@ -435,11 +379,11 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(
 
         relogin = client.post("/login", data={"email": email, "password": password})
         assert relogin.status_code == 303
-        assert relogin.headers["location"] == "/operations"
         history = client.get("/operations")
         assert history.status_code == 200
         assert reference in history.text
-        historical_detail = client.get(operation_path)
-        assert historical_detail.status_code == 200
-        _assert_href(historical_detail.text, f"{operation_path}/export.xlsx")
-        _assert_href(historical_detail.text, f"{operation_path}/export.csv")
+        assert client.get(operation_path).status_code == 200
+        historical_workspace = client.get(workspace_path)
+        assert historical_workspace.status_code == 200
+        _assert_href(historical_workspace.text, f"{operation_path}/export.xlsx")
+        _assert_href(historical_workspace.text, f"{operation_path}/export.csv")

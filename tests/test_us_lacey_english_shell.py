@@ -10,7 +10,7 @@ def test_us_lacey_shell_is_english_and_isolated_from_regional_public_layout():
     assert '{% extends "base.html" %}' in text
     assert 'lang="en"' in text
     assert "U.S. Lacey Act workspace" in text
-    assert "PPQ 505 preparation" in text
+    assert "Declaration preparation" in text
     assert "Human review required" in text
     assert "public/base_public.html" not in text
 
