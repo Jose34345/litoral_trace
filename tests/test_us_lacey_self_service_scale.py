@@ -63,7 +63,7 @@ def _commercial_config() -> UsLaceyCommercialConfig:
     return UsLaceyCommercialConfig(
         price_cents=12500,
         monthly_operation_limit=25,
-        payment_provider="WISE",
+        payment_provider="MANUAL_BANK_TRANSFER",
         bank_transfer_instructions="Configured outside source control",
         terms_version="terms-2026-08",
         privacy_version="privacy-2026-08",
@@ -74,13 +74,15 @@ def _commercial_config() -> UsLaceyCommercialConfig:
 
 def test_commercial_config_fails_closed_without_price_or_legal_versions():
     with pytest.raises(UsLaceyCommercialConfigurationError):
-        load_us_lacey_commercial_config({"US_LACEY_PAYMENT_PROVIDER": "WISE"})
+        load_us_lacey_commercial_config(
+            {"US_LACEY_PAYMENT_PROVIDER": "LEMON_SQUEEZY"}
+        )
 
 
 def test_commercial_config_accepts_explicit_launch_values():
     config = load_us_lacey_commercial_config(
         {
-            "US_LACEY_PAYMENT_PROVIDER": "WISE",
+            "US_LACEY_PAYMENT_PROVIDER": "MANUAL_BANK_TRANSFER",
             "US_LACEY_PRIVATE_BETA_PRICE_CENTS": "12500",
             "US_LACEY_MONTHLY_OPERATION_LIMIT": "25",
             "US_LACEY_BANK_TRANSFER_INSTRUCTIONS": "Configured at deploy time",
@@ -91,7 +93,7 @@ def test_commercial_config_accepts_explicit_launch_values():
     )
     assert config.price_cents == 12500
     assert config.monthly_operation_limit == 25
-    assert config.payment_provider == "WISE"
+    assert config.payment_provider == "MANUAL_BANK_TRANSFER"
 
 
 def test_registration_never_persists_raw_verification_token(monkeypatch):
