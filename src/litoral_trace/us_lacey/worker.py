@@ -3,13 +3,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+from pathlib import PurePath
 
 from sqlalchemy import select
 
 from litoral_trace.assurance.processing import AssuranceProcessingService
-from litoral_trace.db.models import AssuranceDocument, UsLaceyOperation
+from litoral_trace.db.models import AssuranceDocument, UsLaceyOperation, VaultDocument
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.services.vault import VaultService
+from litoral_trace.us_lacey.batch_hardening import (
+    ShipmentBatchRejected,
+    enforce_shipment_document_budget,
+    enforce_streamed_csv_budget,
+    shipment_spreadsheet_limits,
+)
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.jobs import (
     claim_next_us_lacey_job,
@@ -46,6 +53,14 @@ class UsLaceyWorkerResult:
     conflict_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class _DocumentDescriptor:
+    assurance_public_id: object
+    vault_public_id: object
+    filename: str
+    size_bytes: int
+
+
 def _processing_service() -> AssuranceProcessingService:
     settings = build_us_lacey_storage_settings()
     storage = get_us_lacey_storage_client()
@@ -57,8 +72,6 @@ def _processing_service() -> AssuranceProcessingService:
     return AssuranceProcessingService(
         session_factory=get_us_lacey_db_session,
         vault_service=vault,
-        # The U.S. product is intentionally isolated from Argentina lot/shipment
-        # entities. Document extraction stays shared; legacy entity matching does not.
         enable_entity_matching=False,
     )
 
@@ -72,13 +85,11 @@ def _shadow_engine2(*, organization_id: int, operation_id: int) -> None:
     try:
         UsLaceyEngine2Service(vault_service=vault).resolve_operation_with_engine2(organization_id=organization_id, operation_id=operation_id)
     except Exception:
-        # The isolated service records per-document safe failures where possible;
-        # shadow faults intentionally cannot fail the authoritative worker job.
         LOGGER.exception("Lacey Engine 2 shadow resolution failed", extra={"organization_id": organization_id, "operation_id": operation_id})
         return
 
 
-def _assurance_public_id(*, organization_id: int, document_id: int):
+def _document_descriptor(*, organization_id: int, document_id: int) -> _DocumentDescriptor:
     session = get_us_lacey_db_session()
     try:
         set_tenant_db_context(session, organization_id)
@@ -90,9 +101,84 @@ def _assurance_public_id(*, organization_id: int, document_id: int):
         )
         if document is None:
             raise UsLaceyWorkerError("Queued document no longer exists.")
-        return document.public_id
+        vault_document = session.scalar(
+            select(VaultDocument).where(
+                VaultDocument.organization_id == organization_id,
+                VaultDocument.id == document.vault_document_id,
+                VaultDocument.status == "available",
+            )
+        )
+        if vault_document is None:
+            raise UsLaceyWorkerError("Queued document original is not available.")
+        return _DocumentDescriptor(
+            assurance_public_id=document.public_id,
+            vault_public_id=vault_document.public_id,
+            filename=vault_document.original_filename,
+            size_bytes=int(vault_document.size_bytes),
+        )
     finally:
         session.close()
+
+
+def _mark_document_policy_failure(
+    *,
+    organization_id: int,
+    document_id: int,
+    code: str,
+    message: str,
+) -> None:
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, organization_id)
+        document = session.scalar(
+            select(AssuranceDocument).where(
+                AssuranceDocument.organization_id == organization_id,
+                AssuranceDocument.id == document_id,
+            )
+        )
+        if document is not None:
+            document.processing_status = "FAILED"
+            document.last_error_code = code[:100]
+            document.last_error_message = message[:512]
+            session.commit()
+    except Exception:
+        session.rollback()
+        LOGGER.exception("Unable to persist batch-policy failure", extra={"organization_id": organization_id, "document_id": document_id})
+    finally:
+        session.close()
+
+
+def _preflight_existing_document(*, organization_id: int, descriptor: _DocumentDescriptor) -> None:
+    """Reject legacy queued bulk spreadsheets before the expensive parser allocates memory."""
+    suffix = PurePath(descriptor.filename).suffix.lower()
+    if suffix not in {".csv", ".xlsx", ".xls"}:
+        return
+    limits = shipment_spreadsheet_limits()
+    if descriptor.size_bytes > limits.max_bytes:
+        raise ShipmentBatchRejected(
+            "DATASET_TOO_LARGE_FOR_SHIPMENT_PIPELINE",
+            "This spreadsheet is a bulk or multi-shipment dataset and cannot be processed as one Lacey operation.",
+        )
+    settings = build_us_lacey_storage_settings()
+    vault = VaultService(
+        storage_settings=settings,
+        storage=get_us_lacey_storage_client(),
+        session_factory=get_us_lacey_db_session,
+    )
+    with vault.materialize_verified_download(
+        organization_id=organization_id,
+        document_id=descriptor.vault_public_id,
+    ) as verified:
+        if suffix == ".csv":
+            enforce_streamed_csv_budget(
+                chunks=verified.iter_chunks(chunk_size=256 * 1024),
+                size_bytes=descriptor.size_bytes,
+                limits=limits,
+            )
+            return
+        # XLS/XLSX are strictly byte-bounded before this join.
+        content = b"".join(verified.iter_chunks(chunk_size=256 * 1024))
+        enforce_shipment_document_budget(filename=descriptor.filename, content=content, limits=limits)
 
 
 def _refresh_operation(*, organization_id: int, operation_id: int) -> str:
@@ -145,13 +231,46 @@ def process_one_us_lacey_job(
         )
 
     try:
-        assurance_public_id = _assurance_public_id(
+        descriptor = _document_descriptor(
             organization_id=job.organization_id,
             document_id=job.assurance_document_id,
         )
+        try:
+            _preflight_existing_document(
+                organization_id=job.organization_id,
+                descriptor=descriptor,
+            )
+        except ShipmentBatchRejected as exc:
+            _mark_document_policy_failure(
+                organization_id=job.organization_id,
+                document_id=job.assurance_document_id,
+                code=exc.code,
+                message=exc.safe_message,
+            )
+            queue_status = fail_us_lacey_job(
+                job_id=job.id,
+                worker_id=worker_id,
+                error_code=exc.code,
+                safe_error_message=exc.safe_message,
+                retryable=False,
+            )
+            operation_status = _refresh_operation(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+            )
+            return UsLaceyWorkerResult(
+                claimed=True,
+                job_id=job.id,
+                job_status=queue_status,
+                document_status="FAILED",
+                operation_status=operation_status,
+                projected_count=0,
+                conflict_count=0,
+            )
+
         document_status = _processing_service().process(
             organization_id=job.organization_id,
-            assurance_public_id=assurance_public_id,
+            assurance_public_id=descriptor.assurance_public_id,
         )
         if document_status == "FAILED":
             queue_status = fail_us_lacey_job(
