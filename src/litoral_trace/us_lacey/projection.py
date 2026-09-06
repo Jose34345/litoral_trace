@@ -103,11 +103,49 @@ _EXPLICIT_HEADER_ALIASES = {
 _RAW_TABLE_FIELD = re.compile(r"^raw\.table\.\d+\.(?P<header>.+)$")
 _DATA_ROW = re.compile(r"(?:^|;)data_row:(?P<row>\d+)(?:;|$)")
 
+_STRUCTURAL_ARTIFACTS_BY_TARGET = {
+    "container_number": frozenset(
+        {
+            "seal number",
+            "equipment description code",
+            "equipment description",
+            "container length",
+            "container height",
+            "container width",
+            "container type",
+            "load status",
+            "url",
+        }
+    ),
+    "consignee_name": frozenset(
+        {
+            "address line",
+            "city",
+            "state province",
+            "zip code",
+            "country code",
+            "comm number",
+        }
+    ),
+}
+
 
 def _fold(value: object) -> str:
     text = unicodedata.normalize("NFKD", str(value or "").lower())
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def _is_structural_artifact(target: str, value: object) -> bool:
+    """Reject known vertical-table labels only for the target they can corrupt."""
+    folded = _fold(value)
+    for artifact in _STRUCTURAL_ARTIFACTS_BY_TARGET.get(target, ()):
+        if folded == artifact:
+            return True
+        suffix = folded.removeprefix(f"{artifact} ")
+        if suffix != folded and suffix.isdigit():
+            return True
+    return False
 
 
 def _target_field(row: ExtractedDocumentField) -> tuple[str | None, int]:
@@ -117,7 +155,8 @@ def _target_field(row: ExtractedDocumentField) -> tuple[str | None, int]:
     raw_match = _RAW_TABLE_FIELD.match(str(row.field_name or ""))
     if raw_match:
         target = _EXPLICIT_HEADER_ALIASES.get(_fold(raw_match.group("header")))
-        if target:
+        value = row.normalized_value or row.original_value
+        if target and not _is_structural_artifact(target, value):
             return target, 3
     return None, 0
 
