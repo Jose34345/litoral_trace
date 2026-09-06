@@ -75,11 +75,17 @@ _EXPLICIT_HEADER_ALIASES = {
     "filer contact": "filer_contact",
     "bill of lading": "bill_of_lading",
     "bol": "bill_of_lading",
+    "master bol": "bill_of_lading",
+    "master bill of lading": "bill_of_lading",
     "container": "container_number",
     "container number": "container_number",
     "manufacturer id": "manufacturer_id",
     "manufacturer identification": "manufacturer_id",
     "shipment description": "merchandise_description",
+    "commodity description": "merchandise_description",
+    "cargo description": "merchandise_description",
+    "description of goods": "merchandise_description",
+    "goods description": "merchandise_description",
     "hts": "hts_code",
     "hts code": "hts_code",
     "hts number": "hts_code",
@@ -102,6 +108,16 @@ _EXPLICIT_HEADER_ALIASES = {
 
 _RAW_TABLE_FIELD = re.compile(r"^raw\.table\.\d+\.(?P<header>.+)$")
 _DATA_ROW = re.compile(r"(?:^|;)data_row:(?P<row>\d+)(?:;|$)")
+_CONTAINER_TOKEN = re.compile(
+    r"(?<![A-Z0-9])[A-Z]{4}(?:[ -]?\d){7}(?![A-Z0-9])",
+    re.IGNORECASE,
+)
+_URLISH = re.compile(r"(?:https?://|www\.)", re.IGNORECASE)
+_EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+_PHONE_ONLY = re.compile(r"^[+()\-\s.\d]{7,}$")
+_NUMBERED_DESCRIPTION_HEADER = re.compile(
+    r"^(?:commodity description|cargo description|description of goods|goods description) \d+$"
+)
 
 _STRUCTURAL_ARTIFACTS_BY_TARGET = {
     "container_number": frozenset(
@@ -125,9 +141,43 @@ _STRUCTURAL_ARTIFACTS_BY_TARGET = {
             "zip code",
             "country code",
             "comm number",
+            "comm number qualifier",
+            "consignee name",
+        }
+    ),
+    "importer_name": frozenset(
+        {
+            "address line",
+            "city",
+            "state province",
+            "zip code",
+            "country code",
+            "comm number",
+            "comm number qualifier",
+            "importer name",
+        }
+    ),
+    "merchandise_description": frozenset(
+        {
+            "marks and numbers",
+            "equipment description",
+            "equipment description code",
+            "url",
         }
     ),
 }
+
+_PARTY_NON_NAMES = frozenset(
+    {
+        "eeuu",
+        "us",
+        "usa",
+        "united states",
+        "united states of america",
+        "nz",
+        "new zealand",
+    }
+)
 
 
 def _fold(value: object) -> str:
@@ -148,15 +198,66 @@ def _is_structural_artifact(target: str, value: object) -> bool:
     return False
 
 
-def _target_field(row: ExtractedDocumentField) -> tuple[str | None, int]:
+def _explicit_header_target(header: object) -> str | None:
+    folded = _fold(header)
+    direct = _EXPLICIT_HEADER_ALIASES.get(folded)
+    if direct:
+        return direct
+    if _NUMBERED_DESCRIPTION_HEADER.fullmatch(folded):
+        return "merchandise_description"
+    return None
+
+
+def _is_candidate_admissible(
+    target: str,
+    value: object,
+    *,
+    table_headers: frozenset[str] = frozenset(),
+) -> bool:
+    """Apply conservative type semantics before a candidate can reach human review.
+
+    This guard deliberately rejects obvious parser-structure artifacts and impossible
+    field types. It never turns an inferred value into evidence; rejected values simply
+    leave the preparation field missing for human review.
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+    folded = _fold(raw)
+    if _is_structural_artifact(target, raw):
+        return False
+    if folded and folded in table_headers:
+        return False
+    if target == "container_number":
+        if _URLISH.search(raw):
+            return False
+        return bool(_CONTAINER_TOKEN.search(raw.upper()))
+    if target in {"importer_name", "consignee_name"}:
+        if folded in _PARTY_NON_NAMES:
+            return False
+        if _URLISH.search(raw) or _EMAIL.fullmatch(raw) or _PHONE_ONLY.fullmatch(raw):
+            return False
+    if target == "merchandise_description" and _URLISH.search(raw):
+        return False
+    return True
+
+
+def _target_field(
+    row: ExtractedDocumentField,
+    *,
+    table_headers: frozenset[str] = frozenset(),
+) -> tuple[str | None, int]:
     generic = _SAFE_GENERIC_MAP.get(str(row.field_name or "").lower())
     if generic:
-        return generic, 2
+        value = row.normalized_value or row.original_value
+        if _is_candidate_admissible(generic, value, table_headers=table_headers):
+            return generic, 2
+        return None, 0
     raw_match = _RAW_TABLE_FIELD.match(str(row.field_name or ""))
     if raw_match:
-        target = _EXPLICIT_HEADER_ALIASES.get(_fold(raw_match.group("header")))
+        target = _explicit_header_target(raw_match.group("header"))
         value = row.normalized_value or row.original_value
-        if target and not _is_structural_artifact(target, value):
+        if target and _is_candidate_admissible(target, value, table_headers=table_headers):
             return target, 3
     return None, 0
 
@@ -367,10 +468,15 @@ def project_assurance_document_to_us_lacey(
             )
             .order_by(ExtractedDocumentField.id.asc())
         ).all()
+        table_headers = frozenset(
+            _fold(match.group("header"))
+            for row in extracted
+            if (match := _RAW_TABLE_FIELD.match(str(row.field_name or "")))
+        )
 
         candidates: dict[tuple[str, str], list[tuple[int, ExtractedDocumentField]]] = {}
         for row in extracted:
-            target, priority = _target_field(row)
+            target, priority = _target_field(row, table_headers=table_headers)
             value = row.normalized_value or row.original_value
             if target is None or value is None or not str(value).strip():
                 continue
