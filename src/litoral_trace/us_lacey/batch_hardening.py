@@ -60,8 +60,9 @@ def shipment_spreadsheet_limits() -> ShipmentSpreadsheetLimits:
 
 def _bulk_message() -> str:
     return (
-        "This spreadsheet appears to contain a bulk or multi-shipment dataset and is too large for one Lacey operation. "
-        "Use the Litoral bulk benchmark importer instead; the shipment workspace is reserved for documents belonging to one shipment."
+        "This file contains multiple shipments. "
+        "Litoral Trace processes one shipment per operation. "
+        "Split this file so it contains only one shipment, then upload that file to this operation."
     )
 
 
