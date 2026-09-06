@@ -18,6 +18,13 @@ from litoral_trace.us_lacey.batch_hardening import (
 from litoral_trace.us_lacey import workflow
 
 
+CUSTOMER_BULK_REJECTION = (
+    "This file contains multiple shipments. "
+    "Litoral Trace processes one shipment per operation. "
+    "Split this file so it contains only one shipment, then upload that file to this operation."
+)
+
+
 def _limits(*, rows: int = 5, columns: int = 8, cells: int = 32, size: int = 1024 * 1024):
     return ShipmentSpreadsheetLimits(max_bytes=size, max_rows=rows, max_columns=columns, max_cells=cells)
 
@@ -31,12 +38,15 @@ def test_small_shipment_csv_passes_bounded_profile():
     assert profile.columns == 3
 
 
-def test_bulk_csv_is_rejected_before_shipment_processing():
+def test_bulk_csv_is_rejected_before_shipment_processing_with_customer_safe_copy():
     content = b"BOL,Container\n" + b"ABC,MSCU1234567\n" * 8
     with pytest.raises(ShipmentBatchRejected) as captured:
         inspect_csv_chunks_for_shipment((content,), size_bytes=len(content), limits=_limits(rows=5, cells=40))
     assert captured.value.code == DATASET_TOO_COMPLEX
-    assert "bulk" in captured.value.safe_message.lower()
+    assert captured.value.safe_message == CUSTOMER_BULK_REJECTION
+    assert "benchmark" not in captured.value.safe_message.lower()
+    assert "pipeline" not in captured.value.safe_message.lower()
+    assert "importer" not in captured.value.safe_message.lower()
 
 
 def test_customer_workflow_rejects_bulk_before_ingestion_or_queue(monkeypatch):
@@ -59,7 +69,8 @@ def test_customer_workflow_rejects_bulk_before_ingestion_or_queue(monkeypatch):
             content=content,
             operations=ShouldNotRun(),
         )
-    assert "bulk" in str(captured.value).lower()
+    assert str(captured.value) == CUSTOMER_BULK_REJECTION
+    assert "benchmark" not in str(captured.value).lower()
 
 
 def test_bulk_importer_batches_without_shipment_semantics():
