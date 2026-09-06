@@ -34,7 +34,7 @@ def _commercial_config() -> UsLaceyCommercialConfig:
     return UsLaceyCommercialConfig(
         price_cents=12500,
         monthly_operation_limit=25,
-        payment_provider="WISE",
+        payment_provider="MANUAL_BANK_TRANSFER",
         bank_transfer_instructions="CI-only payment instructions",
         terms_version="terms-ci-v1",
         privacy_version="privacy-ci-v1",
