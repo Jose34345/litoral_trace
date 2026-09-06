@@ -354,7 +354,7 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(m
         _assert_href(completed_workspace.text, f"{operation_path}/export.xlsx")
         _assert_href(completed_workspace.text, f"{operation_path}/export.csv")
         assert "not a legal compliance determination" in completed_workspace.text
-        assert "ACE/LAWGS" in completed_workspace.text
+        assert "ACE or LAWGS" in completed_workspace.text
 
         csv_export = client.get(f"{operation_path}/export.csv")
         assert csv_export.status_code == 200
