@@ -206,7 +206,9 @@ def fail_us_lacey_job(
     error_code: str,
     safe_error_message: str,
     retry_delay_seconds: int = 30,
+    retryable: bool = True,
 ) -> str | None:
+    """Record a failure; deterministic policy failures can be permanently non-retryable."""
     if retry_delay_seconds < 0 or retry_delay_seconds > 3600:
         raise UsLaceyJobError("retry_delay_seconds is out of range.")
     error_code = str(error_code or "PROCESSING_ERROR").strip()[:100]
@@ -218,13 +220,20 @@ def fail_us_lacey_job(
             text(
                 """
                 UPDATE public.us_lacey_processing_jobs
-                SET status = CASE WHEN attempt_count < max_attempts THEN 'RETRY' ELSE 'FAILED' END,
+                SET status = CASE
+                        WHEN NOT :retryable THEN 'FAILED'
+                        WHEN attempt_count < max_attempts THEN 'RETRY'
+                        ELSE 'FAILED'
+                    END,
                     available_at = CASE
-                        WHEN attempt_count < max_attempts
+                        WHEN :retryable AND attempt_count < max_attempts
                         THEN now() + make_interval(secs => :retry_delay_seconds)
                         ELSE available_at
                     END,
-                    completed_at = CASE WHEN attempt_count < max_attempts THEN NULL ELSE now() END,
+                    completed_at = CASE
+                        WHEN :retryable AND attempt_count < max_attempts THEN NULL
+                        ELSE now()
+                    END,
                     locked_by = NULL,
                     locked_at = NULL,
                     heartbeat_at = NULL,
@@ -241,6 +250,7 @@ def fail_us_lacey_job(
                 "error_code": error_code,
                 "error_message": safe_error_message,
                 "retry_delay_seconds": retry_delay_seconds,
+                "retryable": bool(retryable),
             },
         ).scalar_one_or_none()
         session.commit()
