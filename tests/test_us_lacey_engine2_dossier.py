@@ -8,14 +8,21 @@ from uuid import uuid4
 from starlette.requests import Request
 from litoral_trace.us_lacey.lacey_engine_dossier import Engine2DossierAvailability, Engine2DossierEvidenceView, Engine2DossierFieldView, Engine2DossierIssueView, Engine2DossierView
 from litoral_trace.web.us_lacey_pilot_app import app
-from litoral_trace.web.us_lacey_operational_views import render_operation_detail
+from litoral_trace.web.us_lacey_operational_views import render_operation_detail, render_operation_workspace
+
+
+def _request():
+    return Request({"type": "http", "method": "GET", "path": "/operations/test", "headers": [], "scheme": "http", "server": ("testserver", 80), "app": app})
+
+
+def _detail(*, status="NEW"):
+    return SimpleNamespace(public_id=uuid4(), client_reference="DOSSIER-UI", status=status, document_count=1, merchandise_line_count=1, importer_name="Authoritative BRAZIL", supplier_name=None, documents=(), fields=(), plant_declarations=(), conflicts=())
 
 
 def _html(dossier):
-    detail = SimpleNamespace(public_id=uuid4(), client_reference="DOSSIER-UI", status="NEW", document_count=1, merchandise_line_count=1, importer_name="Authoritative BRAZIL", supplier_name=None, documents=(), fields=(), plant_declarations=(), conflicts=())
+    detail = _detail()
     identity = SimpleNamespace(legal_name="Portal customer")
-    request = Request({"type": "http", "method": "GET", "path": "/operations/test", "headers": [], "scheme": "http", "server": ("testserver", 80), "app": app})
-    return render_operation_detail(request=request, identity=identity, detail=detail, engine2_dossier=dossier, upload_csrf="upload", complete_csrf="complete", review_csrf={})
+    return render_operation_detail(request=_request(), identity=identity, detail=detail, engine2_dossier=dossier, upload_csrf="upload", complete_csrf="complete", review_csrf={})
 
 
 def test_current_dossier_renders_all_states_provenance_issues_and_harvest_separately():
@@ -33,14 +40,40 @@ def test_current_dossier_renders_all_states_provenance_issues_and_harvest_separa
     html = _html(Engine2DossierView(Engine2DossierAvailability.CURRENT, "REVIEW_REQUIRED", "engine", "rules", "schema", document_count=2, fields=fields, issues=(issue,)))
     for state in ("MISSING", "SUPPORTED", "SUPPORTED_MULTIPLE", "NEAR_MATCH", "CONFLICT", "REVIEW_REQUIRED"):
         assert f'data-engine2-state="{state}"' in html
+    assert 'id="engine2-dossier"' in html
     assert 'data-engine2-readiness="REVIEW_REQUIRED"' in html and "Preparation readiness" in html
     assert "MSKU1, MSKU2" in html and "WOOD BROKERAGE INTL" in html and 'data-engine2-issue' in html
     assert 'data-engine2-evidence-class="EXPLICIT"' in html and 'data-engine2-evidence-class="DERIVED"' in html and 'data-engine2-source-page="7"' in html
     assert "Raw: radiata" in html and "Normalized: RADIATA" in html and "bbox 1, 2, 3, 4" in html
     harvest = re.search(r'<article[^>]*data-engine2-field="country_of_harvest".*?</article>', html, re.S).group(0)
     assert "Missing" in harvest and "New Zealand" not in harvest and "Evidence" not in harvest
-    assert "not a legal compliance determination" in html and "PPQ and human review below remain authoritative" in html and "ACE or LAWGS" in html
+    assert "not a legal compliance determination" in html and "human-reviewed preparation record remains authoritative" in html and "ACE or LAWGS" in html
     assert "accepted" not in html.lower().split("data-engine2-dossier", 1)[1].split('aria-labelledby="shipment-information-heading"', 1)[0]
+
+
+def test_terminal_workspace_refreshes_engine2_dossier_out_of_band():
+    dossier = Engine2DossierView(
+        Engine2DossierAvailability.CURRENT,
+        "REVIEW_REQUIRED",
+        "engine",
+        "rules",
+        "schema",
+        document_count=1,
+        fields=(Engine2DossierFieldView("container_number", "Container Number", "SUPPORTED", ("MSKU9228574",), ()),),
+    )
+    html = render_operation_workspace(
+        request=_request(),
+        identity=SimpleNamespace(legal_name="Portal customer"),
+        detail=_detail(status="REVIEW_REQUIRED"),
+        engine2_dossier=dossier,
+        complete_csrf="complete",
+        review_csrf={},
+    )
+    assert 'id="engine2-dossier"' in html
+    assert 'hx-swap-oob="outerHTML:#engine2-dossier"' in html
+    assert 'data-engine2-availability="CURRENT"' in html
+    assert "MSKU9228574" in html
+    assert 'id="operation-workspace"' in html
 
 
 def test_non_current_dossier_states_hide_canonical_values():
