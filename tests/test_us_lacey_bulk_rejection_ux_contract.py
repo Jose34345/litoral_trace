@@ -29,20 +29,27 @@ def test_bulk_rejection_is_customer_guidance_not_internal_error_ui():
     assert "contact support" not in lowered
 
 
-def test_empty_bulk_rejection_keeps_documents_current_and_processing_pending():
+def test_bulk_rejection_does_not_mix_request_feedback_with_stale_analysis_ui():
     source = TEMPLATE.read_text(encoding="utf-8")
 
     assert '{% set empty_bulk_rejection = bulk_upload_rejection and not detail.documents %}' in source
     assert '("Documents", "complete" if detail.documents else "current")' in source
-    assert '{% set processing_step_state = "pending" if empty_bulk_rejection else' in source
+    assert '{% set processing_step_state = "pending" if empty_bulk_rejection else ("current" if processing.failed or not processing.terminal else "complete") %}' in source
     assert '("Processing", processing_step_state)' in source
 
-    # A rejected first upload must not imply analysis started or poll a job that
-    # was never queued. Existing analysis remains visible when documents already
-    # belong to the operation.
-    assert source.count('{% if not empty_bulk_rejection %}') >= 2
+    # On the response to a rejected multi-shipment upload, do not show an old
+    # Engine 2 placeholder or a processing failure that belongs to a previously
+    # stored document. The operation history remains untouched and is visible on
+    # the normal operation GET after the customer leaves this request-local state.
+    assert source.count('{% if not bulk_upload_rejection %}') >= 2
     assert 'id="engine2-dossier"' in source
     assert 'id="processing-panel"' in source
+
+
+def test_failed_processing_is_not_marked_complete_in_progress_steps():
+    source = TEMPLATE.read_text(encoding="utf-8")
+
+    assert '"current" if processing.failed or not processing.terminal else "complete"' in source
 
 
 def test_generic_errors_remain_distinct_from_expected_bulk_guidance():
