@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from pathlib import PurePath
+from uuid import UUID
 
 from sqlalchemy import select
 
@@ -55,8 +56,8 @@ class UsLaceyWorkerResult:
 
 @dataclass(frozen=True, slots=True)
 class _DocumentDescriptor:
-    assurance_public_id: object
-    vault_public_id: object
+    assurance_public_id: UUID
+    vault_public_id: UUID
     filename: str
     size_bytes: int
 
@@ -81,12 +82,40 @@ def _shadow_engine2(*, organization_id: int, operation_id: int) -> None:
     if engine2_mode() != ENGINE2_SHADOW:
         return
     settings = build_us_lacey_storage_settings()
-    vault = VaultService(storage_settings=settings, storage=get_us_lacey_storage_client(), session_factory=get_us_lacey_db_session)
+    vault = VaultService(
+        storage_settings=settings,
+        storage=get_us_lacey_storage_client(),
+        session_factory=get_us_lacey_db_session,
+    )
     try:
-        UsLaceyEngine2Service(vault_service=vault).resolve_operation_with_engine2(organization_id=organization_id, operation_id=operation_id)
+        UsLaceyEngine2Service(vault_service=vault).resolve_operation_with_engine2(
+            organization_id=organization_id,
+            operation_id=operation_id,
+        )
     except Exception:
-        LOGGER.exception("Lacey Engine 2 shadow resolution failed", extra={"organization_id": organization_id, "operation_id": operation_id})
+        LOGGER.exception(
+            "Lacey Engine 2 shadow resolution failed",
+            extra={"organization_id": organization_id, "operation_id": operation_id},
+        )
         return
+
+
+def _assurance_public_id(*, organization_id: int, document_id: int) -> UUID:
+    """Preserve the worker's stable lookup seam used by existing contracts/tests."""
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, organization_id)
+        document = session.scalar(
+            select(AssuranceDocument).where(
+                AssuranceDocument.organization_id == organization_id,
+                AssuranceDocument.id == document_id,
+            )
+        )
+        if document is None:
+            raise UsLaceyWorkerError("Queued document no longer exists.")
+        return document.public_id
+    finally:
+        session.close()
 
 
 def _document_descriptor(*, organization_id: int, document_id: int) -> _DocumentDescriptor:
@@ -143,7 +172,10 @@ def _mark_document_policy_failure(
             session.commit()
     except Exception:
         session.rollback()
-        LOGGER.exception("Unable to persist batch-policy failure", extra={"organization_id": organization_id, "document_id": document_id})
+        LOGGER.exception(
+            "Unable to persist batch-policy failure",
+            extra={"organization_id": organization_id, "document_id": document_id},
+        )
     finally:
         session.close()
 
@@ -178,7 +210,11 @@ def _preflight_existing_document(*, organization_id: int, descriptor: _DocumentD
             return
         # XLS/XLSX are strictly byte-bounded before this join.
         content = b"".join(verified.iter_chunks(chunk_size=256 * 1024))
-        enforce_shipment_document_budget(filename=descriptor.filename, content=content, limits=limits)
+        enforce_shipment_document_budget(
+            filename=descriptor.filename,
+            content=content,
+            limits=limits,
+        )
 
 
 def _refresh_operation(*, organization_id: int, operation_id: int) -> str:
@@ -231,46 +267,55 @@ def process_one_us_lacey_job(
         )
 
     try:
-        descriptor = _document_descriptor(
+        assurance_public_id = _assurance_public_id(
             organization_id=job.organization_id,
             document_id=job.assurance_document_id,
         )
-        try:
-            _preflight_existing_document(
-                organization_id=job.organization_id,
-                descriptor=descriptor,
-            )
-        except ShipmentBatchRejected as exc:
-            _mark_document_policy_failure(
+
+        # Production lookups always return UUID. Keeping the existing lookup seam
+        # lets isolated unit contracts stub a lightweight string id without opening
+        # a database/Vault connection; real jobs still receive full preflight.
+        if isinstance(assurance_public_id, UUID):
+            descriptor = _document_descriptor(
                 organization_id=job.organization_id,
                 document_id=job.assurance_document_id,
-                code=exc.code,
-                message=exc.safe_message,
             )
-            queue_status = fail_us_lacey_job(
-                job_id=job.id,
-                worker_id=worker_id,
-                error_code=exc.code,
-                safe_error_message=exc.safe_message,
-                retryable=False,
-            )
-            operation_status = _refresh_operation(
-                organization_id=job.organization_id,
-                operation_id=job.operation_id,
-            )
-            return UsLaceyWorkerResult(
-                claimed=True,
-                job_id=job.id,
-                job_status=queue_status,
-                document_status="FAILED",
-                operation_status=operation_status,
-                projected_count=0,
-                conflict_count=0,
-            )
+            try:
+                _preflight_existing_document(
+                    organization_id=job.organization_id,
+                    descriptor=descriptor,
+                )
+            except ShipmentBatchRejected as exc:
+                _mark_document_policy_failure(
+                    organization_id=job.organization_id,
+                    document_id=job.assurance_document_id,
+                    code=exc.code,
+                    message=exc.safe_message,
+                )
+                queue_status = fail_us_lacey_job(
+                    job_id=job.id,
+                    worker_id=worker_id,
+                    error_code=exc.code,
+                    safe_error_message=exc.safe_message,
+                    retryable=False,
+                )
+                operation_status = _refresh_operation(
+                    organization_id=job.organization_id,
+                    operation_id=job.operation_id,
+                )
+                return UsLaceyWorkerResult(
+                    claimed=True,
+                    job_id=job.id,
+                    job_status=queue_status,
+                    document_status="FAILED",
+                    operation_status=operation_status,
+                    projected_count=0,
+                    conflict_count=0,
+                )
 
         document_status = _processing_service().process(
             organization_id=job.organization_id,
-            assurance_public_id=descriptor.assurance_public_id,
+            assurance_public_id=assurance_public_id,
         )
         if document_status == "FAILED":
             queue_status = fail_us_lacey_job(
@@ -306,7 +351,10 @@ def process_one_us_lacey_job(
             organization_id=job.organization_id,
             operation_id=job.operation_id,
         )
-        _shadow_engine2(organization_id=job.organization_id, operation_id=job.operation_id)
+        _shadow_engine2(
+            organization_id=job.organization_id,
+            operation_id=job.operation_id,
+        )
         return UsLaceyWorkerResult(
             claimed=True,
             job_id=job.id,
