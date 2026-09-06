@@ -71,6 +71,20 @@ def test_real_importinfo_url_cannot_become_container_number():
 
 @pytest.mark.parametrize(
     "value",
+    ["MSKU9228574", "MSKU 9228574", "MSKU-922857-4", "CSQU 305438 3"],
+)
+def test_valid_container_identifiers_allow_common_source_separators(value: str):
+    row = SimpleNamespace(
+        field_name="raw.table.1.Container Number",
+        original_value=value,
+        normalized_value=None,
+    )
+    assert _is_candidate_admissible("container_number", value) is True
+    assert _target_field(row) == ("container_number", 3)
+
+
+@pytest.mark.parametrize(
+    "value",
     ["EEUU", "US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"],
 )
 def test_country_only_values_cannot_become_importer_names(value: str):
