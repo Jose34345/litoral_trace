@@ -15,6 +15,7 @@ from sqlalchemy import select
 from litoral_trace.db.models import UsLaceyOperation
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.access import require_us_lacey_operational_access
+from litoral_trace.us_lacey.batch_hardening import ShipmentBatchRejected, enforce_shipment_document_budget
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.ingestion import UsLaceyIngestionResult, UsLaceyIngestionService
 from litoral_trace.us_lacey.jobs import UsLaceyJob, enqueue_us_lacey_document_job
@@ -102,13 +103,20 @@ def upload_and_enqueue_us_lacey_document(
     ingestion: UsLaceyIngestionService | None = None,
     operations: UsLaceyOperationService | None = None,
 ) -> UsLaceyQueuedUpload:
-    """Persist the immutable original, link it to the operation, then queue processing."""
+    """Persist one-shipment evidence, link it, then queue bounded processing."""
     # This operation has already consumed its plan slot. Customers must always be
     # able to finish uploads/review/exports for existing work, even at quota.
     require_us_lacey_operational_access(
         organization_id=organization_id,
         require_operation_slot=False,
     )
+    # Fail before Vault writes and before queue creation when a spreadsheet is a
+    # bulk/multi-shipment dataset. Such datasets belong to the benchmark importer.
+    try:
+        enforce_shipment_document_budget(filename=filename, content=content)
+    except ShipmentBatchRejected as exc:
+        raise UsLaceyWorkflowError(exc.safe_message) from exc
+
     operation_service = operations or UsLaceyOperationService()
     operation_id = operation_service.get_internal_id(
         organization_id=organization_id,

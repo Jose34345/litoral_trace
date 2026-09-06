@@ -19,10 +19,10 @@ from sqlalchemy.orm import Session
 from litoral_trace.assurance.domain import AssuranceDocumentType, DocumentProcessingStatus
 from litoral_trace.assurance.parsers import (
     DocumentParseError,
-    parse_csv,
     validate_xls_bytes,
     validate_xlsx_bytes,
 )
+from litoral_trace.assurance.tabular_safety import TabularSafetyError, validate_csv_header_sample
 from litoral_trace.config import get_settings
 from litoral_trace.config.settings import StorageSettings
 from litoral_trace.db.engine import get_db_session
@@ -154,10 +154,10 @@ def validate_incoming_file(
         elif extension == ".xls":
             validate_xls_bytes(payload)
         elif extension == ".csv":
-            parsed = parse_csv(payload)
-            if not parsed.tables or not parsed.tables[0].headers:
-                raise AssuranceIngestionValidationError("El CSV no contiene datos tabulares utiles.")
-    except DocumentParseError as exc:
+            # Validation is intentionally bounded to a small prefix. Full CSV
+            # parsing belongs to the background processor after policy preflight.
+            validate_csv_header_sample(payload)
+    except (DocumentParseError, TabularSafetyError) as exc:
         raise AssuranceIngestionValidationError(str(exc)) from exc
 
     return ValidatedIncomingFile(
