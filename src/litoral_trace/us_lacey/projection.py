@@ -108,7 +108,10 @@ _EXPLICIT_HEADER_ALIASES = {
 
 _RAW_TABLE_FIELD = re.compile(r"^raw\.table\.\d+\.(?P<header>.+)$")
 _DATA_ROW = re.compile(r"(?:^|;)data_row:(?P<row>\d+)(?:;|$)")
-_CONTAINER_TOKEN = re.compile(r"(?<![A-Z0-9])[A-Z]{4}\d{7}(?![A-Z0-9])", re.IGNORECASE)
+_CONTAINER_TOKEN = re.compile(
+    r"(?<![A-Z0-9])[A-Z]{4}(?:[ -]?\d){7}(?![A-Z0-9])",
+    re.IGNORECASE,
+)
 _URLISH = re.compile(r"(?:https?://|www\.)", re.IGNORECASE)
 _EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _PHONE_ONLY = re.compile(r"^[+()\-\s.\d]{7,}$")
