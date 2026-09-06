@@ -263,7 +263,10 @@ def refresh_us_lacey_operation_status(
     organization_id: int,
     operation: UsLaceyOperation,
 ) -> str:
-    """Derive operational state without making a legal/compliance determination."""
+    """Derive operational state from the current unit of work."""
+    # U.S. Lacey sessions intentionally use autoflush=False. State derivation must
+    # therefore flush pending field/conflict review decisions before counting them.
+    session.flush()
     job_statuses = session.scalars(
         select(UsLaceyProcessingJob.status).where(
             UsLaceyProcessingJob.organization_id == organization_id,
@@ -377,7 +380,6 @@ def project_assurance_document_to_us_lacey(
                 line_references=line_references,
             )
             if not line:
-                # Evidence cannot be assigned to a declaration line safely.
                 continue
             key = (line, target)
             candidates.setdefault(key, []).append((priority, row))
@@ -493,8 +495,6 @@ def project_assurance_document_to_us_lacey(
             if target == "species":
                 species_for_genus.append((line, source))
 
-        # A binomial scientific species can deterministically propose its genus,
-        # but the derived value remains REVIEW until a person confirms it.
         for line, source in species_for_genus:
             genus_field = indexed.get((line, "genus"))
             if genus_field is None or genus_field.human_value:
