@@ -49,6 +49,32 @@ def processing_view(detail) -> ProcessingView:
     return ProcessingView(0, "WAITING_FOR_DOCUMENT", "Add a document to begin analysis", True, False)
 
 
+def _field_has_displayable_resolution(field) -> bool:
+    """Only count/display a settled field when it actually contains a resolution.
+
+    Optional PPQ fields can be initialized in a non-review status with no value so
+    that they do not block completion. Those empty placeholders are operationally
+    settled, but presenting them as customer-confirmed data is misleading.
+    """
+    if str(field.status or "").upper() == "NOT_REQUIRED":
+        return True
+    value = field.effective_value
+    return value is not None and bool(str(value).strip())
+
+
+def _review_field_sets(detail):
+    exception_fields = [
+        field for field in detail.fields if field.status in {"MISSING", "REVIEW"}
+    ]
+    settled_fields = [
+        field
+        for field in detail.fields
+        if field.status not in {"MISSING", "REVIEW"}
+        and _field_has_displayable_resolution(field)
+    ]
+    return exception_fields, settled_fields
+
+
 def render_operations(*, request, identity, operations: Sequence, entitlement) -> str:
     return _render(request, "operations", identity=identity, operations=operations, entitlement=entitlement)
 
@@ -58,8 +84,7 @@ def render_new_operation(*, request, identity, entitlement, csrf_token: str, err
 
 
 def render_operation_detail(*, request, identity, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None, notice: str | None = None) -> str:
-    exception_fields = [field for field in detail.fields if field.status in {"MISSING", "REVIEW"}]
-    settled_fields = [field for field in detail.fields if field.status not in {"MISSING", "REVIEW"}]
+    exception_fields, settled_fields = _review_field_sets(detail)
     progress = processing_view(detail)
     return _render(request, "operation_detail", identity=identity, detail=detail, engine2_dossier=engine2_dossier, upload_csrf=upload_csrf, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, processing=progress, error=error, notice=notice)
 
@@ -69,6 +94,5 @@ def render_processing_fragment(*, request, detail) -> str:
 
 
 def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str]) -> str:
-    exception_fields = [field for field in detail.fields if field.status in {"MISSING", "REVIEW"}]
-    settled_fields = [field for field in detail.fields if field.status not in {"MISSING", "REVIEW"}]
+    exception_fields, settled_fields = _review_field_sets(detail)
     return _render(request, "fragments/operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields)
