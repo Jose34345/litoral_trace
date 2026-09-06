@@ -22,7 +22,7 @@ def _portal_env(monkeypatch) -> None:
         "US_LACEY_APP_HOSTNAME": "app.lacey.litoraltrace.com",
         "US_LACEY_PRIVATE_BETA_PRICE_CENTS": "12500",
         "US_LACEY_MONTHLY_OPERATION_LIMIT": "25",
-        "US_LACEY_PAYMENT_PROVIDER": "WISE",
+        "US_LACEY_PAYMENT_PROVIDER": "MANUAL_BANK_TRANSFER",
         "US_LACEY_BANK_TRANSFER_INSTRUCTIONS": "Send USD and include the exact reference.",
         "US_LACEY_TERMS_VERSION": "terms-v1",
         "US_LACEY_PRIVACY_VERSION": "privacy-v1",
@@ -206,7 +206,7 @@ def test_payment_pending_account_can_view_billing_but_not_self_activate(monkeypa
         subscription_status="PENDING",
         payment_status="PENDING",
         payment_reference="LT-US-ABC123",
-        payment_provider="WISE",
+        payment_provider="MANUAL_BANK_TRANSFER",
     )
     monkeypatch.setattr(
         "litoral_trace.web.us_lacey_pilot_app.resolve_us_lacey_session",
@@ -281,7 +281,7 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
         subscription_status="PILOT",
         payment_status="WAIVED",
         payment_reference="LT-US-PILOT",
-        payment_provider="WISE",
+        payment_provider="MANUAL_BANK_TRANSFER",
     )
     detail = SimpleNamespace(
         public_id="OP-DEMO",
