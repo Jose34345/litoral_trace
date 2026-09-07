@@ -1,1 +1,121 @@
-{% extends "us_lacey/base.html" %}{% set authenticated = true %}{% block lacey_title %}Operations{% endblock %}{% block lacey_content %}{{ page_header("Operations", "Workspace", identity.legal_name ~ " · document preparation workspace.", icon="fa-briefcase") }}<section class="lt-card p-5"><div class="flex flex-wrap items-center gap-3">{% if entitlement.remaining_operations > 0 %}{{ button("New operation", "/operations/new", "primary", "fa-plus") }}{% else %}<span class="text-sm font-semibold text-slate-500">Current operation limit reached.</span>{% endif %}{{ button("Billing", "/billing", "secondary", "fa-receipt") }}</div><p class="mt-3 text-sm text-slate-600">{{ entitlement.used_operations }} of {{ entitlement.monthly_operation_limit }} operation slots used; {{ entitlement.remaining_operations }} remaining.</p></section><section class="lt-card p-6"><h2 class="text-lg font-bold text-slate-950">Recent operations</h2>{% if operations %}<div class="mt-4 overflow-x-auto"><table class="w-full min-w-[42rem] text-left text-sm"><thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500"><tr><th class="p-3">Reference</th><th class="p-3">Status</th><th class="p-3">Documents</th><th class="p-3">Lines</th><th class="p-3">Created</th></tr></thead><tbody>{% for item in operations %}<tr class="border-b border-slate-100"><td class="p-3"><a class="font-bold text-emerald-700 hover:text-emerald-900" href="/operations/{{ item.public_id }}">{{ item.client_reference }}</a></td><td class="p-3">{{ status_badge(item.status|replace("_", " ")) }}</td><td class="p-3">{{ item.document_count }}</td><td class="p-3">{{ item.merchandise_line_count }}</td><td class="p-3">{{ item.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>{% endfor %}</tbody></table></div>{% else %}{{ empty_state("No operations yet", "Create the first shipment workspace to begin.", "fa-folder-open") }}{% endif %}</section>{% endblock %}
+{% extends "us_lacey/base.html" %}
+{% set authenticated = true %}
+{% block lacey_title %}Operations{% endblock %}
+{% block lacey_content %}
+{{ page_header("Operations", "Workspace", "Upload the shipment documents you already have. Litoral Trace will extract and reconcile the preparation data before asking you to confirm anything.", icon="fa-briefcase") }}
+
+<section id="new-shipment" class="lt-card p-6">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="max-w-2xl">
+      <p class="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Start here</p>
+      <h2 class="mt-2 text-2xl font-bold tracking-tight text-slate-950">Upload shipment documents</h2>
+      <p class="mt-2 text-sm leading-6 text-slate-600">No importer, consignee, broker, date or line references are required up front. Upload what you have and we will extract supported values, reconcile the documents and show only the items that still need your attention.</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+      <p class="font-semibold text-slate-900">{{ entitlement.remaining_operations }} operation{{ '' if entitlement.remaining_operations == 1 else 's' }} available</p>
+      <p class="mt-1 text-xs text-slate-500">{{ entitlement.used_operations }} of {{ entitlement.monthly_operation_limit }} used</p>
+    </div>
+  </div>
+
+  {% if entitlement.remaining_operations > 0 %}
+  <form id="document-intake-form" class="mt-6" action="/operations/intake" method="post" enctype="multipart/form-data" data-upload-first-intake>
+    <label class="block cursor-pointer rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 p-8 text-center transition hover:border-emerald-500 hover:bg-emerald-50">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white" aria-hidden="true"><i class="fa-solid fa-cloud-arrow-up"></i></span>
+      <span class="mt-4 block text-lg font-bold text-slate-950">Choose your shipment files</span>
+      <span class="mt-2 block text-sm text-slate-600">PDF, XLSX, XLS or CSV · select several files at once</span>
+      <span class="mt-1 block text-xs text-slate-500">Commercial invoice, packing list, bill of lading, supplier/species declarations and supporting certificates can all be uploaded together.</span>
+      <input id="intake-documents" class="sr-only" name="documents" type="file" accept=".pdf,.xlsx,.xls,.csv" multiple required>
+    </label>
+    <div id="intake-file-summary" class="mt-3 text-sm text-slate-600" aria-live="polite">No files selected.</div>
+    <div class="mt-5 flex flex-wrap items-center gap-3">
+      {{ button("Upload and analyze", variant="primary", button_type="submit", icon="fa-wand-magic-sparkles") }}
+      <span id="intake-status" class="text-sm text-slate-600" aria-live="polite"></span>
+    </div>
+    <p class="mt-4 text-xs leading-5 text-slate-500">We preserve the original files as evidence. Extracted or AI-suggested values are not silently treated as final: conflicts remain flagged and the final preparation record still requires human confirmation.</p>
+  </form>
+  <noscript><p class="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">JavaScript is required for the zero-entry multi-file intake. You can use the legacy <a class="font-semibold underline" href="/operations/new">new operation form</a> instead.</p></noscript>
+  {% else %}
+  <div class="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">The current operation limit has been reached. Existing operations remain available for uploads, review and export.</div>
+  {% endif %}
+</section>
+
+<section class="lt-card p-6">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h2 class="text-lg font-bold text-slate-950">Recent operations</h2>
+      <p class="mt-1 text-sm text-slate-600">Open a shipment to add documents, review suggestions or export a completed preparation package.</p>
+    </div>
+    {{ button("Billing", "/billing", "secondary", "fa-receipt") }}
+  </div>
+  {% if operations %}
+  <div class="mt-4 overflow-x-auto">
+    <table class="w-full min-w-[42rem] text-left text-sm">
+      <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500"><tr><th class="p-3">Reference</th><th class="p-3">Status</th><th class="p-3">Documents</th><th class="p-3">Lines</th><th class="p-3">Created</th></tr></thead>
+      <tbody>{% for item in operations %}<tr class="border-b border-slate-100"><td class="p-3"><a class="font-bold text-emerald-700 hover:text-emerald-900" href="/operations/{{ item.public_id }}">{% if item.client_reference.startswith('INTAKE-') %}Uploaded shipment{% else %}{{ item.client_reference }}{% endif %}</a></td><td class="p-3">{{ status_badge(item.status|replace("_", " ")) }}</td><td class="p-3">{{ item.document_count }}</td><td class="p-3">{{ item.merchandise_line_count }}</td><td class="p-3">{{ item.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  {% else %}
+    {{ empty_state("No shipments analyzed yet", "Upload the first shipment documents above. You do not need to create the metadata manually.", "fa-folder-open") }}
+  {% endif %}
+</section>
+
+{% if entitlement.remaining_operations > 0 %}
+<script>
+(() => {
+  const form = document.querySelector('[data-upload-first-intake]');
+  if (!form) return;
+  const input = document.getElementById('intake-documents');
+  const summary = document.getElementById('intake-file-summary');
+  const status = document.getElementById('intake-status');
+  const submit = form.querySelector('button[type="submit"]');
+
+  input.addEventListener('change', () => {
+    const files = Array.from(input.files || []);
+    if (!files.length) {
+      summary.textContent = 'No files selected.';
+      return;
+    }
+    summary.textContent = files.length === 1 ? files[0].name : `${files.length} files selected · ${files.map(file => file.name).join(', ')}`;
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    submit.disabled = true;
+    status.textContent = 'Preparing secure intake…';
+    try {
+      // The existing certified operation-create page owns the CSRF contract. Fetch
+      // its token just-in-time so the customer never has to see or complete that form.
+      const tokenResponse = await fetch('/operations/new', {credentials: 'same-origin', headers: {'Accept': 'text/html'}});
+      if (!tokenResponse.ok) throw new Error('Could not start a new operation.');
+      const tokenHtml = await tokenResponse.text();
+      const tokenDocument = new DOMParser().parseFromString(tokenHtml, 'text/html');
+      const token = tokenDocument.querySelector('input[name="csrf_token"]')?.value;
+      if (!token) throw new Error('Secure intake token is unavailable.');
+
+      const body = new FormData();
+      body.append('csrf_token', token);
+      files.forEach(file => body.append('documents', file, file.name));
+      status.textContent = `Uploading ${files.length} file${files.length === 1 ? '' : 's'}…`;
+      const response = await fetch('/operations/intake', {
+        method: 'POST',
+        body,
+        credentials: 'same-origin',
+        redirect: 'follow'
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message.includes('operation limit') ? 'The current operation limit has been reached.' : 'The shipment could not be started.');
+      }
+      status.textContent = 'Files stored. Starting analysis…';
+      window.location.assign(response.url);
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : 'The shipment could not be started.';
+      submit.disabled = false;
+    }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
