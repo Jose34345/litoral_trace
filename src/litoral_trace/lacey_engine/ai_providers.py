@@ -1,9 +1,9 @@
 """Provider adapters for AI Extraction Shadow v1.
 
 Provider choice is runtime configuration only. Qwen/Ollama is the free local path,
-Mistral OCR is a low-cost hosted OCR path, and OpenAI Responses provides a hosted
-structured-extraction path. Every provider remains shadow-only here: none mutates
-operational declaration data.
+Mistral OCR is a hosted OCR path, OpenAI Responses is a hosted structured-extraction
+path, and Gemini Interactions is an alternative multimodal hosted path. Every provider
+remains shadow-only here: none mutates operational declaration data.
 """
 from __future__ import annotations
 
@@ -32,6 +32,7 @@ AI_SHADOW_SHADOW = "SHADOW"
 PROVIDER_QWEN_OLLAMA = "qwen_ollama"
 PROVIDER_MISTRAL_OCR = "mistral_ocr"
 PROVIDER_OPENAI = "openai"
+PROVIDER_GEMINI = "gemini"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,22 +51,35 @@ class AIProviderConfig:
         mode = os.getenv("US_LACEY_AI_SHADOW_MODE", "off").strip().upper()
         if mode not in {AI_SHADOW_OFF, AI_SHADOW_SHADOW}:
             mode = AI_SHADOW_OFF
+
         provider = os.getenv("US_LACEY_AI_PROVIDER", PROVIDER_QWEN_OLLAMA).strip().lower()
         if provider == PROVIDER_MISTRAL_OCR:
             default_model = "mistral-ocr-latest"
             default_url = "https://api.mistral.ai/v1/ocr"
         elif provider == PROVIDER_OPENAI:
-            # Luna is intentionally the default extraction tier. Higher-cost models
-            # are reserved for reconciliation/adjudication rather than page-by-page OCR.
             default_model = "gpt-5.6-luna"
             default_url = "https://api.openai.com/v1/responses"
+        elif provider == PROVIDER_GEMINI:
+            # Stable cost-sensitive extraction tier. Reconciliation/adjudication use
+            # provider-aware defaults from AITierConfig.
+            default_model = "gemini-3.5-flash-lite"
+            default_url = "https://generativelanguage.googleapis.com/v1beta/interactions"
         else:
             provider = PROVIDER_QWEN_OLLAMA
             default_model = "qwen2.5vl:7b"
             default_url = "http://127.0.0.1:11434/api/chat"
+
         model = os.getenv("US_LACEY_AI_MODEL", default_model).strip() or default_model
         base_url = os.getenv("US_LACEY_AI_BASE_URL", default_url).strip() or default_url
-        api_key = os.getenv("US_LACEY_AI_API_KEY", "").strip() or None
+        if provider == PROVIDER_GEMINI:
+            api_key = (
+                os.getenv("US_LACEY_GEMINI_API_KEY", "").strip()
+                or os.getenv("US_LACEY_AI_API_KEY", "").strip()
+                or None
+            )
+        else:
+            api_key = os.getenv("US_LACEY_AI_API_KEY", "").strip() or None
+
         try:
             timeout_seconds = max(
                 5.0,
@@ -100,8 +114,6 @@ def ai_shadow_enabled(config: AIProviderConfig | None = None) -> bool:
 
 
 def ai_shadow_engine_version(config: AIProviderConfig) -> str:
-    # This is a bounded cache identity, not a customer-visible version. Never
-    # include endpoints, credentials, or document data in it.
     identity = (
         f"v1|{config.provider}|{config.model}|pages={config.max_pages}|"
         "schema=lacey_ai_shadow_v1"
@@ -149,9 +161,7 @@ _CANDIDATE_SCHEMA = {
                             {"type": "null"},
                         ]
                     },
-                    "reason": {
-                        "anyOf": [{"type": "string"}, {"type": "null"}]
-                    },
+                    "reason": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                 },
                 "required": [
                     "field_key",
@@ -314,9 +324,7 @@ class QwenOllamaProvider:
                 page_payload = json.loads(content_text)
             except json.JSONDecodeError as exc:
                 raise AIShadowError("Ollama structured output is invalid JSON.") from exc
-            if not isinstance(page_payload, dict) or not isinstance(
-                page_payload.get("candidates"), list
-            ):
+            if not isinstance(page_payload, dict) or not isinstance(page_payload.get("candidates"), list):
                 raise AIShadowError("Ollama structured output is missing candidates.")
             for item in page_payload["candidates"]:
                 if isinstance(item, dict):
@@ -346,9 +354,7 @@ class MistralOcrProvider:
 
     def extract(self, *, filename: str, content: bytes) -> AIExtractionResult:
         mime = mimetypes.guess_type(filename)[0] or (
-            "application/pdf"
-            if content.startswith(b"%PDF")
-            else "application/octet-stream"
+            "application/pdf" if content.startswith(b"%PDF") else "application/octet-stream"
         )
         data_url = f"data:{mime};base64,{base64.b64encode(content).decode('ascii')}"
         payload: dict[str, object] = {
@@ -366,21 +372,14 @@ class MistralOcrProvider:
                 },
             },
         }
-        # Document annotations are limited to eight pages. For PDFs, send only
-        # valid 0-indexed pages so short documents never receive out-of-range
-        # page requests and long documents remain fail-bounded in v1.
         if content.startswith(b"%PDF") or filename.casefold().endswith(".pdf"):
             try:
                 from pypdf import PdfReader
 
                 page_count = len(PdfReader(BytesIO(content)).pages)
             except Exception as exc:
-                raise AIShadowError(
-                    "Unable to inspect PDF pages for Mistral OCR."
-                ) from exc
-            payload["pages"] = list(
-                range(min(page_count, self.config.max_pages, 8))
-            )
+                raise AIShadowError("Unable to inspect PDF pages for Mistral OCR.") from exc
+            payload["pages"] = list(range(min(page_count, self.config.max_pages, 8)))
             if not payload["pages"]:
                 raise AIShadowError("PDF contains no processable pages.")
         started = time.monotonic()
@@ -395,13 +394,9 @@ class MistralOcrProvider:
             try:
                 annotation = json.loads(annotation)
             except json.JSONDecodeError as exc:
-                raise AIShadowError(
-                    "Mistral document annotation is invalid JSON."
-                ) from exc
+                raise AIShadowError("Mistral document annotation is invalid JSON.") from exc
         if not isinstance(annotation, dict):
-            raise AIShadowError(
-                "Mistral OCR response is missing document_annotation."
-            )
+            raise AIShadowError("Mistral OCR response is missing document_annotation.")
         elapsed = int((time.monotonic() - started) * 1000)
         pages = response.get("pages")
         page_count = len(pages) if isinstance(pages, list) else None
@@ -415,11 +410,7 @@ class MistralOcrProvider:
 
 
 class OpenAIResponsesProvider:
-    """GPT-5.6 Luna vision extraction with strict structured outputs.
-
-    The response is still passed through the same exact-source evidence verifier as
-    every other shadow provider before it can influence evaluation metrics.
-    """
+    """GPT-5.6 Luna vision extraction with strict structured outputs."""
 
     name = PROVIDER_OPENAI
 
@@ -436,13 +427,9 @@ class OpenAIResponsesProvider:
         candidates: list[dict[str, object]] = []
         started = time.monotonic()
         for page_number, image in enumerate(images, start=1):
-            image_url = (
-                "data:image/png;base64," + base64.b64encode(image).decode("ascii")
-            )
+            image_url = "data:image/png;base64," + base64.b64encode(image).decode("ascii")
             payload = {
                 "model": self.model,
-                # The extraction path can contain customer shipping documents. Do not
-                # opt the Responses request into application-state storage.
                 "store": False,
                 "input": [
                     {
@@ -456,11 +443,7 @@ class OpenAIResponsesProvider:
                                     f"Every candidate page must be {page_number}."
                                 ),
                             },
-                            {
-                                "type": "input_image",
-                                "image_url": image_url,
-                                "detail": "high",
-                            },
+                            {"type": "input_image", "image_url": image_url, "detail": "high"},
                         ],
                     }
                 ],
@@ -482,20 +465,12 @@ class OpenAIResponsesProvider:
             try:
                 page_payload = json.loads(_openai_output_text(response))
             except json.JSONDecodeError as exc:
-                raise AIShadowError(
-                    "OpenAI structured output is invalid JSON."
-                ) from exc
-            if not isinstance(page_payload, dict) or not isinstance(
-                page_payload.get("candidates"), list
-            ):
-                raise AIShadowError(
-                    "OpenAI structured output is missing candidates."
-                )
+                raise AIShadowError("OpenAI structured output is invalid JSON.") from exc
+            if not isinstance(page_payload, dict) or not isinstance(page_payload.get("candidates"), list):
+                raise AIShadowError("OpenAI structured output is missing candidates.")
             for item in page_payload["candidates"]:
                 if isinstance(item, dict):
                     candidate = dict(item)
-                    # The server controls the page binding; a model cannot attach a
-                    # candidate to a different page than the image actually supplied.
                     candidate["page"] = page_number
                     candidates.append(candidate)
         elapsed = int((time.monotonic() - started) * 1000)
@@ -516,4 +491,10 @@ def build_ai_provider(config: AIProviderConfig | None = None):
         return MistralOcrProvider(config)
     if config.provider == PROVIDER_OPENAI:
         return OpenAIResponsesProvider(config)
+    if config.provider == PROVIDER_GEMINI:
+        # Lazy import avoids a module cycle because the Gemini adapter reuses the
+        # shared HTTP, schema, prompt and PDF-rendering helpers defined above.
+        from .gemini_provider import GeminiInteractionsProvider
+
+        return GeminiInteractionsProvider(config)
     return QwenOllamaProvider(config)
