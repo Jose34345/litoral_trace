@@ -41,14 +41,15 @@ def test_current_dossier_renders_all_states_provenance_issues_and_harvest_separa
     for state in ("MISSING", "SUPPORTED", "SUPPORTED_MULTIPLE", "NEAR_MATCH", "CONFLICT", "REVIEW_REQUIRED"):
         assert f'data-engine2-state="{state}"' in html
     assert 'id="engine2-dossier"' in html
-    assert 'data-engine2-readiness="REVIEW_REQUIRED"' in html and "Preparation readiness" in html
+    assert 'data-engine2-readiness="REVIEW_REQUIRED"' in html and "Document evidence status" in html
+    assert "Final preparation readiness is determined by the human review below." in html
+    assert "Supported values here are document-evidence candidates and may not yet be accepted into the declaration." in html
     assert "MSKU1, MSKU2" in html and "WOOD BROKERAGE INTL" in html and 'data-engine2-issue' in html
     assert 'data-engine2-evidence-class="EXPLICIT"' in html and 'data-engine2-evidence-class="DERIVED"' in html and 'data-engine2-source-page="7"' in html
     assert "Raw: radiata" in html and "Normalized: RADIATA" in html and "bbox 1, 2, 3, 4" in html
     harvest = re.search(r'<article[^>]*data-engine2-field="country_of_harvest".*?</article>', html, re.S).group(0)
     assert "Missing" in harvest and "New Zealand" not in harvest and "Evidence" not in harvest
     assert "not a legal compliance determination" in html and "human-reviewed preparation record remains authoritative" in html and "ACE or LAWGS" in html
-    assert "accepted" not in html.lower().split("data-engine2-dossier", 1)[1].split('aria-labelledby="shipment-information-heading"', 1)[0]
 
 
 def test_terminal_workspace_refreshes_engine2_dossier_out_of_band():

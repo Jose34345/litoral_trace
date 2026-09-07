@@ -11,8 +11,41 @@ from .ranking import resolve
 from .segmentation import segment
 
 ENGINE_VERSION = "lacey-engine-2.0.0"
-_FIELDS = ("estimated_arrival_date", "bill_of_lading", "container_number", "consignee_name", "consignee_address", "description", "species", "genus", "filing_entry_reference", "manufacturer_id", "hts_code", "country_of_harvest", "plant_quantity", "metric_unit")
-_MERCHANDISE_DESCRIPTION_LABEL = re.compile(r"(?:commodity description|cargo description(?:\s+\d+)?|description of goods|goods description)", re.I)
+_FIELDS = (
+    "estimated_arrival_date",
+    "bill_of_lading",
+    "container_number",
+    "importer_name",
+    "importer_address",
+    "consignee_name",
+    "consignee_address",
+    "description",
+    "species",
+    "genus",
+    "filing_entry_reference",
+    "manufacturer_id",
+    "hts_code",
+    "entered_value",
+    "article_component",
+    "country_of_harvest",
+    "plant_quantity",
+    "metric_unit",
+    "percent_recycled",
+)
+_MERCHANDISE_DESCRIPTION_LABEL = re.compile(
+    r"(?:merchandise description|commodity description|cargo description(?:\s+\d+)?|description of goods|goods description)",
+    re.I,
+)
+_IMPORTER_NAME_LABEL = re.compile(r"(?:importer|importer name|importer of record|importer of record name)", re.I)
+_CONSIGNEE_NAME_LABEL = re.compile(r"(?:consignee|consignee name)", re.I)
+_ENTRY_LABEL = re.compile(r"(?:entry number|entry no\.?|filing entry reference|filing entry number)", re.I)
+_MID_LABEL = re.compile(r"(?:mid|manufacturer id|manufacturer identification|manufacturer identification code)", re.I)
+_HTS_LABEL = re.compile(r"(?:hts|hts code|hts number|hts no\.?)", re.I)
+_ENTERED_VALUE_LABEL = re.compile(r"(?:entered value|customs entered value)", re.I)
+_ARTICLE_COMPONENT_LABEL = re.compile(r"(?:article\s*/\s*component|article component)", re.I)
+_PLANT_QUANTITY_LABEL = re.compile(r"(?:quantity of plant material|plant material quantity|plant quantity)", re.I)
+_PLANT_UNIT_LABEL = re.compile(r"(?:metric unit|plant unit|unit of plant material|plant material unit)", re.I)
+_PERCENT_RECYCLED_LABEL = re.compile(r"(?:percent recycled|recycled percentage|% recycled)", re.I)
 
 
 def _candidate(field: str, value: str, block, label: str, evidence=EvidenceClass.EXPLICIT, derived_from=None) -> RawCandidate:
@@ -28,13 +61,33 @@ def _normalized_date(value: str) -> str | None:
     return None
 
 
+def _explicit_number(value: str, *, allow_percent: bool = False) -> str | None:
+    """Deterministically strip formatting from an explicitly labelled numeric value."""
+    text = " ".join(str(value or "").split()).strip()
+    pattern = r"(?:USD\s*|\$\s*)?([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s*%)?" if allow_percent else r"(?:USD\s*|\$\s*)?([0-9][0-9,]*(?:\.[0-9]+)?)"
+    match = re.fullmatch(pattern, text, re.I)
+    return match.group(1).replace(",", "") if match else None
+
+
+def _plant_quantity_parts(value: str) -> tuple[str | None, str | None]:
+    """Split only an explicit plant quantity such as '1,250 kg'; never infer semantics."""
+    match = re.fullmatch(
+        r"\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(kg|g|cg|mg|kl|l|ml|mm|mm2|mm3|cm|cm2|cm3|m|m2|m3|km|kilograms?|grams?|liters?|litres?|cubic meters?|cubic metres?)?\s*",
+        str(value or ""),
+        re.I,
+    )
+    if not match:
+        return None, None
+    return match.group(1).replace(",", ""), (match.group(2) or None)
+
+
 def _extract(layout):
     found: dict[str, list[RawCandidate]] = {field: [] for field in _FIELDS}
     for block in layout.blocks:
         text = block.text
         label, value = (block.key_text, block.value_text) if block.key_text is not None else (None, None)
         pairs = [(label, value)] if label else []
-        pairs.extend((match.group(1), match.group(2)) for match in re.finditer(r"(?im)^\s*([A-Za-z][A-Za-z /#.-]{1,45}?)\s*[:#]\s*([^\n]{1,120})$", text))
+        pairs.extend((match.group(1), match.group(2)) for match in re.finditer(r"(?im)^\s*([A-Za-z][A-Za-z /#.%'-]{1,55}?)\s*[:#]\s*([^\n]{1,180})$", text))
         for raw_label, raw_value in pairs:
             key, value = " ".join((raw_label or "").split()), " ".join((raw_value or "").split())
             if not value:
@@ -42,17 +95,53 @@ def _extract(layout):
             lower = key.casefold()
             if re.search(r"estimated (?:arrival|date of arrival|time of arrival)|^eta$", lower):
                 date = _normalized_date(value)
-                if date: found["estimated_arrival_date"].append(_candidate("estimated_arrival_date", date, block, key))
+                if date:
+                    found["estimated_arrival_date"].append(_candidate("estimated_arrival_date", date, block, key))
             elif re.search(r"(?:master (?:bol|b/l)|house bol|bill of lading|b/l no\.?|bol)\b", lower):
                 found["bill_of_lading"].append(_candidate("bill_of_lading", value.upper(), block, key))
             elif re.fullmatch(r"container(?: number| no\.?)?", lower):
                 found["container_number"].append(_candidate("container_number", value.upper(), block, key))
-            elif "consignee" in lower and "address" not in lower:
-                found["consignee_name"].append(_candidate("consignee_name", value.upper(), block, key))
+            elif _IMPORTER_NAME_LABEL.fullmatch(key) and "address" not in lower:
+                found["importer_name"].append(_candidate("importer_name", value, block, key))
+            elif re.fullmatch(r"importer(?:'s)? address|importer address", lower):
+                found["importer_address"].append(_candidate("importer_address", value, block, key))
+            elif _CONSIGNEE_NAME_LABEL.fullmatch(key) and "address" not in lower:
+                found["consignee_name"].append(_candidate("consignee_name", value, block, key))
+            elif re.fullmatch(r"consignee(?:'s)? address|consignee address", lower):
+                found["consignee_address"].append(_candidate("consignee_address", value, block, key))
             elif _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(key):
                 found["description"].append(_candidate("description", value, block, key))
+            elif _ENTRY_LABEL.fullmatch(key):
+                found["filing_entry_reference"].append(_candidate("filing_entry_reference", value.upper(), block, key))
+            elif _MID_LABEL.fullmatch(key):
+                found["manufacturer_id"].append(_candidate("manufacturer_id", value.upper(), block, key))
+            elif _HTS_LABEL.fullmatch(key):
+                found["hts_code"].append(_candidate("hts_code", value, block, key))
+            elif _ENTERED_VALUE_LABEL.fullmatch(key):
+                number = _explicit_number(value)
+                if number:
+                    found["entered_value"].append(_candidate("entered_value", number, block, key, EvidenceClass.DERIVED, "entered_value"))
+            elif _ARTICLE_COMPONENT_LABEL.fullmatch(key):
+                found["article_component"].append(_candidate("article_component", value, block, key))
+            elif re.fullmatch(r"genus|plant genus|scientific name genus", lower):
+                found["genus"].append(_candidate("genus", value, block, key))
+            elif re.fullmatch(r"species|plant species|scientific name species", lower):
+                found["species"].append(_candidate("species", value, block, key))
             elif re.search(r"country of harvest|harvest country|harvested in", lower):
                 found["country_of_harvest"].append(_candidate("country_of_harvest", value, block, key))
+            elif _PLANT_QUANTITY_LABEL.fullmatch(key):
+                amount, unit = _plant_quantity_parts(value)
+                if amount:
+                    found["plant_quantity"].append(_candidate("plant_quantity", amount, block, key, EvidenceClass.DERIVED, "plant_quantity"))
+                if unit:
+                    found["metric_unit"].append(_candidate("metric_unit", unit, block, key, EvidenceClass.DERIVED, "plant_quantity"))
+            elif _PLANT_UNIT_LABEL.fullmatch(key):
+                found["metric_unit"].append(_candidate("metric_unit", value, block, key))
+            elif _PERCENT_RECYCLED_LABEL.fullmatch(key):
+                number = _explicit_number(value, allow_percent=True)
+                if number:
+                    found["percent_recycled"].append(_candidate("percent_recycled", number, block, key, EvidenceClass.DERIVED, "percent_recycled"))
+
         # Web-print PDFs often position labels and values on the same visual line
         # without a literal colon. These patterns remain label-bound and therefore
         # cannot turn generic identifiers into regulatory fields.
@@ -68,42 +157,61 @@ def _extract(layout):
             value = " ".join(match.group(1).split())
             if value:
                 found["consignee_name"].append(_candidate("consignee_name", value, block, "Consignee Name"))
-        for match in re.finditer(r"(?P<label>Commodity Description|Cargo Description\s+\d+|Description of Goods|Goods Description)\s*[:#-]?\s*(?P<value>[^\n]{1,240})", text, re.I):
+        for match in re.finditer(r"(?P<label>Commodity Description|Cargo Description\s+\d+|Description of Goods|Goods Description|Merchandise Description)\s*[:#-]?\s*(?P<value>[^\n]{1,240})", text, re.I):
             value = " ".join(match.group("value").split())
             if value:
                 found["description"].append(_candidate("description", value, block, match.group("label")))
+        for match in re.finditer(r"(?P<label>Entry (?:Number|No\.?)|Filing Entry (?:Reference|Number))\s*[:#-]?\s*(?P<value>[A-Z0-9-]{8,20})", text, re.I):
+            found["filing_entry_reference"].append(_candidate("filing_entry_reference", match.group("value").upper(), block, match.group("label")))
+        for match in re.finditer(r"(?P<label>MID|Manufacturer (?:Identification(?: Code)?|ID)\b)\s*[:#-]?\s*(?P<value>[A-Z0-9 -]{5,25})", text, re.I):
+            found["manufacturer_id"].append(_candidate("manufacturer_id", " ".join(match.group("value").split()).upper(), block, match.group("label")))
+        for match in re.finditer(r"(?P<label>HTS(?:\s+(?:Code|Number|No\.?))?)\s*[:#-]?\s*(?P<value>\d{4,10}(?:[. -]\d{1,4})*)", text, re.I):
+            found["hts_code"].append(_candidate("hts_code", match.group("value"), block, match.group("label")))
+
     genera = {"pinus", "eucalyptus", "quercus", "acer", "betula", "fagus", "fraxinus", "populus", "tectona"}
     for source in layout.blocks:
         taxon = next((match for match in re.finditer(r"\b([A-Za-z]{3,})\s+([A-Za-z]{3,})\b", source.text) if match.group(1).casefold() in genera), None)
         if taxon:
             found["species"].append(_candidate("species", taxon.group(2).lower(), source, "scientific taxon"))
             found["genus"].append(_candidate("genus", taxon.group(1).capitalize(), source, "scientific taxon", EvidenceClass.DERIVED, "species"))
-    # Reconstruct a party address only from explicit, adjacent labelled
-    # components in the consignee record. It is a deterministic DERIVED value;
-    # isolated address labels elsewhere in a report are never a consignee.
+
+    # Reconstruct party addresses only from explicit adjacent labelled components.
+    # This never treats a generic address elsewhere in a report as importer/consignee.
     lines = [block for block in layout.blocks if block.block_type in {"TEXT_LINE", "OCR_LINE"}]
-    for index, block in enumerate(lines):
-        if not re.match(r"^Consignee(?: Name)?\s+", block.text, re.I):
-            continue
-        components: dict[str, tuple[str, object]] = {}
-        for following in lines[index + 1 : index + 6]:
-            if re.match(r"^Consignee(?: Name)?\s+", following.text, re.I):
-                break
-            match = re.match(r"^(Address Line 1|City|State Province|Zip Code)\s+(.+)$", following.text, re.I)
-            if match:
-                components[match.group(1).casefold()] = (" ".join(match.group(2).split()), following)
-        if {"address line 1", "city", "state province", "zip code"}.issubset(components):
-            address = components["address line 1"][0]
-            city = components["city"][0]
-            state = components["state province"][0]
-            postal = components["zip code"][0]
-            source = components["address line 1"][1]
-            found["consignee_address"].append(_candidate(
-                "consignee_address", f"{address}; {city}, {state} {postal}", source,
-                "Consignee Address", EvidenceClass.DERIVED, "consignee_name",
-            ))
-    # The same visual row may be represented as a text line and a detected
-    # table row. That is duplicate evidence, not a semantic disagreement.
+    for party, target in (("Consignee", "consignee_address"), ("Importer", "importer_address")):
+        for index, block in enumerate(lines):
+            if not re.match(rf"^{party}(?: Name| of Record)?\s+", block.text, re.I):
+                continue
+            components: dict[str, tuple[str, object]] = {}
+            for following in lines[index + 1 : index + 7]:
+                if re.match(r"^(?:Consignee|Importer)(?: Name| of Record)?\s+", following.text, re.I):
+                    break
+                match = re.match(r"^(Address Line 1|Address|City|State Province|State|Zip Code|Postal Code|Country Code|Country)\s+(.+)$", following.text, re.I)
+                if match:
+                    components[match.group(1).casefold()] = (" ".join(match.group(2).split()), following)
+            address_key = "address line 1" if "address line 1" in components else ("address" if "address" in components else None)
+            city_key = "city" if "city" in components else None
+            state_key = "state province" if "state province" in components else ("state" if "state" in components else None)
+            postal_key = "zip code" if "zip code" in components else ("postal code" if "postal code" in components else None)
+            if address_key and city_key and state_key and postal_key:
+                address = components[address_key][0]
+                city = components[city_key][0]
+                state = components[state_key][0]
+                postal = components[postal_key][0]
+                country_key = "country" if "country" in components else ("country code" if "country code" in components else None)
+                country = f"; {components[country_key][0]}" if country_key else ""
+                source = components[address_key][1]
+                found[target].append(_candidate(
+                    target,
+                    f"{address}; {city}, {state} {postal}{country}",
+                    source,
+                    f"{party} Address",
+                    EvidenceClass.DERIVED,
+                    f"{party.casefold()}_name",
+                ))
+
+    # The same visual row may be represented as a text line and a detected table row.
+    # That is duplicate evidence, not a semantic disagreement.
     for field_key, candidates in found.items():
         unique: list[RawCandidate] = []
         seen: set[tuple[str, str]] = set()
