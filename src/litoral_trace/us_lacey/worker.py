@@ -10,6 +10,7 @@ from litoral_trace.assurance.processing import AssuranceProcessingService
 from litoral_trace.db.models import AssuranceDocument, UsLaceyOperation
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.services.vault import VaultService
+from litoral_trace.us_lacey.ai_suggestions import project_verified_ai_suggestions
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.jobs import (
     claim_next_us_lacey_job,
@@ -76,6 +77,22 @@ def _shadow_engine2(*, organization_id: int, operation_id: int) -> None:
         # shadow faults intentionally cannot fail the authoritative worker job.
         LOGGER.exception("Lacey Engine 2 shadow resolution failed", extra={"organization_id": organization_id, "operation_id": operation_id})
         return
+
+
+def _project_verified_ai_suggestions(*, organization_id: int, operation_id: int) -> None:
+    """Best-effort bridge: only Engine2+AI agreement may become a FOUND suggestion."""
+    try:
+        project_verified_ai_suggestions(
+            organization_id=organization_id,
+            operation_id=operation_id,
+        )
+    except Exception:
+        # AI suggestion projection is convenience only. The mature deterministic
+        # extraction/review path remains usable if this bridge fails.
+        LOGGER.exception(
+            "Lacey verified AI suggestion projection failed",
+            extra={"organization_id": organization_id, "operation_id": operation_id},
+        )
 
 
 def _assurance_public_id(*, organization_id: int, document_id: int):
@@ -188,6 +205,16 @@ def process_one_us_lacey_job(
             operation_id=job.operation_id,
         )
         _shadow_engine2(organization_id=job.organization_id, operation_id=job.operation_id)
+        _project_verified_ai_suggestions(
+            organization_id=job.organization_id,
+            operation_id=job.operation_id,
+        )
+        # Suggestions can change the customer-visible authority state from MISSING to
+        # FOUND. Refresh once more so operation status and the workspace agree.
+        operation_status = _refresh_operation(
+            organization_id=job.organization_id,
+            operation_id=job.operation_id,
+        )
         return UsLaceyWorkerResult(
             claimed=True,
             job_id=job.id,
