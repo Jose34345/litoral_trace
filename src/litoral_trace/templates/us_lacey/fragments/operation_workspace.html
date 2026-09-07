@@ -1,28 +1,50 @@
-<section id="engine2-dossier" hx-swap-oob="outerHTML:#engine2-dossier" class="lt-card mb-6 p-6" data-engine2-dossier data-engine2-availability="{{ engine2_dossier.availability }}">
-  <h2 class="text-lg font-bold text-slate-950">Document evidence analysis</h2>
-  <p class="mt-2 text-sm text-slate-600">Read-only evidence preview. Supported values here are document-evidence candidates and may not yet be accepted into the declaration. This is not a legal compliance determination; the human-reviewed preparation record remains authoritative and no ACE or LAWGS submission is made.</p>
-  {% if engine2_dossier.availability != "CURRENT" %}
-    <p class="mt-4 text-sm text-slate-700">{{ engine2_dossier.safe_status_message }}</p>
-  {% else %}
-    <div class="mt-4">
-      <span data-engine2-readiness="{{ engine2_dossier.readiness }}">Document evidence status: {{ engine2_dossier.readiness|replace("_", " ") }}</span>
-      <p class="mt-1 text-xs text-slate-500">This status reflects document-evidence reconciliation only. Final preparation readiness is determined by the human review below.</p>
-    </div>
-    <div class="mt-5 grid gap-3">
-      {% for field in engine2_dossier.fields %}
-      <article class="rounded-lg border border-slate-200 p-3" data-engine2-field="{{ field.field_key }}" data-engine2-state="{{ field.state }}">
-        <strong>{{ field.label }}</strong> · {{ field.state|replace("_", " ") }}
-        {% if field.values %}<p class="mt-1">{{ field.values|join(", ") }}</p>{% else %}<p class="mt-1">Missing</p>{% endif %}
-        {% if field.evidence %}<details class="mt-2"><summary>Evidence ({{ field.evidence|length }})</summary>{% for evidence in field.evidence %}<p class="text-xs" data-engine2-evidence data-engine2-evidence-class="{{ evidence.evidence_class }}" data-engine2-source-page="{{ evidence.page }}"><strong>{{ evidence.source_filename }}</strong> · page {{ evidence.page }} · {{ evidence.evidence_class }}<br>Source: {{ evidence.source_text }}<br>Raw: {{ evidence.raw_text }} · Normalized: {{ evidence.normalized_value }} · score {{ evidence.candidate_score }} · authority {{ evidence.source_authority }} · {{ evidence.scope }}{% if evidence.line_key %} · line {{ evidence.line_key }}{% endif %}{% if evidence.component_key %} · component {{ evidence.component_key }}{% endif %}{% if evidence.bbox %} · bbox {{ evidence.bbox|join(", ") }}{% endif %}</p>{% endfor %}</details>{% endif %}
-      </article>
-      {% endfor %}
-    </div>
-    {% if engine2_dossier.issues %}<div class="mt-5 grid gap-3">{% for issue in engine2_dossier.issues %}<article class="rounded-lg border border-amber-200 p-3" data-engine2-issue><strong>{{ issue.label }}</strong> · {{ issue.severity }} · {{ issue.issue_type }}<p>{{ issue.message }}</p><p class="text-xs">Human review required: {{ issue.requires_human_review }} · {{ issue.source_filenames|join(", ") }}{% if issue.line_key %} · line {{ issue.line_key }}{% endif %}{% if issue.component_key %} · component {{ issue.component_key }}{% endif %}</p></article>{% endfor %}</div>{% endif %}
-  {% endif %}
-</section>
+<details id="engine2-dossier" hx-swap-oob="outerHTML:#engine2-dossier" class="lt-card mt-6 p-6" data-engine2-dossier data-engine2-availability="{{ engine2_dossier.availability }}">
+  <summary class="cursor-pointer text-sm font-semibold text-slate-700">Advanced evidence details</summary>
+  <div class="mt-4">
+    <h2 class="text-lg font-bold text-slate-950">Document evidence analysis</h2>
+    <p class="mt-2 text-sm text-slate-600">Technical evidence preview for audit and troubleshooting. Final preparation data still comes from the human review workflow.</p>
+    {% if engine2_dossier.availability != "CURRENT" %}
+      <p class="mt-4 text-sm text-slate-700">{{ engine2_dossier.safe_status_message }}</p>
+    {% else %}
+      <div class="mt-4">
+        <span data-engine2-readiness="{{ engine2_dossier.readiness }}">Document evidence status: {{ engine2_dossier.readiness|replace("_", " ") }}</span>
+        <p class="mt-1 text-xs text-slate-500">This status reflects document-evidence reconciliation only.</p>
+      </div>
+      <div class="mt-5 grid gap-3">
+        {% for field in engine2_dossier.fields %}
+        <article class="rounded-lg border border-slate-200 p-3" data-engine2-field="{{ field.field_key }}" data-engine2-state="{{ field.state }}">
+          <strong>{{ field.label }}</strong> · {{ field.state|replace("_", " ") }}
+          {% if field.values %}<p class="mt-1">{{ field.values|join(", ") }}</p>{% else %}<p class="mt-1">Missing</p>{% endif %}
+          {% if field.evidence %}<details class="mt-2"><summary>Evidence ({{ field.evidence|length }})</summary>{% for evidence in field.evidence %}<p class="text-xs" data-engine2-evidence data-engine2-evidence-class="{{ evidence.evidence_class }}" data-engine2-source-page="{{ evidence.page }}"><strong>{{ evidence.source_filename }}</strong> · page {{ evidence.page }} · {{ evidence.evidence_class }}<br>Source: {{ evidence.source_text }}<br>Raw: {{ evidence.raw_text }} · Normalized: {{ evidence.normalized_value }} · score {{ evidence.candidate_score }} · authority {{ evidence.source_authority }} · {{ evidence.scope }}{% if evidence.line_key %} · line {{ evidence.line_key }}{% endif %}{% if evidence.component_key %} · component {{ evidence.component_key }}{% endif %}{% if evidence.bbox %} · bbox {{ evidence.bbox|join(", ") }}{% endif %}</p>{% endfor %}</details>{% endif %}
+        </article>
+        {% endfor %}
+      </div>
+      {% if engine2_dossier.issues %}<div class="mt-5 grid gap-3">{% for issue in engine2_dossier.issues %}<article class="rounded-lg border border-amber-200 p-3" data-engine2-issue><strong>{{ issue.label }}</strong> · {{ issue.severity }} · {{ issue.issue_type }}<p>{{ issue.message }}</p><p class="text-xs">Human review required: {{ issue.requires_human_review }} · {{ issue.source_filenames|join(", ") }}{% if issue.line_key %} · line {{ issue.line_key }}{% endif %}{% if issue.component_key %} · component {{ issue.component_key }}{% endif %}</p></article>{% endfor %}</div>{% endif %}
+    {% endif %}
+  </div>
+</details>
 
 {% from "components/ui.html" import button, status_badge, empty_state %}
 {% macro friendly_status(value) %}{% set labels = {"MISSING":"Missing information", "REVIEW":"Needs review", "FOUND":"Suggested — verify", "MATCHED":"Confirmed", "SUPPORTED":"Confirmed from documents", "SUPPORTED_MULTIPLE":"Confirmed by multiple sources", "CONFLICT":"Conflicting information", "VALID":"Valid", "NOT_REQUIRED":"Not required"} %}{{ labels.get(value, "Needs review") }}{% endmacro %}
+{% macro missing_guidance(field_name) %}{% set guidance = {
+  "estimated_arrival_date":"Likely source: carrier arrival notice, bill of lading, or customs broker.",
+  "filing_entry_reference":"Likely source: importer or customs broker after the entry is created.",
+  "manufacturer_id":"Likely source: importer, customs broker, or manufacturer identification data.",
+  "importer_name":"Likely source: importer or customs entry documents.",
+  "importer_address":"Likely source: importer or customs entry documents.",
+  "consignee_name":"Likely source: bill of lading, arrival notice, or importer records.",
+  "consignee_address":"Likely source: bill of lading, arrival notice, or importer records.",
+  "merchandise_description":"Likely source: commercial invoice, packing list, or bill of lading.",
+  "hts_code":"Likely source: importer or customs broker classification records.",
+  "entered_value":"Likely source: commercial invoice or customs entry documents.",
+  "article_component":"Likely source: product specification, commercial invoice, or supplier declaration.",
+  "genus":"Likely source: supplier, manufacturer, or species declaration.",
+  "species":"Likely source: supplier, manufacturer, or species declaration.",
+  "country_of_harvest":"Likely source: supplier/manufacturer harvest or origin declaration. Country of origin alone is not treated as proof.",
+  "plant_quantity":"Likely source: supplier/manufacturer plant-material declaration. Shipment gross weight is not substituted automatically.",
+  "metric_unit":"Likely source: the document that states the plant-material quantity.",
+  "percent_recycled":"When applicable, likely source: supplier/manufacturer material-composition declaration."
+} %}{{ guidance.get(field_name, "Add a supporting document or enter this value only if you can verify it.") }}{% endmacro %}
 
 {% macro review_field(field) %}
 {% if field.status == "FOUND" %}
@@ -42,7 +64,8 @@
     <p class="mt-3 text-sm text-slate-700"><span class="font-semibold">{% if field.extractor == "operator-entered-metadata" %}From operation details:{% else %}Suggested value:{% endif %}</span> {{ field.proposed_value }}</p>
     {% if field.status == "FOUND" %}<p class="mt-1 text-xs text-emerald-800">Supported by the current evidence, but not yet confirmed by you.</p>{% endif %}
   {% else %}
-    <p class="mt-3 text-sm text-slate-700">Information is still needed. Litoral Trace will not invent a value that is absent from the supplied evidence.</p>
+    <p class="mt-3 text-sm text-slate-700">Not found in the uploaded evidence. Litoral Trace will not invent a missing fact.</p>
+    <p class="mt-2 text-xs font-semibold text-amber-900">{{ missing_guidance(field.field_name) }}</p>
   {% endif %}
 
   {% if field.candidates|length > 1 %}
@@ -66,11 +89,13 @@
 {% endmacro %}
 
 {% set supported_fields = exception_fields|selectattr('status', 'equalto', 'FOUND')|list %}
-{% set attention_count = exception_fields|length - supported_fields|length %}
+{% set bulk = namespace(items=[]) %}
+{% for field in supported_fields %}{% if field.proposed_value and field.candidates|length <= 1 %}{% set bulk.items = bulk.items + [field] %}{% endif %}{% endfor %}
+{% set attention_count = exception_fields|length - bulk.items|length %}
 <div id="operation-workspace" class="space-y-6" tabindex="-1">
   <section class="lt-card p-6" aria-labelledby="analysis-complete">
-    <div class="flex flex-wrap items-start justify-between gap-4"><div><h2 id="analysis-complete" class="text-lg font-bold text-slate-950" tabindex="-1">Document analysis complete</h2><p class="mt-1 text-sm text-slate-600">We filled what the evidence supports. Confirm the suggested values together, then focus only on missing or conflicting information.</p></div><span class="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-800">{% if detail.status == "COMPLETED" %}Preparation complete{% else %}Human confirmation required{% endif %}</span></div>
-    <div class="mt-5 grid gap-3 sm:grid-cols-5"><div><p class="text-2xl font-bold text-slate-950">{{ detail.document_count }}</p><p class="text-xs font-semibold text-slate-500">Documents</p></div><div><p class="text-2xl font-bold text-emerald-700">{{ settled_fields|length }}</p><p class="text-xs font-semibold text-slate-500">Confirmed</p></div><div><p class="text-2xl font-bold text-emerald-700">{{ supported_fields|length }}</p><p class="text-xs font-semibold text-slate-500">Suggested</p></div><div><p class="text-2xl font-bold text-amber-700">{{ attention_count }}</p><p class="text-xs font-semibold text-slate-500">Needs attention</p></div><div><p class="text-2xl font-bold text-rose-700">{{ detail.conflicts|selectattr('status', 'equalto', 'OPEN')|list|length }}</p><p class="text-xs font-semibold text-slate-500">Conflicts</p></div></div>
+    <div class="flex flex-wrap items-start justify-between gap-4"><div><h2 id="analysis-complete" class="text-lg font-bold text-slate-950" tabindex="-1">Document analysis complete</h2><p class="mt-1 text-sm text-slate-600">Litoral Trace filled what the evidence supports. Confirm the safe suggestions together, then focus only on exceptions.</p></div><span class="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-800">{% if detail.status == "COMPLETED" %}Preparation complete{% else %}Human confirmation required{% endif %}</span></div>
+    <div class="mt-5 grid gap-3 sm:grid-cols-5"><div><p class="text-2xl font-bold text-slate-950">{{ detail.document_count }}</p><p class="text-xs font-semibold text-slate-500">Documents</p></div><div><p class="text-2xl font-bold text-emerald-700">{{ settled_fields|length }}</p><p class="text-xs font-semibold text-slate-500">Confirmed</p></div><div><p class="text-2xl font-bold text-emerald-700">{{ bulk.items|length }}</p><p class="text-xs font-semibold text-slate-500">Safe suggestions</p></div><div><p class="text-2xl font-bold text-amber-700">{{ attention_count }}</p><p class="text-xs font-semibold text-slate-500">Needs attention</p></div><div><p class="text-2xl font-bold text-rose-700">{{ detail.conflicts|selectattr('status', 'equalto', 'OPEN')|list|length }}</p><p class="text-xs font-semibold text-slate-500">Conflicts</p></div></div>
   </section>
 
   {% if detail.status == "COMPLETED" %}
@@ -78,13 +103,13 @@
   {% else %}
   <section class="lt-card p-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <div><h2 class="text-lg font-bold text-slate-950">Review extracted data</h2><p class="mt-1 text-sm text-slate-600">Suggested values are prefilled. Conflicts remain visibly blocked until you choose or edit a value.</p></div>
-      {% if supported_fields %}<form method="post" action="/operations/{{ detail.public_id }}/review/accept-supported"><input type="hidden" name="csrf_token" value="{{ complete_csrf }}">{{ button("Accept all supported values (" ~ supported_fields|length ~ ")", variant="primary", button_type="submit", icon="fa-check-double") }}</form>{% endif %}
+      <div><h2 class="text-lg font-bold text-slate-950">Review extracted data</h2><p class="mt-1 text-sm text-slate-600">Safe suggestions are prefilled. Missing facts and conflicts remain visibly blocked until you resolve them.</p></div>
+      {% if bulk.items %}<form method="post" action="/operations/{{ detail.public_id }}/review/accept-supported"><input type="hidden" name="csrf_token" value="{{ complete_csrf }}">{{ button("Accept all safe suggestions (" ~ bulk.items|length ~ ")", variant="primary", button_type="submit", icon="fa-check-double") }}</form>{% endif %}
     </div>
     <div class="mt-5 grid gap-4">{% for field in exception_fields %}{{ review_field(field) }}{% else %}{{ empty_state("No open review items", icon="fa-circle-check") }}{% endfor %}</div>
   </section>
 
-  <section class="lt-card p-6"><h2 class="text-lg font-bold text-slate-950">Final confirmation</h2>{% if detail.status == "READY_FOR_REVIEW" and exception_fields|length == 0 %}<p class="mt-2 text-sm text-slate-600">All required fields are resolved and explicitly confirmed. You can complete preparation now.</p><form class="mt-4" method="post" action="/operations/{{ detail.public_id }}/complete"><input type="hidden" name="csrf_token" value="{{ complete_csrf }}">{{ button("Complete preparation", variant="primary", button_type="submit") }}</form>{% else %}<p class="mt-2 text-sm text-slate-600">Confirm the supported values and resolve any missing or conflicting items before completing preparation.</p>{% endif %}</section>
+  <section class="lt-card p-6"><h2 class="text-lg font-bold text-slate-950">Final confirmation</h2>{% if detail.status == "READY_FOR_REVIEW" and exception_fields|length == 0 %}<p class="mt-2 text-sm text-slate-600">All required fields are resolved and explicitly confirmed. You can complete preparation now.</p><form class="mt-4" method="post" action="/operations/{{ detail.public_id }}/complete"><input type="hidden" name="csrf_token" value="{{ complete_csrf }}">{{ button("Complete preparation", variant="primary", button_type="submit") }}</form>{% else %}<p class="mt-2 text-sm text-slate-600">Confirm safe suggestions and resolve missing or conflicting items before completing preparation.</p>{% endif %}</section>
   {% endif %}
 
   <details class="lt-card p-6"><summary class="cursor-pointer text-lg font-bold text-slate-950">Show confirmed declaration data</summary><div class="mt-5 grid gap-3 md:grid-cols-2">{% for field in settled_fields %}<div class="rounded-lg border border-slate-200 p-3"><div class="flex items-center justify-between gap-2"><strong>{{ field.label }}</strong><span class="text-xs text-emerald-700">{{ friendly_status(field.status) }}</span></div><p class="mt-1 text-sm text-slate-700">{{ field.effective_value }}</p><details class="mt-2 text-xs text-slate-500"><summary class="cursor-pointer">View evidence</summary><p class="mt-1">{% if field.extractor == "operator-entered-metadata" %}Operation details{% else %}Document evidence{% if field.source_page %} · page {{ field.source_page }}{% endif %}{% endif %}</p></details></div>{% endfor %}</div></details>
