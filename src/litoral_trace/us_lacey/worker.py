@@ -10,6 +10,7 @@ from litoral_trace.assurance.processing import AssuranceProcessingService
 from litoral_trace.db.models import AssuranceDocument, UsLaceyOperation
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.services.vault import VaultService
+from litoral_trace.us_lacey.ai_review import recommend_open_reconciliation_issues
 from litoral_trace.us_lacey.ai_suggestions import project_verified_ai_suggestions
 from litoral_trace.us_lacey.engine2_suggestions import project_engine2_supported_suggestions
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
@@ -116,6 +117,20 @@ def _project_verified_ai_suggestions(*, organization_id: int, operation_id: int)
             extra={"organization_id": organization_id, "operation_id": operation_id},
         )
         return 0
+
+
+def _run_ai_review_recommendations(*, organization_id: int, operation_id: int) -> None:
+    """Best-effort only: recommendation JSON cannot change declaration authority."""
+    try:
+        recommend_open_reconciliation_issues(
+            organization_id=organization_id,
+            operation_id=operation_id,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Lacey AI review recommendation failed",
+            extra={"organization_id": organization_id, "operation_id": operation_id},
+        )
 
 
 def _assurance_public_id(*, organization_id: int, document_id: int):
@@ -244,6 +259,12 @@ def process_one_us_lacey_job(
                 organization_id=job.organization_id,
                 operation_id=job.operation_id,
             )
+        # Terra/Sol may annotate existing OPEN conflicts with a bounded recommendation,
+        # but the recommendation cannot resolve an issue or set a field value.
+        _run_ai_review_recommendations(
+            organization_id=job.organization_id,
+            operation_id=job.operation_id,
+        )
         return UsLaceyWorkerResult(
             claimed=True,
             job_id=job.id,
