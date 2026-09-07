@@ -63,13 +63,16 @@ def _field_has_displayable_resolution(field) -> bool:
 
 
 def _review_field_sets(detail):
+    # FOUND means the pipeline has a supported proposal but no human has accepted it
+    # yet. Keeping FOUND in the review queue makes the UI truthful and enables a safe
+    # one-click confirmation workflow without presenting AI/extraction as final data.
     exception_fields = [
-        field for field in detail.fields if field.status in {"MISSING", "REVIEW"}
+        field for field in detail.fields if field.status in {"MISSING", "REVIEW", "FOUND"}
     ]
     settled_fields = [
         field
         for field in detail.fields
-        if field.status not in {"MISSING", "REVIEW"}
+        if field.status not in {"MISSING", "REVIEW", "FOUND"}
         and _field_has_displayable_resolution(field)
     ]
     return exception_fields, settled_fields
