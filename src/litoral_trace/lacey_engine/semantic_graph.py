@@ -33,8 +33,8 @@ _OUT_OF_SCOPE = re.compile(
 _EMAIL = re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?:\+?\d[\d() .-]{6,}\d)")
 _STREET_START = re.compile(
-    r"\s+\d{1,6}\s+[A-Za-z0-9.' -]+\b(?:street|st|road|rd|avenue|ave|way|drive|dr|"
-    r"boulevard|blvd|lane|ln|highway|hwy|parkway|pkwy|place|pl)\b",
+    r"\s+(?P<address>\d{1,6}\s+[A-Za-z0-9.' -]+\b(?:street|st|road|rd|avenue|ave|way|drive|dr|"
+    r"boulevard|blvd|lane|ln|highway|hwy|parkway|pkwy|place|pl)\b.*)$",
     re.IGNORECASE,
 )
 _COMPANY_SUFFIX = re.compile(
@@ -62,12 +62,7 @@ def is_out_of_scope_context(text: object) -> bool:
 
 
 def party_core(value: object) -> str:
-    """Normalize a party value to its company/name identity without addresses/contact.
-
-    Key/value PDFs often place name, street address, email and phone in one cell.  A
-    clean party name in another document must corroborate that cell, not conflict
-    with it.  This routine strips only strong contact/address signals.
-    """
+    """Normalize a party value to its company/name identity without addresses/contact."""
     raw = " ".join(str(value or "").split()).strip()
     if not raw:
         return ""
@@ -76,13 +71,23 @@ def party_core(value: object) -> str:
     street = _STREET_START.search(raw)
     if street:
         raw = raw[: street.start()]
-    # A comma is commonly the start of a postal address after the legal name.  Do
-    # not cut ordinary company names unless the tail looks address-like.
     comma = raw.find(",")
     if comma > 0 and re.search(r"\b(?:[A-Z]{2}\s+\d{5}|USA|UNITED STATES|VIETNAM|THAILAND|MALAYSIA)\b", raw[comma:], re.I):
         raw = raw[:comma]
-    raw = " ".join(raw.replace("|", " ").split()).strip(" ,-;")
-    return raw
+    return " ".join(raw.replace("|", " ").split()).strip(" ,-;")
+
+
+def party_address(value: object) -> str | None:
+    """Extract an address only when a strong street-number/street-type signal exists."""
+    raw = " ".join(str(value or "").split()).strip()
+    match = _STREET_START.search(raw)
+    if not match:
+        return None
+    address = match.group("address")
+    address = _EMAIL.sub(" ", address)
+    address = _PHONE.sub(" ", address)
+    address = " ".join(address.replace("|", " ").split()).strip(" ,-;")
+    return address or None
 
 
 def semantic_normalize(field_key: str, value: object) -> str:
@@ -130,8 +135,6 @@ def association_key(candidate: AdmittedCandidate, scope: str, document_id: str) 
         and block.row_index is not None
         and block.structure_type in {LayoutStructureType.LINE_ITEM_TABLE, LayoutStructureType.MATRIX_TABLE}
     ):
-        # Table ids already contain the PDF page.  Keep document id so identical
-        # table ids in different uploads cannot collide.
         return f"{document_id}:{block.table_id}:row:{block.row_index}"
     label = str(candidate.raw.label or "")
     match = re.search(r"(?:component|line)\s*(?:#|number)?\s*([a-z0-9-]+)", label, re.I)
