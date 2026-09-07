@@ -19,22 +19,26 @@ The authority boundary is intentionally asymmetric: software may extract, valida
 9. Missing values are never invented. The UI identifies the likely source/owner of the missing fact so the customer is asked for the minimum additional information.
 10. Only explicitly confirmed values become the authoritative preparation record.
 
-## Intelligence pyramid
+## Provider-agnostic intelligence pyramid
+
+The workflow is not coupled to one model vendor. Runtime configuration selects the provider while the evidence, validation and human-authority contracts stay identical.
 
 ```text
-                         GPT-5.6 Sol
-                  bounded conflict adjudication
-                              ^
-                         GPT-5.6 Terra
-                 cross-document reconciliation
-                              ^
-                         GPT-5.6 Luna
-                high-volume structured extraction
-                              ^
-                 Engine 2 + deterministic parsers
-              PDF / OCR / tables / spreadsheets
-                              ^
-                     immutable source files
+          highest reasoning tier
+   Gemini 3.8 Flash / GPT-5.6 Sol
+        bounded conflict adjudication
+                    ^
+          semantic review tier
+ Gemini 3.8 Flash / GPT-5.6 Terra
+       cross-document reconciliation
+                    ^
+         high-volume extraction
+Gemini 3.5 Flash-Lite / GPT-5.6 Luna
+                    ^
+       Engine 2 + deterministic parsers
+      PDF / OCR / tables / spreadsheets
+                    ^
+           immutable source files
 ```
 
 ## Tier 0 — deterministic ingestion, parsing and validation
@@ -52,14 +56,17 @@ Implemented responsibilities:
 
 This layer is cheap, reproducible and auditable and therefore runs before AI.
 
-## Tier 1 — GPT-5.6 Luna extraction
+## Tier 1 — high-volume multimodal extraction
 
-Default high-volume hosted AI model: `gpt-5.6-luna`.
+Supported hosted providers:
+
+- OpenAI: `gpt-5.6-luna`;
+- Gemini: `gemini-3.5-flash-lite` through the Gemini Interactions API.
 
 Implemented responsibilities:
 
-- identify supported Lacey preparation candidates from document pages;
-- return strict structured JSON;
+- identify supported Lacey preparation candidates from rendered document pages;
+- return structured JSON under the same provider-independent schema;
 - return exact source text and page for every candidate;
 - label evidence as explicit, derived or inferred;
 - omit absent fields rather than guessing;
@@ -67,29 +74,36 @@ Implemented responsibilities:
 
 Safety boundary:
 
+- hosted Interactions/Responses requests are stateless (`store=false`) in this pipeline;
 - unverified or inferred candidates do not become trusted suggestions;
 - country of harvest cannot be inferred from country of origin, ports, exporter/manufacturer address or vessel route;
 - gross shipment weight cannot become plant quantity without explicit support;
 - HTS, MID and entry references cannot be invented;
-- a verified Engine 2 + Luna agreement may prefill a `MISSING` review field as `FOUND`, never as `MATCHED`.
+- verified Engine 2 + AI agreement may prefill a `MISSING` review field as `FOUND`, never as `MATCHED`.
 
-Implementation: `lacey_engine.ai_providers.OpenAIResponsesProvider` plus `us_lacey.ai_suggestions`. External egress remains disabled unless explicitly enabled through environment configuration.
+Implementation: `lacey_engine.ai_providers.OpenAIResponsesProvider`, `lacey_engine.gemini_provider.GeminiInteractionsProvider`, plus `us_lacey.ai_suggestions`. External egress remains disabled unless explicitly enabled through environment configuration.
 
-## Tier 2 — GPT-5.6 Terra reconciliation
+## Tier 2 — semantic reconciliation
 
-Default model: `gpt-5.6-terra`.
+Provider-aware defaults:
 
-The routing policy reserves Terra for evidence that needs semantic cross-document reconciliation but is not a genuine blocking contradiction.
+- OpenAI: `gpt-5.6-terra`;
+- Gemini: `gemini-3.8-flash` with medium thinking.
+
+The routing policy reserves this tier for evidence that needs semantic cross-document reconciliation but is not a genuine blocking contradiction.
 
 The bounded review layer can only choose among already persisted evidence-backed candidates or return `NEEDS_HUMAN`; it cannot create a new regulatory fact. Recommendation snapshots are stored inside reconciliation-issue evidence and remain non-authoritative.
 
 Implementation: `lacey_engine.ai_routing` and `us_lacey.ai_review`.
 
-## Tier 3 — GPT-5.6 Sol adjudication
+## Tier 3 — bounded conflict adjudication
 
-Default model: `gpt-5.6-sol`.
+Provider-aware defaults:
 
-Sol is reserved for genuine blocking contradictions after deterministic and lower-cost work. The current adjudicator is deliberately bounded:
+- OpenAI: `gpt-5.6-sol`;
+- Gemini: `gemini-3.8-flash` with high thinking.
+
+The highest reasoning tier is reserved for genuine blocking contradictions after deterministic and lower-cost work. The current adjudicator is deliberately bounded:
 
 - input is a finite list of existing candidate IDs and their bounded evidence metadata;
 - output is either `SELECT(candidate_id)` or `NEEDS_HUMAN`;
@@ -137,17 +151,35 @@ This prevents cost escalation from turning into hallucination.
 
 Spend model budget only where additional intelligence can change the result:
 
-- page-level extraction: Luna;
-- one-engine-only or non-blocking semantic reconciliation: Terra;
-- genuine blocking conflict/ambiguity: Sol;
+- page-level extraction: cheapest configured multimodal tier;
+- one-engine-only or non-blocking semantic reconciliation: middle reasoning tier;
+- genuine blocking conflict/ambiguity: highest configured reasoning tier;
 - agreement: no additional model call;
 - both missing / AI rejected: no stronger-model call — request the missing evidence instead.
 
-The AI review pass is capped per operation (`US_LACEY_AI_REVIEW_MAX_ISSUES`, default 8, hard maximum 25) and is idempotent for the same candidate set and model.
+The AI review pass is capped per operation (`US_LACEY_AI_REVIEW_MAX_ISSUES`, default 8, hard maximum 25) and is idempotent for the same provider, model and candidate set.
 
 ## Runtime gates
 
-All external AI remains opt-in and shadow-first. Relevant environment variables are:
+All external AI remains opt-in and shadow-first.
+
+### Gemini configuration
+
+```text
+US_LACEY_ENGINE2_MODE=SHADOW
+US_LACEY_AI_SHADOW_MODE=SHADOW
+US_LACEY_AI_PROVIDER=gemini
+US_LACEY_AI_ALLOW_EXTERNAL=1
+US_LACEY_GEMINI_API_KEY=<secret environment value>
+US_LACEY_AI_MODEL=gemini-3.5-flash-lite
+US_LACEY_AI_EXTRACT_MODEL=gemini-3.5-flash-lite
+US_LACEY_AI_RECONCILE_MODEL=gemini-3.8-flash
+US_LACEY_AI_ADJUDICATE_MODEL=gemini-3.8-flash
+US_LACEY_AI_REVIEW_MODE=SHADOW
+US_LACEY_AI_REVIEW_MAX_ISSUES=8
+```
+
+### OpenAI configuration
 
 ```text
 US_LACEY_ENGINE2_MODE=SHADOW
@@ -163,6 +195,8 @@ US_LACEY_AI_REVIEW_MODE=SHADOW
 US_LACEY_AI_REVIEW_MAX_ISSUES=8
 ```
 
+`US_LACEY_GEMINI_API_KEY` is preferred for Gemini so an OpenAI key and a Gemini key never need to share one variable. A legacy `US_LACEY_AI_API_KEY` remains a fallback for Gemini to keep deployment migration simple.
+
 Secrets must remain in the deployment secret/environment store, never in Git, issue bodies, logs or customer-visible output.
 
 ## Implemented release slices
@@ -172,11 +206,12 @@ Secrets must remain in the deployment secret/environment store, never in Git, is
 3. **Deterministic PPQ explicit-field extraction expansion** — implemented.
 4. **Engine 2 supported-evidence -> human `FOUND` suggestion bridge** — implemented conservatively.
 5. **OpenAI Luna structured extraction shadow** — implemented behind explicit external-egress gates.
-6. **Verified Engine 2 + Luna agreement -> `FOUND` bridge** — implemented.
-7. **Terra/Sol bounded candidate recommendation shadow** — implemented; non-authoritative and not customer-accepted automatically.
-8. **Exception-first review UX and safe bulk confirmation** — implemented.
-9. **Missing-fact source guidance** — implemented in the review UI.
-10. **Golden-case release gate on real complete/incomplete operations** — still required before increasing AI authority or exposing AI conflict recommendations as a normal customer action.
+6. **Gemini Interactions structured extraction shadow** — implemented with `store=false` and the same evidence contract.
+7. **Verified Engine 2 + hosted-AI agreement -> `FOUND` bridge** — implemented.
+8. **Provider-aware bounded reconciliation/adjudication shadow** — OpenAI Terra/Sol or Gemini 3.8 Flash; non-authoritative and not customer-accepted automatically.
+9. **Exception-first review UX and safe bulk confirmation** — implemented.
+10. **Missing-fact source guidance** — implemented in the review UI.
+11. **Golden-case release gate on real complete/incomplete operations** — still required before increasing AI authority or exposing AI conflict recommendations as a normal customer action.
 
 ## Pre-production validation gate
 
@@ -191,4 +226,4 @@ Do not increase AI authority because a demo looks good. Before any stronger auto
 - rate of manual edits after a suggestion;
 - rate of unsafe inferences (target: zero for protected semantic substitutions).
 
-Until those metrics are acceptable, AI conflict recommendations stay shadow-only and every final preparation value remains subject to explicit human review.
+Benchmark Gemini and OpenAI using the same golden operations before choosing a production default. Until those metrics are acceptable, AI conflict recommendations stay shadow-only and every final preparation value remains subject to explicit human review.
