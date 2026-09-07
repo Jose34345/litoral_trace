@@ -1,7 +1,9 @@
 """Provider adapters for AI Extraction Shadow v1.
 
-Provider choice is runtime configuration only. Qwen/Ollama is the free local path;
-Mistral OCR is the low-cost hosted path. Neither adapter mutates operational data.
+Provider choice is runtime configuration only. Qwen/Ollama is the free local path,
+Mistral OCR is a low-cost hosted OCR path, and OpenAI Responses provides a hosted
+structured-extraction path. Every provider remains shadow-only here: none mutates
+operational declaration data.
 """
 from __future__ import annotations
 
@@ -29,6 +31,7 @@ AI_SHADOW_OFF = "OFF"
 AI_SHADOW_SHADOW = "SHADOW"
 PROVIDER_QWEN_OLLAMA = "qwen_ollama"
 PROVIDER_MISTRAL_OCR = "mistral_ocr"
+PROVIDER_OPENAI = "openai"
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +54,11 @@ class AIProviderConfig:
         if provider == PROVIDER_MISTRAL_OCR:
             default_model = "mistral-ocr-latest"
             default_url = "https://api.mistral.ai/v1/ocr"
+        elif provider == PROVIDER_OPENAI:
+            # Luna is intentionally the default extraction tier. Higher-cost models
+            # are reserved for reconciliation/adjudication rather than page-by-page OCR.
+            default_model = "gpt-5.6-luna"
+            default_url = "https://api.openai.com/v1/responses"
         else:
             provider = PROVIDER_QWEN_OLLAMA
             default_model = "qwen2.5vl:7b"
@@ -183,7 +191,26 @@ def _document_images(filename: str, content: bytes, max_pages: int) -> list[byte
         return _render_pdf_pages(content, max_pages)
     if lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
         return [content]
-    raise AIShadowError("Qwen/Ollama shadow v1 supports PDF and image documents only.")
+    raise AIShadowError("Vision extraction supports PDF and image documents only.")
+
+
+def _openai_output_text(response: dict[str, object]) -> str:
+    """Extract the first Responses API output_text content item from raw JSON."""
+    output = response.get("output")
+    if not isinstance(output, list):
+        raise AIShadowError("OpenAI response is missing output content.")
+    for item in output:
+        if not isinstance(item, dict) or item.get("type") != "message":
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "output_text" and isinstance(part.get("text"), str):
+                return str(part["text"])
+            if isinstance(part, dict) and part.get("type") == "refusal":
+                raise AIShadowError("OpenAI declined the extraction request.")
+    raise AIShadowError("OpenAI response contains no structured output text.")
 
 
 class QwenOllamaProvider:
@@ -297,10 +324,87 @@ class MistralOcrProvider:
         )
 
 
+class OpenAIResponsesProvider:
+    """GPT-5.6 Luna vision extraction with strict structured outputs.
+
+    The response is still passed through the same exact-source evidence verifier as
+    every other shadow provider before it can influence evaluation metrics.
+    """
+
+    name = PROVIDER_OPENAI
+
+    def __init__(self, config: AIProviderConfig) -> None:
+        if not config.allow_external:
+            raise AIShadowError("External AI provider is disabled by policy.")
+        if not config.api_key:
+            raise AIShadowError("OpenAI requires US_LACEY_AI_API_KEY.")
+        self.config = config
+        self.model = config.model
+
+    def extract(self, *, filename: str, content: bytes) -> AIExtractionResult:
+        images = _document_images(filename, content, self.config.max_pages)
+        candidates: list[dict[str, object]] = []
+        started = time.monotonic()
+        for page_number, image in enumerate(images, start=1):
+            image_url = f"data:image/png;base64,{base64.b64encode(image).decode('ascii')}"
+            payload = {
+                "model": self.model,
+                "input": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": _PROMPT + f"\nThis image is page {page_number}. Every candidate page must be {page_number}.",
+                            },
+                            {"type": "input_image", "image_url": image_url, "detail": "high"},
+                        ],
+                    }
+                ],
+                "text": {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "lacey_ai_shadow_v1",
+                        "strict": True,
+                        "schema": _CANDIDATE_SCHEMA,
+                    }
+                },
+            }
+            response = _post_json(
+                url=self.config.base_url,
+                payload=payload,
+                timeout=self.config.timeout_seconds,
+                headers={"Authorization": f"Bearer {self.config.api_key}"},
+            )
+            try:
+                page_payload = json.loads(_openai_output_text(response))
+            except json.JSONDecodeError as exc:
+                raise AIShadowError("OpenAI structured output is invalid JSON.") from exc
+            if not isinstance(page_payload, dict) or not isinstance(page_payload.get("candidates"), list):
+                raise AIShadowError("OpenAI structured output is missing candidates.")
+            for item in page_payload["candidates"]:
+                if isinstance(item, dict):
+                    item = dict(item)
+                    # The server controls the page binding; a model cannot attach a
+                    # candidate to a different page than the image actually supplied.
+                    item["page"] = page_number
+                    candidates.append(item)
+        elapsed = int((time.monotonic() - started) * 1000)
+        return extraction_result_from_payload(
+            payload={"candidates": candidates},
+            provider=self.name,
+            model=self.model,
+            page_count=len(images),
+            latency_ms=elapsed,
+        )
+
+
 def build_ai_provider(config: AIProviderConfig | None = None):
     config = config or AIProviderConfig.from_env()
     if config.mode != AI_SHADOW_SHADOW:
         return None
     if config.provider == PROVIDER_MISTRAL_OCR:
         return MistralOcrProvider(config)
+    if config.provider == PROVIDER_OPENAI:
+        return OpenAIResponsesProvider(config)
     return QwenOllamaProvider(config)
