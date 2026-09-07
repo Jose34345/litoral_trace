@@ -13,6 +13,10 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Cookie, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from litoral_trace.assurance.ingestion import (
+    AssuranceIngestionValidationError,
+    validate_incoming_file,
+)
 from litoral_trace.us_lacey.access import (
     UsLaceyOperationalAccessError,
     require_us_lacey_operational_access,
@@ -29,6 +33,7 @@ from litoral_trace.us_lacey.portal_auth import (
     resolve_us_lacey_session,
 )
 from litoral_trace.us_lacey.review import UsLaceyReviewError, review_us_lacey_field
+from litoral_trace.us_lacey.storage import build_us_lacey_storage_settings
 from litoral_trace.us_lacey.workflow import (
     UsLaceyWorkflowError,
     create_us_lacey_customer_operation,
@@ -103,20 +108,25 @@ async def upload_first_operation_intake(
                 f"Upload at most {MAX_INTAKE_DOCUMENTS} documents in one intake. You can add more afterwards."
             )
 
-        # Read and validate the request before consuming an operation slot. The mature
-        # ingestion service performs the authoritative extension/content/size checks.
+        # Validate every selected file before consuming an operation slot. The same
+        # mature Vault-first ingestion layer validates again when persisting each file;
+        # this preflight prevents a bad second/third file from creating a mostly-empty
+        # customer operation before its format problem is discovered.
         payloads: list[tuple[str, str, bytes]] = []
+        storage_settings = build_us_lacey_storage_settings()
         for document in documents:
             content = await document.read()
-            if not content:
-                raise UsLaceyWorkflowError(
-                    f"{document.filename or 'A selected document'} is empty."
-                )
+            validated = validate_incoming_file(
+                filename=document.filename or "document",
+                content_type=document.content_type or "application/octet-stream",
+                content=content,
+                storage_settings=storage_settings,
+            )
             payloads.append(
                 (
-                    document.filename or "document",
-                    document.content_type or "application/octet-stream",
-                    content,
+                    validated.filename,
+                    validated.content_type,
+                    validated.content,
                 )
             )
 
@@ -144,7 +154,13 @@ async def upload_first_operation_intake(
         return _login_redirect(clear_cookie=bool(us_session))
     except UsLaceyOperationalAccessError:
         return RedirectResponse("/billing", status_code=303)
-    except (UsLaceyCsrfError, UsLaceyWorkflowError, UsLaceyOperationError, ValueError) as exc:
+    except (
+        AssuranceIngestionValidationError,
+        UsLaceyCsrfError,
+        UsLaceyWorkflowError,
+        UsLaceyOperationError,
+        ValueError,
+    ) as exc:
         action = f"/operations/{created.public_id}" if created is not None else "/operations"
         return _error_page(request, str(exc), action_href=action, status_code=400)
 
