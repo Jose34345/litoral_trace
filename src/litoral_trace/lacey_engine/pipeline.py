@@ -163,7 +163,7 @@ def _extract(layout):
                 found["description"].append(_candidate("description", value, block, match.group("label")))
         for match in re.finditer(r"(?P<label>Entry (?:Number|No\.?)|Filing Entry (?:Reference|Number))\s*[:#-]?\s*(?P<value>[A-Z0-9-]{8,20})", text, re.I):
             found["filing_entry_reference"].append(_candidate("filing_entry_reference", match.group("value").upper(), block, match.group("label")))
-        for match in re.finditer(r"(?P<label>MID|Manufacturer (?:ID|Identification(?: Code)?))\s*[:#-]?\s*(?P<value>[A-Z0-9 -]{5,25})", text, re.I):
+        for match in re.finditer(r"(?P<label>MID|Manufacturer (?:Identification(?: Code)?|ID)\b)\s*[:#-]?\s*(?P<value>[A-Z0-9 -]{5,25})", text, re.I):
             found["manufacturer_id"].append(_candidate("manufacturer_id", " ".join(match.group("value").split()).upper(), block, match.group("label")))
         for match in re.finditer(r"(?P<label>HTS(?:\s+(?:Code|Number|No\.?))?)\s*[:#-]?\s*(?P<value>\d{4,10}(?:[. -]\d{1,4})*)", text, re.I):
             found["hts_code"].append(_candidate("hts_code", match.group("value"), block, match.group("label")))
