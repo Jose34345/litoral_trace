@@ -14,7 +14,11 @@ import re
 
 from fastapi import Request, Response
 
-from litoral_trace.us_lacey.operations import UsLaceyOperationService
+from litoral_trace.us_lacey.operations import (
+    UsLaceyOperationError,
+    UsLaceyOperationNotFound,
+    UsLaceyOperationService,
+)
 from litoral_trace.us_lacey.portal_auth import (
     US_LACEY_SESSION_COOKIE,
     UsLaceyPortalAuthError,
@@ -59,7 +63,7 @@ async def _require_explicit_confirmation_before_completion(request: Request, cal
                     organization_id=identity.organization_id,
                     operation_public_id=match.group("operation_id"),
                 )
-            except (UsLaceyPortalAuthError, Exception):
+            except (UsLaceyPortalAuthError, UsLaceyOperationNotFound, UsLaceyOperationError):
                 # Let the certified endpoint produce its normal auth/not-found behavior.
                 detail = None
             if detail is not None and any(field.status == "FOUND" for field in detail.fields):
