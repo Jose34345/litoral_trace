@@ -19,12 +19,12 @@
 
   {% if entitlement.remaining_operations > 0 %}
   <form id="document-intake-form" class="mt-6" action="/operations/intake" method="post" enctype="multipart/form-data" data-upload-first-intake>
-    <label class="block cursor-pointer rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/40 p-8 text-center transition hover:border-emerald-300 hover:bg-emerald-50">
+    <label class="relative block cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/40 p-8 text-center transition hover:border-emerald-300 hover:bg-emerald-50">
       <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white" aria-hidden="true"><i class="fa-solid fa-cloud-arrow-up"></i></span>
       <span class="mt-4 block text-lg font-bold text-slate-950">Choose your shipment files</span>
       <span class="mt-2 block text-sm text-slate-600">PDF, XLSX, XLS or CSV · select several files at once</span>
       <span class="mt-1 block text-xs text-slate-500">Commercial invoice, packing list, bill of lading, supplier/species declarations and supporting certificates can all be uploaded together.</span>
-      <input id="intake-documents" class="sr-only" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;" name="documents" type="file" accept=".pdf,.xlsx,.xls,.csv" multiple required aria-describedby="intake-file-summary">
+      <input id="intake-documents" class="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0" name="documents" type="file" accept=".pdf,.xlsx,.xls,.csv" multiple required aria-describedby="intake-file-summary">
     </label>
     <div id="intake-file-summary" class="mt-3 text-sm text-slate-600" aria-live="polite">No files selected.</div>
     <div class="mt-5 flex flex-wrap items-center gap-3">
