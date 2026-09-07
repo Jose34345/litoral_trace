@@ -19,12 +19,14 @@ from litoral_trace.db.models import ReconciliationIssue, UsLaceyFieldCandidate, 
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.lacey_engine.ai_providers import (
     AIProviderConfig,
+    PROVIDER_GEMINI,
     PROVIDER_OPENAI,
     _openai_output_text,
     _post_json,
 )
 from litoral_trace.lacey_engine.ai_routing import AITask, AITierConfig
 from litoral_trace.lacey_engine.ai_shadow import AIShadowError
+from litoral_trace.lacey_engine.gemini_provider import gemini_output_text
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
 
@@ -101,6 +103,14 @@ Prefer direct labelled documentary evidence and independent cross-document agree
 Return only the requested structured JSON.
 """
 
+_ALLOWED_REASON_CODES = {
+    "SOURCE_AUTHORITY",
+    "CROSS_DOCUMENT_SUPPORT",
+    "CONTEXT_CONSISTENCY",
+    "CONFLICT_UNRESOLVED",
+    "INSUFFICIENT_EVIDENCE",
+}
+
 
 def _candidate_set_hash(field_name: str, candidates: tuple[ReviewCandidate, ...]) -> str:
     payload = [
@@ -121,7 +131,7 @@ def _candidate_set_hash(field_name: str, candidates: tuple[ReviewCandidate, ...]
 
 
 def _task_for_issue(issue: ReconciliationIssue) -> AITask:
-    """Reserve Sol for genuine blocking contradictions; use Terra otherwise."""
+    """Reserve the highest reasoning tier for genuine blocking contradictions."""
     if issue.rule_code == "US_LACEY_FIELD_CONFLICT" or issue.severity == "BLOCKING":
         return AITask.ADJUDICATE
     return AITask.RECONCILE
@@ -133,8 +143,6 @@ def _payload_text(*, field_name: str, issue: ReconciliationIssue, candidates: tu
             "candidate_id": item.candidate_id,
             "value": item.value,
             "source_page": item.source_page,
-            # Locators are bounded because generic extractors can persist long table
-            # coordinates/text. The model receives no original file bytes in this stage.
             "source_locator": (item.source_locator or "")[:1000],
             "extraction_confidence": round(item.extraction_confidence, 4),
         }
@@ -151,6 +159,50 @@ def _payload_text(*, field_name: str, issue: ReconciliationIssue, candidates: tu
     return _PROMPT + "\nEvidence-backed options:\n" + json.dumps(context, ensure_ascii=False, sort_keys=True)
 
 
+def _recommendation_from_payload(
+    *,
+    payload: object,
+    model: str,
+    field_name: str,
+    candidates: tuple[ReviewCandidate, ...],
+) -> AIReviewRecommendation:
+    if not isinstance(payload, Mapping):
+        raise AIShadowError("AI review recommendation returned an invalid object.")
+    action = str(payload.get("action") or "")
+    reason_code = str(payload.get("reason_code") or "")
+    try:
+        confidence = float(payload.get("confidence") or 0.0)
+    except (TypeError, ValueError) as exc:
+        raise AIShadowError("AI review confidence is invalid.") from exc
+    candidate_id = payload.get("candidate_id")
+    if candidate_id is not None:
+        try:
+            candidate_id = int(candidate_id)
+        except (TypeError, ValueError) as exc:
+            raise AIShadowError("AI review candidate ID is invalid.") from exc
+
+    allowed_ids = {candidate.candidate_id for candidate in candidates}
+    if action == "SELECT":
+        if candidate_id not in allowed_ids:
+            raise AIShadowError("AI review attempted to select an unknown candidate.")
+    elif action == "NEEDS_HUMAN":
+        candidate_id = None
+    else:
+        raise AIShadowError("AI review action is invalid.")
+    if not 0.0 <= confidence <= 1.0:
+        raise AIShadowError("AI review confidence is outside the supported range.")
+    if reason_code not in _ALLOWED_REASON_CODES:
+        raise AIShadowError("AI review reason code is invalid.")
+    return AIReviewRecommendation(
+        action=action,
+        candidate_id=candidate_id,
+        confidence=confidence,
+        reason_code=reason_code,
+        model=model,
+        candidate_set_sha256=_candidate_set_hash(field_name, candidates),
+    )
+
+
 def _call_openai_decision(
     *,
     provider_config: AIProviderConfig,
@@ -159,7 +211,6 @@ def _call_openai_decision(
     issue: ReconciliationIssue,
     candidates: tuple[ReviewCandidate, ...],
 ) -> AIReviewRecommendation:
-    candidate_hash = _candidate_set_hash(field_name, candidates)
     response = _post_json(
         url=provider_config.base_url,
         timeout=provider_config.timeout_seconds,
@@ -196,47 +247,52 @@ def _call_openai_decision(
         payload = json.loads(_openai_output_text(response))
     except json.JSONDecodeError as exc:
         raise AIShadowError("AI review recommendation returned invalid JSON.") from exc
-    if not isinstance(payload, Mapping):
-        raise AIShadowError("AI review recommendation returned an invalid object.")
-
-    action = str(payload.get("action") or "")
-    reason_code = str(payload.get("reason_code") or "")
-    try:
-        confidence = float(payload.get("confidence") or 0.0)
-    except (TypeError, ValueError) as exc:
-        raise AIShadowError("AI review confidence is invalid.") from exc
-    candidate_id = payload.get("candidate_id")
-    if candidate_id is not None:
-        try:
-            candidate_id = int(candidate_id)
-        except (TypeError, ValueError) as exc:
-            raise AIShadowError("AI review candidate ID is invalid.") from exc
-
-    allowed_ids = {candidate.candidate_id for candidate in candidates}
-    if action == "SELECT":
-        if candidate_id not in allowed_ids:
-            raise AIShadowError("AI review attempted to select an unknown candidate.")
-    elif action == "NEEDS_HUMAN":
-        candidate_id = None
-    else:
-        raise AIShadowError("AI review action is invalid.")
-    if not 0.0 <= confidence <= 1.0:
-        raise AIShadowError("AI review confidence is outside the supported range.")
-    if reason_code not in {
-        "SOURCE_AUTHORITY",
-        "CROSS_DOCUMENT_SUPPORT",
-        "CONTEXT_CONSISTENCY",
-        "CONFLICT_UNRESOLVED",
-        "INSUFFICIENT_EVIDENCE",
-    }:
-        raise AIShadowError("AI review reason code is invalid.")
-    return AIReviewRecommendation(
-        action=action,
-        candidate_id=candidate_id,
-        confidence=confidence,
-        reason_code=reason_code,
+    return _recommendation_from_payload(
+        payload=payload,
         model=model,
-        candidate_set_sha256=candidate_hash,
+        field_name=field_name,
+        candidates=candidates,
+    )
+
+
+def _call_gemini_decision(
+    *,
+    provider_config: AIProviderConfig,
+    model: str,
+    field_name: str,
+    issue: ReconciliationIssue,
+    candidates: tuple[ReviewCandidate, ...],
+    thinking_level: str,
+) -> AIReviewRecommendation:
+    response = _post_json(
+        url=provider_config.base_url,
+        timeout=provider_config.timeout_seconds,
+        headers={"x-goog-api-key": str(provider_config.api_key or "")},
+        payload={
+            "model": model,
+            "store": False,
+            "input": _payload_text(
+                field_name=field_name,
+                issue=issue,
+                candidates=candidates,
+            ),
+            "generation_config": {"thinking_level": thinking_level},
+            "response_format": {
+                "type": "text",
+                "mime_type": "application/json",
+                "schema": _DECISION_SCHEMA,
+            },
+        },
+    )
+    try:
+        payload = json.loads(gemini_output_text(response))
+    except json.JSONDecodeError as exc:
+        raise AIShadowError("AI review recommendation returned invalid JSON.") from exc
+    return _recommendation_from_payload(
+        payload=payload,
+        model=model,
+        field_name=field_name,
+        candidates=candidates,
     )
 
 
@@ -264,14 +320,14 @@ def _review_candidates(rows: list[UsLaceyFieldCandidate]) -> tuple[ReviewCandida
 
 
 def recommend_open_reconciliation_issues(*, organization_id: int, operation_id: int) -> int:
-    """Persist non-authoritative Terra/Sol recommendations for open evidence conflicts."""
+    """Persist non-authoritative provider recommendations for open evidence conflicts."""
     review_config = AIReviewConfig.from_env()
     if review_config.mode != AI_REVIEW_SHADOW:
         return 0
     provider_config = AIProviderConfig.from_env()
     if (
         provider_config.mode != "SHADOW"
-        or provider_config.provider != PROVIDER_OPENAI
+        or provider_config.provider not in {PROVIDER_OPENAI, PROVIDER_GEMINI}
         or not provider_config.allow_external
         or not provider_config.api_key
     ):
@@ -328,17 +384,30 @@ def recommend_open_reconciliation_issues(*, organization_id: int, operation_id: 
                 isinstance(prior, Mapping)
                 and prior.get("candidate_set_sha256") == candidate_hash
                 and prior.get("model") == model
+                and prior.get("provider") == provider_config.provider
             ):
                 continue
-            recommendation = _call_openai_decision(
-                provider_config=provider_config,
-                model=model,
-                field_name=str(issue.field_name or ""),
-                issue=issue,
-                candidates=candidates,
-            )
+
+            if provider_config.provider == PROVIDER_GEMINI:
+                recommendation = _call_gemini_decision(
+                    provider_config=provider_config,
+                    model=model,
+                    field_name=str(issue.field_name or ""),
+                    issue=issue,
+                    candidates=candidates,
+                    thinking_level="high" if task is AITask.ADJUDICATE else "medium",
+                )
+            else:
+                recommendation = _call_openai_decision(
+                    provider_config=provider_config,
+                    model=model,
+                    field_name=str(issue.field_name or ""),
+                    issue=issue,
+                    candidates=candidates,
+                )
             current_evidence["ai_recommendation"] = {
                 "schema_version": "lacey_ai_candidate_recommendation_v1",
+                "provider": provider_config.provider,
                 "action": recommendation.action,
                 "candidate_id": recommendation.candidate_id,
                 "confidence": recommendation.confidence,
