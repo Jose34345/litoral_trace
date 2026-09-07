@@ -6,6 +6,7 @@ from litoral_trace.web.us_lacey_operational_views import _review_field_sets
 
 ROOT = Path(__file__).resolve().parents[1]
 OPERATIONS_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/operations.html"
+OPERATION_DETAIL_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/operation_detail.html"
 WORKSPACE_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
 UNIFIED_APP = ROOT / "src/litoral_trace/web/us_lacey_unified_app.py"
 INTELLIGENT_ROUTES = ROOT / "src/litoral_trace/web/us_lacey_intelligent_workflow.py"
@@ -46,14 +47,24 @@ def test_found_values_are_suggestions_not_confirmed_data():
     assert [field.status for field in settled] == ["MATCHED"]
 
 
-def test_workspace_offers_bulk_confirmation_but_keeps_conflicts_explicit():
+def test_workspace_offers_safe_bulk_confirmation_but_keeps_conflicts_explicit():
     source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
     assert "/review/accept-supported" in source
-    assert "Accept all supported values" in source
+    assert "Accept all safe suggestions" in source
     assert "Conflicting values found." in source
     assert "The prefilled value may be wrong." in source
     assert 'field.status == "FOUND"' in source
     assert "/review-supported/" in source
+    assert "Country of origin alone is not treated as proof." in source
+    assert "Shipment gross weight is not substituted automatically." in source
+
+
+def test_operation_detail_keeps_document_type_override_advanced_and_evidence_collapsed():
+    source = OPERATION_DETAIL_TEMPLATE.read_text(encoding="utf-8")
+    assert "Advanced: set document type manually" in source
+    assert '<option value="UNKNOWN" selected>Auto-detect</option>' in source
+    assert '<details id="engine2-dossier"' in source
+    assert "Advanced evidence details" in source
 
 
 def test_zero_entry_intake_is_mounted_and_creates_default_line_without_regulatory_inference():
