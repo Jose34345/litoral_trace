@@ -64,3 +64,11 @@ def test_zero_entry_intake_is_mounted_and_creates_default_line_without_regulator
     assert 'document_role="UNKNOWN"' in routes
     assert "intelligent_workflow_router" in unified
     assert "app.include_router(intelligent_workflow_router)" in unified
+
+
+def test_direct_completion_is_blocked_while_supported_suggestions_are_unconfirmed():
+    unified = UNIFIED_APP.read_text(encoding="utf-8")
+    assert "_require_explicit_confirmation_before_completion" in unified
+    assert 'any(field.status == "FOUND" for field in detail.fields)' in unified
+    assert "Confirm all supported suggestions before completing preparation." in unified
+    assert "status_code=409" in unified
