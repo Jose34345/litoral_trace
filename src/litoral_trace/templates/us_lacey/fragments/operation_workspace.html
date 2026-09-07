@@ -8,7 +8,7 @@
     {% else %}
       <div class="mt-4">
         <span data-engine2-readiness="{{ engine2_dossier.readiness }}">Document evidence status: {{ engine2_dossier.readiness|replace("_", " ") }}</span>
-        <p class="mt-1 text-xs text-slate-500">This status reflects document-evidence reconciliation only.</p>
+        <p class="mt-1 text-xs text-slate-500">This status reflects document-evidence reconciliation only. Final preparation readiness is determined by the human review below.</p>
       </div>
       <div class="mt-5 grid gap-3">
         {% for field in engine2_dossier.fields %}
