@@ -28,10 +28,23 @@ class AITierConfig:
 
     @classmethod
     def from_env(cls) -> "AITierConfig":
+        provider = os.getenv("US_LACEY_AI_PROVIDER", "openai").strip().lower()
+        if provider == "gemini":
+            # Stable Gemini defaults: Flash-Lite for high-volume extraction and the
+            # current GA 3.8 Flash model for bounded reconciliation/adjudication.
+            # The review adapter uses lower thinking for reconciliation and higher
+            # thinking for true blocking conflicts while keeping the same stable model.
+            default_extract = "gemini-3.5-flash-lite"
+            default_reconcile = "gemini-3.8-flash"
+            default_adjudicate = "gemini-3.8-flash"
+        else:
+            default_extract = "gpt-5.6-luna"
+            default_reconcile = "gpt-5.6-terra"
+            default_adjudicate = "gpt-5.6-sol"
         return cls(
-            extraction_model=os.getenv("US_LACEY_AI_EXTRACT_MODEL", "gpt-5.6-luna").strip() or "gpt-5.6-luna",
-            reconciliation_model=os.getenv("US_LACEY_AI_RECONCILE_MODEL", "gpt-5.6-terra").strip() or "gpt-5.6-terra",
-            adjudication_model=os.getenv("US_LACEY_AI_ADJUDICATE_MODEL", "gpt-5.6-sol").strip() or "gpt-5.6-sol",
+            extraction_model=os.getenv("US_LACEY_AI_EXTRACT_MODEL", default_extract).strip() or default_extract,
+            reconciliation_model=os.getenv("US_LACEY_AI_RECONCILE_MODEL", default_reconcile).strip() or default_reconcile,
+            adjudication_model=os.getenv("US_LACEY_AI_ADJUDICATE_MODEL", default_adjudicate).strip() or default_adjudicate,
         )
 
     def model_for(self, task: AITask) -> str | None:
@@ -50,8 +63,9 @@ def next_ai_task(status: ReconciliationStatus) -> AITask:
     AGREEMENT already has two independent extraction paths pointing to the same value,
     so paying for another model adds little. BOTH_MISSING and AI_REJECTED are data
     availability/evidence problems: a stronger model must not invent the missing fact.
-    Single-engine values get a Terra cross-document reconciliation pass. Genuine
-    contradictions and ambiguity are the only states escalated to Sol.
+    Single-engine values get a semantic cross-document reconciliation pass. Genuine
+    contradictions and ambiguity are the only states escalated to the highest reasoning
+    tier configured for the selected provider.
     """
     if status in {
         ReconciliationStatus.CONFLICT,
