@@ -12,6 +12,8 @@ from litoral_trace.assurance.processing import AssuranceProcessingService
 from litoral_trace.db.models import AssuranceDocument, UsLaceyOperation, VaultDocument
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.services.vault import VaultService
+from litoral_trace.us_lacey.ai_review import recommend_open_reconciliation_issues
+from litoral_trace.us_lacey.ai_suggestions import project_verified_ai_suggestions
 from litoral_trace.us_lacey.batch_hardening import (
     ShipmentBatchRejected,
     enforce_shipment_document_budget,
@@ -19,6 +21,7 @@ from litoral_trace.us_lacey.batch_hardening import (
     shipment_spreadsheet_limits,
 )
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
+from litoral_trace.us_lacey.engine2_suggestions import project_engine2_supported_suggestions
 from litoral_trace.us_lacey.jobs import (
     claim_next_us_lacey_job,
     complete_us_lacey_job,
@@ -98,6 +101,58 @@ def _shadow_engine2(*, organization_id: int, operation_id: int) -> None:
             extra={"organization_id": organization_id, "operation_id": operation_id},
         )
         return
+
+
+def _project_engine2_suggestions(*, organization_id: int, operation_id: int) -> int:
+    """Best-effort deterministic bridge; supported evidence stays human-confirmable."""
+    try:
+        return int(
+            project_engine2_supported_suggestions(
+                organization_id=organization_id,
+                operation_id=operation_id,
+            )
+            or 0
+        )
+    except Exception:
+        LOGGER.exception(
+            "Lacey Engine 2 suggestion projection failed",
+            extra={"organization_id": organization_id, "operation_id": operation_id},
+        )
+        return 0
+
+
+def _project_verified_ai_suggestions(*, organization_id: int, operation_id: int) -> int:
+    """Best-effort AI bridge; return how many review fields actually changed."""
+    try:
+        return int(
+            project_verified_ai_suggestions(
+                organization_id=organization_id,
+                operation_id=operation_id,
+            )
+            or 0
+        )
+    except Exception:
+        # AI suggestion projection is convenience only. The mature deterministic
+        # extraction/review path remains usable if this bridge fails.
+        LOGGER.exception(
+            "Lacey verified AI suggestion projection failed",
+            extra={"organization_id": organization_id, "operation_id": operation_id},
+        )
+        return 0
+
+
+def _run_ai_review_recommendations(*, organization_id: int, operation_id: int) -> None:
+    """Best-effort only: recommendation JSON cannot change declaration authority."""
+    try:
+        recommend_open_reconciliation_issues(
+            organization_id=organization_id,
+            operation_id=operation_id,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Lacey AI review recommendation failed",
+            extra={"organization_id": organization_id, "operation_id": operation_id},
+        )
 
 
 def _assurance_public_id(*, organization_id: int, document_id: int) -> UUID:
@@ -352,6 +407,28 @@ def process_one_us_lacey_job(
             operation_id=job.operation_id,
         )
         _shadow_engine2(
+            organization_id=job.organization_id,
+            operation_id=job.operation_id,
+        )
+        promoted = _project_engine2_suggestions(
+            organization_id=job.organization_id,
+            operation_id=job.operation_id,
+        )
+        promoted += _project_verified_ai_suggestions(
+            organization_id=job.organization_id,
+            operation_id=job.operation_id,
+        )
+        # Only a real MISSING -> FOUND transition needs another state derivation. This
+        # avoids an unnecessary DB round trip and preserves the legacy worker contract
+        # when intelligence is disabled, fails safely or has nothing evidence-backed.
+        if promoted:
+            operation_status = _refresh_operation(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+            )
+        # AI review may annotate existing OPEN conflicts with a bounded recommendation,
+        # but the recommendation cannot resolve an issue or set a field value.
+        _run_ai_review_recommendations(
             organization_id=job.organization_id,
             operation_id=job.operation_id,
         )

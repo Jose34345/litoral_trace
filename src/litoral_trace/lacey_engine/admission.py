@@ -4,7 +4,10 @@ from .domain import RawCandidate
 from .garbage_patterns import is_label_garbage
 
 _CONTAINER = re.compile(r"^[A-Z]{4}\d{7}$")
-_MERCHANDISE_DESCRIPTION_LABEL = re.compile(r"(?:commodity description|cargo description(?:\s+\d+)?|description of goods|goods description)", re.I)
+_MERCHANDISE_DESCRIPTION_LABEL = re.compile(
+    r"(?:merchandise description|commodity description|cargo description(?:\s+\d+)?|description of goods|goods description)",
+    re.I,
+)
 
 
 def admit(raw: RawCandidate) -> bool:
