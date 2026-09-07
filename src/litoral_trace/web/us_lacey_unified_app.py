@@ -15,16 +15,18 @@ from fastapi import Request, Response
 from litoral_trace.us_lacey.portal_auth import US_LACEY_SESSION_COOKIE
 from litoral_trace.web.lacey_gtm import render_lacey_landing, router as lacey_router
 from litoral_trace.web.us_lacey_free_app import app
+from litoral_trace.web.us_lacey_intelligent_workflow import router as intelligent_workflow_router
 from litoral_trace.web.us_lacey_lemon_billing import router as lemon_billing_router
 from litoral_trace.web.us_lacey_platform_admin import router as platform_admin_router
 
 
-# Public marketing/sample, payment-provider and superadmin routes are additive
-# and do not shadow the certified customer portal endpoints. The admin router
-# uses get_us_lacey_db_session() directly so DATABASE_URL remains untouched and
-# the existing U.S.-vs-generic database collision sentinel keeps working.
+# Public marketing/sample, payment-provider, upload-first workflow and superadmin
+# routes are additive and do not shadow the certified customer portal endpoints.
+# The admin router uses get_us_lacey_db_session() directly so DATABASE_URL remains
+# untouched and the existing U.S.-vs-generic database collision sentinel keeps working.
 app.include_router(lacey_router)
 app.include_router(lemon_billing_router)
+app.include_router(intelligent_workflow_router)
 app.include_router(platform_admin_router)
 
 
