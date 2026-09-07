@@ -79,12 +79,15 @@ def _shadow_engine2(*, organization_id: int, operation_id: int) -> None:
         return
 
 
-def _project_verified_ai_suggestions(*, organization_id: int, operation_id: int) -> None:
-    """Best-effort bridge: only Engine2+AI agreement may become a FOUND suggestion."""
+def _project_verified_ai_suggestions(*, organization_id: int, operation_id: int) -> int:
+    """Best-effort bridge; return how many review fields actually changed."""
     try:
-        project_verified_ai_suggestions(
-            organization_id=organization_id,
-            operation_id=operation_id,
+        return int(
+            project_verified_ai_suggestions(
+                organization_id=organization_id,
+                operation_id=operation_id,
+            )
+            or 0
         )
     except Exception:
         # AI suggestion projection is convenience only. The mature deterministic
@@ -93,6 +96,7 @@ def _project_verified_ai_suggestions(*, organization_id: int, operation_id: int)
             "Lacey verified AI suggestion projection failed",
             extra={"organization_id": organization_id, "operation_id": operation_id},
         )
+        return 0
 
 
 def _assurance_public_id(*, organization_id: int, document_id: int):
@@ -205,16 +209,18 @@ def process_one_us_lacey_job(
             operation_id=job.operation_id,
         )
         _shadow_engine2(organization_id=job.organization_id, operation_id=job.operation_id)
-        _project_verified_ai_suggestions(
+        promoted = _project_verified_ai_suggestions(
             organization_id=job.organization_id,
             operation_id=job.operation_id,
         )
-        # Suggestions can change the customer-visible authority state from MISSING to
-        # FOUND. Refresh once more so operation status and the workspace agree.
-        operation_status = _refresh_operation(
-            organization_id=job.organization_id,
-            operation_id=job.operation_id,
-        )
+        # Only a real MISSING -> FOUND transition needs another state derivation. This
+        # avoids an unnecessary DB round trip and preserves the legacy worker contract
+        # when AI is disabled, fails safely or has nothing evidence-backed to add.
+        if promoted:
+            operation_status = _refresh_operation(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+            )
         return UsLaceyWorkerResult(
             claimed=True,
             job_id=job.id,
