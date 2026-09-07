@@ -10,9 +10,16 @@ plus /admin for an authenticated persisted platform superadmin.
 """
 from __future__ import annotations
 
+import re
+
 from fastapi import Request, Response
 
-from litoral_trace.us_lacey.portal_auth import US_LACEY_SESSION_COOKIE
+from litoral_trace.us_lacey.operations import UsLaceyOperationService
+from litoral_trace.us_lacey.portal_auth import (
+    US_LACEY_SESSION_COOKIE,
+    UsLaceyPortalAuthError,
+    resolve_us_lacey_session,
+)
 from litoral_trace.web.lacey_gtm import render_lacey_landing, router as lacey_router
 from litoral_trace.web.us_lacey_free_app import app
 from litoral_trace.web.us_lacey_intelligent_workflow import router as intelligent_workflow_router
@@ -28,6 +35,41 @@ app.include_router(lacey_router)
 app.include_router(lemon_billing_router)
 app.include_router(intelligent_workflow_router)
 app.include_router(platform_admin_router)
+
+
+_COMPLETE_PATH = re.compile(r"^/operations/(?P<operation_id>[0-9a-fA-F-]{36})/complete$")
+
+
+@app.middleware("http")
+async def _require_explicit_confirmation_before_completion(request: Request, call_next):
+    """Fail closed if the legacy completion endpoint sees unconfirmed FOUND values.
+
+    The canonical review service historically treated FOUND as extracted/resolved. The
+    upload-first UX changes the authority boundary: FOUND is now a suggestion awaiting
+    explicit customer confirmation. This customer-facing guard prevents a direct POST
+    from bypassing that boundary while the underlying review-state contract is migrated.
+    """
+    if request.method == "POST":
+        match = _COMPLETE_PATH.fullmatch(request.url.path)
+        session_token = request.cookies.get(US_LACEY_SESSION_COOKIE)
+        if match and session_token:
+            try:
+                identity = resolve_us_lacey_session(session_token)
+                detail = UsLaceyOperationService().get_detail(
+                    organization_id=identity.organization_id,
+                    operation_public_id=match.group("operation_id"),
+                )
+            except (UsLaceyPortalAuthError, Exception):
+                # Let the certified endpoint produce its normal auth/not-found behavior.
+                detail = None
+            if detail is not None and any(field.status == "FOUND" for field in detail.fields):
+                return Response(
+                    "Confirm all supported suggestions before completing preparation.",
+                    status_code=409,
+                    media_type="text/plain",
+                    headers={"Cache-Control": "no-store, max-age=0"},
+                )
+    return await call_next(request)
 
 
 @app.head("/health", include_in_schema=False)
