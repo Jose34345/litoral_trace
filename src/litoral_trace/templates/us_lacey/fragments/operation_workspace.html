@@ -32,7 +32,7 @@
   {% set action_url = "/operations/" ~ detail.public_id ~ "/review/" ~ field.id %}
   {% set field_csrf = review_csrf.get(field.id, "") %}
 {% endif %}
-<article class="rounded-xl border {% if field.status == 'FOUND' %}border-emerald-200 bg-emerald-50/30{% else %}border-amber-200 bg-amber-50/40{% endif %} p-4" data-review-field data-review-status="{{ field.status }}">
+<article class="rounded-xl border {% if field.status == 'FOUND' %}border-emerald-200 bg-emerald-50/40{% else %}border-amber-200 bg-amber-50/40{% endif %} p-4" data-review-field data-review-status="{{ field.status }}">
   <div class="flex flex-wrap items-center justify-between gap-2">
     <h3 class="font-bold text-slate-950">{{ field.label }}</h3>
     <span class="rounded-full {% if field.status == 'FOUND' %}bg-emerald-100 text-emerald-800{% else %}bg-amber-100 text-amber-800{% endif %} px-2 py-1 text-xs font-bold">{{ friendly_status(field.status) }}</span>
