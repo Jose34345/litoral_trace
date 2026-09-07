@@ -56,6 +56,62 @@ def _ocr_blocks(content: bytes, page_numbers: set[int] | None = None) -> list[La
     return blocks
 
 
+def _table_blocks(*, page_number: int, table_number: int, rows: list) -> list[LayoutBlock]:
+    """Turn both key/value and matrix tables into semantic cells.
+
+    Earlier Engine 2 versions discarded every table wider than two columns.  That
+    destroyed the row relationship between component, genus, species, harvest
+    country, quantity and unit -- precisely the relationship a Lacey declaration
+    needs.  Matrix cells now carry a shared table/row identity and their header as
+    key_text/table_header so downstream extraction can reason about the row.
+    """
+    table_id = f"p{page_number}-t{table_number}"
+    clean_rows = [[_text(cell) for cell in (row or [])] for row in (rows or [])]
+    clean_rows = [row for row in clean_rows if any(row)]
+    if not clean_rows:
+        return []
+    is_key_value = all(len(row) == 2 for row in clean_rows)
+    blocks: list[LayoutBlock] = []
+    if is_key_value:
+        for row_index, cells in enumerate(clean_rows):
+            key, value = cells
+            if key or value:
+                blocks.append(LayoutBlock(
+                    f"{table_id}-r{row_index}", page_number, None,
+                    f"{key}: {value}", "TABLE_ROW", LayoutStructureType.KEY_VALUE_TABLE,
+                    table_id, row_index, None, key, key, value,
+                ))
+        return blocks
+
+    # Use the first non-empty row as a header only when at least two header cells
+    # contain alphabetic text.  It remains a conservative structural decision; no
+    # regulatory meaning is inferred from unlabeled numeric grids.
+    header = clean_rows[0]
+    header_signal = sum(bool(cell and any(ch.isalpha() for ch in cell)) for cell in header)
+    if header_signal < 2:
+        return blocks
+    for row_index, row in enumerate(clean_rows[1:], start=1):
+        padded = row + [""] * max(0, len(header) - len(row))
+        for column_index, (key, value) in enumerate(zip(header, padded)):
+            if not key or not value:
+                continue
+            blocks.append(LayoutBlock(
+                f"{table_id}-r{row_index}-c{column_index}",
+                page_number,
+                None,
+                f"{key}: {value}",
+                "TABLE_CELL",
+                LayoutStructureType.LINE_ITEM_TABLE,
+                table_id,
+                row_index,
+                column_index,
+                key,
+                key,
+                value,
+            ))
+    return blocks
+
+
 def _pdf_layout(content: bytes) -> ParsedLayout:
     try:
         import pdfplumber
@@ -108,20 +164,13 @@ def _pdf_layout(content: bytes) -> ParsedLayout:
                     if text:
                         blocks.append(LayoutBlock(f"p{page_number}-w{word_number}", page_number, _bbox(word), text, "WORD"))
                 for table_number, table in enumerate(page.find_tables() or [], start=1):
-                    table_id = f"p{page_number}-t{table_number}"
-                    rows = table.extract() or []
-                    # A consistently two-column table is semantically key/value.
-                    is_key_value = bool(rows) and all(len(row or []) == 2 for row in rows if row)
-                    for row_index, row in enumerate(rows):
-                        cells = row or []
-                        if is_key_value and len(cells) == 2:
-                            key, value = _text(cells[0]), _text(cells[1])
-                            if key or value:
-                                blocks.append(LayoutBlock(
-                                    f"{table_id}-r{row_index}", page_number, None,
-                                    f"{key}: {value}", "TABLE_ROW", LayoutStructureType.KEY_VALUE_TABLE,
-                                    table_id, row_index, None, key, key, value,
-                                ))
+                    blocks.extend(
+                        _table_blocks(
+                            page_number=page_number,
+                            table_number=table_number,
+                            rows=table.extract() or [],
+                        )
+                    )
                 # Mixed PDFs need OCR only for pages without digital layout.
                 if len(blocks) == page_start:
                     blocks.extend(_ocr_blocks(content, {page_number}))
@@ -147,3 +196,9 @@ def layout_from_key_value_rows(rows: list[tuple[str, str]]) -> ParsedLayout:
                     LayoutStructureType.KEY_VALUE_TABLE, "t1", i, None, key, key, value)
         for i, (key, value) in enumerate(rows)
     ), 1)
+
+
+def layout_from_matrix_rows(headers: list[str], rows: list[list[str]]) -> ParsedLayout:
+    """Deterministic test seam for component/line-item matrix tables."""
+    blocks = _table_blocks(page_number=1, table_number=1, rows=[headers, *rows])
+    return ParsedLayout(tuple(blocks), 1)
