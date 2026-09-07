@@ -36,8 +36,8 @@ def test_operations_starts_with_multi_file_upload_and_no_manual_metadata_fields(
 
 def test_operations_hides_locale_dependent_native_file_picker_chrome():
     source = OPERATIONS_TEMPLATE.read_text(encoding="utf-8")
-    assert 'id="intake-documents"' in source
-    assert 'class="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"' in source
+    assert '<label for="intake-documents"' in source
+    assert 'id="intake-documents" hidden name="documents" type="file"' in source
     assert 'aria-describedby="intake-file-summary"' in source
     assert ">No files selected.</div>" in source
     assert 'style=' not in source
