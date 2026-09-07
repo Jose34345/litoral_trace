@@ -7,6 +7,7 @@ noise from a true contradiction.
 """
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 import re
 import unicodedata
@@ -23,11 +24,9 @@ class EvidenceRelation(str, Enum):
 
 
 _OUT_OF_SCOPE = re.compile(
-    r"\b(?:"
-    r"prior shipment|previous shipment|last year(?:'s)? shipment|old shipment|"
-    r"historical(?:ly)?|archived|archive(?:d)?|reference only|"
-    r"do not use|not current|former shipment|earlier shipment"
-    r")\b",
+    r"\b(?:prior shipment|previous shipment|last year(?:'s)? shipment|old shipment|"
+    r"historical(?:ly)?|archived|archive(?:d)?|reference only|do not use|not current|"
+    r"former shipment|earlier shipment)\b",
     re.IGNORECASE,
 )
 _EMAIL = re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b", re.IGNORECASE)
@@ -41,9 +40,7 @@ _COMPANY_SUFFIX = re.compile(
     r"\b(?:LLC|L\.L\.C\.|INC\.?|INCORPORATED|LTD\.?|LIMITED|CORP\.?|CORPORATION|CO\.?|COMPANY)\b",
     re.IGNORECASE,
 )
-_STRUCTURAL_MID_VALUES = frozenset(
-    {"CODE", "ID", "NUMBER", "NO", "IDENTIFICATION", "MANUFACTURER", "MID"}
-)
+_STRUCTURAL_MID_VALUES = frozenset({"CODE", "ID", "NUMBER", "NO", "IDENTIFICATION", "MANUFACTURER", "MID"})
 
 
 def fold_text(value: object) -> str:
@@ -53,16 +50,11 @@ def fold_text(value: object) -> str:
 
 
 def is_out_of_scope_context(text: object) -> bool:
-    """Return True only for explicit historical/reference-only language.
-
-    We intentionally do not infer staleness from a date alone.  A fact is excluded
-    only when the source itself clearly says it belongs to another/prior shipment.
-    """
+    """Exclude facts only when source prose explicitly marks another/prior shipment."""
     return bool(_OUT_OF_SCOPE.search(str(text or "")))
 
 
 def party_core(value: object) -> str:
-    """Normalize a party value to its company/name identity without addresses/contact."""
     raw = " ".join(str(value or "").split()).strip()
     if not raw:
         return ""
@@ -78,16 +70,34 @@ def party_core(value: object) -> str:
 
 
 def party_address(value: object) -> str | None:
-    """Extract an address only when a strong street-number/street-type signal exists."""
     raw = " ".join(str(value or "").split()).strip()
     match = _STREET_START.search(raw)
     if not match:
         return None
-    address = match.group("address")
-    address = _EMAIL.sub(" ", address)
+    address = _EMAIL.sub(" ", match.group("address"))
     address = _PHONE.sub(" ", address)
-    address = " ".join(address.replace("|", " ").split()).strip(" ,-;")
-    return address or None
+    return " ".join(address.replace("|", " ").split()).strip(" ,-;") or None
+
+
+def _mass_kg(raw: str) -> str | None:
+    match = re.fullmatch(
+        r"\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(g|kg|lb|metric tons?|tonnes?)\s*",
+        raw,
+        re.I,
+    )
+    if not match:
+        return None
+    try:
+        amount = Decimal(match.group(1).replace(",", ""))
+    except InvalidOperation:
+        return None
+    unit = match.group(2).casefold()
+    factor = {
+        "g": Decimal("0.001"), "kg": Decimal("1"), "lb": Decimal("0.45359237"),
+        "metric ton": Decimal("1000"), "metric tons": Decimal("1000"),
+        "tonne": Decimal("1000"), "tonnes": Decimal("1000"),
+    }[unit]
+    return f"{(amount * factor).normalize()} kg"
 
 
 def semantic_normalize(field_key: str, value: object) -> str:
@@ -95,12 +105,8 @@ def semantic_normalize(field_key: str, value: object) -> str:
     if not raw:
         return ""
     key = str(field_key or "").strip().casefold()
-    if key in {
-        "importer_name", "consignee_name", "shipper_name", "supplier_name",
-        "manufacturer_name", "notify_party_name", "filer_name",
-    }:
-        raw = party_core(raw)
-        raw = _COMPANY_SUFFIX.sub("", raw)
+    if key in {"importer_name", "consignee_name", "shipper_name", "supplier_name", "manufacturer_name", "notify_party_name", "filer_name"}:
+        raw = _COMPANY_SUFFIX.sub("", party_core(raw))
         return fold_text(raw)
     if key == "hts_code":
         return re.sub(r"\D", "", raw)
@@ -108,7 +114,20 @@ def semantic_normalize(field_key: str, value: object) -> str:
         return re.sub(r"[^A-Z0-9]", "", raw.upper())
     if key in {"genus", "species", "country_of_harvest", "metric_unit"}:
         return fold_text(raw)
-    if key in {"plant_quantity", "percent_recycled", "entered_value"}:
+    if key == "plant_quantity":
+        mass = _mass_kg(raw)
+        if mass:
+            return mass
+        number = re.search(r"-?[0-9][0-9,]*(?:\.[0-9]+)?", raw)
+        return number.group(0).replace(",", "") if number else fold_text(raw)
+    if key == "entered_value":
+        match = re.fullmatch(r"\s*(?:(USD|EUR|CAD|GBP|AUD|JPY)\s*)?\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*", raw, re.I)
+        if match:
+            currency = (match.group(1) or ("USD" if "$" in raw else "")).upper()
+            amount = Decimal(match.group(2).replace(",", "")).normalize()
+            return f"{currency} {amount}".strip()
+        return fold_text(raw)
+    if key == "percent_recycled":
         number = re.search(r"-?[0-9][0-9,]*(?:\.[0-9]+)?", raw)
         return number.group(0).replace(",", "") if number else fold_text(raw)
     return fold_text(raw)
@@ -126,15 +145,10 @@ def valid_mid_value(value: object) -> bool:
 
 
 def association_key(candidate: AdmittedCandidate, scope: str, document_id: str) -> str | None:
-    """Give a line/component candidate a stable row identity when the PDF provides it."""
     block = candidate.raw.source_block
     if scope not in {"MERCHANDISE_LINE", "PLANT_COMPONENT"}:
         return None
-    if (
-        block.table_id
-        and block.row_index is not None
-        and block.structure_type in {LayoutStructureType.LINE_ITEM_TABLE, LayoutStructureType.MATRIX_TABLE}
-    ):
+    if block.table_id and block.row_index is not None and block.structure_type in {LayoutStructureType.LINE_ITEM_TABLE, LayoutStructureType.MATRIX_TABLE}:
         return f"{document_id}:{block.table_id}:row:{block.row_index}"
     label = str(candidate.raw.label or "")
     match = re.search(r"(?:component|line)\s*(?:#|number)?\s*([a-z0-9-]+)", label, re.I)
