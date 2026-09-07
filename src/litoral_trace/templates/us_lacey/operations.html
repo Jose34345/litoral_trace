@@ -12,14 +12,14 @@
       <p class="mt-2 text-sm leading-6 text-slate-600">No importer, consignee, broker, date or line references are required up front. Upload what you have and we will extract supported values, reconcile the documents and show only the items that still need your attention.</p>
     </div>
     <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-      <p class="font-semibold text-slate-900">{{ entitlement.remaining_operations }} operation{{ '' if entitlement.remaining_operations == 1 else 's' }} available</p>
-      <p class="mt-1 text-xs text-slate-500">{{ entitlement.used_operations }} of {{ entitlement.monthly_operation_limit }} used</p>
+      <p class="font-semibold text-slate-900">{{ identity.legal_name }}</p>
+      <p class="mt-1 text-xs text-slate-500">{{ entitlement.remaining_operations }} remaining · {{ entitlement.used_operations }} of {{ entitlement.monthly_operation_limit }} used</p>
     </div>
   </div>
 
   {% if entitlement.remaining_operations > 0 %}
   <form id="document-intake-form" class="mt-6" action="/operations/intake" method="post" enctype="multipart/form-data" data-upload-first-intake>
-    <label class="block cursor-pointer rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 p-8 text-center transition hover:border-emerald-500 hover:bg-emerald-50">
+    <label class="block cursor-pointer rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/40 p-8 text-center transition hover:border-emerald-300 hover:bg-emerald-50">
       <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white" aria-hidden="true"><i class="fa-solid fa-cloud-arrow-up"></i></span>
       <span class="mt-4 block text-lg font-bold text-slate-950">Choose your shipment files</span>
       <span class="mt-2 block text-sm text-slate-600">PDF, XLSX, XLS or CSV · select several files at once</span>
