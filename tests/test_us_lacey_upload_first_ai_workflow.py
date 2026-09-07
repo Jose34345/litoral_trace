@@ -34,6 +34,15 @@ def test_operations_starts_with_multi_file_upload_and_no_manual_metadata_fields(
         assert old_manual_name not in source
 
 
+def test_operations_hides_locale_dependent_native_file_picker_chrome():
+    source = OPERATIONS_TEMPLATE.read_text(encoding="utf-8")
+    assert 'id="intake-documents"' in source
+    assert 'style="position:absolute;width:1px;height:1px;' in source
+    assert 'clip:rect(0,0,0,0)' in source
+    assert 'aria-describedby="intake-file-summary"' in source
+    assert ">No files selected.</div>" in source
+
+
 def test_found_values_are_suggestions_not_confirmed_data():
     detail = SimpleNamespace(
         fields=(
