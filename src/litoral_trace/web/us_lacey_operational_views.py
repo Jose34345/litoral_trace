@@ -70,8 +70,16 @@ def _present_review_field(field):
     canonical value, using the highest confidence while merging page references into
     the representative page label. Thus page/confidence differences do not render as
     separate conflicting choices.
+
+    ``_review_field_sets`` is also exercised with deliberately lightweight view
+    doubles in contract tests. Candidate presentation is optional enrichment, so a
+    field without the full candidate shape must retain the legacy behavior unchanged.
     """
-    groups = group_candidate_evidence(field.field_name, field.candidates)
+    field_name = getattr(field, "field_name", None)
+    candidates = getattr(field, "candidates", ())
+    if not field_name or not candidates:
+        return field
+    groups = group_candidate_evidence(field_name, candidates)
     if not groups:
         return field
     presented = []
