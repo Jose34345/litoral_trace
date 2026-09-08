@@ -21,6 +21,7 @@ from litoral_trace.db.models import (
 )
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.lacey_engine.ai_shadow import AI_SHADOW_SCHEMA_VERSION
+from litoral_trace.us_lacey.candidate_reconciliation import reconcile_duplicate_field_candidates
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.ppq505 import PPQ505_SHIPMENT_REFERENCE, validate_ppq_value
 from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
@@ -120,7 +121,12 @@ def verified_agreement_suggestions(payload: Mapping[str, object]) -> tuple[Verif
 
 
 def project_verified_ai_suggestions(*, organization_id: int, operation_id: int) -> int:
-    """Populate MISSING fields as FOUND only from Engine2+AI agreement evidence."""
+    """Populate MISSING fields as FOUND only from Engine2+AI agreement evidence.
+
+    After the optional AI bridge, always run deterministic duplicate-value
+    reconciliation.  This keeps page/confidence metadata from creating a false
+    conflict even when no AI document run exists.
+    """
     org_id = int(organization_id)
     session = get_us_lacey_db_session()
     try:
@@ -163,7 +169,7 @@ def project_verified_ai_suggestions(*, organization_id: int, operation_id: int) 
                 targets = by_name.get(suggestion.field_name, [])
                 if len(targets) != 1:
                     # Plant-line values are safe to auto-place only while the intake has
-                    # a single line. Multi-line/component allocation needs Terra.
+                    # a single line. Multi-line/component allocation needs explicit scope.
                     continue
                 field = targets[0]
                 if field.field_status != "MISSING" or field.reviewed_at is not None:
@@ -228,7 +234,12 @@ def project_verified_ai_suggestions(*, organization_id: int, operation_id: int) 
                 operation=operation,
             )
         session.commit()
-        return promoted
+
+        duplicate_result = reconcile_duplicate_field_candidates(
+            organization_id=org_id,
+            operation_id=operation.id,
+        )
+        return promoted + int(duplicate_result.promoted_count)
     except Exception:
         session.rollback()
         raise
