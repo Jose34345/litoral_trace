@@ -58,12 +58,14 @@ def test_found_values_are_suggestions_not_confirmed_data():
 
 def test_workspace_offers_safe_bulk_confirmation_but_keeps_conflicts_explicit():
     source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
-    assert "/review/accept-supported" in source
+    assert "/review/actions/accept-supported" in source
+    assert "/review/fields/" in source
+    assert "/review/accept-supported" not in source
+    assert "/review-supported/" not in source
     assert "Accept all safe suggestions" in source
     assert "Conflicting values found." in source
     assert "The prefilled value may be wrong." in source
     assert 'field.status == "FOUND"' in source
-    assert "/review-supported/" in source
     assert "Country of origin alone is not treated as proof." in source
     assert "Shipment gross weight is not substituted automatically." in source
 
