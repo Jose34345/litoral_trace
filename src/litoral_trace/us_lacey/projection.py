@@ -22,12 +22,15 @@ from litoral_trace.db.models import (
     UsLaceyFieldCandidate,
     UsLaceyOperation,
     UsLaceyOperationField,
+    UsLaceyPlantDeclaration,
+    UsLaceyPpqPlantLine,
     UsLaceyProcessingJob,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
+    PPQ505_PLANT_FIELDS,
     PPQ505_SHIPMENT_REFERENCE,
     PpqScope,
     validate_ppq_value,
@@ -179,6 +182,19 @@ _PARTY_NON_NAMES = frozenset(
     }
 )
 
+_PLANT_ROW_IDENTITY_TARGETS = frozenset(
+    {
+        "article_component",
+        "genus",
+        "species",
+        "country_of_harvest",
+        "plant_quantity",
+        "metric_unit",
+        "percent_recycled",
+    }
+)
+_MAX_AUTO_PLANT_LINES = 500
+
 
 def _fold(value: object) -> str:
     text = unicodedata.normalize("NFKD", str(value or "").lower())
@@ -276,6 +292,113 @@ def _line_reference(
         if 1 <= row_number <= len(line_references):
             return line_references[row_number - 1]
     return line_references[0] if len(line_references) == 1 else ""
+
+
+def _explicit_plant_data_rows(
+    extracted: tuple[ExtractedDocumentField, ...] | list[ExtractedDocumentField],
+    *,
+    table_headers: frozenset[str],
+) -> tuple[int, ...]:
+    """Return explicit table rows that carry plant-line identity evidence.
+
+    Row numbers are evidence locators, not inferred declaration facts. Restricting
+    materialization to plant identity fields prevents shipment totals or generic
+    invoice rows from manufacturing declaration lines.
+    """
+    rows: set[int] = set()
+    for source in extracted:
+        target, _priority = _target_field(source, table_headers=table_headers)
+        if target not in _PLANT_ROW_IDENTITY_TARGETS:
+            continue
+        match = _DATA_ROW.search(str(source.source_locator or ""))
+        if match is None:
+            continue
+        row_number = int(match.group("row"))
+        if 1 <= row_number <= _MAX_AUTO_PLANT_LINES:
+            rows.add(row_number)
+    return tuple(sorted(rows))
+
+
+def _new_line_reference(*, ordinal: int, used: set[str]) -> str:
+    preferred = str(ordinal)
+    if preferred not in used:
+        return preferred
+    base = f"auto-{ordinal}"
+    candidate = base
+    suffix = 2
+    while candidate in used:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _materialize_explicit_plant_lines(
+    session,
+    *,
+    organization_id: int,
+    operation: UsLaceyOperation,
+    extracted: tuple[ExtractedDocumentField, ...] | list[ExtractedDocumentField],
+    table_headers: frozenset[str],
+) -> tuple[str, ...]:
+    """Create only consecutively evidenced plant rows missing from an operation.
+
+    Upload-first intentionally starts with a minimal operation. When extraction
+    explicitly identifies data_row:2, data_row:3, ... for plant identity fields,
+    those rows must become independent PPQ plant lines before projection. This keeps
+    parallel components from being collapsed into line 1 while refusing large row
+    jumps or shipment-only evidence as a basis for creating regulatory rows.
+    """
+    plant_lines = list(
+        session.scalars(
+            select(UsLaceyPpqPlantLine)
+            .where(
+                UsLaceyPpqPlantLine.organization_id == organization_id,
+                UsLaceyPpqPlantLine.operation_id == operation.id,
+            )
+            .order_by(UsLaceyPpqPlantLine.ordinal.asc(), UsLaceyPpqPlantLine.id.asc())
+        ).all()
+    )
+    explicit_rows = set(_explicit_plant_data_rows(extracted, table_headers=table_headers))
+    used = {str(row.line_reference) for row in plant_lines}
+    next_ordinal = len(plant_lines) + 1
+    while next_ordinal <= _MAX_AUTO_PLANT_LINES and next_ordinal in explicit_rows:
+        line_reference = _new_line_reference(ordinal=next_ordinal, used=used)
+        plant_line = UsLaceyPpqPlantLine(
+            organization_id=organization_id,
+            operation_id=operation.id,
+            line_reference=line_reference,
+            ordinal=next_ordinal,
+        )
+        session.add(plant_line)
+        session.flush()
+        session.add(
+            UsLaceyPlantDeclaration(
+                organization_id=organization_id,
+                plant_line_id=plant_line.id,
+                ordinal=1,
+            )
+        )
+        for field_contract in PPQ505_PLANT_FIELDS:
+            session.add(
+                UsLaceyOperationField(
+                    organization_id=organization_id,
+                    operation_id=operation.id,
+                    merchandise_line_reference=line_reference,
+                    field_name=field_contract.key,
+                    field_scope="PLANT_LINE",
+                    plant_line_id=plant_line.id,
+                    field_status="MISSING",
+                    validation_status="MISSING",
+                    confidence=0.0,
+                )
+            )
+        plant_lines.append(plant_line)
+        used.add(line_reference)
+        next_ordinal += 1
+
+    operation.merchandise_line_count = len(plant_lines)
+    session.flush()
+    return tuple(str(row.line_reference) for row in plant_lines)
 
 
 def _fingerprint(*parts: object) -> str:
@@ -444,21 +567,6 @@ def project_assurance_document_to_us_lacey(
         if latest_run is None:
             raise UsLaceyProjectionError("Processed document has no extraction run.")
 
-        operation_fields = session.scalars(
-            select(UsLaceyOperationField).where(
-                UsLaceyOperationField.organization_id == org_id,
-                UsLaceyOperationField.operation_id == operation.id,
-            )
-        ).all()
-        line_references = tuple(dict.fromkeys(
-            row.merchandise_line_reference
-            for row in operation_fields
-            if row.field_scope == "PLANT_LINE"
-        ))
-        indexed = {
-            (row.merchandise_line_reference, row.field_name): row
-            for row in operation_fields
-        }
         extracted = session.scalars(
             select(ExtractedDocumentField)
             .where(
@@ -473,6 +581,23 @@ def project_assurance_document_to_us_lacey(
             for row in extracted
             if (match := _RAW_TABLE_FIELD.match(str(row.field_name or "")))
         )
+        line_references = _materialize_explicit_plant_lines(
+            session,
+            organization_id=org_id,
+            operation=operation,
+            extracted=extracted,
+            table_headers=table_headers,
+        )
+        operation_fields = session.scalars(
+            select(UsLaceyOperationField).where(
+                UsLaceyOperationField.organization_id == org_id,
+                UsLaceyOperationField.operation_id == operation.id,
+            )
+        ).all()
+        indexed = {
+            (row.merchandise_line_reference, row.field_name): row
+            for row in operation_fields
+        }
 
         candidates: dict[tuple[str, str], list[tuple[int, ExtractedDocumentField]]] = {}
         for row in extracted:
@@ -560,6 +685,11 @@ def project_assurance_document_to_us_lacey(
             validation = validate_ppq_value(target, raw_value)
             new_value = validation.normalized_value or raw_value
             existing_value = field.human_value or field.normalized_value or field.original_value
+            human_confirmed = bool(
+                field.field_status == "MATCHED"
+                and field.human_value is not None
+                and str(field.human_value).strip()
+            )
             if existing_value and str(existing_value).strip() != new_value:
                 _upsert_conflict(
                     session,
@@ -589,7 +719,7 @@ def project_assurance_document_to_us_lacey(
             if validation.status.value in {"INVALID", "REVIEW_REQUIRED"}:
                 field.field_status = "REVIEW"
                 review += 1
-            elif existing_value:
+            elif human_confirmed:
                 field.field_status = "MATCHED"
                 matched += 1
             elif float(source.confidence) >= 0.90 and not bool(source.needs_review):
