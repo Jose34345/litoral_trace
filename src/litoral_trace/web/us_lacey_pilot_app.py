@@ -154,7 +154,7 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
         dossier = UsLaceyEngineDossierService().get_dossier(organization_id=identity.organization_id, operation_public_id=detail.public_id)
     except Exception:
         dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
-    tokens = {field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}") for field in detail.fields if field.status in {"MISSING", "REVIEW"}}
+    tokens = {field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}") for field in detail.fields if field.status in {"MISSING", "REVIEW", "FOUND"}}
     return _html(render_operation_detail(request=request, identity=identity, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, error=error, notice=notice), status_code=status_code)
 
 
@@ -178,7 +178,7 @@ def _workspace_fragment(*, request: Request, identity, operation_public_id: str,
             purpose=f"review:{detail.public_id}:{field.id}",
         )
         for field in detail.fields
-        if field.status in {"MISSING", "REVIEW"}
+        if field.status in {"MISSING", "REVIEW", "FOUND"}
     }
     return _html(
         render_operation_workspace(
@@ -626,7 +626,18 @@ async def operation_upload_submit(
             return _operation_error_page(request, "Operation not found.", status_code=404)
 
 
-@app.post("/operations/{operation_public_id}/review/{field_id}", response_class=HTMLResponse)
+# The canonical field-review namespace cannot collide with literal review actions.
+# The legacy alias remains for already-rendered forms, but its :int converter means
+# Starlette rejects action slugs before dispatch rather than sending them to Pydantic.
+@app.post(
+    "/operations/{operation_public_id}/review/{field_id:int}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+@app.post(
+    "/operations/{operation_public_id}/review/fields/{field_id:int}",
+    response_class=HTMLResponse,
+)
 def operation_review_submit(
     operation_public_id: str,
     field_id: int,
