@@ -8,7 +8,7 @@ customer-visible fields afterwards.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi import APIRouter, Cookie, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -21,6 +21,7 @@ from litoral_trace.us_lacey.access import (
     UsLaceyOperationalAccessError,
     require_us_lacey_operational_access,
 )
+from litoral_trace.us_lacey.bulk_review import accept_supported_us_lacey_fields
 from litoral_trace.us_lacey.csrf import UsLaceyCsrfError, verify_us_lacey_csrf
 from litoral_trace.us_lacey.operations import (
     UsLaceyOperationError,
@@ -59,7 +60,13 @@ def _operation_reference() -> str:
     return f"INTAKE-{stamp}-{uuid4().hex[:12].upper()}"
 
 
-def _error_page(request: Request, message: str, *, action_href: str = "/operations", status_code: int = 400) -> HTMLResponse:
+def _error_page(
+    request: Request,
+    message: str,
+    *,
+    action_href: str = "/operations",
+    status_code: int = 400,
+) -> HTMLResponse:
     return HTMLResponse(
         render_message_page(
             request=request,
@@ -169,7 +176,14 @@ def _find_supported_field(detail, field_id: int):
     return next((field for field in detail.fields if field.id == int(field_id)), None)
 
 
-@router.post("/operations/{operation_public_id}/review-supported/{field_id}", response_class=HTMLResponse)
+# Compatibility-only route for links/forms rendered before the canonical review
+# contract was introduced.  The integer path converter is deliberate: it prevents
+# this dynamic endpoint from ever consuming a literal action slug.
+@router.post(
+    "/operations/{operation_public_id}/review-supported/{field_id:int}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
 def review_supported_field(
     operation_public_id: str,
     field_id: int,
@@ -179,11 +193,9 @@ def review_supported_field(
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
-    """Confirm or edit a high-confidence FOUND proposal without silently accepting it."""
+    """Confirm/edit a legacy high-confidence FOUND proposal explicitly."""
     try:
         identity, _entitlement = _identity_and_entitlement(us_session)
-        # Reuse the operation-level confirmation token already rendered in the terminal
-        # workspace. It authorizes a strictly less powerful action than final completion.
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"complete:{operation_public_id}",
@@ -222,14 +234,30 @@ def review_supported_field(
         )
 
 
-@router.post("/operations/{operation_public_id}/review/accept-supported", response_class=HTMLResponse)
+# Canonical action namespace.  The legacy alias is safe because the old per-field
+# route is now constrained with Starlette's :int converter rather than a catch-all
+# string parameter.
+@router.post(
+    "/operations/{operation_public_id}/review/accept-supported",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+@router.post(
+    "/operations/{operation_public_id}/review/actions/accept-supported",
+    response_class=HTMLResponse,
+)
 def accept_all_supported_fields(
     operation_public_id: str,
     request: Request,
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
-    """Accept only unambiguous FOUND proposals; conflicts and missing data remain open."""
+    """Atomically confirm only unambiguous FOUND proposals.
+
+    REVIEW/MISSING values, multi-candidate values and fields with an open
+    reconciliation issue remain untouched.  A repeated POST is idempotent because
+    already-confirmed rows are no longer FOUND.
+    """
     try:
         identity, _entitlement = _identity_and_entitlement(us_session)
         verify_us_lacey_csrf(
@@ -237,27 +265,12 @@ def accept_all_supported_fields(
             purpose=f"complete:{operation_public_id}",
             submitted_token=csrf_token,
         )
-        service = UsLaceyOperationService()
-        detail = service.get_detail(
+        accept_supported_us_lacey_fields(
             organization_id=identity.organization_id,
             operation_public_id=operation_public_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
         )
-        supported = [
-            field
-            for field in detail.fields
-            if field.status == "FOUND"
-            and field.proposed_value
-            and len(field.candidates) <= 1
-        ]
-        for field in supported:
-            review_us_lacey_field(
-                organization_id=identity.organization_id,
-                operation_public_id=operation_public_id,
-                field_id=field.id,
-                user_id=identity.user_id,
-                user_email=identity.email,
-                action="accept",
-            )
         return RedirectResponse(f"/operations/{operation_public_id}", status_code=303)
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))

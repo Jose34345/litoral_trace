@@ -3,14 +3,18 @@ from __future__ import annotations
 from io import BytesIO
 import os
 import re
+from threading import Event, Lock, Thread, current_thread
+import time
 from uuid import uuid4
 
 from openpyxl import load_workbook
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 import litoral_trace.us_lacey.ingestion as ingestion_module
+import litoral_trace.us_lacey.operation_lock as operation_lock_module
 import litoral_trace.us_lacey.worker as worker_module
 from litoral_trace.storage import (
     ObjectDeleteResult,
@@ -310,8 +314,11 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(m
         exceptions = [field for field in operation_detail.fields if field.status in {"MISSING", "REVIEW"}]
         assert exceptions
 
+        legacy_action = f"{operation_path}/review/{exceptions[0].id}"
+        assert client.post(legacy_action, data={}).status_code == 404
+
         for field in exceptions:
-            review_action = f"{operation_path}/review/{field.id}"
+            review_action = f"{operation_path}/review/fields/{field.id}"
             field_csrf = _csrf_for(workspace.text, review_action)
             if field.proposed_value:
                 payload = {"csrf_token": field_csrf, "action": "accept", "value": ""}
@@ -387,3 +394,122 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(m
         assert historical_workspace.status_code == 200
         _assert_href(historical_workspace.text, f"{operation_path}/export.xlsx")
         _assert_href(historical_workspace.text, f"{operation_path}/export.csv")
+
+
+def test_operation_projection_advisory_lock_blocks_second_postgres_session(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The exact two-key pg_advisory_xact_lock serializes independent sessions."""
+    _configure(monkeypatch)
+    reset_us_lacey_engine_state()
+
+    engine = create_engine(
+        os.environ["US_LACEY_DATABASE_URL"],
+        pool_pre_ping=True,
+        hide_parameters=True,
+    )
+    session_factory = sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False,
+    )
+    pid_guard = Lock()
+    session_pids: dict[str, int] = {}
+
+    def real_session_factory():
+        session = session_factory()
+        pid = int(session.execute(text("SELECT pg_backend_pid()" )).scalar_one())
+        with pid_guard:
+            session_pids[current_thread().name] = pid
+        return session
+
+    monkeypatch.setattr(
+        operation_lock_module,
+        "get_us_lacey_db_session",
+        real_session_factory,
+    )
+
+    first_entered = Event()
+    release_first = Event()
+    second_attempting = Event()
+    second_entered = Event()
+    failures: list[BaseException] = []
+    organization_id = 19031
+    operation_id = 28041
+
+    def holder() -> None:
+        try:
+            with operation_lock_module.us_lacey_operation_projection_lock(
+                organization_id=organization_id,
+                operation_id=operation_id,
+            ):
+                first_entered.set()
+                if not release_first.wait(10):
+                    raise AssertionError("Timed out waiting to release the first advisory lock")
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            failures.append(exc)
+            release_first.set()
+
+    def waiter() -> None:
+        try:
+            if not first_entered.wait(10):
+                raise AssertionError("First advisory lock was never acquired")
+            second_attempting.set()
+            with operation_lock_module.us_lacey_operation_projection_lock(
+                organization_id=organization_id,
+                operation_id=operation_id,
+            ):
+                second_entered.set()
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            failures.append(exc)
+            release_first.set()
+
+    holder_thread = Thread(target=holder, name="lacey-lock-holder", daemon=True)
+    waiter_thread = Thread(target=waiter, name="lacey-lock-waiter", daemon=True)
+    holder_thread.start()
+    assert first_entered.wait(10)
+    waiter_thread.start()
+    assert second_attempting.wait(10)
+
+    try:
+        deadline = time.monotonic() + 10
+        waiter_pid = None
+        observed_wait = False
+        while time.monotonic() < deadline:
+            with pid_guard:
+                holder_pid = session_pids.get("lacey-lock-holder")
+                waiter_pid = session_pids.get("lacey-lock-waiter")
+            if holder_pid and waiter_pid:
+                assert holder_pid != waiter_pid
+                with engine.connect() as control:
+                    observed_wait = bool(
+                        control.execute(
+                            text(
+                                "SELECT EXISTS ("
+                                "SELECT 1 FROM pg_locks "
+                                "WHERE pid=:pid AND locktype='advisory' AND granted=false"
+                                ")"
+                            ),
+                            {"pid": waiter_pid},
+                        ).scalar_one()
+                    )
+                if observed_wait:
+                    break
+            time.sleep(0.02)
+
+        assert waiter_pid is not None
+        assert observed_wait, "Second PostgreSQL session was not observed waiting on the advisory lock"
+        assert not second_entered.is_set(), "Second session entered before the first transaction released the lock"
+
+        release_first.set()
+        assert second_entered.wait(10), "Second session did not acquire the lock after transaction release"
+    finally:
+        release_first.set()
+        holder_thread.join(timeout=10)
+        waiter_thread.join(timeout=10)
+        engine.dispose()
+
+    assert not holder_thread.is_alive()
+    assert not waiter_thread.is_alive()
+    assert failures == []
