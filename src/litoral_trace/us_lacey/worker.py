@@ -400,35 +400,38 @@ def process_one_us_lacey_job(
             operation_id=job.operation_id,
             assurance_document_id=job.assurance_document_id,
         )
-        if not complete_us_lacey_job(job_id=job.id, worker_id=worker_id):
-            raise UsLaceyWorkerError("Processing job could not be completed atomically.")
-        operation_status = _refresh_operation(
-            organization_id=job.organization_id,
-            operation_id=job.operation_id,
-        )
+
+        # Run every evidence/recommendation postprocessor while the queue job is
+        # still RUNNING. If orchestration itself ever fails unexpectedly, the outer
+        # failure boundary can still transition the owned job to retry/failed instead
+        # of leaving a false terminal COMPLETED state behind.
         _shadow_engine2(
             organization_id=job.organization_id,
             operation_id=job.operation_id,
         )
-        promoted = _project_engine2_suggestions(
+        _project_engine2_suggestions(
             organization_id=job.organization_id,
             operation_id=job.operation_id,
         )
-        promoted += _project_verified_ai_suggestions(
+        _project_verified_ai_suggestions(
             organization_id=job.organization_id,
             operation_id=job.operation_id,
         )
-        # Only a real MISSING -> FOUND transition needs another state derivation. This
-        # avoids an unnecessary DB round trip and preserves the legacy worker contract
-        # when intelligence is disabled, fails safely or has nothing evidence-backed.
-        if promoted:
-            operation_status = _refresh_operation(
-                organization_id=job.organization_id,
-                operation_id=job.operation_id,
-            )
         # AI review may annotate existing OPEN conflicts with a bounded recommendation,
         # but the recommendation cannot resolve an issue or set a field value.
         _run_ai_review_recommendations(
+            organization_id=job.organization_id,
+            operation_id=job.operation_id,
+        )
+
+        # COMPLETED is the final queue transition, after the full processing chain.
+        if not complete_us_lacey_job(job_id=job.id, worker_id=worker_id):
+            raise UsLaceyWorkerError("Processing job could not be completed atomically.")
+
+        # Refresh only after the terminal queue transition. Refreshing while this job
+        # is RUNNING would correctly project the operation as PROCESSING and leave a
+        # stale operation state until some later request recomputed it.
+        operation_status = _refresh_operation(
             organization_id=job.organization_id,
             operation_id=job.operation_id,
         )
