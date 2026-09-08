@@ -152,7 +152,7 @@ def association_key(candidate: AdmittedCandidate, scope: str, document_id: str) 
         return f"{document_id}:{block.table_id}:row:{block.row_index}"
     label = str(candidate.raw.label or "")
     match = re.search(r"(?:component|line)\s*(?:#|number)?\s*([a-z0-9-]+)", label, re.I)
-    return match.group(1) if match else None
+    return match.group(1).casefold() if match else None
 
 
 def evidence_relation(
