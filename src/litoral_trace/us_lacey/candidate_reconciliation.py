@@ -1,14 +1,13 @@
 """Resolve duplicate-value U.S. Lacey review evidence deterministically.
 
-This pass is deliberately non-authoritative.  It may turn an unreviewed REVIEW
-field into FOUND when multiple evidence rows collapse to one valid canonical value,
-but it never creates MATCHED.  Human confirmation remains the only transition to a
+This pass is deliberately non-authoritative. It may turn an unreviewed REVIEW
+field into FOUND only when an OPEN conflict is proven to be metadata-only, but it
+never creates MATCHED. Human confirmation remains the only transition to a
 confirmed declaration value.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from uuid import UUID
 
 from sqlalchemy import select
 
@@ -42,13 +41,18 @@ def reconcile_duplicate_field_candidates(
     organization_id: int,
     operation_id: int,
 ) -> DuplicateCandidateReconciliationResult:
-    """Merge corroborating candidate metadata and remove duplicate-value conflicts.
+    """Merge corroborating candidate metadata and remove false OPEN conflicts.
 
-    Candidate rows remain stored individually for provenance.  Only their logical
+    Candidate rows remain stored individually for provenance. Only their logical
     grouping changes: page/confidence differences cannot manufacture a contradiction.
-    A field is promoted to FOUND only when at least two rows corroborate exactly one
-    canonical value, the strongest evidence is >= 0.90, PPQ validation is valid, and
-    no genuinely different OPEN conflict remains for that same field/line.
+    A field is promoted to FOUND only when it already has one or more OPEN
+    reconciliation issues, every one of those issues compares canonically identical
+    values, at least two candidate rows corroborate exactly one canonical value, the
+    strongest evidence is >= 0.90, and PPQ validation is valid.
+
+    Requiring an actual false-conflict issue is important: ordinary duplicated
+    provenance can exist on fields that are intentionally still REVIEW for another
+    reason. This pass must not silently broaden the machine-safe surface.
     """
     org_id = int(organization_id)
     session = get_us_lacey_db_session()
@@ -98,13 +102,26 @@ def reconcile_duplicate_field_candidates(
         for field in fields:
             if field.reviewed_at is not None or field.human_value:
                 continue
+
+            field_issues = issues_by_field.get(int(field.id), [])
+            if not field_issues:
+                # Duplicate provenance alone is not enough to change REVIEW -> FOUND.
+                # We only repair a conflict that the reconciliation layer explicitly
+                # created for values that are actually identical.
+                continue
+            if any(
+                not _same_actual_value(field.field_name, issue.left_value, issue.right_value)
+                for issue in field_issues
+            ):
+                # At least one OPEN issue is a genuine value contradiction.
+                continue
+
             rows = candidates_by_field.get(int(field.id), [])
             if len(rows) < 2:
                 continue
             groups = group_candidate_evidence(field.field_name, rows)
             if len(groups) != 1:
-                # Multiple canonical values are a real decision point.  Metadata
-                # normalization must never erase that distinction.
+                # Multiple canonical candidate values are a real decision point.
                 continue
 
             group = groups[0]
@@ -116,24 +133,18 @@ def reconcile_duplicate_field_candidates(
             if float(group.confidence) < 0.90:
                 continue
 
-            remaining_true_issue = False
-            for issue in issues_by_field.get(int(field.id), []):
-                if _same_actual_value(field.field_name, issue.left_value, issue.right_value):
-                    issue.status = "RESOLVED"
-                    issue.resolution_justification = (
-                        "Deterministic duplicate-value reconciliation: source metadata differed "
-                        "but both references support the same canonical field value."
-                    )
-                    issue.evidence_json = {
-                        **(issue.evidence_json or {}),
-                        "duplicate_value_reconciled": True,
-                        "canonical_value": group.canonical_value,
-                    }
-                    resolved += 1
-                else:
-                    remaining_true_issue = True
-            if remaining_true_issue:
-                continue
+            for issue in field_issues:
+                issue.status = "RESOLVED"
+                issue.resolution_justification = (
+                    "Deterministic duplicate-value reconciliation: source metadata differed "
+                    "but both references support the same canonical field value."
+                )
+                issue.evidence_json = {
+                    **(issue.evidence_json or {}),
+                    "duplicate_value_reconciled": True,
+                    "canonical_value": group.canonical_value,
+                }
+                resolved += 1
 
             field.original_value = representative.original_value
             field.normalized_value = validation.normalized_value
