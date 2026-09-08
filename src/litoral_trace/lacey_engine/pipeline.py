@@ -165,7 +165,13 @@ def _extract(layout):
                 number = _explicit_number(value)
                 if number:
                     found["entered_value"].append(_candidate("entered_value", number, block, key, EvidenceClass.DERIVED, "entered_value"))
-            elif _ARTICLE_COMPONENT_LABEL.fullmatch(key) and _table_context(block):
+            elif _ARTICLE_COMPONENT_LABEL.fullmatch(key) and (
+                _table_context(block)
+                or re.fullmatch(r"article\s*/\s*component|article component", key, re.I)
+            ):
+                # A fully explicit Lacey/PPQ "Article / Component" label is safe
+                # outside a table.  The generic word "Component" remains table-only
+                # so unrelated document prose cannot become plant-component evidence.
                 found["article_component"].append(_candidate("article_component", value, block, key))
             elif re.fullmatch(r"genus|plant genus|scientific name genus", lower):
                 found["genus"].append(_candidate("genus", value, block, key))
