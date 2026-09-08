@@ -82,3 +82,8 @@ def test_generic_identifier_labels_do_not_create_entry_mid_or_hts_candidates():
     assert extracted["filing_entry_reference"] == []
     assert extracted["manufacturer_id"] == []
     assert extracted["hts_code"] == []
+
+
+def test_generic_component_label_outside_table_does_not_create_plant_component():
+    layout = layout_from_key_value_rows([("Component", "Chair frame")])
+    assert _extract(layout)["article_component"] == []
