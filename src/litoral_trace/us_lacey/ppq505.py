@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 import re
 from typing import Callable
+import unicodedata
 
 
 class PpqScope(StrEnum):
@@ -103,6 +104,8 @@ _UNIT_ALIASES = {
 }
 
 NOT_REQUIRED_REASON_CODES = frozenset({"NOT_PAPER_OR_PAPERBOARD"})
+_NUMERIC_FIELDS = frozenset({"entered_value", "plant_quantity", "percent_recycled"})
+_CURRENCY_SYMBOLS = frozenset({"$", "€", "£", "¥"})
 
 
 def _missing(value: object) -> bool:
@@ -164,11 +167,29 @@ def normalize_hts(value: object) -> PpqValidation:
     return _result(normalized)
 
 
+def _sanitize_decimal_text(value: object) -> str:
+    """Normalize customer/document numeric formatting before Decimal conversion.
+
+    Source documents and the review UI commonly carry display formatting such as
+    ``$18,600.00`` or non-breaking spaces.  Those presentation characters are not
+    part of the PPQ numeric value, so remove them before strict numeric validation.
+    Alphabetic currency codes and other unexpected text remain invalid rather than
+    being guessed away.
+    """
+    text = unicodedata.normalize("NFKC", str(value)).strip()
+    text = "".join(ch for ch in text if ch not in _CURRENCY_SYMBOLS)
+    text = re.sub(r"[\s\u00a0\u202f]+", "", text)
+    text = text.replace(",", "")
+    if not re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)", text):
+        raise InvalidOperation
+    return text
+
+
 def _decimal(value: object, *, label: str, positive: bool, maximum: Decimal | None = None) -> PpqValidation:
     if missing := _required(value):
         return missing
     try:
-        number = Decimal(str(value).replace(",", "").strip())
+        number = Decimal(_sanitize_decimal_text(value))
     except (InvalidOperation, ValueError):
         return _result(None, f"{label} must be numeric.")
     if not number.is_finite() or (number <= 0 if positive else number < 0):
@@ -268,6 +289,28 @@ def validate_ppq_value(field_key: str, value: object) -> PpqValidation:
     if len(normalized) > 4000:
         return _result(None, f"{field.label} is too long.")
     return _result(normalized)
+
+
+def canonical_ppq_value_key(field_key: str, value: object) -> str:
+    """Return a comparison-only identity for candidate grouping/conflict checks.
+
+    Provenance, source page and confidence are deliberately excluded.  Values are
+    validated first so formatted numerics collapse to their numeric identity, then
+    Unicode/whitespace and casing are normalized for text comparison.  The caller
+    still keeps every original evidence row for auditability.
+    """
+    validation = validate_ppq_value(field_key, value)
+    candidate = validation.normalized_value
+    if candidate is None:
+        candidate = str(value or "").strip()
+    text = unicodedata.normalize("NFKC", str(candidate))
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return ""
+    if field_key in _NUMERIC_FIELDS:
+        # The numeric validator already provides a canonical decimal representation.
+        return text
+    return text.casefold()
 
 
 def is_paper_or_paperboard(article_or_product: object) -> bool:
