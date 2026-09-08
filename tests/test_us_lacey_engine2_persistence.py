@@ -122,7 +122,7 @@ def test_engine2_shipment_snapshot_persists_and_round_trips(engine2_postgres_ses
     service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_document", processor)
     result = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     row = _snapshot(engine2_postgres_session_factory, org, result.shipment_run_id); restored = deserialize_shipment_resolution(row.resolution_json)
-    assert (row.organization_id, row.operation_id, row.ruleset_version, row.schema_version) == (org, operation, "lacey_ruleset_2026_01", SHIPMENT_RESOLUTION_SCHEMA_VERSION)
+    assert (row.organization_id, row.operation_id, row.ruleset_version, row.schema_version) == (org, operation, "lacey_ruleset_2026_02_semantic_graph", SHIPMENT_RESOLUTION_SCHEMA_VERSION)
     assert row.engine_version and row.source_set_fingerprint and row.document_count == 2 and row.resolution_json
     assert restored.canonical_fields["master_bill_of_lading"].values[0].value == "MAEU274342495"
     assert restored.canonical_fields["container_number"].values[0].value == "MSKU9228574"

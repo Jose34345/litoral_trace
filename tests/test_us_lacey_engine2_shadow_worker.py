@@ -12,6 +12,11 @@ def _wire_authoritative_success(monkeypatch):
     monkeypatch.setattr(worker, "project_assurance_document_to_us_lacey", lambda **_: projection)
     monkeypatch.setattr(worker, "complete_us_lacey_job", lambda **_: True)
     monkeypatch.setattr(worker, "_refresh_operation", lambda **_: "READY_FOR_REVIEW")
+    # Keep these worker-ordering tests isolated from database/environment-backed
+    # suggestion bridges. Dedicated tests cover each bridge independently.
+    monkeypatch.setattr(worker, "_project_engine2_suggestions", lambda **_: 0)
+    monkeypatch.setattr(worker, "_project_verified_ai_suggestions", lambda **_: 0)
+    monkeypatch.setattr(worker, "_run_ai_review_recommendations", lambda **_: None)
     return job
 
 
@@ -55,23 +60,25 @@ def test_worker_shadow_mode_still_runs_current_projection(monkeypatch):
     assert len(projected) == 1
 
 
-def test_worker_completes_and_refreshes_before_shadow(monkeypatch):
-    job = _wire_authoritative_success(monkeypatch); events = []
+def test_worker_runs_shadow_before_terminal_completion_and_refresh(monkeypatch):
+    _wire_authoritative_success(monkeypatch); events = []
     monkeypatch.setattr(worker, "engine2_mode", lambda: "SHADOW")
     monkeypatch.setattr(worker, "project_assurance_document_to_us_lacey", lambda **_: (events.append("projection"), SimpleNamespace(projected_count=4, conflict_count=2))[1])
     monkeypatch.setattr(worker, "complete_us_lacey_job", lambda **_: (events.append("complete"), True)[1])
     monkeypatch.setattr(worker, "_refresh_operation", lambda **_: (events.append("refresh"), "READY_FOR_REVIEW")[1])
     monkeypatch.setattr(worker, "_shadow_engine2", lambda **_: events.append("shadow"))
     result = worker.process_one_us_lacey_job(worker_id="unit")
-    assert events == ["projection", "complete", "refresh", "shadow"]
+    assert events == ["projection", "shadow", "complete", "refresh"]
     assert (result.job_status, result.projected_count, result.conflict_count) == ("COMPLETED", 4, 2)
 
 
-def test_worker_does_not_shadow_when_authoritative_completion_fails(monkeypatch):
+def test_worker_shadow_may_persist_before_atomic_completion_failure(monkeypatch):
     _wire_authoritative_success(monkeypatch); calls = []
     monkeypatch.setattr(worker, "engine2_mode", lambda: "SHADOW")
     monkeypatch.setattr(worker, "complete_us_lacey_job", lambda **_: False)
     monkeypatch.setattr(worker, "_shadow_engine2", lambda **_: calls.append("shadow"))
     monkeypatch.setattr(worker, "fail_us_lacey_job", lambda **_: "FAILED")
     result = worker.process_one_us_lacey_job(worker_id="unit")
-    assert result.job_status == "FAILED" and calls == []
+    # Shadow evidence is non-authoritative and may already exist. The queue job must
+    # still fail rather than report a terminal false success.
+    assert result.job_status == "FAILED" and calls == ["shadow"]

@@ -1,8 +1,7 @@
 """Bridge deterministic Engine 2 shipment evidence into the human review queue.
 
-Engine 2 remains non-authoritative. A supported shipment value may prefill a MISSING
-PPQ preparation field as FOUND, but it is never silently accepted as MATCHED. The
-bridge is deliberately evidence preserving and conservative around multi-line values.
+Engine 2 remains non-authoritative. A supported shipment value may prefill an empty
+PPQ preparation field as FOUND, but it is never silently accepted as MATCHED.
 """
 from __future__ import annotations
 
@@ -47,7 +46,7 @@ _ENGINE2_TO_PREPARATION_FIELD = {
     "metric_unit": "metric_unit",
     "percent_recycled": "percent_recycled",
 }
-_SUPPORTED_STATES = frozenset({"SUPPORTED", "SUPPORTED_MULTIPLE"})
+_SUPPORTED_STATES = frozenset({"SUPPORTED", "SUPPORTED_MULTIPLE", "NEAR_MATCH"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,24 +71,14 @@ def _candidate_payload(evidence: Mapping[str, object]) -> Mapping[str, object] |
     return candidate if isinstance(candidate, Mapping) else None
 
 
-def _suggestion_from_field(
-    field_key: str,
-    payload: Mapping[str, object],
-    *,
-    engine_version: str,
-) -> Engine2Suggestion | None:
-    """Choose the strongest exact documentary source for one supported field."""
+def _suggestion_from_field(field_key: str, payload: Mapping[str, object], *, engine_version: str) -> Engine2Suggestion | None:
     target = _ENGINE2_TO_PREPARATION_FIELD.get(field_key)
     if target is None or str(payload.get("state") or "") not in _SUPPORTED_STATES:
         return None
-
     values = payload.get("values")
     evidence_rows = payload.get("supporting_evidence")
     if not isinstance(values, list) or len(values) != 1 or not isinstance(evidence_rows, list):
-        # Multiple canonical values are a set/multi-line allocation problem and must
-        # stay in human/Terra review rather than being collapsed into one PPQ field.
         return None
-
     eligible: list[tuple[float, float, int, str, str, int, str]] = []
     for evidence in evidence_rows:
         if not isinstance(evidence, Mapping):
@@ -115,39 +104,14 @@ def _suggestion_from_field(
             continue
         if not value or not source_text or page < 1 or operation_document_id <= 0:
             continue
-        eligible.append(
-            (
-                source_authority,
-                candidate_score,
-                operation_document_id,
-                value,
-                source_text,
-                page,
-                evidence_class,
-            )
-        )
+        eligible.append((source_authority, candidate_score, operation_document_id, value, source_text, page, evidence_class))
     if not eligible:
         return None
-
-    # Source authority breaks ties before extraction score. Confidence is a bounded
-    # review-priority signal, never the raw Engine 2 score (which is not 0..1).
-    source_authority, candidate_score, document_id, value, source_text, page, evidence_class = max(
-        eligible, key=lambda item: (item[0], item[1])
-    )
-    support_count = len(eligible)
-    confidence = 0.94 if support_count > 1 else 0.86
+    source_authority, candidate_score, document_id, value, source_text, page, evidence_class = max(eligible, key=lambda item: (item[0], item[1]))
+    confidence = 0.94 if len(eligible) > 1 else 0.86
     if evidence_class == "DERIVED":
         confidence = min(confidence, 0.90)
-    return Engine2Suggestion(
-        field_name=target,
-        value=value,
-        operation_document_id=document_id,
-        source_text=source_text,
-        source_page=page,
-        evidence_class=evidence_class,
-        confidence=confidence,
-        engine_version=engine_version,
-    )
+    return Engine2Suggestion(target, value, document_id, source_text, page, evidence_class, confidence, engine_version)
 
 
 def supported_engine2_suggestions(payload: Mapping[str, object]) -> tuple[Engine2Suggestion, ...]:
@@ -157,31 +121,30 @@ def supported_engine2_suggestions(payload: Mapping[str, object]) -> tuple[Engine
     engine_version = str(payload.get("engine_version") or "lacey-engine-2")
     suggestions: list[Engine2Suggestion] = []
     for field_key, field_payload in fields.items():
-        if not isinstance(field_payload, Mapping):
-            continue
-        suggestion = _suggestion_from_field(
-            str(field_key), field_payload, engine_version=engine_version
-        )
-        if suggestion is not None:
-            suggestions.append(suggestion)
+        if isinstance(field_payload, Mapping):
+            suggestion = _suggestion_from_field(str(field_key), field_payload, engine_version=engine_version)
+            if suggestion is not None:
+                suggestions.append(suggestion)
     return tuple(suggestions)
 
 
+def _empty_unreviewed_field(field: UsLaceyOperationField) -> bool:
+    """Allow documentary evidence to replace a null optional MATCHED placeholder."""
+    if field.reviewed_at is not None or field.human_value:
+        return False
+    if str(field.normalized_value or field.original_value or "").strip():
+        return False
+    return field.field_status in {"MISSING", "MATCHED"}
+
+
 def project_engine2_supported_suggestions(*, organization_id: int, operation_id: int) -> int:
-    """Prefill MISSING PPQ fields as FOUND from current Engine 2 shipment support."""
     org_id = int(organization_id)
     session = get_us_lacey_db_session()
     try:
         set_tenant_db_context(session, org_id)
-        operation = session.scalar(
-            select(UsLaceyOperation).where(
-                UsLaceyOperation.organization_id == org_id,
-                UsLaceyOperation.id == int(operation_id),
-            )
-        )
+        operation = session.scalar(select(UsLaceyOperation).where(UsLaceyOperation.organization_id == org_id, UsLaceyOperation.id == int(operation_id)))
         if operation is None:
             return 0
-
         run = session.scalar(
             select(UsLaceyEngineShipmentRun)
             .where(
@@ -193,35 +156,19 @@ def project_engine2_supported_suggestions(*, organization_id: int, operation_id:
         )
         if run is None or not isinstance(run.resolution_json, Mapping):
             return 0
-
-        fields = session.scalars(
-            select(UsLaceyOperationField).where(
-                UsLaceyOperationField.organization_id == org_id,
-                UsLaceyOperationField.operation_id == operation.id,
-            )
-        ).all()
+        fields = session.scalars(select(UsLaceyOperationField).where(UsLaceyOperationField.organization_id == org_id, UsLaceyOperationField.operation_id == operation.id)).all()
         by_name: dict[str, list[UsLaceyOperationField]] = {}
         for field in fields:
             by_name.setdefault(field.field_name, []).append(field)
-
-        links = session.scalars(
-            select(UsLaceyOperationDocument).where(
-                UsLaceyOperationDocument.organization_id == org_id,
-                UsLaceyOperationDocument.operation_id == operation.id,
-                UsLaceyOperationDocument.is_current.is_(True),
-            )
-        ).all()
+        links = session.scalars(select(UsLaceyOperationDocument).where(UsLaceyOperationDocument.organization_id == org_id, UsLaceyOperationDocument.operation_id == operation.id, UsLaceyOperationDocument.is_current.is_(True))).all()
         assurance_by_link = {link.id: link.assurance_document_id for link in links}
-
         promoted = 0
         for suggestion in supported_engine2_suggestions(run.resolution_json):
             targets = by_name.get(suggestion.field_name, [])
             if len(targets) != 1:
-                # Multi-line plant allocation remains explicit. A shipment-level HTS,
-                # species or quantity cannot be guessed onto one of several PPQ lines.
                 continue
             field = targets[0]
-            if field.field_status != "MISSING" or field.reviewed_at is not None:
+            if not _empty_unreviewed_field(field):
                 continue
             assurance_document_id = assurance_by_link.get(suggestion.operation_document_id)
             if assurance_document_id is None:
@@ -229,43 +176,26 @@ def project_engine2_supported_suggestions(*, organization_id: int, operation_id:
             validation = validate_ppq_value(field.field_name, suggestion.value)
             if validation.status.value != "VALID" or not validation.normalized_value:
                 continue
-
-            fingerprint = _fingerprint(
-                "US_LACEY_ENGINE2_SUPPORTED",
-                operation.public_id,
-                field.id,
-                assurance_document_id,
-                validation.normalized_value,
-                suggestion.source_page,
-                suggestion.source_text,
-            )
-            existing = session.scalar(
-                select(UsLaceyFieldCandidate).where(
-                    UsLaceyFieldCandidate.organization_id == org_id,
-                    UsLaceyFieldCandidate.fingerprint == fingerprint,
-                )
-            )
+            fingerprint = _fingerprint("US_LACEY_ENGINE2_SUPPORTED", operation.public_id, field.id, assurance_document_id, validation.normalized_value, suggestion.source_page, suggestion.source_text)
+            existing = session.scalar(select(UsLaceyFieldCandidate).where(UsLaceyFieldCandidate.organization_id == org_id, UsLaceyFieldCandidate.fingerprint == fingerprint))
             if existing is None:
-                session.add(
-                    UsLaceyFieldCandidate(
-                        organization_id=org_id,
-                        operation_id=operation.id,
-                        operation_field_id=field.id,
-                        source_assurance_document_id=assurance_document_id,
-                        original_value=suggestion.value,
-                        normalized_value=validation.normalized_value,
-                        validation_status="VALID",
-                        validation_error=None,
-                        confidence=suggestion.confidence,
-                        source_page=suggestion.source_page,
-                        source_locator=f"engine2-supported:{suggestion.source_text[:1500]}",
-                        extractor="engine2-shipment-supported",
-                        extractor_version=suggestion.engine_version,
-                        fingerprint=fingerprint,
-                        decision="PENDING",
-                    )
-                )
-
+                session.add(UsLaceyFieldCandidate(
+                    organization_id=org_id,
+                    operation_id=operation.id,
+                    operation_field_id=field.id,
+                    source_assurance_document_id=assurance_document_id,
+                    original_value=suggestion.value,
+                    normalized_value=validation.normalized_value,
+                    validation_status="VALID",
+                    validation_error=None,
+                    confidence=suggestion.confidence,
+                    source_page=suggestion.source_page,
+                    source_locator=f"engine2-supported:{suggestion.source_text[:1500]}",
+                    extractor="engine2-shipment-supported",
+                    extractor_version=suggestion.engine_version,
+                    fingerprint=fingerprint,
+                    decision="PENDING",
+                ))
             field.original_value = suggestion.value
             field.normalized_value = validation.normalized_value
             field.field_status = "FOUND"
@@ -278,13 +208,8 @@ def project_engine2_supported_suggestions(*, organization_id: int, operation_id:
             field.validation_status = "VALID"
             field.validation_error = None
             promoted += 1
-
         if promoted:
-            refresh_us_lacey_operation_status(
-                session,
-                organization_id=org_id,
-                operation=operation,
-            )
+            refresh_us_lacey_operation_status(session, organization_id=org_id, operation=operation)
         session.commit()
         return promoted
     except Exception:
