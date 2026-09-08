@@ -1,6 +1,7 @@
 """One-job U.S. worker execution built on the mature Assurance processor."""
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 import logging
 from pathlib import PurePath
@@ -28,6 +29,7 @@ from litoral_trace.us_lacey.jobs import (
     fail_us_lacey_job,
     recover_stale_us_lacey_jobs,
 )
+from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_lock
 from litoral_trace.us_lacey.projection import (
     project_assurance_document_to_us_lacey,
     refresh_us_lacey_operation_status,
@@ -395,34 +397,47 @@ def process_one_us_lacey_job(
                 conflict_count=0,
             )
 
-        projection = project_assurance_document_to_us_lacey(
-            organization_id=job.organization_id,
-            operation_id=job.operation_id,
-            assurance_document_id=job.assurance_document_id,
+        # Same-operation documents may be processed by different workers. Serialize
+        # the entire authoritative projection/post-processing phase so plant-line
+        # materialization observes the previous document's committed result before
+        # deciding whether another declaration line is required.
+        projection_guard = (
+            us_lacey_operation_projection_lock(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+            )
+            if isinstance(assurance_public_id, UUID)
+            else nullcontext()
         )
+        with projection_guard:
+            projection = project_assurance_document_to_us_lacey(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+                assurance_document_id=job.assurance_document_id,
+            )
 
-        # Run every evidence/recommendation postprocessor while the queue job is
-        # still RUNNING. If orchestration itself ever fails unexpectedly, the outer
-        # failure boundary can still transition the owned job to retry/failed instead
-        # of leaving a false terminal COMPLETED state behind.
-        _shadow_engine2(
-            organization_id=job.organization_id,
-            operation_id=job.operation_id,
-        )
-        _project_engine2_suggestions(
-            organization_id=job.organization_id,
-            operation_id=job.operation_id,
-        )
-        _project_verified_ai_suggestions(
-            organization_id=job.organization_id,
-            operation_id=job.operation_id,
-        )
-        # AI review may annotate existing OPEN conflicts with a bounded recommendation,
-        # but the recommendation cannot resolve an issue or set a field value.
-        _run_ai_review_recommendations(
-            organization_id=job.organization_id,
-            operation_id=job.operation_id,
-        )
+            # Run every evidence/recommendation postprocessor while the queue job is
+            # still RUNNING and while same-operation projection is serialized. If
+            # orchestration itself ever fails unexpectedly, the outer failure boundary
+            # can still transition the owned job instead of leaving false terminal work.
+            _shadow_engine2(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+            )
+            _project_engine2_suggestions(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+            )
+            _project_verified_ai_suggestions(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+            )
+            # AI review may annotate existing OPEN conflicts with a bounded recommendation,
+            # but the recommendation cannot resolve an issue or set a field value.
+            _run_ai_review_recommendations(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+            )
 
         # COMPLETED is the final queue transition, after the full processing chain.
         if not complete_us_lacey_job(job_id=job.id, worker_id=worker_id):
