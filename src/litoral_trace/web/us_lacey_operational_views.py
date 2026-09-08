@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+from litoral_trace.us_lacey.candidate_normalization import group_candidate_evidence
 from litoral_trace.web.templates import templates
 
 
@@ -62,12 +63,43 @@ def _field_has_displayable_resolution(field) -> bool:
     return value is not None and bool(str(value).strip())
 
 
+def _present_review_field(field):
+    """Collapse same-value candidate metadata for the customer review card.
+
+    Database candidate rows remain intact. The view exposes one representative per
+    canonical value, using the highest confidence while merging page references into
+    the representative page label. Thus page/confidence differences do not render as
+    separate conflicting choices.
+    """
+    groups = group_candidate_evidence(field.field_name, field.candidates)
+    if not groups:
+        return field
+    presented = []
+    for group in groups:
+        representative = group.representative
+        page_value = representative.source_page
+        if len(group.source_pages) > 1:
+            page_value = ", ".join(str(page) for page in group.source_pages)
+        elif len(group.source_pages) == 1:
+            page_value = group.source_pages[0]
+        presented.append(
+            replace(
+                representative,
+                confidence=float(group.confidence),
+                source_page=page_value,
+            )
+        )
+    return replace(field, candidates=tuple(presented))
+
+
 def _review_field_sets(detail):
     # FOUND means the pipeline has a supported proposal but no human has accepted it
     # yet. Keeping FOUND in the review queue makes the UI truthful and enables a safe
     # one-click confirmation workflow without presenting AI/extraction as final data.
     exception_fields = [
-        field for field in detail.fields if field.status in {"MISSING", "REVIEW", "FOUND"}
+        _present_review_field(field)
+        for field in detail.fields
+        if field.status in {"MISSING", "REVIEW", "FOUND"}
     ]
     settled_fields = [
         field
