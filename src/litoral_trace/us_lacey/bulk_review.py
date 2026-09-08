@@ -1,6 +1,6 @@
 """Atomic customer confirmation for safe U.S. Lacey suggestions.
 
-Bulk confirmation is an explicit human review action.  It may promote only current
+Bulk confirmation is an explicit human review action. It may promote only current
 ``FOUND`` proposals that are unambiguous and have no open reconciliation issue.
 The whole click is committed as one transaction so a validation failure cannot
 leave a partially-confirmed operation.
@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from litoral_trace.db.models import (
     ReconciliationIssue,
@@ -26,6 +26,7 @@ from litoral_trace.services.audit import (
     AuditOutcome,
     record_audit_event,
 )
+from litoral_trace.us_lacey.candidate_normalization import group_candidate_evidence
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.operations import UsLaceyOperationNotFound
 from litoral_trace.us_lacey.ppq505 import validate_ppq_value
@@ -53,9 +54,11 @@ def accept_supported_us_lacey_fields(
     """Confirm every currently safe ``FOUND`` field in one locked transaction.
 
     Idempotency follows from the state transition itself: after a successful click
-    each eligible field is ``MATCHED``.  A repeated request therefore sees no
+    each eligible field is ``MATCHED``. A repeated request therefore sees no
     eligible ``FOUND`` rows and writes no duplicate field-review audit events.
-    ``REVIEW``/``MISSING`` fields and fields with open conflicts are never touched.
+    ``REVIEW``/``MISSING`` fields and fields with genuinely different open conflicts
+    are never touched. Multiple provenance rows supporting the same canonical value
+    count as one safe candidate group rather than a conflict.
     """
     org_id = int(organization_id)
     try:
@@ -94,20 +97,18 @@ def accept_supported_us_lacey_fields(
 
         if found_fields:
             field_ids = [field.id for field in found_fields]
-            candidate_counts = dict(
-                session.execute(
-                    select(
-                        UsLaceyFieldCandidate.operation_field_id,
-                        func.count(UsLaceyFieldCandidate.id),
-                    )
-                    .where(
-                        UsLaceyFieldCandidate.organization_id == org_id,
-                        UsLaceyFieldCandidate.operation_id == operation.id,
-                        UsLaceyFieldCandidate.operation_field_id.in_(field_ids),
-                    )
-                    .group_by(UsLaceyFieldCandidate.operation_field_id)
-                ).all()
-            )
+            candidate_rows = session.scalars(
+                select(UsLaceyFieldCandidate)
+                .where(
+                    UsLaceyFieldCandidate.organization_id == org_id,
+                    UsLaceyFieldCandidate.operation_id == operation.id,
+                    UsLaceyFieldCandidate.operation_field_id.in_(field_ids),
+                )
+                .order_by(UsLaceyFieldCandidate.id.asc())
+            ).all()
+            candidates_by_field: dict[int, list[UsLaceyFieldCandidate]] = {}
+            for candidate in candidate_rows:
+                candidates_by_field.setdefault(int(candidate.operation_field_id), []).append(candidate)
             conflicted_field_ids = set(
                 session.scalars(
                     select(ReconciliationIssue.us_lacey_operation_field_id).where(
@@ -120,7 +121,7 @@ def accept_supported_us_lacey_fields(
                 ).all()
             )
         else:
-            candidate_counts = {}
+            candidates_by_field = {}
             conflicted_field_ids = set()
 
         actor = AuditActor(
@@ -131,7 +132,11 @@ def accept_supported_us_lacey_fields(
         )
         accepted = 0
         for field in found_fields:
-            if int(candidate_counts.get(field.id, 0)) > 1:
+            groups = group_candidate_evidence(
+                field.field_name,
+                candidates_by_field.get(int(field.id), ()),
+            )
+            if len(groups) > 1:
                 continue
             if field.id in conflicted_field_ids:
                 continue
@@ -141,7 +146,7 @@ def accept_supported_us_lacey_fields(
                 continue
             validation = validate_ppq_value(field.field_name, proposed)
             if validation.status.value in {"INVALID", "MISSING", "REVIEW_REQUIRED"}:
-                # FOUND is an invariant asserting a safe, valid proposal.  If that
+                # FOUND is an invariant asserting a safe, valid proposal. If that
                 # invariant is broken, fail the entire click rather than partially
                 # accepting neighboring fields.
                 raise UsLaceyReviewError(
