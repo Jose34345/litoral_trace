@@ -49,7 +49,7 @@ def test_engine2_orm_and_migration_share_status_scoped_document_identity():
 def test_engine2_service_defaults_use_canonical_version_boundaries():
     service = UsLaceyEngine2Service(vault_service=SimpleNamespace())
     assert service._engine_version == ENGINE_VERSION
-    assert service._ruleset.version == LaceyRuleset().version == "lacey_ruleset_2026_01"
+    assert service._ruleset.version == LaceyRuleset().version == "lacey_ruleset_2026_02_semantic_graph"
 
 
 def test_engine2_tables_have_forced_rls_and_tenant_policies(engine2_postgres_engine):
