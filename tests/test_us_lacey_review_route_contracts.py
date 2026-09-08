@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.staticfiles import StaticFiles
 
 from litoral_trace.us_lacey.bulk_review import UsLaceyBulkAcceptResult
 from litoral_trace.us_lacey.csrf import UsLaceyCsrfError
@@ -54,6 +55,11 @@ def test_unified_us_lacey_review_routes_have_no_dynamic_literal_shadow():
 
 def _standalone_review_app(monkeypatch, calls: list[dict]):
     app = FastAPI()
+    app.mount(
+        "/static",
+        StaticFiles(directory="src/litoral_trace/static"),
+        name="static",
+    )
     app.include_router(workflow.router)
     identity = SimpleNamespace(
         organization_id=314,
