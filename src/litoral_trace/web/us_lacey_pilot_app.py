@@ -626,14 +626,6 @@ async def operation_upload_submit(
             return _operation_error_page(request, "Operation not found.", status_code=404)
 
 
-# The canonical field-review namespace cannot collide with literal review actions.
-# The legacy alias remains for already-rendered forms, but its :int converter means
-# Starlette rejects action slugs before dispatch rather than sending them to Pydantic.
-@app.post(
-    "/operations/{operation_public_id}/review/{field_id:int}",
-    response_class=HTMLResponse,
-    include_in_schema=False,
-)
 @app.post(
     "/operations/{operation_public_id}/review/fields/{field_id:int}",
     response_class=HTMLResponse,
