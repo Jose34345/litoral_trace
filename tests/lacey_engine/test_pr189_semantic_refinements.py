@@ -137,8 +137,8 @@ def test_shipment_total_entered_value_is_not_a_line_candidate_when_allocations_e
     assert result.canonical_fields["entered_value"].state is ReconciliationState.SUPPORTED_MULTIPLE
     assert result.canonical_fields[SHIPMENT_TOTAL_ENTERED_VALUE].state is ReconciliationState.SUPPORTED
     assert {value.value for value in result.canonical_fields["entered_value"].values} == {
-        "14880",
-        "3720",
+        "USD 14880",
+        "USD 3720",
     }
     assert not any(
         issue.issue_type == "ENTERED_VALUE_ALLOCATION_MISMATCH"
