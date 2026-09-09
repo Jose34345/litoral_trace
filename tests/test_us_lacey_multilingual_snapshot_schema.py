@@ -297,3 +297,26 @@ def test_new_tables_persist_relationships_and_enforce_tenant_fks_and_uniqueness(
         session.commit()
     session.rollback()
     session.close()
+
+
+def test_phase_b_shadow_lifecycle_runs_inside_postgres_gate(
+    monkeypatch,
+    engine2_postgres_engine,
+    engine2_postgres_session_factory,
+):
+    """The gate already executes this file explicitly; keep Phase B acceptance non-skippable."""
+    from tests import test_us_lacey_multilingual_shadow_postgres as phase_b
+
+    acceptance_tests = (
+        phase_b.test_shadow_snapshot_is_operation_wide_idempotent_and_supersedes_atomically,
+        phase_b.test_shadow_snapshot_refuses_partial_snapshot_when_any_current_source_is_unavailable,
+        phase_b.test_shadow_snapshot_rejects_cross_tenant_operation_scope,
+        phase_b.test_shadow_snapshot_rolls_back_new_generation_if_build_fails,
+    )
+    for acceptance in acceptance_tests:
+        with monkeypatch.context() as scoped:
+            acceptance(
+                scoped,
+                engine2_postgres_engine,
+                engine2_postgres_session_factory,
+            )
