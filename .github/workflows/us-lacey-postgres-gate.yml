@@ -13,13 +13,20 @@ on:
       - "alembic/versions/041_add_us_lacey_lemon_squeezy_billing.py"
       - "alembic/versions/042_add_us_lacey_owner_admin_overview.py"
       - "alembic/versions/043_add_us_lacey_engine2_shadow.py"
+      - "alembic/versions/045_add_lacey_evidence_snapshots.py"
+      - "alembic/versions/046_add_multilingual_text_spans.py"
+      - "alembic/versions/047_add_semantic_evidence_graph.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/web/us_lacey_*"
       - "src/litoral_trace/services/us_lacey_admin.py"
+      - "src/litoral_trace/services/translation.py"
       - "src/litoral_trace/api/admin.py"
       - "src/litoral_trace/templates/admin_organizations.html"
       - "src/litoral_trace/templates/admin_us_lacey_accounts.html"
       - "src/litoral_trace/db/models/us_lacey.py"
+      - "src/litoral_trace/db/models/us_lacey_evidence_snapshot.py"
+      - "src/litoral_trace/db/models/document_text.py"
+      - "src/litoral_trace/db/models/semantic_evidence.py"
       - "src/litoral_trace/db/models/us_lacey_commercial.py"
       - "src/litoral_trace/db/models/us_lacey_payment_event.py"
       - "src/litoral_trace/db/models/reconciliation_issue.py"
@@ -162,7 +169,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "044_platform_admin_control_plane (head)" /tmp/alembic-current.txt
+          grep -Fx "047_lacey_semantic_graph (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -183,6 +190,13 @@ jobs:
               "us_lacey_engine_document_runs": 4,
               "us_lacey_engine_shipment_runs": 4,
               "us_lacey_payment_events": 1,
+              "us_lacey_evidence_snapshots": 4,
+              "us_lacey_evidence_snapshot_documents": 4,
+              "document_text_spans": 4,
+              "document_text_translations": 4,
+              "semantic_evidence_nodes": 4,
+              "semantic_snapshot_nodes": 4,
+              "semantic_evidence_edges": 4,
           }
           ppq_tables = (
               "us_lacey_ppq_shipments",
@@ -450,6 +464,27 @@ jobs:
           assert definer_role == {"rolcanlogin": False, "rolsuper": False, "rolbypassrls": False}
           engine.dispose()
           PY
+      - name: Prove multilingual schema downgrade and re-upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m alembic downgrade 044_platform_admin_control_plane
+          python -m alembic current | tee /tmp/alembic-downgraded.txt
+          grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
+          python -m alembic upgrade head
+          python -m alembic current | tee /tmp/alembic-reupgraded.txt
+          grep -Fx "047_lacey_semantic_graph (head)" /tmp/alembic-reupgraded.txt
+      - name: Prove multilingual snapshot persistence and tenant constraints
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs tests/test_us_lacey_multilingual_snapshot_schema.py \
+            | tee /tmp/multilingual-schema-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/multilingual-schema-postgres.txt; then
+            echo "Multilingual snapshot PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
       - name: Prove Engine 2 shadow persistence and tenant isolation
         shell: bash
         run: |
