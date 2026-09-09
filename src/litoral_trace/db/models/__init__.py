@@ -40,6 +40,19 @@ from litoral_trace.db.models.us_lacey import (
     UsLaceyPpqShipment,
     UsLaceyPlantDeclaration,
 )
+from litoral_trace.db.models.us_lacey_evidence_snapshot import (
+    UsLaceyEvidenceSnapshot,
+    UsLaceyEvidenceSnapshotDocument,
+)
+from litoral_trace.db.models.document_text import (
+    DocumentTextSpan,
+    DocumentTextTranslation,
+)
+from litoral_trace.db.models.semantic_evidence import (
+    SemanticEvidenceEdge,
+    SemanticEvidenceNode,
+    SemanticSnapshotNode,
+)
 from litoral_trace.db.models.us_lacey_commercial import (
     UsLaceyPayment,
     UsLaceyProcessingJob,
@@ -103,6 +116,13 @@ __all__ = [
     "UsLaceyPpqPlantLine",
     "UsLaceyPpqShipment",
     "UsLaceyPlantDeclaration",
+    "UsLaceyEvidenceSnapshot",
+    "UsLaceyEvidenceSnapshotDocument",
+    "DocumentTextSpan",
+    "DocumentTextTranslation",
+    "SemanticEvidenceNode",
+    "SemanticSnapshotNode",
+    "SemanticEvidenceEdge",
     "UsLaceySubscription",
     "UsLaceyPayment",
     "UsLaceyPaymentEvent",
