@@ -337,6 +337,7 @@ def _load_document_sources(
     organization_id: int,
     operation_id: int,
 ) -> tuple[list[_DocumentSource], str | None]:
+    """Return the complete current source set or refuse to build a partial snapshot."""
     rows = session.execute(
         select(UsLaceyOperationDocument, AssuranceDocument, VaultDocument)
         .join(
@@ -357,7 +358,6 @@ def _load_document_sources(
             UsLaceyOperationDocument.organization_id == organization_id,
             UsLaceyOperationDocument.operation_id == operation_id,
             UsLaceyOperationDocument.is_current.is_(True),
-            VaultDocument.status == "available",
         )
         .order_by(UsLaceyOperationDocument.id.asc())
     ).all()
@@ -366,6 +366,8 @@ def _load_document_sources(
 
     sources: list[_DocumentSource] = []
     for operation_document, assurance_document, vault_document in rows:
+        if vault_document.status != "available":
+            return [], "SOURCE_SET_NOT_FULLY_AVAILABLE"
         extraction_run = session.scalar(
             select(DocumentExtractionRun)
             .where(
