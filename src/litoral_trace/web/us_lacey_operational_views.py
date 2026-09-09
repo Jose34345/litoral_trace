@@ -100,19 +100,42 @@ def _present_review_field(field):
     return replace(field, candidates=tuple(presented))
 
 
+_OPEN_REVIEW_STATUSES = frozenset({"MISSING", "REVIEW", "FOUND"})
+
+
 def _review_field_sets(detail):
     # FOUND means the pipeline has a supported proposal but no human has accepted it
     # yet. Keeping FOUND in the review queue makes the UI truthful and enables a safe
     # one-click confirmation workflow without presenting AI/extraction as final data.
+    #
+    # Percent Recycled is conditional on Article / Component being paper or
+    # paperboard. Until applicability is known, it is intentionally absent from the
+    # customer exception queue and therefore does not inflate Needs attention. Once
+    # Article / Component is resolved, the canonical status refresh either marks it
+    # NOT_REQUIRED or exposes the still-required recycled-content field for review.
+    article_components = {
+        str(getattr(field, "line_reference", "")): field
+        for field in detail.fields
+        if getattr(field, "field_name", None) == "article_component"
+    }
+
+    def is_open_review_field(field) -> bool:
+        if getattr(field, "status", None) not in _OPEN_REVIEW_STATUSES:
+            return False
+        if getattr(field, "field_name", None) != "percent_recycled":
+            return True
+        article = article_components.get(str(getattr(field, "line_reference", "")))
+        return article is None or getattr(article, "status", None) not in _OPEN_REVIEW_STATUSES
+
     exception_fields = [
         _present_review_field(field)
         for field in detail.fields
-        if field.status in {"MISSING", "REVIEW", "FOUND"}
+        if is_open_review_field(field)
     ]
     settled_fields = [
         field
         for field in detail.fields
-        if field.status not in {"MISSING", "REVIEW", "FOUND"}
+        if field.status not in _OPEN_REVIEW_STATUSES
         and _field_has_displayable_resolution(field)
     ]
     return exception_fields, settled_fields
