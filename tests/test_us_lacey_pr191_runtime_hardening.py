@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import inspect
 from types import SimpleNamespace
 
@@ -8,6 +9,23 @@ from litoral_trace.us_lacey.reconciliation_invariants import (
     _mark_line_fields_reconciliation_state,
 )
 from litoral_trace.us_lacey.review import finalize_us_lacey_review, review_us_lacey_field
+from litoral_trace.web.us_lacey_operational_views import _present_review_field
+
+
+@dataclass(frozen=True)
+class _DescriptionCandidate:
+    id: int
+    original_value: str
+    normalized_value: str | None = None
+    confidence: float = 0.87
+    source_page: int | None = 2
+    source_document_id: int = 10
+
+
+@dataclass(frozen=True)
+class _DescriptionField:
+    field_name: str
+    candidates: tuple[_DescriptionCandidate, ...]
 
 
 def test_human_review_reconciles_before_readiness_and_commit():
@@ -96,3 +114,19 @@ def test_structural_description_values_are_invalid_at_ppq_domain_boundary():
         "Retail set: four solid rubberwood coasters with one MDF holder; natural finish; packed for retail sale",
     )
     assert commercial.status is PpqValidationStatus.VALID
+
+
+def test_all_filtered_description_candidates_do_not_fall_back_to_original_pool():
+    field = _DescriptionField(
+        field_name="merchandise_description",
+        candidates=(
+            _DescriptionCandidate(1, "Solid rubberwood plant material"),
+            _DescriptionCandidate(2, "MDF plant material"),
+            _DescriptionCandidate(3, "Metal fasteners / protective pads / adhesive"),
+            _DescriptionCandidate(4, "Corrugated cartons, inserts, pallets and other packing"),
+        ),
+    )
+
+    presented = _present_review_field(field)
+
+    assert presented.candidates == ()
