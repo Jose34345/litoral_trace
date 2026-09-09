@@ -101,11 +101,32 @@ def test_genuinely_different_entered_values_remain_separate_candidate_groups():
     assert {group.canonical_value for group in groups} == {"18600", "14880"}
 
 
-def test_review_workspace_js_uses_async_post_and_explicit_viewport_restore():
+def test_review_workspace_js_uses_htmx_and_scrolls_to_next_review_item():
     source = Path("src/litoral_trace/static/src/js/us-lacey-workspace.js").read_text(encoding="utf-8")
+    template = Path(
+        "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
+    ).read_text(encoding="utf-8")
 
-    assert 'document.addEventListener("submit"' in source
-    assert "fetch(form.action" in source
-    assert "event.preventDefault()" in source
-    assert "currentWorkspace.replaceWith(freshWorkspace)" in source
-    assert "restoreViewport(viewportX, viewportY)" in source
+    assert 'document.addEventListener("submit"' not in source
+    assert "fetch(form.action" not in source
+    assert 'document.addEventListener("htmx:beforeRequest"' in source
+    assert 'document.addEventListener("htmx:afterSwap"' in source
+    assert 'scrollIntoView({ behavior: "smooth", block: "center" })' in source
+    assert "restoreViewport(viewport.x, viewport.y)" in source
+
+    assert 'hx-target="#operation-workspace"' in template
+    assert 'hx-swap="outerHTML"' in template
+    assert '/review/actions/fields/' in template
+    assert 'data-reconciliation-invariant="entered-value"' in template
+    assert 'aria-invalid="true"' in template
+    assert 'button_type="submit", disabled=True' in template
+
+
+def test_disabled_complete_preparation_has_entered_value_reconciliation_tooltip():
+    ui = Path("src/litoral_trace/templates/components/ui.html").read_text(encoding="utf-8")
+
+    assert 'disabled and label == "Complete preparation"' in ui
+    assert (
+        "Cannot complete preparation: Please resolve the Entered Value reconciliation inconsistency first."
+        in ui
+    )

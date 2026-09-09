@@ -36,6 +36,10 @@ from litoral_trace.us_lacey.ppq505 import (
     is_paper_or_paperboard,
     validate_ppq_value,
 )
+from litoral_trace.us_lacey.reconciliation_invariants import (
+    reconcile_entered_value_invariant,
+    upsert_shipment_total_entered_value,
+)
 
 
 class UsLaceyProjectionError(RuntimeError):
@@ -110,7 +114,7 @@ _EXPLICIT_HEADER_ALIASES = {
     "recycled percentage": "percent_recycled",
 }
 
-_RAW_TABLE_FIELD = re.compile(r"^raw\.table\.\d+\.(?P<header>.+)$")
+_RAW_TABLE_FIELD = re.compile(r"^raw\.table\.(?P<table>\d+)\.(?P<header>.+)$")
 _DATA_ROW = re.compile(r"(?:^|;)data_row:(?P<row>\d+)(?:;|$)")
 _CONTAINER_TOKEN = re.compile(
     r"(?<![A-Z0-9])[A-Z]{4}(?:[ -]?\d){7}(?![A-Z0-9])",
@@ -127,6 +131,20 @@ _WEIGHT_DESCRIPTION = re.compile(
     re.IGNORECASE,
 )
 _NOT_PAPER_REASON_CODE = "NOT_PAPER_OR_PAPERBOARD"
+_PLANT_DECLARATION_SIGNATURE = frozenset(
+    {"genus", "species", "country of harvest", "plant quantity"}
+)
+_LINE_ALLOCATION_IDENTITY_HEADERS = frozenset(
+    {
+        "component",
+        "article component",
+        "article",
+        "genus",
+        "species",
+        "country of harvest",
+        "plant quantity",
+    }
+)
 
 _STRUCTURAL_ARTIFACTS_BY_TARGET = {
     "container_number": frozenset(
@@ -230,6 +248,27 @@ def _explicit_header_target(header: object) -> str | None:
     return None
 
 
+def _table_header_context(row: ExtractedDocumentField, table_headers) -> frozenset[str]:
+    """Return headers for this raw table, while preserving legacy flat-call tests."""
+    if isinstance(table_headers, dict):
+        match = _RAW_TABLE_FIELD.match(str(row.field_name or ""))
+        if match is not None:
+            return frozenset(table_headers.get(int(match.group("table")), frozenset()))
+        merged: set[str] = set()
+        for headers in table_headers.values():
+            merged.update(headers)
+        return frozenset(merged)
+    return frozenset(table_headers or ())
+
+
+def _is_plant_declaration_table(headers: frozenset[str]) -> bool:
+    return _PLANT_DECLARATION_SIGNATURE.issubset(headers)
+
+
+def _is_line_allocation_table(headers: frozenset[str]) -> bool:
+    return "entered value" in headers and bool(headers & _LINE_ALLOCATION_IDENTITY_HEADERS)
+
+
 def _description_candidate_role(row: ExtractedDocumentField, value: object) -> str | None:
     """Classify obvious non-commercial-description evidence before candidate admission."""
     raw = " ".join(str(value or "").split()).strip()
@@ -259,6 +298,7 @@ def _description_candidate_role(row: ExtractedDocumentField, value: object) -> s
         or value_folded.startswith("supplier statement ")
         or value_folded.startswith("supplier declares ")
         or value_folded.startswith("supplier certifies ")
+        or re.search(r"\bsupplier s production plant\b", value_folded)
     ):
         return "SUPPLIER_STATEMENT"
     return None
@@ -301,23 +341,32 @@ def _is_candidate_admissible(
 def _target_field(
     row: ExtractedDocumentField,
     *,
-    table_headers: frozenset[str] = frozenset(),
+    table_headers=frozenset(),
 ) -> tuple[str | None, int]:
+    context_headers = _table_header_context(row, table_headers)
     generic = _SAFE_GENERIC_MAP.get(str(row.field_name or "").lower())
     if generic:
         value = row.normalized_value or row.original_value
         if generic == "merchandise_description" and _description_candidate_role(row, value):
             return None, 0
-        if _is_candidate_admissible(generic, value, table_headers=table_headers):
+        if _is_candidate_admissible(generic, value, table_headers=context_headers):
             return generic, 2
         return None, 0
     raw_match = _RAW_TABLE_FIELD.match(str(row.field_name or ""))
     if raw_match:
-        target = _explicit_header_target(raw_match.group("header"))
+        header = _fold(raw_match.group("header"))
+        if header == "unit" and _is_plant_declaration_table(context_headers):
+            target = "metric_unit"
+        else:
+            target = _explicit_header_target(raw_match.group("header"))
         value = row.normalized_value or row.original_value
+        if target == "entered_value" and context_headers and not _is_line_allocation_table(context_headers):
+            # A commercial invoice/shipment total is reconciliation evidence, not a
+            # PPQ plant-line allocation. It is persisted separately by the projector.
+            return None, 0
         if target == "merchandise_description" and _description_candidate_role(row, value):
             return None, 0
-        if target and _is_candidate_admissible(target, value, table_headers=table_headers):
+        if target and _is_candidate_admissible(target, value, table_headers=context_headers):
             return target, 3
     return None, 0
 
@@ -341,7 +390,7 @@ def _line_reference(
 def _has_explicit_line_entered_value(
     extracted: tuple[ExtractedDocumentField, ...] | list[ExtractedDocumentField],
     *,
-    table_headers: frozenset[str],
+    table_headers,
 ) -> bool:
     for row in extracted:
         target, _priority = _target_field(row, table_headers=table_headers)
@@ -350,10 +399,34 @@ def _has_explicit_line_entered_value(
     return False
 
 
+def _shipment_total_entered_value_source(
+    extracted: tuple[ExtractedDocumentField, ...] | list[ExtractedDocumentField],
+    *,
+    table_headers,
+) -> ExtractedDocumentField | None:
+    """Return one unambiguous non-line Entered Value source, otherwise fail closed."""
+    distinct: dict[str, ExtractedDocumentField] = {}
+    for row in extracted:
+        raw_match = _RAW_TABLE_FIELD.match(str(row.field_name or ""))
+        if raw_match is None or _fold(raw_match.group("header")) != "entered value":
+            continue
+        headers = _table_header_context(row, table_headers)
+        if _is_line_allocation_table(headers):
+            continue
+        raw = row.normalized_value or row.original_value
+        validation = validate_ppq_value("entered_value", raw)
+        if validation.status.value != "VALID" or validation.normalized_value is None:
+            continue
+        distinct.setdefault(validation.normalized_value, row)
+    if len(distinct) != 1:
+        return None
+    return next(iter(distinct.values()))
+
+
 def _explicit_plant_data_rows(
     extracted: tuple[ExtractedDocumentField, ...] | list[ExtractedDocumentField],
     *,
-    table_headers: frozenset[str],
+    table_headers,
 ) -> tuple[int, ...]:
     """Return explicit table rows that carry plant-line identity evidence.
 
@@ -394,7 +467,7 @@ def _materialize_explicit_plant_lines(
     organization_id: int,
     operation: UsLaceyOperation,
     extracted: tuple[ExtractedDocumentField, ...] | list[ExtractedDocumentField],
-    table_headers: frozenset[str],
+    table_headers,
 ) -> tuple[str, ...]:
     """Create only consecutively evidenced plant rows missing from an operation.
 
@@ -550,7 +623,7 @@ def _apply_percent_recycled_condition(
     """Resolve Percent Recycled as not-required for non-paper plant lines.
 
     Extracted values remain on the field as provenance; only the regulatory state is
-    changed.  If the article later becomes paper/paperboard, the automatic reason is
+    changed. If the article later becomes paper/paperboard, the automatic reason is
     removed and the evidence returns to human review instead of being silently used.
     """
     rows = session.scalars(
@@ -694,11 +767,40 @@ def project_assurance_document_to_us_lacey(
             )
             .order_by(ExtractedDocumentField.id.asc())
         ).all()
-        table_headers = frozenset(
-            _fold(match.group("header"))
-            for row in extracted
-            if (match := _RAW_TABLE_FIELD.match(str(row.field_name or "")))
+        table_header_sets: dict[int, set[str]] = {}
+        for row in extracted:
+            match = _RAW_TABLE_FIELD.match(str(row.field_name or ""))
+            if match is None:
+                continue
+            table_header_sets.setdefault(int(match.group("table")), set()).add(
+                _fold(match.group("header"))
+            )
+        table_headers = {
+            table_id: frozenset(headers)
+            for table_id, headers in table_header_sets.items()
+        }
+
+        shipment_total_source = _shipment_total_entered_value_source(
+            extracted,
+            table_headers=table_headers,
         )
+        if shipment_total_source is not None:
+            shipment_total_raw = (
+                shipment_total_source.normalized_value or shipment_total_source.original_value
+            )
+            upsert_shipment_total_entered_value(
+                session,
+                organization_id=org_id,
+                operation=operation,
+                raw_value=shipment_total_raw,
+                source_assurance_document_id=document.id,
+                source_page=shipment_total_source.source_page,
+                source_locator=shipment_total_source.source_locator,
+                extractor=latest_run.engine,
+                extractor_version=latest_run.engine_version,
+                confidence=float(shipment_total_source.confidence),
+            )
+
         line_references = _materialize_explicit_plant_lines(
             session,
             organization_id=org_id,
@@ -732,8 +834,8 @@ def project_assurance_document_to_us_lacey(
                 and has_entered_value_allocations
                 and _DATA_ROW.search(str(row.source_locator or "")) is None
             ):
-                # Preserve shipment totals in extracted evidence/Engine 2, but never
-                # project them into a plant-line field when explicit allocations exist.
+                # Preserve non-line totals as evidence, but never project them into
+                # a plant line when explicit allocations are present.
                 continue
             line = _line_reference(
                 target=target,
@@ -900,6 +1002,11 @@ def project_assurance_document_to_us_lacey(
                 projected += 1
                 review += 1
 
+        reconcile_entered_value_invariant(
+            session,
+            organization_id=org_id,
+            operation=operation,
+        )
         operation_status = refresh_us_lacey_operation_status(
             session,
             organization_id=org_id,

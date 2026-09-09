@@ -10,6 +10,7 @@ import zlib
 from litoral_trace.assurance.extraction import extract_structured_fields
 from litoral_trace.assurance.parsers import parse_document
 from litoral_trace.us_lacey.projection import _fold, _target_field
+from litoral_trace.us_lacey.reconciliation_invariants import evaluate_entered_value_reconciliation
 
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "us_lacey_golden_packet_01.pdf.zlib.b64"
@@ -80,9 +81,6 @@ def _find_raw(rows, *, header: str, value: str):
 
 
 def _projection_sources(parsed):
-    # Production projection sees both raw persisted cells and deterministic
-    # structured fields. Keep both paths in this regression so a semantic filter
-    # cannot be bypassed by a different extractor representation.
     raw = _raw_cells(parsed)
     structured = [
         SimpleNamespace(
@@ -143,8 +141,6 @@ def test_exact_golden_packet_unit_is_projected_only_inside_plant_declaration_tab
         for row in plant_units
     } == {(1, "KG", "metric_unit"), (2, "KG", "metric_unit")}
 
-    # The same document contains a commercial "Unit Price" column. It is not a
-    # regulatory plant unit and must never enter the PPQ candidate pool.
     unit_price = _find_raw(rows, header="Unit Price", value="$15.50")
     assert _target_field(unit_price, table_headers=headers_by_table) == (None, 0)
 
@@ -162,12 +158,20 @@ def test_exact_golden_packet_shipment_total_never_competes_with_line_allocations
 
     assert _table_id(shipment_total) != _table_id(line_1)
     assert _table_id(line_1) == _table_id(line_2)
-
-    # Invoice total remains source evidence for reconciliation, but it is not a
-    # plant-line field candidate. Only the explicit allocation table is line-scoped.
     assert _target_field(shipment_total, table_headers=headers_by_table) == (None, 0)
     assert _target_field(line_1, table_headers=headers_by_table) == ("entered_value", 3)
     assert _target_field(line_2, table_headers=headers_by_table) == ("entered_value", 3)
+
+    reconciled = evaluate_entered_value_reconciliation(
+        [line_1.original_value, line_2.original_value], shipment_total.original_value
+    )
+    broken = evaluate_entered_value_reconciliation(
+        ["18,600.00", line_2.original_value], shipment_total.original_value
+    )
+    assert reconciled.evaluated is True and reconciled.reconciled is True
+    assert str(reconciled.line_total) == "18600"
+    assert broken.evaluated is True and broken.reconciled is False
+    assert str(broken.line_total) == "22320"
 
 
 def test_exact_golden_packet_supplier_statement_cannot_be_merchandise_description():
