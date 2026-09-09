@@ -6,13 +6,14 @@ import pytest
 from sqlalchemy import func, inspect, select
 
 from litoral_trace.db.models import (
+    AssuranceDocument,
     DocumentExtractionRun,
     DocumentTextSpan,
     ExtractedDocumentField,
     SemanticEvidenceNode,
     UsLaceyEvidenceSnapshot,
-    UsLaceyEvidenceSnapshotDocument,
     UsLaceyOperation,
+    VaultDocument,
 )
 from litoral_trace.us_lacey import shadow_evidence_snapshot as shadow
 from litoral_trace.us_lacey.shadow_evidence_snapshot import ShadowEvidenceSnapshotError
@@ -198,6 +199,82 @@ def test_shadow_snapshot_is_operation_wide_idempotent_and_supersedes_atomically(
     ).all():
         assert node.source_span_id is not None
         assert session.get(DocumentTextSpan, node.source_span_id) is not None
+    session.close()
+
+
+def test_shadow_snapshot_refuses_partial_snapshot_when_any_current_source_is_unavailable(
+    monkeypatch,
+    engine2_postgres_engine,
+    engine2_postgres_session_factory,
+):
+    _require_phase_b_schema(engine2_postgres_engine)
+    monkeypatch.setenv(shadow.SHADOW_FLAG, "1")
+
+    org, operation_id, _, first_assurance_id, _, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        content=b"phase-b-complete-source",
+    )
+    _add_extraction(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        assurance_document_id=first_assurance_id,
+        values=[("description", "Wooden furniture component", 1)],
+    )
+    first = shadow.build_shadow_evidence_snapshot(
+        organization_id=org,
+        operation_id=operation_id,
+        use_configured_translation_provider=False,
+        session_factory=engine2_postgres_session_factory,
+        lock_factory=_no_lock,
+    )
+    assert first.created is True
+
+    _, second_assurance_id, _, _ = add_test_document(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        operation_id=operation_id,
+        role="PACKING_LIST",
+        filename="unavailable.pdf",
+        content=b"phase-b-unavailable-source",
+    )
+    _add_extraction(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        assurance_document_id=second_assurance_id,
+        values=[("description", "Documento de embalaje de madera", 1)],
+    )
+    session = tenant_session(engine2_postgres_session_factory, org)
+    assurance = session.get(AssuranceDocument, second_assurance_id)
+    assert assurance is not None
+    vault = session.get(VaultDocument, assurance.vault_document_id)
+    assert vault is not None
+    vault.status = "delete_pending"
+    session.commit()
+    session.close()
+
+    blocked = shadow.build_shadow_evidence_snapshot(
+        organization_id=org,
+        operation_id=operation_id,
+        use_configured_translation_provider=False,
+        session_factory=engine2_postgres_session_factory,
+        lock_factory=_no_lock,
+    )
+    assert blocked.created is False
+    assert blocked.reason == "SOURCE_SET_NOT_FULLY_AVAILABLE"
+    assert blocked.snapshot_id is None
+
+    session = tenant_session(engine2_postgres_session_factory, org)
+    snapshots = session.scalars(
+        select(UsLaceyEvidenceSnapshot).where(
+            UsLaceyEvidenceSnapshot.organization_id == org,
+            UsLaceyEvidenceSnapshot.operation_id == operation_id,
+        )
+    ).all()
+    assert len(snapshots) == 1
+    assert snapshots[0].id == first.snapshot_id
+    assert snapshots[0].status == "CURRENT"
+    operation = session.get(UsLaceyOperation, operation_id)
+    assert operation.current_evidence_snapshot_id == first.snapshot_id
     session.close()
 
 
