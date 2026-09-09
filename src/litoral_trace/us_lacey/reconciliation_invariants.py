@@ -157,6 +157,31 @@ def _resolve_issue(issue: ReconciliationIssue | None, reason: str) -> None:
     issue.resolved_at = _utc_now()
 
 
+def _mark_line_fields_reconciliation_state(
+    line_fields: list[UsLaceyOperationField],
+    *,
+    reconciled: bool,
+) -> None:
+    """Keep arithmetic-invalid allocations in the editable review state.
+
+    A human value remains preserved as evidence of the decision. The status moves
+    back to REVIEW while the invariant is broken so the red inline editor remains
+    available. Once the invariant reconciles, only fields that were actually human
+    reviewed are restored to MATCHED; untouched extracted proposals retain their
+    original review state and still require confirmation.
+    """
+    for field in line_fields:
+        effective = field.human_value or field.normalized_value or field.original_value
+        if _normalized_entered_value(effective) is None:
+            continue
+        if reconciled:
+            if field.human_value is not None and field.reviewed_at is not None:
+                field.field_status = "MATCHED"
+        else:
+            if field.human_value is not None or field.field_status in {"MATCHED", "FOUND"}:
+                field.field_status = "REVIEW"
+
+
 def reconcile_entered_value_invariant(
     session,
     *,
@@ -220,6 +245,7 @@ def reconcile_entered_value_invariant(
         return result
 
     if result.reconciled:
+        _mark_line_fields_reconciliation_state(line_fields, reconciled=True)
         _resolve_issue(
             issue,
             "Line Entered Value allocations reconcile exactly to the declared shipment total.",
@@ -236,6 +262,7 @@ def reconcile_entered_value_invariant(
             }
         return result
 
+    _mark_line_fields_reconciliation_state(line_fields, reconciled=False)
     line_total = result.line_total or Decimal("0")
     shipment_total = result.shipment_total or Decimal("0")
     evidence = {
