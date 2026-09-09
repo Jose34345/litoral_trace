@@ -93,7 +93,7 @@ jobs:
             echo "Expected exactly one Alembic head."
             exit 1
           fi
-          grep -Fx "044_platform_admin_control_plane (head)" alembic-heads.txt
+          grep -Fx "047_lacey_semantic_graph (head)" alembic-heads.txt
 
       - name: Run pytest suite
         run: python -m pytest -q -rs
@@ -107,7 +107,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "npm"
