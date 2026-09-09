@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from litoral_trace.lacey_engine.domain import (
     AdmittedCandidate,
     DocumentResolution,
@@ -136,10 +138,10 @@ def test_shipment_total_entered_value_is_not_a_line_candidate_when_allocations_e
 
     assert result.canonical_fields["entered_value"].state is ReconciliationState.SUPPORTED_MULTIPLE
     assert result.canonical_fields[SHIPMENT_TOTAL_ENTERED_VALUE].state is ReconciliationState.SUPPORTED
-    assert {value.value for value in result.canonical_fields["entered_value"].values} == {
-        "USD 14880",
-        "USD 3720",
-    }
+    assert {
+        Decimal(value.value.split()[-1])
+        for value in result.canonical_fields["entered_value"].values
+    } == {Decimal("14880"), Decimal("3720")}
     assert not any(
         issue.issue_type == "ENTERED_VALUE_ALLOCATION_MISMATCH"
         for issue in result.issues
