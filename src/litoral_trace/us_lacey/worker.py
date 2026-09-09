@@ -35,6 +35,10 @@ from litoral_trace.us_lacey.projection import (
     refresh_us_lacey_operation_status,
 )
 from litoral_trace.us_lacey.lacey_engine_service import ENGINE2_SHADOW, UsLaceyEngine2Service, engine2_mode
+from litoral_trace.us_lacey.shadow_evidence_snapshot import (
+    build_shadow_evidence_snapshot,
+    multilingual_shadow_enabled,
+)
 from litoral_trace.us_lacey.storage import (
     build_us_lacey_storage_settings,
     get_us_lacey_storage_client,
@@ -153,6 +157,22 @@ def _run_ai_review_recommendations(*, organization_id: int, operation_id: int) -
     except Exception:
         LOGGER.exception(
             "Lacey AI review recommendation failed",
+            extra={"organization_id": organization_id, "operation_id": operation_id},
+        )
+
+
+def _shadow_multilingual_evidence_snapshot(*, organization_id: int, operation_id: int) -> None:
+    """Best-effort Phase B dual-write; legacy completion is authoritative."""
+    if not multilingual_shadow_enabled():
+        return
+    try:
+        build_shadow_evidence_snapshot(
+            organization_id=organization_id,
+            operation_id=operation_id,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Lacey multilingual evidence shadow snapshot failed",
             extra={"organization_id": organization_id, "operation_id": operation_id},
         )
 
@@ -435,6 +455,16 @@ def process_one_us_lacey_job(
             # AI review may annotate existing OPEN conflicts with a bounded recommendation,
             # but the recommendation cannot resolve an issue or set a field value.
             _run_ai_review_recommendations(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+            )
+
+        # The multilingual dual-write owns its own operation advisory lock. Run it
+        # only after the authoritative projection lock has been released to avoid a
+        # nested lock on a separate connection. Any shadow failure is swallowed by
+        # the wrapper and cannot alter the legacy queue state.
+        if isinstance(assurance_public_id, UUID):
+            _shadow_multilingual_evidence_snapshot(
                 organization_id=job.organization_id,
                 operation_id=job.operation_id,
             )
