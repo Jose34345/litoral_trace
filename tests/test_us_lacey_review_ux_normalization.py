@@ -1,7 +1,10 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from litoral_trace.us_lacey.candidate_normalization import group_candidate_evidence
+from litoral_trace.us_lacey.candidate_normalization import (
+    group_candidate_evidence,
+    merchandise_description_candidate_role,
+)
 from litoral_trace.us_lacey.ppq505 import (
     PpqValidationStatus,
     canonical_ppq_value_key,
@@ -101,7 +104,36 @@ def test_genuinely_different_entered_values_remain_separate_candidate_groups():
     assert {group.canonical_value for group in groups} == {"18600", "14880"}
 
 
-def test_review_workspace_js_uses_htmx_and_scrolls_to_next_review_item():
+def test_merchandise_description_pool_rejects_golden_packet_structural_noise():
+    rejected = (
+        ("Solid rubberwood plant material", "PLANT_COMPONENT_DESCRIPTION"),
+        ("MDF plant material", "PLANT_COMPONENT_DESCRIPTION"),
+        ("Metal fasteners / protective pads / adhesive", "PLANT_COMPONENT_DESCRIPTION"),
+        ("Corrugated cartons, inserts, pallets and other packing", "PACKAGING_DESCRIPTION"),
+    )
+    candidates = tuple(
+        _Candidate(index, value, value, confidence=0.87, source_page=2)
+        for index, (value, _role) in enumerate(rejected, start=1)
+    ) + (
+        _Candidate(
+            99,
+            "Retail set: four solid rubberwood coasters with one MDF holder; natural finish; packed for retail sale",
+            "Retail set: four solid rubberwood coasters with one MDF holder; natural finish; packed for retail sale",
+            confidence=0.98,
+            source_page=1,
+        ),
+    )
+
+    for value, role in rejected:
+        assert merchandise_description_candidate_role(value) == role
+    assert merchandise_description_candidate_role(candidates[-1].original_value) is None
+
+    groups = group_candidate_evidence("merchandise_description", candidates)
+    assert len(groups) == 1
+    assert groups[0].representative.id == 99
+
+
+def test_review_workspace_js_uses_granular_htmx_and_scrolls_only_when_needed():
     source = Path("src/litoral_trace/static/src/js/us-lacey-workspace.js").read_text(encoding="utf-8")
     template = Path(
         "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
@@ -111,11 +143,22 @@ def test_review_workspace_js_uses_htmx_and_scrolls_to_next_review_item():
     assert "fetch(form.action" not in source
     assert 'document.addEventListener("htmx:beforeRequest"' in source
     assert 'document.addEventListener("htmx:afterSwap"' in source
-    assert 'scrollIntoView({ behavior: "smooth", block: "center" })' in source
-    assert "restoreViewport(viewport.x, viewport.y)" in source
+    assert "getBoundingClientRect()" in source
+    assert "isVisibleInViewport(next)" in source
+    assert 'scrollIntoView({ behavior: "smooth", block: "nearest" })' in source
+    assert 'block: "center"' not in source
+    assert "restoreViewport" not in source
+    assert "window.scrollTo" not in source
 
-    assert 'hx-target="#operation-workspace"' in template
-    assert 'hx-swap="outerHTML"' in template
+    assert 'hx-target="closest [data-review-field]"' in template
+    assert 'hx-select="#review-field-{{ field.id }}"' in template
+    assert 'hx-target="#operation-workspace"' not in template
+    assert 'id="review-field-list"' in template
+    assert 'hx-target="#review-field-list"' in template
+    assert 'id="review-summary"' in template
+    assert 'id="entered-value-reconciliation-region"' in template
+    assert 'id="final-confirmation"' in template
+    assert template.count('hx-swap-oob="true"') >= 4
     assert '/review/actions/fields/' in template
     assert 'data-reconciliation-invariant="entered-value"' in template
     assert 'aria-invalid="true"' in template

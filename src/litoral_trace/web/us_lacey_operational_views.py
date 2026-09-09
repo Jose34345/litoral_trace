@@ -82,7 +82,9 @@ def _present_review_field(field):
         return field
     groups = group_candidate_evidence(field_name, candidates)
     if not groups:
-        return field
+        # Filtering is a deliberate customer-safety decision. Never fall back to the
+        # original candidate tuple when every value was rejected as structural noise.
+        return replace(field, candidates=())
     presented = []
     for group in groups:
         representative = group.representative
