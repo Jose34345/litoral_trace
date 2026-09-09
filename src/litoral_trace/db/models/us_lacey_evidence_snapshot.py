@@ -164,3 +164,13 @@ if not any(
             use_alter=True,
         )
     )
+
+if not any(
+    index.name == "ix_us_lacey_operations_current_snapshot"
+    for index in UsLaceyOperation.__table__.indexes
+):
+    Index(
+        "ix_us_lacey_operations_current_snapshot",
+        UsLaceyOperation.__table__.c.organization_id,
+        UsLaceyOperation.__table__.c.current_evidence_snapshot_id,
+    )
