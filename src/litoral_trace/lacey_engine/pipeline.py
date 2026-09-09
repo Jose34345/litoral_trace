@@ -101,6 +101,53 @@ def _table_context(block) -> bool:
     return block.structure_type in {LayoutStructureType.LINE_ITEM_TABLE, LayoutStructureType.MATRIX_TABLE}
 
 
+def _plant_declaration_table_ids(layout) -> frozenset[str]:
+    """Identify tables with an explicit PPQ/Lacey plant-declaration signature.
+
+    Generic commercial tables frequently contain a column named ``Unit``.  That
+    header is only regulatory plant-unit evidence when the same table also carries
+    the scientific/harvest and plant-quantity columns that define a Plant
+    Declaration row.
+    """
+    headers_by_table: dict[str, set[str]] = {}
+    for block in layout.blocks:
+        if not _table_context(block) or not block.table_id or not block.table_header:
+            continue
+        headers_by_table.setdefault(str(block.table_id), set()).add(
+            " ".join(str(block.table_header).split()).casefold()
+        )
+
+    qualified: set[str] = set()
+    for table_id, headers in headers_by_table.items():
+        has_quantity = any(_PLANT_QUANTITY_LABEL.fullmatch(header) for header in headers)
+        has_unit = any(_PLANT_UNIT_LABEL.fullmatch(header) or header == "unit" for header in headers)
+        has_genus = any(re.fullmatch(r"genus|plant genus|scientific name genus", header) for header in headers)
+        has_species = any(re.fullmatch(r"species|plant species|scientific name species", header) for header in headers)
+        has_harvest_or_component = any(
+            re.search(r"country of harvest|harvest country", header)
+            or _ARTICLE_COMPONENT_LABEL.fullmatch(header)
+            for header in headers
+        )
+        if has_quantity and has_unit and has_genus and has_species and has_harvest_or_component:
+            qualified.add(table_id)
+    return frozenset(qualified)
+
+
+def _plant_quantity_row_keys(layout, table_ids: frozenset[str]) -> frozenset[tuple[str, int]]:
+    """Return qualified table rows on which a plant quantity was actually extracted."""
+    rows: set[tuple[str, int]] = set()
+    for block in layout.blocks:
+        if not block.table_id or block.row_index is None or str(block.table_id) not in table_ids:
+            continue
+        key = " ".join(str(block.key_text or block.table_header or "").split())
+        if not _PLANT_QUANTITY_LABEL.fullmatch(key):
+            continue
+        amount, _unit = _plant_quantity_parts(str(block.value_text or block.text or ""))
+        if amount:
+            rows.add((str(block.table_id), int(block.row_index)))
+    return frozenset(rows)
+
+
 def _append_party(found, *, target: str, address_target: str, value: str, block, label: str) -> None:
     name = party_core(value)
     if name:
@@ -114,6 +161,8 @@ def _append_party(found, *, target: str, address_target: str, value: str, block,
 
 def _extract(layout):
     found: dict[str, list[RawCandidate]] = {field: [] for field in _FIELDS}
+    plant_declaration_tables = _plant_declaration_table_ids(layout)
+    plant_quantity_rows = _plant_quantity_row_keys(layout, plant_declaration_tables)
     for block in layout.blocks:
         text = block.text
         # Explicit historical/reference-only prose belongs to another evidence
@@ -185,7 +234,12 @@ def _extract(layout):
                     found["plant_quantity"].append(_candidate("plant_quantity", amount, block, key, EvidenceClass.DERIVED, "plant_quantity"))
                 if unit:
                     found["metric_unit"].append(_candidate("metric_unit", unit, block, key, EvidenceClass.DERIVED, "plant_quantity"))
-            elif _PLANT_UNIT_LABEL.fullmatch(key) or (lower == "unit" and _table_context(block)):
+            elif _PLANT_UNIT_LABEL.fullmatch(key) or (
+                lower == "unit"
+                and block.table_id is not None
+                and block.row_index is not None
+                and (str(block.table_id), int(block.row_index)) in plant_quantity_rows
+            ):
                 found["metric_unit"].append(_candidate("metric_unit", value, block, key))
             elif _PERCENT_RECYCLED_LABEL.fullmatch(key):
                 number = _explicit_number(value, allow_percent=True)
