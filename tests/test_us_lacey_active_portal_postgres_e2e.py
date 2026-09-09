@@ -317,8 +317,31 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(m
         legacy_action = f"{operation_path}/review/{exceptions[0].id}"
         assert client.post(legacy_action, data={}).status_code == 404
 
-        for field in exceptions:
-            review_action = f"{operation_path}/review/fields/{field.id}"
+        while True:
+            operation_detail = operation_service.get_detail(
+                organization_id=organization_id,
+                operation_public_id=operation_public_id,
+            )
+            exceptions = [
+                field
+                for field in operation_detail.fields
+                if field.status in {"MISSING", "REVIEW"}
+            ]
+            if not exceptions:
+                break
+
+            field = None
+            review_action = None
+            for candidate in exceptions:
+                candidate_action = f"{operation_path}/review/fields/{candidate.id}"
+                if f'action="{candidate_action}"' in workspace.text:
+                    field = candidate
+                    review_action = candidate_action
+                    break
+
+            assert field is not None and review_action is not None, (
+                "Every currently applicable unresolved field must expose a review form."
+            )
             field_csrf = _csrf_for(workspace.text, review_action)
             if field.proposed_value:
                 payload = {"csrf_token": field_csrf, "action": "accept", "value": ""}
