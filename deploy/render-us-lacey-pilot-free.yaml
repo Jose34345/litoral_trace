@@ -58,6 +58,8 @@ services:
         value: "60"
       - key: US_LACEY_WORKER_STALE_AFTER_SECONDS
         value: "600"
+      - key: LT_LACEY_MULTILINGUAL_SHADOW
+        value: "1"
 
       # The web IAM identity already has private read/write access to the same
       # isolated prefix used by document ingestion and processing.
