@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
 from litoral_trace.us_lacey.candidate_normalization import group_candidate_evidence
+from litoral_trace.us_lacey.ppq505 import PPQ505_FIELDS_BY_KEY
 from litoral_trace.web.templates import templates
 
 
@@ -103,19 +104,25 @@ def _present_review_field(field):
 _OPEN_REVIEW_STATUSES = frozenset({"MISSING", "REVIEW", "FOUND"})
 
 
+def _is_customer_ppq_field(field) -> bool:
+    """Hide internal reconciliation evidence from the PPQ review queue.
+
+    Lightweight contract-test doubles intentionally omit ``field_name``; preserve
+    their legacy behavior while production rows must belong to the published PPQ
+    contract to appear as customer-editable preparation fields.
+    """
+    field_name = getattr(field, "field_name", None)
+    return field_name is None or field_name in PPQ505_FIELDS_BY_KEY
+
+
 def _review_field_sets(detail):
     # FOUND means the pipeline has a supported proposal but no human has accepted it
     # yet. Keeping FOUND in the review queue makes the UI truthful and enables a safe
     # one-click confirmation workflow without presenting AI/extraction as final data.
-    #
-    # Percent Recycled is conditional on Article / Component being paper or
-    # paperboard. Until applicability is known, it is intentionally absent from the
-    # customer exception queue and therefore does not inflate Needs attention. Once
-    # Article / Component is resolved, the canonical status refresh either marks it
-    # NOT_REQUIRED or exposes the still-required recycled-content field for review.
+    customer_fields = tuple(field for field in detail.fields if _is_customer_ppq_field(field))
     article_components = {
         str(getattr(field, "line_reference", "")): field
-        for field in detail.fields
+        for field in customer_fields
         if getattr(field, "field_name", None) == "article_component"
     }
 
@@ -129,12 +136,12 @@ def _review_field_sets(detail):
 
     exception_fields = [
         _present_review_field(field)
-        for field in detail.fields
+        for field in customer_fields
         if is_open_review_field(field)
     ]
     settled_fields = [
         field
-        for field in detail.fields
+        for field in customer_fields
         if field.status not in _OPEN_REVIEW_STATUSES
         and _field_has_displayable_resolution(field)
     ]
@@ -159,6 +166,6 @@ def render_processing_fragment(*, request, detail) -> str:
     return _render(request, "fragments/processing_fragment", detail=detail, processing=processing_view(detail))
 
 
-def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str]) -> str:
+def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None) -> str:
     exception_fields, settled_fields = _review_field_sets(detail)
-    return _render(request, "fragments/operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields)
+    return _render(request, "fragments/operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, error=error)

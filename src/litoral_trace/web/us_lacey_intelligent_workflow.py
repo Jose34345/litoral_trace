@@ -8,6 +8,7 @@ customer-visible fields afterwards.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from uuid import uuid4
 
 from fastapi import APIRouter, Cookie, File, Form, Request, UploadFile
@@ -22,7 +23,16 @@ from litoral_trace.us_lacey.access import (
     require_us_lacey_operational_access,
 )
 from litoral_trace.us_lacey.bulk_review import accept_supported_us_lacey_fields
-from litoral_trace.us_lacey.csrf import UsLaceyCsrfError, verify_us_lacey_csrf
+from litoral_trace.us_lacey.csrf import (
+    UsLaceyCsrfError,
+    us_lacey_csrf_token,
+    verify_us_lacey_csrf,
+)
+from litoral_trace.us_lacey.lacey_engine_dossier import (
+    Engine2DossierAvailability,
+    Engine2DossierView,
+    UsLaceyEngineDossierService,
+)
 from litoral_trace.us_lacey.operations import (
     UsLaceyOperationError,
     UsLaceyOperationNotFound,
@@ -40,11 +50,25 @@ from litoral_trace.us_lacey.workflow import (
     create_us_lacey_customer_operation,
     upload_and_enqueue_us_lacey_document,
 )
+from litoral_trace.web.us_lacey_operational_views import render_operation_workspace
 from litoral_trace.web.us_lacey_portal_views import render_message_page
 
 
 router = APIRouter()
 MAX_INTAKE_DOCUMENTS = 20
+LOGGER = logging.getLogger(__name__)
+
+
+def _html(content: str, *, status_code: int = 200) -> HTMLResponse:
+    response = HTMLResponse(content=content, status_code=status_code)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def _is_htmx(request: Request) -> bool:
+    return str(request.headers.get("HX-Request") or "").strip().lower() == "true"
 
 
 def _login_redirect(*, clear_cookie: bool = False) -> RedirectResponse:
@@ -92,6 +116,56 @@ def _identity_and_entitlement(session_token: str | None, *, require_slot: bool =
     return identity, entitlement
 
 
+def _workspace_fragment(
+    *,
+    request: Request,
+    identity,
+    operation_public_id: str,
+    us_session: str,
+    error: str | None = None,
+) -> HTMLResponse:
+    detail = UsLaceyOperationService().get_detail(
+        organization_id=identity.organization_id,
+        operation_public_id=operation_public_id,
+    )
+    try:
+        dossier = UsLaceyEngineDossierService().get_dossier(
+            organization_id=identity.organization_id,
+            operation_public_id=detail.public_id,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Engine 2 dossier preview failed during HTMX review refresh",
+            extra={"organization_id": identity.organization_id},
+        )
+        dossier = Engine2DossierView(
+            Engine2DossierAvailability.INVALID,
+            safe_status_message="The stored dossier could not be safely read.",
+        )
+    review_tokens = {
+        field.id: us_lacey_csrf_token(
+            session_token=us_session,
+            purpose=f"review:{detail.public_id}:{field.id}",
+        )
+        for field in detail.fields
+        if field.status in {"MISSING", "REVIEW", "FOUND"}
+    }
+    return _html(
+        render_operation_workspace(
+            request=request,
+            identity=identity,
+            detail=detail,
+            engine2_dossier=dossier,
+            complete_csrf=us_lacey_csrf_token(
+                session_token=us_session,
+                purpose=f"complete:{detail.public_id}",
+            ),
+            review_csrf=review_tokens,
+            error=error,
+        )
+    )
+
+
 @router.post("/operations/intake", response_class=HTMLResponse)
 async def upload_first_operation_intake(
     request: Request,
@@ -115,10 +189,6 @@ async def upload_first_operation_intake(
                 f"Upload at most {MAX_INTAKE_DOCUMENTS} documents in one intake. You can add more afterwards."
             )
 
-        # Validate every selected file before consuming an operation slot. The same
-        # mature Vault-first ingestion layer validates again when persisting each file;
-        # this preflight prevents a bad second/third file from creating a mostly-empty
-        # customer operation before its format problem is discovered.
         payloads: list[tuple[str, str, bytes]] = []
         storage_settings = build_us_lacey_storage_settings()
         for document in documents:
@@ -130,20 +200,13 @@ async def upload_first_operation_intake(
                 storage_settings=storage_settings,
             )
             payloads.append(
-                (
-                    validated.filename,
-                    validated.content_type,
-                    validated.content,
-                )
+                (validated.filename, validated.content_type, validated.content)
             )
 
         created = create_us_lacey_customer_operation(
             organization_id=identity.organization_id,
             user_id=identity.user_id,
             client_reference=_operation_reference(),
-            # A default declaration line removes the old requirement for customers to
-            # know PPQ line structure before document analysis. Later reconciliation may
-            # split or add component lines; no regulatory fact is inferred here.
             line_references=("1",),
         )
         for filename, content_type, content in payloads:
@@ -176,9 +239,6 @@ def _find_supported_field(detail, field_id: int):
     return next((field for field in detail.fields if field.id == int(field_id)), None)
 
 
-# Compatibility-only route for links/forms rendered before the canonical review
-# contract was introduced.  The integer path converter is deliberate: it prevents
-# this dynamic endpoint from ever consuming a literal action slug.
 @router.post(
     "/operations/{operation_public_id}/review-supported/{field_id:int}",
     response_class=HTMLResponse,
@@ -234,9 +294,70 @@ def review_supported_field(
         )
 
 
-# Canonical action namespace.  The legacy alias is safe because the old per-field
-# route is now constrained with Starlette's :int converter rather than a catch-all
-# string parameter.
+@router.post(
+    "/operations/{operation_public_id}/review/actions/fields/{field_id:int}",
+    response_class=HTMLResponse,
+)
+def htmx_review_field(
+    operation_public_id: str,
+    field_id: int,
+    request: Request,
+    action: str = Form(...),
+    value: str = Form(""),
+    candidate_id: int | None = Form(None),
+    reason_code: str = Form(""),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """HTMX review mutation returning the authoritative server-rendered workspace."""
+    try:
+        identity, _entitlement = _identity_and_entitlement(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"review:{operation_public_id}:{field_id}",
+            submitted_token=csrf_token,
+        )
+        review_us_lacey_field(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            field_id=field_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+            action=action,
+            value=value or None,
+            candidate_id=candidate_id,
+            reason_code=reason_code or None,
+        )
+        return _workspace_fragment(
+            request=request,
+            identity=identity,
+            operation_public_id=operation_public_id,
+            us_session=us_session or "",
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        if _is_htmx(request):
+            try:
+                return _workspace_fragment(
+                    request=request,
+                    identity=identity,
+                    operation_public_id=operation_public_id,
+                    us_session=us_session or "",
+                    error=str(exc),
+                )
+            except UsLaceyOperationNotFound:
+                pass
+        return _error_page(
+            request,
+            str(exc),
+            action_href=f"/operations/{operation_public_id}",
+            status_code=400,
+        )
+
+
 @router.post(
     "/operations/{operation_public_id}/review/accept-supported",
     response_class=HTMLResponse,
@@ -252,12 +373,7 @@ def accept_all_supported_fields(
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
-    """Atomically confirm only unambiguous FOUND proposals.
-
-    REVIEW/MISSING values, multi-candidate values and fields with an open
-    reconciliation issue remain untouched.  A repeated POST is idempotent because
-    already-confirmed rows are no longer FOUND.
-    """
+    """Atomically confirm only unambiguous FOUND proposals."""
     try:
         identity, _entitlement = _identity_and_entitlement(us_session)
         verify_us_lacey_csrf(
@@ -271,12 +387,30 @@ def accept_all_supported_fields(
             user_id=identity.user_id,
             user_email=identity.email,
         )
+        if _is_htmx(request):
+            return _workspace_fragment(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+            )
         return RedirectResponse(f"/operations/{operation_public_id}", status_code=303)
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
     except UsLaceyOperationalAccessError:
         return RedirectResponse("/billing", status_code=303)
     except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        if _is_htmx(request):
+            try:
+                return _workspace_fragment(
+                    request=request,
+                    identity=identity,
+                    operation_public_id=operation_public_id,
+                    us_session=us_session or "",
+                    error=str(exc),
+                )
+            except UsLaceyOperationNotFound:
+                pass
         return _error_page(
             request,
             str(exc),
