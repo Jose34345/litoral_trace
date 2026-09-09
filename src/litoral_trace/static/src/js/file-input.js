@@ -22,7 +22,7 @@ function transferExternalSpacing(input, wrapper) {
 }
 
 function enhanceFileInput(input) {
-  if (input.dataset.fileInputEnhanced === "true") return;
+  if (input.getAttribute("data-file-input-enhanced") === "true") return;
 
   const parent = input.parentNode;
   if (!parent) return;
@@ -43,7 +43,7 @@ function enhanceFileInput(input) {
   parent.insertBefore(wrapper, input);
   wrapper.append(button, filename, input);
   input.classList.add("lt-file-input__native");
-  input.dataset.fileInputEnhanced = "true";
+  input.setAttribute("data-file-input-enhanced", "true");
 
   const refresh = () => {
     filename.textContent = selectedFileLabel(input);
