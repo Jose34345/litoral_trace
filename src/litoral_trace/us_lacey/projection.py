@@ -33,6 +33,7 @@ from litoral_trace.us_lacey.ppq505 import (
     PPQ505_PLANT_FIELDS,
     PPQ505_SHIPMENT_REFERENCE,
     PpqScope,
+    is_paper_or_paperboard,
     validate_ppq_value,
 )
 
@@ -121,6 +122,11 @@ _PHONE_ONLY = re.compile(r"^[+()\-\s.\d]{7,}$")
 _NUMBERED_DESCRIPTION_HEADER = re.compile(
     r"^(?:commodity description|cargo description|description of goods|goods description) \d+$"
 )
+_WEIGHT_DESCRIPTION = re.compile(
+    r"^\s*[0-9][0-9,.]*\s*(?:KG|KGS?|G|GRAMS?|LB|LBS?|POUNDS?|MT|METRIC\s+TONS?|TONNES?)\s*$",
+    re.IGNORECASE,
+)
+_NOT_PAPER_REASON_CODE = "NOT_PAPER_OR_PAPERBOARD"
 
 _STRUCTURAL_ARTIFACTS_BY_TARGET = {
     "container_number": frozenset(
@@ -224,6 +230,40 @@ def _explicit_header_target(header: object) -> str | None:
     return None
 
 
+def _description_candidate_role(row: ExtractedDocumentField, value: object) -> str | None:
+    """Classify obvious non-commercial-description evidence before candidate admission."""
+    raw = " ".join(str(value or "").split()).strip()
+    field_folded = _fold(row.field_name)
+    locator_folded = _fold(row.source_locator)
+    value_folded = _fold(raw)
+    semantic_context = f"{field_folded} {locator_folded}".strip()
+
+    if _WEIGHT_DESCRIPTION.fullmatch(raw) or re.search(r"\b(?:gross|net)?\s*weight\b", semantic_context):
+        return "WEIGHT"
+    if (
+        re.search(r"\b(?:plant|article) component(?: description)?\b", semantic_context)
+        or value_folded.startswith("plant component description ")
+        or value_folded.startswith("article component description ")
+        or value_folded.startswith("component description ")
+    ):
+        return "PLANT_COMPONENT_DESCRIPTION"
+    if (
+        re.search(r"\b(?:packaging|packing|package) description\b", semantic_context)
+        or value_folded.startswith("packaging description ")
+        or value_folded.startswith("packing description ")
+        or value_folded.startswith("package description ")
+    ):
+        return "PACKAGING_DESCRIPTION"
+    if (
+        re.search(r"\bsupplier (?:statement|declaration|certification)\b", semantic_context)
+        or value_folded.startswith("supplier statement ")
+        or value_folded.startswith("supplier declares ")
+        or value_folded.startswith("supplier certifies ")
+    ):
+        return "SUPPLIER_STATEMENT"
+    return None
+
+
 def _is_candidate_admissible(
     target: str,
     value: object,
@@ -266,6 +306,8 @@ def _target_field(
     generic = _SAFE_GENERIC_MAP.get(str(row.field_name or "").lower())
     if generic:
         value = row.normalized_value or row.original_value
+        if generic == "merchandise_description" and _description_candidate_role(row, value):
+            return None, 0
         if _is_candidate_admissible(generic, value, table_headers=table_headers):
             return generic, 2
         return None, 0
@@ -273,6 +315,8 @@ def _target_field(
     if raw_match:
         target = _explicit_header_target(raw_match.group("header"))
         value = row.normalized_value or row.original_value
+        if target == "merchandise_description" and _description_candidate_role(row, value):
+            return None, 0
         if target and _is_candidate_admissible(target, value, table_headers=table_headers):
             return target, 3
     return None, 0
@@ -292,6 +336,18 @@ def _line_reference(
         if 1 <= row_number <= len(line_references):
             return line_references[row_number - 1]
     return line_references[0] if len(line_references) == 1 else ""
+
+
+def _has_explicit_line_entered_value(
+    extracted: tuple[ExtractedDocumentField, ...] | list[ExtractedDocumentField],
+    *,
+    table_headers: frozenset[str],
+) -> bool:
+    for row in extracted:
+        target, _priority = _target_field(row, table_headers=table_headers)
+        if target == "entered_value" and _DATA_ROW.search(str(row.source_locator or "")):
+            return True
+    return False
 
 
 def _explicit_plant_data_rows(
@@ -481,6 +537,62 @@ def _upsert_conflict(
         existing.resolved_at = None
 
 
+def _field_evidence_value(field: UsLaceyOperationField) -> str:
+    return str(field.human_value or field.normalized_value or field.original_value or "").strip()
+
+
+def _apply_percent_recycled_condition(
+    session,
+    *,
+    organization_id: int,
+    operation: UsLaceyOperation,
+) -> None:
+    """Resolve Percent Recycled as not-required for non-paper plant lines.
+
+    Extracted values remain on the field as provenance; only the regulatory state is
+    changed.  If the article later becomes paper/paperboard, the automatic reason is
+    removed and the evidence returns to human review instead of being silently used.
+    """
+    rows = session.scalars(
+        select(UsLaceyOperationField).where(
+            UsLaceyOperationField.organization_id == organization_id,
+            UsLaceyOperationField.operation_id == operation.id,
+            UsLaceyOperationField.field_name.in_(("article_component", "percent_recycled")),
+        )
+    ).all()
+    by_line = {
+        (str(row.merchandise_line_reference), row.field_name): row
+        for row in rows
+    }
+    for (line_reference, field_name), percent_field in tuple(by_line.items()):
+        if field_name != "percent_recycled":
+            continue
+        article_field = by_line.get((line_reference, "article_component"))
+        article_value = _field_evidence_value(article_field) if article_field is not None else ""
+        if not article_value:
+            continue
+        if not is_paper_or_paperboard(article_value):
+            percent_field.field_status = "NOT_REQUIRED"
+            percent_field.validation_status = "VALID"
+            percent_field.validation_error = None
+            percent_field.not_required_reason_code = _NOT_PAPER_REASON_CODE
+            percent_field.human_value = None
+            continue
+        if percent_field.not_required_reason_code != _NOT_PAPER_REASON_CODE:
+            continue
+        percent_field.not_required_reason_code = None
+        source_value = str(percent_field.normalized_value or percent_field.original_value or "").strip()
+        if not source_value:
+            percent_field.field_status = "MISSING"
+            percent_field.validation_status = "MISSING"
+            percent_field.validation_error = None
+            continue
+        validation = validate_ppq_value("percent_recycled", source_value)
+        percent_field.validation_status = validation.status.value
+        percent_field.validation_error = validation.error
+        percent_field.field_status = "REVIEW"
+
+
 def refresh_us_lacey_operation_status(
     session,
     *,
@@ -490,6 +602,12 @@ def refresh_us_lacey_operation_status(
     """Derive operational state from the current unit of work."""
     # U.S. Lacey sessions intentionally use autoflush=False. State derivation must
     # therefore flush pending field/conflict review decisions before counting them.
+    session.flush()
+    _apply_percent_recycled_condition(
+        session,
+        organization_id=organization_id,
+        operation=operation,
+    )
     session.flush()
     job_statuses = session.scalars(
         select(UsLaceyProcessingJob.status).where(
@@ -598,12 +716,24 @@ def project_assurance_document_to_us_lacey(
             (row.merchandise_line_reference, row.field_name): row
             for row in operation_fields
         }
+        has_entered_value_allocations = _has_explicit_line_entered_value(
+            extracted,
+            table_headers=table_headers,
+        )
 
         candidates: dict[tuple[str, str], list[tuple[int, ExtractedDocumentField]]] = {}
         for row in extracted:
             target, priority = _target_field(row, table_headers=table_headers)
             value = row.normalized_value or row.original_value
             if target is None or value is None or not str(value).strip():
+                continue
+            if (
+                target == "entered_value"
+                and has_entered_value_allocations
+                and _DATA_ROW.search(str(row.source_locator or "")) is None
+            ):
+                # Preserve shipment totals in extracted evidence/Engine 2, but never
+                # project them into a plant-line field when explicit allocations exist.
                 continue
             line = _line_reference(
                 target=target,
