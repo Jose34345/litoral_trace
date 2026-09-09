@@ -32,6 +32,7 @@ from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.domain import US_LACEY_REVIEW_FIELDS
 from litoral_trace.us_lacey.operations import UsLaceyOperationNotFound
 from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
+from litoral_trace.us_lacey.reconciliation_invariants import reconcile_entered_value_invariant
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS,
     PPQ505_PLANT_FIELDS,
@@ -266,6 +267,13 @@ def review_us_lacey_field(
             )
             issue.resolved_at = field.reviewed_at
 
+        # Human review is a state-machine mutation. Recompute the arithmetic invariant
+        # in the same transaction before deriving aggregate readiness or committing.
+        reconcile_entered_value_invariant(
+            session,
+            organization_id=org_id,
+            operation=operation,
+        )
         operation_status = refresh_us_lacey_operation_status(
             session,
             organization_id=org_id,
@@ -344,6 +352,26 @@ def finalize_us_lacey_review(
             organization_id=org_id,
             operation_public_id=operation_public_id,
         )
+        # Finalization never trusts a previously-computed reconciliation state. A
+        # direct/stale request must recompute the invariant before any completion gate.
+        arithmetic = reconcile_entered_value_invariant(
+            session,
+            organization_id=org_id,
+            operation=operation,
+        )
+        if arithmetic.evaluated and not arithmetic.reconciled:
+            refresh_us_lacey_operation_status(
+                session,
+                organization_id=org_id,
+                operation=operation,
+            )
+            # Persist the blocking issue before returning the validation error so a
+            # subsequent workspace render immediately exposes the compliance banner.
+            session.commit()
+            raise UsLaceyReviewError(
+                "Cannot complete preparation: Please resolve the Entered Value reconciliation inconsistency first."
+            )
+
         active_jobs = session.scalar(
             select(func.count(UsLaceyProcessingJob.id)).where(
                 UsLaceyProcessingJob.organization_id == org_id,
