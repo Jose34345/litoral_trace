@@ -3,63 +3,61 @@
 
 let pendingReviewTransition = null;
 
-const restoreViewport = (x, y) => {
-  window.scrollTo({ left: x, top: y, behavior: "instant" });
-  window.requestAnimationFrame(() => {
-    window.scrollTo({ left: x, top: y, behavior: "instant" });
-  });
-};
-
 const reviewFormFromEvent = (event) => {
   const element = event.detail?.elt;
   if (element instanceof HTMLFormElement) return element;
   return element?.closest?.("form[data-review-action]") || null;
 };
 
+const isVisibleInViewport = (element) => {
+  const rect = element.getBoundingClientRect();
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+  return rect.bottom > 0 && rect.top < viewportHeight && rect.right > 0 && rect.left < viewportWidth;
+};
+
+const pendingReviewCards = () => [
+  ...document.querySelectorAll("#review-field-list [data-review-field]"),
+];
+
 document.addEventListener("htmx:beforeRequest", (event) => {
   const form = reviewFormFromEvent(event);
   if (!form?.matches?.("[data-review-action]")) return;
+
   const card = form.closest("[data-review-field]");
   pendingReviewTransition = {
+    targetId: card?.id || "review-field-list",
     order: card ? Number(card.dataset.reviewOrder || "1") : 1,
-    x: window.scrollX,
-    y: window.scrollY,
+    bulk: form.hasAttribute("data-review-bulk"),
   };
 });
 
 document.addEventListener("htmx:afterSwap", (event) => {
-  const workspace = document.querySelector("#operation-workspace");
-  if (!workspace) return;
+  if (!pendingReviewTransition) return;
 
-  if (pendingReviewTransition) {
-    const openCards = [...workspace.querySelectorAll(
-      '[data-review-field][data-review-status="MISSING"], ' +
-      '[data-review-field][data-review-status="REVIEW"], ' +
-      '[data-review-field][data-review-status="FOUND"]'
-    )];
-    const next = openCards.find(
-      (card) => Number(card.dataset.reviewOrder || "0") >= pendingReviewTransition.order
-    );
-    const viewport = pendingReviewTransition;
-    pendingReviewTransition = null;
+  // Out-of-band swaps update the summary/banner/final confirmation separately.
+  // Only the primary card/list swap may advance the analyst to another field.
+  const swappedTargetId = event.detail?.target?.id || "";
+  if (swappedTargetId !== pendingReviewTransition.targetId) return;
 
-    if (next) {
-      window.requestAnimationFrame(() => {
-        next.scrollIntoView({ behavior: "smooth", block: "center" });
-        const input = next.querySelector("input:not([type='hidden']), textarea, select, button");
-        input?.focus?.({ preventScroll: true });
-      });
-      return;
-    }
+  const transition = pendingReviewTransition;
+  pendingReviewTransition = null;
+  const openCards = pendingReviewCards();
+  if (!openCards.length) return;
 
-    // No next review item exists. Keep the analyst exactly where the completed
-    // action left them instead of snapping to the workspace header.
-    restoreViewport(viewport.x, viewport.y);
-    return;
-  }
+  const next = transition.bulk
+    ? openCards[0]
+    : openCards.find(
+        (card) => Number(card.dataset.reviewOrder || "0") >= transition.order
+      ) || openCards[0];
 
-  // Processing/workspace refreshes that were not review actions remain stable.
-  if (event.detail?.target?.id === "operation-workspace") {
-    workspace.querySelector("#analysis-complete")?.focus?.({ preventScroll: true });
-  }
+  // Enterprise review flows should remain visually still whenever the next task is
+  // already on screen. Scroll only when navigation is actually necessary.
+  if (!next || isVisibleInViewport(next)) return;
+
+  window.requestAnimationFrame(() => {
+    next.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const input = next.querySelector("input:not([type='hidden']), textarea, select, button");
+    input?.focus?.({ preventScroll: true });
+  });
 });
