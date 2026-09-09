@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 from types import SimpleNamespace
 
+from litoral_trace.us_lacey.ppq505 import PpqValidationStatus, validate_ppq_value
 from litoral_trace.us_lacey.reconciliation_invariants import (
     _mark_line_fields_reconciliation_state,
 )
@@ -76,3 +77,22 @@ def test_reconciled_unreviewed_extracted_value_is_not_silently_confirmed():
     _mark_line_fields_reconciliation_state([field], reconciled=True)
 
     assert field.field_status == "REVIEW"
+
+
+def test_structural_description_values_are_invalid_at_ppq_domain_boundary():
+    rejected = (
+        "Solid rubberwood plant material",
+        "MDF plant material",
+        "Metal fasteners / protective pads / adhesive",
+        "Corrugated cartons, inserts, pallets and other packing",
+    )
+    for value in rejected:
+        result = validate_ppq_value("merchandise_description", value)
+        assert result.status is PpqValidationStatus.INVALID
+        assert result.error is not None
+
+    commercial = validate_ppq_value(
+        "merchandise_description",
+        "Retail set: four solid rubberwood coasters with one MDF holder; natural finish; packed for retail sale",
+    )
+    assert commercial.status is PpqValidationStatus.VALID
