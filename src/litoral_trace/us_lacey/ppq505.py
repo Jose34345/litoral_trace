@@ -258,10 +258,37 @@ def normalize_mid(value: object) -> PpqValidation:
     return _result(normalized)
 
 
+def normalize_merchandise_description(value: object) -> PpqValidation:
+    """Reject structural materials that cannot stand as the merchandise description.
+
+    The strings remain preserved in extraction/evidence tables. This validator is the
+    domain boundary used by human accept/edit and bulk review, so hiding a bad
+    candidate in the UI is not the only line of defense.
+    """
+    if missing := _required(value):
+        return missing
+    normalized = re.sub(r"\s+", " ", str(value).strip())
+    if len(normalized) > 4000:
+        return _result(None, "Description of Merchandise is too long.")
+    folded = normalized.casefold()
+    structural = (
+        re.search(r"\bplant material\b", folded)
+        or re.search(r"\b(?:metal )?fasteners?\b|\bprotective pads?\b|\badhesives?\b", folded)
+        or re.search(r"\b(?:corrugated\s+)?cartons?\b|\bpallets?\b|\bpacking\b|\bpackaging\b", folded)
+    )
+    if structural:
+        return _result(
+            normalized,
+            "Description of Merchandise must describe the merchandise, not component, adhesive, fastener, or packaging material.",
+        )
+    return _result(normalized)
+
+
 _VALIDATORS: dict[str, Validator] = {
     "estimated_arrival_date": normalize_arrival_date,
     "filing_entry_reference": normalize_entry_number,
     "manufacturer_id": normalize_mid,
+    "merchandise_description": normalize_merchandise_description,
     "hts_code": normalize_hts,
     "entered_value": normalize_entered_value,
     "plant_quantity": normalize_quantity,
