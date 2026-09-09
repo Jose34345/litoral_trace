@@ -168,6 +168,10 @@ def render_processing_fragment(*, request, detail) -> str:
     return _render(request, "fragments/processing_fragment", detail=detail, processing=processing_view(detail))
 
 
-def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None) -> str:
+def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None, is_oob_update: bool | None = None) -> str:
     exception_fields, settled_fields = _review_field_sets(detail)
-    return _render(request, "fragments/operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, error=error)
+    # Initial workspace hydration is a GET and must render its own summary/banner/final
+    # confirmation normally. Review mutations are POSTs and update those regions OOB.
+    if is_oob_update is None:
+        is_oob_update = str(getattr(request, "method", "GET")).upper() == "POST"
+    return _render(request, "fragments/operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, error=error, is_oob_update=is_oob_update)

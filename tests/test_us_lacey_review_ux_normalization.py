@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import inspect
 from pathlib import Path
 
 from litoral_trace.us_lacey.candidate_normalization import (
@@ -10,7 +11,10 @@ from litoral_trace.us_lacey.ppq505 import (
     canonical_ppq_value_key,
     validate_ppq_value,
 )
-from litoral_trace.web.us_lacey_operational_views import _present_review_field
+from litoral_trace.web.us_lacey_operational_views import (
+    _present_review_field,
+    render_operation_workspace,
+)
 
 
 @dataclass(frozen=True)
@@ -133,7 +137,28 @@ def test_merchandise_description_pool_rejects_golden_packet_structural_noise():
     assert groups[0].representative.id == 99
 
 
-def test_review_workspace_js_uses_granular_htmx_and_scrolls_only_when_needed():
+def test_workspace_oob_regions_are_conditional_after_initial_hydration():
+    template = Path(
+        "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
+    ).read_text(encoding="utf-8")
+    render_source = inspect.getsource(render_operation_workspace)
+
+    conditional = '{% if is_oob_update %} hx-swap-oob="true"{% endif %}'
+    assert template.count(conditional) >= 4
+    assert 'id="review-summary"' in template
+    assert 'id="review-action-error-region"' in template
+    assert 'id="entered-value-reconciliation-region"' in template
+    assert 'id="final-confirmation"' in template
+    assert 'id="review-summary" class="lt-card p-6" aria-labelledby="analysis-complete" hx-swap-oob="true"' not in template
+    assert 'id="final-confirmation" class="lt-card p-6" hx-swap-oob="true"' not in template
+
+    assert "is_oob_update: bool | None = None" in render_source
+    assert 'getattr(request, "method", "GET")' in render_source
+    assert '== "POST"' in render_source
+    assert "is_oob_update=is_oob_update" in render_source
+
+
+def test_review_workspace_js_uses_granular_htmx_and_scrolls_only_for_bulk_action():
     source = Path("src/litoral_trace/static/src/js/us-lacey-workspace.js").read_text(encoding="utf-8")
     template = Path(
         "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
@@ -144,21 +169,23 @@ def test_review_workspace_js_uses_granular_htmx_and_scrolls_only_when_needed():
     assert 'document.addEventListener("htmx:beforeRequest"' in source
     assert 'document.addEventListener("htmx:afterSwap"' in source
     assert "getBoundingClientRect()" in source
-    assert "isVisibleInViewport(next)" in source
+    assert "pendingBulkReviewTransition" in source
+    assert 'form.hasAttribute("data-review-bulk")' in source
+    assert 'if (!pendingBulkReviewTransition) return;' in source
+    assert 'event.detail?.target?.id !== "review-field-list"' in source
     assert 'scrollIntoView({ behavior: "smooth", block: "nearest" })' in source
+    assert source.index('if (!pendingBulkReviewTransition) return;') < source.index('scrollIntoView({ behavior: "smooth", block: "nearest" })')
     assert 'block: "center"' not in source
     assert "restoreViewport" not in source
     assert "window.scrollTo" not in source
+    assert "pendingReviewTransition" not in source
 
     assert 'hx-target="closest [data-review-field]"' in template
     assert 'hx-select="#review-field-{{ field.id }}"' in template
     assert 'hx-target="#operation-workspace"' not in template
     assert 'id="review-field-list"' in template
     assert 'hx-target="#review-field-list"' in template
-    assert 'id="review-summary"' in template
-    assert 'id="entered-value-reconciliation-region"' in template
-    assert 'id="final-confirmation"' in template
-    assert template.count('hx-swap-oob="true"') >= 4
+    assert 'data-review-bulk' in template
     assert '/review/actions/fields/' in template
     assert 'data-reconciliation-invariant="entered-value"' in template
     assert 'aria-invalid="true"' in template

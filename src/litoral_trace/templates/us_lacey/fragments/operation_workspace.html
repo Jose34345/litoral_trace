@@ -105,16 +105,16 @@
 {% for field in supported_fields %}{% if field.proposed_value and field.candidates|length <= 1 %}{% set bulk.items = bulk.items + [field] %}{% endif %}{% endfor %}
 {% set attention_count = exception_fields|length - bulk.items|length %}
 <div id="operation-workspace" class="space-y-6" tabindex="-1">
-  <section id="review-summary" class="lt-card p-6" aria-labelledby="analysis-complete" hx-swap-oob="true">
+  <section id="review-summary" class="lt-card p-6" aria-labelledby="analysis-complete"{% if is_oob_update %} hx-swap-oob="true"{% endif %}>
     <div class="flex flex-wrap items-start justify-between gap-4"><div><h2 id="analysis-complete" class="text-lg font-bold text-slate-950" tabindex="-1">Document analysis complete</h2><p class="mt-1 text-sm text-slate-600">Litoral Trace filled what the evidence supports. Confirm the safe suggestions together, then focus only on exceptions.</p></div><span class="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-800">{% if detail.status == "COMPLETED" %}Preparation complete{% else %}Human confirmation required{% endif %}</span></div>
     <div class="mt-5 grid gap-3 sm:grid-cols-5"><div><p class="text-2xl font-bold text-slate-950">{{ detail.document_count }}</p><p class="text-xs font-semibold text-slate-500">Documents</p></div><div><p class="text-2xl font-bold text-emerald-700">{{ settled_fields|length }}</p><p class="text-xs font-semibold text-slate-500">Confirmed</p></div><div><p class="text-2xl font-bold text-emerald-700">{{ bulk.items|length }}</p><p class="text-xs font-semibold text-slate-500">Safe suggestions</p></div><div><p class="text-2xl font-bold text-amber-700">{{ attention_count }}</p><p class="text-xs font-semibold text-slate-500">Needs attention</p></div><div><p class="text-2xl font-bold text-rose-700">{{ detail.conflicts|selectattr('status', 'equalto', 'OPEN')|list|length }}</p><p class="text-xs font-semibold text-slate-500">Conflicts</p></div></div>
   </section>
 
-  <div id="review-action-error-region" hx-swap-oob="true">
+  <div id="review-action-error-region"{% if is_oob_update %} hx-swap-oob="true"{% endif %}>
     {% if error %}<section class="lt-alert lt-alert--danger" role="alert"><i class="fa-solid fa-circle-exclamation lt-alert__icon" aria-hidden="true"></i><div><p class="lt-alert__title">Review action could not be saved</p><p class="lt-alert__message">{{ error }}</p></div></section>{% endif %}
   </div>
 
-  <div id="entered-value-reconciliation-region" hx-swap-oob="true">
+  <div id="entered-value-reconciliation-region"{% if is_oob_update %} hx-swap-oob="true"{% endif %}>
     {% if arithmetic_blocked %}
     <section id="entered-value-reconciliation-banner" class="lt-alert lt-alert--danger" role="alert" data-reconciliation-invariant="entered-value">
       <i class="fa-solid fa-triangle-exclamation lt-alert__icon" aria-hidden="true"></i>
@@ -142,7 +142,7 @@
   </section>
   {% endif %}
 
-  <section id="final-confirmation" class="lt-card p-6" hx-swap-oob="true"><h2 class="text-lg font-bold text-slate-950">Final confirmation</h2>
+  <section id="final-confirmation" class="lt-card p-6"{% if is_oob_update %} hx-swap-oob="true"{% endif %}><h2 class="text-lg font-bold text-slate-950">Final confirmation</h2>
     {% if detail.status == "COMPLETED" %}
       <p class="mt-2 text-sm text-emerald-800">Preparation is complete.</p>
     {% elif arithmetic_blocked %}
