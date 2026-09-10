@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+import logging
 from types import SimpleNamespace
 from uuid import UUID
 
+from litoral_trace.us_lacey import shadow_evidence_snapshot as shadow
 from litoral_trace.us_lacey import worker
 
 
@@ -103,5 +105,29 @@ def test_legacy_projection_and_operation_result_are_identical_with_shadow_off_an
         "complete",
         "refresh",
     ]
-    assert off_shadow_calls == []
+    # The wrapper now always invokes the builder so DISABLED is observable there;
+    # a builder failure remains isolated from the authoritative legacy result.
+    assert off_shadow_calls == ["shadow_attempt"]
     assert on_shadow_calls == ["shadow_attempt"]
+
+
+def test_worker_calls_builder_even_when_shadow_disabled_for_observability(monkeypatch, caplog):
+    monkeypatch.setenv(shadow.SHADOW_FLAG, "0")
+    calls: list[dict[str, int]] = []
+    real_builder = shadow.build_shadow_evidence_snapshot
+
+    def observable_builder(**kwargs: int):
+        calls.append(dict(kwargs))
+        return real_builder(**kwargs)
+
+    monkeypatch.setattr(worker, "build_shadow_evidence_snapshot", observable_builder)
+
+    with caplog.at_level(logging.INFO, logger=shadow.LOGGER.name):
+        worker._shadow_multilingual_evidence_snapshot(
+            organization_id=17,
+            operation_id=23,
+        )
+
+    assert calls == [{"organization_id": 17, "operation_id": 23}]
+    assert "Lacey multilingual shadow metrics" in caplog.text
+    assert "reason=DISABLED" in caplog.text
