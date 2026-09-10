@@ -77,26 +77,32 @@ def test_storage_roundtrip_fails_closed_when_cleanup_fails(monkeypatch):
     assert storage.delete_key == storage.put_key
 
 
-def test_live_runtime_status_requires_successful_worker_heartbeat_and_storage():
-    assert live_readiness.live_runtime_status(
+def test_live_runtime_status_requires_successful_worker_heartbeat_and_storage(monkeypatch):
+    monkeypatch.delenv("LT_LACEY_MULTILINGUAL_SHADOW", raising=False)
+    payload = live_readiness.live_runtime_status(
         worker_ready=True,
         storage_roundtrip="ready",
-    ) == {
-        "status": "ready",
-        "inline_worker": "ready",
-        "storage_roundtrip": "ready",
-    }
+    )
+
+    assert payload["status"] == "ready"
+    assert payload["inline_worker"] == "ready"
+    assert payload["storage_roundtrip"] == "ready"
+    assert "multilingual_shadow" in payload
+    assert payload["multilingual_shadow"] == "disabled"
 
 
-def test_live_runtime_status_fails_closed_without_worker_heartbeat():
-    assert live_readiness.live_runtime_status(
+def test_live_runtime_status_fails_closed_without_worker_heartbeat(monkeypatch):
+    monkeypatch.delenv("LT_LACEY_MULTILINGUAL_SHADOW", raising=False)
+    payload = live_readiness.live_runtime_status(
         worker_ready=False,
         storage_roundtrip="ready",
-    ) == {
-        "status": "not_ready",
-        "inline_worker": "not_ready",
-        "storage_roundtrip": "ready",
-    }
+    )
+
+    assert payload["status"] == "not_ready"
+    assert payload["inline_worker"] == "not_ready"
+    assert payload["storage_roundtrip"] == "ready"
+    assert "multilingual_shadow" in payload
+    assert payload["multilingual_shadow"] == "disabled"
 
 
 def test_free_tier_worker_readiness_requires_fresh_successful_db_heartbeat(monkeypatch):

@@ -448,6 +448,7 @@ def build_shadow_evidence_snapshot(
     org_id = int(organization_id)
     op_id = int(operation_id)
     metrics = SnapshotMetrics()
+    fingerprint: str | None = None
     if not multilingual_shadow_enabled():
         result = SnapshotBuildResult(False, None, None, "DISABLED", metrics)
         _log_metrics(
@@ -690,7 +691,8 @@ def build_shadow_evidence_snapshot(
             operation.current_evidence_snapshot_id = snapshot.id
             session.commit()
 
-            result = SnapshotBuildResult(True, snapshot.id, fingerprint, "CREATED", metrics)
+            reason = "CREATED_EMPTY_EVIDENCE" if metrics.spans_created == 0 else "CREATED"
+            result = SnapshotBuildResult(True, snapshot.id, fingerprint, reason, metrics)
             _log_metrics(
                 organization_id=org_id,
                 operation_id=op_id,
@@ -701,6 +703,13 @@ def build_shadow_evidence_snapshot(
             return result
         except Exception:
             session.rollback()
+            _log_metrics(
+                organization_id=org_id,
+                operation_id=op_id,
+                fingerprint=fingerprint,
+                reason="FAILED",
+                metrics=metrics,
+            )
             raise
         finally:
             session.close()

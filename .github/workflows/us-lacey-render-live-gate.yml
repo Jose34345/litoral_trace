@@ -209,9 +209,11 @@ jobs:
               'status': 'ready',
               'inline_worker': 'ready',
               'storage_roundtrip': 'ready',
+              'multilingual_shadow': 'enabled',
           }, body
           print('render_inline_worker=PASS')
           print('render_storage_roundtrip=PASS')
+          print('render_multilingual_shadow=PASS')
           PY
 
       - name: Verify readiness contract
