@@ -35,10 +35,7 @@ from litoral_trace.us_lacey.projection import (
     refresh_us_lacey_operation_status,
 )
 from litoral_trace.us_lacey.lacey_engine_service import ENGINE2_SHADOW, UsLaceyEngine2Service, engine2_mode
-from litoral_trace.us_lacey.shadow_evidence_snapshot import (
-    build_shadow_evidence_snapshot,
-    multilingual_shadow_enabled,
-)
+from litoral_trace.us_lacey.shadow_evidence_snapshot import build_shadow_evidence_snapshot
 from litoral_trace.us_lacey.storage import (
     build_us_lacey_storage_settings,
     get_us_lacey_storage_client,
@@ -163,8 +160,6 @@ def _run_ai_review_recommendations(*, organization_id: int, operation_id: int) -
 
 def _shadow_multilingual_evidence_snapshot(*, organization_id: int, operation_id: int) -> None:
     """Best-effort Phase B dual-write; legacy completion is authoritative."""
-    if not multilingual_shadow_enabled():
-        return
     try:
         build_shadow_evidence_snapshot(
             organization_id=organization_id,
