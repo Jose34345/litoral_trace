@@ -203,6 +203,7 @@ def _source_set_fingerprint(sources: list[_DocumentSource]) -> str:
         {
             "operation_document_id": item.operation_document_id,
             "assurance_document_id": item.assurance_document_id,
+            "extraction_run_id": item.extraction_run_id,
             "source_sha256": item.source_sha256,
             "version_number": item.version_number,
         }
@@ -373,13 +374,19 @@ def _load_document_sources(
             .where(
                 DocumentExtractionRun.organization_id == organization_id,
                 DocumentExtractionRun.assurance_document_id == assurance_document.id,
-                DocumentExtractionRun.status == "SUCCEEDED",
             )
             .order_by(DocumentExtractionRun.id.desc())
             .limit(1)
         )
         if extraction_run is None:
             return [], "SOURCE_SET_NOT_FULLY_EXTRACTED"
+
+        extraction_status = str(extraction_run.status or "").strip().upper()
+        if extraction_status == "RUNNING":
+            return [], "SOURCE_SET_EXTRACTION_IN_PROGRESS"
+        if extraction_status not in {"SUCCEEDED", "NEEDS_REVIEW"}:
+            return [], "SOURCE_SET_EXTRACTION_UNUSABLE"
+
         sources.append(
             _DocumentSource(
                 operation_document_id=operation_document.id,
