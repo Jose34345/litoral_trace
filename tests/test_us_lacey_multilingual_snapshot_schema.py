@@ -306,12 +306,16 @@ def test_phase_b_shadow_lifecycle_runs_inside_postgres_gate(
 ):
     """The gate already executes this file explicitly; keep Phase B acceptance non-skippable."""
     from tests import test_us_lacey_multilingual_shadow_postgres as phase_b
+    from tests import test_us_lacey_shadow_eligibility_postgres as eligibility
 
     acceptance_tests = (
         phase_b.test_shadow_snapshot_is_operation_wide_idempotent_and_supersedes_atomically,
         phase_b.test_shadow_snapshot_refuses_partial_snapshot_when_any_current_source_is_unavailable,
         phase_b.test_shadow_snapshot_rejects_cross_tenant_operation_scope,
         phase_b.test_shadow_snapshot_rolls_back_new_generation_if_build_fails,
+        eligibility.test_shadow_snapshot_accepts_latest_needs_review_extraction,
+        eligibility.test_shadow_snapshot_rejects_running_extraction,
+        eligibility.test_shadow_fingerprint_mutates_on_new_extraction_run,
     )
     for acceptance in acceptance_tests:
         with monkeypatch.context() as scoped:
