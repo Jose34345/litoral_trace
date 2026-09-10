@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 
+from litoral_trace.us_lacey.shadow_evidence_snapshot import multilingual_shadow_enabled
 from litoral_trace.us_lacey.storage import (
     build_us_lacey_storage_settings,
     get_us_lacey_storage_client,
@@ -78,4 +79,5 @@ def live_runtime_status(*, worker_ready: bool, storage_roundtrip: str) -> dict[s
         "status": overall,
         "inline_worker": inline_worker,
         "storage_roundtrip": storage,
+        "multilingual_shadow": "enabled" if multilingual_shadow_enabled() else "disabled",
     }
