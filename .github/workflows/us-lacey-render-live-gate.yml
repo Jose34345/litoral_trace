@@ -205,15 +205,26 @@ jobs:
           import json
           from pathlib import Path
           body = json.loads(Path('/tmp/live.json').read_text())
-          assert body == {
+          required = {
               'status': 'ready',
               'inline_worker': 'ready',
               'storage_roundtrip': 'ready',
-              'multilingual_shadow': 'enabled',
-          }, body
+          }
+          for key, expected in required.items():
+              assert body.get(key) == expected, body
+
+          # Render is configured with autoDeployTrigger=checksPass, so this workflow
+          # executes against the previously deployed revision before the candidate
+          # can be released. Allow the legacy response to omit the newly introduced
+          # observability key, but fail closed if an exposed key is not enabled.
+          shadow = body.get('multilingual_shadow')
+          assert shadow in (None, 'enabled'), body
           print('render_inline_worker=PASS')
           print('render_storage_roundtrip=PASS')
-          print('render_multilingual_shadow=PASS')
+          print(
+              'render_multilingual_shadow=' +
+              ('PASS' if shadow == 'enabled' else 'PREDEPLOY_NOT_EXPOSED')
+          )
           PY
 
       - name: Verify readiness contract
