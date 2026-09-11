@@ -104,6 +104,8 @@ class _DocumentSource:
     operation_document_id: int
     assurance_document_id: int
     extraction_run_id: int
+    extraction_evidence_hash: str
+    fields: tuple[ExtractedDocumentField, ...]
     source_sha256: str
     document_role: str
     document_type: str
@@ -198,12 +200,34 @@ def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _extraction_evidence_hash(fields: tuple[ExtractedDocumentField, ...]) -> str:
+    """Fingerprint mutable semantic values from one legacy extraction run.
+
+    Human Assurance review preserves original extraction provenance but may correct
+    ``normalized_value`` in place on a ``NEEDS_REVIEW`` run. Capturing the semantic
+    values here makes that review revision visible to the immutable snapshot layer
+    without changing any legacy review/write semantics.
+    """
+    payload = [
+        {
+            "field_id": int(field.id),
+            "field_name": str(field.field_name or ""),
+            "normalized_value": field.normalized_value,
+            "confidence": float(field.confidence or 0.0),
+        }
+        for field in fields
+    ]
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return _sha256_text(canonical)
+
+
 def _source_set_fingerprint(sources: list[_DocumentSource]) -> str:
     payload = [
         {
             "operation_document_id": item.operation_document_id,
             "assurance_document_id": item.assurance_document_id,
             "extraction_run_id": item.extraction_run_id,
+            "extraction_evidence_hash": item.extraction_evidence_hash,
             "source_sha256": item.source_sha256,
             "version_number": item.version_number,
         }
@@ -262,6 +286,8 @@ def _node_fingerprint(
             str(field.id),
             str(field.field_name),
             str(span.content_hash),
+            str(field.normalized_value or ""),
+            str(float(field.confidence or 0.0)),
         )
     )
     return _sha256_text(payload)
@@ -377,6 +403,7 @@ def _load_document_sources(
             )
             .order_by(DocumentExtractionRun.id.desc())
             .limit(1)
+            .with_for_update()
         )
         if extraction_run is None:
             return [], "SOURCE_SET_NOT_FULLY_EXTRACTED"
@@ -387,11 +414,25 @@ def _load_document_sources(
         if extraction_status not in {"SUCCEEDED", "NEEDS_REVIEW"}:
             return [], "SOURCE_SET_EXTRACTION_UNUSABLE"
 
+        fields = tuple(
+            session.scalars(
+                select(ExtractedDocumentField)
+                .where(
+                    ExtractedDocumentField.organization_id == organization_id,
+                    ExtractedDocumentField.assurance_document_id == assurance_document.id,
+                    ExtractedDocumentField.extraction_run_id == extraction_run.id,
+                )
+                .order_by(ExtractedDocumentField.id.asc())
+                .with_for_update()
+            ).all()
+        )
         sources.append(
             _DocumentSource(
                 operation_document_id=operation_document.id,
                 assurance_document_id=assurance_document.id,
                 extraction_run_id=extraction_run.id,
+                extraction_evidence_hash=_extraction_evidence_hash(fields),
+                fields=fields,
                 source_sha256=vault_document.sha256,
                 document_role=operation_document.document_role,
                 document_type=assurance_document.semantic_document_type,
@@ -576,16 +617,7 @@ def build_shadow_evidence_snapshot(
                         processing_result="SUCCEEDED",
                     )
                 )
-                fields = session.scalars(
-                    select(ExtractedDocumentField)
-                    .where(
-                        ExtractedDocumentField.organization_id == org_id,
-                        ExtractedDocumentField.assurance_document_id == source.assurance_document_id,
-                        ExtractedDocumentField.extraction_run_id == source.extraction_run_id,
-                    )
-                    .order_by(ExtractedDocumentField.id.asc())
-                ).all()
-                for field in fields:
+                for field in source.fields:
                     original_text = str(field.original_value or "").strip()
                     if field.source_page is None or int(field.source_page) <= 0:
                         metrics.spans_without_page += 1
