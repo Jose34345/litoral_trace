@@ -10,6 +10,7 @@ from litoral_trace.db.models import (
     DocumentTextSpan,
     ExtractedDocumentField,
     SemanticEvidenceNode,
+    SemanticSnapshotNode,
     UsLaceyEvidenceSnapshot,
 )
 from litoral_trace.us_lacey import shadow_evidence_snapshot as shadow
@@ -247,4 +248,51 @@ def test_shadow_fingerprint_mutates_on_new_extraction_run(
     assert first_snapshot.status == "SUPERSEDED"
     assert second_snapshot.status == "CURRENT"
     assert first_snapshot.source_set_fingerprint != second_snapshot.source_set_fingerprint
+
+    # Assurance human review can correct normalized_value in place without creating
+    # a new extraction run. That semantic revision must still invalidate the CURRENT
+    # source-set fingerprint and materialize a fresh semantic node/generation.
+    reviewed_field = session.scalar(
+        select(ExtractedDocumentField).where(
+            ExtractedDocumentField.organization_id == org,
+            ExtractedDocumentField.assurance_document_id == assurance_id,
+            ExtractedDocumentField.extraction_run_id == second_run_id,
+        )
+    )
+    assert reviewed_field is not None
+    reviewed_field.normalized_value = "Reviewed normalized evidence"
+    session.commit()
+    session.close()
+
+    third = _build_snapshot(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        operation_id=operation_id,
+    )
+    assert third.created is True
+    assert third.metrics.generation == 3
+    assert third.snapshot_id not in {first.snapshot_id, second.snapshot_id}
+    assert third.source_set_fingerprint != second.source_set_fingerprint
+
+    session = tenant_session(engine2_postgres_session_factory, org)
+    second_snapshot = session.get(UsLaceyEvidenceSnapshot, second.snapshot_id)
+    third_snapshot = session.get(UsLaceyEvidenceSnapshot, third.snapshot_id)
+    assert second_snapshot is not None
+    assert third_snapshot is not None
+    assert second_snapshot.status == "SUPERSEDED"
+    assert third_snapshot.status == "CURRENT"
+
+    current_node = session.scalar(
+        select(SemanticEvidenceNode)
+        .join(
+            SemanticSnapshotNode,
+            SemanticSnapshotNode.evidence_node_id == SemanticEvidenceNode.id,
+        )
+        .where(
+            SemanticSnapshotNode.organization_id == org,
+            SemanticSnapshotNode.snapshot_id == third.snapshot_id,
+        )
+    )
+    assert current_node is not None
+    assert current_node.normalized_value == "Reviewed normalized evidence"
     session.close()
