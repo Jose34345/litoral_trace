@@ -125,3 +125,5 @@ services:
         value: "600"
       - key: LT_LACEY_MULTILINGUAL_SHADOW
         value: "1"
+      - key: LT_LACEY_TRANSLATION_PROVIDER
+        value: "aws"
