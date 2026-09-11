@@ -60,6 +60,8 @@ services:
         value: "600"
       - key: LT_LACEY_MULTILINGUAL_SHADOW
         value: "1"
+      - key: LT_LACEY_TRANSLATION_PROVIDER
+        value: "aws"
 
       # The web IAM identity already has private read/write access to the same
       # isolated prefix used by document ingestion and processing.
