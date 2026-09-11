@@ -62,6 +62,11 @@ services:
         value: "1"
       - key: LT_LACEY_TRANSLATION_PROVIDER
         value: "aws"
+      - key: AWS_REGION
+        value: "us-east-1"
+      # The shadow builder consumes this application-specific region explicitly.
+      - key: LT_LACEY_TRANSLATION_AWS_REGION
+        value: "us-east-1"
 
       # The web IAM identity already has private read/write access to the same
       # isolated prefix used by document ingestion and processing.
