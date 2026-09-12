@@ -10,6 +10,8 @@ plus /admin for an authenticated persisted platform superadmin.
 """
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager, suppress
 import re
 
 from fastapi import Request, Response
@@ -24,11 +26,40 @@ from litoral_trace.us_lacey.portal_auth import (
     UsLaceyPortalAuthError,
     resolve_us_lacey_session,
 )
+from litoral_trace.us_lacey.translation_backfill import run_translation_backfill
 from litoral_trace.web.lacey_gtm import render_lacey_landing, router as lacey_router
 from litoral_trace.web.us_lacey_free_app import app
 from litoral_trace.web.us_lacey_intelligent_workflow import router as intelligent_workflow_router
 from litoral_trace.web.us_lacey_lemon_billing import router as lemon_billing_router
 from litoral_trace.web.us_lacey_platform_admin import router as platform_admin_router
+
+
+# Preserve the already-certified free-tier lifespan (inline worker, storage probe)
+# and add the historical translation repair as a detached one-shot task. Scheduling
+# with create_task means HTTP startup never waits for PostgreSQL or the public
+# translation backend. All synchronous DB/network work inside the task uses
+# asyncio.to_thread() and the task is capped at 50 spans per process start.
+_free_tier_lifespan_context = app.router.lifespan_context
+
+
+@asynccontextmanager
+async def _phase_d_lifespan(application):
+    async with _free_tier_lifespan_context(application) as state:
+        backfill_task = asyncio.create_task(
+            run_translation_backfill(),
+            name="us-lacey-translation-backfill",
+        )
+        application.state.us_lacey_translation_backfill_task = backfill_task
+        try:
+            yield state
+        finally:
+            if not backfill_task.done():
+                backfill_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await backfill_task
+
+
+app.router.lifespan_context = _phase_d_lifespan
 
 
 # Public marketing/sample, payment-provider, upload-first workflow and superadmin
