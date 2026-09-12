@@ -103,6 +103,8 @@ class AIExtractionProvider(Protocol):
 
 _IDENTIFIER_FIELDS = {"bill_of_lading", "container_number", "filing_entry_reference", "manufacturer_id", "hts_code"}
 _CASE_INSENSITIVE_FIELDS = {"consignee_name", "consignee_address", "description", "species", "genus", "country_of_harvest", "metric_unit"}
+_GARBAGE_FILTER_FIELDS = frozenset({"article_component", "description"})
+_GARBAGE_EXACT_TOKENS = frozenset({"PAL", "AUX", "PALLET", "CARTON", "BOX", "N/A", "NONE"})
 
 def _fold(value: str) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
@@ -148,6 +150,18 @@ def _bbox_from_payload(payload: object) -> BoundingBox | None:
     top, bottom = sorted((y_a, y_b))
     return BoundingBox(x0=x0, top=top, x1=x1, bottom=bottom)
 
+def _is_deterministic_garbage_candidate(payload: Mapping[str, object]) -> bool:
+    """Reject known non-merchandise rows before they become persisted AI candidates."""
+    field_key = str(payload.get("field_key") or "").strip()
+    if field_key not in _GARBAGE_FILTER_FIELDS:
+        return False
+    value = " ".join(str(payload.get("value") or "").split()).strip()
+    if not value:
+        return False
+    if value.isdigit():
+        return True
+    return value.upper() in _GARBAGE_EXACT_TOKENS
+
 def candidate_from_payload(*, payload: Mapping[str, object], provider: str, model: str) -> AICandidate:
     field_key = str(payload.get("field_key") or "").strip()
     if field_key not in AI_FIELDS:
@@ -187,7 +201,11 @@ def extraction_result_from_payload(*, payload: Mapping[str, object], provider: s
         raise AIShadowError("AI response must contain a candidates array.")
     if not all(isinstance(item, Mapping) for item in raw_candidates):
         raise AIShadowError("AI response contains a non-object candidate.")
-    candidates = tuple(candidate_from_payload(payload=item, provider=provider, model=model) for item in raw_candidates)
+    candidates = tuple(
+        candidate_from_payload(payload=item, provider=provider, model=model)
+        for item in raw_candidates
+        if not _is_deterministic_garbage_candidate(item)
+    )
     return AIExtractionResult(provider, model, AI_SHADOW_SCHEMA_VERSION, candidates, page_count, latency_ms)
 
 def verify_ai_evidence(*, engine2: DocumentResolution, ai: AIExtractionResult) -> AIExtractionResult:
