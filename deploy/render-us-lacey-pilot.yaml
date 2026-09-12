@@ -126,7 +126,7 @@ services:
       - key: LT_LACEY_MULTILINGUAL_SHADOW
         value: "1"
       - key: LT_LACEY_TRANSLATION_PROVIDER
-        value: "aws"
+        value: "open_source"
       - key: AWS_REGION
         value: "us-east-1"
       # The shadow builder consumes this application-specific region explicitly.
