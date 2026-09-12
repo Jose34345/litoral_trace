@@ -208,14 +208,14 @@ _PARTY_NON_NAMES = frozenset(
 
 _TAXONOMY_COMMERCIAL_STOP_WORDS = frozenset(
     {
-        "board",
-        "boards",
-        "cutting",
-        "lumber",
-        "pallet",
-        "pallets",
-        "wood",
-        "wooden",
+        "BOARD",
+        "BOARDS",
+        "CUTTING",
+        "LUMBER",
+        "PALLET",
+        "PALLETS",
+        "WOOD",
+        "WOODEN",
     }
 )
 
@@ -238,6 +238,13 @@ def _fold(value: object) -> str:
     text = unicodedata.normalize("NFKD", str(value or "").lower())
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def _has_commercial_taxonomy_stop_word(value: object) -> bool:
+    """Reject commercial descriptors before they can become genus/species evidence."""
+    sanitized = str(value or "").replace(",", " ").replace("-", " ").upper()
+    words = frozenset(sanitized.split())
+    return bool(words & _TAXONOMY_COMMERCIAL_STOP_WORDS)
 
 
 def _is_structural_artifact(target: str, value: object) -> bool:
@@ -334,10 +341,8 @@ def _is_candidate_admissible(
     if not raw:
         return False
     folded = _fold(raw)
-    if target in {"genus", "species"}:
-        taxonomy_tokens = frozenset(folded.split())
-        if taxonomy_tokens & _TAXONOMY_COMMERCIAL_STOP_WORDS:
-            return False
+    if target in {"genus", "species"} and _has_commercial_taxonomy_stop_word(raw):
+        return False
     if _is_structural_artifact(target, raw):
         return False
     if folded and folded in table_headers:
