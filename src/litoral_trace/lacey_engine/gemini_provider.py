@@ -7,6 +7,7 @@ verification and human-review boundary before it can influence the preparation r
 from __future__ import annotations
 
 import base64
+from copy import deepcopy
 import json
 import time
 from typing import Mapping
@@ -23,6 +24,44 @@ from .ai_shadow import AIExtractionResult, AIShadowError, extraction_result_from
 
 PROVIDER_GEMINI = "gemini"
 GEMINI_INTERACTIONS_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
+
+
+_GEMINI_EXTRACTION_PROMPT = _PROMPT + """
+
+You are an expert U.S. Customs and Lacey Act auditor.
+Pay strict attention to tabular data (e.g., Commercial Invoices, Botanical Declarations).
+Extract EVERY line item. Do not merge different HTS codes or species into a single string.
+Look for Importer and Consignee specifically in Entry Worksheets or Bills of Lading.
+
+For multi-line or visually aligned tables, preserve row-level meaning. A wrapped cell may continue
+on the following visual line; associate it with the correct row before extracting candidates.
+For repeated line-item facts, emit a separate candidate object for EVERY occurrence. The outer
+`candidates` property is the array: repeat `field_key` as many times as needed instead of joining
+values with commas, slashes, semicolons, or prose. In particular, keep each HTS number, entered
+value, genus, species, plant quantity, and unit as an independent candidate tied to exact source
+text. Never collapse multiple merchandise rows into one synthetic value.
+
+Use the canonical field keys `hts_code` for HTS Number and `plant_quantity` for Quantity.
+Use `importer_name`/`importer_address` for importer facts, `consignee_name`/`consignee_address`
+for consignee facts, `entered_value` for declared line value, and `article_component` for the
+plant article/component description when those facts are explicitly present.
+"""
+
+# The provider-neutral contract is intentionally candidate-based rather than a Pydantic object
+# with one scalar property per regulatory field. Its top-level `candidates` array already allows
+# strict repeated values without breaking provenance. Gemini gets an annotated copy that makes
+# that cardinality explicit while keeping the downstream AI-shadow contract stable.
+_GEMINI_CANDIDATE_SCHEMA = deepcopy(_CANDIDATE_SCHEMA)
+_GEMINI_CANDIDATE_SCHEMA["properties"]["candidates"]["description"] = (
+    "Array of evidence-backed field occurrences. Emit one object per field occurrence and per "
+    "line item; repeated field_key values are expected for multi-line tables."
+)
+_GEMINI_CANDIDATE_SCHEMA["properties"]["candidates"]["items"]["properties"]["value"][
+    "description"
+] = (
+    "Exactly one scalar value for one field occurrence. Never concatenate multiple HTS codes, "
+    "entered values, genera, species, quantities, or units into one string."
+)
 
 
 def gemini_output_text(response: Mapping[str, object]) -> str:
@@ -76,7 +115,7 @@ class GeminiInteractionsProvider:
                     {
                         "type": "text",
                         "text": (
-                            _PROMPT
+                            _GEMINI_EXTRACTION_PROMPT
                             + f"\nThis image is page {page_number}. "
                             f"Every candidate page must be {page_number}."
                         ),
@@ -93,7 +132,7 @@ class GeminiInteractionsProvider:
                 "response_format": {
                     "type": "text",
                     "mime_type": "application/json",
-                    "schema": _CANDIDATE_SCHEMA,
+                    "schema": _GEMINI_CANDIDATE_SCHEMA,
                 },
             }
             response = _post_json(

@@ -19,8 +19,9 @@ from .domain import BoundingBox, DocumentResolution, EvidenceClass, FieldStatus
 
 AI_SHADOW_SCHEMA_VERSION = "lacey_ai_shadow_v1"
 AI_FIELDS = (
-    "estimated_arrival_date", "bill_of_lading", "container_number", "consignee_name",
-    "consignee_address", "description", "species", "genus", "filing_entry_reference",
+    "estimated_arrival_date", "bill_of_lading", "container_number", "importer_name",
+    "importer_address", "consignee_name", "consignee_address", "description",
+    "entered_value", "article_component", "species", "genus", "filing_entry_reference",
     "manufacturer_id", "hts_code", "country_of_harvest", "plant_quantity", "metric_unit",
 )
 
