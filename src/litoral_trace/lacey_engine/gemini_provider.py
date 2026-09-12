@@ -30,7 +30,8 @@ _GEMINI_EXTRACTION_PROMPT = _PROMPT + """
 
 You are an expert U.S. Customs and Lacey Act auditor.
 Pay strict attention to tabular data (e.g., Commercial Invoices, Botanical Declarations).
-Extract EVERY line item. Do not merge different HTS codes or species into a single string.
+Analyze tabular data carefully. You MUST ONLY extract line items that represent actual botanical merchandise/products. You MUST ACTIVELY IGNORE packaging materials (e.g., pallets, PAL, cartons, boxes), auxiliary lines (e.g., AUX), numerical line headers standing alone (e.g., '1', '2'), and empty rows. If a row does not contain a tradeable plant product, skip it entirely.
+Do not merge different HTS codes or species into a single string.
 Look for Importer and Consignee specifically in Entry Worksheets or Bills of Lading.
 
 For multi-line or visually aligned tables, preserve row-level meaning. A wrapped cell may continue
