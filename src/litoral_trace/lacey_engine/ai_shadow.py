@@ -104,7 +104,9 @@ class AIExtractionProvider(Protocol):
 _IDENTIFIER_FIELDS = {"bill_of_lading", "container_number", "filing_entry_reference", "manufacturer_id", "hts_code"}
 _CASE_INSENSITIVE_FIELDS = {"consignee_name", "consignee_address", "description", "species", "genus", "country_of_harvest", "metric_unit"}
 _GARBAGE_FILTER_FIELDS = frozenset({"article_component", "description"})
-_GARBAGE_EXACT_TOKENS = frozenset({"PAL", "AUX", "PALLET", "CARTON", "BOX", "N/A", "NONE"})
+_GARBAGE_MARKERS = frozenset({"PAL", "AUX", "PALLET", "CARTON", "BOX"})
+_GARBAGE_CLEAN_EXACT_TOKENS = frozenset({"NA", "NONE"})
+_GARBAGE_MARKER_PATTERN = re.compile(r"(?<![A-Z0-9])(?:PALLET|CARTON|AUX|BOX|PAL)(?![A-Z0-9])")
 
 def _fold(value: str) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
@@ -155,12 +157,18 @@ def _is_deterministic_garbage_candidate(payload: Mapping[str, object]) -> bool:
     field_key = str(payload.get("field_key") or "").strip()
     if field_key not in _GARBAGE_FILTER_FIELDS:
         return False
-    value = " ".join(str(payload.get("value") or "").split()).strip()
-    if not value:
+    text = str(payload.get("value") or "").strip()
+    if not text:
         return False
-    if value.isdigit():
+    upper_text = text.upper()
+    clean_text = re.sub(r"[^A-Z0-9]", "", upper_text)
+    if not clean_text:
+        return False
+    if clean_text.isdigit():
         return True
-    return value.upper() in _GARBAGE_EXACT_TOKENS
+    if clean_text in _GARBAGE_CLEAN_EXACT_TOKENS or clean_text in _GARBAGE_MARKERS:
+        return True
+    return _GARBAGE_MARKER_PATTERN.search(upper_text) is not None
 
 def candidate_from_payload(*, payload: Mapping[str, object], provider: str, model: str) -> AICandidate:
     field_key = str(payload.get("field_key") or "").strip()
