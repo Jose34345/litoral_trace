@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum
 import json
+import math
 import re
 import unicodedata
 from datetime import datetime
@@ -128,16 +129,22 @@ def comparison_key(field_key: str, value: str | None) -> str | None:
     return normalized.upper() if field_key in _IDENTIFIER_FIELDS else _fold(normalized)
 
 def _bbox_from_payload(payload: object) -> BoundingBox | None:
-    if payload is None:
+    """Best-effort spatial metadata parser that never rejects otherwise valid text.
+
+    Vision models occasionally reverse coordinate pairs or emit malformed geometry.
+    Inverted finite pairs are normalized; unusable geometry is discarded so the
+    evidence text can still flow through the shadow pipeline without a rectangle.
+    """
+    if payload is None or not isinstance(payload, (list, tuple)) or len(payload) != 4:
         return None
-    if not isinstance(payload, (list, tuple)) or len(payload) != 4:
-        raise AIShadowError("AI candidate bbox must contain four numbers.")
     try:
-        x0, top, x1, bottom = (float(item) for item in payload)
-    except (TypeError, ValueError) as exc:
-        raise AIShadowError("AI candidate bbox contains an invalid coordinate.") from exc
-    if x1 < x0 or bottom < top:
-        raise AIShadowError("AI candidate bbox is inverted.")
+        x_a, y_a, x_b, y_b = (float(item) for item in payload)
+    except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) for value in (x_a, y_a, x_b, y_b)):
+        return None
+    x0, x1 = sorted((x_a, x_b))
+    top, bottom = sorted((y_a, y_b))
     return BoundingBox(x0=x0, top=top, x1=x1, bottom=bottom)
 
 def candidate_from_payload(*, payload: Mapping[str, object], provider: str, model: str) -> AICandidate:

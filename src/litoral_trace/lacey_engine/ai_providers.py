@@ -12,6 +12,7 @@ import base64
 import hashlib
 from io import BytesIO
 import json
+import logging
 import mimetypes
 import os
 import time
@@ -33,6 +34,12 @@ PROVIDER_QWEN_OLLAMA = "qwen_ollama"
 PROVIDER_MISTRAL_OCR = "mistral_ocr"
 PROVIDER_OPENAI = "openai"
 PROVIDER_GEMINI = "gemini"
+
+
+LOGGER = logging.getLogger(__name__)
+_TRANSIENT_HTTP_STATUS_CODES = frozenset({500, 502, 503, 504})
+_POST_JSON_MAX_ATTEMPTS = 3
+_POST_JSON_RETRY_DELAY_SECONDS = 2.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,13 +217,48 @@ def _post_json(
     if headers:
         merged_headers.update(headers)
     request = Request(url, data=body, headers=merged_headers, method="POST")
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            raw = response.read()
-    except HTTPError as exc:
-        raise AIShadowError(f"AI provider returned HTTP {exc.code}.") from exc
-    except (URLError, TimeoutError, OSError) as exc:
-        raise AIShadowError("AI provider request failed.") from exc
+    host = urlparse(url).hostname or "unknown"
+
+    raw: bytes | None = None
+    for attempt in range(1, _POST_JSON_MAX_ATTEMPTS + 1):
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                raw = response.read()
+            break
+        except HTTPError as exc:
+            if exc.code not in _TRANSIENT_HTTP_STATUS_CODES:
+                raise AIShadowError(f"AI provider returned HTTP {exc.code}.") from exc
+            LOGGER.warning(
+                "AI provider returned a transient HTTP error; retrying request.",
+                extra={
+                    "ai_provider_host": host,
+                    "ai_provider_http_status": exc.code,
+                    "ai_provider_attempt": attempt,
+                    "ai_provider_max_attempts": _POST_JSON_MAX_ATTEMPTS,
+                },
+            )
+            if attempt >= _POST_JSON_MAX_ATTEMPTS:
+                raise AIShadowError(
+                    f"AI provider returned HTTP {exc.code} after {_POST_JSON_MAX_ATTEMPTS} attempts."
+                ) from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            LOGGER.warning(
+                "AI provider network request failed; retrying request.",
+                extra={
+                    "ai_provider_host": host,
+                    "ai_provider_error_type": type(exc).__name__,
+                    "ai_provider_attempt": attempt,
+                    "ai_provider_max_attempts": _POST_JSON_MAX_ATTEMPTS,
+                },
+            )
+            if attempt >= _POST_JSON_MAX_ATTEMPTS:
+                raise AIShadowError(
+                    f"AI provider request failed after {_POST_JSON_MAX_ATTEMPTS} attempts."
+                ) from exc
+        time.sleep(_POST_JSON_RETRY_DELAY_SECONDS)
+
+    if raw is None:
+        raise AIShadowError("AI provider request failed without a response.")
     try:
         parsed = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
