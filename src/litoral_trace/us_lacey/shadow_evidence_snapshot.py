@@ -37,6 +37,7 @@ from litoral_trace.db.models import (
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.services.translation import (
     AwsTranslateProvider,
+    DeepLTranslationProvider,
     NoOpEnglishProvider,
     OpenSourceTranslationProvider,
     TranslationProvider,
@@ -191,6 +192,8 @@ def configured_translation_provider() -> TranslationProvider | None:
         return None
     if provider in {"OPEN_SOURCE", "FREE", "OPEN_SOURCE_GOOGLE"}:
         return OpenSourceTranslationProvider()
+    if provider in {"DEEPL", "DEEPL_API"}:
+        return DeepLTranslationProvider()
     if provider in {"AWS", "AWS_TRANSLATE"}:
         region = str(os.environ.get(TRANSLATION_AWS_REGION_ENV, "")).strip() or None
         return AwsTranslateProvider(region_name=region)

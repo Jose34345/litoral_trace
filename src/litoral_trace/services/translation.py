@@ -11,6 +11,7 @@ import os
 from typing import Any, Mapping, Protocol, runtime_checkable
 
 import boto3
+import deepl
 from deep_translator import GoogleTranslator, MyMemoryTranslator
 
 
@@ -39,6 +40,18 @@ class TranslationProvider(Protocol):
     ) -> TranslationResult:
         """Translate one immutable source span without altering source evidence."""
         ...
+
+
+class BaseTranslationProvider:
+    """Small concrete base for translation providers with a shared contract."""
+
+    def translate(
+        self,
+        text: str,
+        source: str,
+        target: str = "en",
+    ) -> TranslationResult:
+        raise NotImplementedError
 
 
 class NoOpEnglishProvider:
@@ -231,6 +244,87 @@ class OpenSourceTranslationProvider:
             # deep-translator does not expose a calibrated confidence/quality
             # score, so leave quality_score absent instead of inventing certainty.
             metadata={"backend": "deep-translator", "engine": "google"},
+        )
+
+
+class DeepLTranslationProvider(BaseTranslationProvider):
+    """Official DeepL API adapter for production multilingual evidence translation."""
+
+    provider_name = "DEEPL_API"
+    model_name = "deepl-api"
+    model_version = "v2"
+
+    def __init__(self) -> None:
+        api_key = str(os.getenv("LT_DEEPL_API_KEY") or "").strip()
+        if not api_key:
+            raise ValueError(
+                "LT_DEEPL_API_KEY is required when LT_LACEY_TRANSLATION_PROVIDER=deepl"
+            )
+        self.translator = deepl.Translator(api_key)
+
+    @staticmethod
+    def _target_language(code: str) -> str:
+        normalized = str(code or "").strip().lower()
+        mapping = {
+            "en": "EN-US",
+            "eng": "EN-US",
+            "en-us": "EN-US",
+            "en-gb": "EN-GB",
+            "es": "ES",
+            "spa": "ES",
+            "pt": "PT-BR",
+            "pt-br": "PT-BR",
+            "pt-pt": "PT-PT",
+            "zh": "ZH-HANS",
+            "zh-cn": "ZH-HANS",
+        }
+        return mapping.get(normalized, normalized.upper())
+
+    def translate(
+        self,
+        text: str,
+        source: str,
+        target: str = "en",
+    ) -> TranslationResult:
+        source_norm = str(source or "").strip().lower()
+        target_norm = str(target or "").strip().lower()
+        original_text = str(text or "")
+        if not source_norm:
+            raise ValueError("A source language is required for translation")
+        if not target_norm:
+            raise ValueError("A target language is required for translation")
+
+        target_lang = self._target_language(target_norm)
+        if not original_text.strip():
+            return TranslationResult(
+                translated_text=original_text,
+                source_language=source_norm,
+                target_language=target_norm,
+                provider=self.provider_name,
+                model_name=self.model_name,
+                model_version=self.model_version,
+                metadata={"backend": "deepl", "target_lang": target_lang},
+            )
+
+        response = self.translator.translate_text(
+            original_text,
+            target_lang=target_lang,
+        )
+        translated = str(getattr(response, "text", response) or "").strip()
+        if not translated:
+            raise RuntimeError("DeepL API returned an empty translation")
+        detected_source = str(getattr(response, "detected_source_lang", "") or "").strip()
+        metadata: dict[str, Any] = {"backend": "deepl", "target_lang": target_lang}
+        if detected_source:
+            metadata["detected_source_lang"] = detected_source
+        return TranslationResult(
+            translated_text=translated,
+            source_language=source_norm,
+            target_language=target_norm,
+            provider=self.provider_name,
+            model_name=self.model_name,
+            model_version=self.model_version,
+            metadata=metadata,
         )
 
 
