@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import logging
+import os
 from typing import Any, Mapping, Protocol, runtime_checkable
 
 import boto3
@@ -14,6 +15,7 @@ from deep_translator import GoogleTranslator, MyMemoryTranslator
 
 
 LOGGER = logging.getLogger(__name__)
+_DEFAULT_MYMEMORY_EMAIL = "soporte@litoraltrace.com"
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +118,11 @@ class OpenSourceTranslationProvider:
                 return candidate
         return None
 
+    @staticmethod
+    def _mymemory_contact_email() -> str:
+        configured = str(os.getenv("LT_MYMEMORY_EMAIL") or "").strip()
+        return configured or _DEFAULT_MYMEMORY_EMAIL
+
     def _translate_with(
         self,
         translator_cls: Any,
@@ -123,11 +130,15 @@ class OpenSourceTranslationProvider:
         text: str,
         source: str,
         target: str,
+        email: str | None = None,
     ) -> str:
-        translator = translator_cls(
-            source=self._backend_language(source),
-            target=self._backend_language(target),
-        )
+        kwargs: dict[str, Any] = {
+            "source": self._backend_language(source),
+            "target": self._backend_language(target),
+        }
+        if email is not None:
+            kwargs["email"] = email
+        translator = translator_cls(**kwargs)
         translated = str(translator.translate(text) or "").strip()
         if not translated:
             raise RuntimeError("Open-source translation engine returned an empty translation")
@@ -182,6 +193,7 @@ class OpenSourceTranslationProvider:
                     text=original_text,
                     source=source_norm,
                     target=target_norm,
+                    email=self._mymemory_contact_email(),
                 )
             except Exception as fallback_error:
                 LOGGER.warning(

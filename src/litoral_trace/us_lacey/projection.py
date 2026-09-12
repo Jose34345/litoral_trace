@@ -206,6 +206,20 @@ _PARTY_NON_NAMES = frozenset(
     }
 )
 
+_TAXONOMY_COMMERCIAL_STOP_WORDS = frozenset(
+    {
+        "board",
+        "boards",
+        "cutting",
+        "lumber",
+        "pallet",
+        "pallets",
+        "wood",
+        "wooden",
+    }
+)
+
+
 _PLANT_ROW_IDENTITY_TARGETS = frozenset(
     {
         "article_component",
@@ -320,6 +334,10 @@ def _is_candidate_admissible(
     if not raw:
         return False
     folded = _fold(raw)
+    if target in {"genus", "species"}:
+        taxonomy_tokens = frozenset(folded.split())
+        if taxonomy_tokens & _TAXONOMY_COMMERCIAL_STOP_WORDS:
+            return False
     if _is_structural_artifact(target, raw):
         return False
     if folded and folded in table_headers:
