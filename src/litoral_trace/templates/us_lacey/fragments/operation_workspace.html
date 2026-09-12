@@ -128,7 +128,7 @@
   </div>
 
   {% if detail.status == "COMPLETED" %}
-  <section class="lt-card border-emerald-200 p-6"><h2 class="text-lg font-bold text-emerald-900">✓ Preparation complete</h2><p class="mt-2 text-sm text-slate-700">All required preparation fields have been reviewed. Preparation work product only — not filed with ACE or LAWGS.</p><div class="mt-4 flex flex-wrap gap-3">{{ button("Download Excel", "/operations/" ~ detail.public_id ~ "/export.xlsx", "primary") }}{{ button("Download CSV", "/operations/" ~ detail.public_id ~ "/export.csv", "secondary") }}</div></section>
+  <section class="lt-card border-emerald-200 p-6"><h2 class="text-lg font-bold text-emerald-900">✓ Preparation complete</h2><p class="mt-2 text-sm text-slate-700">All required preparation fields have been reviewed. Your declaration outputs are unlocked below.</p></section>
   {% else %}
   <section class="lt-card p-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -154,6 +154,8 @@
       <p class="mt-2 text-sm text-slate-600">Confirm safe suggestions and resolve missing or conflicting items before completing preparation.</p>
     {% endif %}
   </section>
+
+  {% include "us_lacey/fragments/export_declaration_package.html" %}
 
   <details class="lt-card p-6"><summary class="cursor-pointer text-lg font-bold text-slate-950">Show confirmed declaration data</summary><div class="mt-5 grid gap-3 md:grid-cols-2">{% for field in settled_fields %}<div class="rounded-lg border border-slate-200 p-3"><div class="flex items-center justify-between gap-2"><strong>{{ field.label }}</strong><span class="text-xs text-emerald-700">{{ friendly_status(field.status) }}</span></div><p class="mt-1 text-sm text-slate-700">{{ field.effective_value }}</p><details class="mt-2 text-xs text-slate-500"><summary class="cursor-pointer">View evidence</summary><p class="mt-1">{% if field.extractor == "operator-entered-metadata" %}Operation details{% else %}Document evidence{% if field.source_page %} · page {{ field.source_page }}{% endif %}{% endif %}</p></details></div>{% endfor %}</div></details>
   <p class="px-1 text-xs text-slate-500">Human review required. Litoral Trace does not submit this operation to ACE or LAWGS. Preparation work product only; not a legal compliance determination.</p>
