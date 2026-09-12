@@ -1,6 +1,5 @@
 """Translation-provider abstraction for multilingual evidence processing.
 
-Phase A/B foundation only: no production pipeline imports this module yet.
 Translations are interpretations of immutable source spans and must never be
 counted as independent evidence.
 """
@@ -10,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol, runtime_checkable
 
 import boto3
+from deep_translator import GoogleTranslator
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,12 +65,79 @@ class NoOpEnglishProvider:
         )
 
 
-class AwsTranslateProvider:
-    """Lazy AWS Translate adapter prepared for a later feature-flagged rollout.
+class OpenSourceTranslationProvider:
+    """Free deep-translator adapter using its Google Translate backend.
 
-    The boto3 client is created only on first use. Nothing in the current
-    production extraction path instantiates or calls this provider in this PR.
-    A client may be injected for deterministic tests.
+    This backend does not use the paid Google Cloud Translation API and therefore
+    needs no cloud API key. The translator class is injectable so tests remain
+    deterministic and never need outbound network access.
+    """
+
+    provider_name = "OPEN_SOURCE_GOOGLE"
+    model_name = "deep-translator-google"
+    model_version = "1"
+
+    def __init__(self, *, translator_cls: Any = GoogleTranslator) -> None:
+        self._translator_cls = translator_cls
+
+    @staticmethod
+    def _backend_language(code: str) -> str:
+        normalized = (code or "").strip().lower()
+        # deep-translator/Google expects its Chinese locale code rather than the
+        # shadow detector's intentionally generic ISO-639 ``zh`` value.
+        if normalized == "zh":
+            return "zh-CN"
+        return normalized
+
+    def translate(
+        self,
+        text: str,
+        source: str,
+        target: str = "en",
+    ) -> TranslationResult:
+        source_norm = (source or "").strip().lower()
+        target_norm = (target or "").strip().lower()
+        original_text = str(text or "")
+        if not original_text.strip():
+            return TranslationResult(
+                translated_text=original_text,
+                source_language=source_norm,
+                target_language=target_norm,
+                provider=self.provider_name,
+                model_name=self.model_name,
+                model_version=self.model_version,
+                metadata={"backend": "deep-translator"},
+            )
+        if not source_norm:
+            raise ValueError("A source language is required for translation")
+        if not target_norm:
+            raise ValueError("A target language is required for translation")
+
+        translator = self._translator_cls(
+            source=self._backend_language(source_norm),
+            target=self._backend_language(target_norm),
+        )
+        translated = str(translator.translate(original_text) or "").strip()
+        if not translated:
+            raise RuntimeError("Open-source translation provider returned an empty translation")
+        return TranslationResult(
+            translated_text=translated,
+            source_language=source_norm,
+            target_language=target_norm,
+            provider=self.provider_name,
+            model_name=self.model_name,
+            model_version=self.model_version,
+            # deep-translator does not expose a calibrated confidence/quality
+            # score, so leave quality_score absent instead of inventing certainty.
+            metadata={"backend": "deep-translator"},
+        )
+
+
+class AwsTranslateProvider:
+    """Lazy AWS Translate adapter kept as an optional provider.
+
+    The boto3 client is created only on first use. A client may be injected for
+    deterministic tests.
     """
 
     provider_name = "AWS_TRANSLATE"
