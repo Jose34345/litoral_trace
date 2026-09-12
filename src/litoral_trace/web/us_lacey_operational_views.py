@@ -3,10 +3,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+import logging
+
+from markupsafe import Markup, escape
 
 from litoral_trace.us_lacey.candidate_normalization import group_candidate_evidence
 from litoral_trace.us_lacey.ppq505 import PPQ505_FIELDS_BY_KEY
+from litoral_trace.us_lacey.semantic_evidence_read import (
+    EvidenceTextView,
+    SemanticEvidenceReadService,
+)
 from litoral_trace.web.templates import templates
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _render(request, name: str, **context: object) -> str:
@@ -150,6 +160,102 @@ def _review_field_sets(detail):
     return exception_fields, settled_fields
 
 
+def _semantic_evidence_for_detail(identity, detail) -> dict[str, tuple[EvidenceTextView, ...]]:
+    """Read optional Phase D evidence without making the legacy UI depend on it."""
+    organization_id = getattr(identity, "organization_id", None)
+    operation_public_id = getattr(detail, "public_id", None)
+    if not organization_id or operation_public_id is None:
+        return {}
+    try:
+        return SemanticEvidenceReadService().get_operation_evidence(
+            organization_id=int(organization_id),
+            operation_public_id=operation_public_id,
+        )
+    except Exception:
+        # The semantic layer remains additive during Phase D. A read-side problem must
+        # never hide the authoritative human-review workflow.
+        LOGGER.exception(
+            "us_lacey_semantic_evidence_read_failed",
+            extra={"organization_id": int(organization_id)},
+        )
+        return {}
+
+
+def _evidence_for_field(field, evidence_by_field: Mapping[str, tuple[EvidenceTextView, ...]]):
+    items = tuple(evidence_by_field.get(str(getattr(field, "field_name", "")), ()))
+    if not items:
+        return ()
+    source_document_id = getattr(field, "source_assurance_document_id", None)
+    source_page = getattr(field, "source_page", None)
+    preferred = tuple(
+        item
+        for item in items
+        if (source_document_id is None or item.source_assurance_document_id == source_document_id)
+        and (source_page is None or str(item.source_page) == str(source_page))
+    )
+    return preferred or items
+
+
+def _semantic_evidence_markup(evidence: EvidenceTextView) -> Markup:
+    """Inline-safe evidence UI for the existing Jinja review card.
+
+    The translated interpretation is visible by default. The badge's native tooltip
+    always exposes the immutable original source text, including on a no-JS page.
+    """
+    display = escape(evidence.display_text)
+    source_meta = Markup(
+        '<span class="text-xs text-slate-500">Document evidence · page {}</span>'
+    ).format(escape(str(evidence.source_page)))
+    if evidence.is_translated:
+        badge = Markup(
+            '<span class="ml-2 inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800" '
+            'data-translation-badge data-original-language="{}" title="Original evidence: {}">Translated from {}</span>'
+        ).format(
+            escape(evidence.original_language),
+            escape(evidence.original_text),
+            escape(evidence.original_language_label),
+        )
+    else:
+        badge = Markup("")
+    return Markup(
+        '<br><span class="mt-2 inline-block text-sm text-slate-700" data-semantic-evidence '
+        'data-source-span-id="{}"><span class="font-semibold">Evidence:</span> {}</span> {} {}'
+    ).format(
+        escape(str(evidence.source_span_id)),
+        display,
+        badge,
+        source_meta,
+    )
+
+
+def _decorate_review_fields(fields, evidence_by_field: Mapping[str, tuple[EvidenceTextView, ...]]):
+    """Attach display_text to review cards without mutating evidence or form values."""
+    decorated = []
+    for field in fields:
+        proposed_value = getattr(field, "proposed_value", None)
+        if not proposed_value:
+            decorated.append(field)
+            continue
+        evidence_items = _evidence_for_field(field, evidence_by_field)
+        if not evidence_items:
+            decorated.append(field)
+            continue
+        presentation = Markup("{}").format(escape(str(proposed_value)))
+        for evidence in evidence_items:
+            presentation += _semantic_evidence_markup(evidence)
+        decorated.append(replace(field, proposed_value=presentation))
+    return decorated
+
+
+def _review_field_sets_with_semantic_evidence(identity, detail):
+    exception_fields, settled_fields = _review_field_sets(detail)
+    evidence_by_field = _semantic_evidence_for_detail(identity, detail)
+    return (
+        _decorate_review_fields(exception_fields, evidence_by_field),
+        _decorate_review_fields(settled_fields, evidence_by_field),
+    )
+
+
 def render_operations(*, request, identity, operations: Sequence, entitlement) -> str:
     return _render(request, "operations", identity=identity, operations=operations, entitlement=entitlement)
 
@@ -159,7 +265,7 @@ def render_new_operation(*, request, identity, entitlement, csrf_token: str, err
 
 
 def render_operation_detail(*, request, identity, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None, notice: str | None = None) -> str:
-    exception_fields, settled_fields = _review_field_sets(detail)
+    exception_fields, settled_fields = _review_field_sets_with_semantic_evidence(identity, detail)
     progress = processing_view(detail)
     return _render(request, "operation_detail", identity=identity, detail=detail, engine2_dossier=engine2_dossier, upload_csrf=upload_csrf, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, processing=progress, error=error, notice=notice)
 
@@ -169,7 +275,7 @@ def render_processing_fragment(*, request, detail) -> str:
 
 
 def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None, is_oob_update: bool | None = None) -> str:
-    exception_fields, settled_fields = _review_field_sets(detail)
+    exception_fields, settled_fields = _review_field_sets_with_semantic_evidence(identity, detail)
     # Initial workspace hydration is a GET and must render its own summary/banner/final
     # confirmation normally. Review mutations are POSTs and update those regions OOB.
     if is_oob_update is None:
