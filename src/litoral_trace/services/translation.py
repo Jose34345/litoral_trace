@@ -6,10 +6,14 @@ counted as independent evidence.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from typing import Any, Mapping, Protocol, runtime_checkable
 
 import boto3
-from deep_translator import GoogleTranslator
+from deep_translator import GoogleTranslator, MyMemoryTranslator
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,28 +70,68 @@ class NoOpEnglishProvider:
 
 
 class OpenSourceTranslationProvider:
-    """Free deep-translator adapter using its Google Translate backend.
+    """Free deep-translator adapter with a Google -> MyMemory fallback chain.
 
-    This backend does not use the paid Google Cloud Translation API and therefore
-    needs no cloud API key. The translator class is injectable so tests remain
-    deterministic and never need outbound network access.
+    Neither backend uses the paid Google Cloud Translation API. Translator
+    classes are injectable so tests remain deterministic and never need outbound
+    network access. Backend failures are logged without source text; if every
+    engine fails, the final exception is deliberately allowed to propagate.
     """
 
     provider_name = "OPEN_SOURCE_GOOGLE"
     model_name = "deep-translator-google"
     model_version = "1"
+    fallback_provider_name = "OPEN_SOURCE_MYMEMORY"
+    fallback_model_name = "deep-translator-mymemory"
+    fallback_model_version = "1"
 
-    def __init__(self, *, translator_cls: Any = GoogleTranslator) -> None:
+    def __init__(
+        self,
+        *,
+        translator_cls: Any = GoogleTranslator,
+        fallback_translator_cls: Any = MyMemoryTranslator,
+    ) -> None:
         self._translator_cls = translator_cls
+        self._fallback_translator_cls = fallback_translator_cls
 
     @staticmethod
     def _backend_language(code: str) -> str:
         normalized = (code or "").strip().lower()
-        # deep-translator/Google expects its Chinese locale code rather than the
-        # shadow detector's intentionally generic ISO-639 ``zh`` value.
+        # deep-translator expects its Chinese locale code rather than the shadow
+        # detector's intentionally generic ISO-639 ``zh`` value.
         if normalized == "zh":
             return "zh-CN"
         return normalized
+
+    @staticmethod
+    def _error_code(error: Exception) -> Any | None:
+        """Best-effort status/code extraction without logging error payload text."""
+        response = getattr(error, "response", None)
+        for candidate in (
+            getattr(error, "status_code", None),
+            getattr(error, "code", None),
+            getattr(response, "status_code", None),
+        ):
+            if candidate is not None:
+                return candidate
+        return None
+
+    def _translate_with(
+        self,
+        translator_cls: Any,
+        *,
+        text: str,
+        source: str,
+        target: str,
+    ) -> str:
+        translator = translator_cls(
+            source=self._backend_language(source),
+            target=self._backend_language(target),
+        )
+        translated = str(translator.translate(text) or "").strip()
+        if not translated:
+            raise RuntimeError("Open-source translation engine returned an empty translation")
+        return translated
 
     def translate(
         self,
@@ -106,20 +150,65 @@ class OpenSourceTranslationProvider:
                 provider=self.provider_name,
                 model_name=self.model_name,
                 model_version=self.model_version,
-                metadata={"backend": "deep-translator"},
+                metadata={"backend": "deep-translator", "engine": "google"},
             )
         if not source_norm:
             raise ValueError("A source language is required for translation")
         if not target_norm:
             raise ValueError("A target language is required for translation")
 
-        translator = self._translator_cls(
-            source=self._backend_language(source_norm),
-            target=self._backend_language(target_norm),
-        )
-        translated = str(translator.translate(original_text) or "").strip()
-        if not translated:
-            raise RuntimeError("Open-source translation provider returned an empty translation")
+        try:
+            translated = self._translate_with(
+                self._translator_cls,
+                text=original_text,
+                source=source_norm,
+                target=target_norm,
+            )
+        except Exception as google_error:
+            LOGGER.warning(
+                "Open-source translation engine failed; trying fallback.",
+                extra={
+                    "translation_engine": self.provider_name,
+                    "translation_fallback_engine": self.fallback_provider_name,
+                    "translation_source_language": source_norm,
+                    "translation_target_language": target_norm,
+                    "translation_error_type": type(google_error).__name__,
+                    "translation_error_code": self._error_code(google_error),
+                },
+            )
+            try:
+                translated = self._translate_with(
+                    self._fallback_translator_cls,
+                    text=original_text,
+                    source=source_norm,
+                    target=target_norm,
+                )
+            except Exception as fallback_error:
+                LOGGER.warning(
+                    "Open-source translation fallback engine failed; no engines remain.",
+                    extra={
+                        "translation_engine": self.fallback_provider_name,
+                        "translation_source_language": source_norm,
+                        "translation_target_language": target_norm,
+                        "translation_error_type": type(fallback_error).__name__,
+                        "translation_error_code": self._error_code(fallback_error),
+                    },
+                )
+                raise
+            return TranslationResult(
+                translated_text=translated,
+                source_language=source_norm,
+                target_language=target_norm,
+                provider=self.fallback_provider_name,
+                model_name=self.fallback_model_name,
+                model_version=self.fallback_model_version,
+                metadata={
+                    "backend": "deep-translator",
+                    "engine": "mymemory",
+                    "fallback_from": self.provider_name,
+                },
+            )
+
         return TranslationResult(
             translated_text=translated,
             source_language=source_norm,
@@ -129,7 +218,7 @@ class OpenSourceTranslationProvider:
             model_version=self.model_version,
             # deep-translator does not expose a calibrated confidence/quality
             # score, so leave quality_score absent instead of inventing certainty.
-            metadata={"backend": "deep-translator"},
+            metadata={"backend": "deep-translator", "engine": "google"},
         )
 
 
