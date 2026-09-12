@@ -8,8 +8,9 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 import logging
 import re
+import threading
 
-from fastapi import Cookie, FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import BackgroundTasks, Cookie, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -65,6 +66,7 @@ from litoral_trace.us_lacey.self_service import (
     register_us_lacey_company,
     verify_us_lacey_email,
 )
+from litoral_trace.us_lacey.translation_backfill import run_translation_backfill
 from litoral_trace.us_lacey.workflow import (
     UsLaceyWorkflowError,
     create_us_lacey_customer_operation,
@@ -88,6 +90,8 @@ from litoral_trace.web.us_lacey_portal_views import (
 from litoral_trace.web.templates import STATIC_DIR
 
 LOGGER = logging.getLogger(__name__)
+_TRANSLATION_BACKFILL_SCHEDULED_ORGANIZATIONS: set[int] = set()
+_TRANSLATION_BACKFILL_SCHEDULE_LOCK = threading.Lock()
 
 
 app = FastAPI(
@@ -97,6 +101,22 @@ app = FastAPI(
     openapi_url=None,
 )
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+def _schedule_translation_backfill_once(
+    background_tasks: BackgroundTasks,
+    organization_id: int,
+) -> bool:
+    """Schedule one best-effort tenant repair per organization and web process."""
+    tenant_id = int(organization_id)
+    if tenant_id <= 0:
+        raise ValueError("organization_id must be positive")
+    with _TRANSLATION_BACKFILL_SCHEDULE_LOCK:
+        if tenant_id in _TRANSLATION_BACKFILL_SCHEDULED_ORGANIZATIONS:
+            return False
+        _TRANSLATION_BACKFILL_SCHEDULED_ORGANIZATIONS.add(tenant_id)
+    background_tasks.add_task(run_translation_backfill, tenant_id)
+    return True
 
 
 def _html(content: str, *, status_code: int = 200) -> HTMLResponse:
@@ -417,6 +437,7 @@ def billing_page(
 @app.get("/operations", response_class=HTMLResponse)
 def operations_page(
     request: Request,
+    background_tasks: BackgroundTasks,
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
@@ -424,6 +445,10 @@ def operations_page(
         items = UsLaceyOperationService().list_operations(
             organization_id=identity.organization_id,
             limit=100,
+        )
+        _schedule_translation_backfill_once(
+            background_tasks,
+            identity.organization_id,
         )
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
