@@ -39,13 +39,14 @@ class _FailingGoogleTranslator:
 
 
 class _FakeMyMemoryTranslator:
-    init_calls: list[tuple[str, str]] = []
+    init_calls: list[tuple[str, str, str]] = []
     translated_texts: list[str] = []
 
-    def __init__(self, *, source: str, target: str) -> None:
+    def __init__(self, *, source: str, target: str, email: str) -> None:
         self.source = source
         self.target = target
-        self.init_calls.append((source, target))
+        self.email = email
+        self.init_calls.append((source, target, email))
 
     def translate(self, text: str) -> str:
         self.translated_texts.append(text)
@@ -53,9 +54,10 @@ class _FakeMyMemoryTranslator:
 
 
 class _FailingMyMemoryTranslator:
-    def __init__(self, *, source: str, target: str) -> None:
+    def __init__(self, *, source: str, target: str, email: str) -> None:
         self.source = source
         self.target = target
+        self.email = email
 
     def translate(self, text: str) -> str:
         raise RuntimeError("secondary translator unavailable")
@@ -79,7 +81,11 @@ def test_open_source_provider_translates_without_cloud_credentials() -> None:
     assert _FakeGoogleTranslator.translated_texts == ["Factura comercial de madera"]
 
 
-def test_open_source_provider_falls_back_to_mymemory_when_google_fails(caplog) -> None:
+def test_open_source_provider_falls_back_to_mymemory_when_google_fails(
+    caplog,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("LT_MYMEMORY_EMAIL", "translation-test@example.com")
     _FailingGoogleTranslator.init_calls.clear()
     _FakeMyMemoryTranslator.init_calls.clear()
     _FakeMyMemoryTranslator.translated_texts.clear()
@@ -103,7 +109,9 @@ def test_open_source_provider_falls_back_to_mymemory_when_google_fails(caplog) -
         "fallback_from": "OPEN_SOURCE_GOOGLE",
     }
     assert _FailingGoogleTranslator.init_calls == [("es", "en")]
-    assert _FakeMyMemoryTranslator.init_calls == [("es", "en")]
+    assert _FakeMyMemoryTranslator.init_calls == [
+        ("es", "en", "translation-test@example.com")
+    ]
     assert _FakeMyMemoryTranslator.translated_texts == ["Tablas de cortar de madera"]
 
     warning = next(
@@ -115,6 +123,21 @@ def test_open_source_provider_falls_back_to_mymemory_when_google_fails(caplog) -
     assert warning.translation_fallback_engine == "OPEN_SOURCE_MYMEMORY"
     assert warning.translation_error_type == "_GoogleRateLimitError"
     assert warning.translation_error_code == 429
+
+
+def test_open_source_provider_uses_default_mymemory_contact_email(monkeypatch) -> None:
+    monkeypatch.delenv("LT_MYMEMORY_EMAIL", raising=False)
+    _FakeMyMemoryTranslator.init_calls.clear()
+    provider = OpenSourceTranslationProvider(
+        translator_cls=_FailingGoogleTranslator,
+        fallback_translator_cls=_FakeMyMemoryTranslator,
+    )
+
+    provider.translate("Madera aserrada", "es", "en")
+
+    assert _FakeMyMemoryTranslator.init_calls == [
+        ("es", "en", "soporte@litoraltrace.com")
+    ]
 
 
 def test_open_source_provider_raises_when_all_engines_fail(caplog) -> None:
