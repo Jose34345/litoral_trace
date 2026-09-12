@@ -4,14 +4,19 @@ import asyncio
 from dataclasses import dataclass
 from types import SimpleNamespace
 
+from fastapi import BackgroundTasks
+from sqlalchemy.dialects import postgresql
+
 from litoral_trace.services.translation import TranslationResult
 from litoral_trace.us_lacey.semantic_evidence_read import EvidenceTextView, evidence_text_view
 from litoral_trace.us_lacey.translation_backfill import (
     BACKFILL_DELAY_SECONDS,
     BACKFILL_LIMIT,
     TranslationBackfillCandidate,
+    _missing_candidates_statement,
     run_translation_backfill,
 )
+from litoral_trace.web import us_lacey_pilot_app as pilot_app
 from litoral_trace.web.us_lacey_operational_views import _decorate_review_fields
 
 
@@ -62,6 +67,28 @@ def test_read_projection_prefers_translation_but_preserves_original():
     assert view.original_language_label == "Portuguese"
 
 
+def test_backfill_query_is_explicitly_tenant_scoped():
+    statement = _missing_candidates_statement(14, BACKFILL_LIMIT)
+    sql = str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    ).lower()
+
+    assert "document_text_spans" in sql
+    assert "document_text_translations" in sql
+    assert "organizations" not in sql
+    assert "document_text_spans.organization_id = 14" in sql
+    assert "document_text_translations.id is null" in sql
+    assert "original_language" in sql
+    assert "'es'" in sql
+    assert "'pt'" in sql
+    assert "'zh'" in sql
+    assert "target_language = 'en'" in sql
+    assert f"limit {BACKFILL_LIMIT}" in sql
+
+
 class _FakeProvider:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, str]] = []
@@ -84,13 +111,14 @@ def test_backfill_hard_caps_at_50_and_yields_between_translations():
     persisted = []
     sleeps = []
 
-    def load_candidates(limit: int):
+    def load_candidates(organization_id: int, limit: int):
+        assert organization_id == 7
         assert limit == BACKFILL_LIMIT
         # Deliberately violate the loader contract to prove the async layer still
-        # enforces the innegotiable startup budget.
+        # enforces the innegotiable per-trigger startup budget.
         return tuple(
             TranslationBackfillCandidate(
-                organization_id=1,
+                organization_id=7,
                 source_span_id=index + 1,
                 original_text=f"texto {index + 1}",
                 original_language="es",
@@ -98,7 +126,8 @@ def test_backfill_hard_caps_at_50_and_yields_between_translations():
             for index in range(BACKFILL_LIMIT + 10)
         )
 
-    def persist_writes(writes):
+    def persist_writes(organization_id: int, writes):
+        assert organization_id == 7
         persisted.extend(writes)
         return len(writes)
 
@@ -107,6 +136,7 @@ def test_backfill_hard_caps_at_50_and_yields_between_translations():
 
     created = asyncio.run(
         run_translation_backfill(
+            7,
             provider=provider,
             load_candidates=load_candidates,
             persist_writes=persist_writes,
@@ -118,6 +148,57 @@ def test_backfill_hard_caps_at_50_and_yields_between_translations():
     assert len(provider.calls) == BACKFILL_LIMIT
     assert len(persisted) == BACKFILL_LIMIT
     assert sleeps == [BACKFILL_DELAY_SECONDS] * (BACKFILL_LIMIT - 1)
+
+
+def test_jit_backfill_schedules_only_once_per_organization():
+    tasks = BackgroundTasks()
+    with pilot_app._TRANSLATION_BACKFILL_SCHEDULE_LOCK:
+        pilot_app._TRANSLATION_BACKFILL_SCHEDULED_ORGANIZATIONS.clear()
+    try:
+        assert pilot_app._schedule_translation_backfill_once(tasks, 14) is True
+        assert pilot_app._schedule_translation_backfill_once(tasks, 14) is False
+        assert pilot_app._schedule_translation_backfill_once(tasks, 15) is True
+        assert len(tasks.tasks) == 2
+    finally:
+        with pilot_app._TRANSLATION_BACKFILL_SCHEDULE_LOCK:
+            pilot_app._TRANSLATION_BACKFILL_SCHEDULED_ORGANIZATIONS.clear()
+
+
+def test_operations_endpoint_schedules_jit_backfill_for_authenticated_tenant(monkeypatch):
+    identity = SimpleNamespace(organization_id=14)
+    entitlement = SimpleNamespace()
+    monkeypatch.setattr(
+        pilot_app,
+        "_operational_context",
+        lambda _session: (identity, entitlement),
+    )
+    monkeypatch.setattr(
+        pilot_app,
+        "UsLaceyOperationService",
+        lambda: SimpleNamespace(
+            list_operations=lambda *, organization_id, limit: []
+        ),
+    )
+    monkeypatch.setattr(
+        pilot_app,
+        "render_operations",
+        lambda **_kwargs: "<main>ok</main>",
+    )
+    scheduled: list[int] = []
+    monkeypatch.setattr(
+        pilot_app,
+        "_schedule_translation_backfill_once",
+        lambda _tasks, organization_id: scheduled.append(organization_id) or True,
+    )
+
+    response = pilot_app.operations_page(
+        request=SimpleNamespace(),
+        background_tasks=BackgroundTasks(),
+        us_session="opaque-session",
+    )
+
+    assert response.status_code == 200
+    assert scheduled == [14]
 
 
 @dataclass(frozen=True)
