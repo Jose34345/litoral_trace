@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
 import os
 from typing import Mapping
 
@@ -32,6 +33,9 @@ from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
 AI_REVIEW_OFF = "OFF"
 AI_REVIEW_SHADOW = "SHADOW"
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,6 +300,51 @@ def _call_gemini_decision(
     )
 
 
+def _safe_call_review_decision(
+    *,
+    provider_config: AIProviderConfig,
+    model: str,
+    field_name: str,
+    issue: ReconciliationIssue,
+    candidates: tuple[ReviewCandidate, ...],
+    task: AITask,
+) -> AIReviewRecommendation | None:
+    """Return no recommendation when an external AI provider is unavailable.
+
+    Reconciliation advice is shadow-only. Exhausted provider retries therefore
+    degrade to human review rather than failing the surrounding ingestion worker.
+    """
+    try:
+        if provider_config.provider == PROVIDER_GEMINI:
+            return _call_gemini_decision(
+                provider_config=provider_config,
+                model=model,
+                field_name=field_name,
+                issue=issue,
+                candidates=candidates,
+                thinking_level="high" if task is AITask.ADJUDICATE else "medium",
+            )
+        return _call_openai_decision(
+            provider_config=provider_config,
+            model=model,
+            field_name=field_name,
+            issue=issue,
+            candidates=candidates,
+        )
+    except AIShadowError as exc:
+        LOGGER.warning(
+            "AI review recommendation unavailable; leaving issue for human review.",
+            extra={
+                "ai_review_provider": provider_config.provider,
+                "ai_review_model": model,
+                "ai_review_issue_id": getattr(issue, "id", None),
+                "ai_review_field_name": field_name,
+                "ai_review_error_type": type(exc).__name__,
+            },
+        )
+        return None
+
+
 def _review_candidates(rows: list[UsLaceyFieldCandidate]) -> tuple[ReviewCandidate, ...]:
     """Deduplicate exact candidate values while retaining strongest source record."""
     strongest: dict[str, UsLaceyFieldCandidate] = {}
@@ -388,23 +437,16 @@ def recommend_open_reconciliation_issues(*, organization_id: int, operation_id: 
             ):
                 continue
 
-            if provider_config.provider == PROVIDER_GEMINI:
-                recommendation = _call_gemini_decision(
-                    provider_config=provider_config,
-                    model=model,
-                    field_name=str(issue.field_name or ""),
-                    issue=issue,
-                    candidates=candidates,
-                    thinking_level="high" if task is AITask.ADJUDICATE else "medium",
-                )
-            else:
-                recommendation = _call_openai_decision(
-                    provider_config=provider_config,
-                    model=model,
-                    field_name=str(issue.field_name or ""),
-                    issue=issue,
-                    candidates=candidates,
-                )
+            recommendation = _safe_call_review_decision(
+                provider_config=provider_config,
+                model=model,
+                field_name=str(issue.field_name or ""),
+                issue=issue,
+                candidates=candidates,
+                task=task,
+            )
+            if recommendation is None:
+                continue
             current_evidence["ai_recommendation"] = {
                 "schema_version": "lacey_ai_candidate_recommendation_v1",
                 "provider": provider_config.provider,
