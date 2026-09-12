@@ -18,7 +18,13 @@ def _candidate(field_key: str, value: str, source_text: str) -> dict[str, object
 
 def test_gemini_prompt_is_customs_table_and_line_item_aware():
     assert "You are an expert U.S. Customs and Lacey Act auditor." in _GEMINI_EXTRACTION_PROMPT
-    assert "Extract EVERY line item" in _GEMINI_EXTRACTION_PROMPT
+    assert "Extract EVERY line item" not in _GEMINI_EXTRACTION_PROMPT
+    assert "You MUST ONLY extract line items that represent actual botanical merchandise/products" in _GEMINI_EXTRACTION_PROMPT
+    assert "You MUST ACTIVELY IGNORE packaging materials" in _GEMINI_EXTRACTION_PROMPT
+    assert "pallets, PAL, cartons, boxes" in _GEMINI_EXTRACTION_PROMPT
+    assert "auxiliary lines (e.g., AUX)" in _GEMINI_EXTRACTION_PROMPT
+    assert "numerical line headers standing alone" in _GEMINI_EXTRACTION_PROMPT
+    assert "If a row does not contain a tradeable plant product, skip it entirely." in _GEMINI_EXTRACTION_PROMPT
     assert "Do not merge different HTS codes or species into a single string" in _GEMINI_EXTRACTION_PROMPT
     assert "Look for Importer and Consignee specifically in Entry Worksheets or Bills of Lading" in _GEMINI_EXTRACTION_PROMPT
     assert "multi-line or visually aligned tables" in _GEMINI_EXTRACTION_PROMPT
@@ -58,5 +64,8 @@ def test_gemini_preserves_multiple_hts_species_values_and_quantities(monkeypatch
     assert [c.value for c in result.candidates if c.field_key == "species"] == ["radiata", "grandis"]
     assert [c.value for c in result.candidates if c.field_key == "plant_quantity"] == ["20", "12"]
     payload = captured["payload"]
-    assert "Extract EVERY line item" in payload["input"][0]["text"]
+    prompt = payload["input"][0]["text"]
+    assert "Extract EVERY line item" not in prompt
+    assert "You MUST ONLY extract line items that represent actual botanical merchandise/products" in prompt
+    assert "You MUST ACTIVELY IGNORE packaging materials" in prompt
     assert payload["response_format"]["schema"]["properties"]["candidates"]["type"] == "array"
