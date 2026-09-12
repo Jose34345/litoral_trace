@@ -38,6 +38,7 @@ from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.services.translation import (
     AwsTranslateProvider,
     NoOpEnglishProvider,
+    OpenSourceTranslationProvider,
     TranslationProvider,
 )
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
@@ -188,6 +189,8 @@ def configured_translation_provider() -> TranslationProvider | None:
     provider = str(os.environ.get(TRANSLATION_PROVIDER_ENV, "")).strip().upper()
     if provider in {"", "NONE", "DISABLED", "OFF"}:
         return None
+    if provider in {"OPEN_SOURCE", "FREE", "OPEN_SOURCE_GOOGLE"}:
+        return OpenSourceTranslationProvider()
     if provider in {"AWS", "AWS_TRANSLATE"}:
         region = str(os.environ.get(TRANSLATION_AWS_REGION_ENV, "")).strip() or None
         return AwsTranslateProvider(region_name=region)
