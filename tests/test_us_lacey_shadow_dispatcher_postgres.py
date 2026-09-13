@@ -28,9 +28,9 @@ from litoral_trace.lacey_engine.multi_agent.contracts import (
     SpecialistRole,
 )
 from litoral_trace.lacey_engine.multi_agent.router import RoutingPlan
+from litoral_trace.us_lacey import ai_suggestions as ai_suggestions_module
 from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey import specialized_shadow as specialized_module
-from litoral_trace.us_lacey.ai_suggestions import project_verified_ai_suggestions
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 from litoral_trace.us_lacey.ppq505 import PPQ505_SHIPMENT_REFERENCE
 from litoral_trace.us_lacey.specialized_shadow import (
@@ -154,7 +154,7 @@ def _add_missing_field(factory, *, organization_id: int, operation_id: int, fiel
     session.close()
 
 
-def _configure_shadow(monkeypatch) -> None:
+def _configure_shadow(monkeypatch, factory) -> None:
     monkeypatch.setenv("LT_AI_ARCHITECTURE", "shadow")
     monkeypatch.setenv("US_LACEY_AI_SHADOW_MODE", "shadow")
     monkeypatch.setenv("US_LACEY_AI_PROVIDER", "gemini")
@@ -162,6 +162,7 @@ def _configure_shadow(monkeypatch) -> None:
     monkeypatch.setenv("US_LACEY_GEMINI_API_KEY", "fixture-key")
     monkeypatch.setattr(service_module, "process_document", lambda **_: _engine2_resolution())
     monkeypatch.setattr(service_module, "build_ai_provider", lambda _: LegacySuccessProvider())
+    monkeypatch.setattr(ai_suggestions_module, "get_us_lacey_db_session", factory)
 
 
 def _specialized_success(*, documents, **_) -> SpecializedShadowRun:
@@ -220,7 +221,7 @@ def test_shadow_specialized_failure_keeps_legacy_success_and_ui_projection(
         operation_id=operation,
         field_name="bill_of_lading",
     )
-    _configure_shadow(monkeypatch)
+    _configure_shadow(monkeypatch, engine2_postgres_session_factory)
     specialized_calls: list[int] = []
 
     def fail_specialized(**_) -> SpecializedShadowRun:
@@ -254,7 +255,7 @@ def test_shadow_specialized_failure_keeps_legacy_success_and_ui_projection(
     assert legacy.resolution_json["total_tokens"] == 110
     session.close()
 
-    assert project_verified_ai_suggestions(
+    assert ai_suggestions_module.project_verified_ai_suggestions(
         organization_id=org,
         operation_id=operation,
     ) == 1
@@ -289,7 +290,7 @@ def test_shadow_dual_persistence_coexists_and_ui_ignores_specialized_schema(
         operation_id=operation,
         field_name="container_number",
     )
-    _configure_shadow(monkeypatch)
+    _configure_shadow(monkeypatch, engine2_postgres_session_factory)
     monkeypatch.setattr(
         specialized_module,
         "run_specialized_shadow_operation",
@@ -351,7 +352,7 @@ def test_shadow_dual_persistence_coexists_and_ui_ignores_specialized_schema(
     session.commit()
     session.close()
 
-    assert project_verified_ai_suggestions(
+    assert ai_suggestions_module.project_verified_ai_suggestions(
         organization_id=org,
         operation_id=operation,
     ) == 1
