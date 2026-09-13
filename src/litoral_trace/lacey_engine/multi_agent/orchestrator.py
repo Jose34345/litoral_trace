@@ -253,6 +253,7 @@ async def orchestrate_specialists(
         operation=_operation_status(successes=successes, failures=failures),
         specialist_statuses=tuple(statuses),
         field_judge=judge_evaluation,
+        fusion_conflicts=fused.conflicts,
     )
 
 
