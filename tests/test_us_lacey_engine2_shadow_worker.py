@@ -1,6 +1,9 @@
 from __future__ import annotations
 from types import SimpleNamespace
+
+from litoral_trace.lacey_engine.ai_providers import AIProviderConfig
 from litoral_trace.us_lacey import worker
+from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 
 
 def _wire_authoritative_success(monkeypatch):
@@ -48,6 +51,58 @@ def test_worker_shadow_failure_does_not_fail_authoritative_job(monkeypatch, capl
     result = worker.process_one_us_lacey_job(worker_id="unit")
     assert result.job_status == "COMPLETED" and result.projected_count == 4
     assert "Lacey Engine 2 shadow resolution failed" in caplog.text
+
+
+def test_worker_shadow_specialized_failure_after_legacy_success_still_completes(monkeypatch):
+    _wire_authoritative_success(monkeypatch)
+    monkeypatch.setattr(worker, "engine2_mode", lambda: "SHADOW")
+    monkeypatch.setenv("LT_AI_ARCHITECTURE", "shadow")
+
+    service = UsLaceyEngine2Service(session_factory=lambda: None, vault_service=object())
+    calls: list[str] = []
+    monkeypatch.setattr(
+        service,
+        "_run_legacy_ai_operation",
+        lambda **_: calls.append("legacy"),
+        raising=False,
+    )
+
+    def fail_specialized(**_: object) -> None:
+        calls.append("specialized")
+        raise RuntimeError("specialized catastrophic failure")
+
+    monkeypatch.setattr(
+        service,
+        "_run_specialized_ai_operation",
+        fail_specialized,
+        raising=False,
+    )
+    config = AIProviderConfig(
+        mode="SHADOW",
+        provider="gemini",
+        model="fixture-model",
+        base_url="https://example.invalid",
+        api_key="fixture-key",
+        timeout_seconds=30.0,
+        max_pages=8,
+        allow_external=True,
+    )
+
+    def run_shadow_dispatch(**_: object) -> None:
+        service._dispatch_ai_extractors(
+            config=config,
+            organization_id=11,
+            operation_id=13,
+            documents=(),
+            source_set_fingerprint="f" * 64,
+        )
+
+    monkeypatch.setattr(worker, "_shadow_engine2", run_shadow_dispatch)
+    result = worker.process_one_us_lacey_job(worker_id="unit")
+
+    assert result.job_status == "COMPLETED"
+    assert result.projected_count == 4
+    assert calls == ["legacy", "specialized"]
 
 
 def test_worker_shadow_mode_still_runs_current_projection(monkeypatch):
