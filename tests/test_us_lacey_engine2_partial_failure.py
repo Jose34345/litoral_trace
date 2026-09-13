@@ -1,44 +1,9 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 from types import SimpleNamespace
 
-import pytest
-
-from litoral_trace.lacey_engine.ai_providers import AIProviderConfig
-from litoral_trace.lacey_engine.domain import DocumentResolution
+from litoral_trace.lacey_engine.serialization import DOCUMENT_RESOLUTION_SCHEMA_VERSION
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
-
-
-class _Download:
-    def __init__(self, content: bytes) -> None:
-        self._content = content
-
-    def iter_chunks(self):
-        return iter((self._content,))
-
-
-class _Vault:
-    def __init__(self, by_public_id: dict[object, bytes]) -> None:
-        self._by_public_id = by_public_id
-
-    @contextmanager
-    def materialize_verified_download(self, *, document_id, **_):
-        yield _Download(self._by_public_id[document_id])
-
-
-def _resolution() -> DocumentResolution:
-    return DocumentResolution(
-        engine_version="test-engine",
-        filename="ok.pdf",
-        document_type="UNKNOWN",
-        role_hint="UNKNOWN",
-        text="Bill of Lading: MAEU274342495",
-        pages=(),
-        fields=(),
-        conflicts=(),
-        warnings=(),
-    )
 
 
 def test_engine2_continues_after_one_document_failure_and_reports_partial(monkeypatch):
@@ -46,29 +11,29 @@ def test_engine2_continues_after_one_document_failure_and_reports_partial(monkey
     service = UsLaceyEngine2Service(session_factory=lambda: None, vault_service=object())
     processed: list[str] = []
 
-    def fake_process_document(*, filename: str, **_):
-        processed.append(filename)
-        if filename == "broken-scan.pdf":
+    def process_one(document):
+        processed.append(document.filename)
+        if document.filename == "broken-scan.pdf":
             raise RuntimeError("synthetic OCR failure")
-        return _resolution()
+        return f"resolution:{document.filename}"
 
-    monkeypatch.setattr("litoral_trace.us_lacey.lacey_engine_service.process_document", fake_process_document)
-
-    # Contract-level helper introduced by Reliability V2: process every current
-    # document independently and make the aggregate state explicit.
     outcome = service._process_engine2_document_batch(
         documents=(
             SimpleNamespace(filename="broken-scan.pdf"),
             SimpleNamespace(filename="invoice.pdf"),
             SimpleNamespace(filename="packing-list.pdf"),
         ),
-        process_one=lambda document: fake_process_document(filename=document.filename),
+        process_one=process_one,
     )
 
     assert processed == ["broken-scan.pdf", "invoice.pdf", "packing-list.pdf"]
     assert outcome.status == "PARTIAL"
-    assert len(outcome.succeeded) == 2
+    assert [item.result for item in outcome.succeeded] == [
+        "resolution:invoice.pdf",
+        "resolution:packing-list.pdf",
+    ]
     assert len(outcome.failed) == 1
+    assert outcome.failed[0].document.filename == "broken-scan.pdf"
     assert outcome.failed[0].safe_error_code == "ENGINE2_SHADOW_FAILED"
 
 
@@ -89,13 +54,11 @@ def test_engine2_failed_document_retry_identity_is_idempotent(monkeypatch):
         "assurance_document_id": 11,
         "source_sha256": "a" * 64,
         "engine_version": service._engine_version,
-        "schema_version": "lacey_document_resolution_v1",
+        "schema_version": DOCUMENT_RESOLUTION_SCHEMA_VERSION,
         "role_hint": "UNKNOWN",
         "status": "FAILED",
     }
 
-    # The persistence helper must return the existing immutable failure instead
-    # of attempting another INSERT with the same unique identity.
     fake_session = SimpleNamespace()
     monkeypatch.setattr(service, "_find_engine2_document_run", lambda *_args, **_kwargs: existing)
     result = service._get_or_create_failed_engine2_run(
