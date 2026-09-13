@@ -42,7 +42,7 @@ from litoral_trace.lacey_engine.serialization import (
 )
 from litoral_trace.lacey_engine.shipment import LaceyRuleset, ShipmentDocumentInput, process_shipment
 from litoral_trace.services.vault import VaultService
-from litoral_trace.us_lacey import specialized_shadow
+from litoral_trace.us_lacey import specialized_projection_runtime, specialized_shadow
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
 ENGINE2_OFF = "OFF"
@@ -321,6 +321,21 @@ class UsLaceyEngine2Service:
         session: Session = self._session_factory()
         try:
             set_tenant_db_context(session, organization_id)
+            projection = None
+            if row_status == "SUCCEEDED":
+                projection = specialized_projection_runtime.apply_specialized_projection_runtime(
+                    session,
+                    organization_id=organization_id,
+                    operation_id=operation_id,
+                    candidates=run.result.fused_candidates,
+                    fusion_conflicts=run.result.fusion_conflicts,
+                    judge_evaluation=run.result.field_judge,
+                    source_assurance_by_document={
+                        document.document_id: document.assurance_document_id
+                        for document in specialized_documents
+                    },
+                )
+
             persisted = 0
             for document in specialized_documents:
                 existing = session.scalar(
@@ -343,6 +358,8 @@ class UsLaceyEngine2Service:
                     document_id=document.document_id,
                     source_set_fingerprint=source_set_fingerprint,
                 )
+                if projection is not None:
+                    payload["projection"] = projection
                 session.add(
                     UsLaceyEngineDocumentRun(
                         organization_id=organization_id,
@@ -383,6 +400,9 @@ class UsLaceyEngine2Service:
                     "document_count": len(specialized_documents),
                     "persisted_document_count": persisted,
                     "operation_status": run.result.operation.value,
+                    "projection_mode": projection.get("mode") if projection else "off",
+                    "projected_count": projection.get("projected_count") if projection else 0,
+                    "projection_review_count": projection.get("review_count") if projection else 0,
                 },
             )
         except Exception:
