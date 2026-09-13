@@ -88,7 +88,6 @@ def _persist_pending_candidate(
             validation_status="VALID",
             validation_error=None,
             decision="PENDING",
-            decision_reason=None,
         )
     )
     return True
