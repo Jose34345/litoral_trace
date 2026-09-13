@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 import threading
 import time
 from uuid import NAMESPACE_URL, uuid5
 
-from litoral_trace.lacey_engine.ai_shadow import AIShadowError
+from litoral_trace.lacey_engine.ai_shadow import AICandidate, AIShadowError
+from litoral_trace.lacey_engine.domain import EvidenceClass
 from litoral_trace.lacey_engine.multi_agent.contracts import (
+    CandidateEnvelope,
     DocumentType,
     OperationStatus,
     RoutedDocument,
@@ -82,6 +85,40 @@ class SlowExtractor(SuccessfulExtractor):
         finally:
             with self.lock:
                 self.active[0] -= 1
+
+
+class CandidateExtractor(SuccessfulExtractor):
+    def extract(self, documents: tuple[SpecialistInputDocument, ...]) -> SpecialistResult:
+        source = documents[0]
+        candidate = AICandidate(
+            field_key="hts_code",
+            value="4419.90.9000",
+            normalized_value="4419.90.9000",
+            evidence_class=EvidenceClass.EXPLICIT,
+            page=1,
+            source_text="SKU-1 HTS 4419.90.9000",
+            confidence=0.95,
+            provider="fixture",
+            model="fixture",
+            evidence_verified=False,
+        )
+        envelope = CandidateEnvelope(
+            candidate=candidate,
+            document_id=source.routed.document_id,
+            document_type=source.routed.document_type,
+            specialist=self.role,
+            agent_run_id=uuid5(NAMESPACE_URL, "phase6-verifier-run"),
+            line_item_key=None,
+            source_span_id=None,
+        )
+        return SpecialistResult(
+            role=self.role,
+            candidates=(envelope,),
+            provider="fixture",
+            model="fixture",
+            latency_ms=1,
+            warnings=(),
+        )
 
 
 def _source(role: SpecialistRole, index: int) -> tuple[RoutingAssignment, SpecialistInputDocument]:
@@ -227,3 +264,38 @@ def test_orchestrator_respects_explicit_semaphore_limit():
 
     assert result.operation is OperationStatus.COMPLETED
     assert max_active[0] == 2
+
+
+def test_orchestrator_applies_verifier_before_line_binding_and_fusion():
+    assignment, source = _source(SpecialistRole.COMMERCIAL_LINES, 1)
+    routing_plan = RoutingPlan((assignment,))
+    seen = []
+
+    def verifier(candidates: tuple[CandidateEnvelope, ...]) -> tuple[CandidateEnvelope, ...]:
+        assert len(candidates) == 1
+        assert candidates[0].candidate.evidence_verified is False
+        seen.append(candidates[0].candidate.source_text)
+        return (
+            replace(
+                candidates[0],
+                candidate=replace(candidates[0].candidate, evidence_verified=True),
+            ),
+        )
+
+    result = asyncio.run(
+        orchestrate_specialists(
+            routing_plan=routing_plan,
+            documents=(source,),
+            extractors={
+                SpecialistRole.COMMERCIAL_LINES: CandidateExtractor(
+                    SpecialistRole.COMMERCIAL_LINES
+                )
+            },
+            concurrency=1,
+            candidate_verifier=verifier,
+        )
+    )
+
+    assert seen == ["SKU-1 HTS 4419.90.9000"]
+    assert len(result.fused_candidates) == 1
+    assert result.fused_candidates[0].candidate.evidence_verified is True

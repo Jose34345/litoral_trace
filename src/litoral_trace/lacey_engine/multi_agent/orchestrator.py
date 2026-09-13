@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Mapping, Protocol
+from typing import Callable, Mapping, Protocol
 
 from ..ai_shadow import AIShadowError
 from .contracts import (
+    CandidateEnvelope,
     MultiAgentExtractionResult,
     OperationStatus,
     SpecialistExecutionState,
@@ -30,6 +31,9 @@ _DEFAULT_SPECIALIST_CONCURRENCY = 2
 _MAX_SPECIALIST_CONCURRENCY = 3
 _MIN_SPECIALIST_CONCURRENCY = 1
 _ENV_SPECIALIST_CONCURRENCY = "LT_AI_SPECIALIST_CONCURRENCY"
+CandidateVerifier = Callable[
+    [tuple[CandidateEnvelope, ...]], tuple[CandidateEnvelope, ...]
+]
 
 
 class SpecialistExtractor(Protocol):
@@ -72,6 +76,7 @@ async def orchestrate_specialists(
     documents: tuple[SpecialistInputDocument, ...],
     extractors: Mapping[SpecialistRole, SpecialistExtractor],
     concurrency: int | None = None,
+    candidate_verifier: CandidateVerifier | None = None,
 ) -> MultiAgentExtractionResult:
     """Execute routed specialists concurrently while preserving partial successes."""
     limit = specialist_concurrency_limit(concurrency)
@@ -163,6 +168,8 @@ async def orchestrate_specialists(
         for specialist_result in successes
         for candidate in specialist_result.candidates
     )
+    if candidate_verifier is not None:
+        candidates = candidate_verifier(candidates)
     bound_candidates = bind_line_items(candidates)
     fused = fuse_candidates(bound_candidates)
 
