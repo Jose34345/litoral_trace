@@ -32,6 +32,17 @@ class SpecialistRole(str, Enum):
     BOTANICAL = "BOTANICAL"
 
 
+class OperationStatus(str, Enum):
+    COMPLETED = "COMPLETED"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
+
+
+class SpecialistExecutionState(str, Enum):
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 @dataclass(frozen=True, slots=True)
 class RoutedDocument:
     document_id: UUID
@@ -76,6 +87,13 @@ class SpecialistFailure:
 
 
 @dataclass(frozen=True, slots=True)
+class SpecialistExecutionStatus:
+    role: SpecialistRole
+    status: SpecialistExecutionState
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class MultiAgentExtractionResult:
     # RoutingPlan is introduced by Phase 1.  Keeping this as a postponed annotation
     # avoids inventing router semantics in the Phase 0 contract layer.
@@ -83,3 +101,6 @@ class MultiAgentExtractionResult:
     specialist_results: tuple[SpecialistResult, ...]
     fused_candidates: tuple[CandidateEnvelope, ...]
     partial_failures: tuple[SpecialistFailure, ...]
+    # Phase 6 appends defaults so all earlier construction sites remain compatible.
+    operation: OperationStatus = OperationStatus.COMPLETED
+    specialist_statuses: tuple[SpecialistExecutionStatus, ...] = ()
