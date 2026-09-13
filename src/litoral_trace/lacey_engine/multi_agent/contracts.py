@@ -16,6 +16,7 @@ from ..ai_shadow import AICandidate
 
 if TYPE_CHECKING:
     from .field_judge import FieldJudgeEvaluation
+    from .fusion import FusionConflict
 
 
 class DocumentType(str, Enum):
@@ -114,3 +115,6 @@ class MultiAgentExtractionResult:
     # Field Judge telemetry remains observational unless the orchestrator is explicitly
     # invoked in enforce mode.  Appending the default preserves all earlier call sites.
     field_judge: FieldJudgeEvaluation | None = None
+    # Downstream projection must see unresolved deterministic contradictions. Keeping
+    # this explicit prevents a fused winner from silently erasing conflict provenance.
+    fusion_conflicts: tuple[FusionConflict, ...] = ()
