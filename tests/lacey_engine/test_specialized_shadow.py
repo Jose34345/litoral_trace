@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from uuid import NAMESPACE_URL, uuid5
 
 from litoral_trace.lacey_engine.ai_shadow import (
@@ -15,10 +16,17 @@ from litoral_trace.lacey_engine.domain import (
     ParsedLayout,
 )
 from litoral_trace.lacey_engine.multi_agent.contracts import OperationStatus, SpecialistRole
+from litoral_trace.lacey_engine.multi_agent.field_judge import (
+    FIELD_JUDGE_VERSION,
+    FieldJudgeDecision,
+    FieldJudgeMode,
+)
 from litoral_trace.us_lacey.specialized_shadow import (
     SPECIALIZED_SHADOW_SCHEMA_VERSION,
     SpecializedShadowDocument,
     run_specialized_shadow_operation,
+    serialize_specialized_document_run,
+    specialized_engine_version,
 )
 
 
@@ -61,6 +69,45 @@ class FakeSpecialistProvider:
             input_tokens=100,
             output_tokens=12,
             total_tokens=112,
+        )
+
+
+class FakeJudgeProvider:
+    name = "gemini"
+    model = "fixture-judge-model"
+
+    def __init__(
+        self,
+        *,
+        decision: FieldJudgeDecision = FieldJudgeDecision.ACCEPT,
+        fail: bool = False,
+    ) -> None:
+        self.decision = decision
+        self.fail = fail
+        self.calls = 0
+
+    def judge_structured(self, *, prompt: str, schema: dict[str, object]):
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("simulated judge outage")
+        context = json.loads(prompt.split("CANDIDATE CONTEXT:\n", 1)[1])
+        return (
+            {
+                "decisions": [
+                    {
+                        "candidate_id": item["candidate_id"],
+                        "field_key": item["field_key"],
+                        "line_item_key": item["line_item_key"],
+                        "decision": self.decision.value,
+                        "reason": "EXACT_FIELD_CONTEXT",
+                    }
+                    for item in context
+                ]
+            },
+            17,
+            30,
+            5,
+            35,
         )
 
 
@@ -163,3 +210,130 @@ def test_specialized_shadow_keeps_unmatched_evidence_unverified() -> None:
     )
 
     assert run.result.fused_candidates[0].candidate.evidence_verified is False
+
+
+def test_field_judge_off_never_calls_provider_and_preserves_specialized_fusion() -> None:
+    judge = FakeJudgeProvider(decision=FieldJudgeDecision.REJECT)
+
+    run = run_specialized_shadow_operation(
+        documents=(_document(),),
+        provider=FakeSpecialistProvider(),
+        judge_mode=FieldJudgeMode.OFF,
+        judge_provider=judge,
+        concurrency=1,
+    )
+
+    assert judge.calls == 0
+    assert len(run.result.fused_candidates) == 1
+    assert run.result.field_judge is None
+
+
+def test_field_judge_shadow_records_reject_without_changing_fusion() -> None:
+    judge = FakeJudgeProvider(decision=FieldJudgeDecision.REJECT)
+
+    run = run_specialized_shadow_operation(
+        documents=(_document(),),
+        provider=FakeSpecialistProvider(),
+        judge_mode=FieldJudgeMode.SHADOW,
+        judge_provider=judge,
+        concurrency=1,
+    )
+
+    assert judge.calls == 1
+    assert len(run.result.fused_candidates) == 1
+    assert run.result.field_judge is not None
+    assert run.result.field_judge.mode is FieldJudgeMode.SHADOW
+    assert run.result.field_judge.decisions[0].decision is FieldJudgeDecision.REJECT
+    assert run.result.field_judge.latency_ms == 17
+    assert run.result.field_judge.total_tokens == 35
+
+
+def test_field_judge_enforce_only_accept_candidates_reach_fusion() -> None:
+    rejected = run_specialized_shadow_operation(
+        documents=(_document(),),
+        provider=FakeSpecialistProvider(),
+        judge_mode=FieldJudgeMode.ENFORCE,
+        judge_provider=FakeJudgeProvider(decision=FieldJudgeDecision.REJECT),
+        concurrency=1,
+    )
+    accepted = run_specialized_shadow_operation(
+        documents=(_document(),),
+        provider=FakeSpecialistProvider(),
+        judge_mode=FieldJudgeMode.ENFORCE,
+        judge_provider=FakeJudgeProvider(decision=FieldJudgeDecision.ACCEPT),
+        concurrency=1,
+    )
+
+    assert rejected.result.fused_candidates == ()
+    assert len(accepted.result.fused_candidates) == 1
+
+
+def test_field_judge_failure_in_shadow_is_safe_and_keeps_fusion() -> None:
+    judge = FakeJudgeProvider(fail=True)
+
+    run = run_specialized_shadow_operation(
+        documents=(_document(),),
+        provider=FakeSpecialistProvider(),
+        judge_mode=FieldJudgeMode.SHADOW,
+        judge_provider=judge,
+        concurrency=1,
+    )
+
+    assert len(run.result.fused_candidates) == 1
+    assert run.result.field_judge is not None
+    assert run.result.field_judge.safe_error == "simulated judge outage"
+    assert run.result.field_judge.decisions[0].decision is FieldJudgeDecision.NEEDS_REVIEW
+
+
+def test_specialized_serialization_persists_bounded_field_judge_telemetry() -> None:
+    run = run_specialized_shadow_operation(
+        documents=(_document(),),
+        provider=FakeSpecialistProvider(),
+        judge_mode=FieldJudgeMode.SHADOW,
+        judge_provider=FakeJudgeProvider(decision=FieldJudgeDecision.ACCEPT),
+        concurrency=1,
+    )
+
+    payload = serialize_specialized_document_run(
+        run=run,
+        document_id=_document().document_id,
+        source_set_fingerprint="source-set-fixture",
+    )
+
+    judge_payload = payload["field_judge"]
+    assert judge_payload["version"] == FIELD_JUDGE_VERSION
+    assert judge_payload["mode"] == "shadow"
+    assert judge_payload["provider"] == "gemini"
+    assert judge_payload["model"] == "fixture-judge-model"
+    assert judge_payload["latency_ms"] == 17
+    assert judge_payload["input_tokens"] == 30
+    assert judge_payload["output_tokens"] == 5
+    assert judge_payload["total_tokens"] == 35
+    assert judge_payload["accepted_count"] == 1
+    assert judge_payload["rejected_count"] == 0
+    assert judge_payload["needs_review_count"] == 0
+    assert judge_payload["decisions"] == [
+        {
+            "candidate_id": run.result.field_judge.decisions[0].candidate_id,
+            "field_key": "hts_code",
+            "line_item_key": run.result.field_judge.decisions[0].line_item_key,
+            "decision": "ACCEPT",
+            "reason": "EXACT_FIELD_CONTEXT",
+        }
+    ]
+    assert "value" not in judge_payload["decisions"][0]
+    assert "normalized_value" not in judge_payload["decisions"][0]
+
+
+def test_specialized_engine_identity_changes_with_effective_judge_mode() -> None:
+    common = {
+        "provider": "gemini",
+        "model": "fixture-specialist-model",
+        "source_set_fingerprint": "source-set-fixture",
+    }
+
+    off = specialized_engine_version(**common, judge_mode=FieldJudgeMode.OFF)
+    shadow = specialized_engine_version(**common, judge_mode=FieldJudgeMode.SHADOW)
+    enforce = specialized_engine_version(**common, judge_mode=FieldJudgeMode.ENFORCE)
+
+    assert len({off, shadow, enforce}) == 3
