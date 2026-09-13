@@ -25,9 +25,27 @@
       "expected_safe": false
     },
     {
+      "name": "nearer_vessel_label_overrides_older_bol_label",
+      "value": "PACIFIC STAR",
+      "source_text": "Master B/L: MAEU274342495 Vessel: PACIFIC STAR",
+      "expected_safe": false
+    },
+    {
+      "name": "nearer_eta_label_overrides_older_bol_label",
+      "value": "09/15/2026",
+      "source_text": "Bill of Lading: MAEU274342495 ETA: 09/15/2026",
+      "expected_safe": false
+    },
+    {
       "name": "explicit_master_bol",
       "value": "MAEU274342495",
       "source_text": "Master B/L: MAEU274342495",
+      "expected_safe": true
+    },
+    {
+      "name": "nearer_bol_label_overrides_older_vessel_label",
+      "value": "MAEU274342495",
+      "source_text": "Vessel: PACIFIC STAR Master B/L: MAEU274342495",
       "expected_safe": true
     }
   ],
