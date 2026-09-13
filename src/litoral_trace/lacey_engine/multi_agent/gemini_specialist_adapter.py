@@ -21,7 +21,7 @@ from ..ai_providers import (
 )
 from ..ai_shadow import (
     AIShadowError,
-    _is_deterministic_garbage_candidate,
+    _is_rejected_candidate,
     extraction_result_from_payload,
 )
 from ..gemini_provider import gemini_output_text, gemini_usage
@@ -168,7 +168,7 @@ class GeminiSpecialistProvider:
 
         elapsed = int((time.monotonic() - started) * 1000)
         accepted_payloads = tuple(
-            item for item in candidates if not _is_deterministic_garbage_candidate(item)
+            item for item in candidates if not _is_rejected_candidate(item)
         )
         result = extraction_result_from_payload(
             payload={"candidates": candidates},
