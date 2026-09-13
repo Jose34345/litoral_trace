@@ -30,6 +30,7 @@ from litoral_trace.us_lacey.specialized_projection import (
     project_specialized_candidates,
 )
 from tests.us_lacey_engine2_postgres import (
+    engine2_postgres_engine,
     engine2_postgres_session_factory,
     tenant_session,
 )
