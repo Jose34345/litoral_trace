@@ -1,0 +1,54 @@
+{
+  "bol_cases": [
+    {
+      "name": "vessel_not_bol",
+      "value": "PACIFIC STAR",
+      "source_text": "Vessel: PACIFIC STAR",
+      "expected_safe": false
+    },
+    {
+      "name": "pod_not_bol",
+      "value": "LOS ANGELES",
+      "source_text": "POD: LOS ANGELES",
+      "expected_safe": false
+    },
+    {
+      "name": "eta_not_bol",
+      "value": "09/15/2026",
+      "source_text": "ETA: 09/15/2026",
+      "expected_safe": false
+    },
+    {
+      "name": "gross_weight_not_bol",
+      "value": "2050 KG",
+      "source_text": "Gross Weight: 2050 KG",
+      "expected_safe": false
+    },
+    {
+      "name": "explicit_master_bol",
+      "value": "MAEU274342495",
+      "source_text": "Master B/L: MAEU274342495",
+      "expected_safe": true
+    }
+  ],
+  "stable_lines": [
+    {
+      "line_item_key": "SKU:PINE-001",
+      "genus": "Pinus"
+    },
+    {
+      "line_item_key": "SKU:EUC-002",
+      "genus": "Eucalyptus"
+    }
+  ],
+  "conflicting_bols": [
+    {
+      "value": "MAEU274342495",
+      "source_text": "Master B/L: MAEU274342495"
+    },
+    {
+      "value": "OOLU1234567890",
+      "source_text": "Master B/L: OOLU1234567890"
+    }
+  ]
+}
