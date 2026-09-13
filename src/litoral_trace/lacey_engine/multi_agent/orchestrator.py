@@ -7,6 +7,7 @@ loop stays responsive and external rate limits are not flooded.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 import os
 from typing import Callable, Mapping, Protocol
 
@@ -21,6 +22,14 @@ from .contracts import (
     SpecialistResult,
     SpecialistRole,
 )
+from .field_judge import (
+    FIELD_JUDGE_VERSION,
+    FieldJudgeDecision,
+    FieldJudgeEvaluation,
+    FieldJudgeMode,
+    candidate_identity,
+    validate_field_judge_decisions,
+)
 from .fusion import fuse_candidates
 from .line_binding import bind_line_items
 from .router import RoutingPlan
@@ -34,6 +43,7 @@ _ENV_SPECIALIST_CONCURRENCY = "LT_AI_SPECIALIST_CONCURRENCY"
 CandidateVerifier = Callable[
     [tuple[CandidateEnvelope, ...]], tuple[CandidateEnvelope, ...]
 ]
+CandidateJudge = Callable[[tuple[CandidateEnvelope, ...]], FieldJudgeEvaluation]
 
 
 class SpecialistExtractor(Protocol):
@@ -77,8 +87,10 @@ async def orchestrate_specialists(
     extractors: Mapping[SpecialistRole, SpecialistExtractor],
     concurrency: int | None = None,
     candidate_verifier: CandidateVerifier | None = None,
+    field_judge_mode: FieldJudgeMode = FieldJudgeMode.OFF,
+    candidate_judge: CandidateJudge | None = None,
 ) -> MultiAgentExtractionResult:
-    """Execute routed specialists concurrently while preserving partial successes."""
+    """Execute specialists and apply the Judge after binding, before deterministic fusion."""
     limit = specialist_concurrency_limit(concurrency)
     semaphore = asyncio.Semaphore(limit)
     requested_roles = _requested_roles(routing_plan)
@@ -170,8 +182,68 @@ async def orchestrate_specialists(
     )
     if candidate_verifier is not None:
         candidates = candidate_verifier(candidates)
+
+    # The order is a safety invariant: exact evidence verification -> line binding ->
+    # semantic Judge -> deterministic fusion.  Shadow mode observes but cannot mutate
+    # fusion input; enforce mode admits ACCEPT only.
     bound_candidates = bind_line_items(candidates)
-    fused = fuse_candidates(bound_candidates)
+    effective_judge_mode = FieldJudgeMode(field_judge_mode)
+    judge_evaluation: FieldJudgeEvaluation | None = None
+    fusion_candidates = bound_candidates
+
+    if effective_judge_mode is not FieldJudgeMode.OFF:
+        if candidate_judge is None:
+            judge_evaluation = FieldJudgeEvaluation(
+                version=FIELD_JUDGE_VERSION,
+                mode=effective_judge_mode,
+                provider="none",
+                model="none",
+                latency_ms=None,
+                input_tokens=None,
+                output_tokens=None,
+                total_tokens=None,
+                decisions=validate_field_judge_decisions(bound_candidates, ()),
+                safe_error="FIELD_JUDGE_UNAVAILABLE",
+            )
+        else:
+            try:
+                raw_evaluation = candidate_judge(bound_candidates)
+                judge_evaluation = replace(
+                    raw_evaluation,
+                    version=FIELD_JUDGE_VERSION,
+                    mode=effective_judge_mode,
+                    decisions=validate_field_judge_decisions(
+                        bound_candidates,
+                        raw_evaluation.decisions,
+                    ),
+                )
+            except Exception as exc:  # Judge is a bounded, non-fatal safety subsystem.
+                judge_evaluation = FieldJudgeEvaluation(
+                    version=FIELD_JUDGE_VERSION,
+                    mode=effective_judge_mode,
+                    provider="unknown",
+                    model="unknown",
+                    latency_ms=None,
+                    input_tokens=None,
+                    output_tokens=None,
+                    total_tokens=None,
+                    decisions=validate_field_judge_decisions(bound_candidates, ()),
+                    safe_error=str(exc),
+                )
+
+        if effective_judge_mode is FieldJudgeMode.ENFORCE:
+            accepted_ids = {
+                decision.candidate_id
+                for decision in judge_evaluation.decisions
+                if decision.decision is FieldJudgeDecision.ACCEPT
+            }
+            fusion_candidates = tuple(
+                candidate
+                for candidate in bound_candidates
+                if candidate_identity(candidate) in accepted_ids
+            )
+
+    fused = fuse_candidates(fusion_candidates)
 
     return MultiAgentExtractionResult(
         routing_plan=routing_plan,
@@ -180,6 +252,7 @@ async def orchestrate_specialists(
         partial_failures=tuple(failures),
         operation=_operation_status(successes=successes, failures=failures),
         specialist_statuses=tuple(statuses),
+        field_judge=judge_evaluation,
     )
 
 
