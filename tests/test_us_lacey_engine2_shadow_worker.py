@@ -4,6 +4,17 @@ from types import SimpleNamespace
 from litoral_trace.lacey_engine.ai_providers import AIProviderConfig
 from litoral_trace.us_lacey import worker
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
+from tests.us_lacey_engine2_postgres import (
+    engine2_postgres_engine,
+    engine2_postgres_session_factory,
+)
+from tests.test_us_lacey_shadow_dispatcher_postgres import (
+    test_shadow_dual_persistence_coexists_and_ui_ignores_specialized_schema,
+    test_shadow_specialized_failure_keeps_legacy_success_and_ui_projection,
+)
+from tests.test_us_lacey_shadow_worker_postgres import (
+    test_worker_completes_and_ui_projects_only_legacy_when_specialized_crashes,
+)
 
 
 def _wire_authoritative_success(monkeypatch):
