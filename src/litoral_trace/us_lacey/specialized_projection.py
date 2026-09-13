@@ -53,6 +53,16 @@ _ROW_KEY = re.compile(
 _LINE_KEY = re.compile(r"^LINE:[1-9][0-9]*$")
 _SKU_KEY = re.compile(r"^SKU:[A-Z0-9][A-Z0-9._/-]*$", re.IGNORECASE)
 _FINGERPRINT_KEY = re.compile(r"^FP:[A-F0-9]{24,64}$", re.IGNORECASE)
+_BOL_EXPLICIT_LABEL = re.compile(
+    r"(?:\bbill[_\s-]+of[_\s-]+lading\b|\b(?:master|house)\s+b\s*/\s*l\b|"
+    r"\bb\s*/\s*l\b|\bbol\b)",
+    re.IGNORECASE,
+)
+_BOL_TRAP_LABEL = re.compile(
+    r"\b(?:vessel|pod|port\s+of\s+discharge|eta|"
+    r"estimated\s+(?:time\s+of\s+)?arrival|gross\s+weight)\b",
+    re.IGNORECASE,
+)
 _SPECIALIZED_TO_PPQ_FIELD = {"description": "merchandise_description"}
 
 
@@ -239,6 +249,36 @@ def _ppq_field_key(candidate: CandidateEnvelope) -> str | None:
     return target_key if target_key in PPQ505_FIELDS_BY_KEY else None
 
 
+def _candidate_semantically_safe_for_projection(candidate: CandidateEnvelope) -> bool:
+    """Reject known label/value-role confusion before a candidate can reach PPQ fields.
+
+    B/L is a high-impact identifier. Exact evidence verification proves the proposed
+    value exists in the source span, but it does not prove that a nearby Vessel, POD,
+    ETA or Gross Weight value has the B/L semantic role. Therefore B/L projection is
+    fail-closed unless the value itself is locally preceded by an explicit B/L label.
+    """
+    if candidate.candidate.field_key != "bill_of_lading":
+        return True
+
+    source_text = str(candidate.candidate.source_text or "")
+    value = str(candidate.candidate.value or "").strip()
+    if not source_text or not value:
+        return False
+
+    folded_text = source_text.casefold()
+    folded_value = value.casefold()
+    value_index = folded_text.find(folded_value)
+    if value_index < 0:
+        return False
+
+    prefix = source_text[max(0, value_index - 120):value_index]
+    if _BOL_EXPLICIT_LABEL.search(prefix):
+        return True
+    if _BOL_TRAP_LABEL.search(prefix):
+        return False
+    return False
+
+
 def _target_reference(candidate: CandidateEnvelope, *, ppq_field_key: str) -> str | None:
     field = PPQ505_FIELDS_BY_KEY[ppq_field_key]
     if field.scope is PpqScope.SHIPMENT:
@@ -300,7 +340,7 @@ def project_specialized_candidates(
     """Apply the pure safety gate and optionally expose unconfirmed ``FOUND`` values.
 
     ``shadow`` executes the complete eligibility logic but leaves targets untouched.
-    ``enforce`` may fill only an empty, unreviewed target with a PPQ-valid value.  Human
+    ``enforce`` may fill only an empty, unreviewed target with a PPQ-valid value. Human
     review metadata is never written here.
     """
     effective_mode = (
@@ -334,6 +374,9 @@ def project_specialized_candidates(
             skipped += 1
             continue
         if not candidate.evidence_verified or candidate.evidence_class is EvidenceClass.INFERRED:
+            skipped += 1
+            continue
+        if not _candidate_semantically_safe_for_projection(envelope):
             skipped += 1
             continue
 
