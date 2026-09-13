@@ -2,7 +2,8 @@
 
 This module is intentionally non-authoritative. It routes the current operation source
 set to domain specialists, verifies every returned evidence span against Engine 2 before
-line binding/fusion, and returns comparison data for isolated persistence.
+line binding/fusion, applies the bounded Field Judge when explicitly enabled, and returns
+comparison data for isolated persistence.
 """
 from __future__ import annotations
 
@@ -23,6 +24,15 @@ from litoral_trace.lacey_engine.multi_agent.contracts import (
     CandidateEnvelope,
     MultiAgentExtractionResult,
     SpecialistRole,
+)
+from litoral_trace.lacey_engine.multi_agent.field_judge import (
+    FIELD_JUDGE_VERSION,
+    FieldJudgeDecision,
+    FieldJudgeMode,
+    FieldJudgeProvider,
+    GeminiFieldJudgeProvider,
+    evaluate_field_judge,
+    field_judge_mode as configured_field_judge_mode,
 )
 from litoral_trace.lacey_engine.multi_agent.gemini_specialist_adapter import (
     GeminiSpecialistProvider,
@@ -67,21 +77,30 @@ class SpecializedShadowRun:
     total_tokens: int | None
 
 
+def _effective_judge_mode(mode: FieldJudgeMode | str | None) -> FieldJudgeMode:
+    if mode is None:
+        return configured_field_judge_mode()
+    return FieldJudgeMode(mode)
+
+
 def specialized_engine_version(
     *,
     provider: str,
     model: str,
     source_set_fingerprint: str | None = None,
+    judge_mode: FieldJudgeMode | str | None = None,
 ) -> str:
     """Return an immutable identity for one specialized execution contract.
 
     Specialized fusion is operation-scoped, so the source-set fingerprint participates
-    in the persisted engine identity when available. This prevents an unchanged source
-    document from reusing a stale fused result after another operation document changes.
+    in the persisted engine identity when available. Judge version/effective mode are
+    also part of the identity so pre-Judge or differently-gated results cannot be reused.
     """
+    effective_mode = _effective_judge_mode(judge_mode)
     identity = (
         f"v1|{provider}|{model}|schema={SPECIALIZED_SHADOW_SCHEMA_VERSION}|"
-        "evidence=engine2-exact"
+        "evidence=engine2-exact|"
+        f"judge={FIELD_JUDGE_VERSION}:{effective_mode.value}"
     )
     if source_set_fingerprint:
         identity += f"|source_set={source_set_fingerprint}"
@@ -126,6 +145,48 @@ def _verify_candidates(
     return tuple(verified)
 
 
+def _serialize_field_judge(run: SpecializedShadowRun) -> dict[str, object] | None:
+    evaluation = run.result.field_judge
+    if evaluation is None:
+        return None
+
+    decisions = tuple(evaluation.decisions)
+    accepted_count = sum(
+        decision.decision is FieldJudgeDecision.ACCEPT for decision in decisions
+    )
+    rejected_count = sum(
+        decision.decision is FieldJudgeDecision.REJECT for decision in decisions
+    )
+    needs_review_count = sum(
+        decision.decision is FieldJudgeDecision.NEEDS_REVIEW for decision in decisions
+    )
+    return {
+        "version": evaluation.version,
+        "mode": evaluation.mode.value,
+        "provider": evaluation.provider,
+        "model": evaluation.model,
+        "telemetry_scope": "operation",
+        "latency_ms": evaluation.latency_ms,
+        "input_tokens": evaluation.input_tokens,
+        "output_tokens": evaluation.output_tokens,
+        "total_tokens": evaluation.total_tokens,
+        "accepted_count": accepted_count,
+        "rejected_count": rejected_count,
+        "needs_review_count": needs_review_count,
+        "safe_error": evaluation.safe_error,
+        "decisions": [
+            {
+                "candidate_id": decision.candidate_id,
+                "field_key": decision.field_key,
+                "line_item_key": decision.line_item_key,
+                "decision": decision.decision.value,
+                "reason": decision.reason.value,
+            }
+            for decision in decisions
+        ],
+    }
+
+
 def serialize_specialized_document_run(
     *,
     run: SpecializedShadowRun,
@@ -134,8 +195,9 @@ def serialize_specialized_document_run(
 ) -> dict[str, object]:
     """Serialize only fused candidates sourced from one document.
 
-    Latency/tokens are operation-scoped totals and are explicitly tagged as such so a
-    consumer cannot accidentally sum duplicated per-document snapshots as actual spend.
+    Latency/tokens and Judge telemetry are operation-scoped totals and are explicitly
+    tagged as such so a consumer cannot accidentally sum duplicated per-document
+    snapshots as actual spend.
     """
     envelopes = tuple(
         envelope
@@ -156,6 +218,7 @@ def serialize_specialized_document_run(
         "total_tokens": run.total_tokens,
         "candidate_count": len(envelopes),
         "operation_candidate_count": len(run.result.fused_candidates),
+        "field_judge": _serialize_field_judge(run),
         "candidates": [
             {
                 "field_key": envelope.candidate.field_key,
@@ -203,17 +266,45 @@ def run_specialized_shadow_operation(
     provider: ScopedAIExtractionProvider | None = None,
     config: AIProviderConfig | None = None,
     concurrency: int | None = None,
+    judge_mode: FieldJudgeMode | str | None = None,
+    judge_provider: FieldJudgeProvider | None = None,
 ) -> SpecializedShadowRun:
     """Run one current source set through bounded specialists without UI authority."""
     if not documents:
         raise AIShadowError("Specialized shadow requires at least one source document.")
 
+    effective_mode = _effective_judge_mode(judge_mode)
+    configured = config
     scoped_provider = provider
     if scoped_provider is None:
-        configured = config or AIProviderConfig.from_env()
+        configured = configured or AIProviderConfig.from_env()
         if configured.provider != "gemini":
             raise AIShadowError("Specialized shadow currently requires the Gemini provider.")
         scoped_provider = GeminiSpecialistProvider(configured)
+
+    candidate_judge = None
+    if effective_mode is not FieldJudgeMode.OFF:
+        runtime_judge = judge_provider
+        construction_error: Exception | None = None
+        if runtime_judge is None:
+            try:
+                configured = configured or AIProviderConfig.from_env()
+                runtime_judge = GeminiFieldJudgeProvider(configured)
+            except Exception as exc:  # The orchestrator converts this to fail-safe review.
+                construction_error = exc
+
+        if runtime_judge is not None:
+            candidate_judge = lambda candidates: evaluate_field_judge(
+                candidates,
+                provider=runtime_judge,
+                mode=effective_mode,
+            )
+        elif construction_error is not None:
+            def unavailable_judge(candidates):
+                del candidates
+                raise construction_error
+
+            candidate_judge = unavailable_judge
 
     routed_documents = []
     inputs: list[SpecialistInputDocument] = []
@@ -254,6 +345,8 @@ def run_specialized_shadow_operation(
                 candidates,
                 resolutions=resolutions,
             ),
+            field_judge_mode=effective_mode,
+            candidate_judge=candidate_judge,
         )
     )
     elapsed = int((time.monotonic() - started) * 1000)
