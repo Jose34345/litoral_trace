@@ -222,21 +222,32 @@ def test_runtime_enforce_projection_persists_unconfirmed_pending_candidate(
     _configure_projection(monkeypatch, engine2_postgres_session_factory, mode="enforce")
     monkeypatch.setattr(specialized_module, "run_specialized_shadow_operation", _specialized_success)
 
-    result = UsLaceyEngine2Service(
+    service = UsLaceyEngine2Service(
         session_factory=engine2_postgres_session_factory,
         vault_service=FakeVault(b"specialized-projection-enforce"),
-    ).resolve_operation_with_engine2(organization_id=org, operation_id=operation)
+    )
+    result = service.resolve_operation_with_engine2(
+        organization_id=org,
+        operation_id=operation,
+    )
     assert result.status == "SUCCEEDED"
+    repeat = service.resolve_operation_with_engine2(
+        organization_id=org,
+        operation_id=operation,
+    )
+    assert repeat.status == "SUCCEEDED"
 
     session = tenant_session(engine2_postgres_session_factory, org)
     field = session.query(UsLaceyOperationField).filter_by(
         operation_id=operation,
         field_name="bill_of_lading",
     ).one()
-    candidate = session.query(UsLaceyFieldCandidate).filter_by(
+    candidates = session.query(UsLaceyFieldCandidate).filter_by(
         operation_id=operation,
         operation_field_id=field.id,
-    ).one()
+    ).all()
+    assert len(candidates) == 1
+    candidate = candidates[0]
     run = session.query(UsLaceyEngineDocumentRun).filter_by(
         operation_id=operation,
         schema_version=SPECIALIZED_SHADOW_SCHEMA_VERSION,
