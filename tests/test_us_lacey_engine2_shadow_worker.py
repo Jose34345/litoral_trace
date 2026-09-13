@@ -11,6 +11,9 @@ from tests.us_lacey_engine2_postgres import (
 from tests.test_us_lacey_field_judge_regression_corpus import (
     test_seven_unknown_uploads_remain_seven_current_documents,
 )
+from tests.test_us_lacey_projection_mode_identity_postgres import (
+    test_projection_mode_transition_creates_new_auditable_specialized_run,
+)
 from tests.test_us_lacey_shadow_dispatcher_postgres import (
     test_shadow_dual_persistence_coexists_and_ui_ignores_specialized_schema,
     test_shadow_specialized_failure_keeps_legacy_success_and_ui_projection,
