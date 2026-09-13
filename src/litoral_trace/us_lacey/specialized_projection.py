@@ -15,6 +15,13 @@ import re
 from typing import Iterable, Mapping, Sequence
 from uuid import UUID
 
+from sqlalchemy import select
+
+from litoral_trace.db.models import (
+    UsLaceyOperationField,
+    UsLaceyPlantDeclaration,
+    UsLaceyPpqPlantLine,
+)
 from litoral_trace.lacey_engine.domain import EvidenceClass
 from litoral_trace.lacey_engine.multi_agent.contracts import CandidateEnvelope
 from litoral_trace.lacey_engine.multi_agent.field_judge import (
@@ -26,6 +33,7 @@ from litoral_trace.lacey_engine.multi_agent.field_judge import (
 from litoral_trace.lacey_engine.multi_agent.line_binding import LINE_SCOPED_FIELDS
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
+    PPQ505_PLANT_FIELDS,
     PPQ505_SHIPMENT_REFERENCE,
     PpqScope,
     PpqValidationStatus,
@@ -151,6 +159,78 @@ def plan_line_materialization(
         generated_lines=tuple(generated),
         review_only_line_keys=tuple(sorted(review_only)),
     )
+
+
+def materialize_planned_plant_lines(
+    session,
+    *,
+    organization_id: int,
+    operation: object,
+    plan: LineMaterializationPlan,
+) -> tuple[str, ...]:
+    """Create only the missing deterministic plant-line skeletons from ``plan``.
+
+    Materialization is intentionally structural: it creates an empty declaration and
+    the normal PPQ operation-field slots, but it does not project any specialist value.
+    Existing human-created lines are never reordered, renamed, or deleted. Re-running
+    the same plan is idempotent because the current line references are re-read first.
+    """
+    org_id = int(organization_id)
+    operation_id = int(getattr(operation, "id"))
+    existing_lines = session.scalars(
+        select(UsLaceyPpqPlantLine)
+        .where(
+            UsLaceyPpqPlantLine.organization_id == org_id,
+            UsLaceyPpqPlantLine.operation_id == operation_id,
+        )
+        .order_by(UsLaceyPpqPlantLine.ordinal.asc(), UsLaceyPpqPlantLine.id.asc())
+    ).all()
+
+    existing_references = {str(line.line_reference) for line in existing_lines}
+    next_ordinal = max((int(line.ordinal) for line in existing_lines), default=0) + 1
+    created: list[str] = []
+
+    for planned in plan.generated_lines:
+        line_reference = str(planned.line_reference).strip()
+        if not line_reference or line_reference in existing_references:
+            continue
+
+        plant_line = UsLaceyPpqPlantLine(
+            organization_id=org_id,
+            operation_id=operation_id,
+            line_reference=line_reference,
+            ordinal=next_ordinal,
+        )
+        session.add(plant_line)
+        session.flush()
+        session.add(
+            UsLaceyPlantDeclaration(
+                organization_id=org_id,
+                plant_line_id=plant_line.id,
+                ordinal=1,
+            )
+        )
+        for field_contract in PPQ505_PLANT_FIELDS:
+            session.add(
+                UsLaceyOperationField(
+                    organization_id=org_id,
+                    operation_id=operation_id,
+                    merchandise_line_reference=line_reference,
+                    field_name=field_contract.key,
+                    field_scope="PLANT_LINE",
+                    plant_line_id=plant_line.id,
+                    field_status="MISSING",
+                    validation_status="MISSING",
+                    confidence=0.0,
+                )
+            )
+
+        existing_references.add(line_reference)
+        created.append(line_reference)
+        next_ordinal += 1
+
+    setattr(operation, "merchandise_line_count", len(existing_references))
+    return tuple(created)
 
 
 def _ppq_field_key(candidate: CandidateEnvelope) -> str | None:
