@@ -30,6 +30,8 @@ from litoral_trace.lacey_engine.ai_shadow import (
     serialize_ai_shadow_run,
     verify_ai_evidence,
 )
+from litoral_trace.lacey_engine.architecture import AIArchitecture, ai_architecture
+from litoral_trace.lacey_engine.domain import DocumentResolution
 from litoral_trace.lacey_engine.pipeline import ENGINE_VERSION, process_document
 from litoral_trace.lacey_engine.serialization import (
     DOCUMENT_RESOLUTION_SCHEMA_VERSION,
@@ -40,6 +42,7 @@ from litoral_trace.lacey_engine.serialization import (
 )
 from litoral_trace.lacey_engine.shipment import LaceyRuleset, ShipmentDocumentInput, process_shipment
 from litoral_trace.services.vault import VaultService
+from litoral_trace.us_lacey import specialized_shadow
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
 ENGINE2_OFF = "OFF"
@@ -59,6 +62,14 @@ def engine2_mode() -> str:
 class ShadowAggregationResult:
     status: str
     shipment_run_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _AIShadowDocumentContext:
+    link: UsLaceyOperationDocument
+    assurance: AssuranceDocument
+    vault: VaultDocument
+    engine2_resolution: DocumentResolution
 
 
 def source_set_fingerprint(
@@ -117,9 +128,9 @@ class UsLaceyEngine2Service:
         link: UsLaceyOperationDocument,
         assurance: AssuranceDocument,
         vault: VaultDocument,
-        engine2_resolution,
+        engine2_resolution: DocumentResolution,
     ) -> None:
-        """Best-effort AI comparison; never changes Engine 2 or authoritative workflow state."""
+        """Best-effort legacy AI comparison; never changes authoritative workflow state."""
         if not ai_shadow_enabled(config):
             return
 
@@ -152,6 +163,9 @@ class UsLaceyEngine2Service:
             ai_result = provider.extract(filename=vault.original_filename, content=content)
             verified_ai = verify_ai_evidence(engine2=engine2_resolution, ai=ai_result)
             comparison = reconcile_engine2_with_ai(engine2=engine2_resolution, ai=verified_ai)
+            payload = serialize_ai_shadow_run(ai=verified_ai, comparison=comparison)
+            payload["architecture"] = AIArchitecture.LEGACY.value
+            payload["candidate_count"] = len(verified_ai.candidates)
             session.add(
                 UsLaceyEngineDocumentRun(
                     organization_id=organization_id,
@@ -163,15 +177,33 @@ class UsLaceyEngine2Service:
                     source_sha256=vault.sha256,
                     role_hint=link.document_role,
                     status="SUCCEEDED",
-                    resolution_json=serialize_ai_shadow_run(ai=verified_ai, comparison=comparison),
+                    resolution_json=payload,
                 )
             )
             session.commit()
+            LOGGER.info(
+                "Lacey legacy AI shadow persisted",
+                extra={
+                    "architecture": AIArchitecture.LEGACY.value,
+                    "organization_id": organization_id,
+                    "operation_id": operation_id,
+                    "operation_document_id": link.id,
+                    "assurance_document_id": assurance.id,
+                    "ai_provider": verified_ai.provider,
+                    "ai_model": verified_ai.model,
+                    "latency_ms": verified_ai.latency_ms,
+                    "input_tokens": verified_ai.input_tokens,
+                    "output_tokens": verified_ai.output_tokens,
+                    "total_tokens": verified_ai.total_tokens,
+                    "candidate_count": len(verified_ai.candidates),
+                },
+            )
         except Exception:
             session.rollback()
             LOGGER.exception(
                 "Lacey AI extraction shadow failed",
                 extra={
+                    "architecture": AIArchitecture.LEGACY.value,
                     "organization_id": organization_id,
                     "operation_id": operation_id,
                     "assurance_document_id": assurance.id,
@@ -216,6 +248,7 @@ class UsLaceyEngine2Service:
                 LOGGER.exception(
                     "Unable to persist Lacey AI extraction shadow failure",
                     extra={
+                        "architecture": AIArchitecture.LEGACY.value,
                         "organization_id": organization_id,
                         "operation_id": operation_id,
                         "assurance_document_id": assurance.id,
@@ -223,6 +256,202 @@ class UsLaceyEngine2Service:
                 )
         finally:
             session.close()
+
+    def _run_legacy_ai_operation(
+        self,
+        *,
+        config: AIProviderConfig,
+        organization_id: int,
+        operation_id: int,
+        documents: tuple[_AIShadowDocumentContext, ...],
+    ) -> None:
+        for document in documents:
+            self._run_ai_shadow_document(
+                config=config,
+                organization_id=organization_id,
+                operation_id=operation_id,
+                link=document.link,
+                assurance=document.assurance,
+                vault=document.vault,
+                engine2_resolution=document.engine2_resolution,
+            )
+
+    def _run_specialized_ai_operation(
+        self,
+        *,
+        config: AIProviderConfig,
+        organization_id: int,
+        operation_id: int,
+        documents: tuple[_AIShadowDocumentContext, ...],
+        source_set_fingerprint: str,
+    ) -> None:
+        if not documents:
+            return
+
+        specialized_documents: list[specialized_shadow.SpecializedShadowDocument] = []
+        for document in documents:
+            with self._vault.materialize_verified_download(
+                organization_id=organization_id,
+                document_id=document.vault.public_id,
+            ) as download:
+                content = b"".join(download.iter_chunks())
+            specialized_documents.append(
+                specialized_shadow.SpecializedShadowDocument(
+                    document_id=document.assurance.public_id,
+                    operation_document_id=document.link.id,
+                    assurance_document_id=document.assurance.id,
+                    source_sha256=document.vault.sha256,
+                    role_hint=document.link.document_role,
+                    filename=document.vault.original_filename,
+                    content=content,
+                    engine2_resolution=document.engine2_resolution,
+                )
+            )
+
+        run = specialized_shadow.run_specialized_shadow_operation(
+            documents=tuple(specialized_documents),
+            config=config,
+        )
+        engine_version = specialized_shadow.specialized_engine_version(
+            provider=run.provider,
+            model=run.model,
+            source_set_fingerprint=source_set_fingerprint,
+        )
+        row_status = "FAILED" if run.result.operation.value == "FAILED" else "SUCCEEDED"
+        session: Session = self._session_factory()
+        try:
+            set_tenant_db_context(session, organization_id)
+            persisted = 0
+            for document in specialized_documents:
+                existing = session.scalar(
+                    select(UsLaceyEngineDocumentRun).where(
+                        UsLaceyEngineDocumentRun.organization_id == organization_id,
+                        UsLaceyEngineDocumentRun.assurance_document_id
+                        == document.assurance_document_id,
+                        UsLaceyEngineDocumentRun.source_sha256 == document.source_sha256,
+                        UsLaceyEngineDocumentRun.engine_version == engine_version,
+                        UsLaceyEngineDocumentRun.schema_version
+                        == specialized_shadow.SPECIALIZED_SHADOW_SCHEMA_VERSION,
+                        UsLaceyEngineDocumentRun.role_hint == document.role_hint,
+                        UsLaceyEngineDocumentRun.status == row_status,
+                    )
+                )
+                if existing is not None:
+                    continue
+                payload = specialized_shadow.serialize_specialized_document_run(
+                    run=run,
+                    document_id=document.document_id,
+                    source_set_fingerprint=source_set_fingerprint,
+                )
+                session.add(
+                    UsLaceyEngineDocumentRun(
+                        organization_id=organization_id,
+                        operation_id=operation_id,
+                        operation_document_id=document.operation_document_id,
+                        assurance_document_id=document.assurance_document_id,
+                        engine_version=engine_version,
+                        schema_version=specialized_shadow.SPECIALIZED_SHADOW_SCHEMA_VERSION,
+                        source_sha256=document.source_sha256,
+                        role_hint=document.role_hint,
+                        status=row_status,
+                        resolution_json=payload,
+                        safe_error_code=(
+                            "SPECIALIZED_EXTRACTION_FAILED" if row_status == "FAILED" else None
+                        ),
+                        safe_error_message=(
+                            "Specialized extraction did not produce a usable result."
+                            if row_status == "FAILED"
+                            else None
+                        ),
+                    )
+                )
+                persisted += 1
+            session.commit()
+            LOGGER.info(
+                "Lacey specialized AI shadow persisted",
+                extra={
+                    "architecture": AIArchitecture.SPECIALIZED.value,
+                    "organization_id": organization_id,
+                    "operation_id": operation_id,
+                    "ai_provider": run.provider,
+                    "ai_model": run.model,
+                    "latency_ms": run.latency_ms,
+                    "input_tokens": run.input_tokens,
+                    "output_tokens": run.output_tokens,
+                    "total_tokens": run.total_tokens,
+                    "candidate_count": len(run.result.fused_candidates),
+                    "document_count": len(specialized_documents),
+                    "persisted_document_count": persisted,
+                    "operation_status": run.result.operation.value,
+                },
+            )
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def _dispatch_ai_extractors(
+        self,
+        *,
+        config: AIProviderConfig,
+        organization_id: int,
+        operation_id: int,
+        documents: tuple[_AIShadowDocumentContext, ...],
+        source_set_fingerprint: str,
+    ) -> None:
+        """Execute the configured AI architecture without changing legacy UI authority."""
+        if not ai_shadow_enabled(config):
+            return
+
+        architecture = ai_architecture()
+        if architecture is AIArchitecture.LEGACY:
+            self._run_legacy_ai_operation(
+                config=config,
+                organization_id=organization_id,
+                operation_id=operation_id,
+                documents=documents,
+            )
+            return
+
+        if architecture is AIArchitecture.SPECIALIZED:
+            self._run_specialized_ai_operation(
+                config=config,
+                organization_id=organization_id,
+                operation_id=operation_id,
+                documents=documents,
+                source_set_fingerprint=source_set_fingerprint,
+            )
+            return
+
+        # Shadow production contract: legacy always runs first. Specialized is strictly
+        # best-effort and cannot poison the successful legacy/session/worker path.
+        self._run_legacy_ai_operation(
+            config=config,
+            organization_id=organization_id,
+            operation_id=operation_id,
+            documents=documents,
+        )
+        try:
+            self._run_specialized_ai_operation(
+                config=config,
+                organization_id=organization_id,
+                operation_id=operation_id,
+                documents=documents,
+                source_set_fingerprint=source_set_fingerprint,
+            )
+        except Exception:
+            LOGGER.exception(
+                "Lacey specialized AI shadow failed",
+                extra={
+                    "architecture": AIArchitecture.SPECIALIZED.value,
+                    "organization_id": organization_id,
+                    "operation_id": operation_id,
+                    "ai_provider": config.provider,
+                    "ai_model": config.model,
+                    "source_set_fingerprint": source_set_fingerprint,
+                },
+            )
 
     def resolve_operation_with_engine2(
         self,
@@ -270,6 +499,7 @@ class UsLaceyEngine2Service:
             )
 
             ai_config = AIProviderConfig.from_env()
+            ai_documents: list[_AIShadowDocumentContext] = []
             inputs: list[ShipmentDocumentInput] = []
             for link, assurance, vault in rows:
                 run = session.scalar(
@@ -329,17 +559,13 @@ class UsLaceyEngine2Service:
                 else:
                     resolution = deserialize_document_resolution(run.resolution_json)
 
-                # AI is a second non-authoritative extractor. Its own DB session and
-                # safe failure snapshots guarantee provider/network errors cannot poison
-                # Engine 2 persistence or the legacy authoritative workflow.
-                self._run_ai_shadow_document(
-                    config=ai_config,
-                    organization_id=organization_id,
-                    operation_id=operation_id,
-                    link=link,
-                    assurance=assurance,
-                    vault=vault,
-                    engine2_resolution=resolution,
+                ai_documents.append(
+                    _AIShadowDocumentContext(
+                        link=link,
+                        assurance=assurance,
+                        vault=vault,
+                        engine2_resolution=resolution,
+                    )
                 )
                 inputs.append(
                     ShipmentDocumentInput(
@@ -350,9 +576,20 @@ class UsLaceyEngine2Service:
                     )
                 )
 
+            # AI extraction is non-authoritative. In shadow mode this runs legacy first,
+            # then specialized behind an internal exception boundary. Both persistence
+            # paths use independent sessions from the Engine 2 shipment transaction.
+            self._dispatch_ai_extractors(
+                config=ai_config,
+                organization_id=organization_id,
+                operation_id=operation_id,
+                documents=tuple(ai_documents),
+                source_set_fingerprint=fingerprint,
+            )
+
             # Existing Engine 2 shipment snapshots are immutable/reusable, but the
-            # document loop above still lets a newly enabled AI shadow backfill its
-            # isolated document comparison without changing that shipment snapshot.
+            # document loop above still lets newly enabled AI architectures backfill
+            # isolated document comparisons without changing that shipment snapshot.
             if existing is not None:
                 session.commit()
                 return ShadowAggregationResult("SUCCEEDED", existing.id)

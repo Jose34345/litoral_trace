@@ -18,9 +18,19 @@ class FakeScopedProvider:
     name = "fake"
     model = "fake-model"
 
-    def __init__(self, candidates: tuple[AICandidate, ...]) -> None:
+    def __init__(
+        self,
+        candidates: tuple[AICandidate, ...],
+        *,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        total_tokens: int | None = None,
+    ) -> None:
         self.candidates = candidates
         self.calls: list[dict[str, object]] = []
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.total_tokens = total_tokens
 
     def extract_scoped(self, **kwargs) -> AIExtractionResult:
         self.calls.append(kwargs)
@@ -31,6 +41,9 @@ class FakeScopedProvider:
             candidates=self.candidates,
             page_count=len(kwargs["pages"]),
             latency_ms=17,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            total_tokens=self.total_tokens,
         )
 
 
@@ -139,3 +152,31 @@ def test_agent_run_id_is_shared_inside_one_specialist_run():
     assert len({item.agent_run_id for item in result.candidates}) == 1
     assert all(item.specialist is SpecialistRole.CUSTOMS_IDENTITY for item in result.candidates)
     assert result.latency_ms == 17
+
+
+def test_specialist_result_carries_provider_reported_token_usage() -> None:
+    provider = FakeScopedProvider(
+        (_candidate("container_number", "TLLU4827315"),),
+        input_tokens=210,
+        output_tokens=24,
+        total_tokens=234,
+    )
+    specialist = LogisticsExtractor(provider)
+
+    result = specialist.extract((_document(DocumentType.BILL_OF_LADING),))
+
+    assert result.input_tokens == 210
+    assert result.output_tokens == 24
+    assert result.total_tokens == 234
+
+
+def test_specialist_result_does_not_estimate_missing_token_usage() -> None:
+    specialist = LogisticsExtractor(
+        FakeScopedProvider((_candidate("container_number", "TLLU4827315"),))
+    )
+
+    result = specialist.extract((_document(DocumentType.BILL_OF_LADING),))
+
+    assert result.input_tokens is None
+    assert result.output_tokens is None
+    assert result.total_tokens is None

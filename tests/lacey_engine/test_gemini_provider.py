@@ -126,6 +126,54 @@ def test_gemini_extraction_is_stateless_structured_and_page_bound(monkeypatch):
     assert captured["headers"]["x-goog-api-key"] == "test-gemini-key"
 
 
+def test_gemini_extraction_records_only_provider_reported_token_usage(monkeypatch):
+    from litoral_trace.lacey_engine import gemini_provider
+
+    monkeypatch.setattr(
+        gemini_provider,
+        "_document_images",
+        lambda filename, content, max_pages: [b"page-1", b"page-2"],
+    )
+    responses = []
+    for input_tokens, output_tokens, total_tokens in ((120, 18, 138), (80, 12, 92)):
+        response = _gemini_response({"candidates": [_candidate_payload()]})
+        response["usageMetadata"] = {
+            "promptTokenCount": input_tokens,
+            "candidatesTokenCount": output_tokens,
+            "totalTokenCount": total_tokens,
+        }
+        responses.append(response)
+
+    monkeypatch.setattr(gemini_provider, "_post_json", lambda **kwargs: responses.pop(0))
+
+    result = GeminiInteractionsProvider(_config()).extract(filename="fixture.pdf", content=b"pdf")
+
+    assert result.input_tokens == 200
+    assert result.output_tokens == 30
+    assert result.total_tokens == 230
+
+
+def test_gemini_extraction_does_not_estimate_missing_usage(monkeypatch):
+    from litoral_trace.lacey_engine import gemini_provider
+
+    monkeypatch.setattr(
+        gemini_provider,
+        "_document_images",
+        lambda filename, content, max_pages: [b"page-1"],
+    )
+    monkeypatch.setattr(
+        gemini_provider,
+        "_post_json",
+        lambda **kwargs: _gemini_response({"candidates": [_candidate_payload()]}),
+    )
+
+    result = GeminiInteractionsProvider(_config()).extract(filename="fixture.pdf", content=b"pdf")
+
+    assert result.input_tokens is None
+    assert result.output_tokens is None
+    assert result.total_tokens is None
+
+
 def test_provider_aware_tier_defaults_use_stable_gemini_models(monkeypatch):
     monkeypatch.setenv("US_LACEY_AI_PROVIDER", "gemini")
     monkeypatch.delenv("US_LACEY_AI_EXTRACT_MODEL", raising=False)

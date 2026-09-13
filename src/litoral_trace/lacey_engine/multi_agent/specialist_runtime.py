@@ -42,6 +42,11 @@ class ScopedAIExtractionProvider(Protocol):
     ) -> AIExtractionResult: ...
 
 
+def _sum_reported(values: list[int | None]) -> int | None:
+    reported = [value for value in values if value is not None]
+    return sum(reported) if reported else None
+
+
 class BaseSpecialistExtractor:
     """Base class that guarantees a specialist cannot leak fields outside its scope."""
 
@@ -64,6 +69,9 @@ class BaseSpecialistExtractor:
         envelopes: list[CandidateEnvelope] = []
         warnings: list[str] = []
         latency_ms = 0
+        input_tokens: list[int | None] = []
+        output_tokens: list[int | None] = []
+        total_tokens: list[int | None] = []
 
         for source in documents:
             result = self.provider.extract_scoped(
@@ -74,6 +82,9 @@ class BaseSpecialistExtractor:
                 prompt=self.prompt,
             )
             latency_ms += result.latency_ms or 0
+            input_tokens.append(result.input_tokens)
+            output_tokens.append(result.output_tokens)
+            total_tokens.append(result.total_tokens)
 
             for candidate in result.candidates:
                 if candidate.field_key not in self.allowed_fields:
@@ -106,4 +117,7 @@ class BaseSpecialistExtractor:
             model=self.provider.model,
             latency_ms=latency_ms,
             warnings=tuple(warnings),
+            input_tokens=_sum_reported(input_tokens),
+            output_tokens=_sum_reported(output_tokens),
+            total_tokens=_sum_reported(total_tokens),
         )

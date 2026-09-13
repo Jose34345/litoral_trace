@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 from copy import deepcopy
+from dataclasses import replace
 import json
 import time
 
@@ -19,7 +20,12 @@ from ..ai_providers import (
     _post_json,
 )
 from ..ai_shadow import AIExtractionResult, AIShadowError, extraction_result_from_payload
-from ..gemini_provider import gemini_output_text
+from ..gemini_provider import gemini_output_text, gemini_usage
+
+
+def _sum_reported(values: list[int | None]) -> int | None:
+    reported = [value for value in values if value is not None]
+    return sum(reported) if reported else None
 
 
 class GeminiSpecialistProvider:
@@ -63,6 +69,9 @@ class GeminiSpecialistProvider:
         all_images = _document_images(filename, content, max(pages))
         schema = _scoped_schema(allowed_fields)
         candidates: list[dict[str, object]] = []
+        input_tokens: list[int | None] = []
+        output_tokens: list[int | None] = []
+        total_tokens: list[int | None] = []
         started = time.monotonic()
 
         for page_number in pages:
@@ -108,6 +117,10 @@ class GeminiSpecialistProvider:
                 timeout=self.config.timeout_seconds,
                 headers={"x-goog-api-key": self.config.api_key},
             )
+            page_input, page_output, page_total = gemini_usage(response)
+            input_tokens.append(page_input)
+            output_tokens.append(page_output)
+            total_tokens.append(page_total)
             try:
                 page_payload = json.loads(gemini_output_text(response))
             except json.JSONDecodeError as exc:
@@ -123,12 +136,18 @@ class GeminiSpecialistProvider:
                     candidates.append(candidate)
 
         elapsed = int((time.monotonic() - started) * 1000)
-        return extraction_result_from_payload(
+        result = extraction_result_from_payload(
             payload={"candidates": candidates},
             provider=self.name,
             model=self.model,
             page_count=len(pages),
             latency_ms=elapsed,
+        )
+        return replace(
+            result,
+            input_tokens=_sum_reported(input_tokens),
+            output_tokens=_sum_reported(output_tokens),
+            total_tokens=_sum_reported(total_tokens),
         )
 
 

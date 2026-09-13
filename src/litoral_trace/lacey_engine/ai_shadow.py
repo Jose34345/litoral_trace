@@ -61,6 +61,9 @@ class AIExtractionResult:
     candidates: tuple[AICandidate, ...]
     page_count: int | None = None
     latency_ms: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
 
 @dataclass(frozen=True, slots=True)
 class ReconciledField:
@@ -329,6 +332,9 @@ def serialize_ai_shadow_run(*, ai: AIExtractionResult, comparison: AIShadowCompa
         "model": ai.model,
         "page_count": ai.page_count,
         "latency_ms": ai.latency_ms,
+        "input_tokens": ai.input_tokens,
+        "output_tokens": ai.output_tokens,
+        "total_tokens": ai.total_tokens,
         "candidates": [
             {
                 "field_key": c.field_key, "value": c.value, "normalized_value": c.normalized_value,
