@@ -110,7 +110,8 @@ def test_specialized_shadow_verifies_evidence_before_fusion_and_aggregates_usage
 
     assert run.result.operation is OperationStatus.COMPLETED
     assert {item.role for item in run.result.specialist_results} == {
-        SpecialistRole.COMMERCIAL_LINES
+        SpecialistRole.COMMERCIAL_LINES,
+        SpecialistRole.CUSTOMS_IDENTITY,
     }
     assert len(run.result.fused_candidates) == 1
     fused = run.result.fused_candidates[0]
@@ -118,9 +119,9 @@ def test_specialized_shadow_verifies_evidence_before_fusion_and_aggregates_usage
     assert fused.candidate.evidence_verified is True
     assert run.provider == "gemini"
     assert run.model == "fixture-specialist-model"
-    assert run.input_tokens == 100
-    assert run.output_tokens == 12
-    assert run.total_tokens == 112
+    assert run.input_tokens == 200
+    assert run.output_tokens == 24
+    assert run.total_tokens == 224
     assert run.latency_ms >= 0
 
 
@@ -128,6 +129,8 @@ def test_specialized_shadow_keeps_unmatched_evidence_unverified() -> None:
     class WrongSourceProvider(FakeSpecialistProvider):
         def extract_scoped(self, **kwargs) -> AIExtractionResult:
             result = super().extract_scoped(**kwargs)
+            if not result.candidates:
+                return result
             candidate = result.candidates[0]
             wrong = AICandidate(
                 field_key=candidate.field_key,
