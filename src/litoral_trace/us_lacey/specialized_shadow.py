@@ -49,6 +49,11 @@ from litoral_trace.lacey_engine.multi_agent.specialists import (
     CustomsIdentityExtractor,
     LogisticsExtractor,
 )
+from litoral_trace.us_lacey.specialized_projection import (
+    SPECIALIZED_PROJECTION_VERSION,
+    SpecializedProjectionMode,
+    specialized_projection_mode as configured_specialized_projection_mode,
+)
 
 
 SPECIALIZED_SHADOW_SCHEMA_VERSION = "lacey_multi_agent_shadow_v1"
@@ -83,24 +88,36 @@ def _effective_judge_mode(mode: FieldJudgeMode | str | None) -> FieldJudgeMode:
     return FieldJudgeMode(mode)
 
 
+def _effective_projection_mode(
+    mode: SpecializedProjectionMode | str | None,
+) -> SpecializedProjectionMode:
+    if mode is None:
+        return configured_specialized_projection_mode()
+    return SpecializedProjectionMode(mode)
+
+
 def specialized_engine_version(
     *,
     provider: str,
     model: str,
     source_set_fingerprint: str | None = None,
     judge_mode: FieldJudgeMode | str | None = None,
+    projection_mode: SpecializedProjectionMode | str | None = None,
 ) -> str:
     """Return an immutable identity for one specialized execution contract.
 
     Specialized fusion is operation-scoped, so the source-set fingerprint participates
-    in the persisted engine identity when available. Judge version/effective mode are
-    also part of the identity so pre-Judge or differently-gated results cannot be reused.
+    in the persisted engine identity when available. Judge and projection versions plus
+    their effective modes are also part of the identity so differently gated executions
+    cannot be reused as the same immutable run.
     """
-    effective_mode = _effective_judge_mode(judge_mode)
+    effective_judge_mode = _effective_judge_mode(judge_mode)
+    effective_projection_mode = _effective_projection_mode(projection_mode)
     identity = (
         f"v1|{provider}|{model}|schema={SPECIALIZED_SHADOW_SCHEMA_VERSION}|"
         "evidence=engine2-exact|"
-        f"judge={FIELD_JUDGE_VERSION}:{effective_mode.value}"
+        f"judge={FIELD_JUDGE_VERSION}:{effective_judge_mode.value}|"
+        f"projection={SPECIALIZED_PROJECTION_VERSION}:{effective_projection_mode.value}"
     )
     if source_set_fingerprint:
         identity += f"|source_set={source_set_fingerprint}"
