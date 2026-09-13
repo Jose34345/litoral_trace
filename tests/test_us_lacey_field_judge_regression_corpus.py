@@ -105,9 +105,10 @@ def _target(*, field_name: str, line_reference: str, field_scope: str):
 
 
 def test_committed_bol_traps_have_zero_false_safe_projections() -> None:
+    cases = _corpus()["bol_cases"]
     false_safe = 0
     safe_projected = 0
-    for index, case in enumerate(_corpus()["bol_cases"]):
+    for index, case in enumerate(cases):
         candidate = _candidate(
             field_key="bill_of_lading",
             value=case["value"],
@@ -131,7 +132,7 @@ def test_committed_bol_traps_have_zero_false_safe_projections() -> None:
             false_safe += int(projected)
 
     assert false_safe == 0
-    assert safe_projected == 1
+    assert safe_projected == sum(int(case["expected_safe"]) for case in cases)
 
 
 def test_authoritative_bol_contradiction_stays_conflict_and_review() -> None:
