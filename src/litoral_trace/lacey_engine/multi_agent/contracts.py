@@ -9,9 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from ..ai_shadow import AICandidate
+
+if TYPE_CHECKING:
+    from .field_judge import FieldJudgeEvaluation
 
 
 class DocumentType(str, Enum):
@@ -107,3 +111,6 @@ class MultiAgentExtractionResult:
     # Phase 6 appends defaults so all earlier construction sites remain compatible.
     operation: OperationStatus = OperationStatus.COMPLETED
     specialist_statuses: tuple[SpecialistExecutionStatus, ...] = ()
+    # Field Judge telemetry remains observational unless the orchestrator is explicitly
+    # invoked in enforce mode.  Appending the default preserves all earlier call sites.
+    field_judge: FieldJudgeEvaluation | None = None
