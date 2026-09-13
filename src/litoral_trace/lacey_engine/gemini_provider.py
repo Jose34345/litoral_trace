@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 from copy import deepcopy
+from dataclasses import replace
 import json
 import time
 from typing import Mapping
@@ -89,6 +90,37 @@ def gemini_output_text(response: Mapping[str, object]) -> str:
     raise AIShadowError("Gemini response contains no structured output text.")
 
 
+def _usage_int(usage: Mapping[str, object], *keys: str) -> int | None:
+    for key in keys:
+        value = usage.get(key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int) and value >= 0:
+            return value
+    return None
+
+
+def gemini_usage(response: Mapping[str, object]) -> tuple[int | None, int | None, int | None]:
+    """Read provider-reported usage only; never estimate absent token counts."""
+    raw = response.get("usageMetadata")
+    if not isinstance(raw, Mapping):
+        raw = response.get("usage_metadata")
+    if not isinstance(raw, Mapping):
+        raw = response.get("usage")
+    if not isinstance(raw, Mapping):
+        return None, None, None
+    return (
+        _usage_int(raw, "promptTokenCount", "inputTokenCount", "prompt_token_count", "input_tokens"),
+        _usage_int(raw, "candidatesTokenCount", "outputTokenCount", "candidates_token_count", "output_tokens"),
+        _usage_int(raw, "totalTokenCount", "total_token_count", "total_tokens"),
+    )
+
+
+def _sum_reported(values: list[int | None]) -> int | None:
+    reported = [value for value in values if value is not None]
+    return sum(reported) if reported else None
+
+
 class GeminiInteractionsProvider:
     """Gemini multimodal extraction through the stateless Interactions API."""
 
@@ -105,6 +137,9 @@ class GeminiInteractionsProvider:
     def extract(self, *, filename: str, content: bytes) -> AIExtractionResult:
         images = _document_images(filename, content, self.config.max_pages)
         candidates: list[dict[str, object]] = []
+        input_tokens: list[int | None] = []
+        output_tokens: list[int | None] = []
+        total_tokens: list[int | None] = []
         started = time.monotonic()
         for page_number, image in enumerate(images, start=1):
             payload: dict[str, object] = {
@@ -142,6 +177,10 @@ class GeminiInteractionsProvider:
                 timeout=self.config.timeout_seconds,
                 headers={"x-goog-api-key": self.config.api_key},
             )
+            page_input, page_output, page_total = gemini_usage(response)
+            input_tokens.append(page_input)
+            output_tokens.append(page_output)
+            total_tokens.append(page_total)
             try:
                 page_payload = json.loads(gemini_output_text(response))
             except json.JSONDecodeError as exc:
@@ -157,10 +196,16 @@ class GeminiInteractionsProvider:
                     candidate["page"] = page_number
                     candidates.append(candidate)
         elapsed = int((time.monotonic() - started) * 1000)
-        return extraction_result_from_payload(
+        result = extraction_result_from_payload(
             payload={"candidates": candidates},
             provider=self.name,
             model=self.model,
             page_count=len(images),
             latency_ms=elapsed,
+        )
+        return replace(
+            result,
+            input_tokens=_sum_reported(input_tokens),
+            output_tokens=_sum_reported(output_tokens),
+            total_tokens=_sum_reported(total_tokens),
         )
