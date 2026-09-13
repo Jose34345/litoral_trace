@@ -698,10 +698,11 @@ class UsLaceyEngine2Service:
             )
 
             # Never materialize a shipment snapshot from an incomplete source set.
-            # That would silently turn "document not processed" into "field missing".
+            # Internally PARTIAL distinguishes mixed outcomes, while the public result
+            # preserves the historical FAILED contract whenever any current source fails.
             if batch.status != "SUCCEEDED":
                 session.commit()
-                return ShadowAggregationResult(batch.status)
+                return ShadowAggregationResult("FAILED")
 
             # Existing Engine 2 shipment snapshots are immutable/reusable, but the
             # document loop above still lets newly enabled AI architectures backfill
