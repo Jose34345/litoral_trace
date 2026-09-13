@@ -255,7 +255,8 @@ def _candidate_semantically_safe_for_projection(candidate: CandidateEnvelope) ->
     B/L is a high-impact identifier. Exact evidence verification proves the proposed
     value exists in the source span, but it does not prove that a nearby Vessel, POD,
     ETA or Gross Weight value has the B/L semantic role. Therefore B/L projection is
-    fail-closed unless the value itself is locally preceded by an explicit B/L label.
+    fail-closed unless the nearest recognized label before the value is an explicit
+    B/L label.
     """
     if candidate.candidate.field_key != "bill_of_lading":
         return True
@@ -272,11 +273,11 @@ def _candidate_semantically_safe_for_projection(candidate: CandidateEnvelope) ->
         return False
 
     prefix = source_text[max(0, value_index - 120):value_index]
-    if _BOL_EXPLICIT_LABEL.search(prefix):
-        return True
-    if _BOL_TRAP_LABEL.search(prefix):
-        return False
-    return False
+    explicit_matches = tuple(_BOL_EXPLICIT_LABEL.finditer(prefix))
+    trap_matches = tuple(_BOL_TRAP_LABEL.finditer(prefix))
+    explicit_start = explicit_matches[-1].start() if explicit_matches else -1
+    trap_start = trap_matches[-1].start() if trap_matches else -1
+    return explicit_start >= 0 and explicit_start > trap_start
 
 
 def _target_reference(candidate: CandidateEnvelope, *, ppq_field_key: str) -> str | None:
