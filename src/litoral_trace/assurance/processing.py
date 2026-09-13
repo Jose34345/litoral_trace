@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
+import os
+from pathlib import PurePath
 from typing import Callable, Sequence
 from uuid import UUID
 
@@ -28,6 +31,7 @@ from litoral_trace.assurance.matching import (
     match_candidate_entities,
 )
 from litoral_trace.assurance.parsers import DocumentParseError, ParsedDocument, parse_document
+from litoral_trace.assurance.tabular_safety import parse_csv_incremental_bytes
 from litoral_trace.db.engine import get_db_session
 from litoral_trace.db.models import (
     AssuranceDocument,
@@ -50,7 +54,8 @@ from litoral_trace.services.vault import VaultService
 
 SessionFactory = Callable[[], Session | None]
 PARSER_ENGINE = "assurance-deterministic-parser"
-PARSER_ENGINE_VERSION = "1.2.0"
+PARSER_ENGINE_VERSION = "1.3.0"
+_DEFAULT_RAW_CELL_PERSIST_LIMIT = 2000
 
 
 class AssuranceProcessingError(RuntimeError):
@@ -84,6 +89,15 @@ def _serialize_value(value: object) -> str | None:
     return str(value)
 
 
+def _raw_cell_persist_limit() -> int:
+    raw = str(os.environ.get("LT_ASSURANCE_RAW_CELL_PERSIST_LIMIT", _DEFAULT_RAW_CELL_PERSIST_LIMIT)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_RAW_CELL_PERSIST_LIMIT
+    return max(100, min(20_000, value))
+
+
 def _persist_raw_parsed_fields(
     session: Session,
     *,
@@ -92,7 +106,7 @@ def _persist_raw_parsed_fields(
     extraction_run: DocumentExtractionRun,
     parsed: ParsedDocument,
 ) -> int:
-    """Keep auditable raw parse output in addition to semantic candidates."""
+    """Keep auditable raw output without duplicating large spreadsheets cell-by-cell."""
     field_count = 0
 
     if parsed.text:
@@ -115,13 +129,52 @@ def _persist_raw_parsed_fields(
         )
         field_count += 1
 
+    spreadsheet = parsed.file_kind in {"XLSX", "XLS", "CSV"}
+    estimated_cells = sum(len(table.rows) * len(table.headers) for table in parsed.tables)
+    summarize_tables = spreadsheet and estimated_cells > _raw_cell_persist_limit()
+
+    if summarize_tables:
+        # The immutable original already lives in Evidence Vault. Persist table
+        # schema/provenance here, while semantic candidates are stored separately.
+        # This avoids creating tens of thousands of ORM objects for raw cells.
+        for table_index, table in enumerate(parsed.tables, start=1):
+            summary = json.dumps(
+                {
+                    "table": table.name,
+                    "headers": list(table.headers),
+                    "row_count": len(table.rows),
+                    "column_count": len(table.headers),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            session.add(
+                ExtractedDocumentField(
+                    organization_id=organization_id,
+                    assurance_document_id=assurance_document.id,
+                    extraction_run_id=extraction_run.id,
+                    field_name=f"raw.table.{table_index}.schema",
+                    original_value=summary,
+                    normalized_value=summary,
+                    value_type="table_schema",
+                    confidence=1.0,
+                    confidence_level=ConfidenceLevel.HIGH.value,
+                    source_page=table.source.page,
+                    source_locator=table.source.locator or table.name,
+                    auto_accepted=False,
+                    needs_review=False,
+                )
+            )
+            field_count += 1
+        return field_count
+
     for table_index, table in enumerate(parsed.tables, start=1):
         for row_index, record in enumerate(table.rows, start=1):
             for column_index, header in enumerate(table.headers, start=1):
                 value = record.get(header)
                 if value is None:
                     continue
-                confidence = 0.98 if parsed.file_kind in {"XLSX", "XLS", "CSV"} else 0.90
+                confidence = 0.98 if spreadsheet else 0.90
                 locator_parts = [table.source.locator or table.name]
                 locator_parts.append(f"data_row:{row_index}")
                 locator_parts.append(f"column:{column_index}")
@@ -370,9 +423,11 @@ class AssuranceProcessingService:
         *,
         session_factory: SessionFactory | None = None,
         vault_service: VaultService | None = None,
+        enable_entity_matching: bool = True,
     ) -> None:
         self._session_factory = session_factory or get_db_session
         self._vault_service = vault_service or VaultService()
+        self._enable_entity_matching = bool(enable_entity_matching)
 
     def _new_session(self, organization_id: int) -> Session:
         session = self._session_factory()
@@ -444,7 +499,10 @@ class AssuranceProcessingService:
                 engine_version=PARSER_ENGINE_VERSION,
                 status=ExtractionRunStatus.RUNNING.value,
                 started_at=_utc_now(),
-                extraction_metadata={"force_reprocess": bool(force_reprocess)},
+                extraction_metadata={
+                    "force_reprocess": bool(force_reprocess),
+                    "entity_matching_enabled": self._enable_entity_matching,
+                },
             )
             session.add(run)
             assurance_document.processing_status = DocumentProcessingStatus.PROCESSING.value
@@ -460,7 +518,13 @@ class AssuranceProcessingService:
             ) as verified:
                 content = b"".join(verified.iter_chunks(chunk_size=1024 * 1024))
 
-            parsed = parse_document(vault_document.original_filename, content)
+            if PurePath(vault_document.original_filename).suffix.lower() == ".csv":
+                # U.S. Lacey worker preflight guarantees that shipment CSVs reaching
+                # this point are bounded. Parse row-by-row to avoid decoded-text and
+                # all-rows intermediate copies.
+                parsed = parse_csv_incremental_bytes(content)
+            else:
+                parsed = parse_document(vault_document.original_filename, content)
             classification = classify_document(vault_document.original_filename, parsed)
             structured_candidates = extract_structured_fields(parsed)
             missing_fields = missing_required_fields(
@@ -500,12 +564,16 @@ class AssuranceProcessingService:
                 extraction_run=run,
                 candidates=structured_candidates,
             )
-            link_counts = _persist_entity_links(
-                session,
-                organization_id=org_id,
-                assurance_document=assurance_document,
-                candidates=structured_candidates,
-            )
+            if self._enable_entity_matching:
+                link_counts = _persist_entity_links(
+                    session,
+                    organization_id=org_id,
+                    assurance_document=assurance_document,
+                    candidates=structured_candidates,
+                )
+            else:
+                link_counts = {"linked": 0, "ambiguous": 0, "below_threshold": 0}
+
             metadata = dict(run.extraction_metadata or {})
             metadata.update(parsed.metadata)
             metadata.update(
@@ -519,6 +587,7 @@ class AssuranceProcessingService:
                     "review_field_count": field_counts["needs_review"],
                     "field_conflict_count": field_counts["conflicts"],
                     "low_confidence_field_count": field_counts["low_confidence"],
+                    "entity_matching_enabled": self._enable_entity_matching,
                     "entity_link_count": link_counts["linked"],
                     "ambiguous_entity_match_count": link_counts["ambiguous"],
                     "below_threshold_entity_match_count": link_counts["below_threshold"],
@@ -584,6 +653,7 @@ class AssuranceProcessingService:
                     "review_field_count": field_counts["needs_review"],
                     "field_conflict_count": field_counts["conflicts"],
                     "low_confidence_field_count": field_counts["low_confidence"],
+                    "entity_matching_enabled": self._enable_entity_matching,
                     "entity_link_count": link_counts["linked"],
                     "ambiguous_entity_match_count": link_counts["ambiguous"],
                     "ocr_required": bool(parsed.ocr_required),

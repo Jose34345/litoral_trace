@@ -1,17 +1,18 @@
-{% macro button(label, href=None, variant='primary', icon=None, button_type='button', extra_classes='', disabled=False, aria_label=None) -%}
+{% macro button(label, href=None, variant='primary', icon=None, button_type='button', extra_classes='', disabled=False, aria_label=None, title=None) -%}
     {% set variant_class = {
         'primary': 'lt-btn--primary',
         'secondary': 'lt-btn--secondary',
         'ghost': 'lt-btn--ghost',
         'danger': 'lt-btn--danger'
     }.get(variant, 'lt-btn--primary') %}
+    {% set resolved_title = title or ("Cannot complete preparation: Please resolve the Entered Value reconciliation inconsistency first." if disabled and label == "Complete preparation" else None) %}
     {% if href %}
-    <a href="{{ href }}" class="lt-btn {{ variant_class }} {{ extra_classes }}"{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}{% if disabled %} aria-disabled="true" tabindex="-1"{% endif %}>
+    <a href="{{ href }}" class="lt-btn {{ variant_class }} {{ extra_classes }}"{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}{% if resolved_title %} title="{{ resolved_title }}"{% endif %}{% if disabled %} aria-disabled="true" tabindex="-1"{% endif %}>
         {% if icon %}<i class="fa-solid {{ icon }}" aria-hidden="true"></i>{% endif %}
         <span>{{ label }}</span>
     </a>
     {% else %}
-    <button type="{{ button_type }}" class="lt-btn {{ variant_class }} {{ extra_classes }}"{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}{% if disabled %} disabled{% endif %}>
+    <button type="{{ button_type }}" class="lt-btn {{ variant_class }} {{ extra_classes }}"{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}{% if resolved_title %} title="{{ resolved_title }}"{% endif %}{% if disabled %} disabled{% endif %}>
         {% if icon %}<i class="fa-solid {{ icon }}" aria-hidden="true"></i>{% endif %}
         <span>{{ label }}</span>
     </button>
@@ -45,7 +46,7 @@
         {{ badge(status, 'positive', True, extra_classes=extra_classes) }}
     {% elif normalized in ['PENDING', 'REVIEW', 'STAGED', 'PARTIAL', 'PROCESSING', 'QUEUED', 'UNASSESSED'] %}
         {{ badge(status, 'warning', True, extra_classes=extra_classes) }}
-    {% elif normalized in ['BLOCKED', 'CONFLICT', 'FAILED', 'REJECTED', 'ERROR', 'INVALID'] %}
+    {% elif normalized in ['BLOCKED', 'CONFLICT', 'FAILED', 'REJECTED', 'ERROR', 'INVALID', 'MISSING'] %}
         {{ badge(status, 'danger', True, extra_classes=extra_classes) }}
     {% elif normalized in ['INACTIVE', 'DISABLED', 'UNKNOWN', 'NONE'] %}
         {{ badge(status, 'neutral', True, extra_classes=extra_classes) }}

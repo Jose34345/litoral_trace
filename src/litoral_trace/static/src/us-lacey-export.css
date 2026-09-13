@@ -1,0 +1,329 @@
+/* U.S. Lacey declaration export package.
+   Uses the shared design-system tokens so the component stays visually aligned
+   with the customer portal while remaining isolated from generic form styles. */
+
+.lt-export-card {
+  position: relative;
+  overflow: visible;
+  border-color: color-mix(in srgb, var(--lt-info) 18%, var(--lt-border));
+  background:
+    radial-gradient(circle at 96% 0%, rgba(8, 145, 178, 0.09), transparent 34%),
+    var(--lt-surface);
+  box-shadow: var(--lt-shadow-sm);
+}
+
+.lt-export-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+  border-radius: var(--lt-radius-lg) var(--lt-radius-lg) 0 0;
+  background: linear-gradient(90deg, var(--lt-blue), var(--lt-cyan));
+  pointer-events: none;
+}
+
+.lt-export-card__body {
+  padding: 24px;
+}
+
+.lt-export-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.lt-export-card__intro {
+  min-width: 0;
+  max-width: 760px;
+}
+
+.lt-export-card__eyebrow {
+  margin: 0 0 6px;
+  color: var(--lt-cyan);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.lt-export-card__title {
+  margin: 0;
+  color: var(--lt-text);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
+
+.lt-export-card__description {
+  margin: 8px 0 0;
+  color: var(--lt-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.lt-export-card__status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--lt-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lt-bg) 78%, var(--lt-surface));
+  color: var(--lt-muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.lt-export-card__status.is-ready {
+  border-color: color-mix(in srgb, var(--lt-success) 24%, var(--lt-border));
+  background: color-mix(in srgb, var(--lt-success) 9%, var(--lt-surface));
+  color: var(--lt-success);
+}
+
+.lt-export-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.lt-export-action {
+  position: relative;
+  display: flex;
+  min-height: 76px;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--lt-border);
+  border-radius: var(--lt-radius-md);
+  box-shadow: var(--lt-shadow-sm);
+  text-decoration: none;
+  transform: translateZ(0);
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease,
+    transform 200ms ease,
+    opacity 200ms ease;
+}
+
+.lt-export-action:hover {
+  transform: translateY(-1px) scale(1.005);
+  box-shadow: var(--lt-shadow-md);
+}
+
+.lt-export-action:active {
+  transform: translateY(0) scale(0.995);
+}
+
+.lt-export-action:focus-visible,
+.lt-export-tooltip:focus-visible {
+  outline: none;
+  box-shadow: var(--lt-focus);
+}
+
+.lt-export-action--xml {
+  border-color: var(--lt-blue);
+  background: var(--lt-blue);
+  color: #fff;
+}
+
+.lt-export-action--xml:hover {
+  border-color: var(--lt-blue-2);
+  background: var(--lt-blue-2);
+  color: #fff;
+}
+
+.lt-export-action--excel {
+  border-color: color-mix(in srgb, var(--lt-success) 22%, var(--lt-border));
+  background: var(--lt-surface);
+  color: var(--lt-text);
+}
+
+.lt-export-action--excel:hover {
+  border-color: color-mix(in srgb, var(--lt-success) 42%, var(--lt-border));
+  background: color-mix(in srgb, var(--lt-success) 4%, var(--lt-surface));
+  color: var(--lt-text);
+}
+
+.lt-export-action__icon {
+  display: inline-grid;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: var(--lt-radius-sm);
+  font-size: 17px;
+}
+
+.lt-export-action--xml .lt-export-action__icon {
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
+}
+
+.lt-export-action--excel .lt-export-action__icon {
+  background: color-mix(in srgb, var(--lt-success) 10%, var(--lt-surface));
+  color: var(--lt-success);
+}
+
+.lt-export-action__copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  text-align: left;
+}
+
+.lt-export-action__label {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.lt-export-action__meta {
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.72;
+}
+
+.lt-export-action__spinner {
+  display: none;
+  flex: 0 0 17px;
+  width: 17px;
+  height: 17px;
+  margin-left: auto;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: lt-export-spin 700ms linear infinite;
+}
+
+.lt-export-action__lock {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.62;
+}
+
+.lt-export-action.is-loading {
+  cursor: progress;
+  opacity: 0.88;
+  transform: none;
+  box-shadow: var(--lt-shadow-sm);
+}
+
+.lt-export-action.is-loading .lt-export-action__spinner {
+  display: inline-block;
+}
+
+.lt-export-action.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  filter: saturate(0.58);
+  transform: none;
+  box-shadow: none;
+  user-select: none;
+}
+
+.lt-export-action.is-disabled:hover,
+.lt-export-action.is-disabled:active {
+  transform: none;
+  box-shadow: none;
+}
+
+.lt-export-tooltip {
+  position: relative;
+  display: block;
+  border-radius: var(--lt-radius-md);
+}
+
+.lt-export-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 40;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  width: min(330px, calc(100vw - 48px));
+  padding: 9px 11px;
+  border-radius: var(--lt-radius-sm);
+  background: var(--lt-text);
+  color: #fff;
+  box-shadow: var(--lt-shadow-md);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    visibility 160ms ease;
+}
+
+.lt-export-tooltip:hover::after,
+.lt-export-tooltip:focus::after,
+.lt-export-tooltip:focus-within::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+.lt-export-card__footnote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+  color: var(--lt-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.lt-export-card__footnote i {
+  margin-top: 2px;
+  color: var(--lt-info);
+}
+
+@keyframes lt-export-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 720px) {
+  .lt-export-card__body {
+    padding: 20px;
+  }
+
+  .lt-export-card__header {
+    display: grid;
+    gap: 14px;
+  }
+
+  .lt-export-card__status {
+    width: fit-content;
+    white-space: normal;
+  }
+
+  .lt-export-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lt-export-action,
+  .lt-export-tooltip::after {
+    transition: none;
+  }
+
+  .lt-export-action:hover,
+  .lt-export-action:active {
+    transform: none;
+  }
+
+  .lt-export-action__spinner {
+    animation-duration: 1200ms;
+  }
+}

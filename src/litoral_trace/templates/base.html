@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es" class="h-full bg-slate-50">
+{% block html_open %}<html lang="es" class="h-full bg-slate-50">{% endblock %}
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22,11 +22,13 @@
     <link rel="stylesheet" href="{{ url_for('static', path='/src/progress.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/src/geospatial.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/src/mobile-motion.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/src/us-lacey-export.css') }}">
 
     <script src="{{ url_for('static', path='/vendor/htmx/htmx.min.js') }}" defer></script>
     <script src="{{ url_for('static', path='/vendor/leaflet/leaflet.js') }}" defer></script>
     <script type="module" src="{{ url_for('static', path='/src/js/app.js') }}"></script>
     <script type="module" src="{{ url_for('static', path='/src/js/assurance-progress-retry.js') }}"></script>
+    <script type="module" src="{{ url_for('static', path='/src/js/us-lacey-workspace.js') }}"></script>
     <script type="module" src="{{ url_for('static', path='/src/js/dialog.js') }}"></script>
     <script type="module" src="{{ url_for('static', path='/src/js/mobile-motion.js') }}"></script>
     <script type="module" src="{{ url_for('static', path='/src/js/file-input.js') }}"></script>

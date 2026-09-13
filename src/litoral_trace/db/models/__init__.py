@@ -28,6 +28,38 @@ from litoral_trace.db.models.shipment_export_case import ShipmentExportCase
 from litoral_trace.db.models.shipment_phytosanitary_case import ShipmentPhytosanitaryCase
 from litoral_trace.db.models.eudr_dds_candidate import EudrDdsCandidate
 from litoral_trace.db.models.eudr_acceptance_attempt import EudrAcceptanceAttempt
+from litoral_trace.db.models.us_lacey import (
+    UsLaceyFieldCandidate,
+    UsLaceyEngineDocumentRun,
+    UsLaceyEngineShipmentRun,
+    UsLaceyOperation,
+    UsLaceyOperationDocument,
+    UsLaceyOperationField,
+    UsLaceyOrganizationProfile,
+    UsLaceyPpqPlantLine,
+    UsLaceyPpqShipment,
+    UsLaceyPlantDeclaration,
+)
+from litoral_trace.db.models.us_lacey_evidence_snapshot import (
+    UsLaceyEvidenceSnapshot,
+    UsLaceyEvidenceSnapshotDocument,
+)
+from litoral_trace.db.models.document_text import (
+    DocumentTextSpan,
+    DocumentTextTranslation,
+)
+from litoral_trace.db.models.semantic_evidence import (
+    SemanticEvidenceEdge,
+    SemanticEvidenceNode,
+    SemanticSnapshotNode,
+)
+from litoral_trace.db.models.us_lacey_commercial import (
+    UsLaceyPayment,
+    UsLaceyProcessingJob,
+    UsLaceySubscription,
+    UsLaceyTermsAcceptance,
+)
+from litoral_trace.db.models.us_lacey_payment_event import UsLaceyPaymentEvent
 from litoral_trace.db.models.integration import (
     ExternalEntity,
     ExternalEntityVersion,
@@ -74,6 +106,28 @@ __all__ = [
     "ShipmentPhytosanitaryCase",
     "EudrDdsCandidate",
     "EudrAcceptanceAttempt",
+    "UsLaceyOrganizationProfile",
+    "UsLaceyFieldCandidate",
+    "UsLaceyEngineDocumentRun",
+    "UsLaceyEngineShipmentRun",
+    "UsLaceyOperation",
+    "UsLaceyOperationDocument",
+    "UsLaceyOperationField",
+    "UsLaceyPpqPlantLine",
+    "UsLaceyPpqShipment",
+    "UsLaceyPlantDeclaration",
+    "UsLaceyEvidenceSnapshot",
+    "UsLaceyEvidenceSnapshotDocument",
+    "DocumentTextSpan",
+    "DocumentTextTranslation",
+    "SemanticEvidenceNode",
+    "SemanticSnapshotNode",
+    "SemanticEvidenceEdge",
+    "UsLaceySubscription",
+    "UsLaceyPayment",
+    "UsLaceyPaymentEvent",
+    "UsLaceyTermsAcceptance",
+    "UsLaceyProcessingJob",
     "TraceabilityBatch",
     "TraceabilityEvent",
     "TraceabilityEventInput",

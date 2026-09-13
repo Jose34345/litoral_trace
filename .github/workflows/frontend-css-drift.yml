@@ -1,0 +1,58 @@
+name: Frontend CSS Drift Gate
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/frontend-css-drift.yml
+      - package.json
+      - package-lock.json
+      - src/litoral_trace/templates/**
+      - src/litoral_trace/static/src/**
+      - src/litoral_trace/static/dist/app.css
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-css-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  css-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Rebuild Tailwind CSS from tracked templates
+        run: npm run build:css
+
+      - name: Fail if tracked CSS is stale
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- src/litoral_trace/static/dist/app.css
+
+      - name: Verify U.S. Lacey responsive shell utilities exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          css=src/litoral_trace/static/dist/app.css
+          grep -Fq '.gap-x-5{' "$css"
+          grep -Fq '.md\:order-none{' "$css"
+          grep -Fq '.md\:ml-auto{' "$css"
+          grep -Fq '.md\:w-auto{' "$css"
+          grep -Fq '.md\:border-0{' "$css"
+          grep -Fq '.md\:pt-0{' "$css"
+          echo 'frontend_css_drift=PASS'

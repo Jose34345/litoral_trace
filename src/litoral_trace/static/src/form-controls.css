@@ -63,6 +63,18 @@
   border-color: var(--lt-positive);
 }
 
+/* Reconciliation invariants are operation-level controls, not generic form
+   validation. aria-invalid keeps the state accessible while this selector gives
+   the implicated Entered Value controls a persistent enterprise error treatment. */
+.lt-control[aria-invalid="true"] {
+  border-color: var(--lt-danger);
+  box-shadow: 0 0 0 1px var(--lt-danger);
+}
+
+.lt-control[aria-invalid="true"]:focus {
+  outline-color: var(--lt-danger);
+}
+
 .lt-control[type="search"]::-webkit-search-cancel-button {
   cursor: pointer;
 }
@@ -74,6 +86,57 @@ textarea.lt-control {
 
 select.lt-control {
   appearance: auto;
+}
+
+.lt-file-input {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.lt-file-input__button {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--lt-border);
+  border-radius: var(--lt-radius-md);
+  padding: 0.4375rem 0.75rem;
+  background: var(--lt-surface);
+  color: var(--lt-text-primary);
+  font-size: 0.75rem;
+  font-weight: 750;
+  line-height: 1rem;
+  cursor: pointer;
+}
+
+.lt-file-input__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--lt-text-secondary);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+/* The browser-native file control is never allowed to render product chrome.
+   It stays accessible through its wrapping label while our controlled English
+   button/name surface owns the visible interaction. */
+.lt-control[type="file"],
+.lt-file-input__native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  border: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  opacity: 0 !important;
 }
 
 .lt-check-field {
@@ -135,6 +198,14 @@ select.lt-control {
 
   .lt-form__actions > * {
     width: 100%;
+  }
+}
+
+@media print {
+  .lt-file-input,
+  .lt-control[type="file"],
+  .lt-file-input__native {
+    display: none !important;
   }
 }
 
