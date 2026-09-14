@@ -62,6 +62,8 @@ def engine2_mode() -> str:
 class ShadowAggregationResult:
     status: str
     shipment_run_id: int | None = None
+    succeeded_document_count: int = 0
+    failed_document_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +72,26 @@ class _AIShadowDocumentContext:
     assurance: AssuranceDocument
     vault: VaultDocument
     engine2_resolution: DocumentResolution
+
+
+@dataclass(frozen=True, slots=True)
+class _DocumentBatchSuccess:
+    document: object
+    result: object
+
+
+@dataclass(frozen=True, slots=True)
+class _DocumentBatchFailure:
+    document: object
+    safe_error_code: str = "ENGINE2_SHADOW_FAILED"
+    safe_error_message: str = "Shadow document processing did not complete."
+
+
+@dataclass(frozen=True, slots=True)
+class _DocumentBatchOutcome:
+    status: str
+    succeeded: tuple[_DocumentBatchSuccess, ...]
+    failed: tuple[_DocumentBatchFailure, ...]
 
 
 def source_set_fingerprint(
@@ -118,6 +140,80 @@ class UsLaceyEngine2Service:
         self._vault = vault_service
         self._engine_version = engine_version
         self._ruleset = ruleset
+
+    def _process_engine2_document_batch(self, *, documents, process_one) -> _DocumentBatchOutcome:
+        """Process each source independently so one bad document cannot hide its siblings."""
+        succeeded: list[_DocumentBatchSuccess] = []
+        failed: list[_DocumentBatchFailure] = []
+        for document in documents:
+            try:
+                result = process_one(document)
+            except Exception:
+                LOGGER.exception("Lacey Engine 2 document processing failed")
+                failed.append(_DocumentBatchFailure(document=document))
+            else:
+                succeeded.append(_DocumentBatchSuccess(document=document, result=result))
+
+        if failed and succeeded:
+            status = "PARTIAL"
+        elif failed:
+            status = "FAILED"
+        else:
+            status = "SUCCEEDED"
+        return _DocumentBatchOutcome(status, tuple(succeeded), tuple(failed))
+
+    def _engine2_document_run_identity(
+        self,
+        *,
+        organization_id: int,
+        assurance_document_id: int,
+        source_sha256: str,
+        role_hint: str | None,
+        status: str,
+    ) -> dict[str, object]:
+        """Return the exact immutable uniqueness identity for an Engine 2 document run."""
+        return {
+            "organization_id": organization_id,
+            "assurance_document_id": assurance_document_id,
+            "source_sha256": source_sha256,
+            "engine_version": self._engine_version,
+            "schema_version": DOCUMENT_RESOLUTION_SCHEMA_VERSION,
+            "role_hint": role_hint,
+            "status": status,
+        }
+
+    def _find_engine2_document_run(
+        self,
+        session: Session,
+        **identity: object,
+    ) -> UsLaceyEngineDocumentRun | None:
+        conditions = [
+            getattr(UsLaceyEngineDocumentRun, key) == value
+            for key, value in identity.items()
+        ]
+        return session.scalar(select(UsLaceyEngineDocumentRun).where(*conditions))
+
+    def _get_or_create_failed_engine2_run(
+        self,
+        session: Session,
+        *,
+        operation_id: int,
+        operation_document_id: int,
+        identity: dict[str, object],
+    ) -> UsLaceyEngineDocumentRun:
+        """Reuse an existing immutable failure instead of violating its unique identity."""
+        existing = self._find_engine2_document_run(session, **identity)
+        if existing is not None:
+            return existing
+        failed = UsLaceyEngineDocumentRun(
+            **identity,
+            operation_id=operation_id,
+            operation_document_id=operation_document_id,
+            safe_error_code="ENGINE2_SHADOW_FAILED",
+            safe_error_message="Shadow document processing did not complete.",
+        )
+        session.add(failed)
+        return failed
 
     def _run_ai_shadow_document(
         self,
@@ -518,67 +614,64 @@ class UsLaceyEngine2Service:
                 )
             )
 
+            def process_one(row):
+                link, assurance, vault = row
+                success_identity = self._engine2_document_run_identity(
+                    organization_id=organization_id,
+                    assurance_document_id=assurance.id,
+                    source_sha256=vault.sha256,
+                    role_hint=link.document_role,
+                    status="SUCCEEDED",
+                )
+                run = self._find_engine2_document_run(session, **success_identity)
+                if run is not None:
+                    resolution = deserialize_document_resolution(run.resolution_json)
+                else:
+                    with self._vault.materialize_verified_download(
+                        organization_id=organization_id,
+                        document_id=vault.public_id,
+                    ) as download:
+                        resolution = process_document(
+                            filename=vault.original_filename,
+                            content=b"".join(download.iter_chunks()),
+                            role_hint=link.document_role,
+                        )
+                    run = UsLaceyEngineDocumentRun(
+                        **success_identity,
+                        operation_id=operation_id,
+                        operation_document_id=link.id,
+                        resolution_json=serialize_document_resolution(resolution),
+                    )
+                    session.add(run)
+                    session.flush()
+                return link, assurance, vault, resolution
+
+            batch = self._process_engine2_document_batch(
+                documents=tuple(rows),
+                process_one=process_one,
+            )
+
+            for failure in batch.failed:
+                link, assurance, vault = failure.document
+                failed_identity = self._engine2_document_run_identity(
+                    organization_id=organization_id,
+                    assurance_document_id=assurance.id,
+                    source_sha256=vault.sha256,
+                    role_hint=link.document_role,
+                    status="FAILED",
+                )
+                self._get_or_create_failed_engine2_run(
+                    session,
+                    operation_id=operation_id,
+                    operation_document_id=link.id,
+                    identity=failed_identity,
+                )
+
             ai_config = AIProviderConfig.from_env()
             ai_documents: list[_AIShadowDocumentContext] = []
             inputs: list[ShipmentDocumentInput] = []
-            for link, assurance, vault in rows:
-                run = session.scalar(
-                    select(UsLaceyEngineDocumentRun).where(
-                        UsLaceyEngineDocumentRun.organization_id == organization_id,
-                        UsLaceyEngineDocumentRun.assurance_document_id == assurance.id,
-                        UsLaceyEngineDocumentRun.source_sha256 == vault.sha256,
-                        UsLaceyEngineDocumentRun.engine_version == self._engine_version,
-                        UsLaceyEngineDocumentRun.schema_version == DOCUMENT_RESOLUTION_SCHEMA_VERSION,
-                        UsLaceyEngineDocumentRun.role_hint == link.document_role,
-                        UsLaceyEngineDocumentRun.status == "SUCCEEDED",
-                    )
-                )
-                if run is None:
-                    try:
-                        with self._vault.materialize_verified_download(
-                            organization_id=organization_id,
-                            document_id=vault.public_id,
-                        ) as download:
-                            resolution = process_document(
-                                filename=vault.original_filename,
-                                content=b"".join(download.iter_chunks()),
-                                role_hint=link.document_role,
-                            )
-                        run = UsLaceyEngineDocumentRun(
-                            organization_id=organization_id,
-                            operation_id=operation_id,
-                            operation_document_id=link.id,
-                            assurance_document_id=assurance.id,
-                            engine_version=self._engine_version,
-                            schema_version=DOCUMENT_RESOLUTION_SCHEMA_VERSION,
-                            source_sha256=vault.sha256,
-                            role_hint=link.document_role,
-                            status="SUCCEEDED",
-                            resolution_json=serialize_document_resolution(resolution),
-                        )
-                        session.add(run)
-                        session.flush()
-                    except Exception:
-                        session.add(
-                            UsLaceyEngineDocumentRun(
-                                organization_id=organization_id,
-                                operation_id=operation_id,
-                                operation_document_id=link.id,
-                                assurance_document_id=assurance.id,
-                                engine_version=self._engine_version,
-                                schema_version=DOCUMENT_RESOLUTION_SCHEMA_VERSION,
-                                source_sha256=vault.sha256,
-                                role_hint=link.document_role,
-                                status="FAILED",
-                                safe_error_code="ENGINE2_SHADOW_FAILED",
-                                safe_error_message="Shadow document processing did not complete.",
-                            )
-                        )
-                        session.commit()
-                        return ShadowAggregationResult("FAILED")
-                else:
-                    resolution = deserialize_document_resolution(run.resolution_json)
-
+            for success in batch.succeeded:
+                link, assurance, vault, resolution = success.result
                 ai_documents.append(
                     _AIShadowDocumentContext(
                         link=link,
@@ -596,9 +689,8 @@ class UsLaceyEngine2Service:
                     )
                 )
 
-            # AI extraction is non-authoritative. In shadow mode this runs legacy first,
-            # then specialized behind an internal exception boundary. Both persistence
-            # paths use independent sessions from the Engine 2 shipment transaction.
+            # AI extraction remains non-authoritative, but successful sibling documents
+            # can still contribute shadow telemetry even when another source failed.
             self._dispatch_ai_extractors(
                 config=ai_config,
                 organization_id=organization_id,
@@ -607,12 +699,28 @@ class UsLaceyEngine2Service:
                 source_set_fingerprint=fingerprint,
             )
 
+            # Never materialize a shipment snapshot from an incomplete source set.
+            # Mixed outcomes surface as BLOCKED_PARTIAL so callers can distinguish
+            # usable sibling evidence from a total source-processing failure.
+            if batch.status != "SUCCEEDED":
+                session.commit()
+                public_status = "BLOCKED_PARTIAL" if batch.status == "PARTIAL" else "FAILED"
+                return ShadowAggregationResult(
+                    public_status,
+                    succeeded_document_count=len(batch.succeeded),
+                    failed_document_count=len(batch.failed),
+                )
+
             # Existing Engine 2 shipment snapshots are immutable/reusable, but the
             # document loop above still lets newly enabled AI architectures backfill
             # isolated document comparisons without changing that shipment snapshot.
             if existing is not None:
                 session.commit()
-                return ShadowAggregationResult("SUCCEEDED", existing.id)
+                return ShadowAggregationResult(
+                    "SUCCEEDED",
+                    existing.id,
+                    succeeded_document_count=len(batch.succeeded),
+                )
 
             resolution = process_shipment(documents=inputs, ruleset=self._ruleset)
             snapshot = UsLaceyEngineShipmentRun(
@@ -628,7 +736,11 @@ class UsLaceyEngine2Service:
             )
             session.add(snapshot)
             session.commit()
-            return ShadowAggregationResult("SUCCEEDED", snapshot.id)
+            return ShadowAggregationResult(
+                "SUCCEEDED",
+                snapshot.id,
+                succeeded_document_count=len(batch.succeeded),
+            )
         except Exception:
             session.rollback()
             raise

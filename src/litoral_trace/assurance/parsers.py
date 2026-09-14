@@ -14,6 +14,7 @@ from io import BytesIO, StringIO
 import os
 from pathlib import Path, PurePath
 import re
+import shutil
 from tempfile import TemporaryDirectory
 from typing import Any, Iterable
 import zipfile
@@ -339,6 +340,18 @@ def _extract_pdf_text_pages(content: bytes) -> tuple[str, int, int]:
     return text, len(reader.pages), sum(bool(value) for value in page_texts)
 
 
+def _pdf_page_count_with_pdfium(content: bytes) -> int:
+    """Recover a safe page count when pypdf text inspection cannot complete."""
+    import pypdfium2 as pdfium
+
+    document = None
+    try:
+        document = pdfium.PdfDocument(content)
+        return len(document)
+    finally:
+        _safe_close(document)
+
+
 def _ocr_scanned_pdf_with_ocrmypdf(
     content: bytes,
     *,
@@ -426,6 +439,7 @@ def _ocr_scanned_pdf_with_tesseract(
         "ocr_language": _OCR_LANGUAGE,
         "ocr_pages_processed": 0,
         "ocr_timeout_seconds": timeout_seconds,
+        "ocr_binary": "tesseract",
     }
     if page_count <= 0:
         metadata["ocr_error_code"] = "OCR_NO_PAGES"
@@ -433,6 +447,9 @@ def _ocr_scanned_pdf_with_tesseract(
     if page_count > _OCR_MAX_PAGES:
         metadata["ocr_error_code"] = "OCR_PAGE_LIMIT_EXCEEDED"
         metadata["ocr_page_limit"] = _OCR_MAX_PAGES
+        return "", metadata
+    if shutil.which("tesseract") is None:
+        metadata["ocr_error_code"] = "OCR_TESSERACT_BINARY_UNAVAILABLE"
         return "", metadata
 
     try:
@@ -518,12 +535,22 @@ def parse_pdf(content: bytes) -> ParsedDocument:
     if b"%%EOF" not in content[-4096:]:
         raise DocumentParseError("El PDF no contiene un cierre valido.")
 
+    text_extraction_metadata: dict[str, Any] = {}
     try:
         useful_text, page_count, pages_with_text = _extract_pdf_text_pages(content)
     except ImportError as exc:  # pragma: no cover - dependency gate
         raise DocumentParseError("pypdf no esta disponible.") from exc
     except Exception as exc:
-        raise DocumentParseError("No se pudo abrir el PDF.") from exc
+        try:
+            page_count = _pdf_page_count_with_pdfium(content)
+        except Exception as fallback_exc:
+            raise DocumentParseError("No se pudo abrir el PDF.") from fallback_exc
+        useful_text = ""
+        pages_with_text = 0
+        text_extraction_metadata = {
+            "text_extraction_fallback": "pdfium_page_count",
+            "text_extraction_error_type": type(exc).__name__,
+        }
 
     ocr_required = not _has_useful_pdf_text(useful_text)
     ocr_metadata: dict[str, Any] = {
@@ -574,6 +601,7 @@ def parse_pdf(content: bytes) -> ParsedDocument:
         "page_count": page_count,
         "pages_with_text": pages_with_text,
     }
+    metadata.update(text_extraction_metadata)
     metadata.update(ocr_metadata)
     return ParsedDocument(
         file_kind="PDF",

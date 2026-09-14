@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from uuid import NAMESPACE_URL, uuid5
 
 from litoral_trace.lacey_engine.ai_shadow import AICandidate, AIExtractionResult, AI_SHADOW_SCHEMA_VERSION
@@ -110,9 +111,42 @@ def test_runtime_drops_provider_field_outside_specialist_scope_and_warns():
     assert [item.candidate.field_key for item in result.candidates] == ["hts_code"]
     assert result.candidates[0].line_item_key is None
     assert result.candidates[0].source_span_id is None
-    assert result.warnings == ("OUT_OF_SCOPE_FIELD:genus:COMMERCIAL_INVOICE",)
     assert provider.calls[0]["allowed_fields"] == CommercialLineExtractor.allowed_fields
     assert "row" in str(provider.calls[0]["prompt"]).casefold()
+    assert result.warnings == ("OUT_OF_SCOPE_FIELD:genus:COMMERCIAL_INVOICE",)
+
+
+def test_runtime_carries_specialized_row_identity_without_mutating_legacy_candidate():
+    candidate = _candidate("hts_code", "4407110190")
+
+    class Provider:
+        name = "fake"
+        model = "fake-model"
+
+        def extract_scoped(self, **kwargs):
+            return SimpleNamespace(
+                candidates=(candidate,),
+                latency_ms=7,
+                input_tokens=None,
+                output_tokens=None,
+                total_tokens=None,
+                row_identities=(
+                    SimpleNamespace(
+                        line_key="PT-38",
+                        table_id="commercial-lines",
+                        row_index=0,
+                    ),
+                ),
+            )
+
+    result = CommercialLineExtractor(Provider()).extract((_document(),))
+
+    assert len(result.candidates) == 1
+    envelope = result.candidates[0]
+    assert envelope.source_line_key == "PT-38"
+    assert envelope.source_table_id == "commercial-lines"
+    assert envelope.source_row_index == 0
+    assert not hasattr(envelope.candidate, "source_line_key")
 
 
 def test_runtime_drops_candidate_from_page_outside_routed_page_set():

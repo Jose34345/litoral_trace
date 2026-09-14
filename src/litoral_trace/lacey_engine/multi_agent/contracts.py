@@ -73,6 +73,11 @@ class CandidateEnvelope:
     agent_run_id: UUID
     line_item_key: str | None
     source_span_id: UUID | None
+    # Specialized/shadow-only source-row sidecar.  Keep these outside AICandidate so
+    # the legacy extraction/reconciliation contract remains unchanged.
+    source_line_key: str | None = None
+    source_table_id: str | None = None
+    source_row_index: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

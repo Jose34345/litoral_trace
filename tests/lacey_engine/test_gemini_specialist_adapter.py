@@ -57,6 +57,9 @@ def test_adapter_reuses_shared_transport_and_ai_shadow_conversion(monkeypatch):
                             "confidence": 0.99,
                             "bbox": None,
                             "reason": "packaging noise",
+                            "source_line_key": None,
+                            "source_table_id": "commercial-lines",
+                            "source_row_index": 0,
                         },
                         {
                             "field_key": "hts_code",
@@ -67,6 +70,9 @@ def test_adapter_reuses_shared_transport_and_ai_shadow_conversion(monkeypatch):
                             "confidence": 0.96,
                             "bbox": None,
                             "reason": "commercial row",
+                            "source_line_key": "ACT-TRAY-18",
+                            "source_table_id": "commercial-lines",
+                            "source_row_index": 1,
                         },
                     ]
                 }
@@ -85,16 +91,24 @@ def test_adapter_reuses_shared_transport_and_ai_shadow_conversion(monkeypatch):
     )
 
     # The existing deterministic garbage filter still runs through
-    # extraction_result_from_payload and removes the PAL description.
+    # extraction_result_from_payload and removes the PAL description. Its sidecar
+    # identity must be filtered in the same operation so indices remain aligned.
     assert [(candidate.field_key, candidate.value, candidate.page) for candidate in result.candidates] == [
         ("hts_code", "4419.90.9000", 2)
     ]
     assert result.page_count == 1
     assert len(captured_payloads) == 1
+    assert len(result.row_identities) == 1
+    identity = result.row_identities[0]
+    assert identity is not None
+    assert identity.line_key == "ACT-TRAY-18"
+    assert identity.table_id == "commercial-lines"
+    assert identity.row_index == 1
 
     payload = captured_payloads[0]
     prompt_text = payload["input"][0]["text"]
     assert "Extract commercial rows only." in prompt_text
     assert "CLOSED FIELD CONTRACT" in prompt_text
+    assert "same physical merchandise row" in prompt_text
     enum = payload["response_format"]["schema"]["properties"]["candidates"]["items"]["properties"]["field_key"]["enum"]
     assert enum == ["description", "entered_value", "hts_code"]

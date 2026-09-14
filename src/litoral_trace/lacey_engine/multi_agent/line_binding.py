@@ -1,8 +1,9 @@
 """Deterministic commercial/botanical line identity binding.
 
-Binding never asks an LLM to invent identity.  It derives the strongest available key
-from exact evidence in the required priority order: SKU, line number, Engine 2 row
-locator, then a deterministic evidence fingerprint.  Non-line fields remain unbound.
+Binding never asks an LLM to invent identity. It derives the strongest available key
+from exact source-row identity or exact evidence in this order: explicit SKU/line key,
+source-text SKU/line, Engine 2 row locator, specialized table/row sidecar, then a
+deterministic evidence fingerprint. Non-line fields remain unbound.
 """
 from __future__ import annotations
 
@@ -49,6 +50,10 @@ _LINE_LABEL = re.compile(
     r"\b(?:LINE|ITEM)\s*(?:NO\.?|NUMBER|#)?\s*[:#]?\s*(\d{1,6})\b",
     re.I,
 )
+_EXPLICIT_LINE_KEY = re.compile(
+    r"^(?:(?:LINE|ITEM)\s*(?:NO\.?|NUMBER|#)?\s*[:#]?\s*)?(\d{1,6})$",
+    re.I,
+)
 
 
 def source_locator_key(envelope: CandidateEnvelope) -> SourceLocatorKey:
@@ -68,28 +73,34 @@ def derive_line_item_key(
     if envelope.candidate.field_key not in LINE_SCOPED_FIELDS:
         return None
 
+    explicit_key = " ".join((envelope.source_line_key or "").split()).strip()
+    if explicit_key:
+        if _looks_like_sku(explicit_key):
+            return f"SKU:{_normalize_token(explicit_key)}"
+        explicit_line = _EXPLICIT_LINE_KEY.fullmatch(explicit_key)
+        if explicit_line:
+            return f"LINE:{int(explicit_line.group(1))}"
+
     source = " ".join(envelope.candidate.source_text.split()).strip()
-    if not source:
-        return None
+    if source:
+        labelled_sku = _SKU_LABEL.search(source)
+        if labelled_sku:
+            return f"SKU:{_normalize_token(labelled_sku.group(1))}"
 
-    labelled_sku = _SKU_LABEL.search(source)
-    if labelled_sku:
-        return f"SKU:{_normalize_token(labelled_sku.group(1))}"
+        leading = _LEADING_LINE_AND_SKU.search(source)
+        if leading and _looks_like_sku(leading.group(2)):
+            return f"SKU:{_normalize_token(leading.group(2))}"
 
-    leading = _LEADING_LINE_AND_SKU.search(source)
-    if leading and _looks_like_sku(leading.group(2)):
-        return f"SKU:{_normalize_token(leading.group(2))}"
+        leading_sku = _LEADING_SKU.search(source)
+        if leading_sku and _looks_like_sku(leading_sku.group(1)):
+            return f"SKU:{_normalize_token(leading_sku.group(1))}"
 
-    leading_sku = _LEADING_SKU.search(source)
-    if leading_sku and _looks_like_sku(leading_sku.group(1)):
-        return f"SKU:{_normalize_token(leading_sku.group(1))}"
+        labelled_line = _LINE_LABEL.search(source)
+        if labelled_line:
+            return f"LINE:{int(labelled_line.group(1))}"
 
-    labelled_line = _LINE_LABEL.search(source)
-    if labelled_line:
-        return f"LINE:{int(labelled_line.group(1))}"
-
-    if leading:
-        return f"LINE:{int(leading.group(1))}"
+        if leading:
+            return f"LINE:{int(leading.group(1))}"
 
     if row_locator is not None:
         table = _normalize_token(row_locator.table_id)
@@ -99,6 +110,16 @@ def derive_line_item_key(
                 f"T{table}:R{row_locator.row_index}"
             )
 
+    table = _normalize_token(envelope.source_table_id or "")
+    row_index = envelope.source_row_index
+    if table and row_index is not None and row_index >= 0 and envelope.candidate.page >= 1:
+        return (
+            f"ROW:{envelope.document_id}:P{envelope.candidate.page}:"
+            f"T{table}:R{row_index}"
+        )
+
+    if not source:
+        return None
     fingerprint_text = _fingerprintable_text(source)
     if fingerprint_text is None:
         return None
@@ -163,7 +184,7 @@ def _fingerprintable_text(source: str) -> str | None:
     normalized = re.sub(r"[^A-Z0-9]+", " ", source.upper()).strip()
     tokens = normalized.split()
     # A one- or two-token snippet such as "Acacia" or "18,900" is evidence for a
-    # value, not reliable evidence for a row identity.  Leave it explicitly unbound.
+    # value, not reliable evidence for a row identity. Leave it explicitly unbound.
     if len(tokens) < 4 or len(normalized) < 16:
         return None
     return normalized

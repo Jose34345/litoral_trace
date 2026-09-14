@@ -8,6 +8,10 @@ from tests.us_lacey_engine2_postgres import (
     engine2_postgres_engine,
     engine2_postgres_session_factory,
 )
+from tests.test_us_lacey_engine2_partial_failure_postgres import (
+    test_partial_failure_persists_successful_siblings_and_never_snapshots_incomplete_source_set,
+    test_repeated_partial_failure_reuses_one_failed_run_without_unique_violation,
+)
 from tests.test_us_lacey_field_judge_regression_corpus import (
     test_seven_unknown_uploads_remain_seven_current_documents,
 )

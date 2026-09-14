@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 
+from litoral_trace.assurance.ocr_runtime import ensure_tesseract_runtime
 from litoral_trace.us_lacey.shadow_evidence_snapshot import multilingual_shadow_enabled
 from litoral_trace.us_lacey.storage import (
     build_us_lacey_storage_settings,
@@ -70,14 +71,39 @@ def probe_storage_roundtrip() -> str:
     return "not_ready"
 
 
-def live_runtime_status(*, worker_ready: bool, storage_roundtrip: str) -> dict[str, str]:
+def probe_ocr_runtime() -> str:
+    """Verify Tesseract plus the exact English/Spanish language capability needed by OCR."""
+    try:
+        runtime = ensure_tesseract_runtime()
+    except Exception:
+        _LOG.exception("us_lacey_ocr_runtime_probe_failed")
+        return "not_ready"
+    if runtime.ready:
+        _LOG.info("us_lacey_ocr_runtime_ready source=%s", runtime.source)
+        return "ready"
+    _LOG.warning("us_lacey_ocr_runtime_not_ready code=%s", runtime.error_code)
+    return "not_ready"
+
+
+def live_runtime_status(
+    *,
+    worker_ready: bool,
+    storage_roundtrip: str,
+    ocr_runtime: str,
+) -> dict[str, str]:
     """Return a secret-free status document for the deployed free-tier workload."""
     inline_worker = "ready" if worker_ready else "not_ready"
     storage = "ready" if storage_roundtrip == "ready" else "not_ready"
-    overall = "ready" if inline_worker == "ready" and storage == "ready" else "not_ready"
+    ocr = "ready" if ocr_runtime == "ready" else "not_ready"
+    overall = (
+        "ready"
+        if inline_worker == "ready" and storage == "ready" and ocr == "ready"
+        else "not_ready"
+    )
     return {
         "status": overall,
         "inline_worker": inline_worker,
         "storage_roundtrip": storage,
+        "ocr_runtime": ocr,
         "multilingual_shadow": "enabled" if multilingual_shadow_enabled() else "disabled",
     }

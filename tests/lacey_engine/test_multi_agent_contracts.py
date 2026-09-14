@@ -93,6 +93,9 @@ def test_candidate_envelope_wraps_existing_ai_candidate_without_mutating_it():
         "agent_run_id",
         "line_item_key",
         "source_span_id",
+        "source_line_key",
+        "source_table_id",
+        "source_row_index",
     ]
 
 

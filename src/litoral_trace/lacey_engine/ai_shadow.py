@@ -110,6 +110,24 @@ _GARBAGE_FILTER_FIELDS = frozenset({"article_component", "description"})
 _GARBAGE_MARKERS = frozenset({"PAL", "AUX", "PALLET", "CARTON", "BOX"})
 _GARBAGE_CLEAN_EXACT_TOKENS = frozenset({"NA", "NONE"})
 _GARBAGE_MARKER_PATTERN = re.compile(r"(?<![A-Z0-9])(?:PALLET|CARTON|AUX|BOX|PAL)(?![A-Z0-9])")
+_BILL_OF_LADING_LABEL_PATTERN = re.compile(
+    r"(?:^| )"
+    r"(?:bill of lading|b l|bl|bol|conocimiento de embarque|conhecimento de embarque)"
+    r"(?: (?:no|number|numero|nro|nr|n))?"
+    r"(?= |$)"
+)
+_CONTAINER_LABEL_PATTERN = re.compile(
+    r"(?:^| )"
+    r"(?:container(?: (?:no|number|numero|nro|nr|n))?"
+    r"|numero de contenedor|numero de container|numero do conteiner|numero do contentor)"
+    r"(?= |$)"
+)
+_ETA_LABEL_PATTERN = re.compile(
+    r"(?:^| )"
+    r"(?:estimated time of arrival|estimated arrival date|estimated arrival|eta"
+    r"|fecha estimada de llegada|data estimada de chegada|previsao de chegada)"
+    r"(?= |$)"
+)
 
 def _fold(value: str) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
@@ -173,6 +191,52 @@ def _is_deterministic_garbage_candidate(payload: Mapping[str, object]) -> bool:
         return True
     return _GARBAGE_MARKER_PATTERN.search(upper_text) is not None
 
+def _is_directly_anchored_candidate(
+    payload: Mapping[str, object],
+    label_pattern: re.Pattern[str],
+) -> bool:
+    """Require a field value to immediately follow one of its explicit labels."""
+    value = _fold(str(payload.get("value") or ""))
+    source = _fold(str(payload.get("source_text") or ""))
+    if not value or not source:
+        return False
+    for match in label_pattern.finditer(source):
+        remainder = source[match.end():].strip()
+        if remainder == value or remainder.startswith(value + " "):
+            return True
+    return False
+
+def _is_explicit_bill_of_lading_candidate(payload: Mapping[str, object]) -> bool:
+    """Require the candidate value to be directly bound to an explicit B/L label.
+
+    A document title or nearby logistics fields are context only. This prevents vessel,
+    port, ETA, weight, shipper, consignee, and similar values from being promoted to the
+    regulatory bill-of-lading identifier merely because they appear on a B/L page.
+    """
+    return _is_directly_anchored_candidate(payload, _BILL_OF_LADING_LABEL_PATTERN)
+
+def _is_explicit_container_candidate(payload: Mapping[str, object]) -> bool:
+    """Reject vessel, seal, equipment and other logistics values mislabeled as container."""
+    return _is_directly_anchored_candidate(payload, _CONTAINER_LABEL_PATTERN)
+
+def _is_explicit_eta_candidate(payload: Mapping[str, object]) -> bool:
+    """Reject ETD, issue/departure dates and other dates mislabeled as arrival ETA."""
+    return _is_directly_anchored_candidate(payload, _ETA_LABEL_PATTERN)
+
+def _is_semantically_invalid_candidate(payload: Mapping[str, object]) -> bool:
+    field_key = str(payload.get("field_key") or "").strip()
+    if field_key == "bill_of_lading":
+        return not _is_explicit_bill_of_lading_candidate(payload)
+    if field_key == "container_number":
+        return not _is_explicit_container_candidate(payload)
+    if field_key == "estimated_arrival_date":
+        return not _is_explicit_eta_candidate(payload)
+    return False
+
+def _is_rejected_candidate(payload: Mapping[str, object]) -> bool:
+    """Single deterministic admission gate shared by generic and specialist extraction."""
+    return _is_deterministic_garbage_candidate(payload) or _is_semantically_invalid_candidate(payload)
+
 def candidate_from_payload(*, payload: Mapping[str, object], provider: str, model: str) -> AICandidate:
     field_key = str(payload.get("field_key") or "").strip()
     if field_key not in AI_FIELDS:
@@ -215,7 +279,7 @@ def extraction_result_from_payload(*, payload: Mapping[str, object], provider: s
     candidates = tuple(
         candidate_from_payload(payload=item, provider=provider, model=model)
         for item in raw_candidates
-        if not _is_deterministic_garbage_candidate(item)
+        if not _is_rejected_candidate(item)
     )
     return AIExtractionResult(provider, model, AI_SHADOW_SCHEMA_VERSION, candidates, page_count, latency_ms)
 
