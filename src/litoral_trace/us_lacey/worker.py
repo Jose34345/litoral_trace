@@ -4,15 +4,23 @@ from __future__ import annotations
 from contextlib import nullcontext
 from dataclasses import dataclass
 import logging
+import os
 from pathlib import PurePath
+import threading
 from uuid import UUID
 
 from sqlalchemy import select
 
 from litoral_trace.assurance.processing import AssuranceProcessingService
-from litoral_trace.db.models import AssuranceDocument, UsLaceyOperation, VaultDocument
+from litoral_trace.db.models import (
+    AssuranceDocument,
+    UsLaceyEngineDocumentRun,
+    UsLaceyOperation,
+    VaultDocument,
+)
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.services.vault import VaultService
+from litoral_trace.us_lacey import specialized_shadow
 from litoral_trace.us_lacey.ai_review import recommend_open_reconciliation_issues
 from litoral_trace.us_lacey.ai_suggestions import project_verified_ai_suggestions
 from litoral_trace.us_lacey.batch_hardening import (
@@ -27,6 +35,7 @@ from litoral_trace.us_lacey.jobs import (
     claim_next_us_lacey_job,
     complete_us_lacey_job,
     fail_us_lacey_job,
+    heartbeat_us_lacey_job,
     recover_stale_us_lacey_jobs,
 )
 from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_lock
@@ -34,7 +43,11 @@ from litoral_trace.us_lacey.projection import (
     project_assurance_document_to_us_lacey,
     refresh_us_lacey_operation_status,
 )
-from litoral_trace.us_lacey.lacey_engine_service import ENGINE2_SHADOW, UsLaceyEngine2Service, engine2_mode
+from litoral_trace.us_lacey.lacey_engine_service import (
+    ENGINE2_SHADOW,
+    UsLaceyEngine2Service as _BaseUsLaceyEngine2Service,
+    engine2_mode,
+)
 from litoral_trace.us_lacey.shadow_evidence_snapshot import build_shadow_evidence_snapshot
 from litoral_trace.us_lacey.storage import (
     build_us_lacey_storage_settings,
@@ -47,6 +60,140 @@ class UsLaceyWorkerError(RuntimeError):
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+class UsLaceyEngine2Service(_BaseUsLaceyEngine2Service):
+    """Production worker service with durable specialized-source-set idempotency.
+
+    The specialized architecture is shadow-only. Once every document in the exact
+    immutable source set already has a successful specialized run for the configured
+    provider/model, there is no value in downloading the files and invoking Gemini
+    again. Failed or incomplete sets remain retryable.
+    """
+
+    def _specialized_source_set_succeeded(
+        self,
+        *,
+        config,
+        organization_id: int,
+        operation_id: int,
+        documents,
+        source_set_fingerprint: str,
+    ) -> bool:
+        if not documents:
+            return False
+        engine_version = specialized_shadow.specialized_engine_version(
+            provider=config.provider,
+            model=config.model,
+            source_set_fingerprint=source_set_fingerprint,
+        )
+        session = self._session_factory()
+        try:
+            set_tenant_db_context(session, organization_id)
+            for document in documents:
+                existing = session.scalar(
+                    select(UsLaceyEngineDocumentRun).where(
+                        UsLaceyEngineDocumentRun.organization_id == organization_id,
+                        UsLaceyEngineDocumentRun.operation_id == operation_id,
+                        UsLaceyEngineDocumentRun.assurance_document_id
+                        == document.assurance.id,
+                        UsLaceyEngineDocumentRun.source_sha256 == document.vault.sha256,
+                        UsLaceyEngineDocumentRun.engine_version == engine_version,
+                        UsLaceyEngineDocumentRun.schema_version
+                        == specialized_shadow.SPECIALIZED_SHADOW_SCHEMA_VERSION,
+                        UsLaceyEngineDocumentRun.role_hint == document.link.document_role,
+                        UsLaceyEngineDocumentRun.status == "SUCCEEDED",
+                    )
+                )
+                if existing is None:
+                    return False
+            return True
+        finally:
+            session.close()
+
+    def _run_specialized_ai_operation(
+        self,
+        *,
+        config,
+        organization_id: int,
+        operation_id: int,
+        documents,
+        source_set_fingerprint: str,
+    ) -> None:
+        if documents and self._specialized_source_set_succeeded(
+            config=config,
+            organization_id=organization_id,
+            operation_id=operation_id,
+            documents=documents,
+            source_set_fingerprint=source_set_fingerprint,
+        ):
+            LOGGER.info(
+                "Lacey specialized AI shadow source set already persisted",
+                extra={
+                    "organization_id": organization_id,
+                    "operation_id": operation_id,
+                    "document_count": len(documents),
+                    "source_set_fingerprint": source_set_fingerprint,
+                },
+            )
+            return
+        super()._run_specialized_ai_operation(
+            config=config,
+            organization_id=organization_id,
+            operation_id=operation_id,
+            documents=documents,
+            source_set_fingerprint=source_set_fingerprint,
+        )
+
+
+class _UsLaceyJobHeartbeat:
+    """Refresh a RUNNING queue lease while parsers and shadow AI are busy."""
+
+    def __init__(self, *, job_id, worker_id: str, interval_seconds: float) -> None:
+        self._job_id = job_id
+        self._worker_id = worker_id
+        self._interval_seconds = max(float(interval_seconds), 0.001)
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"us-lacey-heartbeat-{job_id}",
+            daemon=True,
+        )
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop_event.wait(self._interval_seconds):
+            try:
+                owned = heartbeat_us_lacey_job(self._job_id, self._worker_id)
+            except Exception:
+                LOGGER.exception(
+                    "U.S. Lacey job heartbeat failed",
+                    extra={"job_id": str(self._job_id), "worker_id": self._worker_id},
+                )
+                continue
+            if not owned:
+                LOGGER.warning(
+                    "U.S. Lacey job heartbeat lost ownership",
+                    extra={"job_id": str(self._job_id), "worker_id": self._worker_id},
+                )
+                return
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout=max(1.0, self._interval_seconds + 1.0))
+
+
+def _job_heartbeat_interval_seconds() -> float:
+    raw = str(os.getenv("US_LACEY_WORKER_HEARTBEAT_SECONDS", "30")).strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        LOGGER.warning("Invalid US_LACEY_WORKER_HEARTBEAT_SECONDS=%r; using 30", raw)
+        return 30.0
+    return max(5.0, min(300.0, value))
 
 
 @dataclass(frozen=True, slots=True)
@@ -338,6 +485,12 @@ def process_one_us_lacey_job(
             conflict_count=0,
         )
 
+    heartbeat = _UsLaceyJobHeartbeat(
+        job_id=job.id,
+        worker_id=worker_id,
+        interval_seconds=_job_heartbeat_interval_seconds(),
+    )
+    heartbeat.start()
     try:
         assurance_public_id = _assurance_public_id(
             organization_id=job.organization_id,
@@ -509,3 +662,5 @@ def process_one_us_lacey_job(
             projected_count=0,
             conflict_count=0,
         )
+    finally:
+        heartbeat.stop()
