@@ -16,6 +16,8 @@ from litoral_trace.db.models import (
     AssuranceDocument,
     UsLaceyEngineDocumentRun,
     UsLaceyOperation,
+    UsLaceyOperationDocument,
+    UsLaceyProcessingJob,
     VaultDocument,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
@@ -253,6 +255,52 @@ def _shadow_engine2(*, organization_id: int, operation_id: int) -> None:
             extra={"organization_id": organization_id, "operation_id": operation_id},
         )
         return
+
+
+def _operation_source_set_ready_for_finalization(
+    *, organization_id: int, operation_id: int, completing_job_id: int,
+) -> bool:
+    """Allow operation-level work only once every current source has reached it.
+
+    The currently owned job is permitted to remain RUNNING. Any sibling queued,
+    retrying or running job -- and any newly attached source without a job yet --
+    defers AI/shadow publication. This is a state barrier, not a timed debounce.
+    """
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, organization_id)
+        sources = session.scalars(
+            select(UsLaceyOperationDocument).where(
+                UsLaceyOperationDocument.organization_id == organization_id,
+                UsLaceyOperationDocument.operation_id == operation_id,
+                UsLaceyOperationDocument.is_current.is_(True),
+            )
+        ).all()
+        if not sources:
+            return False
+        jobs = session.scalars(
+            select(UsLaceyProcessingJob).where(
+                UsLaceyProcessingJob.organization_id == organization_id,
+                UsLaceyProcessingJob.operation_id == operation_id,
+            )
+        ).all()
+        status_by_document = {
+            int(job.assurance_document_id): (int(job.id), str(job.status)) for job in jobs
+        }
+        for source in sources:
+            current = status_by_document.get(int(source.assurance_document_id))
+            if current is None:
+                return False
+            job_id, status = current
+            if job_id == int(completing_job_id):
+                if status != "RUNNING":
+                    return False
+                continue
+            if status != "COMPLETED":
+                return False
+        return True
+    finally:
+        session.close()
 
 
 def _project_engine2_suggestions(*, organization_id: int, operation_id: int) -> int:
@@ -586,34 +634,55 @@ def process_one_us_lacey_job(
                 assurance_document_id=job.assurance_document_id,
             )
 
+            finalize_source_set = (
+                _operation_source_set_ready_for_finalization(
+                    organization_id=job.organization_id,
+                    operation_id=job.operation_id,
+                    completing_job_id=job.id,
+                )
+                if isinstance(assurance_public_id, UUID)
+                else True
+            )
+
             # Run every evidence/recommendation postprocessor while the queue job is
             # still RUNNING and while same-operation projection is serialized. If
             # orchestration itself ever fails unexpectedly, the outer failure boundary
             # can still transition the owned job instead of leaving false terminal work.
-            _shadow_engine2(
-                organization_id=job.organization_id,
-                operation_id=job.operation_id,
-            )
-            _project_engine2_suggestions(
-                organization_id=job.organization_id,
-                operation_id=job.operation_id,
-            )
-            _project_verified_ai_suggestions(
-                organization_id=job.organization_id,
-                operation_id=job.operation_id,
-            )
-            # AI review may annotate existing OPEN conflicts with a bounded recommendation,
-            # but the recommendation cannot resolve an issue or set a field value.
-            _run_ai_review_recommendations(
-                organization_id=job.organization_id,
-                operation_id=job.operation_id,
-            )
+            if finalize_source_set:
+                _shadow_engine2(
+                    organization_id=job.organization_id,
+                    operation_id=job.operation_id,
+                )
+                _project_engine2_suggestions(
+                    organization_id=job.organization_id,
+                    operation_id=job.operation_id,
+                )
+                _project_verified_ai_suggestions(
+                    organization_id=job.organization_id,
+                    operation_id=job.operation_id,
+                )
+                # AI review may annotate existing OPEN conflicts with a bounded recommendation,
+                # but the recommendation cannot resolve an issue or set a field value.
+                _run_ai_review_recommendations(
+                    organization_id=job.organization_id,
+                    operation_id=job.operation_id,
+                )
+            else:
+                LOGGER.info(
+                    "Lacey operation source set not ready; deferred operation-level work",
+                    extra={
+                        "organization_id": job.organization_id,
+                        "operation_id": job.operation_id,
+                        "job_id": job.id,
+                        "stage": "source_set_finalization",
+                    },
+                )
 
         # The multilingual dual-write owns its own operation advisory lock. Run it
         # only after the authoritative projection lock has been released to avoid a
         # nested lock on a separate connection. Any shadow failure is swallowed by
         # the wrapper and cannot alter the legacy queue state.
-        if isinstance(assurance_public_id, UUID):
+        if isinstance(assurance_public_id, UUID) and finalize_source_set:
             _shadow_multilingual_evidence_snapshot(
                 organization_id=job.organization_id,
                 operation_id=job.operation_id,
