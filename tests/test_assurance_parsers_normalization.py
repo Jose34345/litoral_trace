@@ -147,6 +147,33 @@ def test_key_value_matrix_keeps_each_label_bound_to_its_adjacent_value():
     )
 
 
+def test_commercial_table_keeps_two_line_items_in_the_tabular_path():
+    headers, records = _records_from_rows(
+        [
+            ["HTS", "Description", "Quantity", "Value"],
+            ["4407110190", "Pinus taeda boards", "30", "18300.00"],
+            ["4407990190", "Eucalyptus grandis boards", "16", "12640.00"],
+        ],
+        header_index=0,
+    )
+
+    assert headers == ("HTS", "Description", "Quantity", "Value")
+    assert records == (
+        {
+            "HTS": "4407110190",
+            "Description": "Pinus taeda boards",
+            "Quantity": "30",
+            "Value": "18300.00",
+        },
+        {
+            "HTS": "4407990190",
+            "Description": "Eucalyptus grandis boards",
+            "Quantity": "16",
+            "Value": "12640.00",
+        },
+    )
+
+
 def test_csv_parser_detects_semicolon_and_cp1252_encoding():
     payload = "Proveedor;Cantidad;Unidad\r\nAserradero Ñandú;1.250,50;kg\r\nTOTAL;1.250,50;\r\n".encode(
         "cp1252"
