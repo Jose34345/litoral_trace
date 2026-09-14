@@ -88,7 +88,12 @@ def test_ocr_runtime_probe_is_ready_only_when_tesseract_and_languages_verify(mon
     monkeypatch.setattr(
         live_readiness,
         "ensure_tesseract_runtime",
-        lambda: SimpleNamespace(ready=False, source="unavailable", binary=None),
+        lambda: SimpleNamespace(
+            ready=False,
+            source="unavailable",
+            binary=None,
+            error_code="OCR_TESSERACT_BINARY_UNAVAILABLE",
+        ),
     )
     assert live_readiness.probe_ocr_runtime() == "not_ready"
 
