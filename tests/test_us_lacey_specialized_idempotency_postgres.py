@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from litoral_trace.db.models import UsLaceyEngineDocumentRun
 from litoral_trace.us_lacey import specialized_shadow as specialized_module
 from litoral_trace.us_lacey import worker as worker_module
@@ -30,7 +32,12 @@ def test_specialized_same_immutable_source_set_is_not_reexecuted(
     def counted_specialized_run(**kwargs):
         nonlocal calls
         calls += 1
-        return _specialized_success(**kwargs)
+        run = _specialized_success(**kwargs)
+        config = kwargs["config"]
+        # Production specialized extraction is Gemini-backed, so its immutable
+        # engine identity is derived from the configured provider/model. Keep the
+        # fixture on that same contract instead of the generic fixture identity.
+        return replace(run, provider=config.provider, model=config.model)
 
     monkeypatch.setattr(
         specialized_module,
