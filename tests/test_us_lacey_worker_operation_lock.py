@@ -29,6 +29,7 @@ def test_worker_holds_operation_lock_across_projection_postprocessors(monkeypatc
         "_processing_service",
         lambda: SimpleNamespace(process=lambda **_kwargs: "EXTRACTED"),
     )
+    monkeypatch.setattr(worker, "_operation_source_set_ready_for_finalization", lambda **_kwargs: True)
 
     @contextmanager
     def projection_lock(**kwargs):

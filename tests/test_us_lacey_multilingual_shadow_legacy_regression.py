@@ -49,6 +49,7 @@ def _run_authoritative_path(monkeypatch, *, shadow_enabled: bool):
     monkeypatch.setattr(worker, "_preflight_existing_document", lambda **_: legacy_calls.append("preflight"))
     monkeypatch.setattr(worker, "_processing_service", lambda: _ProcessingService(legacy_calls))
     monkeypatch.setattr(worker, "us_lacey_operation_projection_lock", lambda **_: nullcontext())
+    monkeypatch.setattr(worker, "_operation_source_set_ready_for_finalization", lambda **_: True)
 
     def project(**_: object):
         legacy_calls.append("project")

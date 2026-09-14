@@ -352,10 +352,7 @@ def _is_candidate_admissible(
             return False
         return bool(_CONTAINER_TOKEN.search(raw.upper()))
     if target == "bill_of_lading":
-        return bool(
-            re.fullmatch(r"[A-Z0-9][A-Z0-9-]{5,34}", raw, re.IGNORECASE)
-            and any(character.isdigit() for character in raw)
-        )
+        return bool(re.fullmatch(r"[A-Z0-9][A-Z0-9-]{3,34}", raw, re.IGNORECASE))
     if target in {"importer_name", "consignee_name"}:
         if folded in _PARTY_NON_NAMES:
             return False

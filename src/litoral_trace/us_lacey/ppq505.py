@@ -289,12 +289,13 @@ def normalize_bill_of_lading(value: object) -> PpqValidation:
     if missing := _required(value):
         return missing
     normalized = re.sub(r"\s+", " ", str(value).strip().upper())
-    if not re.fullmatch(r"[A-Z0-9][A-Z0-9-]{5,34}", normalized) or not any(
-        character.isdigit() for character in normalized
-    ):
+    # A B/L can be alpha-only (for example, ``BOL-JUDGE``).  Requiring a
+    # four-character suffix keeps a bare vertical-form label such as ``BOL``
+    # from becoming evidence while preserving legitimate short identifiers.
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9-]{3,34}", normalized):
         return _result(
             normalized,
-            "Bill of Lading must be an identifier containing letters or digits, not a field label.",
+            "Bill of Lading must be an identifier, not a field label.",
         )
     return _result(normalized)
 
