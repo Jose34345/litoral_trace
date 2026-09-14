@@ -106,6 +106,48 @@ def _row_nonempty_count(row: Iterable[Any]) -> int:
     return sum(_clean_cell(value) is not None for value in row)
 
 
+def _looks_like_key_value_matrix(rows: list[list[Any]]) -> bool:
+    """Recognize physical label/value pairs, not a conventional header row.
+
+    A matrix is safe to reinterpret only when every populated odd column is a
+    short textual label across the table.  Ambiguous grids retain the existing
+    tabular path rather than inventing a schema.
+    """
+    populated = [list(row) for row in rows if _row_nonempty_count(row)]
+    if len(populated) < 2 or max(map(len, populated)) < 4:
+        return False
+    labels: list[str] = []
+    for row in populated:
+        for index in range(0, len(row), 2):
+            value = _clean_cell(row[index])
+            if value is None:
+                continue
+            text = str(value).strip()
+            if not text or len(text) > 48 or any(character.isdigit() for character in text):
+                return False
+            labels.append(text)
+    return len(labels) >= 4 and len({label.casefold() for label in labels}) >= 4
+
+
+def _records_from_key_value_matrix(rows: list[list[Any]]) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
+    headers: list[str] = []
+    records: list[dict[str, Any]] = []
+    for row in rows:
+        record: dict[str, Any] = {}
+        for index in range(0, len(row), 2):
+            label = _clean_cell(row[index])
+            value = _clean_cell(row[index + 1]) if index + 1 < len(row) else None
+            if label is None or value is None:
+                continue
+            header = _header_label(label, len(headers))
+            if header not in headers:
+                headers.append(header)
+            record[header] = value
+        if record:
+            records.append(record)
+    return tuple(headers), tuple(records)
+
+
 def detect_header_row(rows: list[list[Any]], *, scan_limit: int = 25) -> int | None:
     """Choose the most plausible tabular header among early rows."""
     best_index: int | None = None
@@ -140,6 +182,8 @@ def _records_from_rows(
     *,
     header_index: int,
 ) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
+    if _looks_like_key_value_matrix(rows):
+        return _records_from_key_value_matrix(rows)
     raw_headers = rows[header_index]
     headers = tuple(_header_label(value, index) for index, value in enumerate(raw_headers))
     records: list[dict[str, Any]] = []

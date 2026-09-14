@@ -21,6 +21,7 @@ from litoral_trace.assurance.normalization import (
     normalize_quantity,
 )
 from litoral_trace.assurance.parsers import (
+    _records_from_rows,
     _ocr_timeout_seconds,
     parse_csv,
     parse_pdf,
@@ -119,6 +120,31 @@ def test_xlsx_parser_reads_multiple_sheets_and_skips_total_rows():
     assert len(by_name["Despachos"].rows) == 1
     assert by_name["Despachos"].rows[0]["CUIT"] == "30-70832310-8"
     assert by_name["Despachos"].source.row == 3
+
+
+def test_key_value_matrix_keeps_each_label_bound_to_its_adjacent_value():
+    """A physical BOL matrix must not reuse its first row as column headers."""
+    headers, records = _records_from_rows(
+        [
+            ["BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda."],
+            ["Consignee", "Harborline Timber LLC", "Container", "FSCU7231845"],
+            ["Vessel", "MSC Test", "POL", "Santos"],
+            ["POD", "Houston", "ETA", "2026-10-02"],
+            ["Pieces", "480", None, None],
+        ],
+        header_index=0,
+    )
+
+    assert headers == (
+        "BOL", "Shipper", "Consignee", "Container", "Vessel", "POL", "POD", "ETA", "Pieces"
+    )
+    assert records == (
+        {"BOL": "VSL-SAV-260913-01", "Shipper": "VerdeSul Madeiras Ltda."},
+        {"Consignee": "Harborline Timber LLC", "Container": "FSCU7231845"},
+        {"Vessel": "MSC Test", "POL": "Santos"},
+        {"POD": "Houston", "ETA": "2026-10-02"},
+        {"Pieces": "480"},
+    )
 
 
 def test_csv_parser_detects_semicolon_and_cp1252_encoding():
