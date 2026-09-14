@@ -133,6 +133,7 @@ def test_key_value_matrix_keeps_each_label_bound_to_its_adjacent_value():
             ["Pieces", "480", None, None],
         ],
         header_index=0,
+        allow_key_value_matrix=True,
     )
 
     assert headers == (
@@ -156,6 +157,31 @@ def test_commercial_table_keeps_two_line_items_in_the_tabular_path():
         ],
         header_index=0,
     )
+
+
+@pytest.mark.parametrize(
+    "rows",
+    (
+        [["Country", "Brazil", "Country", "Argentina"]],
+        [[None, "orphan-value", "Container", "FSCU7231845"]],
+        [["Container", None, "ETA", "2026-10-02"]],
+    ),
+)
+def test_ambiguous_key_value_pairs_are_not_reinterpreted(rows):
+    from litoral_trace.assurance.parsers import _looks_like_key_value_matrix
+
+    assert _looks_like_key_value_matrix(rows) is False
+
+
+def test_key_value_matrix_is_opt_in_for_pdf_only():
+    rows = [
+        ["BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda."],
+        ["Consignee", "Harborline Timber LLC", "Container", "FSCU7231845"],
+    ]
+    legacy_headers, _ = _records_from_rows(rows, header_index=0)
+    pdf_headers, _ = _records_from_rows(rows, header_index=0, allow_key_value_matrix=True)
+    assert legacy_headers == ("BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda.")
+    assert pdf_headers == ("BOL", "Shipper", "Consignee", "Container")
 
     assert headers == ("HTS", "Description", "Quantity", "Value")
     assert records == (
