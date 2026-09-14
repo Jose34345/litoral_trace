@@ -25,6 +25,9 @@ from tests.test_us_lacey_shadow_dispatcher_postgres import (
 from tests.test_us_lacey_shadow_worker_postgres import (
     test_worker_completes_and_ui_projects_only_legacy_when_specialized_crashes,
 )
+from tests.test_us_lacey_specialized_idempotency_postgres import (
+    test_specialized_same_immutable_source_set_is_not_reexecuted,
+)
 from tests.test_us_lacey_specialized_projection_postgres import (
     test_runtime_enforce_materializes_stable_line_before_projecting_value,
     test_runtime_enforce_projection_persists_unconfirmed_pending_candidate,
