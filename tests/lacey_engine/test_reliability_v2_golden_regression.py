@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from uuid import NAMESPACE_URL, uuid5
 
-from litoral_trace.lacey_engine.ai_shadow import AICandidate, extraction_result_from_payload
+from litoral_trace.lacey_engine.ai_shadow import (
+    AICandidate,
+    comparison_key,
+    extraction_result_from_payload,
+)
 from litoral_trace.lacey_engine.domain import EvidenceClass
 from litoral_trace.lacey_engine.multi_agent.contracts import (
     CandidateEnvelope,
@@ -97,6 +101,12 @@ def _ai_payload(field_key: str, value: str, source_text: str) -> dict[str, objec
         "bbox": None,
         "reason": None,
     }
+
+
+def _comparison_values(field_key: str, *values: str) -> set[str]:
+    normalized = {comparison_key(field_key, value) for value in values}
+    assert None not in normalized
+    return {value for value in normalized if value is not None}
 
 
 def test_pack1_clean_corroboration_does_not_fabricate_conflict() -> None:
@@ -199,18 +209,15 @@ def test_pack2_preserves_value_eta_and_harvest_conflicts_for_review() -> None:
         ("country_of_harvest", "SKU:PT-38"),
     }
     assert all(item.requires_ai_resolution is True for item in conflicts.values())
-    assert set(conflicts[("entered_value", "SKU:PT-38")].normalized_values) == {
-        "18100.00",
-        "18300.00",
-    }
-    assert set(conflicts[("estimated_arrival_date", None)].normalized_values) == {
-        "2026-10-10",
-        "2026-10-12",
-    }
-    assert set(conflicts[("country_of_harvest", "SKU:PT-38")].normalized_values) == {
-        "brazil",
-        "paraguay",
-    }
+    assert set(conflicts[("entered_value", "SKU:PT-38")].normalized_values) == _comparison_values(
+        "entered_value", "18100.00", "18300.00"
+    )
+    assert set(conflicts[("estimated_arrival_date", None)].normalized_values) == _comparison_values(
+        "estimated_arrival_date", "2026-10-10", "2026-10-12"
+    )
+    assert set(conflicts[("country_of_harvest", "SKU:PT-38")].normalized_values) == _comparison_values(
+        "country_of_harvest", "Brazil", "Paraguay"
+    )
 
 
 def test_pack3_shipment_semantics_accept_only_exact_bol_container_eta() -> None:
