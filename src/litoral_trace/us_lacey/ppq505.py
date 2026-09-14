@@ -284,8 +284,24 @@ def normalize_merchandise_description(value: object) -> PpqValidation:
     return _result(normalized)
 
 
+def normalize_bill_of_lading(value: object) -> PpqValidation:
+    """Accept an identifier, never a vertical-form label as B/L evidence."""
+    if missing := _required(value):
+        return missing
+    normalized = re.sub(r"\s+", " ", str(value).strip().upper())
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9-]{5,34}", normalized) or not any(
+        character.isdigit() for character in normalized
+    ):
+        return _result(
+            normalized,
+            "Bill of Lading must be an identifier containing letters or digits, not a field label.",
+        )
+    return _result(normalized)
+
+
 _VALIDATORS: dict[str, Validator] = {
     "estimated_arrival_date": normalize_arrival_date,
+    "bill_of_lading": normalize_bill_of_lading,
     "filing_entry_reference": normalize_entry_number,
     "manufacturer_id": normalize_mid,
     "merchandise_description": normalize_merchandise_description,
