@@ -34,6 +34,7 @@ from litoral_trace.us_lacey.ppq505 import (
     PPQ505_SHIPMENT_REFERENCE,
     PpqScope,
     is_paper_or_paperboard,
+    is_known_evidence_label,
     validate_ppq_value,
 )
 from litoral_trace.us_lacey.reconciliation_invariants import (
@@ -352,7 +353,9 @@ def _is_candidate_admissible(
             return False
         return bool(_CONTAINER_TOKEN.search(raw.upper()))
     if target == "bill_of_lading":
-        return bool(re.fullmatch(r"[A-Z0-9][A-Z0-9-]{3,34}", raw, re.IGNORECASE))
+        return not is_known_evidence_label(raw) and bool(
+            re.fullmatch(r"[A-Z0-9][A-Z0-9-]{3,34}", raw, re.IGNORECASE)
+        )
     if target in {"importer_name", "consignee_name"}:
         if folded in _PARTY_NON_NAMES:
             return False

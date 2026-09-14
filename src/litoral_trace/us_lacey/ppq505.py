@@ -81,6 +81,44 @@ PPQ505_SHIPMENT_FIELDS = tuple(field for field in PPQ505_FIELDS if field.scope i
 PPQ505_PLANT_FIELDS = tuple(field for field in PPQ505_FIELDS if field.scope is PpqScope.PLANT_LINE)
 PPQ505_SHIPMENT_REFERENCE = "__shipment__"
 
+
+def _fold_evidence_label(value: object) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or ""))
+    normalized = "".join(character for character in normalized if not unicodedata.combining(character))
+    return " ".join(normalized.lower().split())
+
+
+# These are schema/header terms, not field-specific deny-list entries.  They
+# describe the keys a structured shipping document may expose and must never
+# be reinterpreted as the value of another key after provenance is flattened.
+_KNOWN_EVIDENCE_LABELS = frozenset(
+    _fold_evidence_label(label)
+    for label in (
+        *(field.label for field in PPQ505_FIELDS),
+        *(field.key.replace("_", " ") for field in PPQ505_FIELDS),
+        "BOL",
+        "Master BOL",
+        "Master Bill of Lading",
+        "Vessel",
+        "Port of Discharge",
+        "POD",
+        "ETA",
+        "Pieces",
+        "Container",
+        "Container Number",
+        "Consignee",
+        "Broker",
+        "Filer",
+        "HTS",
+        "HTS Code",
+    )
+)
+
+
+def is_known_evidence_label(value: object) -> bool:
+    """Return whether a flattened token is a structured-document key/label."""
+    return _fold_evidence_label(value) in _KNOWN_EVIDENCE_LABELS
+
 # Units accepted by the preparation contract. Values are normalized to the
 # codes used in the workbook, without guessing from an unknown unit.
 PPQ505_ALLOWED_UNITS = frozenset({
@@ -289,6 +327,8 @@ def normalize_bill_of_lading(value: object) -> PpqValidation:
     if missing := _required(value):
         return missing
     normalized = re.sub(r"\s+", " ", str(value).strip().upper())
+    if is_known_evidence_label(normalized):
+        return _result(normalized, "Bill of Lading must be a value, not a document field label.")
     # A B/L can be alpha-only (for example, ``BOL-JUDGE``).  Requiring a
     # four-character suffix keeps a bare vertical-form label such as ``BOL``
     # from becoming evidence while preserving legitimate short identifiers.

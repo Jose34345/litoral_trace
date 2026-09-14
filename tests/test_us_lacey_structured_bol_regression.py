@@ -34,7 +34,7 @@ def test_real_pdf_vertical_kv_preserves_bol_value_not_following_labels():
     assert values == ["VSL-SAV-260913-01"]
 
 
-@pytest.mark.parametrize("value", ["Bill of Lading", "Vessel", "Consignee", "POD", "ETA", "Pieces"])
+@pytest.mark.parametrize("value", ["Bill of Lading", "BOL", "Vessel", "Consignee", "POD", "ETA", "Pieces"])
 def test_bol_admission_and_public_validation_reject_labels(value):
     assert not _is_candidate_admissible("bill_of_lading", value)
     assert validate_ppq_value("bill_of_lading", value).status.value != "VALID"
