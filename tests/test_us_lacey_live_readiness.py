@@ -77,16 +77,34 @@ def test_storage_roundtrip_fails_closed_when_cleanup_fails(monkeypatch):
     assert storage.delete_key == storage.put_key
 
 
-def test_live_runtime_status_requires_successful_worker_heartbeat_and_storage(monkeypatch):
+def test_ocr_runtime_probe_is_ready_only_when_tesseract_and_languages_verify(monkeypatch):
+    monkeypatch.setattr(
+        live_readiness,
+        "ensure_tesseract_runtime",
+        lambda: SimpleNamespace(ready=True, source="portable", binary="/tmp/tesseract"),
+    )
+    assert live_readiness.probe_ocr_runtime() == "ready"
+
+    monkeypatch.setattr(
+        live_readiness,
+        "ensure_tesseract_runtime",
+        lambda: SimpleNamespace(ready=False, source="unavailable", binary=None),
+    )
+    assert live_readiness.probe_ocr_runtime() == "not_ready"
+
+
+def test_live_runtime_status_requires_worker_storage_and_ocr(monkeypatch):
     monkeypatch.delenv("LT_LACEY_MULTILINGUAL_SHADOW", raising=False)
     payload = live_readiness.live_runtime_status(
         worker_ready=True,
         storage_roundtrip="ready",
+        ocr_runtime="ready",
     )
 
     assert payload["status"] == "ready"
     assert payload["inline_worker"] == "ready"
     assert payload["storage_roundtrip"] == "ready"
+    assert payload["ocr_runtime"] == "ready"
     assert "multilingual_shadow" in payload
     assert payload["multilingual_shadow"] == "disabled"
 
@@ -96,13 +114,29 @@ def test_live_runtime_status_fails_closed_without_worker_heartbeat(monkeypatch):
     payload = live_readiness.live_runtime_status(
         worker_ready=False,
         storage_roundtrip="ready",
+        ocr_runtime="ready",
     )
 
     assert payload["status"] == "not_ready"
     assert payload["inline_worker"] == "not_ready"
     assert payload["storage_roundtrip"] == "ready"
+    assert payload["ocr_runtime"] == "ready"
     assert "multilingual_shadow" in payload
     assert payload["multilingual_shadow"] == "disabled"
+
+
+def test_live_runtime_status_fails_closed_without_ocr_runtime(monkeypatch):
+    monkeypatch.delenv("LT_LACEY_MULTILINGUAL_SHADOW", raising=False)
+    payload = live_readiness.live_runtime_status(
+        worker_ready=True,
+        storage_roundtrip="ready",
+        ocr_runtime="not_ready",
+    )
+
+    assert payload["status"] == "not_ready"
+    assert payload["inline_worker"] == "ready"
+    assert payload["storage_roundtrip"] == "ready"
+    assert payload["ocr_runtime"] == "not_ready"
 
 
 def test_free_tier_worker_readiness_requires_fresh_successful_db_heartbeat(monkeypatch):
