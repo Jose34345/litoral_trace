@@ -166,7 +166,9 @@ class _UsLaceyJobHeartbeat:
     def _run(self) -> None:
         while not self._stop_event.wait(self._interval_seconds):
             try:
-                owned = heartbeat_us_lacey_job(self._job_id, self._worker_id)
+                owned = heartbeat_us_lacey_job(
+                    job_id=self._job_id, worker_id=self._worker_id,
+                )
             except Exception:
                 LOGGER.exception(
                     "U.S. Lacey job heartbeat failed",
