@@ -561,10 +561,14 @@ def build_shadow_evidence_snapshot(
             )
             if existing is not None and existing.status == "CURRENT":
                 metrics.generation = existing.generation
+                # rollback expires even primary-key ORM attributes and clears the
+                # transaction-local RLS tenant. Return a scalar captured while the
+                # row is visible, never trigger a tenantless reload afterwards.
+                existing_snapshot_id = int(existing.id)
                 session.rollback()
                 result = SnapshotBuildResult(
                     False,
-                    existing.id,
+                    existing_snapshot_id,
                     fingerprint,
                     "IDEMPOTENT_CURRENT",
                     metrics,
@@ -734,10 +738,11 @@ def build_shadow_evidence_snapshot(
             snapshot.status = "CURRENT"
             snapshot.finalized_at = datetime.now(timezone.utc)
             operation.current_evidence_snapshot_id = snapshot.id
+            snapshot_id = int(snapshot.id)
             session.commit()
 
             reason = "CREATED_EMPTY_EVIDENCE" if metrics.spans_created == 0 else "CREATED"
-            result = SnapshotBuildResult(True, snapshot.id, fingerprint, reason, metrics)
+            result = SnapshotBuildResult(True, snapshot_id, fingerprint, reason, metrics)
             _log_metrics(
                 organization_id=org_id,
                 operation_id=op_id,
