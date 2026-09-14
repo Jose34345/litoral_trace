@@ -169,7 +169,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "047_lacey_semantic_graph (head)" /tmp/alembic-current.txt
+          grep -Fx "048_lacey_source_set_revisions (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -473,7 +473,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "047_lacey_semantic_graph (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "048_lacey_source_set_revisions (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
