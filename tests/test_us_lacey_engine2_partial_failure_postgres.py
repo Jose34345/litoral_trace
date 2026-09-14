@@ -74,8 +74,10 @@ def test_partial_failure_persists_successful_siblings_and_never_snapshots_incomp
         operation_id=operation,
     )
 
-    assert result.status == "FAILED"
+    assert result.status == "BLOCKED_PARTIAL"
     assert result.shipment_run_id is None
+    assert result.succeeded_document_count == 2
+    assert result.failed_document_count == 1
     assert calls == ["bill.pdf", "invoice.pdf", "packing-list.pdf"]
 
     session = tenant_session(factory, org)
@@ -142,7 +144,9 @@ def test_repeated_partial_failure_reuses_one_failed_run_without_unique_violation
         operation_id=operation,
     )
 
-    assert first.status == second.status == "FAILED"
+    assert first.status == second.status == "BLOCKED_PARTIAL"
+    assert first.succeeded_document_count == second.succeeded_document_count == 1
+    assert first.failed_document_count == second.failed_document_count == 1
     # The failing document is retried; the successful sibling is reused from its
     # immutable SUCCEEDED run instead of being reprocessed.
     assert calls == ["bill.pdf", "invoice.pdf", "bill.pdf"]
@@ -174,6 +178,42 @@ def test_repeated_partial_failure_reuses_one_failed_run_without_unique_violation
         .count()
         == 1
     )
+    assert (
+        session.query(UsLaceyEngineShipmentRun)
+        .filter_by(organization_id=org, operation_id=operation)
+        .count()
+        == 0
+    )
+    session.close()
+
+
+def test_all_failed_source_set_remains_failed_not_partial(
+    engine2_postgres_session_factory,
+    monkeypatch,
+):
+    factory = engine2_postgres_session_factory
+    org, operation, _, _, _, _ = create_test_graph(factory, content=b"all-broken")
+
+    def process_document(**_values):
+        raise RuntimeError("synthetic total source failure")
+
+    monkeypatch.setattr(service_module, "process_document", process_document)
+    service = UsLaceyEngine2Service(
+        session_factory=factory,
+        vault_service=FakeVault(b"source"),
+    )
+
+    result = service.resolve_operation_with_engine2(
+        organization_id=org,
+        operation_id=operation,
+    )
+
+    assert result.status == "FAILED"
+    assert result.shipment_run_id is None
+    assert result.succeeded_document_count == 0
+    assert result.failed_document_count == 1
+
+    session = tenant_session(factory, org)
     assert (
         session.query(UsLaceyEngineShipmentRun)
         .filter_by(organization_id=org, operation_id=operation)
