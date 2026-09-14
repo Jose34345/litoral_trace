@@ -157,14 +157,19 @@ def test_commercial_table_keeps_two_line_items_in_the_tabular_path():
         ],
         header_index=0,
     )
+    assert headers == ("HTS", "Description", "Quantity", "Value")
+    assert records == (
+        {"HTS": "4407110190", "Description": "Pinus taeda boards", "Quantity": "30", "Value": "18300.00"},
+        {"HTS": "4407990190", "Description": "Eucalyptus grandis boards", "Quantity": "16", "Value": "12640.00"},
+    )
 
 
 @pytest.mark.parametrize(
     "rows",
     (
-        [["Country", "Brazil", "Country", "Argentina"]],
-        [[None, "orphan-value", "Container", "FSCU7231845"]],
-        [["Container", None, "ETA", "2026-10-02"]],
+        [["Country", "Brazil", "Country", "Argentina"], ["BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda."], ["Consignee", "Harborline Timber LLC", "Container", "FSCU7231845"]],
+        [[None, "orphan-value", "Container", "FSCU7231845"], ["BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda."], ["Consignee", "Harborline Timber LLC", "ETA", "2026-10-02"]],
+        [["Container", None, "ETA", "2026-10-02"], ["BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda."], ["Consignee", "Harborline Timber LLC", "POD", "Houston"]],
     ),
 )
 def test_ambiguous_key_value_pairs_are_not_reinterpreted(rows):
@@ -183,21 +188,11 @@ def test_key_value_matrix_is_opt_in_for_pdf_only():
     assert legacy_headers == ("BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda.")
     assert pdf_headers == ("BOL", "Shipper", "Consignee", "Container")
 
-    assert headers == ("HTS", "Description", "Quantity", "Value")
-    assert records == (
-        {
-            "HTS": "4407110190",
-            "Description": "Pinus taeda boards",
-            "Quantity": "30",
-            "Value": "18300.00",
-        },
-        {
-            "HTS": "4407990190",
-            "Description": "Eucalyptus grandis boards",
-            "Quantity": "16",
-            "Value": "12640.00",
-        },
-    )
+def test_parse_csv_does_not_opt_into_key_value_matrix():
+    payload = b"BOL,VSL-SAV-260913-01,Shipper,VerdeSul Madeiras Ltda.\nConsignee,Harborline Timber LLC,Container,FSCU7231845\n"
+    parsed = parse_csv(payload)
+    assert parsed.tables[0].headers == ("BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda.")
+    assert parsed.tables[0].rows[0]["BOL"] == "Consignee"
 
 
 def test_csv_parser_detects_semicolon_and_cp1252_encoding():
