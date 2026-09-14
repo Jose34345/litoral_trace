@@ -192,7 +192,8 @@ def test_engine2_failed_current_document_blocks_shipment_and_retry_preserves_his
         if values["filename"] == "supplier.pdf" and calls["supplier.pdf"] == 0: calls["supplier.pdf"] += 1; raise RuntimeError("temporary parser failure")
         return resolutions[values["filename"]]
     monkeypatch.setattr(service_module, "process_document", process); service = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"x"))
-    assert service.resolve_operation_with_engine2(organization_id=org, operation_id=operation).status == "FAILED"
+    partial = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
+    assert partial.status == "BLOCKED_PARTIAL" and partial.shipment_run_id is None and partial.succeeded_document_count == 1 and partial.failed_document_count == 1
     session = tenant_session(engine2_postgres_session_factory, org); assert session.query(UsLaceyEngineShipmentRun).filter_by(organization_id=org, operation_id=operation).count() == 0 and session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=supplier[0], status="FAILED").count() == 1; session.close()
     recovered = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); session = tenant_session(engine2_postgres_session_factory, org)
     assert recovered.status == "SUCCEEDED" and session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=supplier[0], status="FAILED").count() == 1 and session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=supplier[0], status="SUCCEEDED").count() == 1 and session.query(UsLaceyEngineShipmentRun).filter_by(id=recovered.shipment_run_id).one().document_count == 2; session.close()
