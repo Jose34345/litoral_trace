@@ -480,6 +480,7 @@ jobs:
           set -euo pipefail
           set -o pipefail
           python -m pytest -q -rs tests/test_us_lacey_multilingual_snapshot_schema.py \
+            tests/test_us_lacey_multilingual_shadow_postgres.py \
             | tee /tmp/multilingual-schema-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/multilingual-schema-postgres.txt; then
             echo "Multilingual snapshot PostgreSQL acceptance must not skip in CI."

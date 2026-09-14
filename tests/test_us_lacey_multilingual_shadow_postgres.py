@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+import os
 
 import pytest
-from sqlalchemy import func, inspect, select
+from sqlalchemy import create_engine, func, inspect, select, text
+from sqlalchemy.orm import sessionmaker
 
 from litoral_trace.db.models import (
     AssuranceDocument,
@@ -82,6 +84,49 @@ def _require_phase_b_schema(engine) -> None:
     }
     if not required.issubset(inspect(engine).get_table_names()):
         pytest.skip("POSTGRES_SCHEMA_NOT_MIGRATED_TO_047")
+
+
+def test_idempotent_snapshot_retry_preserves_identity_across_rls_rollback(
+    monkeypatch, engine2_postgres_engine, engine2_postgres_session_factory,
+):
+    """A runtime-role retry must not reload expired ORM state without its tenant."""
+    _require_phase_b_schema(engine2_postgres_engine)
+    runtime_url = os.environ.get("TEST_POSTGRES_DATABASE_URL")
+    if not runtime_url:
+        pytest.skip("Runtime-role PostgreSQL URL required for RLS regression")
+    monkeypatch.setenv(shadow.SHADOW_FLAG, "1")
+    org, operation_id, _, assurance_id, _, _ = create_test_graph(
+        engine2_postgres_session_factory, content=b"snapshot-rls-retry",
+    )
+    _add_extraction(
+        engine2_postgres_session_factory, organization_id=org,
+        assurance_document_id=assurance_id,
+        values=[("bill_of_lading", "VSL-SAV-260913-01", 1)],
+    )
+    first = shadow.build_shadow_evidence_snapshot(
+        organization_id=org, operation_id=operation_id,
+        use_configured_translation_provider=False,
+        session_factory=engine2_postgres_session_factory, lock_factory=_no_lock,
+    )
+    runtime = create_engine(runtime_url)
+    try:
+        with runtime.connect() as connection:
+            privileges = connection.execute(text(
+                "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"
+            )).one()
+            assert not privileges.rolsuper and not privileges.rolbypassrls
+        again = shadow.build_shadow_evidence_snapshot(
+            organization_id=org, operation_id=operation_id,
+            use_configured_translation_provider=False,
+            session_factory=sessionmaker(bind=runtime, expire_on_commit=False),
+            lock_factory=_no_lock,
+        )
+        assert not again.created
+        assert again.reason == "IDEMPOTENT_CURRENT"
+        assert again.snapshot_id == first.snapshot_id
+        assert again.source_set_fingerprint == first.source_set_fingerprint
+    finally:
+        runtime.dispose()
 
 
 def test_shadow_snapshot_is_operation_wide_idempotent_and_supersedes_atomically(
