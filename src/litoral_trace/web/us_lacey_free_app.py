@@ -25,6 +25,7 @@ from fastapi.responses import HTMLResponse
 from litoral_trace.us_lacey.jobs import recover_stale_us_lacey_jobs
 from litoral_trace.us_lacey.live_readiness import (
     live_runtime_status,
+    probe_ocr_runtime,
     probe_storage_roundtrip,
 )
 from litoral_trace.us_lacey.worker import process_one_us_lacey_job
@@ -187,6 +188,7 @@ async def _free_lifespan(application):
     async with _original_lifespan_context(application) as state:
         _start_inline_worker()
         application.state.us_lacey_storage_roundtrip = probe_storage_roundtrip()
+        application.state.us_lacey_ocr_runtime = probe_ocr_runtime()
         try:
             yield state
         finally:
@@ -202,6 +204,9 @@ def us_lacey_live_readiness(response: Response) -> dict[str, str]:
         worker_ready=_inline_worker_ready(),
         storage_roundtrip=str(
             getattr(app.state, "us_lacey_storage_roundtrip", "not_ready")
+        ),
+        ocr_runtime=str(
+            getattr(app.state, "us_lacey_ocr_runtime", "not_ready")
         ),
     )
     if result["status"] != "ready":
