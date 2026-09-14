@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import PurePath
@@ -54,7 +55,9 @@ from litoral_trace.services.vault import VaultService
 
 SessionFactory = Callable[[], Session | None]
 PARSER_ENGINE = "assurance-deterministic-parser"
-PARSER_ENGINE_VERSION = "1.3.0"
+# Bump when deterministic interpretation changes. Blob identity deliberately
+# remains independent: only the derived extraction cache is invalidated.
+PARSER_ENGINE_VERSION = "1.4.0"
 _DEFAULT_RAW_CELL_PERSIST_LIMIT = 2000
 
 
@@ -96,6 +99,53 @@ def _raw_cell_persist_limit() -> int:
     except ValueError:
         return _DEFAULT_RAW_CELL_PERSIST_LIMIT
     return max(100, min(20_000, value))
+
+
+def _extraction_cache_identity(*, vault_document: VaultDocument, entity_matching_enabled: bool) -> str:
+    """Return the reproducible identity of one derived document interpretation.
+
+    A Vault SHA identifies immutable bytes. This identity additionally captures the
+    deterministic engine, its interpretation version, and configuration which can
+    alter persisted output. It lives on a run, rather than on the blob, so old
+    provenance remains available but cannot be reused incompatibly.
+    """
+    payload = {
+        "content_sha256": str(vault_document.sha256),
+        "engine": PARSER_ENGINE,
+        "engine_version": PARSER_ENGINE_VERSION,
+        "schema_version": "assurance-extraction-v1",
+        "entity_matching_enabled": bool(entity_matching_enabled),
+        "raw_cell_persist_limit": _raw_cell_persist_limit(),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _has_compatible_terminal_run(
+    session: Session,
+    *,
+    organization_id: int,
+    assurance_document_id: int,
+    cache_identity: str,
+) -> bool:
+    """Check derived-result compatibility independently from document terminal state."""
+    runs = session.scalars(
+        select(DocumentExtractionRun)
+        .where(
+            DocumentExtractionRun.organization_id == organization_id,
+            DocumentExtractionRun.assurance_document_id == assurance_document_id,
+            DocumentExtractionRun.engine == PARSER_ENGINE,
+            DocumentExtractionRun.engine_version == PARSER_ENGINE_VERSION,
+            DocumentExtractionRun.status.in_(
+                (ExtractionRunStatus.SUCCEEDED.value, ExtractionRunStatus.NEEDS_REVIEW.value)
+            ),
+        )
+        .order_by(DocumentExtractionRun.id.desc())
+    ).all()
+    return any(
+        str((run.extraction_metadata or {}).get("cache_identity") or "") == cache_identity
+        for run in runs
+    )
 
 
 def _persist_raw_parsed_fields(
@@ -484,11 +534,21 @@ class AssuranceProcessingService:
                 organization_id=org_id,
                 assurance_public_id=public_id,
             )
+            cache_identity = _extraction_cache_identity(
+                vault_document=vault_document,
+                entity_matching_enabled=self._enable_entity_matching,
+            )
 
             if (
                 not force_reprocess
                 and assurance_document.processing_status
                 in {DocumentProcessingStatus.EXTRACTED.value, DocumentProcessingStatus.NEEDS_REVIEW.value}
+                and _has_compatible_terminal_run(
+                    session,
+                    organization_id=org_id,
+                    assurance_document_id=assurance_document.id,
+                    cache_identity=cache_identity,
+                )
             ):
                 return assurance_document.processing_status
 
@@ -502,6 +562,8 @@ class AssuranceProcessingService:
                 extraction_metadata={
                     "force_reprocess": bool(force_reprocess),
                     "entity_matching_enabled": self._enable_entity_matching,
+                    "cache_identity": cache_identity,
+                    "cache_hit": False,
                 },
             )
             session.add(run)
