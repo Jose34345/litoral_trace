@@ -146,6 +146,16 @@ class UsLaceyOperationDocument(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+    __table_args__ = (
+        ForeignKeyConstraint(["operation_id", "organization_id"], ["us_lacey_operations.id", "us_lacey_operations.organization_id"], name="fk_us_lacey_operation_documents_operation_tenant", ondelete="CASCADE"),
+        ForeignKeyConstraint(["assurance_document_id", "organization_id"], ["assurance_documents.id", "assurance_documents.organization_id"], name="fk_us_lacey_operation_documents_assurance_tenant", ondelete="RESTRICT"),
+        UniqueConstraint("id", "organization_id", name="uq_us_lacey_operation_documents_id_org"),
+        UniqueConstraint("organization_id", "operation_id", "assurance_document_id", "version_number", name="uq_us_lacey_operation_documents_version"),
+        CheckConstraint("version_number > 0", name="ck_us_lacey_operation_documents_version"),
+        Index("ix_us_lacey_operation_documents_organization_id", "organization_id"),
+        Index("ix_us_lacey_operation_documents_org_operation", "organization_id", "operation_id"),
+    )
+
 
 class UsLaceySourceSetRevision(Base):
     """Immutable, explicitly sealed source membership for one operation generation."""
@@ -196,15 +206,6 @@ class UsLaceySourceSetMember(Base):
         UniqueConstraint("organization_id", "source_set_revision_id", "operation_document_id", name="uq_lacey_source_member_link"),
         UniqueConstraint("id", "organization_id", name="uq_lacey_source_member_id_org"),
         Index("ix_lacey_source_member_org_revision", "organization_id", "source_set_revision_id"),
-    )
-    __table_args__ = (
-        ForeignKeyConstraint(["operation_id", "organization_id"], ["us_lacey_operations.id", "us_lacey_operations.organization_id"], name="fk_us_lacey_operation_documents_operation_tenant", ondelete="CASCADE"),
-        ForeignKeyConstraint(["assurance_document_id", "organization_id"], ["assurance_documents.id", "assurance_documents.organization_id"], name="fk_us_lacey_operation_documents_assurance_tenant", ondelete="RESTRICT"),
-        UniqueConstraint("id", "organization_id", name="uq_us_lacey_operation_documents_id_org"),
-        UniqueConstraint("organization_id", "operation_id", "assurance_document_id", "version_number", name="uq_us_lacey_operation_documents_version"),
-        CheckConstraint("version_number > 0", name="ck_us_lacey_operation_documents_version"),
-        Index("ix_us_lacey_operation_documents_organization_id", "organization_id"),
-        Index("ix_us_lacey_operation_documents_org_operation", "organization_id", "operation_id"),
     )
 
 
