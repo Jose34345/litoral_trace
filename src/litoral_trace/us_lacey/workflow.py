@@ -20,6 +20,7 @@ from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.ingestion import UsLaceyIngestionResult, UsLaceyIngestionService
 from litoral_trace.us_lacey.jobs import UsLaceyJob, enqueue_us_lacey_document_job
 from litoral_trace.us_lacey.operations import OperationSnapshot, UsLaceyOperationService
+from litoral_trace.us_lacey.source_sets import seal_current_source_set
 
 
 class UsLaceyWorkflowError(RuntimeError):
@@ -133,6 +134,9 @@ def upload_and_enqueue_us_lacey_document(
         document_role=document_role,
     )
     try:
+        # A one-document request is an explicitly complete source set. Multi-file
+        # requests use the batch helper below so no worker can observe a prefix.
+        seal_current_source_set(organization_id=organization_id, operation_id=operation_id)
         job = enqueue_us_lacey_document_job(
             organization_id=organization_id,
             operation_id=operation_id,
@@ -151,4 +155,49 @@ def upload_and_enqueue_us_lacey_document(
             raise
         raise UsLaceyWorkflowError(
             "The document was stored, but processing could not be queued. Retry is safe."
+        ) from exc
+
+
+def upload_and_enqueue_us_lacey_document_batch(
+    *,
+    organization_id: int,
+    user_id: int,
+    operation_public_id: UUID | str,
+    documents: tuple[tuple[str, str, bytes, str], ...],
+    ingestion: UsLaceyIngestionService | None = None,
+    operations: UsLaceyOperationService | None = None,
+) -> tuple[UsLaceyQueuedUpload, ...]:
+    """Attach an entire HTTP batch before sealing or making any job eligible."""
+    if not documents:
+        raise UsLaceyWorkflowError("Choose at least one shipment or supplier document.")
+    operation_service = operations or UsLaceyOperationService()
+    operation_id = operation_service.get_internal_id(
+        organization_id=organization_id, operation_public_id=operation_public_id,
+    )
+    ingestion_service = ingestion or UsLaceyIngestionService()
+    ingested = tuple(
+        ingestion_service.ingest_document(
+            organization_id=organization_id, user_id=user_id,
+            operation_public_id=operation_public_id, filename=filename,
+            content_type=content_type, content=content, document_role=document_role,
+        )
+        for filename, content_type, content, document_role in documents
+    )
+    seal_current_source_set(organization_id=organization_id, operation_id=operation_id)
+    try:
+        queued = tuple(
+            UsLaceyQueuedUpload(
+                ingestion=item,
+                job=enqueue_us_lacey_document_job(
+                    organization_id=organization_id, operation_id=operation_id,
+                    assurance_document_id=item.assurance_document_id,
+                ),
+            )
+            for item in ingested
+        )
+        _mark_operation_processing(organization_id=organization_id, operation_id=operation_id)
+        return queued
+    except Exception as exc:
+        raise UsLaceyWorkflowError(
+            "The document batch was stored, but processing could not be queued. Retry is safe."
         ) from exc

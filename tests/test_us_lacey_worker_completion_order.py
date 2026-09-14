@@ -149,7 +149,7 @@ def test_worker_defers_operation_ai_until_every_current_source_is_terminal(monke
     )
     monkeypatch.setattr(worker, "_preflight_existing_document", lambda **_: None)
     monkeypatch.setattr(worker, "us_lacey_operation_projection_lock", lambda **_: nullcontext())
-    monkeypatch.setattr(worker, "_operation_source_set_ready_for_finalization", lambda **_: False)
+    monkeypatch.setattr(worker, "_claim_source_set_finalization", lambda **_: SimpleNamespace(claimed=False, fingerprint=None))
     monkeypatch.setattr(worker, "_shadow_multilingual_evidence_snapshot", lambda **_: calls.append("snapshot"))
     monkeypatch.setattr(worker, "complete_us_lacey_job", lambda **_: calls.append("complete") or True)
     monkeypatch.setattr(worker, "_refresh_operation", lambda **_: calls.append("refresh") or "PROCESSING")

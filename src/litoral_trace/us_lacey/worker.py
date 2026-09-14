@@ -41,6 +41,7 @@ from litoral_trace.us_lacey.jobs import (
     recover_stale_us_lacey_jobs,
 )
 from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_lock
+from litoral_trace.us_lacey.source_sets import SourceSetClaim, claim_ready_source_set, finalize_claim
 from litoral_trace.us_lacey.projection import (
     project_assurance_document_to_us_lacey,
     refresh_us_lacey_operation_status,
@@ -301,6 +302,15 @@ def _operation_source_set_ready_for_finalization(
         return True
     finally:
         session.close()
+
+
+def _claim_source_set_finalization(*, organization_id: int, operation_id: int, completing_job_id: int) -> SourceSetClaim:
+    """Claim one sealed generation; never infer completion from a transient read."""
+    return claim_ready_source_set(
+        organization_id=organization_id,
+        operation_id=operation_id,
+        completing_job_id=completing_job_id,
+    )
 
 
 def _project_engine2_suggestions(*, organization_id: int, operation_id: int) -> int:
@@ -634,15 +644,16 @@ def process_one_us_lacey_job(
                 assurance_document_id=job.assurance_document_id,
             )
 
-            finalize_source_set = (
-                _operation_source_set_ready_for_finalization(
+            source_set_claim = (
+                _claim_source_set_finalization(
                     organization_id=job.organization_id,
                     operation_id=job.operation_id,
                     completing_job_id=job.id,
                 )
                 if isinstance(assurance_public_id, UUID)
-                else True
+                else SourceSetClaim(None, None, None, True, "TEST")
             )
+            finalize_source_set = source_set_claim.claimed
 
             # Run every evidence/recommendation postprocessor while the queue job is
             # still RUNNING and while same-operation projection is serialized. If
@@ -687,6 +698,11 @@ def process_one_us_lacey_job(
                 organization_id=job.organization_id,
                 operation_id=job.operation_id,
             )
+            if not finalize_claim(organization_id=job.organization_id, claim=source_set_claim):
+                LOGGER.info(
+                    "Lacey source-set finalization superseded before publication",
+                    extra={"organization_id": job.organization_id, "operation_id": job.operation_id, "job_id": job.id, "stage": "source_set_finalization", "source_set_fingerprint": source_set_claim.fingerprint},
+                )
 
         # COMPLETED is the final queue transition, after the full processing chain.
         if not complete_us_lacey_job(job_id=job.id, worker_id=worker_id):
