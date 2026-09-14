@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from litoral_trace.db.models import UsLaceyEngineDocumentRun
-from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey import specialized_shadow as specialized_module
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 from litoral_trace.us_lacey.specialized_shadow import SPECIALIZED_SHADOW_SCHEMA_VERSION
@@ -10,6 +9,7 @@ from tests.test_us_lacey_specialized_projection_postgres import _configure_proje
 from tests.us_lacey_engine2_postgres import (
     FakeVault,
     create_test_graph,
+    engine2_postgres_engine,
     engine2_postgres_session_factory,
     tenant_session,
 )
