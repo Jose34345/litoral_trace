@@ -62,6 +62,8 @@ def engine2_mode() -> str:
 class ShadowAggregationResult:
     status: str
     shipment_run_id: int | None = None
+    succeeded_document_count: int = 0
+    failed_document_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -698,18 +700,27 @@ class UsLaceyEngine2Service:
             )
 
             # Never materialize a shipment snapshot from an incomplete source set.
-            # Internally PARTIAL distinguishes mixed outcomes, while the public result
-            # preserves the historical FAILED contract whenever any current source fails.
+            # Mixed outcomes surface as BLOCKED_PARTIAL so callers can distinguish
+            # usable sibling evidence from a total source-processing failure.
             if batch.status != "SUCCEEDED":
                 session.commit()
-                return ShadowAggregationResult("FAILED")
+                public_status = "BLOCKED_PARTIAL" if batch.status == "PARTIAL" else "FAILED"
+                return ShadowAggregationResult(
+                    public_status,
+                    succeeded_document_count=len(batch.succeeded),
+                    failed_document_count=len(batch.failed),
+                )
 
             # Existing Engine 2 shipment snapshots are immutable/reusable, but the
             # document loop above still lets newly enabled AI architectures backfill
             # isolated document comparisons without changing that shipment snapshot.
             if existing is not None:
                 session.commit()
-                return ShadowAggregationResult("SUCCEEDED", existing.id)
+                return ShadowAggregationResult(
+                    "SUCCEEDED",
+                    existing.id,
+                    succeeded_document_count=len(batch.succeeded),
+                )
 
             resolution = process_shipment(documents=inputs, ruleset=self._ruleset)
             snapshot = UsLaceyEngineShipmentRun(
@@ -725,7 +736,11 @@ class UsLaceyEngine2Service:
             )
             session.add(snapshot)
             session.commit()
-            return ShadowAggregationResult("SUCCEEDED", snapshot.id)
+            return ShadowAggregationResult(
+                "SUCCEEDED",
+                snapshot.id,
+                succeeded_document_count=len(batch.succeeded),
+            )
         except Exception:
             session.rollback()
             raise
