@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from litoral_trace.db.models import UsLaceyEngineDocumentRun
 from litoral_trace.us_lacey import specialized_shadow as specialized_module
-from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
+from litoral_trace.us_lacey import worker as worker_module
 from litoral_trace.us_lacey.specialized_shadow import SPECIALIZED_SHADOW_SCHEMA_VERSION
 from tests.test_us_lacey_shadow_dispatcher_postgres import _specialized_success
 from tests.test_us_lacey_specialized_projection_postgres import _configure_projection
@@ -38,7 +38,7 @@ def test_specialized_same_immutable_source_set_is_not_reexecuted(
         counted_specialized_run,
     )
 
-    service = UsLaceyEngine2Service(
+    service = worker_module.UsLaceyEngine2Service(
         session_factory=engine2_postgres_session_factory,
         vault_service=FakeVault(b"specialized-source-set-idempotency"),
     )
