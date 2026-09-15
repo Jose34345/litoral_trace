@@ -408,3 +408,66 @@ def test_recurring_source_set_creates_a_new_generation_instead_of_reviving_histo
     assert [item.id for item in revisions if item.is_current] == [revision_a2.id]
     assert revisions[0].source_set_fingerprint == revisions[2].source_set_fingerprint
     session.close()
+
+
+def test_claim_fails_closed_when_current_documents_changed_after_seal(
+    engine2_postgres_engine,
+    engine2_postgres_session_factory,
+) -> None:
+    """A partial post-seal attachment cannot let an obsolete revision finalize."""
+    _require_source_set_schema(engine2_postgres_engine)
+    org, operation_id, _, assurance_document_id, _, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        role="UNKNOWN",
+        content=b"stale-membership-source-a",
+    )
+    revision = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation_id,
+        session_factory=engine2_postgres_session_factory,
+    )
+    session = tenant_session(engine2_postgres_session_factory, org)
+    operation_public_id = session.get(UsLaceyOperation, operation_id).public_id
+    session.close()
+
+    job = enqueue_us_lacey_document_job(
+        organization_id=org,
+        operation_id=operation_id,
+        assurance_document_id=assurance_document_id,
+    )
+    session = tenant_session(engine2_postgres_session_factory, org)
+    persisted_job = session.get(UsLaceyProcessingJob, job.id)
+    persisted_job.status = "RUNNING"
+    session.commit()
+    session.close()
+
+    new_assurance_document_id = _add_unattached_assurance_document(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        filename="stale-membership-source-b.pdf",
+        content=b"stale-membership-source-b",
+    )
+    UsLaceyOperationService(
+        session_factory=engine2_postgres_session_factory,
+    ).attach_document(
+        organization_id=org,
+        operation_public_id=operation_public_id,
+        assurance_document_id=new_assurance_document_id,
+        document_role="UNKNOWN",
+    )
+
+    claim = claim_ready_source_set(
+        organization_id=org,
+        operation_id=operation_id,
+        completing_job_id=job.id,
+        session_factory=engine2_postgres_session_factory,
+    )
+
+    assert claim.claimed is False
+    assert claim.revision_id == revision.id
+    assert claim.reason == "SOURCE_SET_CHANGED"
+    session = tenant_session(engine2_postgres_session_factory, org)
+    persisted_revision = session.get(UsLaceySourceSetRevision, revision.id)
+    assert persisted_revision.status == "SEALED"
+    assert persisted_revision.is_current is True
+    session.close()
