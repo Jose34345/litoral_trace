@@ -30,25 +30,28 @@ def _sealed(factory):
     return result
 
 
-def _mark_newer_running_attempt(factory, *, org, job_id, locked_at, worker_id="worker-b"):
+def _mark_newer_running_attempt(factory, *, org, job_id, worker_id="worker-b"):
+    """Start a later attempt using the database clock, matching queue-claim ordering."""
     session = tenant_session(factory, org)
-    session.execute(
+    locked_at = session.execute(
         text(
             """
             UPDATE public.us_lacey_processing_jobs
             SET attempt_count = attempt_count + 1,
                 status = 'RUNNING',
                 locked_by = :worker_id,
-                locked_at = :locked_at,
-                heartbeat_at = :locked_at,
-                updated_at = :locked_at
+                locked_at = clock_timestamp(),
+                heartbeat_at = clock_timestamp(),
+                updated_at = clock_timestamp()
             WHERE id = :job_id
+            RETURNING locked_at
             """
         ),
-        {"job_id": job_id, "locked_at": locked_at, "worker_id": worker_id},
-    )
+        {"job_id": job_id, "worker_id": worker_id},
+    ).scalar_one()
     session.commit()
     session.close()
+    return locked_at
 
 
 def test_two_finalizers_have_one_persistent_cas_winner(engine2_postgres_session_factory):
@@ -107,14 +110,14 @@ def test_retry_attempt_reclaims_abandoned_finalizing_revision_and_fences_stale_c
     revision = session.get(UsLaceySourceSetRevision, revision_id)
     assert revision.status == "FINALIZING"
     assert revision.claimed_at is not None
-    retry_locked_at = revision.claimed_at + timedelta(seconds=1)
+    prior_claimed_at = revision.claimed_at
     session.close()
-    _mark_newer_running_attempt(
+    retry_locked_at = _mark_newer_running_attempt(
         engine2_postgres_session_factory,
         org=org,
         job_id=job_id,
-        locked_at=retry_locked_at,
     )
+    assert retry_locked_at > prior_claimed_at
 
     retry = claim_ready_source_set(
         organization_id=org,
@@ -153,12 +156,12 @@ def test_concurrent_retry_reclaim_has_one_cas_winner(engine2_postgres_session_fa
     )
     assert first.claimed and first.claimed_at is not None
 
-    _mark_newer_running_attempt(
+    retry_locked_at = _mark_newer_running_attempt(
         engine2_postgres_session_factory,
         org=org,
         job_id=job_id,
-        locked_at=first.claimed_at + timedelta(seconds=1),
     )
+    assert retry_locked_at > first.claimed_at
 
     def reclaim(_):
         return claim_ready_source_set(
