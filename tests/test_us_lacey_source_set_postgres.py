@@ -49,8 +49,17 @@ def test_stale_claim_cannot_publish_after_new_generation_becomes_current(engine2
     session.commit(); session.close()
     assert not finalize_claim(organization_id=org, claim=claim, session_factory=engine2_postgres_session_factory)
     session = tenant_session(engine2_postgres_session_factory, org)
-    assert session.get(UsLaceySourceSetRevision, revision_id).status == "FINALIZING"
-    assert session.scalar(select(UsLaceySourceSetRevision.generation).where(UsLaceySourceSetRevision.is_current.is_(True))) == 2
+    stale = session.get(UsLaceySourceSetRevision, revision_id)
+    assert stale.status == "FINALIZING"
+    assert stale.is_current is False
+    current = session.scalars(select(UsLaceySourceSetRevision).where(
+        UsLaceySourceSetRevision.organization_id == org,
+        UsLaceySourceSetRevision.operation_id == operation,
+        UsLaceySourceSetRevision.is_current.is_(True),
+    )).all()
+    assert len(current) == 1
+    assert current[0].generation == 2
+    assert current[0].source_set_fingerprint == "b" * 64
     session.close()
 
 
