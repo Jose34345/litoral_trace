@@ -14,7 +14,7 @@ from litoral_trace.db.models import (
 )
 from litoral_trace.us_lacey.jobs import claim_next_us_lacey_job, recover_stale_us_lacey_jobs
 from litoral_trace.us_lacey.source_sets import SourceSetClaim, claim_ready_source_set, finalize_claim, seal_current_source_set
-from tests.us_lacey_engine2_postgres import create_test_graph, engine2_postgres_engine, engine2_postgres_session_factory, tenant_session
+from tests.us_lacey_engine2_postgres import add_test_document, create_test_graph, engine2_postgres_engine, engine2_postgres_session_factory, tenant_session
 
 
 def _sealed(factory):
@@ -113,6 +113,39 @@ def test_stale_claim_cannot_publish_after_new_generation_becomes_current(engine2
     assert len(current) == 1
     assert current[0].generation == 2
     assert current[0].source_set_fingerprint == "b" * 64
+    session.close()
+
+
+def test_finalize_claim_fails_closed_when_current_documents_changed_after_claim(engine2_postgres_session_factory):
+    """A post-claim membership change cannot publish the older revision FINALIZED."""
+    org, operation, revision_id, job_id = _sealed(engine2_postgres_session_factory)
+    claim = claim_ready_source_set(
+        organization_id=org,
+        operation_id=operation,
+        completing_job_id=job_id,
+        session_factory=engine2_postgres_session_factory,
+    )
+    assert claim.claimed
+
+    add_test_document(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        operation_id=operation,
+        role="UNKNOWN",
+        filename="post-claim-source-set-change.pdf",
+        content=b"post-claim-source-set-change",
+        is_current=True,
+    )
+
+    assert not finalize_claim(
+        organization_id=org,
+        claim=claim,
+        session_factory=engine2_postgres_session_factory,
+    )
+    session = tenant_session(engine2_postgres_session_factory, org)
+    revision = session.get(UsLaceySourceSetRevision, revision_id)
+    assert revision.status == "FINALIZING"
+    assert revision.is_current is True
     session.close()
 
 
