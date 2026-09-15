@@ -24,7 +24,7 @@ from .semantic_graph import (
     valid_mid_value,
 )
 
-ENGINE_VERSION = "lacey-engine-2.1.0"
+ENGINE_VERSION = "lacey-engine-2.2.0"
 _FIELDS = (
     "estimated_arrival_date",
     "bill_of_lading",
@@ -63,7 +63,7 @@ _PERCENT_RECYCLED_LABEL = re.compile(r"(?:percent recycled|recycled percentage|%
 
 
 def _candidate(field: str, value: str, block, label: str, evidence=EvidenceClass.EXPLICIT, derived_from=None) -> RawCandidate:
-    return RawCandidate(field, value, value, block, evidence, f"lacey.{field}", "2.1.0", derived_from, label)
+    return RawCandidate(field, value, value, block, evidence, f"lacey.{field}", "2.2.0", derived_from, label)
 
 
 def _normalized_date(value: str) -> str | None:
@@ -200,7 +200,11 @@ def _extract(layout):
                 _append_party(found, target="consignee_name", address_target="consignee_address", value=value, block=block, label=key)
             elif re.fullmatch(r"consignee(?:'s)? address|consignee address", lower):
                 found["consignee_address"].append(_candidate("consignee_address", value, block, key))
-            elif _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(key):
+            elif _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(key) or (
+                _table_context(block) and lower == "description"
+            ):
+                # Plain "Description" is meaningful only inside a structured line
+                # table. Outside that context it remains too generic to admit.
                 found["description"].append(_candidate("description", value, block, key))
             elif _ENTRY_LABEL.fullmatch(key):
                 found["filing_entry_reference"].append(_candidate("filing_entry_reference", value.upper(), block, key))

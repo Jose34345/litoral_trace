@@ -139,16 +139,134 @@ def bind_line_item(
     )
 
 
+def _semantic_text(value: object) -> str:
+    return re.sub(r"[^A-Z0-9]+", " ", str(value or "").upper()).strip()
+
+
+def _candidate_value(envelope: CandidateEnvelope) -> str:
+    return str(
+        envelope.candidate.normalized_value
+        or envelope.candidate.value
+        or ""
+    ).strip()
+
+
+def _taxonomy_phrases(group: Sequence[CandidateEnvelope]) -> frozenset[str]:
+    """Return explicit two-token-or-better botanical identities for one SKU group."""
+    genera = {
+        _semantic_text(_candidate_value(item))
+        for item in group
+        if item.candidate.field_key == "genus" and _candidate_value(item)
+    }
+    species = {
+        _semantic_text(_candidate_value(item))
+        for item in group
+        if item.candidate.field_key == "species" and _candidate_value(item)
+    }
+    phrases: set[str] = set()
+    for value in species:
+        if len(value.split()) >= 2:
+            phrases.add(value)
+            continue
+        for genus in genera:
+            combined = f"{genus} {value}".strip()
+            if len(combined.split()) >= 2:
+                phrases.add(combined)
+    return frozenset(phrases)
+
+
+def _description_texts(group: Sequence[CandidateEnvelope]) -> frozenset[str]:
+    return frozenset(
+        _semantic_text(_candidate_value(item))
+        for item in group
+        if item.candidate.field_key in {"description", "article_component"}
+        and _candidate_value(item)
+    )
+
+
+def _group_matches_sku(
+    source_group: Sequence[CandidateEnvelope],
+    sku_group: Sequence[CandidateEnvelope],
+) -> bool:
+    """Require explicit semantic agreement; never join lines by ordinal alone."""
+    source_descriptions = _description_texts(source_group)
+    sku_descriptions = _description_texts(sku_group)
+    if source_descriptions and sku_descriptions and source_descriptions & sku_descriptions:
+        return True
+
+    taxonomy = _taxonomy_phrases(sku_group)
+    return any(
+        phrase and phrase in description
+        for description in source_descriptions
+        for phrase in taxonomy
+    )
+
+
+def _reconcile_to_unique_sku(
+    bound: Sequence[CandidateEnvelope],
+) -> tuple[CandidateEnvelope, ...]:
+    """Canonicalize non-SKU line keys only when one unique SKU is semantically proven.
+
+    A line number is local to a document and is therefore never enough to link two
+    documents. Reconciliation requires exact description equality or an explicit
+    genus+species phrase contained in the commercial description. Ambiguous matches
+    remain separate for human review.
+    """
+    groups: dict[str, list[CandidateEnvelope]] = {}
+    for envelope in bound:
+        if envelope.line_item_key:
+            groups.setdefault(envelope.line_item_key, []).append(envelope)
+
+    sku_groups = {
+        key: tuple(group)
+        for key, group in groups.items()
+        if key.startswith("SKU:")
+    }
+    if not sku_groups:
+        return tuple(bound)
+
+    proposals: dict[str, str] = {}
+    for source_key, source_group in groups.items():
+        if source_key.startswith("SKU:"):
+            continue
+        matches = [
+            sku_key
+            for sku_key, sku_group in sku_groups.items()
+            if _group_matches_sku(source_group, sku_group)
+        ]
+        if len(matches) == 1:
+            proposals[source_key] = matches[0]
+
+    # Enforce one-to-one reconciliation. If two local rows claim the same SKU, no
+    # automatic rewrite is safe because the evidence cannot distinguish them.
+    reverse_counts: dict[str, int] = {}
+    for sku_key in proposals.values():
+        reverse_counts[sku_key] = reverse_counts.get(sku_key, 0) + 1
+    accepted = {
+        source_key: sku_key
+        for source_key, sku_key in proposals.items()
+        if reverse_counts[sku_key] == 1
+    }
+    if not accepted:
+        return tuple(bound)
+
+    return tuple(
+        replace(envelope, line_item_key=accepted.get(envelope.line_item_key, envelope.line_item_key))
+        for envelope in bound
+    )
+
+
 def bind_line_items(
     candidates: Sequence[CandidateEnvelope],
     *,
     row_locators: Mapping[SourceLocatorKey, RowLocator] | None = None,
 ) -> tuple[CandidateEnvelope, ...]:
     row_locators = row_locators or {}
-    return tuple(
+    bound = tuple(
         bind_line_item(candidate, row_locator=row_locators.get(source_locator_key(candidate)))
         for candidate in candidates
     )
+    return _reconcile_to_unique_sku(bound)
 
 
 def line_item_binding_accuracy(

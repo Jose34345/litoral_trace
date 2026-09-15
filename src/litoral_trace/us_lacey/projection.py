@@ -146,6 +146,21 @@ _LINE_ALLOCATION_IDENTITY_HEADERS = frozenset(
         "plant quantity",
     }
 )
+_LINE_NUMBER_HEADERS = frozenset(
+    {"line", "line no", "line number", "item", "item no", "item number"}
+)
+_CUSTOMS_HTS_HEADERS = frozenset(
+    {"hts", "hts code", "hts number", "htsus"}
+)
+_CUSTOMS_DESCRIPTION_HEADERS = frozenset(
+    {"description", "commodity description", "description of goods", "goods description"}
+)
+_COMMERCIAL_PRODUCT_ID_HEADERS = frozenset(
+    {"sku", "item code", "product code", "part number", "part no"}
+)
+_COMMERCIAL_UNIT_PRICE_HEADERS = frozenset(
+    {"unit price", "unit cost", "price per unit", "unit value"}
+)
 
 _STRUCTURAL_ARTIFACTS_BY_TARGET = {
     "container_number": frozenset(
@@ -232,6 +247,9 @@ _PLANT_ROW_IDENTITY_TARGETS = frozenset(
         "percent_recycled",
     }
 )
+_CUSTOMS_LINE_ROW_TARGETS = frozenset(
+    {"hts_code", "merchandise_description", "entered_value"}
+)
 _MAX_AUTO_PLANT_LINES = 500
 
 
@@ -288,7 +306,26 @@ def _is_plant_declaration_table(headers: frozenset[str]) -> bool:
 
 
 def _is_line_allocation_table(headers: frozenset[str]) -> bool:
-    return "entered value" in headers and bool(headers & _LINE_ALLOCATION_IDENTITY_HEADERS)
+    if "entered value" not in headers:
+        return False
+    if headers & _LINE_ALLOCATION_IDENTITY_HEADERS:
+        return True
+    # A row with both a commercial product identifier and unit pricing is a sales /
+    # invoice merchandise row, not sufficient evidence of a PPQ/customs allocation.
+    # Fail closed even when it also contains Line + HTS + Description + Entered Value.
+    if (
+        headers & _COMMERCIAL_PRODUCT_ID_HEADERS
+        and headers & _COMMERCIAL_UNIT_PRICE_HEADERS
+    ):
+        return False
+    # Customs entry worksheets often carry no botanical columns. Require the full
+    # row signature (line + HTS + description + entered value) while keeping
+    # commercial pricing tables outside the regulatory-line path above.
+    return (
+        bool(headers & _LINE_NUMBER_HEADERS)
+        and bool(headers & _CUSTOMS_HTS_HEADERS)
+        and bool(headers & _CUSTOMS_DESCRIPTION_HEADERS)
+    )
 
 
 def _description_candidate_role(row: ExtractedDocumentField, value: object) -> str | None:
@@ -456,16 +493,23 @@ def _explicit_plant_data_rows(
     *,
     table_headers,
 ) -> tuple[int, ...]:
-    """Return explicit table rows that carry plant-line identity evidence.
+    """Return explicit table rows that carry line-identity evidence.
 
-    Row numbers are evidence locators, not inferred declaration facts. Restricting
-    materialization to plant identity fields prevents shipment totals or generic
-    invoice rows from manufacturing declaration lines.
+    Botanical declaration rows remain the primary source. Customs entry rows may
+    also establish independent PPQ line skeletons, but only when the enclosing table
+    has the strong line + HTS + description + entered-value signature. This makes
+    upload order irrelevant without allowing shipment totals to manufacture lines.
     """
     rows: set[int] = set()
     for source in extracted:
         target, _priority = _target_field(source, table_headers=table_headers)
-        if target not in _PLANT_ROW_IDENTITY_TARGETS:
+        context_headers = _table_header_context(source, table_headers)
+        is_plant_identity = target in _PLANT_ROW_IDENTITY_TARGETS
+        is_customs_line_identity = (
+            target in _CUSTOMS_LINE_ROW_TARGETS
+            and _is_line_allocation_table(context_headers)
+        )
+        if not (is_plant_identity or is_customs_line_identity):
             continue
         match = _DATA_ROW.search(str(source.source_locator or ""))
         if match is None:
