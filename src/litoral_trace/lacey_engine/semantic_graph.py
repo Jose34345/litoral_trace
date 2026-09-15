@@ -143,7 +143,8 @@ def semantic_normalize(field_key: str, value: object) -> str:
         if match:
             currency = (match.group(1) or ("USD" if "$" in raw else "")).upper()
             amount = Decimal(match.group(2).replace(",", "")).normalize()
-            return f"{currency} {amount}".strip()
+            amount_text = format(amount, "f")
+            return f"{currency} {amount_text}".strip()
         return fold_text(raw)
     if key == "percent_recycled":
         number = re.search(r"-?[0-9][0-9,]*(?:\.[0-9]+)?", raw)
