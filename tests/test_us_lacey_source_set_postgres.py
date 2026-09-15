@@ -1,16 +1,19 @@
-"""PostgreSQL acceptance for source-set CAS and stale-publication guards."""
+"""PostgreSQL acceptance for source-set CAS, recovery and tenant isolation."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+import os
 
-from sqlalchemy import select, text
+from sqlalchemy import create_engine, select, text, update
+from sqlalchemy.orm import sessionmaker
 
+from litoral_trace.config.settings import normalize_database_url
 from litoral_trace.db.models import (
     UsLaceyProcessingJob,
     UsLaceySourceSetMember,
     UsLaceySourceSetRevision,
 )
 from litoral_trace.us_lacey.jobs import claim_next_us_lacey_job, recover_stale_us_lacey_jobs
-from litoral_trace.us_lacey.source_sets import SourceSetClaim, claim_ready_source_set, finalize_claim
+from litoral_trace.us_lacey.source_sets import SourceSetClaim, claim_ready_source_set, finalize_claim, seal_current_source_set
 from tests.us_lacey_engine2_postgres import create_test_graph, engine2_postgres_engine, engine2_postgres_session_factory, tenant_session
 
 
@@ -28,6 +31,23 @@ def _sealed(factory):
     result = org, operation, revision.id, job.id
     session.close()
     return result
+
+
+def _add_running_job(factory, *, org, operation, assurance):
+    session = tenant_session(factory, org)
+    job = UsLaceyProcessingJob(
+        organization_id=org,
+        operation_id=operation,
+        assurance_document_id=assurance,
+        status="RUNNING",
+        max_attempts=3,
+        available_at=datetime.now(timezone.utc),
+    )
+    session.add(job)
+    session.commit()
+    job_id = int(job.id)
+    session.close()
+    return job_id
 
 
 def _mark_newer_running_attempt(factory, *, org, job_id, worker_id="worker-b"):
@@ -268,3 +288,93 @@ def test_real_queue_stale_recovery_reclaims_finalizing_source_set(engine2_postgr
     revision = session.get(UsLaceySourceSetRevision, revision_id)
     assert revision.status == "FINALIZED"
     session.close()
+
+
+def test_source_set_revisions_members_and_claim_are_runtime_tenant_isolated(engine2_postgres_session_factory):
+    org_a, operation_a, _, assurance_a, _, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        content=b"source-set-tenant-a",
+    )
+    org_b, operation_b, _, assurance_b, _, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        content=b"source-set-tenant-b",
+    )
+    revision_a = seal_current_source_set(
+        organization_id=org_a,
+        operation_id=operation_a,
+        session_factory=engine2_postgres_session_factory,
+    )
+    revision_b = seal_current_source_set(
+        organization_id=org_b,
+        operation_id=operation_b,
+        session_factory=engine2_postgres_session_factory,
+    )
+    job_a = _add_running_job(
+        engine2_postgres_session_factory,
+        org=org_a,
+        operation=operation_a,
+        assurance=assurance_a,
+    )
+    _add_running_job(
+        engine2_postgres_session_factory,
+        org=org_b,
+        operation=operation_b,
+        assurance=assurance_b,
+    )
+
+    runtime_url = os.environ.get("TEST_POSTGRES_DATABASE_URL")
+    assert runtime_url, "TEST_POSTGRES_DATABASE_URL is required for source-set RLS acceptance"
+    runtime_engine = create_engine(normalize_database_url(runtime_url), pool_pre_ping=True)
+    RuntimeFactory = sessionmaker(bind=runtime_engine, expire_on_commit=False)
+    try:
+        session = tenant_session(RuntimeFactory, org_a)
+        visible_revisions = session.scalars(
+            select(UsLaceySourceSetRevision).order_by(UsLaceySourceSetRevision.id)
+        ).all()
+        visible_members = session.scalars(
+            select(UsLaceySourceSetMember).order_by(UsLaceySourceSetMember.id)
+        ).all()
+        assert [item.id for item in visible_revisions] == [revision_a.id]
+        assert visible_revisions[0].organization_id == org_a
+        assert {item.organization_id for item in visible_members} == {org_a}
+        assert {item.source_set_revision_id for item in visible_members} == {revision_a.id}
+        assert session.get(UsLaceySourceSetRevision, revision_b.id) is None
+        cross_tenant_update = session.execute(
+            update(UsLaceySourceSetRevision)
+            .where(UsLaceySourceSetRevision.id == revision_b.id)
+            .values(status="SUPERSEDED")
+        )
+        assert cross_tenant_update.rowcount == 0
+        session.commit()
+        session.close()
+
+        claim_a = claim_ready_source_set(
+            organization_id=org_a,
+            operation_id=operation_a,
+            completing_job_id=job_a,
+            session_factory=RuntimeFactory,
+        )
+        assert claim_a.claimed
+        assert claim_a.reason == "CLAIMED"
+        assert finalize_claim(
+            organization_id=org_a,
+            claim=claim_a,
+            session_factory=RuntimeFactory,
+        )
+
+        session = tenant_session(RuntimeFactory, org_b)
+        visible_b = session.scalars(
+            select(UsLaceySourceSetRevision).order_by(UsLaceySourceSetRevision.id)
+        ).all()
+        assert [item.id for item in visible_b] == [revision_b.id]
+        assert visible_b[0].status == "SEALED"
+        assert session.get(UsLaceySourceSetRevision, revision_a.id) is None
+        session.close()
+
+        audit = tenant_session(engine2_postgres_session_factory, org_b)
+        untouched_b = audit.get(UsLaceySourceSetRevision, revision_b.id)
+        assert untouched_b.status == "SEALED"
+        assert untouched_b.is_current is True
+        audit.close()
+    finally:
+        runtime_engine.dispose()
