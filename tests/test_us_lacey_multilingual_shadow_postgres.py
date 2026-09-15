@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+import hashlib
+import os
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, inspect, select
+from sqlalchemy import create_engine, func, inspect, select, text
+from sqlalchemy.orm import sessionmaker
 
 from litoral_trace.db.models import (
     AssuranceDocument,
@@ -13,10 +19,15 @@ from litoral_trace.db.models import (
     SemanticEvidenceNode,
     UsLaceyEvidenceSnapshot,
     UsLaceyOperation,
+    UsLaceyOperationDocument,
+    UsLaceySourceSetRevision,
     VaultDocument,
 )
 from litoral_trace.us_lacey import shadow_evidence_snapshot as shadow
+from litoral_trace.us_lacey.operations import UsLaceyOperationService
 from litoral_trace.us_lacey.shadow_evidence_snapshot import ShadowEvidenceSnapshotError
+from litoral_trace.us_lacey.source_sets import seal_current_source_set
+from litoral_trace.services.translation import TranslationResult
 from tests.us_lacey_engine2_postgres import (
     add_test_document,
     create_test_graph,
@@ -71,6 +82,43 @@ def _add_extraction(
     return run_id
 
 
+def _add_unattached_assurance_document(
+    factory,
+    *,
+    organization_id: int,
+    filename: str,
+    content: bytes,
+) -> int:
+    """Persist a real extracted assurance document without an operation link."""
+    session = tenant_session(factory, organization_id)
+    suffix = uuid4().hex
+    vault = VaultDocument(
+        organization_id=organization_id,
+        original_filename=filename,
+        content_type="application/pdf",
+        size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+        object_key=f"tests/{suffix}",
+        storage_backend="s3",
+        storage_bucket="tests",
+        document_type="OTHER_EVIDENCE",
+        status="available",
+    )
+    session.add(vault)
+    session.flush()
+    assurance = AssuranceDocument(
+        organization_id=organization_id,
+        vault_document_id=vault.id,
+        semantic_document_type="UNKNOWN",
+        processing_status="EXTRACTED",
+    )
+    session.add(assurance)
+    session.commit()
+    assurance_document_id = assurance.id
+    session.close()
+    return assurance_document_id
+
+
 def _require_phase_b_schema(engine) -> None:
     required = {
         "us_lacey_evidence_snapshots",
@@ -82,6 +130,49 @@ def _require_phase_b_schema(engine) -> None:
     }
     if not required.issubset(inspect(engine).get_table_names()):
         pytest.skip("POSTGRES_SCHEMA_NOT_MIGRATED_TO_047")
+
+
+def test_idempotent_snapshot_retry_preserves_identity_across_rls_rollback(
+    monkeypatch, engine2_postgres_engine, engine2_postgres_session_factory,
+):
+    """A runtime-role retry must not reload expired ORM state without its tenant."""
+    _require_phase_b_schema(engine2_postgres_engine)
+    runtime_url = os.environ.get("TEST_POSTGRES_DATABASE_URL")
+    if not runtime_url:
+        pytest.skip("Runtime-role PostgreSQL URL required for RLS regression")
+    monkeypatch.setenv(shadow.SHADOW_FLAG, "1")
+    org, operation_id, _, assurance_id, _, _ = create_test_graph(
+        engine2_postgres_session_factory, content=b"snapshot-rls-retry",
+    )
+    _add_extraction(
+        engine2_postgres_session_factory, organization_id=org,
+        assurance_document_id=assurance_id,
+        values=[("bill_of_lading", "VSL-SAV-260913-01", 1)],
+    )
+    first = shadow.build_shadow_evidence_snapshot(
+        organization_id=org, operation_id=operation_id,
+        use_configured_translation_provider=False,
+        session_factory=engine2_postgres_session_factory, lock_factory=_no_lock,
+    )
+    runtime = create_engine(runtime_url)
+    try:
+        with runtime.connect() as connection:
+            privileges = connection.execute(text(
+                "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"
+            )).one()
+            assert not privileges.rolsuper and not privileges.rolbypassrls
+        again = shadow.build_shadow_evidence_snapshot(
+            organization_id=org, operation_id=operation_id,
+            use_configured_translation_provider=False,
+            session_factory=sessionmaker(bind=runtime, expire_on_commit=False),
+            lock_factory=_no_lock,
+        )
+        assert not again.created
+        assert again.reason == "IDEMPOTENT_CURRENT"
+        assert again.snapshot_id == first.snapshot_id
+        assert again.source_set_fingerprint == first.source_set_fingerprint
+    finally:
+        runtime.dispose()
 
 
 def test_shadow_snapshot_is_operation_wide_idempotent_and_supersedes_atomically(
@@ -389,3 +480,146 @@ def test_shadow_snapshot_rejects_cross_tenant_operation_scope(
         )
     ) == 0
     session_b.close()
+
+
+class BlockingTestTranslationProvider:
+    """Pause snapshot construction through its existing injectable provider boundary."""
+
+    def __init__(self) -> None:
+        self.entered = Event()
+        self.release = Event()
+        self.timed_out = Event()
+
+    def translate(self, text: str, source: str, target: str = "en") -> TranslationResult:
+        self.entered.set()
+        if not self.release.wait(timeout=15):
+            self.timed_out.set()
+        return TranslationResult(
+            translated_text=f"translated:{text}",
+            source_language=source,
+            target_language=target,
+            provider="blocking-test",
+            model_name="blocking-test",
+            model_version="1",
+        )
+
+
+def test_real_attachment_waits_for_snapshot_operation_lock_before_sealing_next_revision(
+    monkeypatch,
+    engine2_postgres_engine,
+    engine2_postgres_session_factory,
+):
+    """The real attachment workflow must serialize behind snapshot N's operation lock."""
+    _require_phase_b_schema(engine2_postgres_engine)
+    monkeypatch.setenv(shadow.SHADOW_FLAG, "1")
+    org, operation_id, first_link_id, first_assurance_id, _, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        role="COMMERCIAL_INVOICE",
+        content=b"stale-snapshot-n",
+    )
+    _add_extraction(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        assurance_document_id=first_assurance_id,
+        values=[("country_of_harvest", "País de cosecha declarado en Brasil", 1)],
+    )
+    replacement_assurance_id = _add_unattached_assurance_document(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        filename="replacement-invoice.pdf",
+        content=b"stale-snapshot-n-plus-one",
+    )
+    _add_extraction(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        assurance_document_id=replacement_assurance_id,
+        values=[("country_of_harvest", "País de colheita declarado no Brasil", 1)],
+    )
+    session = tenant_session(engine2_postgres_session_factory, org)
+    replacement_links = session.scalar(
+        select(func.count(UsLaceyOperationDocument.id)).where(
+            UsLaceyOperationDocument.organization_id == org,
+            UsLaceyOperationDocument.assurance_document_id == replacement_assurance_id,
+        )
+    )
+    assert replacement_links == 0
+    session.close()
+    revision_n = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation_id,
+        session_factory=engine2_postgres_session_factory,
+    )
+    provider = BlockingTestTranslationProvider()
+    attach_started = Event()
+    attach_completed = Event()
+    service = UsLaceyOperationService(session_factory=engine2_postgres_session_factory)
+    session = tenant_session(engine2_postgres_session_factory, org)
+    operation_public_id = session.get(UsLaceyOperation, operation_id).public_id
+    session.close()
+
+    def build_n():
+        return shadow.build_shadow_evidence_snapshot(
+            organization_id=org,
+            operation_id=operation_id,
+            translation_provider=provider,
+            use_configured_translation_provider=False,
+            session_factory=engine2_postgres_session_factory,
+            lock_factory=_no_lock,
+        )
+
+    def advance_to_n_plus_one():
+        attach_started.set()
+        link_id = service.attach_document(
+            organization_id=org,
+            operation_public_id=operation_public_id,
+            assurance_document_id=replacement_assurance_id,
+            document_role="COMMERCIAL_INVOICE",
+        )
+        attach_completed.set()
+        return link_id
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        n_future = pool.submit(build_n)
+        assert provider.entered.wait(timeout=10), "N never entered real translation"
+        n_plus_one_future = pool.submit(advance_to_n_plus_one)
+        try:
+            assert attach_started.wait(timeout=10), "real attach_document did not start"
+            assert not attach_completed.wait(timeout=10), (
+                "real attach_document completed while snapshot N still held operation lock"
+            )
+            assert not provider.timed_out.is_set()
+        finally:
+            # Record attachment blocking before releasing N; no provider assertion
+            # can be swallowed by the production translation failure boundary.
+            provider.release.set()
+            stale_result = n_future.result(timeout=20)
+            replacement_link_id = n_plus_one_future.result(timeout=20)
+
+    assert not provider.timed_out.is_set()
+    assert attach_completed.is_set()
+    session = tenant_session(engine2_postgres_session_factory, org)
+    replacement_link = session.get(UsLaceyOperationDocument, replacement_link_id)
+    first_link = session.get(UsLaceyOperationDocument, first_link_id)
+    assert replacement_link is not None
+    assert replacement_link.assurance_document_id == replacement_assurance_id
+    assert replacement_link.is_current is True
+    assert first_link.is_current is False
+    session.close()
+    revision_n_plus_one = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation_id,
+        session_factory=engine2_postgres_session_factory,
+    )
+    session = tenant_session(engine2_postgres_session_factory, org)
+    persisted_n = session.get(UsLaceySourceSetRevision, revision_n.id)
+    persisted_n_plus_one = session.get(UsLaceySourceSetRevision, revision_n_plus_one.id)
+    assert persisted_n.is_current is False
+    assert persisted_n_plus_one.is_current is True
+    assert persisted_n_plus_one.generation == persisted_n.generation + 1
+    assert persisted_n_plus_one.source_set_fingerprint != persisted_n.source_set_fingerprint
+    stale_snapshot = session.get(UsLaceyEvidenceSnapshot, stale_result.snapshot_id)
+    operation = session.get(UsLaceyOperation, operation_id)
+    assert stale_snapshot.status == "CURRENT"
+    assert operation.current_evidence_snapshot_id == stale_snapshot.id
+    assert replacement_link_id != first_link_id
+    session.close()

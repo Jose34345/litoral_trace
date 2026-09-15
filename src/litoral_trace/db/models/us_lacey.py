@@ -145,6 +145,7 @@ class UsLaceyOperationDocument(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
     __table_args__ = (
         ForeignKeyConstraint(["operation_id", "organization_id"], ["us_lacey_operations.id", "us_lacey_operations.organization_id"], name="fk_us_lacey_operation_documents_operation_tenant", ondelete="CASCADE"),
         ForeignKeyConstraint(["assurance_document_id", "organization_id"], ["assurance_documents.id", "assurance_documents.organization_id"], name="fk_us_lacey_operation_documents_assurance_tenant", ondelete="RESTRICT"),
@@ -153,6 +154,58 @@ class UsLaceyOperationDocument(Base):
         CheckConstraint("version_number > 0", name="ck_us_lacey_operation_documents_version"),
         Index("ix_us_lacey_operation_documents_organization_id", "organization_id"),
         Index("ix_us_lacey_operation_documents_org_operation", "organization_id", "operation_id"),
+    )
+
+
+class UsLaceySourceSetRevision(Base):
+    """Immutable, explicitly sealed source membership for one operation generation."""
+
+    __tablename__ = "us_lacey_source_set_revisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    operation_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_set_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    document_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="OPEN")
+    is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(["operation_id", "organization_id"], ["us_lacey_operations.id", "us_lacey_operations.organization_id"], name="fk_lacey_source_revision_operation_tenant", ondelete="CASCADE"),
+        UniqueConstraint("id", "organization_id", name="uq_lacey_source_revision_id_org"),
+        UniqueConstraint("organization_id", "operation_id", "generation", name="uq_lacey_source_revision_generation"),
+        CheckConstraint("generation > 0", name="ck_lacey_source_revision_generation"),
+        CheckConstraint("document_count > 0", name="ck_lacey_source_revision_document_count"),
+        CheckConstraint("status IN ('OPEN','SEALED','FINALIZING','FINALIZED','SUPERSEDED')", name="ck_lacey_source_revision_status"),
+        Index("ix_lacey_source_revision_org_operation_current", "organization_id", "operation_id", "is_current"),
+        Index("ix_lacey_source_revision_org_operation_fingerprint", "organization_id", "operation_id", "source_set_fingerprint"),
+    )
+
+
+class UsLaceySourceSetMember(Base):
+    """Historical member snapshot of a sealed source-set revision."""
+
+    __tablename__ = "us_lacey_source_set_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_set_revision_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    operation_document_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    assurance_document_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(["source_set_revision_id", "organization_id"], ["us_lacey_source_set_revisions.id", "us_lacey_source_set_revisions.organization_id"], name="fk_lacey_source_member_revision_tenant", ondelete="CASCADE"),
+        ForeignKeyConstraint(["operation_document_id", "organization_id"], ["us_lacey_operation_documents.id", "us_lacey_operation_documents.organization_id"], name="fk_lacey_source_member_link_tenant", ondelete="RESTRICT"),
+        ForeignKeyConstraint(["assurance_document_id", "organization_id"], ["assurance_documents.id", "assurance_documents.organization_id"], name="fk_lacey_source_member_assurance_tenant", ondelete="RESTRICT"),
+        UniqueConstraint("organization_id", "source_set_revision_id", "operation_document_id", name="uq_lacey_source_member_link"),
+        UniqueConstraint("id", "organization_id", name="uq_lacey_source_member_id_org"),
+        Index("ix_lacey_source_member_org_revision", "organization_id", "source_set_revision_id"),
     )
 
 

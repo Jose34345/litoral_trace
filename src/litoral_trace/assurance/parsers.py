@@ -114,7 +114,10 @@ def _looks_like_key_value_matrix(rows: list[list[Any]]) -> bool:
     tabular path rather than inventing a schema.
     """
     populated = [list(row) for row in rows if _row_nonempty_count(row)]
-    if len(populated) < 2 or max(map(len, populated)) < 4:
+    # PDF extractors commonly emit a vertical form as two physical columns. It
+    # has the same label -> adjacent value semantics as the four-column layout.
+    # Other formats retain the legacy path because the caller must opt in.
+    if len(populated) < 2 or max(map(len, populated)) < 2:
         return False
     labels: list[str] = []
     for row in populated:

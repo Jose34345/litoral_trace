@@ -16,6 +16,7 @@ on:
       - "alembic/versions/045_add_lacey_evidence_snapshots.py"
       - "alembic/versions/046_add_multilingual_text_spans.py"
       - "alembic/versions/047_add_semantic_evidence_graph.py"
+      - "alembic/versions/048_add_lacey_source_set_revisions.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/web/us_lacey_*"
       - "src/litoral_trace/services/us_lacey_admin.py"
@@ -169,7 +170,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "047_lacey_semantic_graph (head)" /tmp/alembic-current.txt
+          grep -Fx "048_lacey_source_set_revisions (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -473,13 +474,14 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "047_lacey_semantic_graph (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "048_lacey_source_set_revisions (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
           set -euo pipefail
           set -o pipefail
           python -m pytest -q -rs tests/test_us_lacey_multilingual_snapshot_schema.py \
+            tests/test_us_lacey_multilingual_shadow_postgres.py \
             | tee /tmp/multilingual-schema-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/multilingual-schema-postgres.txt; then
             echo "Multilingual snapshot PostgreSQL acceptance must not skip in CI."
@@ -498,6 +500,21 @@ jobs:
             | tee /tmp/engine2-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/engine2-postgres.txt; then
             echo "Engine 2 PostgreSQL acceptance tests must not skip in CI."
+            exit 1
+          fi
+      - name: Prove source-set CAS lifecycle and stale-publication guard
+        env:
+          DATABASE_URL: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs \
+            tests/test_us_lacey_source_set_postgres.py \
+            tests/test_us_lacey_source_set_worker_postgres.py \
+            | tee /tmp/source-set-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/source-set-postgres.txt; then
+            echo "Source-set PostgreSQL acceptance must not skip in CI."
             exit 1
           fi
       - name: Prove platform-admin control-plane capabilities

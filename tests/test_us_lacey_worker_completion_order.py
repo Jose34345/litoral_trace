@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from types import SimpleNamespace
+from uuid import uuid4
 
 from litoral_trace.us_lacey import worker
 
@@ -134,3 +136,26 @@ def test_unexpected_postprocessing_failure_cannot_leave_false_completed_job(monk
     assert result.document_status is None
     assert result.projected_count == 0
     assert result.conflict_count == 0
+
+
+def test_worker_defers_operation_ai_until_every_current_source_is_terminal(monkeypatch) -> None:
+    calls: list[str] = []
+    _stub_success_path(monkeypatch, calls)
+    monkeypatch.setattr(worker, "_assurance_public_id", lambda **_: uuid4())
+    monkeypatch.setattr(
+        worker,
+        "_document_descriptor",
+        lambda **_: SimpleNamespace(filename="document.pdf", size_bytes=1, vault_public_id=uuid4()),
+    )
+    monkeypatch.setattr(worker, "_preflight_existing_document", lambda **_: None)
+    monkeypatch.setattr(worker, "us_lacey_operation_projection_lock", lambda **_: nullcontext())
+    monkeypatch.setattr(worker, "_claim_source_set_finalization", lambda **_: SimpleNamespace(claimed=False, fingerprint=None))
+    monkeypatch.setattr(worker, "_shadow_multilingual_evidence_snapshot", lambda **_: calls.append("snapshot"))
+    monkeypatch.setattr(worker, "complete_us_lacey_job", lambda **_: calls.append("complete") or True)
+    monkeypatch.setattr(worker, "_refresh_operation", lambda **_: calls.append("refresh") or "PROCESSING")
+    monkeypatch.setattr(worker, "fail_us_lacey_job", lambda **_: (_ for _ in ()).throw(AssertionError()))
+
+    result = worker.process_one_us_lacey_job(worker_id="worker-test")
+
+    assert calls == ["process", "project", "complete", "refresh"]
+    assert result.operation_status == "PROCESSING"

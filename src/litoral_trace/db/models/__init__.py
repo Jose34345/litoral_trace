@@ -34,6 +34,8 @@ from litoral_trace.db.models.us_lacey import (
     UsLaceyEngineShipmentRun,
     UsLaceyOperation,
     UsLaceyOperationDocument,
+    UsLaceySourceSetRevision,
+    UsLaceySourceSetMember,
     UsLaceyOperationField,
     UsLaceyOrganizationProfile,
     UsLaceyPpqPlantLine,

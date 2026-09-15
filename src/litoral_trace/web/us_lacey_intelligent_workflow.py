@@ -49,6 +49,7 @@ from litoral_trace.us_lacey.workflow import (
     UsLaceyWorkflowError,
     create_us_lacey_customer_operation,
     upload_and_enqueue_us_lacey_document,
+    upload_and_enqueue_us_lacey_document_batch,
 )
 from litoral_trace.web.us_lacey_operational_views import render_operation_workspace
 from litoral_trace.web.us_lacey_portal_views import render_message_page
@@ -209,16 +210,12 @@ async def upload_first_operation_intake(
             client_reference=_operation_reference(),
             line_references=("1",),
         )
-        for filename, content_type, content in payloads:
-            upload_and_enqueue_us_lacey_document(
-                organization_id=identity.organization_id,
-                user_id=identity.user_id,
-                operation_public_id=created.public_id,
-                filename=filename,
-                content_type=content_type,
-                content=content,
-                document_role="UNKNOWN",
-            )
+        upload_and_enqueue_us_lacey_document_batch(
+            organization_id=identity.organization_id,
+            user_id=identity.user_id,
+            operation_public_id=created.public_id,
+            documents=tuple((filename, content_type, content, "UNKNOWN") for filename, content_type, content in payloads),
+        )
         return RedirectResponse(f"/operations/{created.public_id}", status_code=303)
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
