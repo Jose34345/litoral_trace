@@ -176,6 +176,28 @@ def test_shipment_reconciles_explicit_taxon_rows_with_supplier_harvest_evidence(
     }
 
 
+def test_duplicate_same_taxon_rows_preserve_distinct_component_identity():
+    rows = [
+        ["Line", "HTS", "Description", "Qty", "Entered Value"],
+        ["1", "4407.11.0190", "Pinus taeda KD boards grade A", "30.000 m3", "USD 18,300.00"],
+        ["2", "4407.11.0191", "Pinus taeda KD boards grade B", "12.000 m3", "USD 7,320.00"],
+    ]
+    entry = _resolution(
+        "duplicate-pinus-entry.pdf",
+        DocumentType.CUSTOMS_ENTRY_SUMMARY,
+        tuple(_table_blocks(page_number=1, table_number=4, rows=rows)),
+    )
+
+    shipment = process_shipment(
+        documents=[ShipmentDocumentInput("entry", entry.filename, resolution=entry)]
+    )
+
+    quantities = shipment.canonical_fields["plant_quantity"]
+    assert quantities.state is ReconciliationState.SUPPORTED_MULTIPLE
+    assert {value.value for value in quantities.values} == {"30.000", "12.000"}
+    assert len({item.component_key for item in quantities.supporting_evidence}) == 2
+
+
 def test_ppq_entered_value_accepts_an_explicit_iso_currency_prefix_without_storing_it():
     result = normalize_entered_value("USD 18,300.00")
     assert result.status is PpqValidationStatus.VALID
