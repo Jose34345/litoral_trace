@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, func, inspect, select, text
@@ -17,6 +19,7 @@ from litoral_trace.db.models import (
     SemanticEvidenceNode,
     UsLaceyEvidenceSnapshot,
     UsLaceyOperation,
+    UsLaceyOperationDocument,
     UsLaceySourceSetRevision,
     VaultDocument,
 )
@@ -77,6 +80,43 @@ def _add_extraction(
     run_id = run.id
     session.close()
     return run_id
+
+
+def _add_unattached_assurance_document(
+    factory,
+    *,
+    organization_id: int,
+    filename: str,
+    content: bytes,
+) -> int:
+    """Persist a real extracted assurance document without an operation link."""
+    session = tenant_session(factory, organization_id)
+    suffix = uuid4().hex
+    vault = VaultDocument(
+        organization_id=organization_id,
+        original_filename=filename,
+        content_type="application/pdf",
+        size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+        object_key=f"tests/{suffix}",
+        storage_backend="s3",
+        storage_bucket="tests",
+        document_type="OTHER_EVIDENCE",
+        status="available",
+    )
+    session.add(vault)
+    session.flush()
+    assurance = AssuranceDocument(
+        organization_id=organization_id,
+        vault_document_id=vault.id,
+        semantic_document_type="UNKNOWN",
+        processing_status="EXTRACTED",
+    )
+    session.add(assurance)
+    session.commit()
+    assurance_document_id = assurance.id
+    session.close()
+    return assurance_document_id
 
 
 def _require_phase_b_schema(engine) -> None:
@@ -483,15 +523,11 @@ def test_real_attachment_waits_for_snapshot_operation_lock_before_sealing_next_r
         assurance_document_id=first_assurance_id,
         values=[("country_of_harvest", "País de cosecha declarado en Brasil", 1)],
     )
-    _, replacement_assurance_id, _, _ = add_test_document(
+    replacement_assurance_id = _add_unattached_assurance_document(
         engine2_postgres_session_factory,
         organization_id=org,
-        operation_id=operation_id,
-        role="REPLACEMENT_STAGING",
         filename="replacement-invoice.pdf",
         content=b"stale-snapshot-n-plus-one",
-        version_number=2,
-        is_current=False,
     )
     _add_extraction(
         engine2_postgres_session_factory,
@@ -499,6 +535,15 @@ def test_real_attachment_waits_for_snapshot_operation_lock_before_sealing_next_r
         assurance_document_id=replacement_assurance_id,
         values=[("country_of_harvest", "País de colheita declarado no Brasil", 1)],
     )
+    session = tenant_session(engine2_postgres_session_factory, org)
+    replacement_links = session.scalar(
+        select(func.count(UsLaceyOperationDocument.id)).where(
+            UsLaceyOperationDocument.organization_id == org,
+            UsLaceyOperationDocument.assurance_document_id == replacement_assurance_id,
+        )
+    )
+    assert replacement_links == 0
+    session.close()
     revision_n = seal_current_source_set(
         organization_id=org,
         operation_id=operation_id,
@@ -538,7 +583,7 @@ def test_real_attachment_waits_for_snapshot_operation_lock_before_sealing_next_r
         assert provider.entered.wait(timeout=10), "N never entered real translation"
         n_plus_one_future = pool.submit(advance_to_n_plus_one)
         try:
-            assert attach_started.wait(timeout=1), "real attach_document did not start"
+            assert attach_started.wait(timeout=10), "real attach_document did not start"
             assert not attach_completed.wait(timeout=10), (
                 "real attach_document completed while snapshot N still held operation lock"
             )
@@ -552,6 +597,14 @@ def test_real_attachment_waits_for_snapshot_operation_lock_before_sealing_next_r
 
     assert not provider.timed_out.is_set()
     assert attach_completed.is_set()
+    session = tenant_session(engine2_postgres_session_factory, org)
+    replacement_link = session.get(UsLaceyOperationDocument, replacement_link_id)
+    first_link = session.get(UsLaceyOperationDocument, first_link_id)
+    assert replacement_link is not None
+    assert replacement_link.assurance_document_id == replacement_assurance_id
+    assert replacement_link.is_current is True
+    assert first_link.is_current is False
+    session.close()
     revision_n_plus_one = seal_current_source_set(
         organization_id=org,
         operation_id=operation_id,
