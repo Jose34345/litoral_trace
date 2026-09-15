@@ -18,16 +18,24 @@ from tests.us_lacey_engine2_postgres import create_test_graph, engine2_postgres_
 
 
 def _sealed(factory):
-    org, operation, link, assurance, _, _ = create_test_graph(factory)
-    session = tenant_session(factory, org)
-    revision = UsLaceySourceSetRevision(
-        organization_id=org, operation_id=operation, generation=1,
-        source_set_fingerprint="a" * 64, document_count=1, status="SEALED", is_current=True,
+    """Create a real sealed revision so its fingerprint matches CURRENT documents."""
+    org, operation, _, assurance, _, _ = create_test_graph(factory)
+    revision = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation,
+        session_factory=factory,
     )
-    session.add(revision); session.flush()
-    session.add(UsLaceySourceSetMember(organization_id=org, source_set_revision_id=revision.id, operation_document_id=link, assurance_document_id=assurance))
-    job = UsLaceyProcessingJob(organization_id=org, operation_id=operation, assurance_document_id=assurance, status="RUNNING", max_attempts=3, available_at=datetime.now(timezone.utc))
-    session.add(job); session.commit()
+    session = tenant_session(factory, org)
+    job = UsLaceyProcessingJob(
+        organization_id=org,
+        operation_id=operation,
+        assurance_document_id=assurance,
+        status="RUNNING",
+        max_attempts=3,
+        available_at=datetime.now(timezone.utc),
+    )
+    session.add(job)
+    session.commit()
     result = org, operation, revision.id, job.id
     session.close()
     return result
