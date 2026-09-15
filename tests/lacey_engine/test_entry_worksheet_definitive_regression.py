@@ -16,6 +16,7 @@ from litoral_trace.lacey_engine.pipeline import _extract
 from litoral_trace.us_lacey.projection import (
     _explicit_plant_data_rows,
     _has_explicit_line_entered_value,
+    _is_line_allocation_table,
     _target_field,
 )
 
@@ -86,6 +87,14 @@ def test_customs_line_table_admits_entered_value_as_explicit_line_allocation():
     assert _has_explicit_line_entered_value(
         [source], table_headers=table_headers
     ) is True
+
+
+def test_commercial_pricing_table_is_not_a_customs_line_allocation():
+    headers = frozenset(
+        {"line", "sku", "description", "hts", "qty", "unit price", "entered value"}
+    )
+
+    assert _is_line_allocation_table(headers) is False
 
 
 def test_customs_entry_rows_can_materialize_lines_before_botanical_documents_arrive():
