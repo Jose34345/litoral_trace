@@ -772,15 +772,23 @@ def process_one_us_lacey_job(
                     organization_id=job.organization_id,
                     operation_id=job.operation_id,
                 )
-            with _timed_worker_stage(
-                job=job,
-                stage="source_set_finalize",
-                source_set_fingerprint=source_set_fingerprint,
+            # Re-enter the same operation lock used by uploads before publishing the
+            # revision FINALIZED. finalize_claim revalidates the canonical CURRENT
+            # fingerprint inside this serialized interval, so a post-snapshot upload
+            # either wins first and fences this claim or waits until publication ends.
+            with us_lacey_operation_projection_lock(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
             ):
-                finalized = finalize_claim(
-                    organization_id=job.organization_id,
-                    claim=source_set_claim,
-                )
+                with _timed_worker_stage(
+                    job=job,
+                    stage="source_set_finalize",
+                    source_set_fingerprint=source_set_fingerprint,
+                ):
+                    finalized = finalize_claim(
+                        organization_id=job.organization_id,
+                        claim=source_set_claim,
+                    )
             if not finalized:
                 LOGGER.info(
                     "Lacey source-set finalization superseded before publication",
