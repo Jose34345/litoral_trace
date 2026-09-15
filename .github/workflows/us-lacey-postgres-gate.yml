@@ -503,11 +503,15 @@ jobs:
             exit 1
           fi
       - name: Prove source-set CAS lifecycle and stale-publication guard
+        env:
+          DATABASE_URL: ""
         shell: bash
         run: |
           set -euo pipefail
           set -o pipefail
-          python -m pytest -q -rs tests/test_us_lacey_source_set_postgres.py \
+          python -m pytest -q -rs \
+            tests/test_us_lacey_source_set_postgres.py \
+            tests/test_us_lacey_source_set_worker_postgres.py \
             | tee /tmp/source-set-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/source-set-postgres.txt; then
             echo "Source-set PostgreSQL acceptance must not skip in CI."
