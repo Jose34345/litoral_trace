@@ -179,11 +179,11 @@ class UsLaceySourceSetRevision(Base):
         ForeignKeyConstraint(["operation_id", "organization_id"], ["us_lacey_operations.id", "us_lacey_operations.organization_id"], name="fk_lacey_source_revision_operation_tenant", ondelete="CASCADE"),
         UniqueConstraint("id", "organization_id", name="uq_lacey_source_revision_id_org"),
         UniqueConstraint("organization_id", "operation_id", "generation", name="uq_lacey_source_revision_generation"),
-        UniqueConstraint("organization_id", "operation_id", "source_set_fingerprint", name="uq_lacey_source_revision_fingerprint"),
         CheckConstraint("generation > 0", name="ck_lacey_source_revision_generation"),
         CheckConstraint("document_count > 0", name="ck_lacey_source_revision_document_count"),
         CheckConstraint("status IN ('OPEN','SEALED','FINALIZING','FINALIZED','SUPERSEDED')", name="ck_lacey_source_revision_status"),
         Index("ix_lacey_source_revision_org_operation_current", "organization_id", "operation_id", "is_current"),
+        Index("ix_lacey_source_revision_org_operation_fingerprint", "organization_id", "operation_id", "source_set_fingerprint"),
     )
 
 
