@@ -1,8 +1,8 @@
 """PostgreSQL acceptance for source-set CAS and stale-publication guards."""
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from litoral_trace.db.models import (
     UsLaceyProcessingJob,
@@ -69,3 +69,63 @@ def test_finalized_generation_is_not_claimed_again(engine2_postgres_session_fact
     assert finalize_claim(organization_id=org, claim=claim, session_factory=engine2_postgres_session_factory)
     retry = claim_ready_source_set(organization_id=org, operation_id=operation, completing_job_id=job_id, session_factory=engine2_postgres_session_factory)
     assert not retry.claimed and retry.reason == "NOT_SEALED"
+
+
+def test_retry_attempt_reclaims_abandoned_finalizing_revision_and_fences_stale_claim(engine2_postgres_session_factory):
+    org, operation, revision_id, job_id = _sealed(engine2_postgres_session_factory)
+    first = claim_ready_source_set(
+        organization_id=org,
+        operation_id=operation,
+        completing_job_id=job_id,
+        session_factory=engine2_postgres_session_factory,
+    )
+    assert first.claimed
+
+    session = tenant_session(engine2_postgres_session_factory, org)
+    revision = session.get(UsLaceySourceSetRevision, revision_id)
+    assert revision.status == "FINALIZING"
+    assert revision.claimed_at is not None
+    retry_locked_at = revision.claimed_at + timedelta(seconds=1)
+    session.execute(
+        text(
+            """
+            UPDATE public.us_lacey_processing_jobs
+            SET attempt_count = attempt_count + 1,
+                status = 'RUNNING',
+                locked_by = 'worker-b',
+                locked_at = :locked_at,
+                heartbeat_at = :locked_at,
+                updated_at = :locked_at
+            WHERE id = :job_id
+            """
+        ),
+        {"job_id": job_id, "locked_at": retry_locked_at},
+    )
+    session.commit()
+    session.close()
+
+    retry = claim_ready_source_set(
+        organization_id=org,
+        operation_id=operation,
+        completing_job_id=job_id,
+        session_factory=engine2_postgres_session_factory,
+    )
+    assert retry.claimed
+    assert retry.reason == "RECLAIMED"
+
+    assert not finalize_claim(
+        organization_id=org,
+        claim=first,
+        session_factory=engine2_postgres_session_factory,
+    )
+    assert finalize_claim(
+        organization_id=org,
+        claim=retry,
+        session_factory=engine2_postgres_session_factory,
+    )
+
+    session = tenant_session(engine2_postgres_session_factory, org)
+    finalized = session.get(UsLaceySourceSetRevision, revision_id)
+    assert finalized.status == "FINALIZED"
+    assert finalized.is_current is True
+    session.close()
