@@ -42,11 +42,11 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.ForeignKeyConstraint(["operation_id", "organization_id"], ["us_lacey_operations.id", "us_lacey_operations.organization_id"], ondelete="CASCADE"),
         sa.UniqueConstraint("id", "organization_id"), sa.UniqueConstraint("organization_id", "operation_id", "generation"),
-        sa.UniqueConstraint("organization_id", "operation_id", "source_set_fingerprint"),
         sa.CheckConstraint("generation > 0"), sa.CheckConstraint("document_count > 0"),
         sa.CheckConstraint("status IN ('OPEN','SEALED','FINALIZING','FINALIZED','SUPERSEDED')"),
     )
     op.create_index("ix_lacey_source_revision_org_operation_current", "us_lacey_source_set_revisions", ["organization_id", "operation_id", "is_current"])
+    op.create_index("ix_lacey_source_revision_org_operation_fingerprint", "us_lacey_source_set_revisions", ["organization_id", "operation_id", "source_set_fingerprint"])
     op.create_table(
         "us_lacey_source_set_members",
         sa.Column("id", sa.Integer(), primary_key=True), sa.Column("organization_id", sa.Integer(), nullable=False),
