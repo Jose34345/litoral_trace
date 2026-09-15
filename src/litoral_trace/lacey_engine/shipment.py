@@ -236,6 +236,7 @@ for _key in ("hts_code", "description", PLANT_LINE_ENTERED_VALUE):
     _CATALOG[_key] = FieldCardinality.PER_MERCHANDISE_LINE
 _PARTY_KEYS = {"importer_name", "consignee_name", "shipper_name", "supplier_name", "manufacturer_name", "notify_party_name"}
 _IMPORTANT = frozenset({"bill_of_lading", "master_bill_of_lading", "house_bill_of_lading", "country_of_harvest", "species", "genus"})
+_PARALLEL_CARDINALITIES = frozenset({FieldCardinality.PER_MERCHANDISE_LINE, FieldCardinality.PER_PLANT_COMPONENT})
 
 
 def _cardinality(field_key: str) -> FieldCardinality:
@@ -304,7 +305,7 @@ def _reconcile(field_key: str, evidence: list[ShipmentEvidence]) -> Reconciliati
             values,
             tuple(evidence),
         )
-    if cardinality in {FieldCardinality.PER_MERCHANDISE_LINE, FieldCardinality.PER_PLANT_COMPONENT}:
+    if cardinality in _PARALLEL_CARDINALITIES:
         association_keys = [
             item.line_key if cardinality is FieldCardinality.PER_MERCHANDISE_LINE else item.component_key
             for item in evidence
@@ -357,6 +358,32 @@ def _typed_key(field_key: str, label: str) -> str:
     if "house" in label and any(token in label for token in ("b/l", "bol", "bill of lading")):
         return "house_bill_of_lading"
     return field_key
+
+
+def _shipment_candidates(original_key: str, field) -> tuple[AdmittedCandidate, ...]:
+    """Keep row-level corroboration without widening scalar document resolutions.
+
+    Document ranking intentionally exposes one winner for MATCHED fields.  Shipment
+    reconciliation needs every same-value occurrence for line/component fields so
+    that two explicit rows such as Pinus/Brazil and Eucalyptus/Brazil retain their
+    separate semantic identities.  Lower-ranked different values remain excluded
+    unless the document resolver already classified the field as CONFLICT.
+    """
+    if field.status is FieldStatus.CONFLICT:
+        return tuple(field.candidates)
+    winner = field.winning_candidate
+    if field.status is not FieldStatus.MATCHED or winner is None:
+        return ()
+    cardinality = _CATALOG.get(original_key)
+    if cardinality not in _PARALLEL_CARDINALITIES:
+        return (winner,)
+    winner_value = semantic_normalize(original_key, winner.raw.normalized_value)
+    same_value = tuple(
+        candidate
+        for candidate in field.candidates
+        if semantic_normalize(original_key, candidate.raw.normalized_value) == winner_value
+    )
+    return same_value or (winner,)
 
 
 def _entered_value_allocation_issue(fields: dict[str, ReconciliationResult]) -> ShipmentIssue | None:
@@ -440,11 +467,7 @@ def process_shipment(*, documents: list[ShipmentDocumentInput], ruleset: LaceyRu
         )
         resolved.append(ShipmentDocumentResolution(item.document_id, item.filename, resolution))
         for original_key, field in resolution.fields.items():
-            candidates = (
-                field.candidates
-                if field.status is FieldStatus.CONFLICT
-                else ((field.winning_candidate,) if field.status is FieldStatus.MATCHED and field.winning_candidate else ())
-            )
+            candidates = _shipment_candidates(original_key, field)
             for index, candidate in enumerate(candidates):
                 if candidate.raw.evidence_class is EvidenceClass.INFERRED:
                     inferred_not_used += 1
@@ -513,7 +536,7 @@ def process_shipment(*, documents: list[ShipmentDocumentInput], ruleset: LaceyRu
         if result.state is ReconciliationState.CONFLICT:
             issues.append(ShipmentIssue(f"conflict:{key}", key, _scope(cardinality).value, "HIGH", "CONFLICT", f"Conflicting admissible {key} evidence for the same semantic entity.", ids, docs))
         elif result.state is ReconciliationState.REVIEW_REQUIRED:
-            kind = "AMBIGUOUS_ASSOCIATION" if cardinality in {FieldCardinality.PER_PLANT_COMPONENT, FieldCardinality.PER_MERCHANDISE_LINE} else "INCONSISTENT_SET"
+            kind = "AMBIGUOUS_ASSOCIATION" if cardinality in _PARALLEL_CARDINALITIES else "INCONSISTENT_SET"
             issues.append(ShipmentIssue(f"review:{key}", key, _scope(cardinality).value, "MEDIUM", kind, f"{key} requires semantic review.", ids, docs))
         if key in _IMPORTANT and evidence and max(item.source_authority for item in evidence) < 10:
             issues.append(ShipmentIssue(f"low-authority:{key}", key, _scope(cardinality).value, "MEDIUM", "LOW_AUTHORITY_ONLY", f"Only low-authority evidence is available for {key}.", ids, docs))

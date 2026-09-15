@@ -24,7 +24,7 @@ from .semantic_graph import (
     valid_mid_value,
 )
 
-ENGINE_VERSION = "lacey-engine-2.2.0"
+ENGINE_VERSION = "lacey-engine-2.3.0"
 _FIELDS = (
     "estimated_arrival_date",
     "bill_of_lading",
@@ -40,6 +40,7 @@ _FIELDS = (
     "manufacturer_id",
     "hts_code",
     "entered_value",
+    "currency",
     "article_component",
     "country_of_harvest",
     "plant_quantity",
@@ -56,14 +57,16 @@ _ENTRY_LABEL = re.compile(r"(?:entry number|entry no\.?|filing entry reference|f
 _MID_LABEL = re.compile(r"(?:mid|manufacturer id|manufacturer identification|manufacturer identification code(?: \(mid\))?)", re.I)
 _HTS_LABEL = re.compile(r"(?:hts|hts code|hts number|hts no\.?)", re.I)
 _ENTERED_VALUE_LABEL = re.compile(r"(?:entered value|customs entered value)", re.I)
+_CURRENCY_LABEL = re.compile(r"(?:currency|currency code)", re.I)
 _ARTICLE_COMPONENT_LABEL = re.compile(r"(?:article\s*/\s*component|article component|component)", re.I)
 _PLANT_QUANTITY_LABEL = re.compile(r"(?:quantity of plant material|plant material quantity|plant quantity)", re.I)
 _PLANT_UNIT_LABEL = re.compile(r"(?:metric unit|plant unit|unit of plant material|plant material unit)", re.I)
 _PERCENT_RECYCLED_LABEL = re.compile(r"(?:percent recycled|recycled percentage|% recycled)", re.I)
+_ISO_CURRENCY = re.compile(r"^(USD|EUR|CAD|GBP|AUD|JPY|CNY|BRL|MXN)\b", re.I)
 
 
 def _candidate(field: str, value: str, block, label: str, evidence=EvidenceClass.EXPLICIT, derived_from=None) -> RawCandidate:
-    return RawCandidate(field, value, value, block, evidence, f"lacey.{field}", "2.2.0", derived_from, label)
+    return RawCandidate(field, value, value, block, evidence, f"lacey.{field}", "2.3.0", derived_from, label)
 
 
 def _normalized_date(value: str) -> str | None:
@@ -102,13 +105,6 @@ def _table_context(block) -> bool:
 
 
 def _plant_declaration_table_ids(layout) -> frozenset[str]:
-    """Identify tables with an explicit PPQ/Lacey plant-declaration signature.
-
-    Generic commercial tables frequently contain a column named ``Unit``.  That
-    header is only regulatory plant-unit evidence when the same table also carries
-    the scientific/harvest and plant-quantity columns that define a Plant
-    Declaration row.
-    """
     headers_by_table: dict[str, set[str]] = {}
     for block in layout.blocks:
         if not _table_context(block) or not block.table_id or not block.table_header:
@@ -116,7 +112,6 @@ def _plant_declaration_table_ids(layout) -> frozenset[str]:
         headers_by_table.setdefault(str(block.table_id), set()).add(
             " ".join(str(block.table_header).split()).casefold()
         )
-
     qualified: set[str] = set()
     for table_id, headers in headers_by_table.items():
         has_quantity = any(_PLANT_QUANTITY_LABEL.fullmatch(header) for header in headers)
@@ -133,8 +128,28 @@ def _plant_declaration_table_ids(layout) -> frozenset[str]:
     return frozenset(qualified)
 
 
+def _entry_worksheet_table_ids(layout) -> frozenset[str]:
+    """Identify customs line tables strongly enough to treat Qty as plant-line quantity."""
+    headers_by_table: dict[str, set[str]] = {}
+    for block in layout.blocks:
+        if not _table_context(block) or not block.table_id or not block.table_header:
+            continue
+        headers_by_table.setdefault(str(block.table_id), set()).add(
+            " ".join(str(block.table_header).split()).casefold()
+        )
+    qualified: set[str] = set()
+    for table_id, headers in headers_by_table.items():
+        has_line = any(header in {"line", "line no", "line number", "item"} for header in headers)
+        has_hts = any(_HTS_LABEL.fullmatch(header) for header in headers)
+        has_description = "description" in headers or any(_MERCHANDISE_DESCRIPTION_LABEL.fullmatch(header) for header in headers)
+        has_qty = any(header in {"qty", "quantity"} for header in headers)
+        has_value = any(_ENTERED_VALUE_LABEL.fullmatch(header) for header in headers)
+        if has_line and has_hts and has_description and has_qty and has_value:
+            qualified.add(table_id)
+    return frozenset(qualified)
+
+
 def _plant_quantity_row_keys(layout, table_ids: frozenset[str]) -> frozenset[tuple[str, int]]:
-    """Return qualified table rows on which a plant quantity was actually extracted."""
     rows: set[tuple[str, int]] = set()
     for block in layout.blocks:
         if not block.table_id or block.row_index is None or str(block.table_id) not in table_ids:
@@ -162,11 +177,10 @@ def _append_party(found, *, target: str, address_target: str, value: str, block,
 def _extract(layout):
     found: dict[str, list[RawCandidate]] = {field: [] for field in _FIELDS}
     plant_declaration_tables = _plant_declaration_table_ids(layout)
+    entry_worksheet_tables = _entry_worksheet_table_ids(layout)
     plant_quantity_rows = _plant_quantity_row_keys(layout, plant_declaration_tables)
     for block in layout.blocks:
         text = block.text
-        # Explicit historical/reference-only prose belongs to another evidence
-        # entity.  It must never compete with the current shipment.
         if is_out_of_scope_context(text):
             continue
         label, value = (block.key_text, block.value_text) if block.key_text is not None else (None, None)
@@ -200,11 +214,7 @@ def _extract(layout):
                 _append_party(found, target="consignee_name", address_target="consignee_address", value=value, block=block, label=key)
             elif re.fullmatch(r"consignee(?:'s)? address|consignee address", lower):
                 found["consignee_address"].append(_candidate("consignee_address", value, block, key))
-            elif _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(key) or (
-                _table_context(block) and lower == "description"
-            ):
-                # Plain "Description" is meaningful only inside a structured line
-                # table. Outside that context it remains too generic to admit.
+            elif _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(key) or (_table_context(block) and lower == "description"):
                 found["description"].append(_candidate("description", value, block, key))
             elif _ENTRY_LABEL.fullmatch(key):
                 found["filing_entry_reference"].append(_candidate("filing_entry_reference", value.upper(), block, key))
@@ -218,13 +228,14 @@ def _extract(layout):
                 number = _explicit_number(value)
                 if number:
                     found["entered_value"].append(_candidate("entered_value", number, block, key, EvidenceClass.DERIVED, "entered_value"))
+                currency = _ISO_CURRENCY.match(value)
+                if currency:
+                    found["currency"].append(_candidate("currency", currency.group(1).upper(), block, "Currency", EvidenceClass.DERIVED, "entered_value"))
+            elif _CURRENCY_LABEL.fullmatch(key) and _ISO_CURRENCY.fullmatch(value):
+                found["currency"].append(_candidate("currency", value.upper(), block, key))
             elif _ARTICLE_COMPONENT_LABEL.fullmatch(key) and (
-                _table_context(block)
-                or re.fullmatch(r"article\s*/\s*component|article component", key, re.I)
+                _table_context(block) or re.fullmatch(r"article\s*/\s*component|article component", key, re.I)
             ):
-                # A fully explicit Lacey/PPQ "Article / Component" label is safe
-                # outside a table.  The generic word "Component" remains table-only
-                # so unrelated document prose cannot become plant-component evidence.
                 found["article_component"].append(_candidate("article_component", value, block, key))
             elif re.fullmatch(r"genus|plant genus|scientific name genus", lower):
                 found["genus"].append(_candidate("genus", value, block, key))
@@ -238,10 +249,17 @@ def _extract(layout):
                     found["plant_quantity"].append(_candidate("plant_quantity", amount, block, key, EvidenceClass.DERIVED, "plant_quantity"))
                 if unit:
                     found["metric_unit"].append(_candidate("metric_unit", unit, block, key, EvidenceClass.DERIVED, "plant_quantity"))
-            elif _PLANT_UNIT_LABEL.fullmatch(key) or (
-                lower == "unit"
+            elif (
+                lower in {"qty", "quantity"}
                 and block.table_id is not None
-                and block.row_index is not None
+                and str(block.table_id) in entry_worksheet_tables
+            ):
+                amount, unit = _plant_quantity_parts(value)
+                if amount and unit:
+                    found["plant_quantity"].append(_candidate("plant_quantity", amount, block, "Plant Quantity", EvidenceClass.DERIVED, "plant_quantity"))
+                    found["metric_unit"].append(_candidate("metric_unit", unit, block, "Plant Quantity Unit", EvidenceClass.DERIVED, "plant_quantity"))
+            elif _PLANT_UNIT_LABEL.fullmatch(key) or (
+                lower == "unit" and block.table_id is not None and block.row_index is not None
                 and (str(block.table_id), int(block.row_index)) in plant_quantity_rows
             ):
                 found["metric_unit"].append(_candidate("metric_unit", value, block, key))
@@ -250,7 +268,6 @@ def _extract(layout):
                 if number is not None:
                     found["percent_recycled"].append(_candidate("percent_recycled", number, block, key, EvidenceClass.DERIVED, "percent_recycled"))
 
-        # Web-print PDFs often position labels and values on the same visual line.
         for match in re.finditer(r"(?:Estimated (?:Arrival Date|Date of Arrival|Time of Arrival)|\bETA)\s*[:#-]?\s*([A-Za-z]+ \d{1,2}, \d{4}|\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{4}-\d{1,2}-\d{1,2})", text, re.I):
             date = _normalized_date(match.group(1))
             if date:
@@ -269,14 +286,20 @@ def _extract(layout):
                 found["description"].append(_candidate("description", value, block, match.group("label")))
         for match in re.finditer(r"(?P<label>Entry (?:Number|No\.?)|Filing Entry (?:Reference|Number))\s*[:#-]?\s*(?P<value>[A-Z0-9-]{8,20})", text, re.I):
             found["filing_entry_reference"].append(_candidate("filing_entry_reference", match.group("value").upper(), block, match.group("label")))
-        # Do not let the word "Code" from "Manufacturer Identification Code"
-        # become a MID candidate.  Require the value after the complete label.
         for match in re.finditer(r"(?P<label>MID|Manufacturer Identification(?: Code)?(?: \(MID\))?|Manufacturer ID)\s*[:#-]?\s*(?P<value>[A-Z0-9][A-Z0-9 -]{4,24})\b", text, re.I):
             candidate_value = " ".join(match.group("value").split()).upper()
             if valid_mid_value(candidate_value):
                 found["manufacturer_id"].append(_candidate("manufacturer_id", candidate_value, block, match.group("label")))
         for match in re.finditer(r"(?P<label>HTS(?:\s+(?:Code|Number|No\.?))?)\s*[:#-]?\s*(?P<value>\d{4,10}(?:[. -]\d{1,4})*)", text, re.I):
             found["hts_code"].append(_candidate("hts_code", match.group("value"), block, match.group("label")))
+        for match in re.finditer(
+            r"(?:country of harvest|harvest country|harvested in|pa[ií]s de colheita|pa[ií]s de cosecha)\s*[:#-]?\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .'-]{1,60}?)(?=\s+-|\s+\||$)",
+            text,
+            re.I,
+        ):
+            country = " ".join(match.group(1).split()).strip(" .,-")
+            if country:
+                found["country_of_harvest"].append(_candidate("country_of_harvest", country, block, "Country of Harvest"))
 
     genera = {"pinus", "eucalyptus", "quercus", "acer", "betula", "fagus", "fraxinus", "populus", "tectona", "hevea"}
     for source in layout.blocks:
@@ -287,7 +310,6 @@ def _extract(layout):
             found["species"].append(_candidate("species", taxon.group(2).lower(), source, "scientific taxon"))
             found["genus"].append(_candidate("genus", taxon.group(1).capitalize(), source, "scientific taxon", EvidenceClass.DERIVED, "species"))
 
-    # Reconstruct party addresses from adjacent explicitly labelled components.
     lines = [block for block in layout.blocks if block.block_type in {"TEXT_LINE", "OCR_LINE"} and not is_out_of_scope_context(block.text)]
     for party, target in (("Consignee", "consignee_address"), ("Importer", "importer_address")):
         for index, block in enumerate(lines):
@@ -311,9 +333,6 @@ def _extract(layout):
                 source = components[address_key][1]
                 found[target].append(_candidate(target, f"{address}; {city}, {state} {postal}{country}", source, f"{party} Address", EvidenceClass.DERIVED, f"{party.casefold()}_name"))
 
-    # The same visual row may be represented as a text line and a table cell.  Keep
-    # duplicate sources for corroboration only when the block differs; exact duplicate
-    # candidate/block pairs are removed here.
     for field_key, candidates in found.items():
         unique: list[RawCandidate] = []
         seen: set[tuple[str, str]] = set()

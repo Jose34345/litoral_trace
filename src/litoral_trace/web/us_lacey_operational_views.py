@@ -47,6 +47,17 @@ def processing_view(detail) -> ProcessingView:
     if detail.status == "COMPLETED":
         return ProcessingView(100, "COMPLETED", "Preparation complete.", True, False)
     if "RUNNING" in statuses:
+        completed_jobs = sum(
+            str(document.job_status or "").upper() == "COMPLETED"
+            for document in documents
+        )
+        durable_extraction_states = {"EXTRACTED", "EXTRACTION_COMPLETE", "RECONCILED"}
+        all_documents_extracted = bool(documents) and all(
+            str(document.processing_status or "").upper() in durable_extraction_states
+            for document in documents
+        )
+        if all_documents_extracted and completed_jobs >= max(1, len(documents) - 1):
+            return ProcessingView(90, "RECONCILING", "Reconciling shipment evidence", False, False)
         return ProcessingView(60, "RUNNING", "Extracting shipment information", False, False)
     if statuses & {"QUEUED", "RETRY"}:
         return ProcessingView(35, "QUEUED", "Document queued for secure analysis", False, False)

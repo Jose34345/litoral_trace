@@ -144,6 +144,10 @@ _UNIT_ALIASES = {
 NOT_REQUIRED_REASON_CODES = frozenset({"NOT_PAPER_OR_PAPERBOARD"})
 _NUMERIC_FIELDS = frozenset({"entered_value", "plant_quantity", "percent_recycled"})
 _CURRENCY_SYMBOLS = frozenset({"$", "€", "£", "¥"})
+_ENTERED_VALUE_CURRENCY_PREFIX = re.compile(
+    r"^(?:USD|EUR|CAD|GBP|AUD|JPY|CNY|BRL|MXN)\s+(?=[+-]?(?:\d|\.))",
+    re.I,
+)
 
 
 def _missing(value: object) -> bool:
@@ -240,6 +244,8 @@ def _decimal(value: object, *, label: str, positive: bool, maximum: Decimal | No
 
 
 def normalize_entered_value(value: object) -> PpqValidation:
+    if isinstance(value, str):
+        value = _ENTERED_VALUE_CURRENCY_PREFIX.sub("", unicodedata.normalize("NFKC", value).strip(), count=1)
     return _decimal(value, label="Entered value", positive=False)
 
 
