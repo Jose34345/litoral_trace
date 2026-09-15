@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -82,8 +83,26 @@ def test_zero_entry_intake_is_mounted_and_creates_default_line_without_regulator
     routes = INTELLIGENT_ROUTES.read_text(encoding="utf-8")
     unified = UNIFIED_APP.read_text(encoding="utf-8")
     assert '@router.post("/operations/intake"' in routes
-    assert 'line_references=("1",)' in routes
-    assert 'document_role="UNKNOWN"' in routes
+    tree = ast.parse(routes)
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+    create_call = next(
+        call for call in calls
+        if isinstance(call.func, ast.Name) and call.func.id == "create_us_lacey_customer_operation"
+    )
+    create_keywords = {keyword.arg: keyword.value for keyword in create_call.keywords}
+    assert isinstance(create_keywords["line_references"], ast.Tuple)
+    assert [element.value for element in create_keywords["line_references"].elts] == ["1"]
+
+    batch_call = next(
+        call for call in calls
+        if isinstance(call.func, ast.Name) and call.func.id == "upload_and_enqueue_us_lacey_document_batch"
+    )
+    batch_keywords = {keyword.arg: keyword.value for keyword in batch_call.keywords}
+    assert "documents" in batch_keywords
+    assert any(
+        isinstance(node, ast.Constant) and node.value == "UNKNOWN"
+        for node in ast.walk(batch_keywords["documents"])
+    )
     assert "intelligent_workflow_router" in unified
     assert "app.include_router(intelligent_workflow_router)" in unified
 
