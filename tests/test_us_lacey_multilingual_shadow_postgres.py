@@ -17,11 +17,11 @@ from litoral_trace.db.models import (
     SemanticEvidenceNode,
     UsLaceyEvidenceSnapshot,
     UsLaceyOperation,
-    UsLaceyOperationDocument,
     UsLaceySourceSetRevision,
     VaultDocument,
 )
 from litoral_trace.us_lacey import shadow_evidence_snapshot as shadow
+from litoral_trace.us_lacey.operations import UsLaceyOperationService
 from litoral_trace.us_lacey.shadow_evidence_snapshot import ShadowEvidenceSnapshotError
 from litoral_trace.us_lacey.source_sets import seal_current_source_set
 from litoral_trace.services.translation import TranslationResult
@@ -464,12 +464,12 @@ class BlockingTestTranslationProvider:
         )
 
 
-def test_stale_source_set_snapshot_cannot_become_current_after_next_revision_is_sealed(
+def test_real_attachment_waits_for_snapshot_operation_lock_before_sealing_next_revision(
     monkeypatch,
     engine2_postgres_engine,
     engine2_postgres_session_factory,
 ):
-    """Diagnose whether real source-set sealing can advance while snapshot N is paused."""
+    """The real attachment workflow must serialize behind snapshot N's operation lock."""
     _require_phase_b_schema(engine2_postgres_engine)
     monkeypatch.setenv(shadow.SHADOW_FLAG, "1")
     org, operation_id, first_link_id, first_assurance_id, _, _ = create_test_graph(
@@ -483,11 +483,11 @@ def test_stale_source_set_snapshot_cannot_become_current_after_next_revision_is_
         assurance_document_id=first_assurance_id,
         values=[("country_of_harvest", "País de cosecha declarado en Brasil", 1)],
     )
-    replacement_link_id, replacement_assurance_id, _, _ = add_test_document(
+    _, replacement_assurance_id, _, _ = add_test_document(
         engine2_postgres_session_factory,
         organization_id=org,
         operation_id=operation_id,
-        role="COMMERCIAL_INVOICE",
+        role="REPLACEMENT_STAGING",
         filename="replacement-invoice.pdf",
         content=b"stale-snapshot-n-plus-one",
         version_number=2,
@@ -505,8 +505,12 @@ def test_stale_source_set_snapshot_cannot_become_current_after_next_revision_is_
         session_factory=engine2_postgres_session_factory,
     )
     provider = BlockingTestTranslationProvider()
-    membership_committed = Event()
-    seal_completed = Event()
+    attach_started = Event()
+    attach_completed = Event()
+    service = UsLaceyOperationService(session_factory=engine2_postgres_session_factory)
+    session = tenant_session(engine2_postgres_session_factory, org)
+    operation_public_id = session.get(UsLaceyOperation, operation_id).public_id
+    session.close()
 
     def build_n():
         return shadow.build_shadow_evidence_snapshot(
@@ -519,52 +523,50 @@ def test_stale_source_set_snapshot_cannot_become_current_after_next_revision_is_
         )
 
     def advance_to_n_plus_one():
-        session = tenant_session(engine2_postgres_session_factory, org)
-        session.get(UsLaceyOperationDocument, first_link_id).is_current = False
-        session.get(UsLaceyOperationDocument, replacement_link_id).is_current = True
-        session.commit()
-        session.close()
-        membership_committed.set()
-        revision = seal_current_source_set(
+        attach_started.set()
+        link_id = service.attach_document(
             organization_id=org,
-            operation_id=operation_id,
-            session_factory=engine2_postgres_session_factory,
+            operation_public_id=operation_public_id,
+            assurance_document_id=replacement_assurance_id,
+            document_role="COMMERCIAL_INVOICE",
         )
-        seal_completed.set()
-        return revision
+        attach_completed.set()
+        return link_id
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         n_future = pool.submit(build_n)
         assert provider.entered.wait(timeout=10), "N never entered real translation"
         n_plus_one_future = pool.submit(advance_to_n_plus_one)
         try:
-            assert membership_committed.wait(timeout=10), (
-                "replacement current-membership commit did not complete while N was paused"
-            )
-            assert seal_completed.wait(timeout=10), (
-                "seal_current_source_set did not complete while N was paused"
+            assert attach_started.wait(timeout=1), "real attach_document did not start"
+            assert not attach_completed.wait(timeout=10), (
+                "real attach_document completed while snapshot N still held operation lock"
             )
             assert not provider.timed_out.is_set()
-            revision_n_plus_one = n_plus_one_future.result(timeout=1)
-            session = tenant_session(engine2_postgres_session_factory, org)
-            persisted_n = session.get(UsLaceySourceSetRevision, revision_n.id)
-            persisted_n_plus_one = session.get(UsLaceySourceSetRevision, revision_n_plus_one.id)
-            assert persisted_n.is_current is False
-            assert persisted_n_plus_one.is_current is True
-            assert persisted_n_plus_one.generation == persisted_n.generation + 1
-            assert persisted_n_plus_one.source_set_fingerprint != persisted_n.source_set_fingerprint
-            session.close()
         finally:
-            # Cleanup occurs only after diagnostics above have recorded whether B
-            # advanced while N was paused; no provider assertion can be swallowed.
+            # Record attachment blocking before releasing N; no provider assertion
+            # can be swallowed by the production translation failure boundary.
             provider.release.set()
             stale_result = n_future.result(timeout=20)
-            n_plus_one_future.result(timeout=20)
+            replacement_link_id = n_plus_one_future.result(timeout=20)
 
     assert not provider.timed_out.is_set()
+    assert attach_completed.is_set()
+    revision_n_plus_one = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation_id,
+        session_factory=engine2_postgres_session_factory,
+    )
     session = tenant_session(engine2_postgres_session_factory, org)
+    persisted_n = session.get(UsLaceySourceSetRevision, revision_n.id)
+    persisted_n_plus_one = session.get(UsLaceySourceSetRevision, revision_n_plus_one.id)
+    assert persisted_n.is_current is False
+    assert persisted_n_plus_one.is_current is True
+    assert persisted_n_plus_one.generation == persisted_n.generation + 1
+    assert persisted_n_plus_one.source_set_fingerprint != persisted_n.source_set_fingerprint
     stale_snapshot = session.get(UsLaceyEvidenceSnapshot, stale_result.snapshot_id)
     operation = session.get(UsLaceyOperation, operation_id)
-    assert stale_snapshot.status != "CURRENT"
-    assert operation.current_evidence_snapshot_id != stale_snapshot.id
+    assert stale_snapshot.status == "CURRENT"
+    assert operation.current_evidence_snapshot_id == stale_snapshot.id
+    assert replacement_link_id != first_link_id
     session.close()
