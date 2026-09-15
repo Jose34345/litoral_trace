@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
+from typing import Callable
 
 from litoral_trace.db.models import (
     AssuranceDocument,
@@ -28,9 +29,12 @@ class SourceSetClaim:
     reason: str
 
 
-def seal_current_source_set(*, organization_id: int, operation_id: int) -> UsLaceySourceSetRevision:
+SessionFactory = Callable[[], Session]
+
+
+def seal_current_source_set(*, organization_id: int, operation_id: int, session_factory: SessionFactory = get_us_lacey_db_session) -> UsLaceySourceSetRevision:
     """Snapshot current links and expose them to workers only as one SEALED set."""
-    session = get_us_lacey_db_session()
+    session = session_factory()
     try:
         set_tenant_db_context(session, organization_id)
         rows = session.execute(
@@ -85,9 +89,9 @@ def seal_current_source_set(*, organization_id: int, operation_id: int) -> UsLac
         session.close()
 
 
-def claim_ready_source_set(*, organization_id: int, operation_id: int, completing_job_id: int) -> SourceSetClaim:
+def claim_ready_source_set(*, organization_id: int, operation_id: int, completing_job_id: int, session_factory: SessionFactory = get_us_lacey_db_session) -> SourceSetClaim:
     """CAS-claim the sealed current revision once every member job is terminal."""
-    session = get_us_lacey_db_session()
+    session = session_factory()
     try:
         set_tenant_db_context(session, organization_id)
         revision = session.scalar(select(UsLaceySourceSetRevision).where(
@@ -122,11 +126,11 @@ def claim_ready_source_set(*, organization_id: int, operation_id: int, completin
         session.close()
 
 
-def finalize_claim(*, organization_id: int, claim: SourceSetClaim) -> bool:
+def finalize_claim(*, organization_id: int, claim: SourceSetClaim, session_factory: SessionFactory = get_us_lacey_db_session) -> bool:
     """Publish only if this exact claim remains the operation's current revision."""
     if not claim.claimed or claim.revision_id is None:
         return False
-    session = get_us_lacey_db_session()
+    session = session_factory()
     try:
         set_tenant_db_context(session, organization_id)
         changed = session.execute(update(UsLaceySourceSetRevision).where(
