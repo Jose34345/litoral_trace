@@ -16,6 +16,40 @@ def _bbox(item: dict) -> BoundingBox:
     return BoundingBox(float(item["x0"]), float(item["top"]), float(item["x1"]), float(item["bottom"]))
 
 
+def _looks_like_key_value_matrix(rows: list[list[str]]) -> bool:
+    """Recognize physical label/value pairs before interpreting a header row.
+
+    Some PDFs render forms as four or more columns containing repeated
+    ``label, value`` pairs. Treating the first physical row as a conventional
+    header turns labels such as ``Importer`` into columns and later labels into
+    false values. This mirrors the conservative Assurance parser contract: every
+    populated even column must be a short textual label with an adjacent value.
+    """
+    populated = [row for row in rows if any(row)]
+    if len(populated) < 2 or max(map(len, populated)) < 4:
+        return False
+
+    labels: list[str] = []
+    for row in populated:
+        row_labels: set[str] = set()
+        for index in range(0, len(row), 2):
+            key = _text(row[index]) if index < len(row) else ""
+            value = _text(row[index + 1]) if index + 1 < len(row) else ""
+            if bool(key) != bool(value):
+                return False
+            if not key:
+                continue
+            if len(key) > 48 or any(character.isdigit() for character in key):
+                return False
+            folded = key.casefold()
+            if folded in row_labels:
+                return False
+            row_labels.add(folded)
+            labels.append(key)
+
+    return len(labels) >= 4 and len({label.casefold() for label in labels}) >= 4
+
+
 def _ocr_blocks(content: bytes, page_numbers: set[int] | None = None) -> list[LayoutBlock]:
     """Coordinate-preserving OCR fallback for image-only shipment documents."""
     try:
@@ -80,6 +114,29 @@ def _table_blocks(*, page_number: int, table_number: int, rows: list) -> list[La
                     f"{table_id}-r{row_index}", page_number, None,
                     f"{key}: {value}", "TABLE_ROW", LayoutStructureType.KEY_VALUE_TABLE,
                     table_id, row_index, None, key, key, value,
+                ))
+        return blocks
+
+    if _looks_like_key_value_matrix(clean_rows):
+        for row_index, row in enumerate(clean_rows):
+            for pair_index, column_index in enumerate(range(0, len(row), 2)):
+                key = _text(row[column_index]) if column_index < len(row) else ""
+                value = _text(row[column_index + 1]) if column_index + 1 < len(row) else ""
+                if not key or not value:
+                    continue
+                blocks.append(LayoutBlock(
+                    f"{table_id}-r{row_index}-p{pair_index}",
+                    page_number,
+                    None,
+                    f"{key}: {value}",
+                    "TABLE_ROW",
+                    LayoutStructureType.KEY_VALUE_TABLE,
+                    table_id,
+                    row_index,
+                    column_index,
+                    key,
+                    key,
+                    value,
                 ))
         return blocks
 

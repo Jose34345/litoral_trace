@@ -146,6 +146,21 @@ _LINE_ALLOCATION_IDENTITY_HEADERS = frozenset(
         "plant quantity",
     }
 )
+_LINE_NUMBER_HEADERS = frozenset(
+    {"line", "line no", "line number", "item", "item no", "item number"}
+)
+_CUSTOMS_LINE_IDENTITY_HEADERS = frozenset(
+    {
+        "hts",
+        "hts code",
+        "hts number",
+        "htsus",
+        "description",
+        "commodity description",
+        "description of goods",
+        "goods description",
+    }
+)
 
 _STRUCTURAL_ARTIFACTS_BY_TARGET = {
     "container_number": frozenset(
@@ -288,7 +303,16 @@ def _is_plant_declaration_table(headers: frozenset[str]) -> bool:
 
 
 def _is_line_allocation_table(headers: frozenset[str]) -> bool:
-    return "entered value" in headers and bool(headers & _LINE_ALLOCATION_IDENTITY_HEADERS)
+    if "entered value" not in headers:
+        return False
+    if headers & _LINE_ALLOCATION_IDENTITY_HEADERS:
+        return True
+    # Customs entry worksheets often carry no botanical columns. An explicit line
+    # number plus HTS/description is strong structural evidence that Entered Value
+    # belongs to that row rather than to the shipment total.
+    return bool(headers & _LINE_NUMBER_HEADERS) and bool(
+        headers & _CUSTOMS_LINE_IDENTITY_HEADERS
+    )
 
 
 def _description_candidate_role(row: ExtractedDocumentField, value: object) -> str | None:
