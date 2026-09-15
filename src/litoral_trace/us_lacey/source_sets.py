@@ -59,6 +59,7 @@ def seal_current_source_set(*, organization_id: int, operation_id: int, session_
             UsLaceySourceSetRevision.organization_id == organization_id,
             UsLaceySourceSetRevision.operation_id == operation_id,
             UsLaceySourceSetRevision.source_set_fingerprint == fingerprint,
+            UsLaceySourceSetRevision.is_current.is_(True),
         ))
         if existing is not None:
             return existing
