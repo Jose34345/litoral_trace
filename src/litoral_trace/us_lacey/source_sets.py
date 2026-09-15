@@ -240,12 +240,31 @@ def claim_ready_source_set(*, organization_id: int, operation_id: int, completin
 
 
 def finalize_claim(*, organization_id: int, claim: SourceSetClaim, session_factory: SessionFactory = get_us_lacey_db_session) -> bool:
-    """Publish only if this exact claim token remains current for the revision."""
+    """Publish only if this exact claim token and document set remain current."""
     if not claim.claimed or claim.revision_id is None or claim.claimed_at is None:
         return False
     session = session_factory()
     try:
         set_tenant_db_context(session, organization_id)
+        revision = session.scalar(select(UsLaceySourceSetRevision).where(
+            UsLaceySourceSetRevision.id == claim.revision_id,
+            UsLaceySourceSetRevision.organization_id == organization_id,
+            UsLaceySourceSetRevision.is_current.is_(True),
+            UsLaceySourceSetRevision.source_set_fingerprint == claim.fingerprint,
+            UsLaceySourceSetRevision.status == "FINALIZING",
+            UsLaceySourceSetRevision.claimed_at == claim.claimed_at,
+        ))
+        if revision is None:
+            return False
+
+        current_fingerprint, _ = _fingerprint_current_source_set(
+            session,
+            organization_id=organization_id,
+            operation_id=int(revision.operation_id),
+        )
+        if current_fingerprint != claim.fingerprint:
+            return False
+
         changed = session.execute(update(UsLaceySourceSetRevision).where(
             UsLaceySourceSetRevision.id == claim.revision_id,
             UsLaceySourceSetRevision.organization_id == organization_id,
