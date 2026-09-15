@@ -1,12 +1,13 @@
 """One-job U.S. worker execution built on the mature Assurance processor."""
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 import logging
 import os
 from pathlib import PurePath
 import threading
+import time
 from uuid import UUID
 
 from sqlalchemy import select
@@ -63,6 +64,49 @@ class UsLaceyWorkerError(RuntimeError):
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _log_stage_timing(
+    *,
+    job,
+    stage: str,
+    started_at: float,
+    source_set_fingerprint: str | None = None,
+    job_status: str | None = None,
+) -> None:
+    """Emit one structured monotonic duration for worker latency diagnosis."""
+    extra = {
+        "event": "us_lacey_stage_timing",
+        "stage": stage,
+        "duration_ms": float(max(0.0, (time.perf_counter() - started_at) * 1000.0)),
+        "organization_id": job.organization_id,
+        "operation_id": job.operation_id,
+        "job_id": job.id,
+    }
+    if source_set_fingerprint is not None:
+        extra["source_set_fingerprint"] = source_set_fingerprint
+    if job_status is not None:
+        extra["job_status"] = job_status
+    LOGGER.info("U.S. Lacey worker stage timing", extra=extra)
+
+
+@contextmanager
+def _timed_worker_stage(
+    *,
+    job,
+    stage: str,
+    source_set_fingerprint: str | None = None,
+):
+    started_at = time.perf_counter()
+    try:
+        yield
+    finally:
+        _log_stage_timing(
+            job=job,
+            stage=stage,
+            started_at=started_at,
+            source_set_fingerprint=source_set_fingerprint,
+        )
 
 
 class UsLaceyEngine2Service(_BaseUsLaceyEngine2Service):
@@ -545,6 +589,7 @@ def process_one_us_lacey_job(
             conflict_count=0,
         )
 
+    total_started_at = time.perf_counter()
     heartbeat = _UsLaceyJobHeartbeat(
         job_id=job.id,
         worker_id=worker_id,
@@ -560,48 +605,50 @@ def process_one_us_lacey_job(
         # Production lookups always return UUID. Keeping the existing lookup seam
         # lets isolated unit contracts stub a lightweight string id without opening
         # a database/Vault connection; real jobs still receive full preflight.
-        if isinstance(assurance_public_id, UUID):
-            descriptor = _document_descriptor(
-                organization_id=job.organization_id,
-                document_id=job.assurance_document_id,
-            )
-            try:
-                _preflight_existing_document(
-                    organization_id=job.organization_id,
-                    descriptor=descriptor,
-                )
-            except ShipmentBatchRejected as exc:
-                _mark_document_policy_failure(
+        with _timed_worker_stage(job=job, stage="preflight"):
+            if isinstance(assurance_public_id, UUID):
+                descriptor = _document_descriptor(
                     organization_id=job.organization_id,
                     document_id=job.assurance_document_id,
-                    code=exc.code,
-                    message=exc.safe_message,
                 )
-                queue_status = fail_us_lacey_job(
-                    job_id=job.id,
-                    worker_id=worker_id,
-                    error_code=exc.code,
-                    safe_error_message=exc.safe_message,
-                    retryable=False,
-                )
-                operation_status = _refresh_operation(
-                    organization_id=job.organization_id,
-                    operation_id=job.operation_id,
-                )
-                return UsLaceyWorkerResult(
-                    claimed=True,
-                    job_id=job.id,
-                    job_status=queue_status,
-                    document_status="FAILED",
-                    operation_status=operation_status,
-                    projected_count=0,
-                    conflict_count=0,
-                )
+                try:
+                    _preflight_existing_document(
+                        organization_id=job.organization_id,
+                        descriptor=descriptor,
+                    )
+                except ShipmentBatchRejected as exc:
+                    _mark_document_policy_failure(
+                        organization_id=job.organization_id,
+                        document_id=job.assurance_document_id,
+                        code=exc.code,
+                        message=exc.safe_message,
+                    )
+                    queue_status = fail_us_lacey_job(
+                        job_id=job.id,
+                        worker_id=worker_id,
+                        error_code=exc.code,
+                        safe_error_message=exc.safe_message,
+                        retryable=False,
+                    )
+                    operation_status = _refresh_operation(
+                        organization_id=job.organization_id,
+                        operation_id=job.operation_id,
+                    )
+                    return UsLaceyWorkerResult(
+                        claimed=True,
+                        job_id=job.id,
+                        job_status=queue_status,
+                        document_status="FAILED",
+                        operation_status=operation_status,
+                        projected_count=0,
+                        conflict_count=0,
+                    )
 
-        document_status = _processing_service().process(
-            organization_id=job.organization_id,
-            assurance_public_id=assurance_public_id,
-        )
+        with _timed_worker_stage(job=job, stage="document_processing"):
+            document_status = _processing_service().process(
+                organization_id=job.organization_id,
+                assurance_public_id=assurance_public_id,
+            )
         if document_status == "FAILED":
             queue_status = fail_us_lacey_job(
                 job_id=job.id,
@@ -638,11 +685,12 @@ def process_one_us_lacey_job(
             else nullcontext()
         )
         with projection_guard:
-            projection = project_assurance_document_to_us_lacey(
-                organization_id=job.organization_id,
-                operation_id=job.operation_id,
-                assurance_document_id=job.assurance_document_id,
-            )
+            with _timed_worker_stage(job=job, stage="authoritative_projection"):
+                projection = project_assurance_document_to_us_lacey(
+                    organization_id=job.organization_id,
+                    operation_id=job.operation_id,
+                    assurance_document_id=job.assurance_document_id,
+                )
 
             source_set_claim = (
                 _claim_source_set_finalization(
@@ -654,30 +702,51 @@ def process_one_us_lacey_job(
                 else SourceSetClaim(None, None, None, True, "TEST")
             )
             finalize_source_set = source_set_claim.claimed
+            source_set_fingerprint = source_set_claim.fingerprint
 
             # Run every evidence/recommendation postprocessor while the queue job is
             # still RUNNING and while same-operation projection is serialized. If
             # orchestration itself ever fails unexpectedly, the outer failure boundary
             # can still transition the owned job instead of leaving false terminal work.
             if finalize_source_set:
-                _shadow_engine2(
-                    organization_id=job.organization_id,
-                    operation_id=job.operation_id,
-                )
-                _project_engine2_suggestions(
-                    organization_id=job.organization_id,
-                    operation_id=job.operation_id,
-                )
-                _project_verified_ai_suggestions(
-                    organization_id=job.organization_id,
-                    operation_id=job.operation_id,
-                )
+                with _timed_worker_stage(
+                    job=job,
+                    stage="engine2_shadow",
+                    source_set_fingerprint=source_set_fingerprint,
+                ):
+                    _shadow_engine2(
+                        organization_id=job.organization_id,
+                        operation_id=job.operation_id,
+                    )
+                with _timed_worker_stage(
+                    job=job,
+                    stage="engine2_suggestions",
+                    source_set_fingerprint=source_set_fingerprint,
+                ):
+                    _project_engine2_suggestions(
+                        organization_id=job.organization_id,
+                        operation_id=job.operation_id,
+                    )
+                with _timed_worker_stage(
+                    job=job,
+                    stage="verified_ai_suggestions",
+                    source_set_fingerprint=source_set_fingerprint,
+                ):
+                    _project_verified_ai_suggestions(
+                        organization_id=job.organization_id,
+                        operation_id=job.operation_id,
+                    )
                 # AI review may annotate existing OPEN conflicts with a bounded recommendation,
                 # but the recommendation cannot resolve an issue or set a field value.
-                _run_ai_review_recommendations(
-                    organization_id=job.organization_id,
-                    operation_id=job.operation_id,
-                )
+                with _timed_worker_stage(
+                    job=job,
+                    stage="ai_review_recommendations",
+                    source_set_fingerprint=source_set_fingerprint,
+                ):
+                    _run_ai_review_recommendations(
+                        organization_id=job.organization_id,
+                        operation_id=job.operation_id,
+                    )
             else:
                 LOGGER.info(
                     "Lacey operation source set not ready; deferred operation-level work",
@@ -694,26 +763,50 @@ def process_one_us_lacey_job(
         # nested lock on a separate connection. Any shadow failure is swallowed by
         # the wrapper and cannot alter the legacy queue state.
         if isinstance(assurance_public_id, UUID) and finalize_source_set:
-            _shadow_multilingual_evidence_snapshot(
-                organization_id=job.organization_id,
-                operation_id=job.operation_id,
-            )
-            if not finalize_claim(organization_id=job.organization_id, claim=source_set_claim):
+            with _timed_worker_stage(
+                job=job,
+                stage="multilingual_snapshot",
+                source_set_fingerprint=source_set_fingerprint,
+            ):
+                _shadow_multilingual_evidence_snapshot(
+                    organization_id=job.organization_id,
+                    operation_id=job.operation_id,
+                )
+            with _timed_worker_stage(
+                job=job,
+                stage="source_set_finalize",
+                source_set_fingerprint=source_set_fingerprint,
+            ):
+                finalized = finalize_claim(
+                    organization_id=job.organization_id,
+                    claim=source_set_claim,
+                )
+            if not finalized:
                 LOGGER.info(
                     "Lacey source-set finalization superseded before publication",
                     extra={"organization_id": job.organization_id, "operation_id": job.operation_id, "job_id": job.id, "stage": "source_set_finalization", "source_set_fingerprint": source_set_claim.fingerprint},
                 )
 
         # COMPLETED is the final queue transition, after the full processing chain.
-        if not complete_us_lacey_job(job_id=job.id, worker_id=worker_id):
+        with _timed_worker_stage(job=job, stage="queue_complete"):
+            completed = complete_us_lacey_job(job_id=job.id, worker_id=worker_id)
+        if not completed:
             raise UsLaceyWorkerError("Processing job could not be completed atomically.")
 
         # Refresh only after the terminal queue transition. Refreshing while this job
         # is RUNNING would correctly project the operation as PROCESSING and leave a
         # stale operation state until some later request recomputed it.
-        operation_status = _refresh_operation(
-            organization_id=job.organization_id,
-            operation_id=job.operation_id,
+        with _timed_worker_stage(job=job, stage="operation_refresh"):
+            operation_status = _refresh_operation(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+            )
+        _log_stage_timing(
+            job=job,
+            stage="total",
+            started_at=total_started_at,
+            source_set_fingerprint=source_set_fingerprint,
+            job_status="COMPLETED",
         )
         return UsLaceyWorkerResult(
             claimed=True,
