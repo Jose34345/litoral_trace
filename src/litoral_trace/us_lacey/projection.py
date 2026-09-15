@@ -149,17 +149,11 @@ _LINE_ALLOCATION_IDENTITY_HEADERS = frozenset(
 _LINE_NUMBER_HEADERS = frozenset(
     {"line", "line no", "line number", "item", "item no", "item number"}
 )
-_CUSTOMS_LINE_IDENTITY_HEADERS = frozenset(
-    {
-        "hts",
-        "hts code",
-        "hts number",
-        "htsus",
-        "description",
-        "commodity description",
-        "description of goods",
-        "goods description",
-    }
+_CUSTOMS_HTS_HEADERS = frozenset(
+    {"hts", "hts code", "hts number", "htsus"}
+)
+_CUSTOMS_DESCRIPTION_HEADERS = frozenset(
+    {"description", "commodity description", "description of goods", "goods description"}
 )
 
 _STRUCTURAL_ARTIFACTS_BY_TARGET = {
@@ -247,6 +241,9 @@ _PLANT_ROW_IDENTITY_TARGETS = frozenset(
         "percent_recycled",
     }
 )
+_CUSTOMS_LINE_ROW_TARGETS = frozenset(
+    {"hts_code", "merchandise_description", "entered_value"}
+)
 _MAX_AUTO_PLANT_LINES = 500
 
 
@@ -307,11 +304,13 @@ def _is_line_allocation_table(headers: frozenset[str]) -> bool:
         return False
     if headers & _LINE_ALLOCATION_IDENTITY_HEADERS:
         return True
-    # Customs entry worksheets often carry no botanical columns. An explicit line
-    # number plus HTS/description is strong structural evidence that Entered Value
-    # belongs to that row rather than to the shipment total.
-    return bool(headers & _LINE_NUMBER_HEADERS) and bool(
-        headers & _CUSTOMS_LINE_IDENTITY_HEADERS
+    # Customs entry worksheets often carry no botanical columns. Require the full
+    # row signature (line + HTS + description + entered value) so a shipment-summary
+    # table with a line-ish column cannot be mistaken for plant-line allocations.
+    return (
+        bool(headers & _LINE_NUMBER_HEADERS)
+        and bool(headers & _CUSTOMS_HTS_HEADERS)
+        and bool(headers & _CUSTOMS_DESCRIPTION_HEADERS)
     )
 
 
@@ -480,16 +479,23 @@ def _explicit_plant_data_rows(
     *,
     table_headers,
 ) -> tuple[int, ...]:
-    """Return explicit table rows that carry plant-line identity evidence.
+    """Return explicit table rows that carry line-identity evidence.
 
-    Row numbers are evidence locators, not inferred declaration facts. Restricting
-    materialization to plant identity fields prevents shipment totals or generic
-    invoice rows from manufacturing declaration lines.
+    Botanical declaration rows remain the primary source. Customs entry rows may
+    also establish independent PPQ line skeletons, but only when the enclosing table
+    has the strong line + HTS + description + entered-value signature. This makes
+    upload order irrelevant without allowing shipment totals to manufacture lines.
     """
     rows: set[int] = set()
     for source in extracted:
         target, _priority = _target_field(source, table_headers=table_headers)
-        if target not in _PLANT_ROW_IDENTITY_TARGETS:
+        context_headers = _table_header_context(source, table_headers)
+        is_plant_identity = target in _PLANT_ROW_IDENTITY_TARGETS
+        is_customs_line_identity = (
+            target in _CUSTOMS_LINE_ROW_TARGETS
+            and _is_line_allocation_table(context_headers)
+        )
+        if not (is_plant_identity or is_customs_line_identity):
             continue
         match = _DATA_ROW.search(str(source.source_locator or ""))
         if match is None:
