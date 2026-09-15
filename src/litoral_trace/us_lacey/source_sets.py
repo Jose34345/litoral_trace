@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Callable
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
-from typing import Callable
 
 from litoral_trace.db.models import (
     AssuranceDocument,
@@ -34,27 +34,62 @@ class SourceSetClaim:
 SessionFactory = Callable[[], Session]
 
 
+def _current_source_set_rows(
+    session: Session,
+    *,
+    organization_id: int,
+    operation_id: int,
+):
+    """Load the canonical current operation-document/Vault membership."""
+    return session.execute(
+        select(UsLaceyOperationDocument, VaultDocument)
+        .join(
+            AssuranceDocument,
+            AssuranceDocument.id == UsLaceyOperationDocument.assurance_document_id,
+        )
+        .join(VaultDocument, VaultDocument.id == AssuranceDocument.vault_document_id)
+        .where(
+            UsLaceyOperationDocument.organization_id == organization_id,
+            UsLaceyOperationDocument.operation_id == operation_id,
+            UsLaceyOperationDocument.is_current.is_(True),
+        )
+        .order_by(UsLaceyOperationDocument.id)
+    ).all()
+
+
+def _fingerprint_current_source_set(
+    session: Session,
+    *,
+    organization_id: int,
+    operation_id: int,
+) -> tuple[str | None, list]:
+    rows = _current_source_set_rows(
+        session,
+        organization_id=organization_id,
+        operation_id=operation_id,
+    )
+    if not rows:
+        return None, rows
+    fingerprint = source_set_fingerprint(
+        organization_id=organization_id,
+        operation_id=operation_id,
+        documents=[(link, vault) for link, vault in rows],
+    )
+    return fingerprint, rows
+
+
 def seal_current_source_set(*, organization_id: int, operation_id: int, session_factory: SessionFactory = get_us_lacey_db_session) -> UsLaceySourceSetRevision:
     """Snapshot current links and expose them to workers only as one SEALED set."""
     session = session_factory()
     try:
         set_tenant_db_context(session, organization_id)
-        rows = session.execute(
-            select(UsLaceyOperationDocument, VaultDocument)
-            .join(AssuranceDocument, (AssuranceDocument.id == UsLaceyOperationDocument.assurance_document_id))
-            .join(VaultDocument, VaultDocument.id == AssuranceDocument.vault_document_id)
-            .where(
-                UsLaceyOperationDocument.organization_id == organization_id,
-                UsLaceyOperationDocument.operation_id == operation_id,
-                UsLaceyOperationDocument.is_current.is_(True),
-            ).order_by(UsLaceyOperationDocument.id)
-        ).all()
-        if not rows:
-            raise ValueError("A source set requires at least one current document.")
-        fingerprint = source_set_fingerprint(
-            organization_id=organization_id, operation_id=operation_id,
-            documents=[(link, vault) for link, vault in rows],
+        fingerprint, rows = _fingerprint_current_source_set(
+            session,
+            organization_id=organization_id,
+            operation_id=operation_id,
         )
+        if fingerprint is None:
+            raise ValueError("A source set requires at least one current document.")
         existing = session.scalar(select(UsLaceySourceSetRevision).where(
             UsLaceySourceSetRevision.organization_id == organization_id,
             UsLaceySourceSetRevision.operation_id == operation_id,
@@ -104,6 +139,22 @@ def claim_ready_source_set(*, organization_id: int, operation_id: int, completin
         ))
         if revision is None or revision.status not in {"SEALED", "FINALIZING"}:
             return SourceSetClaim(None, None, None, False, "NOT_SEALED")
+
+        current_fingerprint, _ = _fingerprint_current_source_set(
+            session,
+            organization_id=organization_id,
+            operation_id=operation_id,
+        )
+        if current_fingerprint != revision.source_set_fingerprint:
+            return SourceSetClaim(
+                revision.id,
+                revision.generation,
+                revision.source_set_fingerprint,
+                False,
+                "SOURCE_SET_CHANGED",
+                revision.claimed_at,
+            )
+
         members = session.scalars(select(UsLaceySourceSetMember).where(
             UsLaceySourceSetMember.organization_id == organization_id,
             UsLaceySourceSetMember.source_set_revision_id == revision.id,
