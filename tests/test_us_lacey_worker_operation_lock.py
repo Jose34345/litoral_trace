@@ -5,7 +5,7 @@ from uuid import uuid4
 from litoral_trace.us_lacey import worker
 
 
-def test_worker_holds_operation_lock_across_projection_postprocessors(monkeypatch):
+def test_worker_holds_operation_lock_across_projection_postprocessors_and_final_claim(monkeypatch):
     events: list[str] = []
     job = SimpleNamespace(
         id=41,
@@ -29,8 +29,21 @@ def test_worker_holds_operation_lock_across_projection_postprocessors(monkeypatc
         "_processing_service",
         lambda: SimpleNamespace(process=lambda **_kwargs: "EXTRACTED"),
     )
-    monkeypatch.setattr(worker, "_claim_source_set_finalization", lambda **_kwargs: SimpleNamespace(claimed=True, fingerprint="test"))
-    monkeypatch.setattr(worker, "finalize_claim", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        worker,
+        "_claim_source_set_finalization",
+        lambda **_kwargs: SimpleNamespace(claimed=True, fingerprint="test"),
+    )
+    monkeypatch.setattr(
+        worker,
+        "finalize_claim",
+        lambda **_kwargs: events.append("finalize") or True,
+    )
+    monkeypatch.setattr(
+        worker,
+        "_shadow_multilingual_evidence_snapshot",
+        lambda **_kwargs: events.append("snapshot"),
+    )
 
     @contextmanager
     def projection_lock(**kwargs):
@@ -86,6 +99,10 @@ def test_worker_holds_operation_lock_across_projection_postprocessors(monkeypatc
         "engine2-suggestions",
         "ai-suggestions",
         "ai-review",
+        "lock-exit",
+        "snapshot",
+        "lock-enter",
+        "finalize",
         "lock-exit",
         "complete",
         "refresh",
