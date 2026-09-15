@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -18,6 +19,13 @@ def test_seven_document_batch_seals_all_members_before_any_job_is_eligible(monke
             events.append(("ingest", sequence))
             return SimpleNamespace(assurance_document_id=sequence)
 
+    # This unit test proves batch ordering only.  The real PostgreSQL advisory-lock
+    # behavior has its own dedicated acceptance coverage, so keep this seam local.
+    monkeypatch.setattr(
+        workflow,
+        "us_lacey_operation_projection_lock",
+        lambda **_: nullcontext(),
+    )
     monkeypatch.setattr(
         workflow,
         "seal_current_source_set",
