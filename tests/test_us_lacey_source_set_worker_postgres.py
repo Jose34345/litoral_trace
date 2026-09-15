@@ -329,3 +329,82 @@ def test_seven_document_source_set_runs_operation_ai_exactly_once_after_last_mem
     )
     assert [revision.id for revision in current_revisions] == [persisted_n_plus_one.id]
     session.close()
+
+
+def test_recurring_source_set_creates_a_new_generation_instead_of_reviving_history(
+    engine2_postgres_engine,
+    engine2_postgres_session_factory,
+) -> None:
+    """A -> B -> A is a new revision even when A's canonical fingerprint repeats."""
+    _require_source_set_schema(engine2_postgres_engine)
+    org, operation_id, original_link_id, _, _, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        role="BILL_OF_LADING",
+        content=b"recurring-source-set-a",
+    )
+    revision_a1 = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation_id,
+        session_factory=engine2_postgres_session_factory,
+    )
+    identical_a1 = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation_id,
+        session_factory=engine2_postgres_session_factory,
+    )
+    assert identical_a1.id == revision_a1.id
+
+    replacement_link_id, _, _, _ = add_test_document(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        operation_id=operation_id,
+        role="BILL_OF_LADING",
+        filename="recurring-source-set-b.pdf",
+        content=b"recurring-source-set-b",
+        version_number=2,
+        is_current=False,
+    )
+    session = tenant_session(engine2_postgres_session_factory, org)
+    session.get(UsLaceyOperationDocument, original_link_id).is_current = False
+    session.get(UsLaceyOperationDocument, replacement_link_id).is_current = True
+    session.commit()
+    session.close()
+
+    revision_b = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation_id,
+        session_factory=engine2_postgres_session_factory,
+    )
+    assert revision_b.generation == revision_a1.generation + 1
+    assert revision_b.source_set_fingerprint != revision_a1.source_set_fingerprint
+
+    session = tenant_session(engine2_postgres_session_factory, org)
+    session.get(UsLaceyOperationDocument, replacement_link_id).is_current = False
+    session.get(UsLaceyOperationDocument, original_link_id).is_current = True
+    session.commit()
+    session.close()
+
+    revision_a2 = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation_id,
+        session_factory=engine2_postgres_session_factory,
+    )
+
+    assert revision_a2.id != revision_a1.id
+    assert revision_a2.generation == revision_b.generation + 1
+    assert revision_a2.source_set_fingerprint == revision_a1.source_set_fingerprint
+    assert revision_a2.is_current is True
+
+    session = tenant_session(engine2_postgres_session_factory, org)
+    revisions = session.scalars(
+        select(UsLaceySourceSetRevision)
+        .where(
+            UsLaceySourceSetRevision.organization_id == org,
+            UsLaceySourceSetRevision.operation_id == operation_id,
+        )
+        .order_by(UsLaceySourceSetRevision.generation)
+    ).all()
+    assert [item.generation for item in revisions] == [1, 2, 3]
+    assert [item.id for item in revisions if item.is_current] == [revision_a2.id]
+    assert revisions[0].source_set_fingerprint == revisions[2].source_set_fingerprint
+    session.close()
