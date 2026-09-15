@@ -41,6 +41,12 @@ _COMPANY_SUFFIX = re.compile(
     re.IGNORECASE,
 )
 _STRUCTURAL_MID_VALUES = frozenset({"CODE", "ID", "NUMBER", "NO", "IDENTIFICATION", "MANUFACTURER", "MID"})
+_KNOWN_PLANT_GENERA = frozenset({
+    "acer", "betula", "eucalyptus", "fagus", "fraxinus", "hevea", "pinus", "populus", "quercus", "tectona",
+})
+_COUNTRY_ALIASES = {
+    "brasil": "brazil",
+}
 
 
 def fold_text(value: object) -> str:
@@ -100,6 +106,15 @@ def _mass_kg(raw: str) -> str | None:
     return f"{(amount * factor).normalize()} kg"
 
 
+def _taxon_signature(text: object) -> str | None:
+    """Return a deterministic plant identity only from an explicit binomial in evidence text."""
+    for match in re.finditer(r"\b([A-Za-z]{3,})\s+([A-Za-z]{3,})\b", str(text or "")):
+        genus = match.group(1).casefold()
+        if genus in _KNOWN_PLANT_GENERA:
+            return f"taxon:{genus}:{match.group(2).casefold()}"
+    return None
+
+
 def semantic_normalize(field_key: str, value: object) -> str:
     raw = " ".join(str(value or "").split()).strip()
     if not raw:
@@ -112,7 +127,10 @@ def semantic_normalize(field_key: str, value: object) -> str:
         return re.sub(r"\D", "", raw)
     if key in {"container_number", "bill_of_lading", "manufacturer_id", "filing_entry_reference"}:
         return re.sub(r"[^A-Z0-9]", "", raw.upper())
-    if key in {"genus", "species", "country_of_harvest", "metric_unit"}:
+    if key == "country_of_harvest":
+        folded = fold_text(raw)
+        return _COUNTRY_ALIASES.get(folded, folded)
+    if key in {"genus", "species", "metric_unit"}:
         return fold_text(raw)
     if key == "plant_quantity":
         mass = _mass_kg(raw)
@@ -148,6 +166,10 @@ def association_key(candidate: AdmittedCandidate, scope: str, document_id: str) 
     block = candidate.raw.source_block
     if scope not in {"MERCHANDISE_LINE", "PLANT_COMPONENT"}:
         return None
+    if scope == "PLANT_COMPONENT":
+        taxon = _taxon_signature(candidate.provenance.source_text)
+        if taxon:
+            return taxon
     if block.table_id and block.row_index is not None and block.structure_type in {LayoutStructureType.LINE_ITEM_TABLE, LayoutStructureType.MATRIX_TABLE}:
         return f"{document_id}:{block.table_id}:row:{block.row_index}"
     label = str(candidate.raw.label or "")
