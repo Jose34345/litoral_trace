@@ -155,6 +155,12 @@ _CUSTOMS_HTS_HEADERS = frozenset(
 _CUSTOMS_DESCRIPTION_HEADERS = frozenset(
     {"description", "commodity description", "description of goods", "goods description"}
 )
+_COMMERCIAL_PRODUCT_ID_HEADERS = frozenset(
+    {"sku", "item code", "product code", "part number", "part no"}
+)
+_COMMERCIAL_UNIT_PRICE_HEADERS = frozenset(
+    {"unit price", "unit cost", "price per unit", "unit value"}
+)
 
 _STRUCTURAL_ARTIFACTS_BY_TARGET = {
     "container_number": frozenset(
@@ -304,9 +310,17 @@ def _is_line_allocation_table(headers: frozenset[str]) -> bool:
         return False
     if headers & _LINE_ALLOCATION_IDENTITY_HEADERS:
         return True
+    # A row with both a commercial product identifier and unit pricing is a sales /
+    # invoice merchandise row, not sufficient evidence of a PPQ/customs allocation.
+    # Fail closed even when it also contains Line + HTS + Description + Entered Value.
+    if (
+        headers & _COMMERCIAL_PRODUCT_ID_HEADERS
+        and headers & _COMMERCIAL_UNIT_PRICE_HEADERS
+    ):
+        return False
     # Customs entry worksheets often carry no botanical columns. Require the full
-    # row signature (line + HTS + description + entered value) so a shipment-summary
-    # table with a line-ish column cannot be mistaken for plant-line allocations.
+    # row signature (line + HTS + description + entered value) while keeping
+    # commercial pricing tables outside the regulatory-line path above.
     return (
         bool(headers & _LINE_NUMBER_HEADERS)
         and bool(headers & _CUSTOMS_HTS_HEADERS)
