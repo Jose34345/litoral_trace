@@ -14,6 +14,7 @@ from litoral_trace.lacey_engine.multi_agent.contracts import (
 from litoral_trace.lacey_engine.multi_agent.line_binding import bind_line_items
 from litoral_trace.lacey_engine.pipeline import _extract
 from litoral_trace.us_lacey.projection import (
+    _explicit_plant_data_rows,
     _has_explicit_line_entered_value,
     _target_field,
 )
@@ -85,6 +86,43 @@ def test_customs_line_table_admits_entered_value_as_explicit_line_allocation():
     assert _has_explicit_line_entered_value(
         [source], table_headers=table_headers
     ) is True
+
+
+def test_customs_entry_rows_can_materialize_lines_before_botanical_documents_arrive():
+    table_headers = {
+        2: frozenset({"line", "hts", "description", "qty", "entered value"})
+    }
+    extracted = [
+        SimpleNamespace(
+            field_name="raw.table.2.HTS",
+            original_value="4407.11.0190",
+            normalized_value="4407.11.0190",
+            source_locator="pdf:page:1;table:2;header_row:1;data_row:1;column:2",
+        ),
+        SimpleNamespace(
+            field_name="raw.table.2.Entered Value",
+            original_value="USD 18,300.00",
+            normalized_value="USD 18,300.00",
+            source_locator="pdf:page:1;table:2;header_row:1;data_row:1;column:5",
+        ),
+        SimpleNamespace(
+            field_name="raw.table.2.HTS",
+            original_value="4407.99.0190",
+            normalized_value="4407.99.0190",
+            source_locator="pdf:page:1;table:2;header_row:1;data_row:2;column:2",
+        ),
+        SimpleNamespace(
+            field_name="raw.table.2.Entered Value",
+            original_value="USD 12,640.00",
+            normalized_value="USD 12,640.00",
+            source_locator="pdf:page:1;table:2;header_row:1;data_row:2;column:5",
+        ),
+    ]
+
+    assert _explicit_plant_data_rows(
+        extracted,
+        table_headers=table_headers,
+    ) == (1, 2)
 
 
 def _candidate(field_key: str, value: str) -> AICandidate:
