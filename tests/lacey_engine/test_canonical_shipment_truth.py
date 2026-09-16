@@ -181,6 +181,16 @@ def test_golden_shipment_truth_has_two_isolated_complete_lines():
     assert first.fields["hts_code"].state is CanonicalTruthState.SUPPORTED
     assert second.fields["hts_code"].state is CanonicalTruthState.SUPPORTED
 
+    description = truth.shipment_fields["merchandise_description"]
+    assert description.state is CanonicalTruthState.SUPPORTED_MULTIPLE
+    assert description.values == (
+        "Pinus taeda KD sawn boards; Eucalyptus grandis KD sawn boards",
+    )
+    assert {row.line_key for row in description.evidence} == {
+        "6:table:2:row:1",
+        "6:table:2:row:2",
+    }
+
 
 def test_low_authority_harvest_country_is_visible_review_not_missing():
     truth = build_canonical_shipment_truth(_golden_payload())

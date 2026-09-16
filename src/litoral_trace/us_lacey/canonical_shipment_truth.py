@@ -1,11 +1,9 @@
-"""Deterministic final truth model for U.S. Lacey shipment preparation.
+"""Canonical shipment and plant-line truth for U.S. Lacey preparation.
 
-The extraction/reconciliation engine owns evidence admission. This module owns the
-last semantic step before machine-derived values are published to customer review:
-it turns scoped shipment evidence into explicit shipment and plant-line entities and
-publishes that truth into the existing PPQ review schema without touching human work.
-
-It intentionally contains no AI calls and never guesses an ambiguous line binding.
+Engine 2 owns evidence admission and reconciliation.  This module is the single
+machine publication boundary between that evidence graph and customer review.
+It preserves line identity, fails closed on ambiguous joins, and never overwrites
+human-reviewed work.
 """
 from __future__ import annotations
 
@@ -29,7 +27,13 @@ from litoral_trace.db.models import (
     UsLaceyPlantDeclaration,
     UsLaceyPpqPlantLine,
 )
-from litoral_trace.us_lacey.ppq505 import PPQ505_PLANT_FIELDS, validate_ppq_value
+from litoral_trace.us_lacey.ppq505 import (
+    PPQ505_FIELDS_BY_KEY,
+    PPQ505_PLANT_FIELDS,
+    PPQ505_SHIPMENT_REFERENCE,
+    PpqScope,
+    validate_ppq_value,
+)
 
 
 CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v1"
@@ -117,17 +121,7 @@ _COMPONENT_FIELDS = frozenset(
         "percent_recycled",
     }
 )
-_BOTANICAL_PPQ_FIELDS = frozenset(
-    {
-        "article_component",
-        "genus",
-        "species",
-        "country_of_harvest",
-        "plant_quantity",
-        "metric_unit",
-        "percent_recycled",
-    }
-)
+_BOTANICAL_PPQ_FIELDS = frozenset(_ENGINE_TO_PPQ[key] for key in _COMPONENT_FIELDS)
 _ROW_ORDINAL = re.compile(r"(?:^|:)row:(\d+)$", re.IGNORECASE)
 _TAXON = re.compile(r"^taxon:([^:]+):([^:]+)$", re.IGNORECASE)
 
@@ -152,9 +146,9 @@ def _evidence(row: Mapping, *, fallback_field: str) -> CanonicalEvidence:
     raw = _raw_payload(row)
     page = provenance.get("page")
     try:
-        page_value = int(page) if page is not None else None
+        source_page = int(page) if page is not None else None
     except (TypeError, ValueError):
-        page_value = None
+        source_page = None
     return CanonicalEvidence(
         candidate_id=str(row.get("candidate_id") or ""),
         document_id=str(row.get("document_id") or ""),
@@ -166,9 +160,9 @@ def _evidence(row: Mapping, *, fallback_field: str) -> CanonicalEvidence:
         candidate_score=float(
             row.get("candidate_score") or _candidate_payload(row).get("score") or 0.0
         ),
-        source_page=page_value,
+        source_page=source_page,
         source_text=str(provenance.get("source_text") or ""),
-        line_key=(str(row.get("line_key")).strip() if row.get("line_key") else None),
+        line_key=str(row.get("line_key")).strip() if row.get("line_key") else None,
         component_key=(
             str(row.get("component_key")).strip() if row.get("component_key") else None
         ),
@@ -204,18 +198,21 @@ def _field_state(
 
 def _field_truth(
     *,
-    engine_key: str,
     target_key: str,
     field_payload: Mapping,
     rows: tuple[CanonicalEvidence, ...],
     force_review: bool = False,
 ) -> CanonicalFieldTruth:
-    state = _field_state(
-        aggregate_state=str(field_payload.get("state") or "MISSING"),
-        rows=rows,
-        force_review=force_review,
+    return CanonicalFieldTruth(
+        field_name=target_key,
+        state=_field_state(
+            aggregate_state=str(field_payload.get("state") or "MISSING"),
+            rows=rows,
+            force_review=force_review,
+        ),
+        values=_distinct_values(rows),
+        evidence=rows,
     )
-    return CanonicalFieldTruth(target_key, state, _distinct_values(rows), rows)
 
 
 def _ordinal(key: str) -> int | None:
@@ -247,21 +244,52 @@ def _low_authority_review_fields(payload: Mapping) -> frozenset[str]:
     for issue in payload.get("issues") or ():
         if not isinstance(issue, Mapping):
             continue
-        if str(issue.get("issue_type") or "") == "LOW_AUTHORITY_ONLY":
-            field = str(issue.get("field_key") or "").strip()
-            if field:
-                fields.add(field)
+        if str(issue.get("issue_type") or "") != "LOW_AUTHORITY_ONLY":
+            continue
+        field = str(issue.get("field_key") or "").strip()
+        if field:
+            fields.add(field)
     return frozenset(fields)
 
 
-def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
-    """Build one fail-closed shipment/plant-line truth from Engine 2 JSON.
+def _composed_merchandise_description(
+    plant_lines: tuple[CanonicalPlantLineTruth, ...],
+) -> CanonicalFieldTruth | None:
+    """Collapse line-local descriptions into the shipment-scoped PPQ field.
 
-    Merchandise rows are never merged merely because their values look similar.
-    Plant-component evidence is attached only when a taxon is explicitly present
-    in exactly one merchandise line description (or the whole operation has one
-    merchandise line and one component).
+    PPQ 505 field 10 is shipment-scoped.  Line descriptions remain on canonical
+    plant lines for identity and evidence isolation, but their exact supported
+    strings are published once, in stable line order, rather than as a false
+    cross-line conflict.
     """
+    values: list[str] = []
+    evidence: list[CanonicalEvidence] = []
+    for line in plant_lines:
+        description = line.fields.get("merchandise_description")
+        if description is None or description.state is CanonicalTruthState.CONFLICT:
+            return None
+        if len(description.values) != 1:
+            return None
+        if description.values[0] not in values:
+            values.append(description.values[0])
+        evidence.extend(description.evidence)
+    if not values:
+        return None
+    state = (
+        CanonicalTruthState.SUPPORTED_MULTIPLE
+        if len(values) > 1 or len(evidence) > 1
+        else CanonicalTruthState.SUPPORTED
+    )
+    return CanonicalFieldTruth(
+        field_name="merchandise_description",
+        state=state,
+        values=("; ".join(values),),
+        evidence=tuple(evidence),
+    )
+
+
+def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
+    """Build one fail-closed shipment/plant-line truth from Engine 2 JSON."""
     fields_payload = payload.get("canonical_fields")
     if not isinstance(fields_payload, Mapping):
         raise ValueError("Shipment resolution has no canonical_fields mapping.")
@@ -300,28 +328,24 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
 
     description_text_by_line: dict[str, str] = {}
     for line_key in merchandise_keys:
-        rows = tuple(
-            row
-            for row in evidence_by_field.get("description", ())
-            if row.line_key == line_key
-        )
         description_text_by_line[line_key] = " ".join(
             part
-            for row in rows
+            for row in evidence_by_field.get("description", ())
+            if row.line_key == line_key
             for part in (row.normalized_value, row.source_text)
             if part
         )
 
     matches_by_component: dict[str, tuple[str, ...]] = {}
     for component_key in component_keys:
-        explicit = tuple(
+        matches = tuple(
             line_key
             for line_key in merchandise_keys
             if _contains_taxon(description_text_by_line.get(line_key, ""), component_key)
         )
-        if not explicit and len(merchandise_keys) == 1 and len(component_keys) == 1:
-            explicit = (merchandise_keys[0],)
-        matches_by_component[component_key] = explicit
+        if not matches and len(merchandise_keys) == 1 and len(component_keys) == 1:
+            matches = (merchandise_keys[0],)
+        matches_by_component[component_key] = matches
 
     component_for_line: dict[str, str] = {}
     unresolved: set[str] = set()
@@ -331,15 +355,14 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
             continue
         line_key = matches[0]
         if line_key in component_for_line:
-            # Two botanical entities claiming one merchandise row is ambiguous.
             unresolved.add(component_key)
             unresolved.add(component_for_line.pop(line_key))
             continue
         component_for_line[line_key] = component_key
 
-    plant_lines: list[CanonicalPlantLineTruth] = []
+    line_truths: list[CanonicalPlantLineTruth] = []
     for line_key in merchandise_keys:
-        canonical_fields: dict[str, CanonicalFieldTruth] = {}
+        line_fields: dict[str, CanonicalFieldTruth] = {}
         for engine_key in _MERCHANDISE_FIELDS:
             field_payload = field_payloads.get(engine_key)
             if field_payload is None:
@@ -349,8 +372,7 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
             )
             if not rows:
                 continue
-            canonical_fields[_ENGINE_TO_PPQ[engine_key]] = _field_truth(
-                engine_key=engine_key,
+            line_fields[_ENGINE_TO_PPQ[engine_key]] = _field_truth(
                 target_key=_ENGINE_TO_PPQ[engine_key],
                 field_payload=field_payload,
                 rows=rows,
@@ -369,29 +391,25 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
                 )
                 if not rows:
                     continue
-                canonical_fields[_ENGINE_TO_PPQ[engine_key]] = _field_truth(
-                    engine_key=engine_key,
+                line_fields[_ENGINE_TO_PPQ[engine_key]] = _field_truth(
                     target_key=_ENGINE_TO_PPQ[engine_key],
                     field_payload=field_payload,
                     rows=rows,
                     force_review=engine_key in low_authority_fields,
                 )
 
-        plant_lines.append(
+        line_truths.append(
             CanonicalPlantLineTruth(
                 entity_key=line_key,
                 ordinal_hint=_ordinal(line_key),
                 taxon_key=component_key,
-                fields=canonical_fields,
+                fields=line_fields,
             )
         )
 
-    # A component-only operation is still representable; a mixed operation with
-    # ambiguous component joins is deliberately fail-closed instead of growing
-    # invented duplicate PPQ lines.
     if not merchandise_keys:
         for ordinal, component_key in enumerate(component_keys, start=1):
-            canonical_fields: dict[str, CanonicalFieldTruth] = {}
+            line_fields: dict[str, CanonicalFieldTruth] = {}
             for engine_key in _COMPONENT_FIELDS:
                 field_payload = field_payloads.get(engine_key)
                 if field_payload is None:
@@ -403,39 +421,44 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
                 )
                 if not rows:
                     continue
-                canonical_fields[_ENGINE_TO_PPQ[engine_key]] = _field_truth(
-                    engine_key=engine_key,
+                line_fields[_ENGINE_TO_PPQ[engine_key]] = _field_truth(
                     target_key=_ENGINE_TO_PPQ[engine_key],
                     field_payload=field_payload,
                     rows=rows,
                     force_review=engine_key in low_authority_fields,
                 )
-            plant_lines.append(
+            line_truths.append(
                 CanonicalPlantLineTruth(
                     entity_key=component_key,
                     ordinal_hint=ordinal,
                     taxon_key=component_key,
-                    fields=canonical_fields,
+                    fields=line_fields,
                 )
             )
 
+    plant_lines = tuple(line_truths)
     shipment_fields: dict[str, CanonicalFieldTruth] = {}
     for engine_key, field_payload in field_payloads.items():
         if engine_key in _MERCHANDISE_FIELDS or engine_key in _COMPONENT_FIELDS:
             continue
-        rows = evidence_by_field.get(engine_key, ())
         target = _ENGINE_TO_PPQ.get(engine_key, engine_key)
+        contract = PPQ505_FIELDS_BY_KEY.get(target)
+        if contract is None or contract.scope is not PpqScope.SHIPMENT:
+            continue
         shipment_fields[target] = _field_truth(
-            engine_key=engine_key,
             target_key=target,
             field_payload=field_payload,
-            rows=rows,
+            rows=evidence_by_field.get(engine_key, ()),
             force_review=engine_key in low_authority_fields,
         )
 
+    composed_description = _composed_merchandise_description(plant_lines)
+    if composed_description is not None:
+        shipment_fields["merchandise_description"] = composed_description
+
     return CanonicalShipmentTruth(
         shipment_fields=shipment_fields,
-        plant_lines=tuple(plant_lines),
+        plant_lines=plant_lines,
         unresolved_component_keys=tuple(sorted(unresolved)),
     )
 
@@ -541,9 +564,47 @@ def _ensure_plant_line_count(
         lines.append(line)
         existing_refs.add(reference)
         next_ordinal += 1
-    operation.merchandise_line_count = max(int(operation.merchandise_line_count or 0), len(lines))
+    operation.merchandise_line_count = max(
+        int(operation.merchandise_line_count or 0), len(lines)
+    )
     session.flush()
     return tuple(lines)
+
+
+def _ensure_shipment_field(
+    session,
+    *,
+    organization_id: int,
+    operation_id: int,
+    field_name: str,
+) -> UsLaceyOperationField:
+    contract = PPQ505_FIELDS_BY_KEY.get(field_name)
+    if contract is None or contract.scope is not PpqScope.SHIPMENT:
+        raise RuntimeError("CANONICAL_SHIPMENT_FIELD_CONTRACT_INVALID")
+    existing = session.scalar(
+        select(UsLaceyOperationField).where(
+            UsLaceyOperationField.organization_id == organization_id,
+            UsLaceyOperationField.operation_id == operation_id,
+            UsLaceyOperationField.merchandise_line_reference == PPQ505_SHIPMENT_REFERENCE,
+            UsLaceyOperationField.field_name == field_name,
+        )
+    )
+    if existing is not None:
+        return existing
+    field = UsLaceyOperationField(
+        organization_id=organization_id,
+        operation_id=operation_id,
+        merchandise_line_reference=PPQ505_SHIPMENT_REFERENCE,
+        field_name=field_name,
+        field_scope="SHIPMENT",
+        plant_line_id=None,
+        field_status="MISSING",
+        validation_status="MISSING",
+        confidence=0.0,
+    )
+    session.add(field)
+    session.flush()
+    return field
 
 
 def _reject_stale_machine_candidates(
@@ -561,13 +622,24 @@ def _reject_stale_machine_candidates(
             UsLaceyFieldCandidate.decision == "PENDING",
         )
     ).all()
+    now = datetime.now(timezone.utc)
     for row in rows:
         if row.fingerprint in accepted_fingerprints:
             continue
         row.decision = "REJECTED"
-        row.decided_at = datetime.now(timezone.utc)
+        row.decided_at = now
         rejected += 1
     return rejected
+
+
+def _candidate_groups(field: CanonicalFieldTruth) -> Mapping[str, tuple[CanonicalEvidence, ...]]:
+    if len(field.values) == 1:
+        return {field.values[0]: field.evidence}
+    groups: dict[str, list[CanonicalEvidence]] = {}
+    for evidence in field.evidence:
+        if evidence.normalized_value:
+            groups.setdefault(evidence.normalized_value, []).append(evidence)
+    return {key: tuple(value) for key, value in groups.items()}
 
 
 def _publish_field(
@@ -580,7 +652,6 @@ def _publish_field(
     assurance_by_operation_document: Mapping[int, int],
     ambiguous_component_binding: bool,
 ) -> tuple[int, int, int]:
-    """Publish one unreviewed field; return fields, reviews, rejected candidates."""
     if _reviewed(target):
         return 0, 0, 0
 
@@ -607,20 +678,14 @@ def _publish_field(
             )
             return 1, 1, rejected
         if target.field_status == "NOT_REQUIRED":
-            # Preserve an independent deterministic regulatory condition.
             return 0, 0, rejected
         target.field_status = "MISSING"
         target.validation_status = "MISSING"
         target.validation_error = None
         return 1, 0, rejected
 
-    evidence_by_value: dict[str, list[CanonicalEvidence]] = {}
-    for evidence in truth.evidence:
-        if evidence.normalized_value:
-            evidence_by_value.setdefault(evidence.normalized_value, []).append(evidence)
-
     accepted_fingerprints: set[str] = set()
-    for value, evidences in evidence_by_value.items():
+    for value, evidences in _candidate_groups(truth).items():
         validation = validate_ppq_value(target.field_name, value)
         normalized = validation.normalized_value or value
         for evidence in evidences:
@@ -679,12 +744,9 @@ def _publish_field(
                         decision="PENDING",
                     )
                 )
-            elif existing.decision == "REJECTED":
-                # Same canonical evidence can reappear after a safe republish; it is
-                # authoritative machine evidence again, but still needs human review.
+            elif existing.decision == "REJECTED" and existing.decided_by_user_id is None:
                 existing.decision = "PENDING"
                 existing.decided_at = None
-                existing.decided_by_user_id = None
 
     rejected = _reject_stale_machine_candidates(
         session,
@@ -698,10 +760,9 @@ def _publish_field(
         target.normalized_value = None
         target.field_status = "REVIEW"
         target.validation_status = "REVIEW_REQUIRED"
-        target.validation_error = "Canonical evidence contains multiple values for this line."
+        target.validation_error = "Canonical evidence contains multiple values for this entity."
         primary = _primary_evidence(truth)
-        if primary is not None:
-            target.confidence = _confidence(primary.candidate_score)
+        target.confidence = _confidence(primary.candidate_score) if primary else 0.0
         target.extractor = _CANONICAL_EXTRACTOR
         target.extractor_version = CANONICAL_PUBLISHER_VERSION
         return 1, 1, rejected
@@ -749,21 +810,26 @@ def _publish_field(
 
 
 def _resolvable_field_names(truth: CanonicalShipmentTruth) -> frozenset[str]:
-    if not truth.plant_lines:
-        return frozenset()
-    candidate_names = set(truth.plant_lines[0].fields)
-    for line in truth.plant_lines[1:]:
-        candidate_names.intersection_update(line.fields)
-    if truth.unresolved_component_keys:
-        candidate_names.difference_update(_BOTANICAL_PPQ_FIELDS)
-    return frozenset(
-        field_name
-        for field_name in candidate_names
-        if all(
-            line.fields[field_name].state is not CanonicalTruthState.CONFLICT
-            for line in truth.plant_lines
+    names: set[str] = {
+        key
+        for key, field in truth.shipment_fields.items()
+        if field.state is not CanonicalTruthState.CONFLICT and len(field.values) == 1
+    }
+    if truth.plant_lines:
+        line_names = set(truth.plant_lines[0].fields)
+        for line in truth.plant_lines[1:]:
+            line_names.intersection_update(line.fields)
+        if truth.unresolved_component_keys:
+            line_names.difference_update(_BOTANICAL_PPQ_FIELDS)
+        names.update(
+            field_name
+            for field_name in line_names
+            if all(
+                line.fields[field_name].state is not CanonicalTruthState.CONFLICT
+                for line in truth.plant_lines
+            )
         )
-    )
+    return frozenset(names)
 
 
 def publish_canonical_shipment_truth(
@@ -772,12 +838,7 @@ def publish_canonical_shipment_truth(
     organization_id: int,
     operation_id: int,
 ) -> CanonicalPublishResult:
-    """Publish the latest Engine 2 shipment truth into PPQ review atomically.
-
-    The caller owns the transaction. Human-reviewed fields are immutable. All machine
-    candidates that are no longer part of the canonical entity are retained for audit
-    but marked REJECTED so customer review cannot be contaminated by stale routes.
-    """
+    """Publish latest Engine 2 truth into PPQ review in the caller transaction."""
     org_id = int(organization_id)
     op_id = int(operation_id)
     operation = session.scalar(
@@ -827,8 +888,7 @@ def publish_canonical_shipment_truth(
         )
     ).all()
     indexed = {
-        (str(row.merchandise_line_reference), row.field_name): row
-        for row in fields
+        (str(row.merchandise_line_reference), row.field_name): row for row in fields
     }
 
     field_count = review_count = rejected_count = 0
@@ -851,12 +911,34 @@ def publish_canonical_shipment_truth(
             review_count += reviews
             rejected_count += rejected
 
-    # Existing user-created extra lines are preserved, but machine-derived values that
-    # have no canonical entity are retired instead of remaining a second authority.
+    for field_name, shipment_truth in truth.shipment_fields.items():
+        target = _ensure_shipment_field(
+            session,
+            organization_id=org_id,
+            operation_id=op_id,
+            field_name=field_name,
+        )
+        published, reviews, rejected = _publish_field(
+            session,
+            organization_id=org_id,
+            operation_id=op_id,
+            target=target,
+            truth=shipment_truth,
+            assurance_by_operation_document=assurance_by_operation_document,
+            ambiguous_component_binding=False,
+        )
+        field_count += published
+        review_count += reviews
+        rejected_count += rejected
+
     if len(lines) > len(truth.plant_lines):
         canonical_ids = {int(line.id) for line in canonical_lines}
         for row in fields:
-            if row.plant_line_id is None or int(row.plant_line_id) in canonical_ids or _reviewed(row):
+            if (
+                row.plant_line_id is None
+                or int(row.plant_line_id) in canonical_ids
+                or _reviewed(row)
+            ):
                 continue
             rejected_count += _reject_stale_machine_candidates(
                 session,
@@ -877,8 +959,8 @@ def publish_canonical_shipment_truth(
                 row.validation_status = "MISSING"
                 row.validation_error = None
 
-    resolvable_fields = _resolvable_field_names(truth)
     resolved_conflicts = 0
+    resolvable_fields = _resolvable_field_names(truth)
     if resolvable_fields:
         issues = session.scalars(
             select(ReconciliationIssue).where(
@@ -897,7 +979,6 @@ def publish_canonical_shipment_truth(
             resolved_conflicts += 1
 
     session.flush()
-    # Import lazily to keep the canonical model independent from the legacy projector.
     from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
 
     refresh_us_lacey_operation_status(

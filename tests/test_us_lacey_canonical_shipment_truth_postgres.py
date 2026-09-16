@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from litoral_trace.db.models import (
     ReconciliationIssue,
@@ -14,7 +14,7 @@ from litoral_trace.db.models import (
     UsLaceyPpqPlantLine,
 )
 from litoral_trace.us_lacey.canonical_shipment_truth import publish_canonical_shipment_truth
-from litoral_trace.us_lacey.ppq505 import PPQ505_PLANT_FIELDS
+from litoral_trace.us_lacey.ppq505 import PPQ505_PLANT_FIELDS, PPQ505_SHIPMENT_REFERENCE
 from tests.lacey_engine.test_canonical_shipment_truth import _golden_payload
 from tests.us_lacey_engine2_postgres import (
     create_test_graph,
@@ -25,11 +25,12 @@ from tests.us_lacey_engine2_postgres import (
 
 
 def _seed_two_lines(factory):
-    org, operation_id, link_id, assurance_id, _, _ = create_test_graph(factory, content=b"canonical-truth")
+    org, operation_id, link_id, assurance_id, _, _ = create_test_graph(
+        factory, content=b"canonical-truth"
+    )
     session = tenant_session(factory, org)
     operation = session.get(UsLaceyOperation, operation_id)
     operation.document_count = 7
-    lines = []
     for ordinal in (1, 2):
         line = UsLaceyPpqPlantLine(
             organization_id=org,
@@ -39,7 +40,6 @@ def _seed_two_lines(factory):
         )
         session.add(line)
         session.flush()
-        lines.append(line)
         for contract in PPQ505_PLANT_FIELDS:
             session.add(
                 UsLaceyOperationField(
@@ -55,6 +55,7 @@ def _seed_two_lines(factory):
                 )
             )
     operation.merchandise_line_count = 2
+
     payload = _golden_payload()
     for field in payload["canonical_fields"].values():
         for evidence in field["supporting_evidence"]:
@@ -67,7 +68,9 @@ def _seed_two_lines(factory):
             engine_version="canonical-test",
             ruleset_version="canonical-test",
             schema_version="lacey_shipment_resolution_v1",
-            source_set_fingerprint=hashlib.sha256(f"canonical:{org}:{operation_id}".encode()).hexdigest(),
+            source_set_fingerprint=hashlib.sha256(
+                f"canonical:{org}:{operation_id}".encode()
+            ).hexdigest(),
             document_count=7,
             readiness="REVIEW_REQUIRED",
             resolution_json=payload,
@@ -94,6 +97,7 @@ def test_canonical_publication_replaces_machine_state_without_cross_line_leakage
     factory = engine2_postgres_session_factory
     org, operation_id, assurance_id = _seed_two_lines(factory)
     session = tenant_session(factory, org)
+
     first_hts = _field(session, org, operation_id, "1", "hts_code")
     first_hts.original_value = "4407990190"
     first_hts.normalized_value = "4407990190"
@@ -119,6 +123,7 @@ def test_canonical_publication_replaces_machine_state_without_cross_line_leakage
         decision="PENDING",
     )
     session.add(legacy_candidate)
+
     operation = session.get(UsLaceyOperation, operation_id)
     conflict = ReconciliationIssue(
         organization_id=org,
@@ -151,7 +156,6 @@ def test_canonical_publication_replaces_machine_state_without_cross_line_leakage
     expected = {
         "1": {
             "hts_code": "4407110190",
-            "merchandise_description": "Pinus taeda KD sawn boards",
             "entered_value": "18300",
             "genus": "Pinus",
             "species": "Pinus taeda",
@@ -160,7 +164,6 @@ def test_canonical_publication_replaces_machine_state_without_cross_line_leakage
         },
         "2": {
             "hts_code": "4407990190",
-            "merchandise_description": "Eucalyptus grandis KD sawn boards",
             "entered_value": "12640",
             "genus": "Eucalyptus",
             "species": "Eucalyptus grandis",
@@ -171,9 +174,26 @@ def test_canonical_publication_replaces_machine_state_without_cross_line_leakage
     for line_reference, fields in expected.items():
         for field_name, value in fields.items():
             row = _field(session, org, operation_id, line_reference, field_name)
+            assert row is not None
             assert row.normalized_value == value
             assert row.extractor == "canonical-shipment-truth"
             assert row.field_status == "FOUND"
+
+    description = _field(
+        session,
+        org,
+        operation_id,
+        PPQ505_SHIPMENT_REFERENCE,
+        "merchandise_description",
+    )
+    assert description is not None
+    assert description.field_scope == "SHIPMENT"
+    assert description.plant_line_id is None
+    assert description.normalized_value == (
+        "Pinus taeda KD sawn boards; Eucalyptus grandis KD sawn boards"
+    )
+    assert description.field_status == "FOUND"
+    assert description.extractor == "canonical-shipment-truth"
 
     for line_reference in ("1", "2"):
         country = _field(session, org, operation_id, line_reference, "country_of_harvest")
@@ -193,19 +213,23 @@ def test_canonical_publication_replaces_machine_state_without_cross_line_leakage
     session.refresh(conflict)
     assert legacy_candidate.decision == "REJECTED"
     assert conflict.status == "RESOLVED"
-    assert conflict.resolution_justification == "Superseded by canonical shipment-line reconciliation."
+    assert conflict.resolution_justification == (
+        "Superseded by canonical shipment-line reconciliation."
+    )
     assert conflict.resolved_at is not None
 
     before_candidates = session.scalar(
-        select(__import__("sqlalchemy").func.count(UsLaceyFieldCandidate.id)).where(
+        select(func.count(UsLaceyFieldCandidate.id)).where(
             UsLaceyFieldCandidate.organization_id == org,
             UsLaceyFieldCandidate.operation_id == operation_id,
         )
     )
-    publish_canonical_shipment_truth(session, organization_id=org, operation_id=operation_id)
+    publish_canonical_shipment_truth(
+        session, organization_id=org, operation_id=operation_id
+    )
     session.commit()
     after_candidates = session.scalar(
-        select(__import__("sqlalchemy").func.count(UsLaceyFieldCandidate.id)).where(
+        select(func.count(UsLaceyFieldCandidate.id)).where(
             UsLaceyFieldCandidate.organization_id == org,
             UsLaceyFieldCandidate.operation_id == operation_id,
         )
@@ -214,7 +238,9 @@ def test_canonical_publication_replaces_machine_state_without_cross_line_leakage
     session.close()
 
 
-def test_canonical_publication_never_overwrites_human_review(engine2_postgres_session_factory):
+def test_canonical_publication_never_overwrites_human_review(
+    engine2_postgres_session_factory,
+):
     factory = engine2_postgres_session_factory
     org, operation_id, assurance_id = _seed_two_lines(factory)
     session = tenant_session(factory, org)
@@ -229,7 +255,9 @@ def test_canonical_publication_never_overwrites_human_review(engine2_postgres_se
     genus.reviewed_at = reviewed_at
     session.commit()
 
-    publish_canonical_shipment_truth(session, organization_id=org, operation_id=operation_id)
+    publish_canonical_shipment_truth(
+        session, organization_id=org, operation_id=operation_id
+    )
     session.commit()
     session.refresh(genus)
 
