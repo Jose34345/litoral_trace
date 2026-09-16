@@ -1,31 +1,19 @@
-"""Bridge deterministic Engine 2 shipment evidence into the human review queue.
+"""Compatibility seam for Engine 2 analysis and canonical shipment publication.
 
-Engine 2 remains non-authoritative. Supported shipment values may prefill empty PPQ
-preparation fields as FOUND, while explicitly supported low-authority harvest-country
-evidence is surfaced as REVIEW. Nothing is silently accepted as MATCHED.
+The former module independently interpreted shipment evidence and wrote PPQ review
+fields. That second writer is retired. ``supported_engine2_suggestions`` remains as a
+pure analysis helper for regression/diagnostic callers, while runtime publication has
+exactly one authority: CanonicalShipmentTruth.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
-import re
 from typing import Mapping
 
-from sqlalchemy import select
-
-from litoral_trace.db.models import (
-    UsLaceyEngineShipmentRun,
-    UsLaceyFieldCandidate,
-    UsLaceyOperation,
-    UsLaceyOperationDocument,
-    UsLaceyOperationField,
-    UsLaceyPpqPlantLine,
-)
 from litoral_trace.db.tenant import set_tenant_db_context
-from litoral_trace.lacey_engine.serialization import SHIPMENT_RESOLUTION_SCHEMA_VERSION
+from litoral_trace.us_lacey.canonical_shipment_truth import publish_canonical_shipment_truth
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
-from litoral_trace.us_lacey.ppq505 import validate_ppq_value
-from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
+from litoral_trace.us_lacey.lacey_engine_service import ENGINE2_SHADOW, engine2_mode
 
 
 _ENGINE2_TO_PREPARATION_FIELD = {
@@ -50,15 +38,12 @@ _ENGINE2_TO_PREPARATION_FIELD = {
     "percent_recycled": "percent_recycled",
 }
 _SUPPORTED_STATES = frozenset({"SUPPORTED", "SUPPORTED_MULTIPLE", "NEAR_MATCH"})
-_ROW_ASSOCIATION = re.compile(r":row:(?P<row>[0-9]+)$", re.IGNORECASE)
-_TAXON_ASSOCIATION = re.compile(
-    r"^taxon:(?P<genus>[a-z][a-z0-9-]*):(?P<species>[a-z][a-z0-9-]*)$",
-    re.IGNORECASE,
-)
 
 
 @dataclass(frozen=True, slots=True)
 class Engine2Suggestion:
+    """Pure, non-authoritative view of one supported Engine 2 evidence value."""
+
     field_name: str
     value: str
     operation_document_id: int
@@ -69,11 +54,6 @@ class Engine2Suggestion:
     engine_version: str
     association_key: str | None = None
     requires_review: bool = False
-
-
-def _fingerprint(*parts: object) -> str:
-    canonical = "\x1f".join(str(part if part is not None else "") for part in parts)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _candidate_payload(evidence: Mapping[str, object]) -> Mapping[str, object] | None:
@@ -142,9 +122,6 @@ def _suggestions_from_field(
             continue
         if not value or not source_text or page < 1 or operation_document_id <= 0:
             continue
-        # REVIEW_REQUIRED harvest evidence is useful only when it is bound to an
-        # explicit semantic entity. Never turn unassociated low-authority prose into
-        # an operation-level country guess.
         if review_only and association is None:
             continue
         eligible.setdefault((association, value), []).append(
@@ -162,13 +139,14 @@ def _suggestions_from_field(
     if not eligible:
         return ()
 
-    # A scalar/unassociated field must still have one canonical value. Multiple
-    # unassociated values are ambiguous and remain fail-closed.
-    unassociated_values = {value for (association, value) in eligible if association is None}
+    # A scalar/unassociated field must have one canonical value. Multiple unrelated
+    # values stay fail-closed; semantically associated line/component values remain
+    # available to diagnostics as separate suggestions.
+    unassociated_values = {
+        value for (association, value) in eligible if association is None
+    }
     if len(unassociated_values) > 1:
-        eligible = {
-            key: rows for key, rows in eligible.items() if key[0] is not None
-        }
+        eligible = {key: rows for key, rows in eligible.items() if key[0] is not None}
 
     suggestions: list[Engine2Suggestion] = []
     for (association, _normalized_value), rows in eligible.items():
@@ -209,6 +187,8 @@ def _suggestions_from_field(
 def supported_engine2_suggestions(
     payload: Mapping[str, object],
 ) -> tuple[Engine2Suggestion, ...]:
+    """Return a pure diagnostic view without writing PPQ/candidate state."""
+
     fields = payload.get("canonical_fields")
     if not isinstance(fields, Mapping):
         return ()
@@ -224,215 +204,28 @@ def supported_engine2_suggestions(
     return tuple(suggestions)
 
 
-def _empty_unreviewed_field(field: UsLaceyOperationField) -> bool:
-    """Allow documentary evidence to replace a null optional MATCHED placeholder."""
-    if field.reviewed_at is not None or field.human_value:
-        return False
-    if str(field.normalized_value or field.original_value or "").strip():
-        return False
-    return field.field_status in {"MISSING", "MATCHED"}
-
-
-def _field_value(field: UsLaceyOperationField | None) -> str:
-    if field is None:
-        return ""
-    return str(field.human_value or field.normalized_value or field.original_value or "").strip()
-
-
-def _target_for_suggestion(
-    suggestion: Engine2Suggestion,
-    *,
-    targets: list[UsLaceyOperationField],
-    fields_by_line_name: Mapping[tuple[str, str], UsLaceyOperationField],
-    line_reference_by_ordinal: Mapping[int, str],
-) -> UsLaceyOperationField | None:
-    association = str(suggestion.association_key or "").strip()
-    if not association:
-        return targets[0] if len(targets) == 1 else None
-
-    row_match = _ROW_ASSOCIATION.search(association)
-    if row_match:
-        reference = line_reference_by_ordinal.get(int(row_match.group("row")))
-        if reference is None:
-            return None
-        matches = [
-            field
-            for field in targets
-            if str(field.merchandise_line_reference or "") == reference
-        ]
-        return matches[0] if len(matches) == 1 else None
-
-    taxon_match = _TAXON_ASSOCIATION.fullmatch(association)
-    if taxon_match:
-        genus = taxon_match.group("genus").casefold()
-        species = taxon_match.group("species").casefold()
-        matching_references: list[str] = []
-        for reference in sorted(
-            {str(field.merchandise_line_reference or "") for field in targets}
-        ):
-            if not reference:
-                continue
-            line_genus = _field_value(
-                fields_by_line_name.get((reference, "genus"))
-            ).casefold()
-            line_species = _field_value(
-                fields_by_line_name.get((reference, "species"))
-            ).casefold()
-            if line_genus == genus and line_species == species:
-                matching_references.append(reference)
-        if len(matching_references) != 1:
-            return None
-        reference = matching_references[0]
-        matches = [
-            field
-            for field in targets
-            if str(field.merchandise_line_reference or "") == reference
-        ]
-        return matches[0] if len(matches) == 1 else None
-
-    return None
-
-
 def project_engine2_supported_suggestions(*, organization_id: int, operation_id: int) -> int:
-    org_id = int(organization_id)
+    """Publish CanonicalShipmentTruth only when Engine 2 canonical input is active.
+
+    ``US_LACEY_ENGINE2_MODE=SHADOW`` is the existing contract that causes the worker
+    to build/persist the shipment run. With Engine 2 OFF there is no canonical input
+    to publish, so this compatibility seam is deliberately a no-op. When Engine 2 is
+    active, publication failures propagate and keep the owned worker job fail-closed.
+    """
+
+    if engine2_mode() != ENGINE2_SHADOW:
+        return 0
+
     session = get_us_lacey_db_session()
     try:
-        set_tenant_db_context(session, org_id)
-        operation = session.scalar(
-            select(UsLaceyOperation).where(
-                UsLaceyOperation.organization_id == org_id,
-                UsLaceyOperation.id == int(operation_id),
-            )
+        set_tenant_db_context(session, organization_id)
+        result = publish_canonical_shipment_truth(
+            session,
+            organization_id=organization_id,
+            operation_id=operation_id,
         )
-        if operation is None:
-            return 0
-        run = session.scalar(
-            select(UsLaceyEngineShipmentRun)
-            .where(
-                UsLaceyEngineShipmentRun.organization_id == org_id,
-                UsLaceyEngineShipmentRun.operation_id == operation.id,
-                UsLaceyEngineShipmentRun.schema_version
-                == SHIPMENT_RESOLUTION_SCHEMA_VERSION,
-            )
-            .order_by(UsLaceyEngineShipmentRun.id.desc())
-        )
-        if run is None or not isinstance(run.resolution_json, Mapping):
-            return 0
-
-        fields = session.scalars(
-            select(UsLaceyOperationField).where(
-                UsLaceyOperationField.organization_id == org_id,
-                UsLaceyOperationField.operation_id == operation.id,
-            )
-        ).all()
-        by_name: dict[str, list[UsLaceyOperationField]] = {}
-        by_line_name: dict[tuple[str, str], UsLaceyOperationField] = {}
-        for field in fields:
-            by_name.setdefault(field.field_name, []).append(field)
-            reference = str(field.merchandise_line_reference or "")
-            if reference:
-                by_line_name[(reference, field.field_name)] = field
-
-        plant_lines = session.scalars(
-            select(UsLaceyPpqPlantLine).where(
-                UsLaceyPpqPlantLine.organization_id == org_id,
-                UsLaceyPpqPlantLine.operation_id == operation.id,
-            )
-        ).all()
-        line_reference_by_ordinal = {
-            int(line.ordinal): str(line.line_reference) for line in plant_lines
-        }
-
-        links = session.scalars(
-            select(UsLaceyOperationDocument).where(
-                UsLaceyOperationDocument.organization_id == org_id,
-                UsLaceyOperationDocument.operation_id == operation.id,
-                UsLaceyOperationDocument.is_current.is_(True),
-            )
-        ).all()
-        assurance_by_link = {link.id: link.assurance_document_id for link in links}
-
-        promoted = 0
-        for suggestion in supported_engine2_suggestions(run.resolution_json):
-            targets = by_name.get(suggestion.field_name, [])
-            field = _target_for_suggestion(
-                suggestion,
-                targets=targets,
-                fields_by_line_name=by_line_name,
-                line_reference_by_ordinal=line_reference_by_ordinal,
-            )
-            if field is None or not _empty_unreviewed_field(field):
-                continue
-            assurance_document_id = assurance_by_link.get(
-                suggestion.operation_document_id
-            )
-            if assurance_document_id is None:
-                continue
-            validation = validate_ppq_value(field.field_name, suggestion.value)
-            if validation.status.value != "VALID" or not validation.normalized_value:
-                continue
-
-            extractor = (
-                "engine2-shipment-review"
-                if suggestion.requires_review
-                else "engine2-shipment-supported"
-            )
-            fingerprint = _fingerprint(
-                "US_LACEY_ENGINE2_REVIEW"
-                if suggestion.requires_review
-                else "US_LACEY_ENGINE2_SUPPORTED",
-                operation.public_id,
-                field.id,
-                assurance_document_id,
-                validation.normalized_value,
-                suggestion.source_page,
-                suggestion.source_text,
-            )
-            existing = session.scalar(
-                select(UsLaceyFieldCandidate).where(
-                    UsLaceyFieldCandidate.organization_id == org_id,
-                    UsLaceyFieldCandidate.fingerprint == fingerprint,
-                )
-            )
-            if existing is None:
-                session.add(
-                    UsLaceyFieldCandidate(
-                        organization_id=org_id,
-                        operation_id=operation.id,
-                        operation_field_id=field.id,
-                        source_assurance_document_id=assurance_document_id,
-                        original_value=suggestion.value,
-                        normalized_value=validation.normalized_value,
-                        validation_status="VALID",
-                        validation_error=None,
-                        confidence=suggestion.confidence,
-                        source_page=suggestion.source_page,
-                        source_locator=f"{extractor}:{suggestion.source_text[:1500]}",
-                        extractor=extractor,
-                        extractor_version=suggestion.engine_version,
-                        fingerprint=fingerprint,
-                        decision="PENDING",
-                    )
-                )
-            field.original_value = suggestion.value
-            field.normalized_value = validation.normalized_value
-            field.field_status = "REVIEW" if suggestion.requires_review else "FOUND"
-            field.confidence = suggestion.confidence
-            field.source_assurance_document_id = assurance_document_id
-            field.source_page = suggestion.source_page
-            field.source_locator = f"{extractor}:{suggestion.source_text[:1500]}"
-            field.extractor = extractor
-            field.extractor_version = suggestion.engine_version
-            field.validation_status = "VALID"
-            field.validation_error = None
-            promoted += 1
-
-        if promoted:
-            refresh_us_lacey_operation_status(
-                session, organization_id=org_id, operation=operation
-            )
         session.commit()
-        return promoted
+        return int(result.field_count)
     except Exception:
         session.rollback()
         raise

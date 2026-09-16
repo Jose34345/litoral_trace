@@ -1,11 +1,13 @@
 """U.S. Lacey operation service with safe current-document link semantics.
 
 The established operation service remains in ``_operations_core``. This module
-keeps its public API stable while isolating the document-linking policy so
-unclassified evidence cannot silently supersede unrelated evidence.
+keeps its public API stable while isolating customer-facing policies so
+unclassified evidence cannot silently supersede unrelated evidence and retired
+machine candidates cannot reappear as active review suggestions.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -36,7 +38,37 @@ def _document_role_replaces_current(role: str | None) -> bool:
 
 
 class UsLaceyOperationService(_CoreUsLaceyOperationService):
-    """Operation service with fail-safe multi-document attachment semantics."""
+    """Operation service with fail-safe document and review visibility semantics."""
+
+    def get_detail(
+        self,
+        *,
+        organization_id: int,
+        operation_public_id: UUID | str,
+    ):
+        """Return active customer review state while retaining rejected audit rows.
+
+        Canonical publication deliberately rejects stale machine candidates instead
+        of deleting them. The customer-facing read path must therefore hide those
+        retired candidates; audit/history queries remain unchanged in the core data
+        model.
+        """
+        detail = super().get_detail(
+            organization_id=organization_id,
+            operation_public_id=operation_public_id,
+        )
+        fields = tuple(
+            replace(
+                field,
+                candidates=tuple(
+                    candidate
+                    for candidate in field.candidates
+                    if candidate.decision != "REJECTED"
+                ),
+            )
+            for field in detail.fields
+        )
+        return replace(detail, fields=fields)
 
     def attach_document(
         self,

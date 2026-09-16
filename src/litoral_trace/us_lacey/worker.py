@@ -358,21 +358,14 @@ def _claim_source_set_finalization(*, organization_id: int, operation_id: int, c
 
 
 def _project_engine2_suggestions(*, organization_id: int, operation_id: int) -> int:
-    """Best-effort deterministic bridge; supported evidence stays human-confirmable."""
-    try:
-        return int(
-            project_engine2_supported_suggestions(
-                organization_id=organization_id,
-                operation_id=operation_id,
-            )
-            or 0
+    """Final canonical publication boundary; any failure aborts the owned job."""
+    return int(
+        project_engine2_supported_suggestions(
+            organization_id=organization_id,
+            operation_id=operation_id,
         )
-    except Exception:
-        LOGGER.exception(
-            "Lacey Engine 2 suggestion projection failed",
-            extra={"organization_id": organization_id, "operation_id": operation_id},
-        )
-        return 0
+        or 0
+    )
 
 
 def _project_verified_ai_suggestions(*, organization_id: int, operation_id: int) -> int:
@@ -704,10 +697,9 @@ def process_one_us_lacey_job(
             finalize_source_set = source_set_claim.claimed
             source_set_fingerprint = source_set_claim.fingerprint
 
-            # Run every evidence/recommendation postprocessor while the queue job is
-            # still RUNNING and while same-operation projection is serialized. If
-            # orchestration itself ever fails unexpectedly, the outer failure boundary
-            # can still transition the owned job instead of leaving false terminal work.
+            # Provisional extraction/AI writers run first. Canonical publication is
+            # deliberately last so no independent projector can overwrite final line
+            # identity or resurrect cross-line evidence after reconciliation.
             if finalize_source_set:
                 with _timed_worker_stage(
                     job=job,
@@ -720,19 +712,19 @@ def process_one_us_lacey_job(
                     )
                 with _timed_worker_stage(
                     job=job,
-                    stage="engine2_suggestions",
+                    stage="verified_ai_suggestions",
                     source_set_fingerprint=source_set_fingerprint,
                 ):
-                    _project_engine2_suggestions(
+                    _project_verified_ai_suggestions(
                         organization_id=job.organization_id,
                         operation_id=job.operation_id,
                     )
                 with _timed_worker_stage(
                     job=job,
-                    stage="verified_ai_suggestions",
+                    stage="canonical_publication",
                     source_set_fingerprint=source_set_fingerprint,
                 ):
-                    _project_verified_ai_suggestions(
+                    _project_engine2_suggestions(
                         organization_id=job.organization_id,
                         operation_id=job.operation_id,
                     )

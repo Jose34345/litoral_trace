@@ -96,13 +96,15 @@ def test_legacy_projection_and_operation_result_are_identical_with_shadow_off_an
     assert off_result.projected_count == 4
     assert off_result.conflict_count == 2
 
+    # Provisional machine suggestions run before the canonical publication seam so
+    # CanonicalShipmentTruth remains the final writer of declaration field state.
     assert off_legacy_calls == on_legacy_calls == [
         "preflight",
         "process",
         "project",
         "engine2",
-        "engine2_suggestions",
         "ai_suggestions",
+        "engine2_suggestions",
         "ai_review",
         "complete",
         "refresh",
