@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from litoral_trace.us_lacey.specialized_shadow import specialized_computation_fingerprint
+from litoral_trace.us_lacey.specialized_inference_cache import specialized_computation_fingerprint
 
 
 def _document(*, sha256: str, role_hint: str, filename: str, operation_document_id: int, assurance_document_id: int):
@@ -23,6 +23,9 @@ def _fingerprint(documents, *, model: str = "gemini-3.5-flash-lite"):
         max_pages=8,
         judge_mode="enforce",
         projection_mode="enforce",
+        specialized_schema_version="lacey_multi_agent_shadow_v2",
+        field_judge_version="lacey_field_judge_v1",
+        projection_version="lacey_specialized_projection_v1",
     )
 
 
