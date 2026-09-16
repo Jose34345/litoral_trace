@@ -1,0 +1,66 @@
+{
+  "ruleset_id": "APHIS-LACEY-V1",
+  "version": "2025-12-24+2025-07-30",
+  "snapshot_date": "2026-09-16",
+  "schema_version": 1,
+  "sources": [
+    {
+      "source_ref": "APHIS_REQUIREMENTS_2025-12-24",
+      "url": "https://www.aphis.usda.gov/plant-imports/file-lacey-act-declaration/requirements",
+      "last_modified": "2025-12-24"
+    },
+    {
+      "source_ref": "APHIS_SUD_2025-07-30",
+      "url": "https://www.aphis.usda.gov/plant-imports/file-lacey-act-declaration/special-use-designations",
+      "last_modified": "2025-07-30"
+    }
+  ],
+  "valid_units": {
+    "KG": {"dimension": "MASS", "to_base": "1"},
+    "G": {"dimension": "MASS", "to_base": "0.001"},
+    "CG": {"dimension": "MASS", "to_base": "0.00001"},
+    "M": {"dimension": "LENGTH", "to_base": "1"},
+    "CM": {"dimension": "LENGTH", "to_base": "0.01"},
+    "MM": {"dimension": "LENGTH", "to_base": "0.001"},
+    "M2": {"dimension": "AREA", "to_base": "1"},
+    "CM2": {"dimension": "AREA", "to_base": "0.0001"},
+    "MM2": {"dimension": "AREA", "to_base": "0.000001"},
+    "M3": {"dimension": "VOLUME", "to_base": "1"},
+    "CM3": {"dimension": "VOLUME", "to_base": "0.000001"},
+    "MM3": {"dimension": "VOLUME", "to_base": "0.000000001"},
+    "ML": {"dimension": "VOLUME", "to_base": "0.000001"},
+    "CTL": {"dimension": "VOLUME", "to_base": "0.00001"},
+    "L": {"dimension": "VOLUME", "to_base": "0.001"},
+    "KL": {"dimension": "VOLUME", "to_base": "1"}
+  },
+  "de_minimis": {
+    "max_unit_percent": "5",
+    "max_entry_kg_same_hts": "2.9",
+    "source_ref": "APHIS_REQUIREMENTS_2025-12-24"
+  },
+  "composite": {
+    "known_composite": [
+      "MDF",
+      "HDF",
+      "OSB",
+      "PARTICLE BOARD",
+      "PARTICLEBOARD",
+      "PAPER",
+      "PAPERBOARD",
+      "CARDBOARD",
+      "MEDIUM DENSITY FIBERBOARD",
+      "HIGH DENSITY FIBERBOARD",
+      "ORIENTED STRAND BOARD"
+    ],
+    "known_non_composite": [
+      "THIN SOLID WOOD VENEER",
+      "THIN SOLID WOOD PLY",
+      "SOLID WOOD VENEER",
+      "SOLID WOOD"
+    ],
+    "source_ref": "APHIS_REQUIREMENTS_2025-12-24"
+  },
+  "completeness": {
+    "source_ref": "APHIS_REQUIREMENTS_2025-12-24"
+  }
+}
