@@ -728,17 +728,6 @@ def process_one_us_lacey_job(
                         organization_id=job.organization_id,
                         operation_id=job.operation_id,
                     )
-                # AI review may annotate existing OPEN conflicts with a bounded recommendation,
-                # but the recommendation cannot resolve an issue or set a field value.
-                with _timed_worker_stage(
-                    job=job,
-                    stage="ai_review_recommendations",
-                    source_set_fingerprint=source_set_fingerprint,
-                ):
-                    _run_ai_review_recommendations(
-                        organization_id=job.organization_id,
-                        operation_id=job.operation_id,
-                    )
             else:
                 LOGGER.info(
                     "Lacey operation source set not ready; deferred operation-level work",
@@ -787,7 +776,9 @@ def process_one_us_lacey_job(
                     extra={"organization_id": job.organization_id, "operation_id": job.operation_id, "job_id": job.id, "stage": "source_set_finalization", "source_set_fingerprint": source_set_claim.fingerprint},
                 )
 
-        # COMPLETED is the final queue transition, after the full processing chain.
+        # Customer-visible completion is authoritative once canonical publication and
+        # source-set finalization have succeeded. Non-authoritative AI review must not
+        # extend the PROCESSING state or turn a completed job back into a retry.
         with _timed_worker_stage(job=job, stage="queue_complete"):
             completed = complete_us_lacey_job(job_id=job.id, worker_id=worker_id)
         if not completed:
@@ -801,6 +792,37 @@ def process_one_us_lacey_job(
                 organization_id=job.organization_id,
                 operation_id=job.operation_id,
             )
+
+        # Stop the RUNNING-job lease before optional post-completion work. Otherwise a
+        # slow provider call would keep heartbeating a job that has already transitioned
+        # to COMPLETED and produce false lost-ownership warnings.
+        heartbeat.stop()
+
+        if finalize_source_set:
+            try:
+                with _timed_worker_stage(
+                    job=job,
+                    stage="ai_review_recommendations",
+                    source_set_fingerprint=source_set_fingerprint,
+                ):
+                    _run_ai_review_recommendations(
+                        organization_id=job.organization_id,
+                        operation_id=job.operation_id,
+                    )
+            except Exception:
+                # This outer boundary also protects against programming/runtime errors
+                # in the wrapper itself. The queue/operation state is already terminal
+                # and must remain customer-visible regardless of recommendation health.
+                LOGGER.exception(
+                    "Lacey post-completion AI review failed; completed job remains authoritative",
+                    extra={
+                        "organization_id": job.organization_id,
+                        "operation_id": job.operation_id,
+                        "job_id": job.id,
+                        "source_set_fingerprint": source_set_fingerprint,
+                    },
+                )
+
         _log_stage_timing(
             job=job,
             stage="total",
