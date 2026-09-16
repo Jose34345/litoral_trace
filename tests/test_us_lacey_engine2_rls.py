@@ -11,6 +11,10 @@ from litoral_trace.lacey_engine.serialization import DOCUMENT_RESOLUTION_SCHEMA_
 from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 from tests.us_lacey_engine2_postgres import FakeVault, create_test_graph, engine2_postgres_engine, engine2_postgres_session_factory, tenant_session
+from tests.test_us_lacey_canonical_shipment_truth_postgres import (
+    test_canonical_publication_never_overwrites_human_review as _canonical_human_review_contract,
+    test_canonical_publication_replaces_machine_state_without_cross_line_leakage as _canonical_publish_contract,
+)
 
 RUNTIME_ROLE = "litoral_trace_app"
 
@@ -79,3 +83,11 @@ def test_engine2_composite_tenant_foreign_keys_reject_cross_tenant_rows(engine2_
     assert session.query(UsLaceyEngineDocumentRun).filter_by(engine_version="fk-test").count() == 0
     assert session.query(UsLaceyEngineShipmentRun).filter_by(engine_version="fk-test").count() == 0
     session.close()
+
+
+def test_engine2_gate_runs_canonical_publication_contract(engine2_postgres_session_factory):
+    _canonical_publish_contract(engine2_postgres_session_factory)
+
+
+def test_engine2_gate_runs_canonical_human_review_contract(engine2_postgres_session_factory):
+    _canonical_human_review_contract(engine2_postgres_session_factory)
