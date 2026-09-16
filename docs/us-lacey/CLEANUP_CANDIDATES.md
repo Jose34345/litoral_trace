@@ -2,32 +2,43 @@
 
 This file records cleanup/debt candidates. **It is not authorization to delete or move them.** Every destructive action requires fresh reference/import/runtime/test evidence and a separate change.
 
-## SAFE_TO_ARCHIVE — documentation only, after link audit
-These files appear primarily historical/status-oriented and are candidates to move under a documentation archive once inbound references are checked:
-- `US_LACEY_COMPLETION_CHECKLIST.md`
-- `US_LACEY_UI_PARITY_AUDIT.md`
-- older U.S. Lacey plans/specs in `docs/` whose implementation has already landed and whose current guidance conflicts with `docs/us-lacey/`
+See `CLEANUP_AUDIT.md` for Phase 2 evidence-backed decisions.
 
-Before archiving: search repository references, PR/runbook links and onboarding references. Preserve Git history; do not delete useful rationale.
+## COMPLETED IN PHASE 2 — archived with compatibility stubs
+The following historical root documents were audited and archived without breaking their old paths:
+- `US_LACEY_COMPLETION_CHECKLIST.md` -> `docs/archive/us-lacey/US_LACEY_COMPLETION_CHECKLIST.md`
+- `US_LACEY_UI_PARITY_AUDIT.md` -> `docs/archive/us-lacey/US_LACEY_UI_PARITY_AUDIT.md`
+
+Their root files are now compatibility stubs that direct agents to `docs/us-lacey/README.md`. They were not hard-deleted because repository code search cannot prove the absence of external/inbound links.
+
+## SAFE_TO_ARCHIVE — documentation only, after link audit
+- older U.S. Lacey plans/specs in `docs/` whose implementation has already landed and whose current guidance conflicts with `docs/us-lacey/`;
+- historical status documents that embed obsolete test counts, migration heads or rollout state.
+
+Before archiving: search repository references, PR/runbook links and onboarding references. Preserve Git history; prefer compatibility stubs when an old stable path may be referenced externally.
 
 ## PROBABLY_OBSOLETE — needs evidence before action
 - superseded historical implementation plans whose status is no longer current;
 - scripts that are not referenced by CI, deployment, docs, runtime entrypoints or operator runbooks;
-- old experimental entrypoints that have been replaced by the unified U.S. Lacey application but may still be used by previews/tests;
 - redundant local deployment helpers if Render/CI no longer uses them.
 
-No concrete file in this section is approved for deletion yet; classify only after import/reference/runtime analysis.
+No concrete runtime file in this section is approved for deletion yet; classify only after import/reference/runtime analysis.
 
-## NEEDS_INVESTIGATION
+## INVESTIGATED — KEEP
 
 ### Multiple web entrypoints
-`src/litoral_trace/web/` contains several U.S. Lacey apps/views, including experiment/free/pilot/unified/worker/admin paths. Determine which are:
-- production entrypoints;
-- preview/demo entrypoints;
-- test-only;
-- historical.
+Phase 2 found that several U.S. Lacey web modules are layered composition rather than simple duplicates:
+- `src/litoral_trace/web/us_lacey_pilot_app.py` — authenticated portal base: **KEEP**;
+- `src/litoral_trace/web/us_lacey_free_app.py` — free-tier portal + inline worker: **KEEP**;
+- `src/litoral_trace/web/us_lacey_unified_app.py` — customer-facing composition root: **KEEP**;
+- `src/litoral_trace/web/us_lacey_worker_app.py` — dedicated worker topology: **KEEP**;
+- `src/litoral_trace/web/us_lacey_platform_admin.py` — admin router included by unified app: **KEEP**;
+- `src/litoral_trace/web/lacey_gtm.py` — GTM router used by unified and experiment apps: **KEEP**;
+- `src/litoral_trace/web/lacey_experiment_app.py` — independent GTM/private-beta surface: **KEEP / REVIEW LATER** until deployment evidence proves it unused.
 
-Do not consolidate them until `render.yaml`, entrypoints, tests and workflows are traced.
+Do not consolidate these only because multiple ASGI entrypoints exist. See `CLEANUP_AUDIT.md`.
+
+## NEEDS_INVESTIGATION
 
 ### Large application hotspots
 - `src/litoral_trace/us_lacey/_operations_core.py`
@@ -41,10 +52,20 @@ Do not consolidate them until `render.yaml`, entrypoints, tests and workflows ar
 These are candidates for gradual extraction only when feature work naturally touches a responsibility. Avoid a mass refactor solely for aesthetics.
 
 ### Documentation sprawl
-Root runbooks and `docs/` contain valuable operational/history material. Establish a future `docs/archive/` or topic-based index only after validating links. The canonical current U.S. Lacey navigation layer is now `docs/us-lacey/`.
+Root runbooks and `docs/` contain valuable operational/history material. Continue moving historical-only material into `docs/archive/` only after validating links. The canonical current U.S. Lacey navigation layer is `docs/us-lacey/`.
 
 ### Workflow count
 `.github/workflows/` contains many historical milestone/gate workflows. Some may still be deliberate release gates. Before consolidating, inspect branch protection/rulesets, workflow dispatch use, documentation and recent runs. Never delete a gate based only on filename age.
+
+### Script inventory
+Audit old scripts against:
+- active GitHub Actions workflows;
+- Docker/Render startup commands;
+- operator runbooks;
+- direct imports/callers;
+- manual recovery procedures.
+
+A script with no import is not automatically dead if it is an operator entrypoint.
 
 ## DO_NOT_TOUCH in cleanup-only changes
 - deployed Alembic migrations;
