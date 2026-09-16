@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+import pytest
 from sqlalchemy import func, select
 
 from litoral_trace.db.models import (
@@ -81,4 +84,67 @@ def test_publication_compacts_unreviewed_stale_machine_canonical_lines(
             UsLaceyOperationField.plant_line_id.is_not(None),
         )
     ) == 2 * len(PPQ505_PLANT_FIELDS)
+    session.close()
+
+
+def test_publication_refuses_to_compact_human_reviewed_canonical_line(
+    engine2_postgres_session_factory,
+):
+    factory = engine2_postgres_session_factory
+    org, operation_id, _ = _seed_two_lines(factory)
+    session = tenant_session(factory, org)
+    operation = session.get(UsLaceyOperation, operation_id)
+    _add_stale_machine_line(session, org=org, operation_id=operation_id, ordinal=3)
+    reviewed_line = _add_stale_machine_line(
+        session,
+        org=org,
+        operation_id=operation_id,
+        ordinal=4,
+    )
+    reviewed_field = session.scalar(
+        select(UsLaceyOperationField).where(
+            UsLaceyOperationField.organization_id == org,
+            UsLaceyOperationField.operation_id == operation_id,
+            UsLaceyOperationField.plant_line_id == reviewed_line.id,
+            UsLaceyOperationField.field_name == "genus",
+        )
+    )
+    assert reviewed_field is not None
+    reviewed_field.human_value = "Cedrela"
+    reviewed_field.reviewed_at = datetime.now(timezone.utc)
+    operation.merchandise_line_count = 4
+    session.commit()
+
+    with pytest.raises(RuntimeError, match="CANONICAL_STALE_LINE_REQUIRES_REVIEW"):
+        publish_canonical_shipment_truth(
+            session,
+            organization_id=org,
+            operation_id=operation_id,
+        )
+    session.rollback()
+
+    remaining = session.scalars(
+        select(UsLaceyPpqPlantLine)
+        .where(
+            UsLaceyPpqPlantLine.organization_id == org,
+            UsLaceyPpqPlantLine.operation_id == operation_id,
+        )
+        .order_by(UsLaceyPpqPlantLine.ordinal.asc())
+    ).all()
+    protected_field = session.scalar(
+        select(UsLaceyOperationField).where(
+            UsLaceyOperationField.organization_id == org,
+            UsLaceyOperationField.operation_id == operation_id,
+            UsLaceyOperationField.plant_line_id == reviewed_line.id,
+            UsLaceyOperationField.field_name == "genus",
+        )
+    )
+    assert [line.line_reference for line in remaining] == [
+        "1",
+        "2",
+        "CANONICAL-3",
+        "CANONICAL-4",
+    ]
+    assert protected_field is not None
+    assert protected_field.human_value == "Cedrela"
     session.close()
