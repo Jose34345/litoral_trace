@@ -17,6 +17,7 @@ from tests.test_us_lacey_canonical_shipment_truth_postgres import (
 )
 from tests.test_us_lacey_canonical_line_compaction_postgres import (
     test_publication_compacts_unreviewed_stale_machine_canonical_lines as _canonical_compaction_contract,
+    test_publication_refuses_to_compact_human_reviewed_canonical_line as _canonical_compaction_human_guard_contract,
 )
 
 RUNTIME_ROLE = "litoral_trace_app"
@@ -98,3 +99,7 @@ def test_engine2_gate_runs_canonical_human_review_contract(engine2_postgres_sess
 
 def test_engine2_gate_runs_canonical_line_compaction_contract(engine2_postgres_session_factory):
     _canonical_compaction_contract(engine2_postgres_session_factory)
+
+
+def test_engine2_gate_runs_canonical_line_compaction_human_guard_contract(engine2_postgres_session_factory):
+    _canonical_compaction_human_guard_contract(engine2_postgres_session_factory)
