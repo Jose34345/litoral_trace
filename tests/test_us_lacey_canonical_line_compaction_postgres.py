@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 
 import pytest
 from sqlalchemy import func, select
@@ -14,6 +15,12 @@ from litoral_trace.us_lacey.canonical_shipment_truth import publish_canonical_sh
 from litoral_trace.us_lacey.ppq505 import PPQ505_PLANT_FIELDS
 from tests.test_us_lacey_canonical_shipment_truth_postgres import _seed_two_lines
 from tests.us_lacey_engine2_postgres import tenant_session
+
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("ENABLE_POSTGRES_TESTS") != "1",
+    reason="Canonical line compaction requires the isolated PostgreSQL gate.",
+)
 
 
 def _add_stale_machine_line(
