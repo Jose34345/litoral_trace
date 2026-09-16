@@ -16,12 +16,19 @@ from tests.test_us_lacey_canonical_shipment_truth_postgres import _seed_two_line
 from tests.us_lacey_engine2_postgres import tenant_session
 
 
-def _add_stale_machine_line(session, *, org: int, operation_id: int, ordinal: int) -> UsLaceyPpqPlantLine:
-    reference = f"CANONICAL-{ordinal}"
+def _add_stale_machine_line(
+    session,
+    *,
+    org: int,
+    operation_id: int,
+    ordinal: int,
+    reference: str | None = None,
+) -> UsLaceyPpqPlantLine:
+    line_reference = reference or f"CANONICAL-{ordinal}"
     line = UsLaceyPpqPlantLine(
         organization_id=org,
         operation_id=operation_id,
-        line_reference=reference,
+        line_reference=line_reference,
         ordinal=ordinal,
     )
     session.add(line)
@@ -31,7 +38,7 @@ def _add_stale_machine_line(session, *, org: int, operation_id: int, ordinal: in
             UsLaceyOperationField(
                 organization_id=org,
                 operation_id=operation_id,
-                merchandise_line_reference=reference,
+                merchandise_line_reference=line_reference,
                 field_name=contract.key,
                 field_scope="PLANT_LINE",
                 plant_line_id=line.id,
@@ -147,4 +154,41 @@ def test_publication_refuses_to_compact_human_reviewed_canonical_line(
     ]
     assert protected_field is not None
     assert protected_field.human_value == "Cedrela"
+    session.close()
+
+
+def test_publication_refuses_to_compact_surplus_noncanonical_line(
+    engine2_postgres_session_factory,
+):
+    factory = engine2_postgres_session_factory
+    org, operation_id, _ = _seed_two_lines(factory)
+    session = tenant_session(factory, org)
+    operation = session.get(UsLaceyOperation, operation_id)
+    _add_stale_machine_line(
+        session,
+        org=org,
+        operation_id=operation_id,
+        ordinal=3,
+        reference="CUSTOMER-LINE-3",
+    )
+    operation.merchandise_line_count = 3
+    session.commit()
+
+    with pytest.raises(RuntimeError, match="CANONICAL_STALE_LINE_REQUIRES_REVIEW"):
+        publish_canonical_shipment_truth(
+            session,
+            organization_id=org,
+            operation_id=operation_id,
+        )
+    session.rollback()
+
+    remaining = session.scalars(
+        select(UsLaceyPpqPlantLine)
+        .where(
+            UsLaceyPpqPlantLine.organization_id == org,
+            UsLaceyPpqPlantLine.operation_id == operation_id,
+        )
+        .order_by(UsLaceyPpqPlantLine.ordinal.asc())
+    ).all()
+    assert [line.line_reference for line in remaining] == ["1", "2", "CUSTOMER-LINE-3"]
     session.close()
