@@ -17,6 +17,8 @@ from copy import deepcopy
 import re
 from typing import Mapping
 
+from litoral_trace.us_lacey.ppq505 import PpqValidationStatus, normalize_hts
+
 
 _MERCHANDISE_FIELDS = ("description", "hts_code", "entered_value")
 _COMPONENT_FIELDS = (
@@ -114,6 +116,19 @@ def _line_values(
     )
 
 
+def _hts_identity(value: str) -> str | None:
+    """Return the PPQ-normalized HTS only for a contract-valid source value.
+
+    Identity matching may ignore presentation punctuation/spacing while the persisted
+    source candidate/raw evidence remains unchanged. Invalid values fail closed rather
+    than being guessed into an equivalence class.
+    """
+    validation = normalize_hts(value)
+    if validation.status is not PpqValidationStatus.VALID:
+        return None
+    return validation.normalized_value
+
+
 def _anchored_taxa(fields: Mapping, known_line_keys: frozenset[str]) -> dict[str, frozenset[str]]:
     taxa: dict[str, set[str]] = defaultdict(set)
     for field_name in ("genus", "species"):
@@ -133,12 +148,15 @@ def _strong_signature(
     line_key: str,
     taxa_by_line: Mapping[str, frozenset[str]],
 ) -> tuple[str, str] | None:
-    """Return an exact HTS+taxon identity only when both are unambiguous."""
+    """Return an exact canonical HTS+taxon identity only when unambiguous."""
     hts_values = _line_values(fields, "hts_code", line_key)
     taxa = taxa_by_line.get(line_key, frozenset())
     if len(hts_values) != 1 or len(taxa) != 1:
         return None
-    return next(iter(hts_values)), next(iter(taxa))
+    hts = _hts_identity(next(iter(hts_values)))
+    if hts is None:
+        return None
+    return hts, next(iter(taxa))
 
 
 def _equivalence_groups(
@@ -329,6 +347,13 @@ def _rewrite_field_rows(
         line_key = str(row.get("line_key") or "").strip()
         if line_key in member_to_rep:
             row["line_key"] = member_to_rep[line_key]
+
+        if field_name == "hts_code":
+            hts = _hts_identity(_normalized(row))
+            if hts is not None:
+                # Only the derived canonical view is normalized. Candidate/raw source
+                # evidence remains byte-for-byte as extracted for audit/provenance.
+                row["normalized_value"] = hts
 
         if field_name not in _COMPONENT_FIELDS:
             continue

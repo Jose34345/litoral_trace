@@ -97,7 +97,8 @@ def test_legacy_projection_and_operation_result_are_identical_with_shadow_off_an
     assert off_result.conflict_count == 2
 
     # Provisional machine suggestions run before the canonical publication seam so
-    # CanonicalShipmentTruth remains the final writer of declaration field state.
+    # CanonicalShipmentTruth remains the final declaration writer. AI review is only
+    # advisory and therefore runs after the customer-visible terminal transition.
     assert off_legacy_calls == on_legacy_calls == [
         "preflight",
         "process",
@@ -105,9 +106,9 @@ def test_legacy_projection_and_operation_result_are_identical_with_shadow_off_an
         "engine2",
         "ai_suggestions",
         "engine2_suggestions",
-        "ai_review",
         "complete",
         "refresh",
+        "ai_review",
     ]
     # The wrapper now always invokes the builder so DISABLED is observable there;
     # a builder failure remains isolated from the authoritative legacy result.

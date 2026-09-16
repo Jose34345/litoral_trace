@@ -53,7 +53,7 @@ def _stub_success_path(monkeypatch, calls: list[str]) -> None:
     monkeypatch.setattr(worker, "_run_ai_review_recommendations", lambda **_: calls.append("ai_review"))
 
 
-def test_worker_marks_completed_only_after_all_postprocessing(monkeypatch) -> None:
+def test_worker_marks_customer_visible_completion_before_non_authoritative_ai_review(monkeypatch) -> None:
     calls: list[str] = []
     _stub_success_path(monkeypatch, calls)
 
@@ -81,9 +81,9 @@ def test_worker_marks_completed_only_after_all_postprocessing(monkeypatch) -> No
         "engine2",
         "ai_suggestions",
         "engine2_suggestions",
-        "ai_review",
         "complete",
         "refresh",
+        "ai_review",
     ]
     assert result.claimed is True
     assert result.job_status == "COMPLETED"
@@ -93,7 +93,7 @@ def test_worker_marks_completed_only_after_all_postprocessing(monkeypatch) -> No
     assert result.conflict_count == 1
 
 
-def test_unexpected_postprocessing_failure_cannot_leave_false_completed_job(monkeypatch) -> None:
+def test_post_completion_ai_review_failure_cannot_requeue_completed_job(monkeypatch) -> None:
     calls: list[str] = []
     _stub_success_path(monkeypatch, calls)
 
@@ -111,7 +111,7 @@ def test_unexpected_postprocessing_failure_cannot_leave_false_completed_job(monk
 
     def refresh(**_: object) -> str:
         calls.append("refresh")
-        return "PROCESSING"
+        return "READY_FOR_REVIEW"
 
     monkeypatch.setattr(worker, "_run_ai_review_recommendations", failing_review)
     monkeypatch.setattr(worker, "complete_us_lacey_job", complete)
@@ -126,16 +126,17 @@ def test_unexpected_postprocessing_failure_cannot_leave_false_completed_job(monk
         "engine2",
         "ai_suggestions",
         "engine2_suggestions",
-        "ai_review",
-        "fail",
+        "complete",
         "refresh",
+        "ai_review",
     ]
-    assert "complete" not in calls
+    assert "fail" not in calls
     assert result.claimed is True
-    assert result.job_status == "QUEUED"
-    assert result.document_status is None
-    assert result.projected_count == 0
-    assert result.conflict_count == 0
+    assert result.job_status == "COMPLETED"
+    assert result.operation_status == "READY_FOR_REVIEW"
+    assert result.document_status == "PROCESSED"
+    assert result.projected_count == 3
+    assert result.conflict_count == 1
 
 
 def test_worker_defers_operation_ai_until_every_current_source_is_terminal(monkeypatch) -> None:
