@@ -209,10 +209,13 @@ def test_cross_document_rows_collapse_to_two_canonical_product_lines():
     assert pinus.fields["metric_unit"].values == ("m3",)
     assert pinus.fields["country_of_harvest"].values == ("Brasil",)
     assert pinus.fields["country_of_harvest"].state is CanonicalTruthState.REVIEW_REQUIRED
+    # Cross-document rows share one canonical line identity while retaining
+    # independent source-document provenance on every evidence item.
     assert {row.line_key for row in pinus.fields["hts_code"].evidence} == {
-        "176:p1-t2:row:1",
-        "181:p1-t2:row:1",
+        "176:p1-t2:row:1"
     }
+    assert {row.document_id for row in pinus.fields["hts_code"].evidence} == {"176", "181"}
+    assert len(pinus.fields["hts_code"].evidence) == 2
 
     assert eucalyptus.ordinal_hint == 2
     assert eucalyptus.taxon_key == "taxon:eucalyptus:grandis"
@@ -224,6 +227,8 @@ def test_cross_document_rows_collapse_to_two_canonical_product_lines():
     assert eucalyptus.fields["metric_unit"].values == ("m3",)
     assert eucalyptus.fields["country_of_harvest"].values == ("Brasil",)
     assert eucalyptus.fields["country_of_harvest"].state is CanonicalTruthState.REVIEW_REQUIRED
+    assert {row.document_id for row in eucalyptus.fields["hts_code"].evidence} == {"176", "181"}
+    assert len(eucalyptus.fields["hts_code"].evidence) == 2
 
     description = truth.shipment_fields["merchandise_description"]
     assert description.values == (
