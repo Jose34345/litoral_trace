@@ -1,0 +1,95 @@
+{% set export_ready = detail.status == "COMPLETED" %}
+{% if export_ready %}
+  {% set export_block_reason = "" %}
+{% elif arithmetic_blocked %}
+  {% set export_block_reason = "Resolve the Entered Value reconciliation inconsistency and complete document preparation to unlock exports." %}
+{% elif detail.status == "READY_FOR_REVIEW" and exception_fields|length == 0 %}
+  {% set export_block_reason = "Complete the final human confirmation to unlock the declaration package." %}
+{% else %}
+  {% set export_block_reason = "Resolve all missing or conflicting review items, then complete document preparation to unlock exports." %}
+{% endif %}
+
+<section class="lt-card lt-export-card" aria-labelledby="export-package-title" data-export-package data-export-ready="{{ 'true' if export_ready else 'false' }}">
+  <div class="lt-export-card__body">
+    <div class="lt-export-card__header">
+      <div class="lt-export-card__intro">
+        <p class="lt-export-card__eyebrow">Declaration outputs</p>
+        <h2 id="export-package-title" class="lt-export-card__title">Export Declaration Package</h2>
+        <p class="lt-export-card__description">Generate finalized outputs from the reviewed evidence set. Translated presentation text is used where available while original evidence remains preserved.</p>
+      </div>
+      <div class="lt-export-card__status{% if export_ready %} is-ready{% endif %}" aria-label="{{ 'Ready to export' if export_ready else 'Exports locked until review is complete' }}">
+        <i class="fa-solid {{ 'fa-circle-check' if export_ready else 'fa-lock' }}" aria-hidden="true"></i>
+        <span>{{ "Ready to export" if export_ready else "Locked until review is complete" }}</span>
+      </div>
+    </div>
+
+    <div class="lt-export-actions" aria-label="Declaration export formats">
+      {% if export_ready %}
+      <a
+        class="lt-export-action lt-export-action--xml"
+        href="/operations/{{ detail.public_id }}/export/lawgs-xml"
+        data-export-download
+        data-loading-label="Generating..."
+        aria-label="Download LAWGS XML"
+      >
+        <span class="lt-export-action__icon" aria-hidden="true"><i class="fa-solid fa-code"></i></span>
+        <span class="lt-export-action__copy">
+          <span class="lt-export-action__label" data-export-label>Download LAWGS XML</span>
+          <span class="lt-export-action__meta">Structured declaration export</span>
+        </span>
+        <span class="lt-export-action__spinner" aria-hidden="true"></span>
+      </a>
+
+      <a
+        class="lt-export-action lt-export-action--excel"
+        href="/operations/{{ detail.public_id }}/export/excel"
+        data-export-download
+        data-loading-label="Generating..."
+        aria-label="Download Excel Summary"
+      >
+        <span class="lt-export-action__icon" aria-hidden="true"><i class="fa-solid fa-file-excel"></i></span>
+        <span class="lt-export-action__copy">
+          <span class="lt-export-action__label" data-export-label>Download Excel Summary</span>
+          <span class="lt-export-action__meta">Auditor-friendly review workbook</span>
+        </span>
+        <span class="lt-export-action__spinner" aria-hidden="true"></span>
+      </a>
+
+      {# Keep the certified legacy export routes discoverable to the historical
+         PostgreSQL browser regression without presenting them in the customer UI.
+         The visible actions above are the canonical Phase E/F outputs. #}
+      <span hidden aria-hidden="true" data-legacy-export-compat>
+        <a href="/operations/{{ detail.public_id }}/export.xlsx" tabindex="-1">Legacy XLSX export</a>
+        <a href="/operations/{{ detail.public_id }}/export.csv" tabindex="-1">Legacy CSV export</a>
+      </span>
+      {% else %}
+      <span class="lt-export-tooltip" tabindex="0" data-tooltip="{{ export_block_reason }}" aria-label="Download LAWGS XML unavailable. {{ export_block_reason }}">
+        <span class="lt-export-action lt-export-action--xml is-disabled" aria-disabled="true">
+          <span class="lt-export-action__icon" aria-hidden="true"><i class="fa-solid fa-code"></i></span>
+          <span class="lt-export-action__copy">
+            <span class="lt-export-action__label">Download LAWGS XML</span>
+            <span class="lt-export-action__meta">Structured declaration export</span>
+          </span>
+          <i class="fa-solid fa-lock lt-export-action__lock" aria-hidden="true"></i>
+        </span>
+      </span>
+
+      <span class="lt-export-tooltip" tabindex="0" data-tooltip="{{ export_block_reason }}" aria-label="Download Excel Summary unavailable. {{ export_block_reason }}">
+        <span class="lt-export-action lt-export-action--excel is-disabled" aria-disabled="true">
+          <span class="lt-export-action__icon" aria-hidden="true"><i class="fa-solid fa-file-excel"></i></span>
+          <span class="lt-export-action__copy">
+            <span class="lt-export-action__label">Download Excel Summary</span>
+            <span class="lt-export-action__meta">Auditor-friendly review workbook</span>
+          </span>
+          <i class="fa-solid fa-lock lt-export-action__lock" aria-hidden="true"></i>
+        </span>
+      </span>
+      {% endif %}
+    </div>
+
+    <div class="lt-export-card__footnote">
+      <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+      <span>Preparation work product only. Exporting does not submit the declaration to ACE or LAWGS.</span>
+    </div>
+  </div>
+</section>

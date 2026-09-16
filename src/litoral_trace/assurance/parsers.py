@@ -14,6 +14,7 @@ from io import BytesIO, StringIO
 import os
 from pathlib import Path, PurePath
 import re
+import shutil
 from tempfile import TemporaryDirectory
 from typing import Any, Iterable
 import zipfile
@@ -105,6 +106,58 @@ def _row_nonempty_count(row: Iterable[Any]) -> int:
     return sum(_clean_cell(value) is not None for value in row)
 
 
+def _looks_like_key_value_matrix(rows: list[list[Any]]) -> bool:
+    """Recognize physical label/value pairs, not a conventional header row.
+
+    A matrix is safe to reinterpret only when every populated odd column is a
+    short textual label across the table.  Ambiguous grids retain the existing
+    tabular path rather than inventing a schema.
+    """
+    populated = [list(row) for row in rows if _row_nonempty_count(row)]
+    # PDF extractors commonly emit a vertical form as two physical columns. It
+    # has the same label -> adjacent value semantics as the four-column layout.
+    # Other formats retain the legacy path because the caller must opt in.
+    if len(populated) < 2 or max(map(len, populated)) < 2:
+        return False
+    labels: list[str] = []
+    for row in populated:
+        row_labels: set[str] = set()
+        for index in range(0, len(row), 2):
+            value = _clean_cell(row[index])
+            paired_value = _clean_cell(row[index + 1]) if index + 1 < len(row) else None
+            if (value is None) != (paired_value is None):
+                return False
+            if value is None:
+                continue
+            text = str(value).strip()
+            if not text or len(text) > 48 or any(character.isdigit() for character in text):
+                return False
+            if text.casefold() in row_labels:
+                return False
+            row_labels.add(text.casefold())
+            labels.append(text)
+    return len(labels) >= 4 and len({label.casefold() for label in labels}) >= 4
+
+
+def _records_from_key_value_matrix(rows: list[list[Any]]) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
+    headers: list[str] = []
+    records: list[dict[str, Any]] = []
+    for row in rows:
+        record: dict[str, Any] = {}
+        for index in range(0, len(row), 2):
+            label = _clean_cell(row[index])
+            value = _clean_cell(row[index + 1]) if index + 1 < len(row) else None
+            if label is None or value is None:
+                continue
+            header = _header_label(label, len(headers))
+            if header not in headers:
+                headers.append(header)
+            record[header] = value
+        if record:
+            records.append(record)
+    return tuple(headers), tuple(records)
+
+
 def detect_header_row(rows: list[list[Any]], *, scan_limit: int = 25) -> int | None:
     """Choose the most plausible tabular header among early rows."""
     best_index: int | None = None
@@ -138,7 +191,10 @@ def _records_from_rows(
     rows: list[list[Any]],
     *,
     header_index: int,
+    allow_key_value_matrix: bool = False,
 ) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
+    if allow_key_value_matrix and _looks_like_key_value_matrix(rows):
+        return _records_from_key_value_matrix(rows)
     raw_headers = rows[header_index]
     headers = tuple(_header_label(value, index) for index, value in enumerate(raw_headers))
     records: list[dict[str, Any]] = []
@@ -339,6 +395,18 @@ def _extract_pdf_text_pages(content: bytes) -> tuple[str, int, int]:
     return text, len(reader.pages), sum(bool(value) for value in page_texts)
 
 
+def _pdf_page_count_with_pdfium(content: bytes) -> int:
+    """Recover a safe page count when pypdf text inspection cannot complete."""
+    import pypdfium2 as pdfium
+
+    document = None
+    try:
+        document = pdfium.PdfDocument(content)
+        return len(document)
+    finally:
+        _safe_close(document)
+
+
 def _ocr_scanned_pdf_with_ocrmypdf(
     content: bytes,
     *,
@@ -426,6 +494,7 @@ def _ocr_scanned_pdf_with_tesseract(
         "ocr_language": _OCR_LANGUAGE,
         "ocr_pages_processed": 0,
         "ocr_timeout_seconds": timeout_seconds,
+        "ocr_binary": "tesseract",
     }
     if page_count <= 0:
         metadata["ocr_error_code"] = "OCR_NO_PAGES"
@@ -433,6 +502,9 @@ def _ocr_scanned_pdf_with_tesseract(
     if page_count > _OCR_MAX_PAGES:
         metadata["ocr_error_code"] = "OCR_PAGE_LIMIT_EXCEEDED"
         metadata["ocr_page_limit"] = _OCR_MAX_PAGES
+        return "", metadata
+    if shutil.which("tesseract") is None:
+        metadata["ocr_error_code"] = "OCR_TESSERACT_BINARY_UNAVAILABLE"
         return "", metadata
 
     try:
@@ -518,12 +590,22 @@ def parse_pdf(content: bytes) -> ParsedDocument:
     if b"%%EOF" not in content[-4096:]:
         raise DocumentParseError("El PDF no contiene un cierre valido.")
 
+    text_extraction_metadata: dict[str, Any] = {}
     try:
         useful_text, page_count, pages_with_text = _extract_pdf_text_pages(content)
     except ImportError as exc:  # pragma: no cover - dependency gate
         raise DocumentParseError("pypdf no esta disponible.") from exc
     except Exception as exc:
-        raise DocumentParseError("No se pudo abrir el PDF.") from exc
+        try:
+            page_count = _pdf_page_count_with_pdfium(content)
+        except Exception as fallback_exc:
+            raise DocumentParseError("No se pudo abrir el PDF.") from fallback_exc
+        useful_text = ""
+        pages_with_text = 0
+        text_extraction_metadata = {
+            "text_extraction_fallback": "pdfium_page_count",
+            "text_extraction_error_type": type(exc).__name__,
+        }
 
     ocr_required = not _has_useful_pdf_text(useful_text)
     ocr_metadata: dict[str, Any] = {
@@ -548,7 +630,7 @@ def parse_pdf(content: bytes) -> ParsedDocument:
                         header_index = detect_header_row(rows, scan_limit=10)
                         if header_index is None:
                             continue
-                        headers, records = _records_from_rows(rows, header_index=header_index)
+                        headers, records = _records_from_rows(rows, header_index=header_index, allow_key_value_matrix=True)
                         if not records:
                             continue
                         tables.append(
@@ -574,6 +656,7 @@ def parse_pdf(content: bytes) -> ParsedDocument:
         "page_count": page_count,
         "pages_with_text": pages_with_text,
     }
+    metadata.update(text_extraction_metadata)
     metadata.update(ocr_metadata)
     return ParsedDocument(
         file_kind="PDF",
