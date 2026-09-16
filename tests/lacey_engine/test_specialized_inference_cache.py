@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from litoral_trace.us_lacey.lacey_engine_service import specialized_computation_fingerprint
+from litoral_trace.us_lacey.specialized_shadow import specialized_computation_fingerprint
 
 
 def _document(*, sha256: str, role_hint: str, filename: str, operation_document_id: int, assurance_document_id: int):
@@ -28,36 +28,12 @@ def _fingerprint(documents, *, model: str = "gemini-3.5-flash-lite"):
 
 def test_cache_identity_ignores_operation_specific_document_ids():
     first = [
-        _document(
-            sha256="a" * 64,
-            role_hint="ENTRY_WORKSHEET",
-            filename="entry.pdf",
-            operation_document_id=11,
-            assurance_document_id=101,
-        ),
-        _document(
-            sha256="b" * 64,
-            role_hint="SUPPLIER_ORIGIN",
-            filename="origin.pdf",
-            operation_document_id=12,
-            assurance_document_id=102,
-        ),
+        _document(sha256="a" * 64, role_hint="ENTRY_WORKSHEET", filename="entry.pdf", operation_document_id=11, assurance_document_id=101),
+        _document(sha256="b" * 64, role_hint="SUPPLIER_ORIGIN", filename="origin.pdf", operation_document_id=12, assurance_document_id=102),
     ]
     second = [
-        _document(
-            sha256="a" * 64,
-            role_hint="ENTRY_WORKSHEET",
-            filename="entry.pdf",
-            operation_document_id=211,
-            assurance_document_id=301,
-        ),
-        _document(
-            sha256="b" * 64,
-            role_hint="SUPPLIER_ORIGIN",
-            filename="origin.pdf",
-            operation_document_id=212,
-            assurance_document_id=302,
-        ),
+        _document(sha256="a" * 64, role_hint="ENTRY_WORKSHEET", filename="entry.pdf", operation_document_id=211, assurance_document_id=301),
+        _document(sha256="b" * 64, role_hint="SUPPLIER_ORIGIN", filename="origin.pdf", operation_document_id=212, assurance_document_id=302),
     ]
 
     assert _fingerprint(first) == _fingerprint(second)
@@ -65,13 +41,7 @@ def test_cache_identity_ignores_operation_specific_document_ids():
 
 def test_cache_identity_invalidates_when_model_or_content_changes():
     documents = [
-        _document(
-            sha256="a" * 64,
-            role_hint="ENTRY_WORKSHEET",
-            filename="entry.pdf",
-            operation_document_id=11,
-            assurance_document_id=101,
-        )
+        _document(sha256="a" * 64, role_hint="ENTRY_WORKSHEET", filename="entry.pdf", operation_document_id=11, assurance_document_id=101)
     ]
     changed_content = [dict(documents[0], sha256="c" * 64)]
 
