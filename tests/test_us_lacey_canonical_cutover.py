@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import inspect
+import logging
+import time
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -8,6 +11,8 @@ import pytest
 
 import litoral_trace.us_lacey.engine2_suggestions as engine2_suggestions
 import litoral_trace.us_lacey.operations as operations
+import litoral_trace.us_lacey.specialized_inference_cache as inference_cache
+import litoral_trace.us_lacey.worker as worker
 from litoral_trace.us_lacey._operations_core import (
     FieldCandidateView,
     OperationDetail,
@@ -78,6 +83,43 @@ def test_engine2_compatibility_seam_rolls_back_canonical_failure(monkeypatch):
     assert session.committed is False
     assert session.rolled_back is True
     assert session.closed is True
+
+
+def test_worker_does_not_swallow_canonical_publication_failure(monkeypatch):
+    monkeypatch.setattr(
+        worker,
+        "project_engine2_supported_suggestions",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("canonical failed")),
+    )
+    with pytest.raises(RuntimeError, match="canonical failed"):
+        worker._project_engine2_suggestions(organization_id=7, operation_id=11)
+
+
+def test_canonical_publication_is_last_field_writer_in_finalization_chain():
+    source = inspect.getsource(worker.process_one_us_lacey_job)
+    ai_position = source.index("_project_verified_ai_suggestions(")
+    canonical_position = source.index("_project_engine2_suggestions(")
+    review_position = source.index("_run_ai_review_recommendations(")
+    assert ai_position < canonical_position < review_position
+
+
+def test_cache_hit_telemetry_proves_zero_external_provider_calls(caplog):
+    caplog.set_level(logging.INFO, logger=inference_cache.__name__)
+    inference_cache._log_cache_lookup(
+        organization_id=7,
+        computation_fingerprint="f" * 64,
+        document_count=7,
+        cache_hit=True,
+        miss_reason=None,
+        started_at=time.perf_counter(),
+    )
+    record = next(
+        item for item in caplog.records
+        if getattr(item, "event", None) == "us_lacey_specialized_cache_lookup"
+    )
+    assert record.cache_hit is True
+    assert record.external_provider_call_count == 0
+    assert record.document_count == 7
 
 
 def _candidate(candidate_id: int, decision: str) -> FieldCandidateView:
