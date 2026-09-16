@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 import hashlib
 import json
+import logging
+import time
 from typing import Iterable, Mapping
 
 from sqlalchemy import select
@@ -16,6 +18,8 @@ from sqlalchemy import select
 from litoral_trace.db.models import AssuranceDocument, UsLaceyEngineDocumentRun
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
+
+LOGGER = logging.getLogger(__name__)
 
 
 def specialized_computation_fingerprint(
@@ -101,6 +105,32 @@ def _descriptor_from_payload(row: UsLaceyEngineDocumentRun) -> tuple[str, str, s
     )
 
 
+def _log_cache_lookup(
+    *,
+    organization_id: int,
+    computation_fingerprint: str,
+    document_count: int,
+    cache_hit: bool,
+    miss_reason: str | None,
+    started_at: float,
+) -> None:
+    """Emit content-free telemetry proving whether external inference is avoidable."""
+    LOGGER.info(
+        "Lacey specialized inference cache lookup",
+        extra={
+            "event": "us_lacey_specialized_cache_lookup",
+            "organization_id": int(organization_id),
+            "computation_fingerprint": computation_fingerprint,
+            "document_count": int(document_count),
+            "cache_hit": bool(cache_hit),
+            "miss_reason": miss_reason,
+            # A complete cache hit returns before any provider is constructed.
+            "external_provider_call_count": 0 if cache_hit else None,
+            "duration_ms": float(max(0.0, (time.perf_counter() - started_at) * 1000.0)),
+        },
+    )
+
+
 def find_cached_specialized_payloads(
     *,
     organization_id: int,
@@ -109,7 +139,16 @@ def find_cached_specialized_payloads(
     schema_version: str,
 ) -> tuple[Mapping[str, object], ...] | None:
     """Return one complete prior source-set snapshot, or ``None`` fail-closed."""
+    started_at = time.perf_counter()
     if not documents:
+        _log_cache_lookup(
+            organization_id=organization_id,
+            computation_fingerprint=computation_fingerprint,
+            document_count=0,
+            cache_hit=False,
+            miss_reason="empty_source_set",
+            started_at=started_at,
+        )
         return None
     session = get_us_lacey_db_session()
     try:
@@ -149,7 +188,23 @@ def find_cached_specialized_payloads(
                 if isinstance(row.resolution_json, Mapping)
             )
             if len(payloads) == len(documents):
+                _log_cache_lookup(
+                    organization_id=organization_id,
+                    computation_fingerprint=computation_fingerprint,
+                    document_count=len(documents),
+                    cache_hit=True,
+                    miss_reason=None,
+                    started_at=started_at,
+                )
                 return payloads
+        _log_cache_lookup(
+            organization_id=organization_id,
+            computation_fingerprint=computation_fingerprint,
+            document_count=len(documents),
+            cache_hit=False,
+            miss_reason="no_complete_prior_source_set",
+            started_at=started_at,
+        )
         return None
     finally:
         session.close()
