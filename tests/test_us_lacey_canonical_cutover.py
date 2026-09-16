@@ -36,9 +36,26 @@ class _Session:
         self.closed = True
 
 
+def test_engine2_off_does_not_require_a_canonical_shipment_run(monkeypatch):
+    monkeypatch.setattr(engine2_suggestions, "engine2_mode", lambda: "OFF")
+
+    def session_must_not_open():
+        raise AssertionError("Engine2 OFF must not open a canonical publication transaction")
+
+    monkeypatch.setattr(engine2_suggestions, "get_us_lacey_db_session", session_must_not_open)
+
+    projected = engine2_suggestions.project_engine2_supported_suggestions(
+        organization_id=7,
+        operation_id=11,
+    )
+
+    assert projected == 0
+
+
 def test_engine2_compatibility_seam_publishes_only_canonical_truth(monkeypatch):
     session = _Session()
     calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(engine2_suggestions, "engine2_mode", lambda: "SHADOW")
     monkeypatch.setattr(engine2_suggestions, "get_us_lacey_db_session", lambda: session)
     monkeypatch.setattr(
         engine2_suggestions,
@@ -66,6 +83,7 @@ def test_engine2_compatibility_seam_publishes_only_canonical_truth(monkeypatch):
 
 def test_engine2_compatibility_seam_rolls_back_canonical_failure(monkeypatch):
     session = _Session()
+    monkeypatch.setattr(engine2_suggestions, "engine2_mode", lambda: "SHADOW")
     monkeypatch.setattr(engine2_suggestions, "get_us_lacey_db_session", lambda: session)
     monkeypatch.setattr(engine2_suggestions, "set_tenant_db_context", lambda *_args: None)
     monkeypatch.setattr(
