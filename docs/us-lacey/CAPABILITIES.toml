@@ -1,0 +1,242 @@
+version = 1
+product = "us_lacey"
+canonical_docs = "docs/us-lacey"
+
+[authority_levels]
+observation = "Literal or structurally extracted source information; not final truth."
+inferred = "Machine-derived and evidence-backed; may still require adjudication."
+deterministic = "Result of explicit deterministic logic/calculation."
+review_required = "Insufficient or conflicting support; human action required."
+human_confirmed = "Explicit reviewer decision with audit history."
+canonical = "Published operational truth eligible for downstream presentation/export."
+
+[capabilities.document_understanding]
+status = "ACTIVE"
+owner = "lacey_engine"
+authority = "observation"
+implementation = [
+  "src/litoral_trace/lacey_engine/admission.py",
+  "src/litoral_trace/lacey_engine/classifier.py",
+  "src/litoral_trace/lacey_engine/layout_parser.py",
+  "src/litoral_trace/lacey_engine/segmentation.py",
+  "src/litoral_trace/lacey_engine/pipeline.py"
+]
+tests = ["tests/lacey_engine"]
+notes = "Produces evidence/candidates; does not by itself publish canonical U.S. Lacey truth."
+
+[capabilities.source_authority]
+status = "ACTIVE"
+owner = "lacey_engine"
+authority = "deterministic"
+implementation = [
+  "src/litoral_trace/lacey_engine/source_authority.py",
+  "src/litoral_trace/lacey_engine/ranking.py"
+]
+tests = ["tests/lacey_engine"]
+notes = "Preserve source precedence and evidence backing when adding new document classes."
+
+[capabilities.specialist_orchestration]
+status = "ACTIVE"
+owner = "lacey_engine.multi_agent"
+authority = "inferred"
+implementation = [
+  "src/litoral_trace/lacey_engine/multi_agent/orchestrator.py",
+  "src/litoral_trace/lacey_engine/multi_agent/router.py",
+  "src/litoral_trace/lacey_engine/multi_agent/specialist_runtime.py",
+  "src/litoral_trace/lacey_engine/multi_agent/specialists"
+]
+tests = ["tests/lacey_engine"]
+notes = "Specialist/AI output remains non-canonical until application reconciliation/publication."
+
+[capabilities.line_binding_and_fusion]
+status = "ACTIVE"
+owner = "lacey_engine.multi_agent"
+authority = "inferred"
+implementation = [
+  "src/litoral_trace/lacey_engine/multi_agent/line_binding.py",
+  "src/litoral_trace/lacey_engine/multi_agent/fusion.py",
+  "src/litoral_trace/lacey_engine/multi_agent/resolver.py",
+  "src/litoral_trace/lacey_engine/multi_agent/field_judge.py"
+]
+tests = [
+  "tests/lacey_engine/test_cross_document_line_identity.py",
+  "tests/lacey_engine/test_cross_document_line_identity_fail_closed.py"
+]
+notes = "Cross-document identity must fail closed when evidence is insufficient."
+
+[capabilities.ai_shadow]
+status = "SHADOW"
+owner = "lacey_engine + us_lacey"
+authority = "inferred"
+implementation = [
+  "src/litoral_trace/lacey_engine/ai_shadow.py",
+  "src/litoral_trace/us_lacey/specialized_shadow.py",
+  "src/litoral_trace/us_lacey/specialized_projection.py",
+  "src/litoral_trace/us_lacey/specialized_projection_runtime.py",
+  "src/litoral_trace/us_lacey/specialized_inference_cache.py"
+]
+migrations = ["alembic/versions/043_add_us_lacey_engine2_shadow.py"]
+tests = ["tests/lacey_engine"]
+notes = "Shadow output must not silently alter canonical customer-facing truth."
+
+[capabilities.operation_workflow]
+status = "ACTIVE"
+owner = "us_lacey"
+authority = "deterministic"
+implementation = [
+  "src/litoral_trace/us_lacey/_operations_core.py",
+  "src/litoral_trace/us_lacey/operations.py",
+  "src/litoral_trace/us_lacey/workflow.py"
+]
+migrations = ["alembic/versions/034_add_us_lacey_pilot_core.py"]
+tests = ["tests"]
+notes = "Core operation lifecycle. Treat _operations_core.py as a hotspot; avoid adding unrelated domain logic."
+
+[capabilities.job_worker_lifecycle]
+status = "ACTIVE"
+owner = "us_lacey"
+authority = "deterministic"
+implementation = [
+  "src/litoral_trace/us_lacey/jobs.py",
+  "src/litoral_trace/us_lacey/worker.py",
+  "src/litoral_trace/us_lacey/worker_db.py",
+  "src/litoral_trace/us_lacey/worker_runner.py",
+  "src/litoral_trace/us_lacey/operation_lock.py"
+]
+tests = ["tests"]
+workflows = [".github/workflows/us-lacey-postgres-gate.yml"]
+notes = "Changes require concurrency/idempotency/source-generation review."
+
+[capabilities.source_set_revisions]
+status = "CANONICAL"
+owner = "us_lacey"
+authority = "deterministic"
+implementation = ["src/litoral_trace/us_lacey/source_sets.py"]
+migrations = ["alembic/versions/048_add_lacey_source_set_revisions.py"]
+tests = ["tests"]
+workflows = [".github/workflows/us-lacey-postgres-gate.yml"]
+notes = "Stale source generations must never overwrite current truth."
+
+[capabilities.semantic_evidence]
+status = "ACTIVE"
+owner = "us_lacey + persistence"
+authority = "observation"
+implementation = [
+  "src/litoral_trace/us_lacey/semantic_evidence_read.py",
+  "src/litoral_trace/us_lacey/shadow_evidence_snapshot.py",
+  "src/litoral_trace/lacey_engine/semantic_graph.py",
+  "src/litoral_trace/db/models/semantic_evidence.py",
+  "src/litoral_trace/db/models/document_text.py"
+]
+migrations = [
+  "alembic/versions/045_add_lacey_evidence_snapshots.py",
+  "alembic/versions/046_add_multilingual_text_spans.py",
+  "alembic/versions/047_add_semantic_evidence_graph.py"
+]
+tests = ["tests"]
+notes = "Future product/regulatory decisions must reuse this provenance chain rather than create a parallel evidence store."
+
+[capabilities.canonical_shipment_truth]
+status = "CANONICAL"
+owner = "us_lacey"
+authority = "canonical"
+implementation = [
+  "src/litoral_trace/us_lacey/canonical_shipment_truth.py",
+  "src/litoral_trace/us_lacey/canonical_publication_support.py"
+]
+tests = ["tests/lacey_engine/test_canonical_shipment_truth.py"]
+notes = "Central publication boundary. Do not write around it from AI/specialist paths."
+
+[capabilities.customer_projection]
+status = "ACTIVE"
+owner = "us_lacey"
+authority = "canonical"
+implementation = ["src/litoral_trace/us_lacey/projection.py"]
+tests = ["tests"]
+notes = "Projection should shape already-decided state; do not embed new regulatory domain engines here."
+
+[capabilities.human_review]
+status = "ACTIVE"
+owner = "us_lacey"
+authority = "human_confirmed"
+implementation = [
+  "src/litoral_trace/us_lacey/review.py",
+  "src/litoral_trace/us_lacey/bulk_review.py",
+  "src/litoral_trace/us_lacey/ai_review.py",
+  "src/litoral_trace/us_lacey/ai_suggestions.py"
+]
+tests = ["tests"]
+notes = "Reviewer actions must remain explicit and auditable. Future exception-first review should extend this capability."
+
+[capabilities.ppq505_and_exports]
+status = "ACTIVE"
+owner = "us_lacey"
+authority = "canonical"
+implementation = [
+  "src/litoral_trace/us_lacey/ppq505.py",
+  "src/litoral_trace/us_lacey/exporters"
+]
+migrations = ["alembic/versions/040_establish_us_lacey_ppq505_contract.py"]
+tests = ["tests"]
+notes = "Preparation/export capability; do not imply live federal API submission unless explicitly implemented and verified."
+
+[capabilities.portal_and_self_service]
+status = "ACTIVE"
+owner = "us_lacey"
+authority = "deterministic"
+implementation = [
+  "src/litoral_trace/us_lacey/portal_auth.py",
+  "src/litoral_trace/us_lacey/access.py",
+  "src/litoral_trace/us_lacey/self_service.py",
+  "src/litoral_trace/web/us_lacey_portal_views.py"
+]
+migrations = [
+  "alembic/versions/035_add_us_lacey_self_service.py",
+  "alembic/versions/037_add_us_lacey_portal_auth_functions.py"
+]
+tests = ["tests"]
+notes = "Preserve tenant isolation and authorization contracts."
+
+[capabilities.billing]
+status = "ACTIVE"
+owner = "us_lacey"
+authority = "deterministic"
+implementation = [
+  "src/litoral_trace/us_lacey/lemon_billing.py",
+  "src/litoral_trace/us_lacey/lemon_squeezy.py"
+]
+migrations = ["alembic/versions/041_add_us_lacey_lemon_squeezy_billing.py"]
+tests = ["tests"]
+notes = "Commercial infrastructure is separate from regulatory truth."
+
+[capabilities.product_composition_bom]
+status = "PLANNED"
+owner = "product_intelligence"
+authority = "observation"
+implementation = []
+tests = []
+notes = "Planned reusable Product/SKU/Component/Material/BOM domain. Must preserve evidence links and avoid hiding product structure inside prompts."
+
+[capabilities.taxonomy_resolver]
+status = "PLANNED"
+owner = "us_lacey.regulatory.taxonomy"
+authority = "inferred"
+implementation = []
+tests = []
+notes = "Planned versioned taxonomy resolution with exact/synonym/alias candidates, confidence and explicit ambiguity/review states."
+
+[capabilities.regulatory_rules]
+status = "PLANNED"
+owner = "us_lacey.regulatory"
+authority = "deterministic"
+implementation = []
+tests = []
+notes = "Planned versioned deterministic rules for de minimis, composite/special-use and readiness. Missing inputs must yield indeterminate/review-required rather than false-safe."
+
+[capabilities.exception_first_review]
+status = "PLANNED"
+owner = "us_lacey review extension"
+authority = "review_required"
+implementation = []
+tests = []
+notes = "Planned queue that surfaces only unresolved/conflicting/missing-evidence cases and links each issue to source evidence."
