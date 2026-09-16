@@ -27,6 +27,9 @@ from litoral_trace.db.models import (
     UsLaceyPlantDeclaration,
     UsLaceyPpqPlantLine,
 )
+from litoral_trace.us_lacey.cross_document_line_identity import (
+    reconcile_cross_document_line_identity,
+)
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
     PPQ505_PLANT_FIELDS,
@@ -36,7 +39,7 @@ from litoral_trace.us_lacey.ppq505 import (
 )
 
 
-CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v1"
+CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v2"
 _CANONICAL_EXTRACTOR = "canonical-shipment-truth"
 _CANONICAL_CONFLICT_RESOLUTION = "Superseded by canonical shipment-line reconciliation."
 
@@ -290,6 +293,7 @@ def _composed_merchandise_description(
 
 def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
     """Build one fail-closed shipment/plant-line truth from Engine 2 JSON."""
+    payload = reconcile_cross_document_line_identity(payload)
     fields_payload = payload.get("canonical_fields")
     if not isinstance(fields_payload, Mapping):
         raise ValueError("Shipment resolution has no canonical_fields mapping.")
@@ -506,6 +510,28 @@ def _candidate_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _line_has_human_review(
+    session,
+    *,
+    organization_id: int,
+    operation_id: int,
+    plant_line_id: int,
+) -> bool:
+    fields = session.scalars(
+        select(UsLaceyOperationField).where(
+            UsLaceyOperationField.organization_id == organization_id,
+            UsLaceyOperationField.operation_id == operation_id,
+            UsLaceyOperationField.plant_line_id == plant_line_id,
+        )
+    ).all()
+    return any(
+        field.reviewed_at is not None
+        or field.reviewed_by_user_id is not None
+        or bool(str(field.human_value or "").strip())
+        for field in fields
+    )
+
+
 def _ensure_plant_line_count(
     session,
     *,
@@ -523,6 +549,24 @@ def _ensure_plant_line_count(
             .order_by(UsLaceyPpqPlantLine.ordinal.asc(), UsLaceyPpqPlantLine.id.asc())
         ).all()
     )
+
+    if len(lines) > needed:
+        surplus = lines[needed:]
+        for line in surplus:
+            if not str(line.line_reference).startswith("CANONICAL-"):
+                raise RuntimeError("CANONICAL_STALE_LINE_REQUIRES_REVIEW")
+            if _line_has_human_review(
+                session,
+                organization_id=organization_id,
+                operation_id=int(operation.id),
+                plant_line_id=int(line.id),
+            ):
+                raise RuntimeError("CANONICAL_STALE_LINE_REQUIRES_REVIEW")
+        for line in surplus:
+            session.delete(line)
+        session.flush()
+        lines = lines[:needed]
+
     existing_refs = {str(line.line_reference) for line in lines}
     next_ordinal = max((int(line.ordinal) for line in lines), default=0) + 1
     while len(lines) < needed:
@@ -564,9 +608,7 @@ def _ensure_plant_line_count(
         lines.append(line)
         existing_refs.add(reference)
         next_ordinal += 1
-    operation.merchandise_line_count = max(
-        int(operation.merchandise_line_count or 0), len(lines)
-    )
+    operation.merchandise_line_count = len(lines)
     session.flush()
     return tuple(lines)
 

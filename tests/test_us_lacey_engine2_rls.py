@@ -15,6 +15,10 @@ from tests.test_us_lacey_canonical_shipment_truth_postgres import (
     test_canonical_publication_never_overwrites_human_review as _canonical_human_review_contract,
     test_canonical_publication_replaces_machine_state_without_cross_line_leakage as _canonical_publish_contract,
 )
+from tests.test_us_lacey_canonical_line_compaction_postgres import (
+    test_publication_compacts_unreviewed_stale_machine_canonical_lines as _canonical_compaction_contract,
+    test_publication_refuses_to_compact_human_reviewed_canonical_line as _canonical_compaction_human_guard_contract,
+)
 
 RUNTIME_ROLE = "litoral_trace_app"
 
@@ -91,3 +95,11 @@ def test_engine2_gate_runs_canonical_publication_contract(engine2_postgres_sessi
 
 def test_engine2_gate_runs_canonical_human_review_contract(engine2_postgres_session_factory):
     _canonical_human_review_contract(engine2_postgres_session_factory)
+
+
+def test_engine2_gate_runs_canonical_line_compaction_contract(engine2_postgres_session_factory):
+    _canonical_compaction_contract(engine2_postgres_session_factory)
+
+
+def test_engine2_gate_runs_canonical_line_compaction_human_guard_contract(engine2_postgres_session_factory):
+    _canonical_compaction_human_guard_contract(engine2_postgres_session_factory)
