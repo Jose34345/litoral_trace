@@ -8,13 +8,20 @@ exactly one authority: CanonicalShipmentTruth.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Mapping
 
 from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.us_lacey.canonical_publication_support import (
+    prepare_canonical_publication,
+    publish_derived_article_components,
+)
 from litoral_trace.us_lacey.canonical_shipment_truth import publish_canonical_shipment_truth
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.lacey_engine_service import ENGINE2_SHADOW, engine2_mode
 
+
+LOGGER = logging.getLogger(__name__)
 
 _ENGINE2_TO_PREPARATION_FIELD = {
     "estimated_arrival_date": "estimated_arrival_date",
@@ -211,6 +218,11 @@ def project_engine2_supported_suggestions(*, organization_id: int, operation_id:
     to build/persist the shipment run. With Engine 2 OFF there is no canonical input
     to publish, so this compatibility seam is deliberately a no-op. When Engine 2 is
     active, publication failures propagate and keep the owned worker job fail-closed.
+
+    Per-document plant lines are provisional. Before the canonical writer runs, only
+    surplus rows with provable deterministic-machine provenance and no human review
+    may be compacted. Article / Component is then derived from that same canonical
+    line truth inside this transaction, so no second independent writer is restored.
     """
 
     if engine2_mode() != ENGINE2_SHADOW:
@@ -219,15 +231,34 @@ def project_engine2_supported_suggestions(*, organization_id: int, operation_id:
     session = get_us_lacey_db_session()
     try:
         set_tenant_db_context(session, organization_id)
+        truth = prepare_canonical_publication(
+            session,
+            organization_id=organization_id,
+            operation_id=operation_id,
+        )
         result = publish_canonical_shipment_truth(
             session,
             organization_id=organization_id,
             operation_id=operation_id,
         )
+        derived_count = publish_derived_article_components(
+            session,
+            organization_id=organization_id,
+            operation_id=operation_id,
+            truth=truth,
+        )
         session.commit()
-        return int(result.field_count)
+        return int(result.field_count) + int(derived_count)
     except Exception:
         session.rollback()
+        LOGGER.exception(
+            "U.S. Lacey canonical publication failed",
+            extra={
+                "event": "us_lacey_canonical_publication_failed",
+                "organization_id": int(organization_id),
+                "operation_id": int(operation_id),
+            },
+        )
         raise
     finally:
         session.close()

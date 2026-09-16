@@ -55,6 +55,7 @@ def test_engine2_off_does_not_require_a_canonical_shipment_run(monkeypatch):
 def test_engine2_compatibility_seam_publishes_only_canonical_truth(monkeypatch):
     session = _Session()
     calls: list[tuple[str, object]] = []
+    truth = SimpleNamespace(plant_lines=())
     monkeypatch.setattr(engine2_suggestions, "engine2_mode", lambda: "SHADOW")
     monkeypatch.setattr(engine2_suggestions, "get_us_lacey_db_session", lambda: session)
     monkeypatch.setattr(
@@ -63,11 +64,21 @@ def test_engine2_compatibility_seam_publishes_only_canonical_truth(monkeypatch):
         lambda current, organization_id: calls.append(("tenant", (current, organization_id))),
     )
 
+    def prepare(current, *, organization_id, operation_id):
+        calls.append(("prepare", (current, organization_id, operation_id)))
+        return truth
+
     def publish(current, *, organization_id, operation_id):
         calls.append(("canonical", (current, organization_id, operation_id)))
         return SimpleNamespace(field_count=17)
 
+    def derive(current, *, organization_id, operation_id, truth):
+        calls.append(("derived", (current, organization_id, operation_id, truth)))
+        return 0
+
+    monkeypatch.setattr(engine2_suggestions, "prepare_canonical_publication", prepare)
     monkeypatch.setattr(engine2_suggestions, "publish_canonical_shipment_truth", publish)
+    monkeypatch.setattr(engine2_suggestions, "publish_derived_article_components", derive)
 
     projected = engine2_suggestions.project_engine2_supported_suggestions(
         organization_id=7,
@@ -75,7 +86,7 @@ def test_engine2_compatibility_seam_publishes_only_canonical_truth(monkeypatch):
     )
 
     assert projected == 17
-    assert [name for name, _value in calls] == ["tenant", "canonical"]
+    assert [name for name, _value in calls] == ["tenant", "prepare", "canonical", "derived"]
     assert session.committed is True
     assert session.rolled_back is False
     assert session.closed is True
@@ -83,13 +94,26 @@ def test_engine2_compatibility_seam_publishes_only_canonical_truth(monkeypatch):
 
 def test_engine2_compatibility_seam_rolls_back_canonical_failure(monkeypatch):
     session = _Session()
+    truth = SimpleNamespace(plant_lines=())
     monkeypatch.setattr(engine2_suggestions, "engine2_mode", lambda: "SHADOW")
     monkeypatch.setattr(engine2_suggestions, "get_us_lacey_db_session", lambda: session)
     monkeypatch.setattr(engine2_suggestions, "set_tenant_db_context", lambda *_args: None)
     monkeypatch.setattr(
         engine2_suggestions,
+        "prepare_canonical_publication",
+        lambda *_args, **_kwargs: truth,
+    )
+    monkeypatch.setattr(
+        engine2_suggestions,
         "publish_canonical_shipment_truth",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("canonical failed")),
+    )
+    monkeypatch.setattr(
+        engine2_suggestions,
+        "publish_derived_article_components",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("derived publication must not run after canonical failure")
+        ),
     )
 
     with pytest.raises(RuntimeError, match="canonical failed"):
