@@ -119,9 +119,9 @@ def _line_values(
 def _hts_identity(value: str) -> str | None:
     """Return the PPQ-normalized HTS only for a contract-valid source value.
 
-    Identity matching may ignore presentation punctuation/spacing, but the source
-    evidence itself remains untouched. Invalid values fail closed rather than being
-    guessed into an equivalence class.
+    Identity matching may ignore presentation punctuation/spacing while the persisted
+    source candidate/raw evidence remains unchanged. Invalid values fail closed rather
+    than being guessed into an equivalence class.
     """
     validation = normalize_hts(value)
     if validation.status is not PpqValidationStatus.VALID:
@@ -347,6 +347,13 @@ def _rewrite_field_rows(
         line_key = str(row.get("line_key") or "").strip()
         if line_key in member_to_rep:
             row["line_key"] = member_to_rep[line_key]
+
+        if field_name == "hts_code":
+            hts = _hts_identity(_normalized(row))
+            if hts is not None:
+                # Only the derived canonical view is normalized. Candidate/raw source
+                # evidence remains byte-for-byte as extracted for audit/provenance.
+                row["normalized_value"] = hts
 
         if field_name not in _COMPONENT_FIELDS:
             continue
