@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from litoral_trace.lacey_engine.ai_providers import AIProviderConfig
+from litoral_trace.us_lacey import specialized_shadow
 from litoral_trace.us_lacey.specialized_inference_cache import specialized_computation_fingerprint
 
 
@@ -51,3 +53,34 @@ def test_cache_identity_invalidates_when_model_or_content_changes():
     baseline = _fingerprint(documents)
     assert baseline != _fingerprint(changed_content)
     assert baseline != _fingerprint(documents, model="gemini-next")
+
+
+def test_cache_hit_returns_before_constructing_or_calling_provider(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(
+        specialized_shadow,
+        "_try_cache",
+        lambda **_kwargs: ("cache-fingerprint", sentinel),
+    )
+
+    def provider_must_not_run(_config):
+        raise AssertionError("Gemini provider must not be constructed on a cache hit")
+
+    monkeypatch.setattr(specialized_shadow, "GeminiSpecialistProvider", provider_must_not_run)
+    config = AIProviderConfig(
+        mode="SHADOW",
+        provider="gemini",
+        model="gemini-3.5-flash-lite",
+        base_url="https://example.invalid",
+        api_key="test-key",
+        timeout_seconds=30.0,
+        max_pages=8,
+        allow_external=True,
+    )
+
+    result = specialized_shadow.run_specialized_shadow_operation(
+        documents=(object(),),
+        config=config,
+    )
+
+    assert result is sentinel
