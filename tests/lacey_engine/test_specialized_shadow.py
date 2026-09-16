@@ -144,7 +144,7 @@ def _document() -> SpecializedShadowDocument:
 
 
 def test_specialized_shadow_has_distinct_non_authoritative_schema() -> None:
-    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v1"
+    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v2"
     assert SPECIALIZED_SHADOW_SCHEMA_VERSION != AI_SHADOW_SCHEMA_VERSION
 
 
