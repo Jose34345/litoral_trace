@@ -329,3 +329,25 @@ def test_worker_processes_csv_and_xlsx_with_real_postgres_and_simulated_storage(
 
     reset_us_lacey_worker_engine_state()
     reset_us_lacey_engine_state()
+
+
+def test_worker_gate_compacts_pack1_provisional_numeric_lines(engine2_postgres_session_factory):
+    from tests.test_us_lacey_pack1_finalization_postgres import (
+        test_pack1_style_numeric_machine_surplus_is_compacted_before_canonical_publish,
+    )
+
+    test_pack1_style_numeric_machine_surplus_is_compacted_before_canonical_publish(
+        engine2_postgres_session_factory
+    )
+
+
+def test_worker_gate_preserves_species_line_locality_and_derives_component(
+    engine2_postgres_session_factory,
+):
+    from tests.test_us_lacey_pack1_finalization_postgres import (
+        test_article_component_and_species_stay_line_local_after_canonical_publish,
+    )
+
+    test_article_component_and_species_stay_line_local_after_canonical_publish(
+        engine2_postgres_session_factory
+    )
