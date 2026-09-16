@@ -27,6 +27,9 @@ from litoral_trace.db.models import (
     UsLaceyPlantDeclaration,
     UsLaceyPpqPlantLine,
 )
+from litoral_trace.us_lacey.cross_document_line_identity import (
+    reconcile_cross_document_line_identity,
+)
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
     PPQ505_PLANT_FIELDS,
@@ -36,7 +39,7 @@ from litoral_trace.us_lacey.ppq505 import (
 )
 
 
-CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v1"
+CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v2"
 _CANONICAL_EXTRACTOR = "canonical-shipment-truth"
 _CANONICAL_CONFLICT_RESOLUTION = "Superseded by canonical shipment-line reconciliation."
 
@@ -290,6 +293,7 @@ def _composed_merchandise_description(
 
 def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
     """Build one fail-closed shipment/plant-line truth from Engine 2 JSON."""
+    payload = reconcile_cross_document_line_identity(payload)
     fields_payload = payload.get("canonical_fields")
     if not isinstance(fields_payload, Mapping):
         raise ValueError("Shipment resolution has no canonical_fields mapping.")
