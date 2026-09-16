@@ -113,3 +113,11 @@ def test_equivalent_hts_formatting_collapses_cross_document_product_lines() -> N
     assert {row["line_key"] for row in rows} == {invoice_1, invoice_2}
     assert [row["line_key"] for row in rows].count(invoice_1) == 2
     assert [row["line_key"] for row in rows].count(invoice_2) == 2
+    # The canonical layer compares and publishes contract-normalized HTS values,
+    # while the cloned candidate/raw evidence retains the exact source form.
+    assert {row["normalized_value"] for row in rows} == {"4407110190", "4407990190"}
+    invoice_rows = [row for row in rows if row["document_id"] == "183"]
+    assert {row["candidate"]["raw"]["normalized_value"] for row in invoice_rows} == {
+        "4407.11.019 0",
+        "4407.99.019 0",
+    }
