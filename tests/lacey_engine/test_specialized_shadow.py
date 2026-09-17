@@ -170,6 +170,9 @@ def test_specialized_shadow_verifies_evidence_before_fusion_and_aggregates_usage
     fused = run.result.fused_candidates[0]
     assert fused.candidate.field_key == "hts_code"
     assert fused.candidate.evidence_verified is True
+    assert run.result.candidate_admission is not None
+    assert run.result.candidate_admission.admitted_count == 1
+    assert run.result.candidate_admission.blocked_count == 0
     assert run.provider == "gemini"
     assert run.model == "fixture-specialist-model"
     assert run.input_tokens == 200
@@ -178,7 +181,7 @@ def test_specialized_shadow_verifies_evidence_before_fusion_and_aggregates_usage
     assert run.latency_ms >= 0
 
 
-def test_specialized_shadow_keeps_unmatched_evidence_unverified() -> None:
+def test_specialized_shadow_blocks_unmatched_evidence_before_fusion() -> None:
     class WrongSourceProvider(FakeSpecialistProvider):
         def extract_scoped(self, **kwargs) -> AIExtractionResult:
             result = super().extract_scoped(**kwargs)
@@ -215,7 +218,13 @@ def test_specialized_shadow_keeps_unmatched_evidence_unverified() -> None:
         concurrency=1,
     )
 
-    assert run.result.fused_candidates[0].candidate.evidence_verified is False
+    assert run.result.fused_candidates == ()
+    assert run.result.candidate_admission is not None
+    assert run.result.candidate_admission.admitted_count == 0
+    assert run.result.candidate_admission.blocked_count == 1
+    record = run.result.candidate_admission.records[0]
+    assert record.decision is CandidateAdmissionDecision.BLOCKED
+    assert record.reason is CandidateAdmissionReason.EVIDENCE_UNVERIFIED
 
 
 def test_field_judge_off_never_calls_provider_and_preserves_specialized_fusion() -> None:
