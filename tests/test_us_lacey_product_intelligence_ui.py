@@ -8,7 +8,7 @@ from starlette.routing import Mount, Router
 
 from litoral_trace.us_lacey.product_intelligence_snapshot import ProductIntelligenceView
 from litoral_trace.web import us_lacey_operational_views as operational_views
-from litoral_trace.web.us_lacey_operational_views import render_operation_detail
+from litoral_trace.web.us_lacey_operational_views import render_operation_detail, render_operation_workspace
 
 
 def _request() -> Request:
@@ -171,3 +171,28 @@ def test_operation_detail_renders_non_applicable_product_intelligence_compactly(
 
     assert 'data-product-intelligence-status="NOT_APPLICABLE"' in html
     assert "No explicit BOM was detected" in html
+
+
+def test_operation_workspace_hydration_renders_product_composition_without_manual_reload(monkeypatch):
+    monkeypatch.setattr(operational_views, "_semantic_evidence_for_detail", lambda *_: {})
+    monkeypatch.setattr(
+        operational_views,
+        "_product_intelligence_for_detail",
+        lambda *_args, **_kwargs: _product_intelligence(),
+    )
+
+    html = render_operation_workspace(
+        request=_request(),
+        identity=SimpleNamespace(organization_id=7),
+        detail=_detail(),
+        engine2_dossier=_engine2(),
+        complete_csrf="complete",
+        review_csrf={},
+    )
+
+    assert 'data-product-intelligence-status="READY"' in html
+    assert "Product composition" in html
+    assert "CHAIR-001" in html
+    assert "Rubberwood" in html
+    assert "BOM.xlsx" in html
+    assert "row 2" in html
