@@ -50,6 +50,10 @@ class SpecialUseRegistry:
     def load(cls, path: Path) -> "SpecialUseRegistry":
         raw = path.read_bytes()
         snapshot = SpecialUseSnapshot.model_validate_json(raw)
+        if snapshot.schema_version != 1:
+            raise ValueError(
+                f"unsupported special-use schema_version: {snapshot.schema_version}"
+            )
         fingerprint = hashlib.sha256(raw).hexdigest()
         return cls(snapshot, fingerprint)
 
