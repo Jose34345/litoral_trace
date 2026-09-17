@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from litoral_trace.us_lacey.product_intelligence_snapshot import (
     ProductIntelligenceDocumentInput,
     analyze_product_intelligence_documents,
+    enrich_product_intelligence_taxonomy,
 )
 
 
@@ -74,3 +77,77 @@ def test_taxonomy_enrichment_does_not_change_bom_readiness():
     material = next(iter(_materials(result).values()))
     assert material["taxonomy"]["status"] == "NO_MATCH"
     assert material["taxonomy"]["review_required"] is True
+
+
+def test_legacy_snapshot_payload_is_enriched_on_read_without_rewriting_source_payload():
+    legacy_payload = {
+        "schema_version": "product-intelligence-snapshot-v1",
+        "sources": [
+            {
+                "filename": "legacy-bom.csv",
+                "tables": [
+                    {
+                        "compositions": [
+                            {
+                                "sku": "CHAIR-OLD",
+                                "components": [
+                                    {
+                                        "component_key": "leg",
+                                        "material": {
+                                            "name_raw": "Hevea wood",
+                                            "name_normalized": "hevea wood",
+                                            "source": {
+                                                "document_id": "legacy-assurance-1",
+                                                "sheet": "BOM",
+                                                "row": 7,
+                                            },
+                                        },
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ],
+            }
+        ],
+    }
+    original = deepcopy(legacy_payload)
+
+    enriched = enrich_product_intelligence_taxonomy(legacy_payload)
+
+    material = enriched["sources"][0]["tables"][0]["compositions"][0]["components"][0]["material"]
+    assert material["taxonomy"]["status"] == "REVIEW_REQUIRED"
+    assert material["taxonomy"]["candidates"][0]["scientific_name"] == "Hevea"
+    assert material["taxonomy"]["candidates"][0]["rank"] == "GENUS"
+    assert material["source"] == original["sources"][0]["tables"][0]["compositions"][0]["components"][0]["material"]["source"]
+    assert legacy_payload == original
+
+
+def test_read_compatibility_keeps_existing_taxonomy_instead_of_reinterpreting_it():
+    payload = {
+        "sources": [
+            {
+                "tables": [
+                    {
+                        "compositions": [
+                            {
+                                "components": [
+                                    {
+                                        "material": {
+                                            "name_raw": "Rubberwood",
+                                            "taxonomy": {"status": "HISTORICAL_TEST_VALUE"},
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+
+    enriched = enrich_product_intelligence_taxonomy(payload)
+
+    material = enriched["sources"][0]["tables"][0]["compositions"][0]["components"][0]["material"]
+    assert material["taxonomy"] == {"status": "HISTORICAL_TEST_VALUE"}
