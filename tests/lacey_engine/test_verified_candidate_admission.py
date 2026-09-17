@@ -133,6 +133,31 @@ def test_verified_candidate_admission_accepts_only_fully_supported_candidate() -
         ),
         (
             _candidate(
+                line_item_key="SKU:",
+                seed="malformed-sku",
+            ),
+            CandidateAdmissionReason.LINE_BINDING_AMBIGUOUS,
+        ),
+        (
+            _candidate(
+                line_item_key="LINE:0",
+                seed="zero-line",
+            ),
+            CandidateAdmissionReason.LINE_BINDING_AMBIGUOUS,
+        ),
+        (
+            _candidate(
+                line_item_key=(
+                    "ROW:00000000-0000-0000-0000-000000000001:"
+                    "P1:TINVOICE:R0"
+                ),
+                seed="foreign-row",
+            ),
+            CandidateAdmissionReason.LINE_BINDING_AMBIGUOUS,
+        ),
+
+        (
+            _candidate(
                 field_key="bill_of_lading",
                 value="OOLU1234567890",
                 document_type=DocumentType.BILL_OF_LADING,
