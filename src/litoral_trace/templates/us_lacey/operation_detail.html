@@ -58,8 +58,8 @@
     </div>
     <div class="mt-5 grid gap-4">
       {% for source in product_intelligence.payload.get('sources', []) %}
-        {% for table in source.get('tables', []) %}
-          {% for composition in table.get('compositions', []) %}
+        {% for bom_block in source.get('tables', []) %}
+          {% for composition in bom_block.get('compositions', []) %}
           <article class="rounded-lg border border-slate-200 p-4" data-product-composition-sku="{{ composition.get('sku', '') }}">
             <h3 class="font-bold text-slate-950">{{ composition.get('sku', 'Unidentified SKU') }}{% if composition.get('product_name') %} — {{ composition.get('product_name') }}{% endif %}</h3>
             <div class="mt-3 grid gap-3">
@@ -67,10 +67,10 @@
               {% set material = component.get('material') or {} %}
               {% set mass = material.get('mass') or {} %}
               {% set source_anchor = component.get('source') or material.get('source') or {} %}
-              <div class="rounded-md bg-slate-50 p-3" data-product-component>
+              <div class="rounded-lg bg-slate-50 p-3" data-product-component>
                 <p class="font-semibold text-slate-900">{{ component.get('description_raw') or 'Component' }}</p>
                 <p class="mt-1 text-sm text-slate-700">{{ material.get('name_raw') or material.get('name_normalized') or 'Material not stated' }}{% if mass.get('kilograms') %} · {{ mass.get('kilograms') }} kg{% endif %}{% if component.get('quantity') %} · quantity {{ component.get('quantity') }}{% endif %}</p>
-                <p class="mt-1 text-xs text-slate-500">Source: {{ source.get('filename', 'source document') }}{% if source_anchor.get('sheet') %} · {{ source_anchor.get('sheet') }}{% elif table.get('source', {}).get('sheet') %} · {{ table.get('source', {}).get('sheet') }}{% endif %}{% if source_anchor.get('row') %} · row {{ source_anchor.get('row') }}{% endif %}</p>
+                <p class="mt-1 text-xs text-slate-500">Source: {{ source.get('filename', 'source document') }}{% if source_anchor.get('sheet') %} · {{ source_anchor.get('sheet') }}{% elif bom_block.get('source', {}).get('sheet') %} · {{ bom_block.get('source', {}).get('sheet') }}{% endif %}{% if source_anchor.get('row') %} · row {{ source_anchor.get('row') }}{% endif %}</p>
               </div>
               {% endfor %}
             </div>
