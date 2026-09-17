@@ -18,6 +18,7 @@ from litoral_trace.us_lacey.product_intelligence_snapshot import (
 )
 from litoral_trace.us_lacey.source_sets import seal_current_source_set
 from tests.us_lacey_engine2_postgres import (
+    add_test_document,
     create_test_graph,
     engine2_postgres_engine,
     engine2_postgres_session_factory,
@@ -226,4 +227,63 @@ def test_mark_stale_changes_metadata_without_mutating_payload(
     persisted = session.get(UsLaceyProductIntelligenceSnapshot, snapshot_id)
     assert persisted.status == "STALE"
     assert persisted.payload_json == original_payload
+    session.close()
+
+
+def test_new_source_set_generation_marks_prior_product_intelligence_snapshot_stale(
+    engine2_postgres_engine,
+    engine2_postgres_session_factory,
+):
+    if "us_lacey_product_intelligence_snapshots" not in inspect(engine2_postgres_engine).get_table_names():
+        pytest.skip("POSTGRES_SCHEMA_NOT_MIGRATED_TO_049")
+
+    org, operation, _, _, _, _ = create_test_graph(
+        engine2_postgres_session_factory, content=b"pi-generation-one"
+    )
+    first_revision = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation,
+        session_factory=engine2_postgres_session_factory,
+    )
+    session = tenant_session(engine2_postgres_session_factory, org)
+    snapshot = _snapshot(organization_id=org, operation_id=operation, revision=first_revision)
+    snapshot.payload_json = {
+        "schema_version": "product-intelligence-snapshot-v1",
+        "sources": [{"document_id": "immutable-generation-one"}],
+    }
+    session.add(snapshot)
+    session.commit()
+    snapshot_id = snapshot.id
+    original_payload = dict(snapshot.payload_json)
+    session.close()
+
+    add_test_document(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        operation_id=operation,
+        role="UNKNOWN",
+        filename="generation-two.pdf",
+        content=b"generation-two",
+        is_current=True,
+    )
+    second_revision = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation,
+        session_factory=engine2_postgres_session_factory,
+    )
+
+    assert second_revision.id != first_revision.id
+    assert second_revision.generation == first_revision.generation + 1
+    session = tenant_session(engine2_postgres_session_factory, org)
+    prior = session.get(UsLaceyProductIntelligenceSnapshot, snapshot_id)
+    assert prior.status == "STALE"
+    assert prior.payload_json == original_payload
+    current_revisions = session.scalars(
+        select(UsLaceySourceSetRevision).where(
+            UsLaceySourceSetRevision.organization_id == org,
+            UsLaceySourceSetRevision.operation_id == operation,
+            UsLaceySourceSetRevision.is_current.is_(True),
+        )
+    ).all()
+    assert [revision.id for revision in current_revisions] == [second_revision.id]
     session.close()
