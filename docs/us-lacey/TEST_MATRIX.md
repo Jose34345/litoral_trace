@@ -13,6 +13,10 @@ Use this as a routing guide. Exact test names evolve; search existing tests befo
 | Product Intelligence worker ordering/idempotency | `tests/test_us_lacey_product_intelligence_worker.py` | general CI + U.S. Lacey PostgreSQL Gate |
 | Product Intelligence RLS/supersession | `tests/test_us_lacey_product_intelligence_snapshot_postgres.py` | U.S. Lacey PostgreSQL Gate, no skip allowed for targeted Product Intelligence PostgreSQL acceptance |
 | Taxonomy Resolver | `tests/test_us_lacey_taxonomy_resolver.py` + `tests/test_us_lacey_product_intelligence_taxonomy.py` | general CI + U.S. Lacey PostgreSQL Gate |
+| Regulatory Rules pure domain | `tests/test_us_lacey_regulatory_rules.py` | general CI pytest |
+| Regulatory Assessment payload/snapshot/read | `tests/test_us_lacey_regulatory_assessment_payload.py` + `tests/test_us_lacey_regulatory_assessment_snapshot.py` + UI tests | general CI + U.S. Lacey PostgreSQL Gate |
+| Regulatory Assessment worker ordering | `tests/test_us_lacey_regulatory_assessment_worker.py` + worker stage timing test | general CI + U.S. Lacey PostgreSQL Gate |
+| Regulatory Assessment RLS/supersession | `tests/test_us_lacey_regulatory_assessment_snapshot_postgres.py` | U.S. Lacey PostgreSQL Gate, no skip allowed for targeted acceptance |
 | canonical shipment truth | `tests/lacey_engine/test_canonical_shipment_truth.py` | U.S. Lacey PostgreSQL gate + general CI |
 | operation/source-set lifecycle | U.S. Lacey operation/source-set/worker tests under `tests/` | `.github/workflows/us-lacey-postgres-gate.yml` |
 | worker locking/idempotency | worker/job/lock/source-set tests | U.S. Lacey PostgreSQL gate |
@@ -43,7 +47,7 @@ The current general CI config uses Python 3.11, installs `requirements.txt`, `py
 python -m pytest -q -rs
 ```
 
-The canonical U.S. Lacey Alembic head after Hito 7 remains `049_lacey_product_intelligence_snapshots`; Hito 7 adds no migration.
+The canonical U.S. Lacey Alembic head after Hito 8 is `050_lacey_regulatory_assessment_snapshots`.
 
 ## Product Intelligence / BOM contract
 The active BOM capability is protected by:
@@ -68,7 +72,7 @@ Coverage expectations include:
 - supersession to `STALE` when a newer source set wins;
 - current-only reads that do not surface stale snapshots;
 - tenant A/B isolation and RLS/FORCE RLS in PostgreSQL;
-- worker ordering after canonical publication and before multilingual shadow/source-set finalization;
+- worker ordering after canonical publication and before downstream non-canonical/regulatory/multilingual stages;
 - terminal workspace hydration showing the Product Intelligence card without a manual full-page reload;
 - preservation of the non-canonical boundary: no automatic write to canonical shipment truth, PPQ505 or LAWGS.
 
@@ -92,10 +96,35 @@ Coverage expectations include:
 
 Any taxonomy/catalog change must run both focused taxonomy tests and the Product Intelligence snapshot/worker regression tests before the general CI and PostgreSQL gates.
 
-## Rules for future capabilities
+## Deterministic Regulatory Rules contract
+The active rule capability is protected by:
+- `tests/test_us_lacey_regulatory_rules.py`
+- `tests/test_us_lacey_regulatory_assessment_payload.py`
+- `tests/test_us_lacey_regulatory_assessment_snapshot.py`
+- `tests/test_us_lacey_regulatory_assessment_snapshot_postgres.py`
+- `tests/test_us_lacey_regulatory_assessment_worker.py`
+- `tests/test_us_lacey_regulatory_assessment_ui.py`
+- `tests/test_us_lacey_worker_stage_timing.py`
 
-### Regulatory rules
-Boundary tests are mandatory. For de minimis-style calculations, test exact threshold values, just below/above thresholds, unit conversion, missing weights, multi-line aggregation and ruleset versioning. Missing inputs must produce INDETERMINATE/REVIEW_REQUIRED rather than a guessed PASS.
+Coverage expectations include:
+- exact threshold values and just-below/above boundaries using `Decimal`;
+- protected/unknown status failing closed rather than producing a false-safe PASS;
+- same-HTS aggregation inputs remaining explicit rather than inferred from unrelated lines;
+- composite/special-use construction facts kept distinct from species/due-care determinability;
+- plywood/thin solid plies not being treated as SPECIAL/COMPOSITE merely from a broad material label;
+- stable ruleset version, reason codes, evidence references and calculation trace;
+- stable input fingerprinting;
+- source-set idempotency and generation/fingerprint fencing;
+- `CURRENT / STALE` lifecycle and automatic supersession when the source set changes;
+- tenant A/B isolation plus RLS/FORCE RLS in PostgreSQL;
+- worker ordering after Product Intelligence and before multilingual/source-set finalization;
+- current-only/current-ruleset customer reads;
+- UI wording that makes every result rule-scoped and explicitly non-final;
+- no automatic write to canonical shipment truth, PPQ505, LAWGS or ACE.
+
+Missing required inputs must produce `INDETERMINATE`/review-required rather than a guessed `PASS`. A `PASS` on one rule is never an overall shipment compliance status.
+
+## Rules for future capabilities
 
 ### Source-linked review
 Add end-to-end tests that a displayed decision can resolve to an existing evidence/document anchor and that reviewer overrides create new audited actions rather than erasing source observations.
