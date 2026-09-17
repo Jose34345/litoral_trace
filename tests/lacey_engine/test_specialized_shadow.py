@@ -507,3 +507,80 @@ def test_specialized_cache_rehydrates_document_routing_plan() -> None:
         ("COMMERCIAL_LINES", "CUSTOMS_IDENTITY"),
         ("COMMERCIAL_LINES",),
     ]
+
+
+
+class MislabelledBolProvider:
+    name = "gemini"
+    model = "fixture-mislabelled-bol-model"
+
+    def extract_scoped(self, *, filename, content, pages, allowed_fields, prompt):
+        candidates = ()
+        if "bill_of_lading" in allowed_fields:
+            candidates = (
+                AICandidate(
+                    field_key="bill_of_lading",
+                    value="OOLU1234567890",
+                    normalized_value="OOLU1234567890",
+                    evidence_class=EvidenceClass.EXPLICIT,
+                    page=1,
+                    source_text="Vessel: OOLU1234567890",
+                    confidence=0.99,
+                    provider=self.name,
+                    model=self.model,
+                    evidence_verified=False,
+                ),
+            )
+        return AIExtractionResult(
+            provider=self.name,
+            model=self.model,
+            schema_version=AI_SHADOW_SCHEMA_VERSION,
+            candidates=candidates,
+            page_count=len(pages),
+            latency_ms=1,
+        )
+
+
+def _mislabelled_bol_document() -> SpecializedShadowDocument:
+    block = LayoutBlock(
+        block_id="bol-page-1",
+        page=1,
+        bbox=None,
+        text="OCEAN BILL OF LADING\nVessel: OOLU1234567890",
+        block_type="text",
+    )
+    resolution = DocumentResolution(
+        filename="bill-of-lading.pdf",
+        engine_version="fixture-engine2",
+        document_type=EngineDocumentType.BILL_OF_LADING,
+        type_confidence=0.99,
+        layout=ParsedLayout(blocks=(block,), page_count=1),
+        sections=(),
+        fields={},
+    )
+    return SpecializedShadowDocument(
+        document_id=uuid5(NAMESPACE_URL, "shadow-mislabelled-bol"),
+        operation_document_id=12,
+        assurance_document_id=22,
+        source_sha256="c" * 64,
+        role_hint="BILL_OF_LADING",
+        filename="bill-of-lading.pdf",
+        content=b"%PDF-bol-fixture",
+        engine2_resolution=resolution,
+    )
+
+
+def test_specialized_admission_blocks_semantic_role_mismatch_before_fusion() -> None:
+    run = run_specialized_shadow_operation(
+        documents=(_mislabelled_bol_document(),),
+        provider=MislabelledBolProvider(),
+        concurrency=1,
+    )
+
+    assert run.result.fused_candidates == ()
+    assert run.result.candidate_admission is not None
+    assert run.result.candidate_admission.blocked_count == 1
+    assert (
+        run.result.candidate_admission.records[0].reason
+        is CandidateAdmissionReason.SEMANTIC_ROLE_MISMATCH
+    )
