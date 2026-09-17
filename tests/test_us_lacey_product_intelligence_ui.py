@@ -4,13 +4,26 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from starlette.requests import Request
+from starlette.routing import Mount, Router
 
 from litoral_trace.us_lacey.product_intelligence_snapshot import ProductIntelligenceView
+from litoral_trace.web import us_lacey_operational_views as operational_views
 from litoral_trace.web.us_lacey_operational_views import render_operation_detail
 
 
 def _request() -> Request:
-    return Request({"type": "http", "method": "GET", "path": "/operations/test", "headers": []})
+    router = Router(routes=[Mount("/static", name="static")])
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/operations/test",
+            "headers": [],
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "router": router,
+        }
+    )
 
 
 def _detail():
@@ -105,7 +118,8 @@ def _product_intelligence() -> ProductIntelligenceView:
     )
 
 
-def test_operation_detail_renders_product_composition_with_source_provenance():
+def test_operation_detail_renders_product_composition_with_source_provenance(monkeypatch):
+    monkeypatch.setattr(operational_views, "_semantic_evidence_for_detail", lambda *_: {})
     html = render_operation_detail(
         request=_request(),
         identity=SimpleNamespace(organization_id=7),
@@ -129,7 +143,8 @@ def test_operation_detail_renders_product_composition_with_source_provenance():
     assert "row 2" in html
 
 
-def test_operation_detail_renders_non_applicable_product_intelligence_compactly():
+def test_operation_detail_renders_non_applicable_product_intelligence_compactly(monkeypatch):
+    monkeypatch.setattr(operational_views, "_semantic_evidence_for_detail", lambda *_: {})
     view = ProductIntelligenceView(
         status="NOT_APPLICABLE",
         generation=1,
