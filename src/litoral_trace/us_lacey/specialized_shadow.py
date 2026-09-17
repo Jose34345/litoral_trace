@@ -187,6 +187,40 @@ def _serialize_field_judge(run: SpecializedShadowRun) -> dict[str, object] | Non
     }
 
 
+def _serialize_candidate_admission(
+    run: SpecializedShadowRun,
+    *,
+    document_id: UUID,
+) -> dict[str, object] | None:
+    evaluation = run.result.candidate_admission
+    if evaluation is None:
+        return None
+    records = tuple(
+        record for record in evaluation.records if record.document_id == document_id
+    )
+    return {
+        "version": evaluation.version,
+        "admitted_count": sum(
+            record.decision is CandidateAdmissionDecision.ADMITTED
+            for record in records
+        ),
+        "blocked_count": sum(
+            record.decision is CandidateAdmissionDecision.BLOCKED
+            for record in records
+        ),
+        "records": [
+            {
+                "candidate_id": record.candidate_id,
+                "field_key": record.field_key,
+                "line_item_key": record.line_item_key,
+                "decision": record.decision.value,
+                "reason": record.reason.value,
+            }
+            for record in records
+        ],
+    }
+
+
 def _cache_document_for(run: SpecializedShadowRun, document_id: UUID) -> Mapping[str, object]:
     for item in run.cache_documents:
         if str(item.get("document_id") or "") == str(document_id):
@@ -228,6 +262,10 @@ def serialize_specialized_document_run(*, run: SpecializedShadowRun, document_id
         "candidate_count": len(envelopes),
         "operation_candidate_count": len(run.result.fused_candidates),
         "routing_plan": _serialize_routing_plan(run, document_id=document_id),
+        "candidate_admission": _serialize_candidate_admission(
+            run,
+            document_id=document_id,
+        ),
         "field_judge": _serialize_field_judge(run),
         "fusion_conflicts": [{"field_key": conflict.key.field_key, "line_item_key": conflict.key.line_item_key, "unbound_identity": conflict.key.unbound_identity, "requires_ai_resolution": conflict.requires_ai_resolution} for conflict in run.result.fusion_conflicts],
         "candidates": [
