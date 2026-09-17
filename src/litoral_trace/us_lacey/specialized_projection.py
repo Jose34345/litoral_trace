@@ -280,6 +280,16 @@ def _candidate_semantically_safe_for_projection(candidate: CandidateEnvelope) ->
     return explicit_start >= 0 and explicit_start > trap_start
 
 
+def ppq_field_key_for_candidate(candidate: CandidateEnvelope) -> str | None:
+    """Expose the deterministic specialized-to-PPQ field mapping for safety gates."""
+    return _ppq_field_key(candidate)
+
+
+def candidate_semantically_safe_for_projection(candidate: CandidateEnvelope) -> bool:
+    """Expose the projection semantic-role check for pre-fusion admission."""
+    return _candidate_semantically_safe_for_projection(candidate)
+
+
 def _target_reference(candidate: CandidateEnvelope, *, ppq_field_key: str) -> str | None:
     field = PPQ505_FIELDS_BY_KEY[ppq_field_key]
     if field.scope is PpqScope.SHIPMENT:
