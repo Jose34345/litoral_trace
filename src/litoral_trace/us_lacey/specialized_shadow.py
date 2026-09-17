@@ -17,6 +17,14 @@ from uuid import UUID
 from litoral_trace.lacey_engine.ai_providers import AIProviderConfig
 from litoral_trace.lacey_engine.ai_shadow import AICandidate, AIExtractionResult, AIShadowError, verify_ai_evidence
 from litoral_trace.lacey_engine.domain import BoundingBox, DocumentResolution, EvidenceClass
+from litoral_trace.lacey_engine.multi_agent.candidate_admission import (
+    CANDIDATE_ADMISSION_VERSION,
+    CandidateAdmissionDecision,
+    CandidateAdmissionEvaluation,
+    CandidateAdmissionReason,
+    CandidateAdmissionRecord,
+    evaluate_verified_candidate_admission,
+)
 from litoral_trace.lacey_engine.multi_agent.contracts import (
     CandidateEnvelope,
     DocumentType as SpecializedDocumentType,
@@ -44,11 +52,18 @@ from litoral_trace.lacey_engine.multi_agent.orchestrator import orchestrate_spec
 from litoral_trace.lacey_engine.multi_agent.router import RoutingAssignment, RoutingPlan, build_routing_plan, route_document
 from litoral_trace.lacey_engine.multi_agent.specialist_runtime import ScopedAIExtractionProvider, SpecialistInputDocument
 from litoral_trace.lacey_engine.multi_agent.specialists import BotanicalExtractor, CommercialLineExtractor, CustomsIdentityExtractor, LogisticsExtractor
+from litoral_trace.us_lacey.ppq505 import PpqValidationStatus, validate_ppq_value
 from litoral_trace.us_lacey.specialized_inference_cache import cache_organization_id, find_cached_specialized_payloads, specialized_computation_fingerprint
-from litoral_trace.us_lacey.specialized_projection import SPECIALIZED_PROJECTION_VERSION, SpecializedProjectionMode, specialized_projection_mode as configured_specialized_projection_mode
+from litoral_trace.us_lacey.specialized_projection import (
+    SPECIALIZED_PROJECTION_VERSION,
+    SpecializedProjectionMode,
+    candidate_semantically_safe_for_projection,
+    ppq_field_key_for_candidate,
+    specialized_projection_mode as configured_specialized_projection_mode,
+)
 
 LOGGER = logging.getLogger(__name__)
-SPECIALIZED_SHADOW_SCHEMA_VERSION = "lacey_multi_agent_shadow_v3"
+SPECIALIZED_SHADOW_SCHEMA_VERSION = "lacey_multi_agent_shadow_v4"
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,14 +104,14 @@ def specialized_engine_version(*, provider: str, model: str, source_set_fingerpr
     effective_judge_mode = _effective_judge_mode(judge_mode)
     effective_projection_mode = _effective_projection_mode(projection_mode)
     identity = (
-        f"v3|{provider}|{model}|schema={SPECIALIZED_SHADOW_SCHEMA_VERSION}|"
+        f"v4|{provider}|{model}|schema={SPECIALIZED_SHADOW_SCHEMA_VERSION}|"
         "evidence=engine2-exact|"
         f"judge={FIELD_JUDGE_VERSION}:{effective_judge_mode.value}|"
         f"projection={SPECIALIZED_PROJECTION_VERSION}:{effective_projection_mode.value}"
     )
     if source_set_fingerprint:
         identity += f"|source_set={source_set_fingerprint}"
-    return f"multi-agent-v3:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:32]}"
+    return f"multi-agent-v4:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:32]}"
 
 
 def _sum_reported(values: list[int | None]) -> int | None:
@@ -119,6 +134,34 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
         checked = verify_ai_evidence(engine2=resolution, ai=singleton)
         verified.append(replace(envelope, candidate=checked.candidates[0]))
     return tuple(verified)
+
+
+def _specialized_admission_reason(
+    candidate: CandidateEnvelope,
+) -> CandidateAdmissionReason | None:
+    if not candidate_semantically_safe_for_projection(candidate):
+        return CandidateAdmissionReason.SEMANTIC_ROLE_MISMATCH
+
+    ppq_field_key = ppq_field_key_for_candidate(candidate)
+    if ppq_field_key is None:
+        return CandidateAdmissionReason.FIELD_NOT_ALLOWED
+
+    validation = validate_ppq_value(ppq_field_key, candidate.candidate.value)
+    if (
+        validation.status is not PpqValidationStatus.VALID
+        or not validation.normalized_value
+    ):
+        return CandidateAdmissionReason.INVALID_VALUE
+    return None
+
+
+def _admit_specialized_candidates(
+    candidates: tuple[CandidateEnvelope, ...],
+) -> CandidateAdmissionEvaluation:
+    return evaluate_verified_candidate_admission(
+        candidates,
+        extra_validator=_specialized_admission_reason,
+    )
 
 
 def _serialize_field_judge(run: SpecializedShadowRun) -> dict[str, object] | None:
