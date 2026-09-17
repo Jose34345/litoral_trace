@@ -29,7 +29,7 @@ Migrations 045–047 introduced evidence snapshots, multilingual text spans and 
 ### Product Intelligence snapshots
 - `src/litoral_trace/db/models/us_lacey_product_intelligence.py`
 - `src/litoral_trace/us_lacey/product_intelligence_snapshot.py`
-- migration `049_lacey_product_intelligence_snapshots.py`
+- migration `049_add_lacey_product_intelligence_snapshots.py`
 
 Each Product Intelligence snapshot is tenant-owned and bound to the U.S. Lacey operation plus the source-set revision/fingerprint from which it was computed. The lifecycle is `READY / PARTIAL / FAILED / NOT_APPLICABLE / STALE`.
 
