@@ -48,7 +48,7 @@ from litoral_trace.us_lacey.specialized_inference_cache import cache_organizatio
 from litoral_trace.us_lacey.specialized_projection import SPECIALIZED_PROJECTION_VERSION, SpecializedProjectionMode, specialized_projection_mode as configured_specialized_projection_mode
 
 LOGGER = logging.getLogger(__name__)
-SPECIALIZED_SHADOW_SCHEMA_VERSION = "lacey_multi_agent_shadow_v2"
+SPECIALIZED_SHADOW_SCHEMA_VERSION = "lacey_multi_agent_shadow_v3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,14 +89,14 @@ def specialized_engine_version(*, provider: str, model: str, source_set_fingerpr
     effective_judge_mode = _effective_judge_mode(judge_mode)
     effective_projection_mode = _effective_projection_mode(projection_mode)
     identity = (
-        f"v2|{provider}|{model}|schema={SPECIALIZED_SHADOW_SCHEMA_VERSION}|"
+        f"v3|{provider}|{model}|schema={SPECIALIZED_SHADOW_SCHEMA_VERSION}|"
         "evidence=engine2-exact|"
         f"judge={FIELD_JUDGE_VERSION}:{effective_judge_mode.value}|"
         f"projection={SPECIALIZED_PROJECTION_VERSION}:{effective_projection_mode.value}"
     )
     if source_set_fingerprint:
         identity += f"|source_set={source_set_fingerprint}"
-    return f"multi-agent-v2:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:32]}"
+    return f"multi-agent-v3:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:32]}"
 
 
 def _sum_reported(values: list[int | None]) -> int | None:
