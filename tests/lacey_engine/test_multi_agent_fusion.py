@@ -418,3 +418,47 @@ def test_species_binomial_and_epithet_remain_distinct_without_matching_genus_con
 
     assert len(result.conflicts) == 1
     assert result.conflicts[0].key.field_key == "species"
+
+
+
+def test_species_equivalence_fails_closed_when_line_has_multiple_genera() -> None:
+    line_key = "SKU:AMBIGUOUS-TAXON"
+    candidates = (
+        _envelope(
+            "genus",
+            "Eucalyptus",
+            document_type=DocumentType.BOTANICAL_DECLARATION,
+            specialist=SpecialistRole.BOTANICAL,
+            line_item_key=line_key,
+            document_seed="ambiguous-genus-eucalyptus",
+        ),
+        _envelope(
+            "genus",
+            "Pinus",
+            document_type=DocumentType.SUPPLIER_ORIGIN,
+            specialist=SpecialistRole.BOTANICAL,
+            line_item_key=line_key,
+            document_seed="ambiguous-genus-pinus",
+        ),
+        _envelope(
+            "species",
+            "Eucalyptus grandis",
+            document_type=DocumentType.BOTANICAL_DECLARATION,
+            specialist=SpecialistRole.BOTANICAL,
+            line_item_key=line_key,
+            document_seed="ambiguous-species-full",
+        ),
+        _envelope(
+            "species",
+            "grandis",
+            document_type=DocumentType.SUPPLIER_ORIGIN,
+            specialist=SpecialistRole.BOTANICAL,
+            line_item_key=line_key,
+            document_seed="ambiguous-species-epithet",
+        ),
+    )
+
+    result = fuse_candidates(candidates)
+
+    conflict_fields = {item.key.field_key for item in result.conflicts}
+    assert conflict_fields == {"genus", "species"}
