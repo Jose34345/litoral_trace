@@ -1,0 +1,90 @@
+{
+  "source": "USDA APHIS Lacey Act Special Use Designations",
+  "source_url": "https://www.aphis.usda.gov/plant-imports/file-lacey-act-declaration/special-use-designations",
+  "last_modified": "2025-07-30",
+  "snapshot_date": "2026-09-16",
+  "schema_version": 1,
+  "designations": [
+    {
+      "genus": "TEMP",
+      "species": "AATH",
+      "category": "SPECIES_GROUP",
+      "members": ["Abies amabilis", "Tsuga heterophylla"],
+      "requires_due_care": false,
+      "current": true,
+      "notes": "Temporary APHIS species-group code as published in the current snapshot.",
+      "source_ref": "APHIS_SUD_2025-07-30"
+    },
+    {
+      "genus": "TEMP",
+      "species": "LOPM",
+      "category": "SPECIES_GROUP",
+      "members": ["Larix occidentalis", "Pseudotsuga menziesii"],
+      "requires_due_care": false,
+      "current": true,
+      "notes": "The APHIS page displays a spelling variant for Douglas-fir; this snapshot stores the accepted scientific spelling Pseudotsuga menziesii while preserving APHIS TEMP/LOPM semantics.",
+      "source_ref": "APHIS_SUD_2025-07-30"
+    },
+    {
+      "genus": "SPECIAL",
+      "species": "SPF",
+      "category": "SPECIES_GROUP",
+      "members": [
+        "Abies balsamea",
+        "Abies lasiocarpa",
+        "Picea engelmannii",
+        "Picea glauca",
+        "Picea mariana",
+        "Picea rubens",
+        "Picea sitchensis",
+        "Pinus banksiana",
+        "Pinus contorta",
+        "Pinus resinosa"
+      ],
+      "requires_due_care": false,
+      "current": true,
+      "notes": "Spruce-Pine-Fir grouping published by APHIS.",
+      "source_ref": "APHIS_SUD_2025-07-30"
+    },
+    {
+      "genus": "SPECIAL",
+      "species": "COMPOSITE",
+      "category": "COMPOSITE",
+      "members": [],
+      "requires_due_care": true,
+      "current": true,
+      "notes": "Use is conditional on APHIS due-care and composite-material requirements.",
+      "source_ref": "APHIS_SUD_2025-07-30"
+    },
+    {
+      "genus": "SPECIAL",
+      "species": "RECYCLED",
+      "category": "RECYCLED",
+      "members": [],
+      "requires_due_care": true,
+      "current": true,
+      "notes": "Use is conditional on recycled-material applicability and due care.",
+      "source_ref": "APHIS_SUD_2025-07-30"
+    },
+    {
+      "genus": "SPECIAL",
+      "species": "RECLAIMED",
+      "category": "RECLAIMED",
+      "members": [],
+      "requires_due_care": true,
+      "current": true,
+      "notes": "Use is conditional on reclaimed-material applicability and due care.",
+      "source_ref": "APHIS_SUD_2025-07-30"
+    },
+    {
+      "genus": "SPECIAL",
+      "species": "PREAMENDMENT",
+      "category": "PREAMENDMENT",
+      "members": [],
+      "requires_due_care": true,
+      "current": true,
+      "notes": "V1 requires an explicit upstream determination that pre-amendment applicability is satisfied; it does not infer dates.",
+      "source_ref": "APHIS_SUD_2025-07-30"
+    }
+  ]
+}

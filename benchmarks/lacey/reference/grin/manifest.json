@@ -1,0 +1,8 @@
+{
+  "source": "USDA GRIN Taxonomy for Plants — curated Golden Benchmark subset",
+  "snapshot_version": "golden-taxonomy-v1",
+  "snapshot_date": "2026-09-16",
+  "source_url": "https://npgsweb.ars-grin.gov/gringlobal/taxon/taxonomysearch",
+  "sha256": "91097d4652e6ee9b0f9c5109a336bb6adda9d31cf7bd77e6eaeec69d26e886bf",
+  "schema_version": 1
+}
