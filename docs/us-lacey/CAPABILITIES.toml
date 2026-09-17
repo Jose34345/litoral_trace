@@ -210,12 +210,17 @@ tests = ["tests"]
 notes = "Commercial infrastructure is separate from regulatory truth."
 
 [capabilities.product_composition_bom]
-status = "PLANNED"
+status = "ACTIVE"
 owner = "product_intelligence"
-authority = "observation"
-implementation = []
-tests = []
-notes = "Planned reusable Product/SKU/Component/Material/BOM domain. Must preserve evidence links and avoid hiding product structure inside prompts."
+authority = "observation + deterministic"
+implementation = [
+  "src/litoral_trace/product_intelligence/domain.py",
+  "src/litoral_trace/product_intelligence/units.py",
+  "src/litoral_trace/product_intelligence/bom_schema.py",
+  "src/litoral_trace/product_intelligence/bom_ingestion.py"
+]
+tests = ["tests/product_intelligence"]
+notes = "Reusable explicit CSV/XLSX BOM composition with source anchors, deterministic unit normalization, and SKU isolation. Non-canonical and no regulatory authority."
 
 [capabilities.taxonomy_resolver]
 status = "PLANNED"
