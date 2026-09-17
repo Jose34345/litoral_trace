@@ -368,6 +368,7 @@ def _rehydrate_cached_run(payloads: tuple[Mapping[str, object], ...], *, documen
 
     rebound_candidates: list[CandidateEnvelope] = []
     rebound_by_old_candidate_id: dict[str, CandidateEnvelope] = {}
+    admission_records: list[CandidateAdmissionRecord] = []
     routing_assignments: list[RoutingAssignment] = []
     document_replacements: dict[UUID, UUID] = {}
     for payload in payloads:
@@ -411,6 +412,54 @@ def _rehydrate_cached_run(payloads: tuple[Mapping[str, object], ...], *, documen
                 RoutingAssignment(document=routed_document, specialists=specialists)
             )
 
+        raw_admission = payload.get("candidate_admission")
+        if not isinstance(raw_admission, Mapping):
+            return None
+        if str(raw_admission.get("version") or "") != CANDIDATE_ADMISSION_VERSION:
+            return None
+        raw_admission_records = raw_admission.get("records")
+        if not isinstance(raw_admission_records, list):
+            return None
+        document_admission_records: list[CandidateAdmissionRecord] = []
+        for raw_record in raw_admission_records:
+            if not isinstance(raw_record, Mapping):
+                return None
+            try:
+                line_key = _rewrite_line_key(
+                    raw_record.get("line_item_key"),
+                    old_document_id=old_document_id,
+                    new_document_id=current.document_id,
+                )
+                record = CandidateAdmissionRecord(
+                    candidate_id=str(raw_record["candidate_id"]),
+                    document_id=current.document_id,
+                    field_key=str(raw_record["field_key"]),
+                    line_item_key=line_key,
+                    decision=CandidateAdmissionDecision(str(raw_record["decision"])),
+                    reason=CandidateAdmissionReason(str(raw_record["reason"])),
+                )
+            except (KeyError, TypeError, ValueError):
+                return None
+            if not record.candidate_id or not record.field_key:
+                return None
+            document_admission_records.append(record)
+        admitted_count = sum(
+            item.decision is CandidateAdmissionDecision.ADMITTED
+            for item in document_admission_records
+        )
+        blocked_count = sum(
+            item.decision is CandidateAdmissionDecision.BLOCKED
+            for item in document_admission_records
+        )
+        try:
+            if int(raw_admission.get("admitted_count")) != admitted_count:
+                return None
+            if int(raw_admission.get("blocked_count")) != blocked_count:
+                return None
+        except (TypeError, ValueError):
+            return None
+        admission_records.extend(document_admission_records)
+
         raw_candidates = payload.get("candidates")
         if not isinstance(raw_candidates, list):
             return None
@@ -446,7 +495,22 @@ def _rehydrate_cached_run(payloads: tuple[Mapping[str, object], ...], *, documen
         operation = OperationStatus(str(first.get("operation_status") or "COMPLETED"))
     except ValueError:
         return None
-    result = MultiAgentExtractionResult(routing_plan=RoutingPlan(tuple(routing_assignments)), specialist_results=(), fused_candidates=tuple(rebound_candidates), partial_failures=(), operation=operation, specialist_statuses=(), field_judge=judge, fusion_conflicts=tuple(conflicts))
+    admission = CandidateAdmissionEvaluation(
+        version=CANDIDATE_ADMISSION_VERSION,
+        admitted_candidates=tuple(rebound_candidates),
+        records=tuple(admission_records),
+    )
+    result = MultiAgentExtractionResult(
+        routing_plan=RoutingPlan(tuple(routing_assignments)),
+        specialist_results=(),
+        fused_candidates=tuple(rebound_candidates),
+        partial_failures=(),
+        operation=operation,
+        specialist_statuses=(),
+        field_judge=judge,
+        fusion_conflicts=tuple(conflicts),
+        candidate_admission=admission,
+    )
     return SpecializedShadowRun(result=result, provider=provider, model=model, latency_ms=0, input_tokens=0, output_tokens=0, total_tokens=0, computation_fingerprint=computation_fingerprint, cache_documents=_cache_descriptors(documents), cache_hit=True)
 
 
