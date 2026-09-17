@@ -3,11 +3,12 @@ from io import BytesIO
 from openpyxl import Workbook
 
 from litoral_trace.assurance.parsers import parse_csv, parse_xlsx
+from litoral_trace.assurance.tabular_safety import parse_csv_incremental_bytes
 from litoral_trace.product_intelligence.bom_ingestion import ingest_bom_table
 
 
-def test_csv_bom_preserves_physical_row_after_discarded_blank_and_total_rows():
-    payload = (
+def _csv_payload() -> bytes:
+    return (
         b"SKU,Product,Component,Material,Qty,Weight,UOM\n"
         b"SKU-A,Chair,Leg,Oak,4,1,kg\n"
         b"\n"
@@ -15,7 +16,9 @@ def test_csv_bom_preserves_physical_row_after_discarded_blank_and_total_rows():
         b"SKU-B,Table,Top,Oak,1,2,kg\n"
     )
 
-    parsed = parse_csv(payload)
+
+def test_csv_bom_preserves_physical_row_after_discarded_blank_and_total_rows():
+    parsed = parse_csv(_csv_payload())
     table = parsed.tables[0]
 
     assert table.row_numbers == (2, 5)
@@ -25,6 +28,16 @@ def test_csv_bom_preserves_physical_row_after_discarded_blank_and_total_rows():
     assert by_sku["SKU-A"].components[0].source.row == 2
     assert by_sku["SKU-B"].components[0].source.row == 5
     assert by_sku["SKU-B"].components[0].component_key == "SKU-B:row:5"
+
+
+def test_incremental_worker_csv_parser_preserves_the_same_physical_rows():
+    table = parse_csv_incremental_bytes(_csv_payload()).tables[0]
+
+    assert table.row_numbers == (2, 5)
+    result = ingest_bom_table(table, document_id="doc-worker-csv")
+    by_sku = {item.sku: item for item in result.compositions}
+    assert by_sku["SKU-A"].components[0].source.row == 2
+    assert by_sku["SKU-B"].components[0].source.row == 5
 
 
 def test_xlsx_bom_preserves_physical_row_after_discarded_blank_row():
