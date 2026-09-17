@@ -5,24 +5,23 @@ This is the short current roadmap for agent navigation. It intentionally exclude
 ## NOW — protect and consolidate the existing product
 1. Keep the current source-set/canonical finalization pipeline stable.
 2. Use this AI development control plane (`AGENTS.md` + `docs/us-lacey/`) as the canonical navigation layer.
-3. Do not perform broad package moves or destructive cleanup while the commercial product is being validated.
-4. Keep evidence, tenant isolation, human review, canonical publication and exports regression-protected.
+3. Keep the new Product Intelligence / explicit BOM foundation regression-protected and non-canonical.
+4. Do not perform broad package moves or destructive cleanup while the commercial product is being validated.
+5. Keep evidence, tenant isolation, human review, canonical publication and exports regression-protected.
+
+## DELIVERED — Product Intelligence / explicit BOM foundation
+The reusable `src/litoral_trace/product_intelligence/` domain now provides:
+- explicit CSV/XLSX BOM ingestion through the existing Assurance parser authority;
+- immutable `SKU -> Component -> Material` composition contracts;
+- raw + normalized mass/unit values using `Decimal`;
+- source anchors to table/sheet/row/document identity;
+- explicit issue records for incomplete/invalid rows;
+- deterministic SKU isolation;
+- no persistence, no taxonomy inference and no canonical/regulatory authority.
 
 ## NEXT — build the work-reduction product
 
-### 1. Product Intelligence / BOM
-Goal: structured `Product -> SKU -> Component -> Material` composition backed by source evidence.
-
-Initial scope:
-- explicit XLSX/CSV BOM first;
-- PDF tables only where extraction is reliable;
-- preserve raw + normalized values/units;
-- prevent cross-SKU/component leakage;
-- attach every supported component/material/weight to existing provenance.
-
-Recommended ownership: reusable `src/litoral_trace/product_intelligence/` domain, integrated with U.S. Lacey rather than hidden inside `lacey_engine` prompts.
-
-### 2. Taxonomy Resolver
+### 1. Taxonomy Resolver
 Goal: turn commercial/common/scientific plant names into versioned taxonomic candidates without fabricating certainty.
 
 Initial scope:
@@ -35,7 +34,7 @@ Initial scope:
 
 Recommended ownership: focused `src/litoral_trace/us_lacey/regulatory/taxonomy/` package.
 
-### 3. Deterministic Regulatory Rules
+### 2. Deterministic Regulatory Rules
 Goal: explicit, versioned, reproducible decisions rather than prompt-only compliance conclusions.
 
 Initial scope:
@@ -48,7 +47,7 @@ Initial scope:
 
 Recommended ownership: `src/litoral_trace/us_lacey/regulatory/rules/`.
 
-### 4. Exception-first Human Review
+### 3. Exception-first Human Review
 Goal: reviewers inspect only unresolved or risky items instead of re-reading full shipments.
 
 Initial scope:
@@ -59,7 +58,7 @@ Initial scope:
 - direct source navigation;
 - accept/reject/correct/request-evidence actions using existing auditable review patterns.
 
-### 5. Source-linked Review Package
+### 4. Source-linked Review Package
 Goal: one customer-facing output showing product composition, species/taxonomy, rule results, conflicts, missing evidence and reviewer status, with direct provenance.
 
 Initial formats:
