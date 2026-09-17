@@ -35,6 +35,14 @@ def _parse_decimal(value: object) -> Decimal:
     return result
 
 
+def _physical_row(table: ParsedTable, *, ordinal: int, header_row: int) -> int:
+    """Return parser-retained physical row provenance with a legacy fallback."""
+    row_numbers = getattr(table, "row_numbers", ())
+    if row_numbers and len(row_numbers) == len(table.rows):
+        return int(row_numbers[ordinal - 1])
+    return (header_row + ordinal) if header_row else ordinal
+
+
 def ingest_bom_table(
     table: ParsedTable,
     *,
@@ -51,7 +59,7 @@ def ingest_bom_table(
             document_id=document_id,
             table_name=table.name,
             sheet=table.source.sheet,
-            row=(header_row + ordinal) if header_row else ordinal,
+            row=_physical_row(table, ordinal=ordinal, header_row=header_row),
             column=None,
             locator=table.source.locator,
         )
@@ -91,6 +99,31 @@ def ingest_bom_table(
                 continue
 
         product_name = _clean_text(row.get(binding.product_name)) if binding.product_name else ""
+        bucket = grouped.get(sku)
+        if bucket is not None:
+            existing_product_name = bucket.get("product_name")
+            if (
+                isinstance(existing_product_name, str)
+                and existing_product_name
+                and product_name
+                and existing_product_name.casefold() != product_name.casefold()
+            ):
+                issues.append(
+                    BomIssue(
+                        "CONFLICTING_PRODUCT_NAME",
+                        "BOM rows for the same SKU contain conflicting product names.",
+                        BomIssueSeverity.ERROR,
+                        source,
+                    )
+                )
+                continue
+        else:
+            bucket = {"product_name": product_name or None, "components": []}
+            grouped[sku] = bucket
+
+        if bucket["product_name"] is None and product_name:
+            bucket["product_name"] = product_name
+
         component = Component(
             component_key=f"{sku}:row:{source.row}",
             description_raw=component_text,
@@ -103,13 +136,6 @@ def ingest_bom_table(
             quantity=quantity,
             source=source,
         )
-
-        bucket = grouped.setdefault(
-            sku,
-            {"product_name": product_name or None, "components": []},
-        )
-        if bucket["product_name"] is None and product_name:
-            bucket["product_name"] = product_name
         components = bucket["components"]
         assert isinstance(components, list)
         components.append(component)
