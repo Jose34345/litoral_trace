@@ -8,6 +8,7 @@ from collections.abc import Iterable
 
 from litoral_trace.us_lacey.regulatory.taxonomy.catalog import CATALOG_V1, CATALOG_VERSION
 from litoral_trace.us_lacey.regulatory.taxonomy.domain import (
+    TaxonomicRank,
     TaxonomyCandidate,
     TaxonomyCatalogRecord,
     TaxonomyMatchKind,
@@ -114,7 +115,10 @@ def resolve_taxonomy(
         )
 
     candidate = ordered[0]
-    if candidate.match_kind is TaxonomyMatchKind.ACCEPTED_SCIENTIFIC_NAME:
+    if (
+        candidate.match_kind is TaxonomyMatchKind.ACCEPTED_SCIENTIFIC_NAME
+        and candidate.rank is TaxonomicRank.SPECIES
+    ):
         return TaxonomyResolution(
             catalog_version=CATALOG_VERSION,
             query_normalized=query,
@@ -124,11 +128,16 @@ def resolve_taxonomy(
             candidates=ordered,
         )
 
+    reason = (
+        "EXACT_ACCEPTED_GENUS_NAME"
+        if candidate.match_kind is TaxonomyMatchKind.ACCEPTED_SCIENTIFIC_NAME
+        else f"EXACT_{candidate.match_kind.value}"
+    )
     return TaxonomyResolution(
         catalog_version=CATALOG_VERSION,
         query_normalized=query,
         status=TaxonomyStatus.REVIEW_REQUIRED,
-        reason=f"EXACT_{candidate.match_kind.value}",
+        reason=reason,
         review_required=True,
         candidates=ordered,
     )
