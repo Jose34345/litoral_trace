@@ -57,7 +57,7 @@ def test_csv_explicit_bom_builds_ready_snapshot_payload_with_physical_provenance
     table = result.payload["sources"][0]["tables"][0]
     assert table["compositions"][0]["sku"] == "CHAIR-001"
     assert table["compositions"][0]["components"][1]["source"]["row"] == 4
-    assert table["compositions"][0]["components"][1]["material"]["mass"]["kilograms"] == "1.2"
+    assert table["compositions"][0]["components"][1]["material"]["mass"]["kilograms"] == "1.200"
     assert table["source"]["locator"] == "csv:header_row:1"
 
 
