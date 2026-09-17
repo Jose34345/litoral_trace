@@ -339,6 +339,15 @@ def test_specialized_serialization_persists_bounded_field_judge_telemetry() -> N
     assert "value" not in judge_payload["decisions"][0]
     assert "normalized_value" not in judge_payload["decisions"][0]
 
+    admission_payload = payload["candidate_admission"]
+    assert admission_payload["version"] == CANDIDATE_ADMISSION_VERSION
+    assert admission_payload["admitted_count"] == 1
+    assert admission_payload["blocked_count"] == 0
+    assert admission_payload["records"][0]["decision"] == "ADMITTED"
+    assert admission_payload["records"][0]["reason"] == "VERIFIED_SUPPORTED"
+    assert "value" not in admission_payload["records"][0]
+    assert "normalized_value" not in admission_payload["records"][0]
+
 
 def test_specialized_engine_identity_changes_with_effective_judge_mode() -> None:
     common = {
@@ -436,6 +445,12 @@ def test_specialized_serialization_persists_document_routing_without_candidates(
     )
 
     assert payload["candidate_count"] == 0
+    assert payload["candidate_admission"] == {
+        "version": CANDIDATE_ADMISSION_VERSION,
+        "admitted_count": 0,
+        "blocked_count": 0,
+        "records": [],
+    }
     assert payload["routing_plan"] == [
         {
             "document_type": "COMMERCIAL_INVOICE",
@@ -475,6 +490,9 @@ def test_specialized_cache_rehydrates_document_routing_plan() -> None:
     )
 
     assert cached is not None
+    assert cached.result.candidate_admission is not None
+    assert cached.result.candidate_admission.admitted_count == 0
+    assert cached.result.candidate_admission.blocked_count == 0
     assert [
         (item.document_type.value, item.pages)
         for item in cached.result.routing_plan.documents
