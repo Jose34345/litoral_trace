@@ -14,10 +14,12 @@ from litoral_trace.db.models import (
     UsLaceySourceSetRevision,
 )
 from litoral_trace.us_lacey.product_intelligence_snapshot import (
+    build_product_intelligence_snapshot,
     mark_product_intelligence_snapshots_stale,
 )
-from litoral_trace.us_lacey.source_sets import seal_current_source_set
+from litoral_trace.us_lacey.source_sets import SourceSetClaim, seal_current_source_set
 from tests.us_lacey_engine2_postgres import (
+    FakeVault,
     add_test_document,
     create_test_graph,
     engine2_postgres_engine,
@@ -43,6 +45,32 @@ def _snapshot(*, organization_id: int, operation_id: int, revision: UsLaceySourc
         issue_count=0,
         payload_json={"schema_version": "product-intelligence-snapshot-v1", "sources": []},
         finalized_at=datetime.now(timezone.utc),
+    )
+
+
+def _claim_revision(factory, *, organization_id: int, revision: UsLaceySourceSetRevision) -> SourceSetClaim:
+    session = tenant_session(factory, organization_id)
+    try:
+        claimed_at = session.execute(
+            update(UsLaceySourceSetRevision)
+            .where(
+                UsLaceySourceSetRevision.organization_id == organization_id,
+                UsLaceySourceSetRevision.id == revision.id,
+                UsLaceySourceSetRevision.is_current.is_(True),
+            )
+            .values(status="FINALIZING", claimed_at=datetime.now(timezone.utc))
+            .returning(UsLaceySourceSetRevision.claimed_at)
+        ).scalar_one()
+        session.commit()
+    finally:
+        session.close()
+    return SourceSetClaim(
+        revision_id=revision.id,
+        generation=revision.generation,
+        fingerprint=revision.source_set_fingerprint,
+        claimed=True,
+        reason="CLAIMED",
+        claimed_at=claimed_at,
     )
 
 
@@ -187,6 +215,48 @@ def test_runtime_rls_hides_other_tenant_product_intelligence_snapshot(
         assert cross.rowcount == 0
         session.commit()
         session.close()
+    finally:
+        runtime_engine.dispose()
+
+
+def test_builder_reinstalls_runtime_tenant_context_before_refresh(
+    engine2_postgres_engine,
+    engine2_postgres_session_factory,
+):
+    if "us_lacey_product_intelligence_snapshots" not in inspect(engine2_postgres_engine).get_table_names():
+        pytest.skip("POSTGRES_SCHEMA_NOT_MIGRATED_TO_049")
+
+    org, operation, _, _, _, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        content=b"pi-builder-runtime-rls",
+    )
+    revision = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation,
+        session_factory=engine2_postgres_session_factory,
+    )
+    claim = _claim_revision(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        revision=revision,
+    )
+
+    runtime_url = os.environ.get("TEST_POSTGRES_DATABASE_URL")
+    assert runtime_url, "TEST_POSTGRES_DATABASE_URL is required for Product Intelligence RLS acceptance"
+    runtime_engine = create_engine(normalize_database_url(runtime_url), pool_pre_ping=True)
+    RuntimeFactory = sessionmaker(bind=runtime_engine, autoflush=False, expire_on_commit=False)
+    try:
+        snapshot = build_product_intelligence_snapshot(
+            organization_id=org,
+            operation_id=operation,
+            claim=claim,
+            session_factory=RuntimeFactory,
+            vault_service=FakeVault(b""),
+        )
+        assert snapshot is not None
+        assert snapshot.organization_id == org
+        assert snapshot.source_set_revision_id == revision.id
+        assert snapshot.status == "NOT_APPLICABLE"
     finally:
         runtime_engine.dispose()
 
