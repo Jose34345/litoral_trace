@@ -27,6 +27,17 @@ def test_exact_accepted_scientific_name_resolves_without_publishing_authority():
     assert candidate.authority_record_url == "https://lod.nal.usda.gov/nalt/45477"
 
 
+def test_accepted_genus_name_remains_review_required_for_species_level_workflow():
+    result = resolve_taxonomy("Hevea")
+
+    assert result.status is TaxonomyStatus.REVIEW_REQUIRED
+    assert result.review_required is True
+    assert result.reason == "EXACT_ACCEPTED_GENUS_NAME"
+    assert result.candidates[0].scientific_name == "Hevea"
+    assert result.candidates[0].rank is TaxonomicRank.GENUS
+    assert result.candidates[0].species_epithet is None
+
+
 def test_synonym_and_usda_common_aliases_require_review():
     for name, match_kind in (
         ("Siphonia brasiliensis", TaxonomyMatchKind.SYNONYM),
