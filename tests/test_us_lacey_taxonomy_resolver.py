@@ -128,3 +128,31 @@ def test_multiple_supported_exact_alias_candidates_remain_ambiguous():
         "Example beta",
     ]
     assert all(candidate.match_kind is TaxonomyMatchKind.COMMERCIAL_ALIAS for candidate in result.candidates)
+
+
+
+def test_verified_pinus_taeda_record_resolves_exact_species() -> None:
+    result = resolve_taxonomy("Pinus taeda")
+
+    assert result.status is TaxonomyStatus.RESOLVED
+    assert result.review_required is False
+    assert len(result.candidates) == 1
+    candidate = result.candidates[0]
+    assert candidate.scientific_name == "Pinus taeda"
+    assert candidate.rank is TaxonomicRank.SPECIES
+    assert candidate.genus == "Pinus"
+    assert candidate.species_epithet == "taeda"
+    assert candidate.authority_record_url == "https://lod.nal.usda.gov/nalt/50493"
+
+
+def test_verified_eucalyptus_genus_record_remains_review_required() -> None:
+    result = resolve_taxonomy("Eucalyptus")
+
+    assert result.status is TaxonomyStatus.REVIEW_REQUIRED
+    assert result.review_required is True
+    assert len(result.candidates) == 1
+    candidate = result.candidates[0]
+    assert candidate.scientific_name == "Eucalyptus"
+    assert candidate.rank is TaxonomicRank.GENUS
+    assert candidate.species_epithet is None
+    assert candidate.authority_record_url == "https://lod.nal.usda.gov/nalt/38345"
