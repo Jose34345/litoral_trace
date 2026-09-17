@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 import logging
+from urllib.parse import parse_qs
 
 from markupsafe import Markup, escape
 
@@ -316,4 +317,19 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
     # confirmation normally. Review mutations are POSTs and update those regions OOB.
     if is_oob_update is None:
         is_oob_update = str(getattr(request, "method", "GET")).upper() == "POST"
-    return _render(request, "fragments/operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, error=error, is_oob_update=is_oob_update)
+    workspace = _render(request, "fragments/operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, error=error, is_oob_update=is_oob_update)
+    scope = getattr(request, "scope", {}) or {}
+    raw_query = scope.get("query_string", b"")
+    if isinstance(raw_query, bytes):
+        raw_query = raw_query.decode("latin-1")
+    include_product_intelligence = parse_qs(str(raw_query)).get("include_product_intelligence") == ["1"]
+    if not include_product_intelligence:
+        return workspace
+    product_intelligence = _product_intelligence_for_detail(identity, detail)
+    if product_intelligence is None:
+        return workspace
+    return _render(
+        request,
+        "fragments/product_intelligence_card",
+        product_intelligence=product_intelligence,
+    ) + workspace
