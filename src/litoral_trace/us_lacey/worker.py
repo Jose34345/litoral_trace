@@ -42,6 +42,7 @@ from litoral_trace.us_lacey.jobs import (
     recover_stale_us_lacey_jobs,
 )
 from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_lock
+from litoral_trace.us_lacey.product_intelligence_snapshot import build_product_intelligence_snapshot
 from litoral_trace.us_lacey.source_sets import SourceSetClaim, claim_ready_source_set, finalize_claim
 from litoral_trace.us_lacey.projection import (
     project_assurance_document_to_us_lacey,
@@ -366,6 +367,28 @@ def _project_engine2_suggestions(*, organization_id: int, operation_id: int) -> 
         )
         or 0
     )
+
+
+def _build_product_intelligence_snapshot(*, organization_id: int, operation_id: int, claim: SourceSetClaim):
+    """Best-effort non-canonical composition evidence for the exact claimed source set."""
+    try:
+        return build_product_intelligence_snapshot(
+            organization_id=organization_id,
+            operation_id=operation_id,
+            claim=claim,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Lacey Product Intelligence snapshot build failed",
+            extra={
+                "organization_id": organization_id,
+                "operation_id": operation_id,
+                "source_set_revision_id": claim.revision_id,
+                "source_set_generation": claim.generation,
+                "source_set_fingerprint": claim.fingerprint,
+            },
+        )
+        return None
 
 
 def _project_verified_ai_suggestions(*, organization_id: int, operation_id: int) -> int:
@@ -728,6 +751,17 @@ def process_one_us_lacey_job(
                         organization_id=job.organization_id,
                         operation_id=job.operation_id,
                     )
+                if isinstance(assurance_public_id, UUID):
+                    with _timed_worker_stage(
+                        job=job,
+                        stage="product_intelligence",
+                        source_set_fingerprint=source_set_fingerprint,
+                    ):
+                        _build_product_intelligence_snapshot(
+                            organization_id=job.organization_id,
+                            operation_id=job.operation_id,
+                            claim=source_set_claim,
+                        )
             else:
                 LOGGER.info(
                     "Lacey operation source set not ready; deferred operation-level work",
