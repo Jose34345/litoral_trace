@@ -4,7 +4,6 @@ from uuid import NAMESPACE_URL, uuid5
 
 from litoral_trace.lacey_engine.ai_shadow import (
     AICandidate,
-    comparison_key,
     extraction_result_from_payload,
 )
 from litoral_trace.lacey_engine.domain import EvidenceClass
@@ -15,6 +14,7 @@ from litoral_trace.lacey_engine.multi_agent.contracts import (
 )
 from litoral_trace.lacey_engine.multi_agent.fusion import fuse_candidates
 from litoral_trace.lacey_engine.multi_agent.line_binding import bind_line_items
+from litoral_trace.lacey_engine.multi_agent.semantic_normalization import semantic_value_key
 from litoral_trace.lacey_engine.multi_agent.router import classify_page
 from litoral_trace.us_lacey.ppq505 import PPQ505_SHIPMENT_REFERENCE
 from litoral_trace.us_lacey.specialized_projection import (
@@ -104,9 +104,7 @@ def _ai_payload(field_key: str, value: str, source_text: str) -> dict[str, objec
 
 
 def _comparison_values(field_key: str, *values: str) -> set[str]:
-    normalized = {comparison_key(field_key, value) for value in values}
-    assert None not in normalized
-    return {value for value in normalized if value is not None}
+    return {semantic_value_key(field_key, value) for value in values}
 
 
 def test_pack1_clean_corroboration_does_not_fabricate_conflict() -> None:

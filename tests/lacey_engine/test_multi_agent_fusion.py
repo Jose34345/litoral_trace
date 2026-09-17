@@ -260,3 +260,205 @@ def test_cross_document_fusion_accuracy_uses_normalized_winner_value():
     key = FusionKey("hts_code", "SKU:ACT-TRAY-18")
 
     assert cross_document_fusion_accuracy({key: "4419.90.9000"}, result) == 1.0
+
+
+
+def test_semantically_equivalent_hts_formatting_does_not_create_conflict() -> None:
+    invoice = _envelope(
+        "hts_code",
+        "4407.11.0190",
+        document_type=DocumentType.COMMERCIAL_INVOICE,
+        specialist=SpecialistRole.COMMERCIAL_LINES,
+        line_item_key="SKU:PT-38",
+        document_seed="semantic-hts-invoice",
+    )
+    entry = _envelope(
+        "hts_code",
+        "4407110190",
+        document_type=DocumentType.ENTRY_WORKSHEET,
+        specialist=SpecialistRole.COMMERCIAL_LINES,
+        line_item_key="SKU:PT-38",
+        document_seed="semantic-hts-entry",
+    )
+
+    result = fuse_candidates((invoice, entry))
+
+    assert result.fused_candidates == (entry,)
+    assert result.fused_candidates[0].candidate.value == "4407110190"
+    assert result.conflicts == ()
+
+
+def test_semantically_equivalent_money_unit_and_country_do_not_create_conflicts() -> None:
+    line_key = "SKU:EG-24"
+    candidates = (
+        _envelope(
+            "entered_value",
+            "$18,300.00",
+            document_type=DocumentType.COMMERCIAL_INVOICE,
+            specialist=SpecialistRole.COMMERCIAL_LINES,
+            line_item_key=line_key,
+            document_seed="money-invoice",
+        ),
+        _envelope(
+            "entered_value",
+            "18300",
+            document_type=DocumentType.ENTRY_WORKSHEET,
+            specialist=SpecialistRole.COMMERCIAL_LINES,
+            line_item_key=line_key,
+            document_seed="money-entry",
+        ),
+        _envelope(
+            "metric_unit",
+            "m³",
+            document_type=DocumentType.BOTANICAL_DECLARATION,
+            specialist=SpecialistRole.BOTANICAL,
+            line_item_key=line_key,
+            document_seed="unit-botanical",
+        ),
+        _envelope(
+            "metric_unit",
+            "M3",
+            document_type=DocumentType.SUPPLIER_ORIGIN,
+            specialist=SpecialistRole.BOTANICAL,
+            line_item_key=line_key,
+            document_seed="unit-origin",
+        ),
+        _envelope(
+            "country_of_harvest",
+            "Brazil",
+            document_type=DocumentType.BOTANICAL_DECLARATION,
+            specialist=SpecialistRole.BOTANICAL,
+            line_item_key=line_key,
+            document_seed="country-botanical",
+        ),
+        _envelope(
+            "country_of_harvest",
+            "Brasil",
+            document_type=DocumentType.SUPPLIER_ORIGIN,
+            specialist=SpecialistRole.BOTANICAL,
+            line_item_key=line_key,
+            document_seed="country-origin",
+        ),
+    )
+
+    result = fuse_candidates(candidates)
+
+    assert result.conflicts == ()
+    assert len(result.fused_candidates) == 3
+    assert {item.candidate.field_key for item in result.fused_candidates} == {
+        "entered_value",
+        "metric_unit",
+        "country_of_harvest",
+    }
+
+
+def test_species_epithet_and_binomial_are_equivalent_when_line_genus_is_known() -> None:
+    line_key = "SKU:EG-24"
+    genus = _envelope(
+        "genus",
+        "Eucalyptus",
+        document_type=DocumentType.BOTANICAL_DECLARATION,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key=line_key,
+        document_seed="genus",
+    )
+    full_species = _envelope(
+        "species",
+        "Eucalyptus grandis",
+        document_type=DocumentType.BOTANICAL_DECLARATION,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key=line_key,
+        document_seed="species-full",
+    )
+    epithet = _envelope(
+        "species",
+        "grandis",
+        document_type=DocumentType.SUPPLIER_ORIGIN,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key=line_key,
+        document_seed="species-epithet",
+    )
+
+    result = fuse_candidates((genus, full_species, epithet))
+
+    assert result.conflicts == ()
+    species = [item for item in result.fused_candidates if item.candidate.field_key == "species"]
+    assert species == [full_species]
+    assert species[0].candidate.value == "Eucalyptus grandis"
+
+
+def test_species_binomial_and_epithet_remain_distinct_without_matching_genus_context() -> None:
+    line_key = "SKU:EG-24"
+    wrong_genus = _envelope(
+        "genus",
+        "Pinus",
+        document_type=DocumentType.BOTANICAL_DECLARATION,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key=line_key,
+        document_seed="wrong-genus",
+    )
+    full_species = _envelope(
+        "species",
+        "Eucalyptus grandis",
+        document_type=DocumentType.BOTANICAL_DECLARATION,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key=line_key,
+        document_seed="species-full-no-context",
+    )
+    epithet = _envelope(
+        "species",
+        "grandis",
+        document_type=DocumentType.SUPPLIER_ORIGIN,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key=line_key,
+        document_seed="species-epithet-no-context",
+    )
+
+    result = fuse_candidates((wrong_genus, full_species, epithet))
+
+    assert len(result.conflicts) == 1
+    assert result.conflicts[0].key.field_key == "species"
+
+
+
+def test_species_equivalence_fails_closed_when_line_has_multiple_genera() -> None:
+    line_key = "SKU:AMBIGUOUS-TAXON"
+    candidates = (
+        _envelope(
+            "genus",
+            "Eucalyptus",
+            document_type=DocumentType.BOTANICAL_DECLARATION,
+            specialist=SpecialistRole.BOTANICAL,
+            line_item_key=line_key,
+            document_seed="ambiguous-genus-eucalyptus",
+        ),
+        _envelope(
+            "genus",
+            "Pinus",
+            document_type=DocumentType.SUPPLIER_ORIGIN,
+            specialist=SpecialistRole.BOTANICAL,
+            line_item_key=line_key,
+            document_seed="ambiguous-genus-pinus",
+        ),
+        _envelope(
+            "species",
+            "Eucalyptus grandis",
+            document_type=DocumentType.BOTANICAL_DECLARATION,
+            specialist=SpecialistRole.BOTANICAL,
+            line_item_key=line_key,
+            document_seed="ambiguous-species-full",
+        ),
+        _envelope(
+            "species",
+            "grandis",
+            document_type=DocumentType.SUPPLIER_ORIGIN,
+            specialist=SpecialistRole.BOTANICAL,
+            line_item_key=line_key,
+            document_seed="ambiguous-species-epithet",
+        ),
+    )
+
+    result = fuse_candidates(candidates)
+
+    conflict_fields = {item.key.field_key for item in result.conflicts}
+    assert conflict_fields == {"genus", "species"}

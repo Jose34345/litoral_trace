@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import hashlib
 
-from ..ai_shadow import comparison_key
 from .contracts import CandidateEnvelope, DocumentType, SpecialistRole
+from .semantic_normalization import semantic_value_key
 
 
 FIELD_SPECIALIST: dict[str, SpecialistRole] = {
@@ -126,8 +126,16 @@ def correct_specialist(candidate: CandidateEnvelope) -> bool:
     return expected is not None and candidate.specialist is expected
 
 
-def normalized_candidate_value(candidate: CandidateEnvelope) -> str:
-    value = comparison_key(candidate.candidate.field_key, candidate.candidate.normalized_value)
+def normalized_candidate_value(
+    candidate: CandidateEnvelope,
+    *,
+    genus_context: frozenset[str] = frozenset(),
+) -> str:
+    value = semantic_value_key(
+        candidate.candidate.field_key,
+        candidate.candidate.normalized_value,
+        genus_context=genus_context,
+    )
     return value or candidate.candidate.normalized_value
 
 
