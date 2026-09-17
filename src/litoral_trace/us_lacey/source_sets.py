@@ -113,7 +113,7 @@ def seal_current_source_set(*, organization_id: int, operation_id: int, session_
                 UsLaceyProductIntelligenceSnapshot.operation_id == operation_id,
                 UsLaceyProductIntelligenceSnapshot.status != "STALE",
             )
-            .values(status="STALE", stale_at=func.clock_timestamp())
+            .values(status="STALE")
         )
         session.execute(update(UsLaceySourceSetRevision).where(
             UsLaceySourceSetRevision.organization_id == organization_id,
