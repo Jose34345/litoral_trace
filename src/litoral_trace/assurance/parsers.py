@@ -41,6 +41,7 @@ class ParsedTable:
     headers: tuple[str, ...]
     rows: tuple[dict[str, Any], ...]
     source: SourceLocation
+    row_numbers: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,18 +188,17 @@ def _is_decorative_or_total_row(values: list[Any]) -> bool:
     return False
 
 
-def _records_from_rows(
+def _records_from_rows_with_numbers(
     rows: list[list[Any]],
     *,
     header_index: int,
-    allow_key_value_matrix: bool = False,
-) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
-    if allow_key_value_matrix and _looks_like_key_value_matrix(rows):
-        return _records_from_key_value_matrix(rows)
+) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...], tuple[int, ...]]:
+    """Build records while retaining 1-based physical source row numbers."""
     raw_headers = rows[header_index]
     headers = tuple(_header_label(value, index) for index, value in enumerate(raw_headers))
     records: list[dict[str, Any]] = []
-    for row in rows[header_index + 1 :]:
+    row_numbers: list[int] = []
+    for physical_row, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
         padded = list(row) + [None] * max(0, len(headers) - len(row))
         values = padded[: len(headers)]
         if _is_decorative_or_total_row(values):
@@ -209,7 +209,23 @@ def _records_from_rows(
         }
         if any(value is not None for value in record.values()):
             records.append(record)
-    return headers, tuple(records)
+            row_numbers.append(physical_row)
+    return headers, tuple(records), tuple(row_numbers)
+
+
+def _records_from_rows(
+    rows: list[list[Any]],
+    *,
+    header_index: int,
+    allow_key_value_matrix: bool = False,
+) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
+    if allow_key_value_matrix and _looks_like_key_value_matrix(rows):
+        return _records_from_key_value_matrix(rows)
+    headers, records, _row_numbers = _records_from_rows_with_numbers(
+        rows,
+        header_index=header_index,
+    )
+    return headers, records
 
 
 def validate_xlsx_bytes(content: bytes) -> None:
@@ -244,7 +260,7 @@ def parse_xlsx(content: bytes) -> ParsedDocument:
             header_index = detect_header_row(rows)
             if header_index is None:
                 continue
-            headers, records = _records_from_rows(rows, header_index=header_index)
+            headers, records, row_numbers = _records_from_rows_with_numbers(rows, header_index=header_index)
             if not records:
                 continue
             tables.append(
@@ -257,6 +273,7 @@ def parse_xlsx(content: bytes) -> ParsedDocument:
                         row=header_index + 1,
                         locator=f"sheet:{worksheet.title};header_row:{header_index + 1}",
                     ),
+                    row_numbers=row_numbers,
                 )
             )
     finally:
@@ -290,7 +307,7 @@ def parse_xls(content: bytes) -> ParsedDocument:
             header_index = detect_header_row(rows)
             if header_index is None:
                 continue
-            headers, records = _records_from_rows(rows, header_index=header_index)
+            headers, records, row_numbers = _records_from_rows_with_numbers(rows, header_index=header_index)
             if not records:
                 continue
             tables.append(
@@ -303,6 +320,7 @@ def parse_xls(content: bytes) -> ParsedDocument:
                         row=header_index + 1,
                         locator=f"sheet:{sheet_name};header_row:{header_index + 1}",
                     ),
+                    row_numbers=row_numbers,
                 )
             )
     finally:
@@ -341,7 +359,7 @@ def parse_csv(content: bytes) -> ParsedDocument:
     header_index = detect_header_row(rows)
     if header_index is None:
         raise DocumentParseError("El CSV no contiene una cabecera util.")
-    headers, records = _records_from_rows(rows, header_index=header_index)
+    headers, records, row_numbers = _records_from_rows_with_numbers(rows, header_index=header_index)
     table = ParsedTable(
         name="csv",
         headers=headers,
@@ -350,6 +368,7 @@ def parse_csv(content: bytes) -> ParsedDocument:
             row=header_index + 1,
             locator=f"csv:header_row:{header_index + 1}",
         ),
+        row_numbers=row_numbers,
     )
     return ParsedDocument(
         file_kind="CSV",
