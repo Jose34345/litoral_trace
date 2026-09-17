@@ -24,6 +24,7 @@ from litoral_trace.lacey_engine.multi_agent.field_judge import (
 from litoral_trace.us_lacey.specialized_shadow import (
     SPECIALIZED_SHADOW_SCHEMA_VERSION,
     SpecializedShadowDocument,
+    _rehydrate_cached_run,
     run_specialized_shadow_operation,
     serialize_specialized_document_run,
     specialized_engine_version,
@@ -337,3 +338,139 @@ def test_specialized_engine_identity_changes_with_effective_judge_mode() -> None
     enforce = specialized_engine_version(**common, judge_mode=FieldJudgeMode.ENFORCE)
 
     assert len({off, shadow, enforce}) == 3
+
+class EmptySpecialistProvider:
+    name = "gemini"
+    model = "fixture-empty-specialist-model"
+
+    def extract_scoped(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        pages: tuple[int, ...],
+        allowed_fields: frozenset[str],
+        prompt: str,
+    ) -> AIExtractionResult:
+        return AIExtractionResult(
+            provider=self.name,
+            model=self.model,
+            schema_version=AI_SHADOW_SCHEMA_VERSION,
+            candidates=(),
+            page_count=len(pages),
+            latency_ms=1,
+            input_tokens=1,
+            output_tokens=0,
+            total_tokens=1,
+        )
+
+
+def _mixed_resolution() -> DocumentResolution:
+    blocks = (
+        LayoutBlock(
+            block_id="page-1-row-1",
+            page=1,
+            bbox=None,
+            text="COMMERCIAL INVOICE\nInvoice No. INV-1\nCommercial Line Items\nEntered Value",
+            block_type="text",
+        ),
+        LayoutBlock(
+            block_id="page-2-row-1",
+            page=2,
+            bbox=None,
+            text="PACKING LIST\nPackage Detail\nCartons Pieces\nNet Wt. Gross Wt.",
+            block_type="text",
+        ),
+    )
+    return DocumentResolution(
+        filename="mixed-packet.pdf",
+        engine_version="fixture-engine2",
+        document_type=EngineDocumentType.COMMERCIAL_INVOICE,
+        type_confidence=0.99,
+        layout=ParsedLayout(blocks=blocks, page_count=2),
+        sections=(),
+        fields={},
+    )
+
+
+def _mixed_document() -> SpecializedShadowDocument:
+    return SpecializedShadowDocument(
+        document_id=uuid5(NAMESPACE_URL, "shadow-mixed-packet"),
+        operation_document_id=11,
+        assurance_document_id=21,
+        source_sha256="b" * 64,
+        role_hint="SUPPORTING_DOCUMENT",
+        filename="mixed-packet.pdf",
+        content=b"%PDF-mixed-fixture",
+        engine2_resolution=_mixed_resolution(),
+    )
+
+
+def test_specialized_serialization_persists_document_routing_without_candidates() -> None:
+    document = _mixed_document()
+    run = run_specialized_shadow_operation(
+        documents=(document,),
+        provider=EmptySpecialistProvider(),
+        concurrency=1,
+    )
+
+    payload = serialize_specialized_document_run(
+        run=run,
+        document_id=document.document_id,
+        source_set_fingerprint="source-set-routing-fixture",
+    )
+
+    assert payload["candidate_count"] == 0
+    assert payload["routing_plan"] == [
+        {
+            "document_type": "COMMERCIAL_INVOICE",
+            "pages": [1],
+            "confidence": run.result.routing_plan.documents[0].confidence,
+            "signals": list(run.result.routing_plan.documents[0].signals),
+            "specialists": ["COMMERCIAL_LINES", "CUSTOMS_IDENTITY"],
+        },
+        {
+            "document_type": "PACKING_LIST",
+            "pages": [2],
+            "confidence": run.result.routing_plan.documents[1].confidence,
+            "signals": list(run.result.routing_plan.documents[1].signals),
+            "specialists": ["COMMERCIAL_LINES"],
+        },
+    ]
+    assert payload["cache_document"]["document_id"] == str(document.document_id)
+
+
+def test_specialized_cache_rehydrates_document_routing_plan() -> None:
+    document = _mixed_document()
+    run = run_specialized_shadow_operation(
+        documents=(document,),
+        provider=EmptySpecialistProvider(),
+        concurrency=1,
+    )
+    payload = serialize_specialized_document_run(
+        run=run,
+        document_id=document.document_id,
+        source_set_fingerprint="source-set-routing-fixture",
+    )
+
+    cached = _rehydrate_cached_run(
+        (payload,),
+        documents=(document,),
+        computation_fingerprint="routing-cache-fixture",
+    )
+
+    assert cached is not None
+    assert [
+        (item.document_type.value, item.pages)
+        for item in cached.result.routing_plan.documents
+    ] == [
+        ("COMMERCIAL_INVOICE", (1,)),
+        ("PACKING_LIST", (2,)),
+    ]
+    assert [
+        tuple(role.value for role in cached.result.routing_plan.specialists_for(item))
+        for item in cached.result.routing_plan.documents
+    ] == [
+        ("COMMERCIAL_LINES", "CUSTOMS_IDENTITY"),
+        ("COMMERCIAL_LINES",),
+    ]
