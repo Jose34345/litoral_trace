@@ -12,7 +12,7 @@ from litoral_trace.web.us_lacey_operational_views import render_operation_detail
 
 
 def _request() -> Request:
-    router = Router(routes=[Mount("/static", name="static")])
+    router = Router(routes=[Mount("/static", app=Router(), name="static")])
     return Request(
         {
             "type": "http",
