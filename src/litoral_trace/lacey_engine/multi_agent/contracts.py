@@ -15,6 +15,7 @@ from uuid import UUID
 from ..ai_shadow import AICandidate
 
 if TYPE_CHECKING:
+    from .candidate_admission import CandidateAdmissionEvaluation
     from .field_judge import FieldJudgeEvaluation
     from .fusion import FusionConflict
 
@@ -123,3 +124,5 @@ class MultiAgentExtractionResult:
     # Downstream projection must see unresolved deterministic contradictions. Keeping
     # this explicit prevents a fused winner from silently erasing conflict provenance.
     fusion_conflicts: tuple[FusionConflict, ...] = ()
+    # Specialized admission is evidence gating only; it does not imply canonical truth.
+    candidate_admission: CandidateAdmissionEvaluation | None = None

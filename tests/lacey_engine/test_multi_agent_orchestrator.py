@@ -8,6 +8,10 @@ from uuid import NAMESPACE_URL, uuid5
 
 from litoral_trace.lacey_engine.ai_shadow import AICandidate, AIShadowError
 from litoral_trace.lacey_engine.domain import EvidenceClass
+from litoral_trace.lacey_engine.multi_agent.candidate_admission import (
+    CandidateAdmissionReason,
+    evaluate_verified_candidate_admission,
+)
 from litoral_trace.lacey_engine.multi_agent.contracts import (
     CandidateEnvelope,
     DocumentType,
@@ -299,3 +303,47 @@ def test_orchestrator_applies_verifier_before_line_binding_and_fusion():
     assert seen == ["SKU-1 HTS 4419.90.9000"]
     assert len(result.fused_candidates) == 1
     assert result.fused_candidates[0].candidate.evidence_verified is True
+
+
+
+def test_orchestrator_admission_runs_after_binding_and_before_fusion() -> None:
+    assignment, source = _source(SpecialistRole.COMMERCIAL_LINES, 1)
+    routing_plan = RoutingPlan((assignment,))
+    seen_line_keys: list[str | None] = []
+
+    def verifier(candidates: tuple[CandidateEnvelope, ...]) -> tuple[CandidateEnvelope, ...]:
+        return tuple(
+            replace(
+                envelope,
+                candidate=replace(envelope.candidate, evidence_verified=True),
+            )
+            for envelope in candidates
+        )
+
+    def admitter(candidates: tuple[CandidateEnvelope, ...]):
+        seen_line_keys.extend(item.line_item_key for item in candidates)
+        return evaluate_verified_candidate_admission(
+            candidates,
+            extra_validator=lambda _item: CandidateAdmissionReason.INVALID_VALUE,
+        )
+
+    result = asyncio.run(
+        orchestrate_specialists(
+            routing_plan=routing_plan,
+            documents=(source,),
+            extractors={
+                SpecialistRole.COMMERCIAL_LINES: CandidateExtractor(
+                    SpecialistRole.COMMERCIAL_LINES
+                )
+            },
+            concurrency=1,
+            candidate_verifier=verifier,
+            candidate_admitter=admitter,
+        )
+    )
+
+    assert seen_line_keys == ["SKU:SKU-1"]
+    assert result.candidate_admission is not None
+    assert result.candidate_admission.blocked_count == 1
+    assert result.fused_candidates == ()
+    assert result.fusion_conflicts == ()

@@ -15,6 +15,11 @@ from litoral_trace.lacey_engine.domain import (
     LayoutBlock,
     ParsedLayout,
 )
+from litoral_trace.lacey_engine.multi_agent.candidate_admission import (
+    CANDIDATE_ADMISSION_VERSION,
+    CandidateAdmissionDecision,
+    CandidateAdmissionReason,
+)
 from litoral_trace.lacey_engine.multi_agent.contracts import OperationStatus, SpecialistRole
 from litoral_trace.lacey_engine.multi_agent.field_judge import (
     FIELD_JUDGE_VERSION,
@@ -145,7 +150,7 @@ def _document() -> SpecializedShadowDocument:
 
 
 def test_specialized_shadow_has_distinct_non_authoritative_schema() -> None:
-    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v3"
+    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v4"
     assert SPECIALIZED_SHADOW_SCHEMA_VERSION != AI_SHADOW_SCHEMA_VERSION
 
 
@@ -165,6 +170,9 @@ def test_specialized_shadow_verifies_evidence_before_fusion_and_aggregates_usage
     fused = run.result.fused_candidates[0]
     assert fused.candidate.field_key == "hts_code"
     assert fused.candidate.evidence_verified is True
+    assert run.result.candidate_admission is not None
+    assert run.result.candidate_admission.admitted_count == 1
+    assert run.result.candidate_admission.blocked_count == 0
     assert run.provider == "gemini"
     assert run.model == "fixture-specialist-model"
     assert run.input_tokens == 200
@@ -173,7 +181,7 @@ def test_specialized_shadow_verifies_evidence_before_fusion_and_aggregates_usage
     assert run.latency_ms >= 0
 
 
-def test_specialized_shadow_keeps_unmatched_evidence_unverified() -> None:
+def test_specialized_shadow_blocks_unmatched_evidence_before_fusion() -> None:
     class WrongSourceProvider(FakeSpecialistProvider):
         def extract_scoped(self, **kwargs) -> AIExtractionResult:
             result = super().extract_scoped(**kwargs)
@@ -210,7 +218,13 @@ def test_specialized_shadow_keeps_unmatched_evidence_unverified() -> None:
         concurrency=1,
     )
 
-    assert run.result.fused_candidates[0].candidate.evidence_verified is False
+    assert run.result.fused_candidates == ()
+    assert run.result.candidate_admission is not None
+    assert run.result.candidate_admission.admitted_count == 0
+    assert run.result.candidate_admission.blocked_count == 1
+    record = run.result.candidate_admission.records[0]
+    assert record.decision is CandidateAdmissionDecision.BLOCKED
+    assert record.reason is CandidateAdmissionReason.EVIDENCE_UNVERIFIED
 
 
 def test_field_judge_off_never_calls_provider_and_preserves_specialized_fusion() -> None:
@@ -325,6 +339,15 @@ def test_specialized_serialization_persists_bounded_field_judge_telemetry() -> N
     assert "value" not in judge_payload["decisions"][0]
     assert "normalized_value" not in judge_payload["decisions"][0]
 
+    admission_payload = payload["candidate_admission"]
+    assert admission_payload["version"] == CANDIDATE_ADMISSION_VERSION
+    assert admission_payload["admitted_count"] == 1
+    assert admission_payload["blocked_count"] == 0
+    assert admission_payload["records"][0]["decision"] == "ADMITTED"
+    assert admission_payload["records"][0]["reason"] == "VERIFIED_SUPPORTED"
+    assert "value" not in admission_payload["records"][0]
+    assert "normalized_value" not in admission_payload["records"][0]
+
 
 def test_specialized_engine_identity_changes_with_effective_judge_mode() -> None:
     common = {
@@ -338,7 +361,7 @@ def test_specialized_engine_identity_changes_with_effective_judge_mode() -> None
     enforce = specialized_engine_version(**common, judge_mode=FieldJudgeMode.ENFORCE)
 
     assert len({off, shadow, enforce}) == 3
-    assert off.startswith("multi-agent-v3:")
+    assert off.startswith("multi-agent-v4:")
 
 class EmptySpecialistProvider:
     name = "gemini"
@@ -422,6 +445,12 @@ def test_specialized_serialization_persists_document_routing_without_candidates(
     )
 
     assert payload["candidate_count"] == 0
+    assert payload["candidate_admission"] == {
+        "version": CANDIDATE_ADMISSION_VERSION,
+        "admitted_count": 0,
+        "blocked_count": 0,
+        "records": [],
+    }
     assert payload["routing_plan"] == [
         {
             "document_type": "COMMERCIAL_INVOICE",
@@ -461,6 +490,9 @@ def test_specialized_cache_rehydrates_document_routing_plan() -> None:
     )
 
     assert cached is not None
+    assert cached.result.candidate_admission is not None
+    assert cached.result.candidate_admission.admitted_count == 0
+    assert cached.result.candidate_admission.blocked_count == 0
     assert [
         (item.document_type.value, item.pages)
         for item in cached.result.routing_plan.documents
@@ -475,3 +507,80 @@ def test_specialized_cache_rehydrates_document_routing_plan() -> None:
         ("COMMERCIAL_LINES", "CUSTOMS_IDENTITY"),
         ("COMMERCIAL_LINES",),
     ]
+
+
+
+class MislabelledBolProvider:
+    name = "gemini"
+    model = "fixture-mislabelled-bol-model"
+
+    def extract_scoped(self, *, filename, content, pages, allowed_fields, prompt):
+        candidates = ()
+        if "bill_of_lading" in allowed_fields:
+            candidates = (
+                AICandidate(
+                    field_key="bill_of_lading",
+                    value="OOLU1234567890",
+                    normalized_value="OOLU1234567890",
+                    evidence_class=EvidenceClass.EXPLICIT,
+                    page=1,
+                    source_text="Vessel: OOLU1234567890",
+                    confidence=0.99,
+                    provider=self.name,
+                    model=self.model,
+                    evidence_verified=False,
+                ),
+            )
+        return AIExtractionResult(
+            provider=self.name,
+            model=self.model,
+            schema_version=AI_SHADOW_SCHEMA_VERSION,
+            candidates=candidates,
+            page_count=len(pages),
+            latency_ms=1,
+        )
+
+
+def _mislabelled_bol_document() -> SpecializedShadowDocument:
+    block = LayoutBlock(
+        block_id="bol-page-1",
+        page=1,
+        bbox=None,
+        text="OCEAN BILL OF LADING\nVessel: OOLU1234567890",
+        block_type="text",
+    )
+    resolution = DocumentResolution(
+        filename="bill-of-lading.pdf",
+        engine_version="fixture-engine2",
+        document_type=EngineDocumentType.BILL_OF_LADING,
+        type_confidence=0.99,
+        layout=ParsedLayout(blocks=(block,), page_count=1),
+        sections=(),
+        fields={},
+    )
+    return SpecializedShadowDocument(
+        document_id=uuid5(NAMESPACE_URL, "shadow-mislabelled-bol"),
+        operation_document_id=12,
+        assurance_document_id=22,
+        source_sha256="c" * 64,
+        role_hint="BILL_OF_LADING",
+        filename="bill-of-lading.pdf",
+        content=b"%PDF-bol-fixture",
+        engine2_resolution=resolution,
+    )
+
+
+def test_specialized_admission_blocks_semantic_role_mismatch_before_fusion() -> None:
+    run = run_specialized_shadow_operation(
+        documents=(_mislabelled_bol_document(),),
+        provider=MislabelledBolProvider(),
+        concurrency=1,
+    )
+
+    assert run.result.fused_candidates == ()
+    assert run.result.candidate_admission is not None
+    assert run.result.candidate_admission.blocked_count == 1
+    assert (
+        run.result.candidate_admission.records[0].reason
+        is CandidateAdmissionReason.SEMANTIC_ROLE_MISMATCH
+    )

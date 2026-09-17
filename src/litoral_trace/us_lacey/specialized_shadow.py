@@ -17,6 +17,14 @@ from uuid import UUID
 from litoral_trace.lacey_engine.ai_providers import AIProviderConfig
 from litoral_trace.lacey_engine.ai_shadow import AICandidate, AIExtractionResult, AIShadowError, verify_ai_evidence
 from litoral_trace.lacey_engine.domain import BoundingBox, DocumentResolution, EvidenceClass
+from litoral_trace.lacey_engine.multi_agent.candidate_admission import (
+    CANDIDATE_ADMISSION_VERSION,
+    CandidateAdmissionDecision,
+    CandidateAdmissionEvaluation,
+    CandidateAdmissionReason,
+    CandidateAdmissionRecord,
+    evaluate_verified_candidate_admission,
+)
 from litoral_trace.lacey_engine.multi_agent.contracts import (
     CandidateEnvelope,
     DocumentType as SpecializedDocumentType,
@@ -44,11 +52,18 @@ from litoral_trace.lacey_engine.multi_agent.orchestrator import orchestrate_spec
 from litoral_trace.lacey_engine.multi_agent.router import RoutingAssignment, RoutingPlan, build_routing_plan, route_document
 from litoral_trace.lacey_engine.multi_agent.specialist_runtime import ScopedAIExtractionProvider, SpecialistInputDocument
 from litoral_trace.lacey_engine.multi_agent.specialists import BotanicalExtractor, CommercialLineExtractor, CustomsIdentityExtractor, LogisticsExtractor
+from litoral_trace.us_lacey.ppq505 import PpqValidationStatus, validate_ppq_value
 from litoral_trace.us_lacey.specialized_inference_cache import cache_organization_id, find_cached_specialized_payloads, specialized_computation_fingerprint
-from litoral_trace.us_lacey.specialized_projection import SPECIALIZED_PROJECTION_VERSION, SpecializedProjectionMode, specialized_projection_mode as configured_specialized_projection_mode
+from litoral_trace.us_lacey.specialized_projection import (
+    SPECIALIZED_PROJECTION_VERSION,
+    SpecializedProjectionMode,
+    candidate_semantically_safe_for_projection,
+    ppq_field_key_for_candidate,
+    specialized_projection_mode as configured_specialized_projection_mode,
+)
 
 LOGGER = logging.getLogger(__name__)
-SPECIALIZED_SHADOW_SCHEMA_VERSION = "lacey_multi_agent_shadow_v3"
+SPECIALIZED_SHADOW_SCHEMA_VERSION = "lacey_multi_agent_shadow_v4"
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,14 +104,14 @@ def specialized_engine_version(*, provider: str, model: str, source_set_fingerpr
     effective_judge_mode = _effective_judge_mode(judge_mode)
     effective_projection_mode = _effective_projection_mode(projection_mode)
     identity = (
-        f"v3|{provider}|{model}|schema={SPECIALIZED_SHADOW_SCHEMA_VERSION}|"
+        f"v4|{provider}|{model}|schema={SPECIALIZED_SHADOW_SCHEMA_VERSION}|"
         "evidence=engine2-exact|"
         f"judge={FIELD_JUDGE_VERSION}:{effective_judge_mode.value}|"
         f"projection={SPECIALIZED_PROJECTION_VERSION}:{effective_projection_mode.value}"
     )
     if source_set_fingerprint:
         identity += f"|source_set={source_set_fingerprint}"
-    return f"multi-agent-v3:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:32]}"
+    return f"multi-agent-v4:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:32]}"
 
 
 def _sum_reported(values: list[int | None]) -> int | None:
@@ -121,6 +136,34 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
     return tuple(verified)
 
 
+def _specialized_admission_reason(
+    candidate: CandidateEnvelope,
+) -> CandidateAdmissionReason | None:
+    if not candidate_semantically_safe_for_projection(candidate):
+        return CandidateAdmissionReason.SEMANTIC_ROLE_MISMATCH
+
+    ppq_field_key = ppq_field_key_for_candidate(candidate)
+    if ppq_field_key is None:
+        return CandidateAdmissionReason.FIELD_NOT_ALLOWED
+
+    validation = validate_ppq_value(ppq_field_key, candidate.candidate.value)
+    if (
+        validation.status is not PpqValidationStatus.VALID
+        or not validation.normalized_value
+    ):
+        return CandidateAdmissionReason.INVALID_VALUE
+    return None
+
+
+def _admit_specialized_candidates(
+    candidates: tuple[CandidateEnvelope, ...],
+) -> CandidateAdmissionEvaluation:
+    return evaluate_verified_candidate_admission(
+        candidates,
+        extra_validator=_specialized_admission_reason,
+    )
+
+
 def _serialize_field_judge(run: SpecializedShadowRun) -> dict[str, object] | None:
     evaluation = run.result.field_judge
     if evaluation is None:
@@ -141,6 +184,40 @@ def _serialize_field_judge(run: SpecializedShadowRun) -> dict[str, object] | Non
         "needs_review_count": sum(item.decision is FieldJudgeDecision.NEEDS_REVIEW for item in decisions),
         "safe_error": evaluation.safe_error,
         "decisions": [{"candidate_id": item.candidate_id, "field_key": item.field_key, "line_item_key": item.line_item_key, "decision": item.decision.value, "reason": item.reason.value} for item in decisions],
+    }
+
+
+def _serialize_candidate_admission(
+    run: SpecializedShadowRun,
+    *,
+    document_id: UUID,
+) -> dict[str, object] | None:
+    evaluation = run.result.candidate_admission
+    if evaluation is None:
+        return None
+    records = tuple(
+        record for record in evaluation.records if record.document_id == document_id
+    )
+    return {
+        "version": evaluation.version,
+        "admitted_count": sum(
+            record.decision is CandidateAdmissionDecision.ADMITTED
+            for record in records
+        ),
+        "blocked_count": sum(
+            record.decision is CandidateAdmissionDecision.BLOCKED
+            for record in records
+        ),
+        "records": [
+            {
+                "candidate_id": record.candidate_id,
+                "field_key": record.field_key,
+                "line_item_key": record.line_item_key,
+                "decision": record.decision.value,
+                "reason": record.reason.value,
+            }
+            for record in records
+        ],
     }
 
 
@@ -185,6 +262,10 @@ def serialize_specialized_document_run(*, run: SpecializedShadowRun, document_id
         "candidate_count": len(envelopes),
         "operation_candidate_count": len(run.result.fused_candidates),
         "routing_plan": _serialize_routing_plan(run, document_id=document_id),
+        "candidate_admission": _serialize_candidate_admission(
+            run,
+            document_id=document_id,
+        ),
         "field_judge": _serialize_field_judge(run),
         "fusion_conflicts": [{"field_key": conflict.key.field_key, "line_item_key": conflict.key.line_item_key, "unbound_identity": conflict.key.unbound_identity, "requires_ai_resolution": conflict.requires_ai_resolution} for conflict in run.result.fusion_conflicts],
         "candidates": [
@@ -287,6 +368,7 @@ def _rehydrate_cached_run(payloads: tuple[Mapping[str, object], ...], *, documen
 
     rebound_candidates: list[CandidateEnvelope] = []
     rebound_by_old_candidate_id: dict[str, CandidateEnvelope] = {}
+    admission_records: list[CandidateAdmissionRecord] = []
     routing_assignments: list[RoutingAssignment] = []
     document_replacements: dict[UUID, UUID] = {}
     for payload in payloads:
@@ -330,6 +412,54 @@ def _rehydrate_cached_run(payloads: tuple[Mapping[str, object], ...], *, documen
                 RoutingAssignment(document=routed_document, specialists=specialists)
             )
 
+        raw_admission = payload.get("candidate_admission")
+        if not isinstance(raw_admission, Mapping):
+            return None
+        if str(raw_admission.get("version") or "") != CANDIDATE_ADMISSION_VERSION:
+            return None
+        raw_admission_records = raw_admission.get("records")
+        if not isinstance(raw_admission_records, list):
+            return None
+        document_admission_records: list[CandidateAdmissionRecord] = []
+        for raw_record in raw_admission_records:
+            if not isinstance(raw_record, Mapping):
+                return None
+            try:
+                line_key = _rewrite_line_key(
+                    raw_record.get("line_item_key"),
+                    old_document_id=old_document_id,
+                    new_document_id=current.document_id,
+                )
+                record = CandidateAdmissionRecord(
+                    candidate_id=str(raw_record["candidate_id"]),
+                    document_id=current.document_id,
+                    field_key=str(raw_record["field_key"]),
+                    line_item_key=line_key,
+                    decision=CandidateAdmissionDecision(str(raw_record["decision"])),
+                    reason=CandidateAdmissionReason(str(raw_record["reason"])),
+                )
+            except (KeyError, TypeError, ValueError):
+                return None
+            if not record.candidate_id or not record.field_key:
+                return None
+            document_admission_records.append(record)
+        admitted_count = sum(
+            item.decision is CandidateAdmissionDecision.ADMITTED
+            for item in document_admission_records
+        )
+        blocked_count = sum(
+            item.decision is CandidateAdmissionDecision.BLOCKED
+            for item in document_admission_records
+        )
+        try:
+            if int(raw_admission.get("admitted_count")) != admitted_count:
+                return None
+            if int(raw_admission.get("blocked_count")) != blocked_count:
+                return None
+        except (TypeError, ValueError):
+            return None
+        admission_records.extend(document_admission_records)
+
         raw_candidates = payload.get("candidates")
         if not isinstance(raw_candidates, list):
             return None
@@ -365,7 +495,22 @@ def _rehydrate_cached_run(payloads: tuple[Mapping[str, object], ...], *, documen
         operation = OperationStatus(str(first.get("operation_status") or "COMPLETED"))
     except ValueError:
         return None
-    result = MultiAgentExtractionResult(routing_plan=RoutingPlan(tuple(routing_assignments)), specialist_results=(), fused_candidates=tuple(rebound_candidates), partial_failures=(), operation=operation, specialist_statuses=(), field_judge=judge, fusion_conflicts=tuple(conflicts))
+    admission = CandidateAdmissionEvaluation(
+        version=CANDIDATE_ADMISSION_VERSION,
+        admitted_candidates=tuple(rebound_candidates),
+        records=tuple(admission_records),
+    )
+    result = MultiAgentExtractionResult(
+        routing_plan=RoutingPlan(tuple(routing_assignments)),
+        specialist_results=(),
+        fused_candidates=tuple(rebound_candidates),
+        partial_failures=(),
+        operation=operation,
+        specialist_statuses=(),
+        field_judge=judge,
+        fusion_conflicts=tuple(conflicts),
+        candidate_admission=admission,
+    )
     return SpecializedShadowRun(result=result, provider=provider, model=model, latency_ms=0, input_tokens=0, output_tokens=0, total_tokens=0, computation_fingerprint=computation_fingerprint, cache_documents=_cache_descriptors(documents), cache_hit=True)
 
 
@@ -451,7 +596,21 @@ def run_specialized_shadow_operation(*, documents: tuple[SpecializedShadowDocume
         SpecialistRole.BOTANICAL: BotanicalExtractor(scoped_provider),
     }
     started = time.monotonic()
-    result = asyncio.run(orchestrate_specialists(routing_plan=routing_plan, documents=tuple(inputs), extractors=extractors, concurrency=concurrency, candidate_verifier=lambda candidates: _verify_candidates(candidates, resolutions=resolutions), field_judge_mode=effective_mode, candidate_judge=candidate_judge))
+    result = asyncio.run(
+        orchestrate_specialists(
+            routing_plan=routing_plan,
+            documents=tuple(inputs),
+            extractors=extractors,
+            concurrency=concurrency,
+            candidate_verifier=lambda candidates: _verify_candidates(
+                candidates,
+                resolutions=resolutions,
+            ),
+            candidate_admitter=_admit_specialized_candidates,
+            field_judge_mode=effective_mode,
+            candidate_judge=candidate_judge,
+        )
+    )
     elapsed = int((time.monotonic() - started) * 1000)
 
     return SpecializedShadowRun(
