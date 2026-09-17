@@ -5,7 +5,7 @@ from decimal import Decimal
 import hashlib
 import json
 from pathlib import Path
-from typing import Mapping, Tuple
+from typing import Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -64,7 +64,12 @@ class RegulatoryRuleSet(BaseModel):
 
     @classmethod
     def load(cls, path: Path) -> "RegulatoryRuleSet":
-        return cls.model_validate_json(path.read_text(encoding="utf-8"))
+        ruleset = cls.model_validate_json(path.read_text(encoding="utf-8"))
+        if ruleset.schema_version != 1:
+            raise ValueError(
+                f"unsupported regulatory schema_version: {ruleset.schema_version}"
+            )
+        return ruleset
 
     @property
     def fingerprint(self) -> str:
