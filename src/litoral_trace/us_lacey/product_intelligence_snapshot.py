@@ -6,6 +6,7 @@ shipment truth, or a regulatory decision without a separate reviewed boundary.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -154,6 +155,36 @@ def _material(value: Material) -> dict[str, Any]:
         "source": _source_anchor(value.source),
         "taxonomy": _taxonomy(value.name_raw),
     }
+
+
+def enrich_product_intelligence_taxonomy(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return a read-compatible copy for snapshots persisted before Hito 7.
+
+    Persisted Product Intelligence snapshots are immutable and may predate taxonomy
+    enrichment. The read path adds taxonomy only to material objects that do not
+    already contain it, without rewriting the stored snapshot or source provenance.
+    """
+    enriched = deepcopy(payload)
+    for source in enriched.get("sources", ()):
+        if not isinstance(source, dict):
+            continue
+        for table in source.get("tables", ()):
+            if not isinstance(table, dict):
+                continue
+            for composition in table.get("compositions", ()):
+                if not isinstance(composition, dict):
+                    continue
+                for component in composition.get("components", ()):
+                    if not isinstance(component, dict):
+                        continue
+                    material = component.get("material")
+                    if not isinstance(material, dict) or "taxonomy" in material:
+                        continue
+                    name_raw = material.get("name_raw")
+                    if name_raw is None:
+                        continue
+                    material["taxonomy"] = _taxonomy(str(name_raw))
+    return enriched
 
 
 def _component(value: Component) -> dict[str, Any]:
@@ -590,7 +621,7 @@ def get_current_product_intelligence_view(
             component_count=row.component_count,
             material_count=row.material_count,
             issue_count=row.issue_count,
-            payload=dict(row.payload_json or {}),
+            payload=enrich_product_intelligence_taxonomy(dict(row.payload_json or {})),
         )
     finally:
         session.close()
