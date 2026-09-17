@@ -191,6 +191,7 @@ def parse_csv_incremental_bytes(content: bytes) -> ParsedDocument:
     header_index: int | None = None
     headers: tuple[str, ...] = ()
     records: list[dict[str, object]] = []
+    row_numbers: list[int] = []
     for physical_index, row in enumerate(rows, start=1):
         if header_index is None:
             if physical_index <= 25 and _candidate_header(row):
@@ -209,6 +210,7 @@ def parse_csv_incremental_bytes(content: bytes) -> ParsedDocument:
             if first in {"total", "subtotal", "totales", "total general", "observaciones", "observacion"}:
                 continue
             records.append(record)
+            row_numbers.append(physical_index)
     if header_index is None or not headers:
         raise TabularSafetyError("El CSV no contiene una cabecera util.")
     table = ParsedTable(
@@ -216,6 +218,7 @@ def parse_csv_incremental_bytes(content: bytes) -> ParsedDocument:
         headers=headers,
         rows=tuple(records),
         source=SourceLocation(row=header_index, locator=f"csv:header_row:{header_index}"),
+        row_numbers=tuple(row_numbers),
     )
     return ParsedDocument(
         file_kind="CSV",
