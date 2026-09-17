@@ -12,6 +12,7 @@ import os
 from typing import Callable, Mapping, Protocol
 
 from ..ai_shadow import AIShadowError
+from .candidate_admission import CandidateAdmissionEvaluation
 from .contracts import (
     CandidateEnvelope,
     MultiAgentExtractionResult,
@@ -44,6 +45,9 @@ CandidateVerifier = Callable[
     [tuple[CandidateEnvelope, ...]], tuple[CandidateEnvelope, ...]
 ]
 CandidateJudge = Callable[[tuple[CandidateEnvelope, ...]], FieldJudgeEvaluation]
+CandidateAdmitter = Callable[
+    [tuple[CandidateEnvelope, ...]], CandidateAdmissionEvaluation
+]
 
 
 class SpecialistExtractor(Protocol):
@@ -87,6 +91,7 @@ async def orchestrate_specialists(
     extractors: Mapping[SpecialistRole, SpecialistExtractor],
     concurrency: int | None = None,
     candidate_verifier: CandidateVerifier | None = None,
+    candidate_admitter: CandidateAdmitter | None = None,
     field_judge_mode: FieldJudgeMode = FieldJudgeMode.OFF,
     candidate_judge: CandidateJudge | None = None,
 ) -> MultiAgentExtractionResult:
@@ -183,13 +188,23 @@ async def orchestrate_specialists(
     if candidate_verifier is not None:
         candidates = candidate_verifier(candidates)
 
-    # The order is a safety invariant: exact evidence verification -> line binding ->
-    # semantic Judge -> deterministic fusion.  Shadow mode observes but cannot mutate
-    # fusion input; enforce mode admits ACCEPT only.
+    # Safety invariant: exact evidence verification -> line binding -> deterministic
+    # admission -> semantic Judge -> deterministic fusion. Admission cannot establish
+    # canonical truth; it only prevents unsafe candidates from entering later stages.
     bound_candidates = bind_line_items(candidates)
+    candidate_admission = (
+        candidate_admitter(bound_candidates)
+        if candidate_admitter is not None
+        else None
+    )
+    admitted_candidates = (
+        candidate_admission.admitted_candidates
+        if candidate_admission is not None
+        else bound_candidates
+    )
     effective_judge_mode = FieldJudgeMode(field_judge_mode)
     judge_evaluation: FieldJudgeEvaluation | None = None
-    fusion_candidates = bound_candidates
+    fusion_candidates = admitted_candidates
 
     if effective_judge_mode is not FieldJudgeMode.OFF:
         if candidate_judge is None:
@@ -202,18 +217,18 @@ async def orchestrate_specialists(
                 input_tokens=None,
                 output_tokens=None,
                 total_tokens=None,
-                decisions=validate_field_judge_decisions(bound_candidates, ()),
+                decisions=validate_field_judge_decisions(admitted_candidates, ()),
                 safe_error="FIELD_JUDGE_UNAVAILABLE",
             )
         else:
             try:
-                raw_evaluation = candidate_judge(bound_candidates)
+                raw_evaluation = candidate_judge(admitted_candidates)
                 judge_evaluation = replace(
                     raw_evaluation,
                     version=FIELD_JUDGE_VERSION,
                     mode=effective_judge_mode,
                     decisions=validate_field_judge_decisions(
-                        bound_candidates,
+                        admitted_candidates,
                         raw_evaluation.decisions,
                     ),
                 )
@@ -227,7 +242,7 @@ async def orchestrate_specialists(
                     input_tokens=None,
                     output_tokens=None,
                     total_tokens=None,
-                    decisions=validate_field_judge_decisions(bound_candidates, ()),
+                    decisions=validate_field_judge_decisions(admitted_candidates, ()),
                     safe_error=str(exc),
                 )
 
@@ -239,7 +254,7 @@ async def orchestrate_specialists(
             }
             fusion_candidates = tuple(
                 candidate
-                for candidate in bound_candidates
+                for candidate in admitted_candidates
                 if candidate_identity(candidate) in accepted_ids
             )
 
@@ -254,6 +269,7 @@ async def orchestrate_specialists(
         specialist_statuses=tuple(statuses),
         field_judge=judge_evaluation,
         fusion_conflicts=fused.conflicts,
+        candidate_admission=candidate_admission,
     )
 
 
