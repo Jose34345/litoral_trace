@@ -596,7 +596,21 @@ def run_specialized_shadow_operation(*, documents: tuple[SpecializedShadowDocume
         SpecialistRole.BOTANICAL: BotanicalExtractor(scoped_provider),
     }
     started = time.monotonic()
-    result = asyncio.run(orchestrate_specialists(routing_plan=routing_plan, documents=tuple(inputs), extractors=extractors, concurrency=concurrency, candidate_verifier=lambda candidates: _verify_candidates(candidates, resolutions=resolutions), field_judge_mode=effective_mode, candidate_judge=candidate_judge))
+    result = asyncio.run(
+        orchestrate_specialists(
+            routing_plan=routing_plan,
+            documents=tuple(inputs),
+            extractors=extractors,
+            concurrency=concurrency,
+            candidate_verifier=lambda candidates: _verify_candidates(
+                candidates,
+                resolutions=resolutions,
+            ),
+            candidate_admitter=_admit_specialized_candidates,
+            field_judge_mode=effective_mode,
+            candidate_judge=candidate_judge,
+        )
+    )
     elapsed = int((time.monotonic() - started) * 1000)
 
     return SpecializedShadowRun(
