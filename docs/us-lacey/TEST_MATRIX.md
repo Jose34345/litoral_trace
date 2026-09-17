@@ -8,6 +8,7 @@ Use this as a routing guide. Exact test names evolve; search existing tests befo
 | AI routing/provider/shadow | AI architecture/routing/shadow/resilience tests under `tests/lacey_engine/` | general CI pytest |
 | specialist routing/fusion | specialist + line-binding/fusion tests | general CI pytest |
 | cross-document identity | `tests/lacey_engine/test_cross_document_line_identity.py` and fail-closed companion | general CI pytest |
+| Product Intelligence / BOM | `tests/product_intelligence/` | general CI pytest + existing Assurance parser regressions |
 | canonical shipment truth | `tests/lacey_engine/test_canonical_shipment_truth.py` | U.S. Lacey PostgreSQL gate + general CI |
 | operation/source-set lifecycle | U.S. Lacey operation/source-set/worker tests under `tests/` | `.github/workflows/us-lacey-postgres-gate.yml` |
 | worker locking/idempotency | worker/job/lock/source-set tests | U.S. Lacey PostgreSQL gate |
@@ -38,10 +39,17 @@ The current general CI config uses Python 3.11, installs `requirements.txt`, `py
 python -m pytest -q -rs
 ```
 
-## Rules for future capabilities
+## Product Intelligence / BOM contract
+The active BOM foundation is protected by:
+- `tests/product_intelligence/test_domain.py`
+- `tests/product_intelligence/test_units.py`
+- `tests/product_intelligence/test_bom_schema.py`
+- `tests/product_intelligence/test_bom_ingestion.py`
+- `tests/product_intelligence/test_bom_parser_integration.py`
 
-### Product Composition/BOM
-Add golden structured BOM cases covering SKU/component isolation, unit normalization and source provenance. Include negative cases preventing cross-SKU component leakage.
+Golden cases cover SKU/component isolation, unit normalization, CSV/XLSX parser reuse, source provenance and partial success when independent invalid rows exist. Changes to Assurance CSV/XLSX parsing also require the repository's existing parser regression tests.
+
+## Rules for future capabilities
 
 ### Taxonomy Resolver
 Add golden exact-name, synonym, commercial/common alias, ambiguity and no-match cases. A candidate ambiguity test must prove the resolver does not auto-promote an uncertain species.
