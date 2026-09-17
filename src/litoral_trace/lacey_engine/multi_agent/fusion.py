@@ -11,6 +11,7 @@ from .authority import (
 )
 from .contracts import CandidateEnvelope
 from .line_binding import LINE_SCOPED_FIELDS
+from .semantic_normalization import semantic_value_key
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,10 +144,7 @@ def cross_document_fusion_accuracy(
         for candidate in candidate_tuple
     }
     normalized_expected = {
-        key: __import__(
-            "litoral_trace.lacey_engine.multi_agent.semantic_normalization",
-            fromlist=["semantic_value_key"],
-        ).semantic_value_key(
+        key: semantic_value_key(
             key.field_key,
             value,
             genus_context=(
