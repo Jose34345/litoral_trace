@@ -15,6 +15,8 @@ This package owns the U.S. Lacey application/workflow layer. It consumes documen
 - Customer-facing projection: `projection.py`
 - Product Intelligence snapshot/read path: `product_intelligence_snapshot.py`
 - U.S.-specific taxonomy support: `regulatory/taxonomy/`
+- Deterministic regulatory rules: `regulatory/rules/`
+- Regulatory Assessment persistence/read path: `regulatory_assessment_snapshot.py`
 - Regulatory/export contract: `ppq505.py`, `exporters/`
 - Access/auth/security: `access.py`, `csrf.py`, `portal_auth.py`, `portal_config.py`, `config.py`, `db.py`
 - Commercial/self-service: `commercial.py`, `self_service.py`, `live_readiness.py`, `lemon_billing.py`, `lemon_squeezy.py`, `email_delivery.py`
@@ -22,24 +24,28 @@ This package owns the U.S. Lacey application/workflow layer. It consumes documen
 ## Do not implement here
 Raw document classification, segmentation, specialist extraction, source-authority ranking, line binding or multi-agent fusion belong in `src/litoral_trace/lacey_engine/` unless the existing architecture proves otherwise.
 
-Reusable BOM composition remains in `src/litoral_trace/product_intelligence/`; U.S.-specific taxonomy and future regulatory rules belong under `src/litoral_trace/us_lacey/regulatory/`.
+Reusable BOM composition remains in `src/litoral_trace/product_intelligence/`; U.S.-specific taxonomy and deterministic regulatory rules belong under `src/litoral_trace/us_lacey/regulatory/`.
 
 ## Protected boundaries
 - Do not bypass `source_sets.py` when publishing results from a document generation.
 - Do not write directly to customer-facing truth from an AI suggestion path.
-- Do not downgrade REVIEW_REQUIRED/ambiguous states merely to increase automation.
+- Do not downgrade REVIEW_REQUIRED/ambiguous/INDETERMINATE states merely to increase automation.
 - Do not bypass organization scoping/RLS for convenience.
 - Do not add new domain rules directly to `projection.py`; projection should render/shape already-decided state.
 - Treat `_operations_core.py`, `worker.py`, `review.py`, `canonical_shipment_truth.py`, and `projection.py` as hotspots. New capabilities should normally live in focused modules/packages and integrate through explicit interfaces.
 - Taxonomy is advisory/non-canonical evidence. `regulatory/taxonomy/` must never write directly to canonical shipment truth, PPQ505 or LAWGS.
 - Taxonomy v1 is exact-match only. Do not add fuzzy matching or promote genus/common/commercial aliases to species facts without a separately reviewed design and tests.
-- Product Intelligence readiness must not become safer merely because taxonomy returned a candidate; unresolved taxonomy remains an exception for later review/regulatory logic.
+- Product Intelligence readiness must not become safer merely because taxonomy returned a candidate; unresolved taxonomy remains an exception for review/regulatory logic.
+- Regulatory Rules are deterministic but non-canonical. Every result is rule-scoped; a PASS must never be presented as an overall shipment compliance verdict.
+- Missing HTS, weight, protected-status, due-care or construction facts must remain explicit missing/unknown inputs and produce INDETERMINATE when required by the rule.
+- Regulatory Assessment snapshots must be fenced by source-set revision/fingerprint and ruleset/input fingerprint, and superseded generations must become STALE.
+- Regulatory Assessment must not write canonical shipment truth, PPQ505, LAWGS or ACE data.
 
 ## Current domain placement
 For the current commercial roadmap:
 - reusable product/BOM composition lives outside this package in `src/litoral_trace/product_intelligence/`;
 - active U.S.-specific taxonomy support lives in `src/litoral_trace/us_lacey/regulatory/taxonomy/`;
-- future deterministic regulatory rules should live under `src/litoral_trace/us_lacey/regulatory/rules/`;
+- active deterministic regulatory rules live in `src/litoral_trace/us_lacey/regulatory/rules/` with source-set-scoped persistence in `regulatory_assessment_snapshot.py`;
 - exception-first review should extend the existing review workflow rather than create a parallel review system;
 - all new decisions should reuse the existing evidence/provenance chain.
 
@@ -50,6 +56,16 @@ When changing `regulatory/taxonomy/` or taxonomy serialization:
 3. preserve catalog version/reason/authority metadata;
 4. prove ambiguous/no-match/genus-only inputs fail closed;
 5. run general CI and U.S. Lacey PostgreSQL Gate before merge.
+
+## Regulatory rules change checklist
+When changing `regulatory/rules/` or Regulatory Assessment persistence:
+1. run `tests/test_us_lacey_regulatory_rules.py` and payload/snapshot tests;
+2. test exact thresholds and both sides of every boundary with `Decimal`;
+3. prove missing/unknown/protected inputs fail closed to INDETERMINATE or the explicit non-pass state required by the rule;
+4. preserve reason codes, calculation trace, evidence refs, ruleset version and stable input fingerprinting;
+5. run worker/UI regressions and `tests/test_us_lacey_regulatory_assessment_snapshot_postgres.py`;
+6. prove source-set supersession to STALE and negative cross-tenant RLS behavior;
+7. run general CI and U.S. Lacey PostgreSQL Gate before merge.
 
 ## Required reading
 Read root `AGENTS.md`, then `docs/us-lacey/ARCHITECTURE.md`, `CAPABILITIES.toml`, `INVARIANTS.md`, and `TEST_MATRIX.md` before changing this package.
