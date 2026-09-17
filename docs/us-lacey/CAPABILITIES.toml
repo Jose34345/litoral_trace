@@ -115,7 +115,7 @@ implementation = ["src/litoral_trace/us_lacey/source_sets.py"]
 migrations = ["alembic/versions/048_add_lacey_source_set_revisions.py"]
 tests = ["tests"]
 workflows = [".github/workflows/us-lacey-postgres-gate.yml"]
-notes = "Stale source generations must never overwrite current truth."
+notes = "Stale source generations must never overwrite current truth or current non-canonical derived work products."
 
 [capabilities.semantic_evidence]
 status = "ACTIVE"
@@ -134,7 +134,7 @@ migrations = [
   "alembic/versions/047_add_semantic_evidence_graph.py"
 ]
 tests = ["tests"]
-notes = "Future product/regulatory decisions must reuse this provenance chain rather than create a parallel evidence store."
+notes = "Product/regulatory decisions must reuse this provenance chain rather than create a parallel evidence store."
 
 [capabilities.canonical_shipment_truth]
 status = "CANONICAL"
@@ -145,7 +145,7 @@ implementation = [
   "src/litoral_trace/us_lacey/canonical_publication_support.py"
 ]
 tests = ["tests/lacey_engine/test_canonical_shipment_truth.py"]
-notes = "Central publication boundary. Do not write around it from AI/specialist paths."
+notes = "Central publication boundary. Do not write around it from AI/specialist/product-intelligence/regulatory-assessment paths."
 
 [capabilities.customer_projection]
 status = "ACTIVE"
@@ -235,7 +235,7 @@ workflows = [
   ".github/workflows/ci.yml",
   ".github/workflows/us-lacey-postgres-gate.yml"
 ]
-notes = "Explicit CSV/XLS/XLSX BOM composition is persisted as a tenant-scoped, source-set-versioned snapshot with READY/PARTIAL/FAILED/NOT_APPLICABLE/STALE lifecycle. The worker builds it after canonical publication and before multilingual shadow/source-set finalization. Reads expose only the current non-stale source-set generation. It remains non-canonical and has no PPQ505/LAWGS or regulatory authority."
+notes = "Explicit CSV/XLS/XLSX BOM composition is persisted as a tenant-scoped, source-set-versioned snapshot with READY/PARTIAL/FAILED/NOT_APPLICABLE/STALE lifecycle. The worker builds it after canonical publication and before regulatory assessment, multilingual shadow and source-set finalization. Reads expose only the current non-stale source-set generation. It remains non-canonical and has no PPQ505/LAWGS or regulatory filing authority."
 
 [capabilities.taxonomy_resolver]
 status = "ACTIVE"
@@ -258,12 +258,35 @@ workflows = [
 notes = "Versioned exact-match taxonomy candidates are attached to non-canonical Product Intelligence material evidence. Accepted scientific-name matches may be RESOLVED as advisory evidence; synonyms/common/commercial/genus aliases remain REVIEW_REQUIRED; multiple exact candidates remain AMBIGUOUS; unsupported or near/fuzzy names remain NO_MATCH. The resolver never writes canonical shipment truth, PPQ505 or LAWGS and does not alter BOM readiness."
 
 [capabilities.regulatory_rules]
-status = "PLANNED"
-owner = "us_lacey.regulatory"
-authority = "deterministic"
-implementation = []
-tests = []
-notes = "Planned versioned deterministic rules for de minimis, composite/special-use and readiness. Missing inputs must yield indeterminate/review-required rather than false-safe."
+status = "ACTIVE"
+owner = "us_lacey.regulatory.rules + us_lacey"
+authority = "deterministic + review_required"
+implementation = [
+  "src/litoral_trace/us_lacey/regulatory/rules/domain.py",
+  "src/litoral_trace/us_lacey/regulatory/rules/de_minimis.py",
+  "src/litoral_trace/us_lacey/regulatory/rules/special_composite.py",
+  "src/litoral_trace/us_lacey/regulatory_assessment_snapshot.py",
+  "src/litoral_trace/db/models/us_lacey_regulatory_assessment.py",
+  "src/litoral_trace/us_lacey/source_sets.py",
+  "src/litoral_trace/us_lacey/worker.py",
+  "src/litoral_trace/web/us_lacey_operational_views.py",
+  "src/litoral_trace/templates/us_lacey/fragments/regulatory_assessment_card.html"
+]
+migrations = ["alembic/versions/050_add_lacey_regulatory_assessment_snapshots.py"]
+tests = [
+  "tests/test_us_lacey_regulatory_rules.py",
+  "tests/test_us_lacey_regulatory_assessment_payload.py",
+  "tests/test_us_lacey_regulatory_assessment_snapshot.py",
+  "tests/test_us_lacey_regulatory_assessment_snapshot_postgres.py",
+  "tests/test_us_lacey_regulatory_assessment_worker.py",
+  "tests/test_us_lacey_regulatory_assessment_ui.py",
+  "tests/test_us_lacey_worker_stage_timing.py"
+]
+workflows = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/us-lacey-postgres-gate.yml"
+]
+notes = "Versioned DE_MINIMIS and SPECIAL_COMPOSITE evaluators produce rule-scoped PASS/FAIL/INDETERMINATE with reason codes, calculation traces and evidence references. Exact inputs plus ruleset/source-set identity are fingerprinted into a tenant-scoped CURRENT/STALE snapshot. Missing inputs remain INDETERMINATE; a rule PASS is never an overall shipment verdict. Regulatory Assessment remains non-canonical and cannot write canonical shipment truth, PPQ505, LAWGS or ACE."
 
 [capabilities.exception_first_review]
 status = "PLANNED"

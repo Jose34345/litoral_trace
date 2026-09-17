@@ -43,6 +43,7 @@ from litoral_trace.us_lacey.jobs import (
 )
 from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_lock
 from litoral_trace.us_lacey.product_intelligence_snapshot import build_product_intelligence_snapshot
+from litoral_trace.us_lacey.regulatory_assessment_snapshot import build_regulatory_assessment_snapshot
 from litoral_trace.us_lacey.source_sets import SourceSetClaim, claim_ready_source_set, finalize_claim
 from litoral_trace.us_lacey.projection import (
     project_assurance_document_to_us_lacey,
@@ -391,6 +392,30 @@ def _build_product_intelligence_snapshot(*, organization_id: int, operation_id: 
         return None
 
 
+def _build_regulatory_assessment_snapshot(*, organization_id: int, operation_id: int, claim: SourceSetClaim):
+    """Best-effort non-canonical rule assessment for the exact claimed source set."""
+    try:
+        return build_regulatory_assessment_snapshot(
+            organization_id=organization_id,
+            operation_id=operation_id,
+            claim=claim,
+        )
+    except Exception:
+        # Fail closed: a rule-engine failure produces no CURRENT safe assessment,
+        # but cannot roll back the already-published canonical extraction result.
+        LOGGER.exception(
+            "Lacey regulatory assessment snapshot build failed",
+            extra={
+                "organization_id": organization_id,
+                "operation_id": operation_id,
+                "source_set_revision_id": claim.revision_id,
+                "source_set_generation": claim.generation,
+                "source_set_fingerprint": claim.fingerprint,
+            },
+        )
+        return None
+
+
 def _project_verified_ai_suggestions(*, organization_id: int, operation_id: int) -> int:
     """Best-effort AI bridge; return how many review fields actually changed."""
     try:
@@ -402,8 +427,6 @@ def _project_verified_ai_suggestions(*, organization_id: int, operation_id: int)
             or 0
         )
     except Exception:
-        # AI suggestion projection is convenience only. The mature deterministic
-        # extraction/review path remains usable if this bridge fails.
         LOGGER.exception(
             "Lacey verified AI suggestion projection failed",
             extra={"organization_id": organization_id, "operation_id": operation_id},
@@ -547,7 +570,6 @@ def _preflight_existing_document(*, organization_id: int, descriptor: _DocumentD
                 limits=limits,
             )
             return
-        # XLS/XLSX are strictly byte-bounded before this join.
         content = b"".join(verified.iter_chunks(chunk_size=256 * 1024))
         enforce_shipment_document_budget(
             filename=descriptor.filename,
@@ -618,9 +640,6 @@ def process_one_us_lacey_job(
             document_id=job.assurance_document_id,
         )
 
-        # Production lookups always return UUID. Keeping the existing lookup seam
-        # lets isolated unit contracts stub a lightweight string id without opening
-        # a database/Vault connection; real jobs still receive full preflight.
         with _timed_worker_stage(job=job, stage="preflight"):
             if isinstance(assurance_public_id, UUID):
                 descriptor = _document_descriptor(
@@ -688,10 +707,6 @@ def process_one_us_lacey_job(
                 conflict_count=0,
             )
 
-        # Same-operation documents may be processed by different workers. Serialize
-        # the entire authoritative projection/post-processing phase so plant-line
-        # materialization observes the previous document's committed result before
-        # deciding whether another declaration line is required.
         projection_guard = (
             us_lacey_operation_projection_lock(
                 organization_id=job.organization_id,
@@ -720,9 +735,6 @@ def process_one_us_lacey_job(
             finalize_source_set = source_set_claim.claimed
             source_set_fingerprint = source_set_claim.fingerprint
 
-            # Provisional extraction/AI writers run first. Canonical publication is
-            # deliberately last so no independent projector can overwrite final line
-            # identity or resurrect cross-line evidence after reconciliation.
             if finalize_source_set:
                 with _timed_worker_stage(
                     job=job,
@@ -762,6 +774,16 @@ def process_one_us_lacey_job(
                             operation_id=job.operation_id,
                             claim=source_set_claim,
                         )
+                    with _timed_worker_stage(
+                        job=job,
+                        stage="regulatory_assessment",
+                        source_set_fingerprint=source_set_fingerprint,
+                    ):
+                        _build_regulatory_assessment_snapshot(
+                            organization_id=job.organization_id,
+                            operation_id=job.operation_id,
+                            claim=source_set_claim,
+                        )
             else:
                 LOGGER.info(
                     "Lacey operation source set not ready; deferred operation-level work",
@@ -773,10 +795,6 @@ def process_one_us_lacey_job(
                     },
                 )
 
-        # The multilingual dual-write owns its own operation advisory lock. Run it
-        # only after the authoritative projection lock has been released to avoid a
-        # nested lock on a separate connection. Any shadow failure is swallowed by
-        # the wrapper and cannot alter the legacy queue state.
         if isinstance(assurance_public_id, UUID) and finalize_source_set:
             with _timed_worker_stage(
                 job=job,
@@ -787,10 +805,6 @@ def process_one_us_lacey_job(
                     organization_id=job.organization_id,
                     operation_id=job.operation_id,
                 )
-            # Re-enter the same operation lock used by uploads before publishing the
-            # revision FINALIZED. finalize_claim revalidates the canonical CURRENT
-            # fingerprint inside this serialized interval, so a post-snapshot upload
-            # either wins first and fences this claim or waits until publication ends.
             with us_lacey_operation_projection_lock(
                 organization_id=job.organization_id,
                 operation_id=job.operation_id,
@@ -810,26 +824,17 @@ def process_one_us_lacey_job(
                     extra={"organization_id": job.organization_id, "operation_id": job.operation_id, "job_id": job.id, "stage": "source_set_finalization", "source_set_fingerprint": source_set_claim.fingerprint},
                 )
 
-        # Customer-visible completion is authoritative once canonical publication and
-        # source-set finalization have succeeded. Non-authoritative AI review must not
-        # extend the PROCESSING state or turn a completed job back into a retry.
         with _timed_worker_stage(job=job, stage="queue_complete"):
             completed = complete_us_lacey_job(job_id=job.id, worker_id=worker_id)
         if not completed:
             raise UsLaceyWorkerError("Processing job could not be completed atomically.")
 
-        # Refresh only after the terminal queue transition. Refreshing while this job
-        # is RUNNING would correctly project the operation as PROCESSING and leave a
-        # stale operation state until some later request recomputed it.
         with _timed_worker_stage(job=job, stage="operation_refresh"):
             operation_status = _refresh_operation(
                 organization_id=job.organization_id,
                 operation_id=job.operation_id,
             )
 
-        # Stop the RUNNING-job lease before optional post-completion work. Otherwise a
-        # slow provider call would keep heartbeating a job that has already transitioned
-        # to COMPLETED and produce false lost-ownership warnings.
         heartbeat.stop()
 
         if finalize_source_set:
@@ -844,9 +849,6 @@ def process_one_us_lacey_job(
                         operation_id=job.operation_id,
                     )
             except Exception:
-                # This outer boundary also protects against programming/runtime errors
-                # in the wrapper itself. The queue/operation state is already terminal
-                # and must remain customer-visible regardless of recommendation health.
                 LOGGER.exception(
                     "Lacey post-completion AI review failed; completed job remains authoritative",
                     extra={

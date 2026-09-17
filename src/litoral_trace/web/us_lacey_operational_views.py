@@ -13,6 +13,9 @@ from litoral_trace.us_lacey.ppq505 import PPQ505_FIELDS_BY_KEY
 from litoral_trace.us_lacey.product_intelligence_snapshot import (
     get_current_product_intelligence_view,
 )
+from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
+    get_current_regulatory_assessment_view,
+)
 from litoral_trace.us_lacey.semantic_evidence_read import (
     EvidenceTextView,
     SemanticEvidenceReadService,
@@ -107,8 +110,6 @@ def _present_review_field(field):
         return field
     groups = group_candidate_evidence(field_name, candidates)
     if not groups:
-        # Filtering is a deliberate customer-safety decision. Never fall back to the
-        # original candidate tuple when every value was rejected as structural noise.
         return replace(field, candidates=())
     presented = []
     for group in groups:
@@ -132,20 +133,11 @@ _OPEN_REVIEW_STATUSES = frozenset({"MISSING", "REVIEW", "FOUND"})
 
 
 def _is_customer_ppq_field(field) -> bool:
-    """Hide internal reconciliation evidence from the PPQ review queue.
-
-    Lightweight contract-test doubles intentionally omit ``field_name``; preserve
-    their legacy behavior while production rows must belong to the published PPQ
-    contract to appear as customer-editable preparation fields.
-    """
     field_name = getattr(field, "field_name", None)
     return field_name is None or field_name in PPQ505_FIELDS_BY_KEY
 
 
 def _review_field_sets(detail):
-    # FOUND means the pipeline has a supported proposal but no human has accepted it
-    # yet. Keeping FOUND in the review queue makes the UI truthful and enables a safe
-    # one-click confirmation workflow without presenting AI/extraction as final data.
     customer_fields = tuple(field for field in detail.fields if _is_customer_ppq_field(field))
     article_components = {
         str(getattr(field, "line_reference", "")): field
@@ -176,7 +168,6 @@ def _review_field_sets(detail):
 
 
 def _semantic_evidence_for_detail(identity, detail) -> dict[str, tuple[EvidenceTextView, ...]]:
-    """Read optional Phase D evidence without making the legacy UI depend on it."""
     organization_id = getattr(identity, "organization_id", None)
     operation_public_id = getattr(detail, "public_id", None)
     if not organization_id or operation_public_id is None:
@@ -187,8 +178,6 @@ def _semantic_evidence_for_detail(identity, detail) -> dict[str, tuple[EvidenceT
             operation_public_id=operation_public_id,
         )
     except Exception:
-        # The semantic layer remains additive during Phase D. A read-side problem must
-        # never hide the authoritative human-review workflow.
         LOGGER.exception(
             "us_lacey_semantic_evidence_read_failed",
             extra={"organization_id": int(organization_id)},
@@ -212,11 +201,6 @@ def _evidence_for_field(field, evidence_by_field: Mapping[str, tuple[EvidenceTex
 
 
 def _semantic_evidence_markup(evidence: EvidenceTextView) -> Markup:
-    """Inline-safe evidence UI for the existing Jinja review card.
-
-    The translated interpretation is visible by default. The badge's native tooltip
-    always exposes the immutable original source text, including on a no-JS page.
-    """
     display = escape(evidence.display_text)
     source_meta = Markup(
         '<span class="text-xs text-slate-500">Document evidence · page {}</span>'
@@ -244,7 +228,6 @@ def _semantic_evidence_markup(evidence: EvidenceTextView) -> Markup:
 
 
 def _decorate_review_fields(fields, evidence_by_field: Mapping[str, tuple[EvidenceTextView, ...]]):
-    """Attach display_text to review cards without mutating evidence or form values."""
     decorated = []
     for field in fields:
         proposed_value = getattr(field, "proposed_value", None)
@@ -292,6 +275,27 @@ def _product_intelligence_for_detail(identity, detail, explicit_view=None):
         return None
 
 
+def _regulatory_assessment_for_detail(identity, detail, explicit_view=None):
+    """Best-effort non-canonical rules read; never block the authoritative review UI."""
+    if explicit_view is not None:
+        return explicit_view
+    organization_id = getattr(identity, "organization_id", None)
+    operation_public_id = getattr(detail, "public_id", None)
+    if not organization_id or operation_public_id is None:
+        return None
+    try:
+        return get_current_regulatory_assessment_view(
+            organization_id=int(organization_id),
+            operation_public_id=operation_public_id,
+        )
+    except Exception:
+        LOGGER.exception(
+            "us_lacey_regulatory_assessment_read_failed",
+            extra={"organization_id": int(organization_id)},
+        )
+        return None
+
+
 def render_operations(*, request, identity, operations: Sequence, entitlement) -> str:
     return _render(request, "operations", identity=identity, operations=operations, entitlement=entitlement)
 
@@ -300,11 +304,12 @@ def render_new_operation(*, request, identity, entitlement, csrf_token: str, err
     return _render(request, "new_operation", identity=identity, entitlement=entitlement, csrf_token=csrf_token, error=error)
 
 
-def render_operation_detail(*, request, identity, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], product_intelligence=None, error: str | None = None, notice: str | None = None) -> str:
+def render_operation_detail(*, request, identity, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], product_intelligence=None, regulatory_assessment=None, error: str | None = None, notice: str | None = None) -> str:
     exception_fields, settled_fields = _review_field_sets_with_semantic_evidence(identity, detail)
     progress = processing_view(detail)
     product_intelligence = _product_intelligence_for_detail(identity, detail, product_intelligence)
-    return _render(request, "operation_detail", identity=identity, detail=detail, engine2_dossier=engine2_dossier, product_intelligence=product_intelligence, upload_csrf=upload_csrf, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, processing=progress, error=error, notice=notice)
+    regulatory_assessment = _regulatory_assessment_for_detail(identity, detail, regulatory_assessment)
+    return _render(request, "operation_detail", identity=identity, detail=detail, engine2_dossier=engine2_dossier, product_intelligence=product_intelligence, regulatory_assessment=regulatory_assessment, upload_csrf=upload_csrf, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, processing=progress, error=error, notice=notice)
 
 
 def render_processing_fragment(*, request, detail) -> str:
@@ -313,8 +318,6 @@ def render_processing_fragment(*, request, detail) -> str:
 
 def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None, is_oob_update: bool | None = None) -> str:
     exception_fields, settled_fields = _review_field_sets_with_semantic_evidence(identity, detail)
-    # Initial workspace hydration is a GET and must render its own summary/banner/final
-    # confirmation normally. Review mutations are POSTs and update those regions OOB.
     if is_oob_update is None:
         is_oob_update = str(getattr(request, "method", "GET")).upper() == "POST"
     workspace = _render(request, "fragments/operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, error=error, is_oob_update=is_oob_update)
@@ -325,11 +328,20 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
     include_product_intelligence = parse_qs(str(raw_query)).get("include_product_intelligence") == ["1"]
     if not include_product_intelligence:
         return workspace
+
+    prefix = ""
     product_intelligence = _product_intelligence_for_detail(identity, detail)
-    if product_intelligence is None:
-        return workspace
-    return _render(
-        request,
-        "fragments/product_intelligence_card",
-        product_intelligence=product_intelligence,
-    ) + workspace
+    if product_intelligence is not None:
+        prefix += _render(
+            request,
+            "fragments/product_intelligence_card",
+            product_intelligence=product_intelligence,
+        )
+    regulatory_assessment = _regulatory_assessment_for_detail(identity, detail)
+    if regulatory_assessment is not None:
+        prefix += _render(
+            request,
+            "fragments/regulatory_assessment_card",
+            regulatory_assessment=regulatory_assessment,
+        )
+    return prefix + workspace

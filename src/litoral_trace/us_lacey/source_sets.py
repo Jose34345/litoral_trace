@@ -13,6 +13,7 @@ from litoral_trace.db.models import (
     UsLaceyOperationDocument,
     UsLaceyProcessingJob,
     UsLaceyProductIntelligenceSnapshot,
+    UsLaceyRegulatoryAssessmentSnapshot,
     UsLaceySourceSetMember,
     UsLaceySourceSetRevision,
     VaultDocument,
@@ -100,18 +101,25 @@ def seal_current_source_set(*, organization_id: int, operation_id: int, session_
         if existing is not None:
             return existing
 
-        # A changed source-set fingerprint supersedes every Product Intelligence
-        # interpretation built from the prior generation. Keep its immutable payload
-        # for audit, but make the staleness explicit in the same transaction that
-        # creates the new source-set generation. This logic stays at the source-set
-        # lifecycle boundary instead of importing the application PI service, which
-        # itself depends on SourceSetClaim and would introduce a circular dependency.
+        # A changed source-set fingerprint supersedes every derived interpretation
+        # built from the prior generation. Keep immutable payloads for audit, but make
+        # staleness explicit in the same transaction that creates the new generation.
+        # This stays at the lifecycle/model boundary to avoid service dependency cycles.
         session.execute(
             update(UsLaceyProductIntelligenceSnapshot)
             .where(
                 UsLaceyProductIntelligenceSnapshot.organization_id == organization_id,
                 UsLaceyProductIntelligenceSnapshot.operation_id == operation_id,
                 UsLaceyProductIntelligenceSnapshot.status != "STALE",
+            )
+            .values(status="STALE")
+        )
+        session.execute(
+            update(UsLaceyRegulatoryAssessmentSnapshot)
+            .where(
+                UsLaceyRegulatoryAssessmentSnapshot.organization_id == organization_id,
+                UsLaceyRegulatoryAssessmentSnapshot.operation_id == operation_id,
+                UsLaceyRegulatoryAssessmentSnapshot.status != "STALE",
             )
             .values(status="STALE")
         )
@@ -209,10 +217,6 @@ def claim_ready_source_set(*, organization_id: int, operation_id: int, completin
                 claimed_at,
             )
 
-        # A queue retry is a new execution attempt. Its locked_at is written when
-        # claim_next_us_lacey_job() acquires the retry, so it is newer than the
-        # source-set token left by the abandoned attempt. Heartbeats do not move
-        # locked_at, which prevents the original attempt from self-reclaiming.
         prior_claimed_at = revision.claimed_at
         if (
             prior_claimed_at is None
