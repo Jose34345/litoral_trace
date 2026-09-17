@@ -37,6 +37,53 @@
 {% if not bulk_upload_rejection %}
 <div class="mt-6" id="processing-panel" {% if not processing.terminal %}hx-get="/operations/{{ detail.public_id }}/processing-fragment" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>{% include "us_lacey/fragments/processing_fragment_body.html" %}</div>
 {% endif %}
+
+{% if not bulk_upload_rejection and product_intelligence %}
+<section class="lt-card mt-6 p-6" data-product-intelligence-status="{{ product_intelligence.status }}" aria-labelledby="product-composition-title">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h2 id="product-composition-title" class="text-lg font-bold text-slate-950">Product composition</h2>
+      <p class="mt-1 text-sm text-slate-600">This is product-composition evidence; it is not final Lacey declaration data.</p>
+    </div>
+    <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{{ product_intelligence.status|replace('_', ' ') }}</span>
+  </div>
+  {% if product_intelligence.status == "NOT_APPLICABLE" %}
+    <p class="mt-4 text-sm text-slate-700">No explicit BOM was detected in the current tabular source set.</p>
+  {% else %}
+    <div class="mt-4 flex flex-wrap gap-4 text-sm text-slate-700">
+      <span><strong>{{ product_intelligence.unique_sku_count }}</strong> SKU{{ '' if product_intelligence.unique_sku_count == 1 else 's' }}</span>
+      <span><strong>{{ product_intelligence.component_count }}</strong> component{{ '' if product_intelligence.component_count == 1 else 's' }}</span>
+      <span><strong>{{ product_intelligence.material_count }}</strong> material{{ '' if product_intelligence.material_count == 1 else 's' }}</span>
+      {% if product_intelligence.issue_count %}<span><strong>{{ product_intelligence.issue_count }}</strong> issue{{ '' if product_intelligence.issue_count == 1 else 's' }}</span>{% endif %}
+    </div>
+    <div class="mt-5 grid gap-4">
+      {% for source in product_intelligence.payload.get('sources', []) %}
+        {% for bom_block in source.get('tables', []) %}
+          {% for composition in bom_block.get('compositions', []) %}
+          <article class="rounded-lg border border-slate-200 p-4" data-product-composition-sku="{{ composition.get('sku', '') }}">
+            <h3 class="font-bold text-slate-950">{{ composition.get('sku', 'Unidentified SKU') }}{% if composition.get('product_name') %} — {{ composition.get('product_name') }}{% endif %}</h3>
+            <div class="mt-3 grid gap-3">
+              {% for component in composition.get('components', []) %}
+              {% set material = component.get('material') or {} %}
+              {% set mass = material.get('mass') or {} %}
+              {% set source_anchor = component.get('source') or material.get('source') or {} %}
+              <div class="rounded-lg bg-slate-50 p-3" data-product-component>
+                <p class="font-semibold text-slate-900">{{ component.get('description_raw') or 'Component' }}</p>
+                <p class="mt-1 text-sm text-slate-700">{{ material.get('name_raw') or material.get('name_normalized') or 'Material not stated' }}{% if mass.get('kilograms') %} · {{ mass.get('kilograms') }} kg{% endif %}{% if component.get('quantity') %} · quantity {{ component.get('quantity') }}{% endif %}</p>
+                <p class="mt-1 text-xs text-slate-500">Source: {{ source.get('filename', 'source document') }}{% if source_anchor.get('sheet') %} · {{ source_anchor.get('sheet') }}{% elif bom_block.get('source', {}).get('sheet') %} · {{ bom_block.get('source', {}).get('sheet') }}{% endif %}{% if source_anchor.get('row') %} · row {{ source_anchor.get('row') }}{% endif %}</p>
+              </div>
+              {% endfor %}
+            </div>
+          </article>
+          {% endfor %}
+        {% endfor %}
+      {% endfor %}
+    </div>
+    {% if product_intelligence.status == "FAILED" %}<p class="mt-4 text-sm font-semibold text-amber-800">The explicit BOM could not be safely converted into usable composition evidence. Review the source file.</p>{% elif product_intelligence.status == "PARTIAL" %}<p class="mt-4 text-sm font-semibold text-amber-800">Some composition evidence was recovered, but one or more rows still need attention.</p>{% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
 {% if not bulk_upload_rejection %}
 <details id="engine2-dossier" class="lt-card mt-6 p-6" data-engine2-dossier data-engine2-availability="{{ engine2_dossier.availability }}"><summary class="cursor-pointer text-sm font-semibold text-slate-700">Advanced evidence details</summary><div class="mt-4"><h2 class="text-lg font-bold text-slate-950">Document evidence analysis</h2><p class="mt-2 text-sm text-slate-600">Technical evidence preview for audit and troubleshooting. Final preparation data still comes from the human review workflow.</p>{% if engine2_dossier.availability != "CURRENT" %}<p class="mt-4 text-sm text-slate-700">{{ engine2_dossier.safe_status_message }}</p>{% else %}<div class="mt-4"><span data-engine2-readiness="{{ engine2_dossier.readiness }}">Document evidence status: {{ engine2_dossier.readiness|replace("_", " ") }}</span><p class="mt-1 text-xs text-slate-500">This status reflects document-evidence reconciliation only. Final preparation readiness is determined by the human review below.</p><p class="mt-1 text-xs text-slate-500">Supported values here are document-evidence candidates and may not yet be accepted into the declaration.</p></div><div class="mt-5 grid gap-3">{% for field in engine2_dossier.fields %}<article class="rounded-lg border border-slate-200 p-3" data-engine2-field="{{ field.field_key }}" data-engine2-state="{{ field.state }}"><strong>{{ field.label }}</strong> · {{ field.state|replace("_", " ") }}{% if field.values %}<p class="mt-1">{{ field.values|join(", ") }}</p>{% else %}<p class="mt-1">Missing</p>{% endif %}{% if field.evidence %}<details class="mt-2"><summary>Evidence ({{ field.evidence|length }})</summary>{% for evidence in field.evidence %}<p class="text-xs" data-engine2-evidence data-engine2-evidence-class="{{ evidence.evidence_class }}" data-engine2-source-page="{{ evidence.page }}"><strong>{{ evidence.source_filename }}</strong> · page {{ evidence.page }} · {{ evidence.evidence_class }}<br>Source: {{ evidence.source_text }}<br>Raw: {{ evidence.raw_text }} · Normalized: {{ evidence.normalized_value }} · score {{ evidence.candidate_score }} · authority {{ evidence.source_authority }} · {{ evidence.scope }}{% if evidence.line_key %} · line {{ evidence.line_key }}{% endif %}{% if evidence.component_key %} · component {{ evidence.component_key }}{% endif %}{% if evidence.bbox %} · bbox {{ evidence.bbox|join(", ") }}{% endif %}</p>{% endfor %}</details>{% endif %}</article>{% endfor %}</div>{% if engine2_dossier.issues %}<div class="mt-5 grid gap-3">{% for issue in engine2_dossier.issues %}<article class="rounded-lg border border-amber-200 p-3" data-engine2-issue><strong>{{ issue.label }}</strong> · {{ issue.severity }} · {{ issue.issue_type }}<p>{{ issue.message }}</p><p class="text-xs">Human review required: {{ issue.requires_human_review }} · {{ issue.source_filenames|join(", ") }}{% if issue.line_key %} · line {{ issue.line_key }}{% endif %}{% if issue.component_key %} · component {{ issue.component_key }}{% endif %}</p></article>{% endfor %}</div>{% endif %}{% endif %}<p class="mt-5 text-xs text-slate-500">This document-evidence analysis is not a legal compliance determination; the human-reviewed preparation record remains authoritative. Litoral Trace does not submit this operation to ACE or LAWGS.</p></div></details>
 {% endif %}

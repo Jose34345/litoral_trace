@@ -9,6 +9,9 @@ from markupsafe import Markup, escape
 
 from litoral_trace.us_lacey.candidate_normalization import group_candidate_evidence
 from litoral_trace.us_lacey.ppq505 import PPQ505_FIELDS_BY_KEY
+from litoral_trace.us_lacey.product_intelligence_snapshot import (
+    get_current_product_intelligence_view,
+)
 from litoral_trace.us_lacey.semantic_evidence_read import (
     EvidenceTextView,
     SemanticEvidenceReadService,
@@ -267,6 +270,27 @@ def _review_field_sets_with_semantic_evidence(identity, detail):
     )
 
 
+def _product_intelligence_for_detail(identity, detail, explicit_view=None):
+    """Best-effort additive read; canonical review UI must remain available on failure."""
+    if explicit_view is not None:
+        return explicit_view
+    organization_id = getattr(identity, "organization_id", None)
+    operation_public_id = getattr(detail, "public_id", None)
+    if not organization_id or operation_public_id is None:
+        return None
+    try:
+        return get_current_product_intelligence_view(
+            organization_id=int(organization_id),
+            operation_public_id=operation_public_id,
+        )
+    except Exception:
+        LOGGER.exception(
+            "us_lacey_product_intelligence_read_failed",
+            extra={"organization_id": int(organization_id)},
+        )
+        return None
+
+
 def render_operations(*, request, identity, operations: Sequence, entitlement) -> str:
     return _render(request, "operations", identity=identity, operations=operations, entitlement=entitlement)
 
@@ -275,10 +299,11 @@ def render_new_operation(*, request, identity, entitlement, csrf_token: str, err
     return _render(request, "new_operation", identity=identity, entitlement=entitlement, csrf_token=csrf_token, error=error)
 
 
-def render_operation_detail(*, request, identity, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None, notice: str | None = None) -> str:
+def render_operation_detail(*, request, identity, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], product_intelligence=None, error: str | None = None, notice: str | None = None) -> str:
     exception_fields, settled_fields = _review_field_sets_with_semantic_evidence(identity, detail)
     progress = processing_view(detail)
-    return _render(request, "operation_detail", identity=identity, detail=detail, engine2_dossier=engine2_dossier, upload_csrf=upload_csrf, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, processing=progress, error=error, notice=notice)
+    product_intelligence = _product_intelligence_for_detail(identity, detail, product_intelligence)
+    return _render(request, "operation_detail", identity=identity, detail=detail, engine2_dossier=engine2_dossier, product_intelligence=product_intelligence, upload_csrf=upload_csrf, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, processing=progress, error=error, notice=notice)
 
 
 def render_processing_fragment(*, request, detail) -> str:
