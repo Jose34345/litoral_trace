@@ -22,6 +22,7 @@ from litoral_trace.lacey_engine.multi_agent.contracts import (
     DocumentType as SpecializedDocumentType,
     MultiAgentExtractionResult,
     OperationStatus,
+    RoutedDocument,
     SpecialistRole,
 )
 from litoral_trace.lacey_engine.multi_agent.field_judge import (
@@ -40,7 +41,7 @@ from litoral_trace.lacey_engine.multi_agent.field_judge import (
 from litoral_trace.lacey_engine.multi_agent.fusion import FusionConflict, FusionKey
 from litoral_trace.lacey_engine.multi_agent.gemini_specialist_adapter import GeminiSpecialistProvider
 from litoral_trace.lacey_engine.multi_agent.orchestrator import orchestrate_specialists
-from litoral_trace.lacey_engine.multi_agent.router import RoutingPlan, build_routing_plan, route_document
+from litoral_trace.lacey_engine.multi_agent.router import RoutingAssignment, RoutingPlan, build_routing_plan, route_document
 from litoral_trace.lacey_engine.multi_agent.specialist_runtime import ScopedAIExtractionProvider, SpecialistInputDocument
 from litoral_trace.lacey_engine.multi_agent.specialists import BotanicalExtractor, CommercialLineExtractor, CustomsIdentityExtractor, LogisticsExtractor
 from litoral_trace.us_lacey.specialized_inference_cache import cache_organization_id, find_cached_specialized_payloads, specialized_computation_fingerprint
@@ -150,6 +151,20 @@ def _cache_document_for(run: SpecializedShadowRun, document_id: UUID) -> Mapping
     return {"document_id": str(document_id)}
 
 
+def _serialize_routing_plan(run: SpecializedShadowRun, *, document_id: UUID) -> list[dict[str, object]]:
+    return [
+        {
+            "document_type": assignment.document.document_type.value,
+            "pages": list(assignment.document.pages),
+            "confidence": assignment.document.confidence,
+            "signals": list(assignment.document.signals),
+            "specialists": [role.value for role in assignment.specialists],
+        }
+        for assignment in run.result.routing_plan.assignments
+        if assignment.document.document_id == document_id
+    ]
+
+
 def serialize_specialized_document_run(*, run: SpecializedShadowRun, document_id: UUID, source_set_fingerprint: str) -> dict[str, object]:
     envelopes = tuple(item for item in run.result.fused_candidates if item.document_id == document_id)
     return {
@@ -169,6 +184,7 @@ def serialize_specialized_document_run(*, run: SpecializedShadowRun, document_id
         "total_tokens": run.total_tokens,
         "candidate_count": len(envelopes),
         "operation_candidate_count": len(run.result.fused_candidates),
+        "routing_plan": _serialize_routing_plan(run, document_id=document_id),
         "field_judge": _serialize_field_judge(run),
         "fusion_conflicts": [{"field_key": conflict.key.field_key, "line_item_key": conflict.key.line_item_key, "unbound_identity": conflict.key.unbound_identity, "requires_ai_resolution": conflict.requires_ai_resolution} for conflict in run.result.fusion_conflicts],
         "candidates": [
@@ -271,6 +287,7 @@ def _rehydrate_cached_run(payloads: tuple[Mapping[str, object], ...], *, documen
 
     rebound_candidates: list[CandidateEnvelope] = []
     rebound_by_old_candidate_id: dict[str, CandidateEnvelope] = {}
+    routing_assignments: list[RoutingAssignment] = []
     document_replacements: dict[UUID, UUID] = {}
     for payload in payloads:
         descriptor = _cache_descriptor(payload)
@@ -283,6 +300,36 @@ def _rehydrate_cached_run(payloads: tuple[Mapping[str, object], ...], *, documen
         except (KeyError, TypeError, ValueError):
             return None
         document_replacements[old_document_id] = current.document_id
+        raw_routing_plan = payload.get("routing_plan")
+        if not isinstance(raw_routing_plan, list):
+            return None
+        for raw_assignment in raw_routing_plan:
+            if not isinstance(raw_assignment, Mapping):
+                return None
+            try:
+                pages_raw = raw_assignment["pages"]
+                signals_raw = raw_assignment["signals"]
+                specialists_raw = raw_assignment["specialists"]
+                if not isinstance(pages_raw, list) or not isinstance(signals_raw, list) or not isinstance(specialists_raw, list):
+                    return None
+                pages = tuple(int(page) for page in pages_raw)
+                confidence = float(raw_assignment["confidence"])
+                if not pages or any(page <= 0 for page in pages) or not 0.0 <= confidence <= 1.0:
+                    return None
+                routed_document = RoutedDocument(
+                    document_id=current.document_id,
+                    document_type=SpecializedDocumentType(str(raw_assignment["document_type"])),
+                    pages=pages,
+                    confidence=confidence,
+                    signals=tuple(str(signal) for signal in signals_raw),
+                )
+                specialists = tuple(SpecialistRole(str(role)) for role in specialists_raw)
+            except (KeyError, TypeError, ValueError):
+                return None
+            routing_assignments.append(
+                RoutingAssignment(document=routed_document, specialists=specialists)
+            )
+
         raw_candidates = payload.get("candidates")
         if not isinstance(raw_candidates, list):
             return None
@@ -318,7 +365,7 @@ def _rehydrate_cached_run(payloads: tuple[Mapping[str, object], ...], *, documen
         operation = OperationStatus(str(first.get("operation_status") or "COMPLETED"))
     except ValueError:
         return None
-    result = MultiAgentExtractionResult(routing_plan=RoutingPlan(()), specialist_results=(), fused_candidates=tuple(rebound_candidates), partial_failures=(), operation=operation, specialist_statuses=(), field_judge=judge, fusion_conflicts=tuple(conflicts))
+    result = MultiAgentExtractionResult(routing_plan=RoutingPlan(tuple(routing_assignments)), specialist_results=(), fused_candidates=tuple(rebound_candidates), partial_failures=(), operation=operation, specialist_statuses=(), field_judge=judge, fusion_conflicts=tuple(conflicts))
     return SpecializedShadowRun(result=result, provider=provider, model=model, latency_ms=0, input_tokens=0, output_tokens=0, total_tokens=0, computation_fingerprint=computation_fingerprint, cache_documents=_cache_descriptors(documents), cache_hit=True)
 
 
