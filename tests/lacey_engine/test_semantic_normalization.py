@@ -52,3 +52,15 @@ def test_species_binomial_is_not_collapsed_without_matching_genus_context() -> N
         )
         == "eucalyptus grandis"
     )
+
+
+
+def test_species_binomial_is_not_collapsed_when_genus_context_is_ambiguous() -> None:
+    assert (
+        semantic_value_key(
+            "species",
+            "Eucalyptus grandis",
+            genus_context=frozenset({"eucalyptus", "pinus"}),
+        )
+        == "eucalyptus grandis"
+    )
