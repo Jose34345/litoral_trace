@@ -6,7 +6,7 @@ import os
 import pytest
 from sqlalchemy import create_engine, inspect, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from litoral_trace.config.settings import normalize_database_url
 from litoral_trace.db.models import (
@@ -253,6 +253,91 @@ def test_builder_reinstalls_runtime_tenant_context_before_refresh(
             session_factory=RuntimeFactory,
             vault_service=FakeVault(b""),
         )
+        assert snapshot is not None
+        assert snapshot.organization_id == org
+        assert snapshot.source_set_revision_id == revision.id
+        assert snapshot.status == "NOT_APPLICABLE"
+    finally:
+        runtime_engine.dispose()
+
+
+def test_builder_reinstalls_runtime_tenant_context_after_integrity_error_rollback(
+    engine2_postgres_engine,
+    engine2_postgres_session_factory,
+):
+    if "us_lacey_product_intelligence_snapshots" not in inspect(engine2_postgres_engine).get_table_names():
+        pytest.skip("POSTGRES_SCHEMA_NOT_MIGRATED_TO_049")
+
+    org, operation, _, _, _, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        content=b"pi-builder-runtime-race",
+    )
+    revision = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation,
+        session_factory=engine2_postgres_session_factory,
+    )
+    claim = _claim_revision(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        revision=revision,
+    )
+
+    runtime_url = os.environ.get("TEST_POSTGRES_DATABASE_URL")
+    assert runtime_url, "TEST_POSTGRES_DATABASE_URL is required for Product Intelligence RLS acceptance"
+    runtime_engine = create_engine(normalize_database_url(runtime_url), pool_pre_ping=True)
+    injected = [False]
+    root_factory = engine2_postgres_session_factory
+
+    class RacingSession(Session):
+        def commit(self):
+            pending = next(
+                (item for item in self.new if isinstance(item, UsLaceyProductIntelligenceSnapshot)),
+                None,
+            )
+            if pending is not None and not injected[0]:
+                race = tenant_session(root_factory, int(pending.organization_id))
+                try:
+                    race.add(
+                        UsLaceyProductIntelligenceSnapshot(
+                            organization_id=pending.organization_id,
+                            operation_id=pending.operation_id,
+                            source_set_revision_id=pending.source_set_revision_id,
+                            generation=pending.generation,
+                            source_set_fingerprint=pending.source_set_fingerprint,
+                            status=pending.status,
+                            document_count=pending.document_count,
+                            eligible_document_count=pending.eligible_document_count,
+                            recognized_bom_table_count=pending.recognized_bom_table_count,
+                            unique_sku_count=pending.unique_sku_count,
+                            component_count=pending.component_count,
+                            material_count=pending.material_count,
+                            issue_count=pending.issue_count,
+                            payload_json=dict(pending.payload_json or {}),
+                            finalized_at=pending.finalized_at,
+                        )
+                    )
+                    race.commit()
+                    injected[0] = True
+                finally:
+                    race.close()
+            return super().commit()
+
+    RuntimeFactory = sessionmaker(
+        bind=runtime_engine,
+        class_=RacingSession,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    try:
+        snapshot = build_product_intelligence_snapshot(
+            organization_id=org,
+            operation_id=operation,
+            claim=claim,
+            session_factory=RuntimeFactory,
+            vault_service=FakeVault(b""),
+        )
+        assert injected[0] is True
         assert snapshot is not None
         assert snapshot.organization_id == org
         assert snapshot.source_set_revision_id == revision.id
