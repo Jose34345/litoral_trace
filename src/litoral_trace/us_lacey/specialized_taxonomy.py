@@ -5,10 +5,10 @@ from collections.abc import Iterable
 
 from litoral_trace.lacey_engine.multi_agent.contracts import CandidateEnvelope
 from litoral_trace.us_lacey.regulatory.taxonomy import (
-    CATALOG_VERSION,
     TaxonomyResolution,
     resolve_taxonomy,
 )
+from litoral_trace.us_lacey.regulatory.taxonomy.catalog import CATALOG_VERSION
 from litoral_trace.us_lacey.regulatory.taxonomy.resolver import normalize_taxonomy_query
 
 
