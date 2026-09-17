@@ -316,4 +316,17 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
     # confirmation normally. Review mutations are POSTs and update those regions OOB.
     if is_oob_update is None:
         is_oob_update = str(getattr(request, "method", "GET")).upper() == "POST"
-    return _render(request, "fragments/operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, error=error, is_oob_update=is_oob_update)
+    workspace = _render(request, "fragments/operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, error=error, is_oob_update=is_oob_update)
+    include_product_intelligence = str(
+        getattr(request, "query_params", {}).get("include_product_intelligence", "")
+    ) == "1"
+    if not include_product_intelligence:
+        return workspace
+    product_intelligence = _product_intelligence_for_detail(identity, detail)
+    if product_intelligence is None:
+        return workspace
+    return _render(
+        request,
+        "fragments/product_intelligence_card",
+        product_intelligence=product_intelligence,
+    ) + workspace
