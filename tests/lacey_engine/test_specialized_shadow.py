@@ -150,7 +150,7 @@ def _document() -> SpecializedShadowDocument:
 
 
 def test_specialized_shadow_has_distinct_non_authoritative_schema() -> None:
-    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v5"
+    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v6"
     assert SPECIALIZED_SHADOW_SCHEMA_VERSION != AI_SHADOW_SCHEMA_VERSION
 
 
@@ -361,7 +361,7 @@ def test_specialized_engine_identity_changes_with_effective_judge_mode() -> None
     enforce = specialized_engine_version(**common, judge_mode=FieldJudgeMode.ENFORCE)
 
     assert len({off, shadow, enforce}) == 3
-    assert off.startswith("multi-agent-v5:")
+    assert off.startswith("multi-agent-v6:")
 
 class EmptySpecialistProvider:
     name = "gemini"
@@ -584,3 +584,111 @@ def test_specialized_admission_blocks_semantic_role_mismatch_before_fusion() -> 
         run.result.candidate_admission.records[0].reason
         is CandidateAdmissionReason.SEMANTIC_ROLE_MISMATCH
     )
+
+
+
+class BotanicalTaxonomyProvider:
+    name = "gemini"
+    model = "fixture-botanical-taxonomy-model"
+
+    def extract_scoped(self, *, filename, content, pages, allowed_fields, prompt):
+        candidates = []
+        if "genus" in allowed_fields:
+            candidates.append(
+                AICandidate(
+                    field_key="genus",
+                    value="Pinus",
+                    normalized_value="Pinus",
+                    evidence_class=EvidenceClass.EXPLICIT,
+                    page=1,
+                    source_text="SKU: PT-38 Genus: Pinus",
+                    confidence=0.99,
+                    provider=self.name,
+                    model=self.model,
+                    evidence_verified=False,
+                )
+            )
+        if "species" in allowed_fields:
+            candidates.append(
+                AICandidate(
+                    field_key="species",
+                    value="taeda",
+                    normalized_value="taeda",
+                    evidence_class=EvidenceClass.EXPLICIT,
+                    page=1,
+                    source_text="SKU: PT-38 Species: taeda",
+                    confidence=0.99,
+                    provider=self.name,
+                    model=self.model,
+                    evidence_verified=False,
+                )
+            )
+        return AIExtractionResult(
+            provider=self.name,
+            model=self.model,
+            schema_version=AI_SHADOW_SCHEMA_VERSION,
+            candidates=tuple(candidates),
+            page_count=len(pages),
+            latency_ms=1,
+        )
+
+
+def _botanical_taxonomy_document() -> SpecializedShadowDocument:
+    block = LayoutBlock(
+        block_id="botanical-page-1",
+        page=1,
+        bbox=None,
+        text=(
+            "BOTANICAL DECLARATION\n"
+            "SKU: PT-38 Genus: Pinus\n"
+            "SKU: PT-38 Species: taeda\n"
+            "Country of Harvest: Brazil\n"
+            "Plant Quantity: 30 m3"
+        ),
+        block_type="text",
+    )
+    resolution = DocumentResolution(
+        filename="botanical-declaration.pdf",
+        engine_version="fixture-engine2",
+        document_type=EngineDocumentType.SPECIES_DECLARATION,
+        type_confidence=0.99,
+        layout=ParsedLayout(blocks=(block,), page_count=1),
+        sections=(),
+        fields={},
+    )
+    return SpecializedShadowDocument(
+        document_id=uuid5(NAMESPACE_URL, "shadow-botanical-taxonomy"),
+        operation_document_id=13,
+        assurance_document_id=23,
+        source_sha256="d" * 64,
+        role_hint="BOTANICAL_DECLARATION",
+        filename="botanical-declaration.pdf",
+        content=b"%PDF-botanical-taxonomy-fixture",
+        engine2_resolution=resolution,
+    )
+
+
+def test_specialized_serialization_attaches_noncanonical_taxonomy_sidecar() -> None:
+    document = _botanical_taxonomy_document()
+    run = run_specialized_shadow_operation(
+        documents=(document,),
+        provider=BotanicalTaxonomyProvider(),
+        concurrency=1,
+    )
+
+    payload = serialize_specialized_document_run(
+        run=run,
+        document_id=document.document_id,
+        source_set_fingerprint="source-set-taxonomy-fixture",
+    )
+
+    by_field = {item["field_key"]: item for item in payload["candidates"]}
+    assert by_field["genus"]["value"] == "Pinus"
+    assert by_field["species"]["value"] == "taeda"
+    assert by_field["genus"]["taxonomy"]["query"] == "Pinus"
+    assert by_field["genus"]["taxonomy"]["status"] == "REVIEW_REQUIRED"
+    assert by_field["species"]["taxonomy"]["query"] == "Pinus taeda"
+    assert by_field["species"]["taxonomy"]["status"] == "RESOLVED"
+    assert by_field["species"]["taxonomy"]["review_required"] is False
+    assert by_field["species"]["taxonomy"]["candidates"][0]["scientific_name"] == "Pinus taeda"
+    assert by_field["species"]["normalized_value"] == "taeda"
