@@ -312,6 +312,7 @@ def build_regulatory_assessment_snapshot(
             session.commit()
         except IntegrityError:
             session.rollback()
+            set_tenant_db_context(session, organization_id)
             existing = session.scalar(
                 select(UsLaceyRegulatoryAssessmentSnapshot).where(
                     UsLaceyRegulatoryAssessmentSnapshot.organization_id == organization_id,
@@ -322,6 +323,7 @@ def build_regulatory_assessment_snapshot(
             if existing is None:
                 raise
             return existing
+        set_tenant_db_context(session, organization_id)
         session.refresh(snapshot)
         return snapshot
     finally:
