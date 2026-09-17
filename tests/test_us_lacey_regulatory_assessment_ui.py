@@ -105,3 +105,26 @@ def test_terminal_workspace_hydrates_rule_scoped_regulatory_panel(monkeypatch):
     assert "FAIL" in html
     assert "not a final filing or compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
+
+
+def test_direct_operation_detail_renders_same_noncanonical_regulatory_panel(monkeypatch):
+    monkeypatch.setattr(operational_views, "_semantic_evidence_for_detail", lambda *_: {})
+    monkeypatch.setattr(operational_views, "_product_intelligence_for_detail", lambda *_args, **_kwargs: None)
+
+    html = operational_views.render_operation_detail(
+        request=_request(query_string=b""),
+        identity=SimpleNamespace(organization_id=7),
+        detail=_detail(),
+        engine2_dossier=_engine2(),
+        product_intelligence=None,
+        regulatory_assessment=_view(),
+        upload_csrf="upload",
+        complete_csrf="complete",
+        review_csrf={},
+    )
+
+    assert 'data-regulatory-assessment-status="CURRENT"' in html
+    assert "DE_MINIMIS" in html
+    assert "SPECIAL_COMPOSITE" in html
+    assert "not a final filing or compliance determination" in html.lower()
+    assert "shipment pass" not in html.lower()
