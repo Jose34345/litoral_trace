@@ -15,6 +15,11 @@ from litoral_trace.lacey_engine.domain import (
     LayoutBlock,
     ParsedLayout,
 )
+from litoral_trace.lacey_engine.multi_agent.candidate_admission import (
+    CANDIDATE_ADMISSION_VERSION,
+    CandidateAdmissionDecision,
+    CandidateAdmissionReason,
+)
 from litoral_trace.lacey_engine.multi_agent.contracts import OperationStatus, SpecialistRole
 from litoral_trace.lacey_engine.multi_agent.field_judge import (
     FIELD_JUDGE_VERSION,
@@ -145,7 +150,7 @@ def _document() -> SpecializedShadowDocument:
 
 
 def test_specialized_shadow_has_distinct_non_authoritative_schema() -> None:
-    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v3"
+    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v4"
     assert SPECIALIZED_SHADOW_SCHEMA_VERSION != AI_SHADOW_SCHEMA_VERSION
 
 
@@ -338,7 +343,7 @@ def test_specialized_engine_identity_changes_with_effective_judge_mode() -> None
     enforce = specialized_engine_version(**common, judge_mode=FieldJudgeMode.ENFORCE)
 
     assert len({off, shadow, enforce}) == 3
-    assert off.startswith("multi-agent-v3:")
+    assert off.startswith("multi-agent-v4:")
 
 class EmptySpecialistProvider:
     name = "gemini"
