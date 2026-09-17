@@ -93,7 +93,7 @@ jobs:
             echo "Expected exactly one Alembic head."
             exit 1
           fi
-          grep -Fx "049_lacey_product_intelligence_snapshots (head)" alembic-heads.txt
+          grep -Fx "050_lacey_regulatory_assessment_snapshots (head)" alembic-heads.txt
 
       - name: Run pytest suite
         run: python -m pytest -q -rs
