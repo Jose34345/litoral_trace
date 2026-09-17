@@ -211,16 +211,31 @@ notes = "Commercial infrastructure is separate from regulatory truth."
 
 [capabilities.product_composition_bom]
 status = "ACTIVE"
-owner = "product_intelligence"
+owner = "product_intelligence + us_lacey"
 authority = "observation + deterministic"
 implementation = [
   "src/litoral_trace/product_intelligence/domain.py",
   "src/litoral_trace/product_intelligence/units.py",
   "src/litoral_trace/product_intelligence/bom_schema.py",
-  "src/litoral_trace/product_intelligence/bom_ingestion.py"
+  "src/litoral_trace/product_intelligence/bom_ingestion.py",
+  "src/litoral_trace/us_lacey/product_intelligence_snapshot.py",
+  "src/litoral_trace/db/models/us_lacey_product_intelligence.py",
+  "src/litoral_trace/us_lacey/worker.py",
+  "src/litoral_trace/web/us_lacey_operational_views.py"
 ]
-tests = ["tests/product_intelligence"]
-notes = "Reusable explicit CSV/XLSX BOM composition with source anchors, deterministic unit normalization, and SKU isolation. Non-canonical and no regulatory authority."
+migrations = ["alembic/versions/049_lacey_product_intelligence_snapshots.py"]
+tests = [
+  "tests/product_intelligence",
+  "tests/test_us_lacey_product_intelligence_snapshot.py",
+  "tests/test_us_lacey_product_intelligence_snapshot_postgres.py",
+  "tests/test_us_lacey_product_intelligence_worker.py",
+  "tests/test_us_lacey_product_intelligence_ui.py"
+]
+workflows = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/us-lacey-postgres-gate.yml"
+]
+notes = "Explicit CSV/XLS/XLSX BOM composition is persisted as a tenant-scoped, source-set-versioned snapshot with READY/PARTIAL/FAILED/NOT_APPLICABLE/STALE lifecycle. The worker builds it after canonical publication and before multilingual shadow/source-set finalization. Reads expose only the current non-stale source-set generation. It remains non-canonical and has no PPQ505/LAWGS or regulatory authority."
 
 [capabilities.taxonomy_resolver]
 status = "PLANNED"
