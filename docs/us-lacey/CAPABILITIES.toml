@@ -223,7 +223,7 @@ implementation = [
   "src/litoral_trace/us_lacey/worker.py",
   "src/litoral_trace/web/us_lacey_operational_views.py"
 ]
-migrations = ["alembic/versions/049_lacey_product_intelligence_snapshots.py"]
+migrations = ["alembic/versions/049_add_lacey_product_intelligence_snapshots.py"]
 tests = [
   "tests/product_intelligence",
   "tests/test_us_lacey_product_intelligence_snapshot.py",
