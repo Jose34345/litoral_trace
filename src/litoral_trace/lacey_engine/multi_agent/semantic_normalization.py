@@ -104,7 +104,7 @@ def semantic_value_key(
         tokens = taxon.split()
         if (
             len(tokens) >= 2
-            and genus_context
+            and len(genus_context) == 1
             and tokens[0] in genus_context
         ):
             return " ".join(tokens[1:])
