@@ -238,12 +238,24 @@ workflows = [
 notes = "Explicit CSV/XLS/XLSX BOM composition is persisted as a tenant-scoped, source-set-versioned snapshot with READY/PARTIAL/FAILED/NOT_APPLICABLE/STALE lifecycle. The worker builds it after canonical publication and before multilingual shadow/source-set finalization. Reads expose only the current non-stale source-set generation. It remains non-canonical and has no PPQ505/LAWGS or regulatory authority."
 
 [capabilities.taxonomy_resolver]
-status = "PLANNED"
+status = "ACTIVE"
 owner = "us_lacey.regulatory.taxonomy"
-authority = "inferred"
-implementation = []
-tests = []
-notes = "Planned versioned taxonomy resolution with exact/synonym/alias candidates, confidence and explicit ambiguity/review states."
+authority = "deterministic + review_required"
+implementation = [
+  "src/litoral_trace/us_lacey/regulatory/taxonomy/domain.py",
+  "src/litoral_trace/us_lacey/regulatory/taxonomy/catalog.py",
+  "src/litoral_trace/us_lacey/regulatory/taxonomy/resolver.py",
+  "src/litoral_trace/us_lacey/product_intelligence_snapshot.py"
+]
+tests = [
+  "tests/test_us_lacey_taxonomy_resolver.py",
+  "tests/test_us_lacey_product_intelligence_taxonomy.py"
+]
+workflows = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/us-lacey-postgres-gate.yml"
+]
+notes = "Versioned exact-match taxonomy candidates are attached to non-canonical Product Intelligence material evidence. Accepted scientific-name matches may be RESOLVED as advisory evidence; synonyms/common/commercial/genus aliases remain REVIEW_REQUIRED; multiple exact candidates remain AMBIGUOUS; unsupported or near/fuzzy names remain NO_MATCH. The resolver never writes canonical shipment truth, PPQ505 or LAWGS and does not alter BOM readiness."
 
 [capabilities.regulatory_rules]
 status = "PLANNED"

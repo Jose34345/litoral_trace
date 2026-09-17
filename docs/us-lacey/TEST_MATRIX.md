@@ -12,6 +12,7 @@ Use this as a routing guide. Exact test names evolve; search existing tests befo
 | Product Intelligence snapshot/read path | `tests/test_us_lacey_product_intelligence_snapshot.py` + UI tests | general CI + U.S. Lacey PostgreSQL Gate |
 | Product Intelligence worker ordering/idempotency | `tests/test_us_lacey_product_intelligence_worker.py` | general CI + U.S. Lacey PostgreSQL Gate |
 | Product Intelligence RLS/supersession | `tests/test_us_lacey_product_intelligence_snapshot_postgres.py` | U.S. Lacey PostgreSQL Gate, no skip allowed for targeted Product Intelligence PostgreSQL acceptance |
+| Taxonomy Resolver | `tests/test_us_lacey_taxonomy_resolver.py` + `tests/test_us_lacey_product_intelligence_taxonomy.py` | general CI + U.S. Lacey PostgreSQL Gate |
 | canonical shipment truth | `tests/lacey_engine/test_canonical_shipment_truth.py` | U.S. Lacey PostgreSQL gate + general CI |
 | operation/source-set lifecycle | U.S. Lacey operation/source-set/worker tests under `tests/` | `.github/workflows/us-lacey-postgres-gate.yml` |
 | worker locking/idempotency | worker/job/lock/source-set tests | U.S. Lacey PostgreSQL gate |
@@ -42,7 +43,7 @@ The current general CI config uses Python 3.11, installs `requirements.txt`, `py
 python -m pytest -q -rs
 ```
 
-The canonical U.S. Lacey Alembic head after Hito 6 is `049_lacey_product_intelligence_snapshots`.
+The canonical U.S. Lacey Alembic head after Hito 7 remains `049_lacey_product_intelligence_snapshots`; Hito 7 adds no migration.
 
 ## Product Intelligence / BOM contract
 The active BOM capability is protected by:
@@ -73,10 +74,25 @@ Coverage expectations include:
 
 Changes to Assurance CSV/XLS/XLSX parsing also require the repository's existing parser regression tests.
 
-## Rules for future capabilities
+## Taxonomy Resolver contract
+The active Taxonomy Resolver is protected by:
+- `tests/test_us_lacey_taxonomy_resolver.py`
+- `tests/test_us_lacey_product_intelligence_taxonomy.py`
 
-### Taxonomy Resolver
-Add golden exact-name, synonym, commercial/common alias, ambiguity and no-match cases. A candidate ambiguity test must prove the resolver does not auto-promote an uncertain species. Include provenance/version assertions so a resolved scientific candidate remains traceable to the input material name and taxonomy dataset/version.
+Coverage expectations include:
+- exact accepted scientific-name resolution;
+- synonym, common alias and commercial alias results remaining `REVIEW_REQUIRED`;
+- genus-only names such as `Hevea wood` never becoming an automatic species fact;
+- deterministic multiple-candidate ambiguity with no winner selection;
+- unsupported names and near matches returning `NO_MATCH` rather than fuzzy guesses;
+- catalog version, reason, authority source/URL and deterministic confidence in candidate output;
+- preservation of BOM file/table/sheet/row/document provenance;
+- taxonomy status not changing BOM readiness by itself;
+- no direct write to canonical shipment truth, PPQ505 or LAWGS.
+
+Any taxonomy/catalog change must run both focused taxonomy tests and the Product Intelligence snapshot/worker regression tests before the general CI and PostgreSQL gates.
+
+## Rules for future capabilities
 
 ### Regulatory rules
 Boundary tests are mandatory. For de minimis-style calculations, test exact threshold values, just below/above thresholds, unit conversion, missing weights, multi-line aggregation and ruleset versioning. Missing inputs must produce INDETERMINATE/REVIEW_REQUIRED rather than a guessed PASS.
