@@ -12,6 +12,7 @@ from litoral_trace.db.models import (
     AssuranceDocument,
     UsLaceyOperationDocument,
     UsLaceyProcessingJob,
+    UsLaceyProductIntelligenceSnapshot,
     UsLaceySourceSetMember,
     UsLaceySourceSetRevision,
     VaultDocument,
@@ -98,6 +99,22 @@ def seal_current_source_set(*, organization_id: int, operation_id: int, session_
         ))
         if existing is not None:
             return existing
+
+        # A changed source-set fingerprint supersedes every Product Intelligence
+        # interpretation built from the prior generation. Keep its immutable payload
+        # for audit, but make the staleness explicit in the same transaction that
+        # creates the new source-set generation. This logic stays at the source-set
+        # lifecycle boundary instead of importing the application PI service, which
+        # itself depends on SourceSetClaim and would introduce a circular dependency.
+        session.execute(
+            update(UsLaceyProductIntelligenceSnapshot)
+            .where(
+                UsLaceyProductIntelligenceSnapshot.organization_id == organization_id,
+                UsLaceyProductIntelligenceSnapshot.operation_id == operation_id,
+                UsLaceyProductIntelligenceSnapshot.status != "STALE",
+            )
+            .values(status="STALE", stale_at=func.clock_timestamp())
+        )
         session.execute(update(UsLaceySourceSetRevision).where(
             UsLaceySourceSetRevision.organization_id == organization_id,
             UsLaceySourceSetRevision.operation_id == operation_id,
