@@ -72,6 +72,11 @@ class TaxonomySnapshot:
         except Exception as exc:  # pydantic/json/path errors become one fail-closed contract
             raise TaxonomySnapshotError(f"invalid taxonomy manifest: {exc}") from exc
 
+        if manifest.schema_version != 1:
+            raise TaxonomySnapshotError(
+                f"unsupported taxonomy schema_version: {manifest.schema_version}"
+            )
+
         actual_sha = hashlib.sha256(csv_path.read_bytes()).hexdigest()
         if actual_sha != manifest.sha256:
             raise TaxonomySnapshotError(
@@ -88,13 +93,18 @@ class TaxonomySnapshot:
                     f"taxonomy snapshot missing columns: {', '.join(sorted(missing))}"
                 )
             for row_number, row in enumerate(reader, start=2):
+                raw_is_accepted = (row["is_accepted"] or "").strip().casefold()
+                if raw_is_accepted not in {"true", "false"}:
+                    raise TaxonomySnapshotError(
+                        f"invalid taxonomy row {row_number}: is_accepted must be true or false"
+                    )
                 try:
                     record = TaxonRecord(
                         source_id=(row["source_id"] or "").strip(),
                         scientific_name=(row["scientific_name"] or "").strip(),
                         genus=(row["genus"] or "").strip(),
                         species=(row["species"] or "").strip(),
-                        is_accepted=(row["is_accepted"] or "").strip().casefold() == "true",
+                        is_accepted=raw_is_accepted == "true",
                         accepted_source_id=(row["accepted_source_id"] or "").strip() or None,
                         common_names=_split_aliases(row["common_names"] or ""),
                         commercial_aliases=_split_aliases(row["commercial_aliases"] or ""),
