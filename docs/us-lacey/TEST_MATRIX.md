@@ -8,7 +8,10 @@ Use this as a routing guide. Exact test names evolve; search existing tests befo
 | AI routing/provider/shadow | AI architecture/routing/shadow/resilience tests under `tests/lacey_engine/` | general CI pytest |
 | specialist routing/fusion | specialist + line-binding/fusion tests | general CI pytest |
 | cross-document identity | `tests/lacey_engine/test_cross_document_line_identity.py` and fail-closed companion | general CI pytest |
-| Product Intelligence / BOM | `tests/product_intelligence/` | general CI pytest + existing Assurance parser regressions |
+| Product Intelligence parser/domain | `tests/product_intelligence/` | general CI pytest + existing Assurance parser regressions |
+| Product Intelligence snapshot/read path | `tests/test_us_lacey_product_intelligence_snapshot.py` + UI tests | general CI + U.S. Lacey PostgreSQL Gate |
+| Product Intelligence worker ordering/idempotency | `tests/test_us_lacey_product_intelligence_worker.py` | general CI + U.S. Lacey PostgreSQL Gate |
+| Product Intelligence RLS/supersession | `tests/test_us_lacey_product_intelligence_snapshot_postgres.py` | U.S. Lacey PostgreSQL Gate, no skip allowed for targeted Product Intelligence PostgreSQL acceptance |
 | canonical shipment truth | `tests/lacey_engine/test_canonical_shipment_truth.py` | U.S. Lacey PostgreSQL gate + general CI |
 | operation/source-set lifecycle | U.S. Lacey operation/source-set/worker tests under `tests/` | `.github/workflows/us-lacey-postgres-gate.yml` |
 | worker locking/idempotency | worker/job/lock/source-set tests | U.S. Lacey PostgreSQL gate |
@@ -39,20 +42,41 @@ The current general CI config uses Python 3.11, installs `requirements.txt`, `py
 python -m pytest -q -rs
 ```
 
+The canonical U.S. Lacey Alembic head after Hito 6 is `049_lacey_product_intelligence_snapshots`.
+
 ## Product Intelligence / BOM contract
-The active BOM foundation is protected by:
+The active BOM capability is protected by:
 - `tests/product_intelligence/test_domain.py`
 - `tests/product_intelligence/test_units.py`
 - `tests/product_intelligence/test_bom_schema.py`
 - `tests/product_intelligence/test_bom_ingestion.py`
 - `tests/product_intelligence/test_bom_parser_integration.py`
+- `tests/product_intelligence/test_bom_provenance_integrity.py`
+- `tests/test_us_lacey_product_intelligence_snapshot.py`
+- `tests/test_us_lacey_product_intelligence_snapshot_postgres.py`
+- `tests/test_us_lacey_product_intelligence_worker.py`
+- `tests/test_us_lacey_product_intelligence_ui.py`
 
-Golden cases cover SKU/component isolation, unit normalization, CSV/XLSX parser reuse, source provenance and partial success when independent invalid rows exist. Changes to Assurance CSV/XLSX parsing also require the repository's existing parser regression tests.
+Coverage expectations include:
+- SKU/component isolation and Decimal unit normalization;
+- CSV/XLS/XLSX reuse of the existing Assurance parser;
+- file/table/sheet/row provenance;
+- partial success for independent invalid rows;
+- source-set idempotency and generation/fingerprint fencing;
+- `READY / PARTIAL / FAILED / NOT_APPLICABLE / STALE` lifecycle;
+- supersession to `STALE` when a newer source set wins;
+- current-only reads that do not surface stale snapshots;
+- tenant A/B isolation and RLS/FORCE RLS in PostgreSQL;
+- worker ordering after canonical publication and before multilingual shadow/source-set finalization;
+- terminal workspace hydration showing the Product Intelligence card without a manual full-page reload;
+- preservation of the non-canonical boundary: no automatic write to canonical shipment truth, PPQ505 or LAWGS.
+
+Changes to Assurance CSV/XLS/XLSX parsing also require the repository's existing parser regression tests.
 
 ## Rules for future capabilities
 
 ### Taxonomy Resolver
-Add golden exact-name, synonym, commercial/common alias, ambiguity and no-match cases. A candidate ambiguity test must prove the resolver does not auto-promote an uncertain species.
+Add golden exact-name, synonym, commercial/common alias, ambiguity and no-match cases. A candidate ambiguity test must prove the resolver does not auto-promote an uncertain species. Include provenance/version assertions so a resolved scientific candidate remains traceable to the input material name and taxonomy dataset/version.
 
 ### Regulatory rules
 Boundary tests are mandatory. For de minimis-style calculations, test exact threshold values, just below/above thresholds, unit conversion, missing weights, multi-line aggregation and ruleset versioning. Missing inputs must produce INDETERMINATE/REVIEW_REQUIRED rather than a guessed PASS.
