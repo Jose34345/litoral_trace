@@ -41,11 +41,13 @@ class Scorecard(BaseModel):
     def total_fields(self) -> int:
         return len(self.results)
 
+    @property
+    def counts(self) -> Counter[EvalClassification]:
+        """Return classification counts with zero-default lookup semantics."""
+        return Counter(result.classification for result in self.results)
+
     def count(self, classification: EvalClassification) -> int:
-        return sum(
-            result.classification is classification
-            for result in self.results
-        )
+        return self.counts[classification]
 
     def rate(self, classification: EvalClassification) -> float:
         if self.total_fields == 0:
@@ -83,7 +85,7 @@ class Scorecard(BaseModel):
 
     def render_console(self) -> str:
         """Return a dependency-free deterministic executive scorecard."""
-        counts = Counter(result.classification for result in self.results)
+        counts = self.counts
         classification_rows = [
             (classification.value, counts[classification], self.rate(classification))
             for classification in EvalClassification
