@@ -40,6 +40,7 @@ from litoral_trace.product_intelligence.domain import (
 )
 from litoral_trace.services.vault import VaultError, VaultService
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
+from litoral_trace.us_lacey.regulatory.taxonomy import resolve_taxonomy
 from litoral_trace.us_lacey.storage import build_us_lacey_storage_settings, get_us_lacey_storage_client
 
 SNAPSHOT_SCHEMA_VERSION = "product-intelligence-snapshot-v1"
@@ -120,12 +121,38 @@ def _mass(value: MassValue | None) -> dict[str, Any] | None:
     }
 
 
+def _taxonomy(name: str) -> dict[str, Any]:
+    resolution = resolve_taxonomy(name)
+    return {
+        "catalog_version": resolution.catalog_version,
+        "query_normalized": resolution.query_normalized,
+        "status": resolution.status.value,
+        "reason": resolution.reason,
+        "review_required": resolution.review_required,
+        "candidates": [
+            {
+                "scientific_name": candidate.scientific_name,
+                "rank": candidate.rank.value,
+                "genus": candidate.genus,
+                "species_epithet": candidate.species_epithet,
+                "match_kind": candidate.match_kind.value,
+                "confidence": str(candidate.confidence),
+                "authority_source": candidate.authority_source,
+                "authority_record_url": candidate.authority_record_url,
+                "catalog_record_id": candidate.catalog_record_id,
+            }
+            for candidate in resolution.candidates
+        ],
+    }
+
+
 def _material(value: Material) -> dict[str, Any]:
     return {
         "name_raw": value.name_raw,
         "name_normalized": value.name_normalized,
         "mass": _mass(value.mass),
         "source": _source_anchor(value.source),
+        "taxonomy": _taxonomy(value.name_raw),
     }
 
 
