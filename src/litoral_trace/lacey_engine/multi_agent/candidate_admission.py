@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import re
 from typing import Callable
 from uuid import UUID
 
@@ -78,15 +79,30 @@ CandidateAdmissionValidator = Callable[
 ]
 
 
+_SKU_KEY = re.compile(r"^SKU:[A-Z0-9][A-Z0-9._/-]*$", re.IGNORECASE)
+_LINE_KEY = re.compile(r"^LINE:[1-9][0-9]*$")
+_ROW_KEY = re.compile(
+    r"^ROW:(?P<document>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}):P(?P<page>[1-9][0-9]*):"
+    r"T(?P<table>[A-Z0-9._/-]+):R(?P<row>[0-9]+)$",
+    re.IGNORECASE,
+)
+
+
 def _stable_line_binding(candidate: CandidateEnvelope) -> bool:
     field_key = candidate.candidate.field_key
-    line_key = candidate.line_item_key
+    line_key = str(candidate.line_item_key or "").strip()
 
     if field_key not in LINE_SCOPED_FIELDS:
-        return line_key is None
+        return not line_key
     if not line_key:
         return False
-    return line_key.startswith(("SKU:", "LINE:", "ROW:"))
+    if _SKU_KEY.fullmatch(line_key) or _LINE_KEY.fullmatch(line_key):
+        return True
+    row_match = _ROW_KEY.fullmatch(line_key)
+    if row_match is None:
+        return False
+    return row_match.group("document").casefold() == str(candidate.document_id).casefold()
 
 
 def _structural_reason(candidate: CandidateEnvelope) -> CandidateAdmissionReason | None:
