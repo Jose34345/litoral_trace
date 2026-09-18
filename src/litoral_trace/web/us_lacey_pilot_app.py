@@ -63,6 +63,7 @@ from litoral_trace.us_lacey.review import (
     finalize_us_lacey_review,
     review_us_lacey_field,
 )
+from litoral_trace.us_lacey.review_telemetry import parse_review_telemetry
 from litoral_trace.us_lacey.self_service import (
     UsLaceySelfServiceError,
     get_us_lacey_billing_summary,
@@ -731,6 +732,9 @@ def operation_complete_submit(
     operation_public_id: str,
     request: Request,
     csrf_token: str = Form(...),
+    review_started_at: str = Form(""),
+    review_elapsed_seconds: str = Form(""),
+    review_modified_field_ids: str = Form(""),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
@@ -740,11 +744,17 @@ def operation_complete_submit(
             purpose=f"complete:{operation_public_id}",
             submitted_token=csrf_token,
         )
+        telemetry = parse_review_telemetry(
+            started_at=review_started_at,
+            elapsed_seconds=review_elapsed_seconds,
+            modified_field_ids=review_modified_field_ids,
+        )
         finalize_us_lacey_review(
             organization_id=identity.organization_id,
             operation_public_id=operation_public_id,
             user_id=identity.user_id,
             user_email=identity.email,
+            telemetry=telemetry,
         )
         return RedirectResponse(f"/operations/{operation_public_id}?completed=1", status_code=303)
     except UsLaceyPortalAuthError:
