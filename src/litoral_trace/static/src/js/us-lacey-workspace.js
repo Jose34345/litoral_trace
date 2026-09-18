@@ -97,3 +97,140 @@ document.addEventListener("htmx:afterSwap", (event) => {
     input?.focus?.({ preventScroll: true });
   });
 });
+
+let reviewTelemetry = null;
+
+const reviewTelemetryKey = (operationId) => `lt:lacey-review:${operationId}`;
+
+const sessionRead = (key) => {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch (_) {
+    return null;
+  }
+};
+
+const sessionWrite = (key, value) => {
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch (_) {
+    // Telemetry is non-authoritative and must never block review.
+  }
+};
+
+const sessionRemove = (key) => {
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch (_) {
+    // Telemetry is non-authoritative and must never block review.
+  }
+};
+
+const loadReviewTelemetry = () => {
+  const workspace = document.getElementById("operation-workspace");
+  if (!workspace) return null;
+
+  const operationId = workspace.dataset.operationId;
+  if (!operationId) return null;
+
+  const key = reviewTelemetryKey(operationId);
+  if (workspace.dataset.reviewCompleted === "true") {
+    sessionRemove(key);
+    return null;
+  }
+
+  let state = null;
+  try {
+    state = JSON.parse(sessionRead(key) || "null");
+  } catch (_) {
+    state = null;
+  }
+
+  if (!state?.startedAt) {
+    state = {
+      startedAt: new Date().toISOString(),
+      modifiedFieldIds: [],
+    };
+    sessionWrite(key, JSON.stringify(state));
+  }
+
+  return {
+    operationId,
+    key,
+    startedAt: state.startedAt,
+    modifiedFieldIds: new Set(state.modifiedFieldIds || []),
+  };
+};
+
+const ensureReviewTelemetry = () => {
+  const workspace = document.getElementById("operation-workspace");
+  const operationId = workspace?.dataset?.operationId;
+  if (!operationId) return null;
+
+  if (!reviewTelemetry || reviewTelemetry.operationId !== operationId) {
+    reviewTelemetry = loadReviewTelemetry();
+  }
+  return reviewTelemetry;
+};
+
+const persistReviewTelemetry = () => {
+  const state = ensureReviewTelemetry();
+  if (!state) return;
+  sessionWrite(state.key, JSON.stringify({
+    startedAt: state.startedAt,
+    modifiedFieldIds: [...state.modifiedFieldIds],
+  }));
+};
+
+const hydrateReviewCompletionForm = (form) => {
+  const state = ensureReviewTelemetry();
+  if (!state) return;
+
+  const startedMs = Date.parse(state.startedAt);
+  const elapsedSeconds = Number.isFinite(startedMs)
+    ? Math.max(0, Math.round((Date.now() - startedMs) / 1000))
+    : "";
+
+  const startedInput = form.querySelector("[data-review-started-at]");
+  const elapsedInput = form.querySelector("[data-review-elapsed-seconds]");
+  const modifiedInput = form.querySelector("[data-review-modified-field-ids]");
+
+  if (startedInput) startedInput.value = state.startedAt;
+  if (elapsedInput) elapsedInput.value = String(elapsedSeconds);
+  if (modifiedInput) modifiedInput.value = [...state.modifiedFieldIds].join(",");
+};
+
+const initializeReviewTelemetry = () => {
+  ensureReviewTelemetry();
+
+  document.querySelectorAll("[data-review-completion-form]").forEach((form) => {
+    if (form.dataset.reviewTelemetryBound === "true") return;
+    form.addEventListener("submit", () => hydrateReviewCompletionForm(form));
+    form.dataset.reviewTelemetryBound = "true";
+  });
+};
+
+document.addEventListener("input", (event) => {
+  const input = event.target.closest?.(
+    '[data-review-field][data-review-required="true"] input[name="value"]'
+  );
+  if (!input) return;
+
+  const card = input.closest("[data-review-field]");
+  const fieldId = Number(card?.dataset.reviewFieldId);
+  if (!Number.isInteger(fieldId) || fieldId <= 0) return;
+
+  const state = ensureReviewTelemetry();
+  if (!state) return;
+
+  state.modifiedFieldIds.add(fieldId);
+  persistReviewTelemetry();
+});
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializeReviewTelemetry);
+} else {
+  initializeReviewTelemetry();
+}
+
+document.addEventListener("htmx:load", initializeReviewTelemetry);
