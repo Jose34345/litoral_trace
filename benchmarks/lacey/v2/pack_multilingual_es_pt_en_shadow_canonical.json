@@ -1,0 +1,239 @@
+{
+  "version": "p2-shadow-canonical-v1",
+  "pack_id": "pack-multilingual-es-pt-en",
+  "description": "Multilingual ES/PT/EN regression packet modeled on the golden Acacia/Hevea/Tectona shipment evidence and multilingual shadow fixtures.",
+  "shadow": {
+    "availability": "CURRENT",
+    "fields": [
+      {
+        "field_key": "species",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "Acacia mangium",
+          "Hevea brasiliensis",
+          "Tectona grandis"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:ACT-TRAY-18",
+            "component_key": "taxon:acacia:mangium",
+            "normalized_value": "Acacia mangium",
+            "source_filename": "04_Declaracion_Botanica_ES.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "es"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:RUB-CB-32",
+            "component_key": "taxon:hevea:brasiliensis",
+            "normalized_value": "Hevea brasiliensis",
+            "source_filename": "05_Declaracao_Fornecedor_PT.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "pt"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:TEK-SRV-04",
+            "component_key": "taxon:tectona:grandis",
+            "normalized_value": "Tectona grandis",
+            "source_filename": "06_Botanical_Support_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "country_of_harvest",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "Vietnam",
+          "Indonesia"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:ACT-TRAY-18",
+            "component_key": "taxon:acacia:mangium",
+            "normalized_value": "Vietnam",
+            "source_filename": "04_Declaracion_Botanica_ES.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "es"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:RUB-CB-32",
+            "component_key": "taxon:hevea:brasiliensis",
+            "normalized_value": "Vietnam",
+            "source_filename": "05_Declaracao_Fornecedor_PT.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "pt"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:TEK-SRV-04",
+            "component_key": "taxon:tectona:grandis",
+            "normalized_value": "Indonesia",
+            "source_filename": "06_Botanical_Support_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "plant_quantity",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "315",
+          "510",
+          "145"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:ACT-TRAY-18",
+            "component_key": "taxon:acacia:mangium",
+            "normalized_value": "315",
+            "source_filename": "04_Declaracion_Botanica_ES.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "es"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:RUB-CB-32",
+            "component_key": "taxon:hevea:brasiliensis",
+            "normalized_value": "510",
+            "source_filename": "05_Declaracao_Fornecedor_PT.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "pt"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:TEK-SRV-04",
+            "component_key": "taxon:tectona:grandis",
+            "normalized_value": "145",
+            "source_filename": "06_Botanical_Support_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      }
+    ]
+  },
+  "canonical": {
+    "shipment_fields": {
+      "manufacturer_id": {
+        "state": "SUPPORTED",
+        "values": [
+          "VNMKHOM123HCM"
+        ],
+        "publication_status": "FOUND",
+        "issue_types": []
+      }
+    },
+    "plant_lines": [
+      {
+        "entity_key": "SKU:ACT-TRAY-18",
+        "fields": {
+          "species": {
+            "state": "SUPPORTED",
+            "values": [
+              "Acacia mangium"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "country_of_harvest": {
+            "state": "SUPPORTED",
+            "values": [
+              "Vietnam"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "plant_quantity": {
+            "state": "SUPPORTED",
+            "values": [
+              "315"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          }
+        }
+      },
+      {
+        "entity_key": "SKU:RUB-CB-32",
+        "fields": {
+          "species": {
+            "state": "SUPPORTED",
+            "values": [
+              "Hevea brasiliensis"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "country_of_harvest": {
+            "state": "SUPPORTED",
+            "values": [
+              "Vietnam"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "plant_quantity": {
+            "state": "MISSING",
+            "values": [],
+            "publication_status": "MISSING",
+            "issue_types": []
+          }
+        }
+      },
+      {
+        "entity_key": "SKU:TEK-SRV-04",
+        "fields": {
+          "species": {
+            "state": "SUPPORTED",
+            "values": [
+              "Tectona grandis"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "country_of_harvest": {
+            "state": "REVIEW_REQUIRED",
+            "values": [
+              "Indonesia",
+              "Vietnam"
+            ],
+            "publication_status": "REVIEW",
+            "issue_types": [
+              "INCONSISTENT_SET"
+            ]
+          },
+          "plant_quantity": {
+            "state": "MISSING",
+            "values": [],
+            "publication_status": "MISSING",
+            "issue_types": []
+          }
+        }
+      }
+    ]
+  },
+  "expected_diff": {
+    "comparable_slots": 10,
+    "agreement_count": 6,
+    "shadow_supported_but_canonical_missing": 2,
+    "canonical_supported_but_shadow_missing": 1,
+    "false_conflict_count": 1
+  }
+}
