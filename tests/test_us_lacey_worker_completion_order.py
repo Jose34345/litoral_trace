@@ -129,6 +129,7 @@ def test_post_completion_ai_review_failure_cannot_requeue_completed_job(monkeypa
     assert calls == [
         "process",
         "project",
+        "candidate_equivalence",
         "engine2",
         "ai_suggestions",
         "engine2_suggestions",
