@@ -69,6 +69,13 @@ def test_schema_probe_fails_closed_when_database_is_unavailable(monkeypatch) -> 
     assert schema_compatibility.probe_us_lacey_schema_compatibility() is False
 
 
+def test_render_runtime_declares_schema_compatibility_dependency() -> None:
+    root = Path(__file__).resolve().parents[1]
+    requirements = (root / "requirements.txt").read_text(encoding="utf-8")
+
+    assert "alembic>=1.13,<2" in requirements
+
+
 def test_release_contract_migrates_neon_before_render_checks_pass_deploy() -> None:
     root = Path(__file__).resolve().parents[1]
     neon = (root / ".github/workflows/us-lacey-neon-live-gate.yml").read_text(
