@@ -54,6 +54,7 @@ def test_worker_emits_structured_stage_durations_for_finalizing_job(monkeypatch,
         "_claim_source_set_finalization",
         lambda **_: SimpleNamespace(claimed=True, fingerprint=fingerprint),
     )
+    monkeypatch.setattr(worker, "_reconcile_candidate_equivalence", lambda **_: 0)
     monkeypatch.setattr(worker, "_shadow_engine2", lambda **_: None)
     monkeypatch.setattr(worker, "_project_engine2_suggestions", lambda **_: 0)
     monkeypatch.setattr(worker, "_project_verified_ai_suggestions", lambda **_: 0)
@@ -82,6 +83,7 @@ def test_worker_emits_structured_stage_durations_for_finalizing_job(monkeypatch,
         "preflight",
         "document_processing",
         "authoritative_projection",
+        "candidate_equivalence_reconciliation",
         "engine2_shadow",
         "canonical_publication",
         "product_intelligence",
