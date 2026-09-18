@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-import hashlib
 import logging
 import os
 import re
@@ -34,6 +33,7 @@ from litoral_trace.lacey_engine.multi_agent.line_binding import (
     LINE_SCOPED_FIELDS,
     line_identity_scope,
 )
+from litoral_trace.us_lacey.shipment_product_bridge import materialized_line_reference
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
     PPQ505_PLANT_FIELDS,
@@ -123,8 +123,7 @@ def _stable_line_key(value: str) -> bool:
 
 
 def _derived_line_reference(line_item_key: str) -> str:
-    digest = hashlib.sha256(line_item_key.encode("utf-8")).hexdigest()[:20].upper()
-    return f"LT-{digest}"
+    return materialized_line_reference(line_item_key)
 
 
 def _materialization_identity(candidate: CandidateEnvelope) -> tuple[str, str] | None:
