@@ -199,6 +199,10 @@ def test_private_pilot_ready_with_explicit_isolated_config(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("STORAGE_BUCKET_NAME", raising=False)
     monkeypatch.delenv("STORAGE_KEY_PREFIX", raising=False)
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.probe_us_lacey_schema_compatibility",
+        lambda: True,
+    )
     client = TestClient(app)
     response = client.get("/ready")
     assert response.status_code == 200
@@ -207,4 +211,24 @@ def test_private_pilot_ready_with_explicit_isolated_config(monkeypatch):
         "service": "us-lacey-pilot",
         "environment": "pilot",
         "hostname": "lacey.litoraltrace.com",
+    }
+
+
+def test_private_pilot_ready_fails_closed_on_schema_drift(monkeypatch):
+    for key, value in _safe_env().items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("STORAGE_BUCKET_NAME", raising=False)
+    monkeypatch.delenv("STORAGE_KEY_PREFIX", raising=False)
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.probe_us_lacey_schema_compatibility",
+        lambda: False,
+    )
+
+    client = TestClient(app)
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "U.S. Lacey pilot database schema is not compatible with this release."
     }

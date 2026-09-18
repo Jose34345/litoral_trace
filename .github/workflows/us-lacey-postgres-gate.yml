@@ -19,6 +19,7 @@ on:
       - "alembic/versions/048_add_lacey_source_set_revisions.py"
       - "alembic/versions/049_add_lacey_product_intelligence_snapshots.py"
       - "alembic/versions/050_add_lacey_regulatory_assessment_snapshots.py"
+      - "alembic/versions/051_lacey_schema_readiness.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
       - "src/litoral_trace/web/us_lacey_*"
@@ -155,6 +156,7 @@ jobs:
           python -m alembic upgrade 048_lacey_source_set_revisions
           python -m alembic upgrade 049_lacey_product_intelligence_snapshots
           python -m alembic upgrade 050_lacey_regulatory_assessment_snapshots
+          python -m alembic upgrade 051_lacey_schema_readiness
       - name: Bind dedicated worker login to queue capability
         shell: bash
         run: |
@@ -179,7 +181,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "050_lacey_regulatory_assessment_snapshots (head)" /tmp/alembic-current.txt
+          grep -Fx "051_lacey_schema_readiness (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -587,7 +589,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "050_lacey_regulatory_assessment_snapshots (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "051_lacey_schema_readiness (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
@@ -656,6 +658,19 @@ jobs:
             | tee /tmp/regulatory-assessment-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/regulatory-assessment-postgres.txt; then
             echo "Regulatory Assessment PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
+      - name: Prove runtime schema compatibility metadata contract
+        env:
+          DATABASE_URL: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs tests/test_us_lacey_schema_compatibility_postgres.py \
+            | tee /tmp/schema-compatibility-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/schema-compatibility-postgres.txt; then
+            echo "Schema compatibility PostgreSQL acceptance must not skip in CI."
             exit 1
           fi
       - name: Prove platform-admin control-plane capabilities
