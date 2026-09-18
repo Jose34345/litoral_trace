@@ -88,6 +88,13 @@ select.lt-control {
   appearance: auto;
 }
 
+/* Staged upload forms own their visible file-selection surface. If an older
+   cached enhancer wraps the hidden input, suppress that legacy chrome rather
+   than rendering a second picker below the dropzone. */
+[data-file-staging-form] .lt-file-input {
+  display: none !important;
+}
+
 .lt-file-input {
   position: relative;
   display: flex;

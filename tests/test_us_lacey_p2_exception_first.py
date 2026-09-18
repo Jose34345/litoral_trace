@@ -10,6 +10,9 @@ from litoral_trace.web.us_lacey_operational_views import _review_field_groups
 
 
 ROOT = Path(__file__).resolve().parents[1]
+OPERATIONS_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/operations.html"
+BASE_TEMPLATE = ROOT / "src/litoral_trace/templates/base.html"
+FORM_CONTROLS_CSS = ROOT / "src/litoral_trace/static/src/form-controls.css"
 DETAIL_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/operation_detail.html"
 WORKSPACE_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
 REGULATORY_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/fragments/regulatory_assessment_card.html"
@@ -53,6 +56,18 @@ def test_review_projection_separates_attention_supported_and_settled_without_new
     assert [field.id for field in attention] == [2, 3, 5]
     assert [field.id for field in settled] == [4]
     assert supported[0].status == "FOUND"
+
+
+def test_operations_intake_defends_against_cached_legacy_file_enhancer():
+    template = OPERATIONS_TEMPLATE.read_text(encoding="utf-8")
+    base = BASE_TEMPLATE.read_text(encoding="utf-8")
+    css = FORM_CONTROLS_CSS.read_text(encoding="utf-8")
+
+    assert "data-file-staging-form" in template
+    assert "data-file-dropzone-input" in template
+    assert "data-file-staging-list" in template
+    assert "[data-file-staging-form] .lt-file-input" in css
+    assert "?v=20260918-file-staging-2" in base
 
 
 def test_operation_upload_uses_one_hidden_multi_file_input_and_staging_surface():

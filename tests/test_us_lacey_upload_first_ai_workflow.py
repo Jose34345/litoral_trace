@@ -40,6 +40,10 @@ def test_operations_hides_locale_dependent_native_file_picker_chrome():
     assert '<label for="intake-documents"' in source
     assert 'id="intake-documents" hidden name="documents" type="file"' in source
     assert 'aria-describedby="intake-file-summary"' in source
+    assert "data-file-staging-form" in source
+    assert "data-file-dropzone" in source
+    assert "data-file-dropzone-input" in source
+    assert "data-file-staging-list" in source
     assert ">No files selected.</div>" in source
     assert 'style=' not in source
 
