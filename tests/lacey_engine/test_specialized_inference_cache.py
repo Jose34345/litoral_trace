@@ -20,6 +20,7 @@ def _fingerprint(
     *,
     model: str = "gemini-3.5-flash-lite",
     taxonomy_version: str = "taxonomy-v1",
+    line_binding_version: str = "line-binding-v1",
 ):
     return specialized_computation_fingerprint(
         organization_id=7,
@@ -34,6 +35,7 @@ def _fingerprint(
         field_judge_version="lacey_field_judge_v1",
         projection_version="lacey_specialized_projection_v1",
         taxonomy_version=taxonomy_version,
+        line_binding_version=line_binding_version,
     )
 
 
@@ -60,6 +62,10 @@ def test_cache_identity_invalidates_when_model_or_content_changes():
     assert baseline != _fingerprint(changed_content)
     assert baseline != _fingerprint(documents, model="gemini-next")
     assert baseline != _fingerprint(documents, taxonomy_version="taxonomy-v2")
+    assert baseline != _fingerprint(
+        documents,
+        line_binding_version="line-binding-v2",
+    )
 
 
 def test_cache_hit_returns_before_constructing_or_calling_provider(monkeypatch):
