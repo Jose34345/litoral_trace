@@ -199,7 +199,7 @@ def _render_variant_text(
 
     text = "\n".join(
         (
-            "SYNTHETIC GOLDEN BENCHMARK DOCUMENT",
+            "LT-GOLDEN-V1",
             *signals,
             "LT-TEST-2026-0912-A | MHW-INV-260915-77 | "
             "OOLU-TEST-260912-01 | TLLU4827315",
