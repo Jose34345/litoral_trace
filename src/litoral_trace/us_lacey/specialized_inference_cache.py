@@ -36,6 +36,7 @@ def specialized_computation_fingerprint(
     field_judge_version: str,
     projection_version: str,
     taxonomy_version: str = "",
+    line_binding_version: str = "",
 ) -> str:
     """Return the immutable computational identity for one specialized source set."""
     source_descriptors = sorted(
@@ -62,6 +63,7 @@ def specialized_computation_fingerprint(
         "projection_version": str(projection_version),
         "projection_mode": str(projection_mode),
         "taxonomy_version": str(taxonomy_version),
+        "line_binding_version": str(line_binding_version),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
