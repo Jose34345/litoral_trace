@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from litoral_trace.us_lacey import schema_compatibility
@@ -66,3 +67,21 @@ def test_schema_probe_fails_closed_when_database_is_unavailable(monkeypatch) -> 
     monkeypatch.setattr(schema_compatibility, "get_us_lacey_engine", lambda: engine)
 
     assert schema_compatibility.probe_us_lacey_schema_compatibility() is False
+
+
+def test_release_contract_migrates_neon_before_render_checks_pass_deploy() -> None:
+    root = Path(__file__).resolve().parents[1]
+    neon = (root / ".github/workflows/us-lacey-neon-live-gate.yml").read_text(
+        encoding="utf-8"
+    )
+    render = (root / "deploy/render-us-lacey-pilot-free.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "feature/us-lacey-pilot-platform" in neon
+    assert 'MODE="migrate"' in neon
+    assert "python -m alembic upgrade head" in neon
+    assert "US_LACEY_NEON_MIGRATION_DATABASE_URL" in neon
+    assert "autoDeployTrigger: checksPass" in render
+    assert "US_LACEY_NEON_MIGRATION_DATABASE_URL" not in render
+    assert "MIGRATION_DATABASE_URL" not in render
