@@ -189,7 +189,6 @@ def _render_variant_text(
     expected_type: DocumentType,
     language: str,
     transform: str,
-    source_text: str,
 ) -> str:
     try:
         signals = _LOCALIZED_SIGNALS[language][expected_type]
@@ -198,13 +197,12 @@ def _render_variant_text(
             f"Unsupported corpus localization: language={language} type={expected_type.value}"
         ) from exc
 
-    source_tail = " ".join(source_text.split())[-360:]
     text = "\n".join(
         (
             "SYNTHETIC GOLDEN BENCHMARK DOCUMENT",
             *signals,
-            "Shipment LT-TEST-2026-0912-A",
-            source_tail,
+            "LT-TEST-2026-0912-A | MHW-INV-260915-77 | "
+            "OOLU-TEST-260912-01 | TLLU4827315",
         )
     )
 
@@ -250,15 +248,15 @@ def materialize_router_corpus(
                     expected_type=expected_type,
                     language=variant.language,
                     transform=variant.transform,
-                    source_text=text,
                 )
                 for page, text in source_pages.items()
             }
-            stem = Path(str(item["filename"])).stem
             materialized.append(
                 RouterCorpusDocument(
                     document_id=f"{manifest.version}:{variant.variant_id}:{ordinal:02d}",
-                    filename=f"{stem}__{variant.variant_id}.pdf",
+                    # Generic filenames deliberately remove document-type hints so
+                    # multilingual accuracy is earned from page content alone.
+                    filename=f"golden_{ordinal:02d}__{variant.variant_id}.pdf",
                     expected_type=expected_type,
                     language=variant.language,
                     modality=variant.modality,
