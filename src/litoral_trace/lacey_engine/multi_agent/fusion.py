@@ -10,7 +10,7 @@ from .authority import (
     normalized_candidate_value,
 )
 from .contracts import CandidateEnvelope
-from .line_binding import LINE_SCOPED_FIELDS
+from .line_binding import LINE_SCOPED_FIELDS, line_identity_scope
 from .semantic_normalization import semantic_value_key
 
 
@@ -39,22 +39,26 @@ class FusionResult:
 
 def fusion_key(candidate: CandidateEnvelope) -> FusionKey:
     field_key = candidate.candidate.field_key
-    if field_key in LINE_SCOPED_FIELDS and candidate.line_item_key is None:
+    if field_key not in LINE_SCOPED_FIELDS:
+        return FusionKey(field_key, candidate.line_item_key, None)
+    if candidate.line_item_key is None:
         return FusionKey(field_key, None, candidate_identity(candidate))
-    return FusionKey(field_key, candidate.line_item_key, None)
+    line_key, document_scope = line_identity_scope(candidate)
+    return FusionKey(field_key, line_key, document_scope)
 
 
 def _genus_contexts(
     candidates: tuple[CandidateEnvelope, ...],
-) -> dict[str, frozenset[str]]:
-    by_line: dict[str, set[str]] = {}
+) -> dict[tuple[str, str | None], frozenset[str]]:
+    by_line: dict[tuple[str, str | None], set[str]] = {}
     for candidate in candidates:
         if candidate.candidate.field_key != "genus" or candidate.line_item_key is None:
             continue
         genus = normalized_candidate_value(candidate)
-        if genus:
-            by_line.setdefault(candidate.line_item_key, set()).add(genus)
-    return {line_key: frozenset(values) for line_key, values in by_line.items()}
+        line_key, document_scope = line_identity_scope(candidate)
+        if genus and line_key is not None:
+            by_line.setdefault((line_key, document_scope), set()).add(genus)
+    return {scope: frozenset(values) for scope, values in by_line.items()}
 
 
 def fuse_candidates(candidates: Iterable[CandidateEnvelope]) -> FusionResult:
@@ -71,7 +75,10 @@ def fuse_candidates(candidates: Iterable[CandidateEnvelope]) -> FusionResult:
     for key in sorted(groups, key=_fusion_key_sort):
         group = groups[key]
         genus_context = (
-            genus_contexts.get(key.line_item_key, frozenset())
+            genus_contexts.get(
+                (key.line_item_key, key.unbound_identity),
+                frozenset(),
+            )
             if key.field_key == "species" and key.line_item_key is not None
             else frozenset()
         )
@@ -135,7 +142,10 @@ def cross_document_fusion_accuracy(
         fusion_key(candidate): normalized_candidate_value(
             candidate,
             genus_context=(
-                genus_contexts.get(candidate.line_item_key, frozenset())
+                genus_contexts.get(
+                    line_identity_scope(candidate),
+                    frozenset(),
+                )
                 if candidate.candidate.field_key == "species"
                 and candidate.line_item_key is not None
                 else frozenset()
@@ -148,7 +158,10 @@ def cross_document_fusion_accuracy(
             key.field_key,
             value,
             genus_context=(
-                genus_contexts.get(key.line_item_key, frozenset())
+                genus_contexts.get(
+                    (key.line_item_key, key.unbound_identity),
+                    frozenset(),
+                )
                 if key.field_key == "species" and key.line_item_key is not None
                 else frozenset()
             ),
