@@ -9,7 +9,10 @@ from urllib.parse import parse_qs
 from markupsafe import Markup, escape
 
 from litoral_trace.us_lacey.candidate_normalization import group_candidate_evidence
-from litoral_trace.us_lacey.ppq505 import PPQ505_FIELDS_BY_KEY
+from litoral_trace.us_lacey.ppq505 import (
+    PPQ505_FIELDS_BY_KEY,
+    canonical_ppq_value_key,
+)
 from litoral_trace.us_lacey.product_intelligence_snapshot import (
     get_current_product_intelligence_view,
 )
@@ -186,9 +189,18 @@ def _semantic_evidence_for_detail(identity, detail) -> dict[str, tuple[EvidenceT
 
 
 def _evidence_for_field(field, evidence_by_field: Mapping[str, tuple[EvidenceTextView, ...]]):
-    items = tuple(evidence_by_field.get(str(getattr(field, "field_name", "")), ()))
+    """Return evidence that is safe to render on one review card.
+
+    Shipment-scoped fields keep the legacy document/page preference. Plant-line
+    fields fail closed: evidence must support the same value on the same source
+    document/page, or match the exact source locator. This prevents evidence for
+    one botanical line from appearing on another line's review card.
+    """
+    field_name = str(getattr(field, "field_name", "") or "")
+    items = tuple(evidence_by_field.get(field_name, ()))
     if not items:
         return ()
+
     source_document_id = getattr(field, "source_assurance_document_id", None)
     source_page = getattr(field, "source_page", None)
     preferred = tuple(
@@ -197,7 +209,45 @@ def _evidence_for_field(field, evidence_by_field: Mapping[str, tuple[EvidenceTex
         if (source_document_id is None or item.source_assurance_document_id == source_document_id)
         and (source_page is None or str(item.source_page) == str(source_page))
     )
-    return preferred or items
+    candidates = preferred or items
+
+    if str(getattr(field, "scope", "") or "").upper() != "PLANT_LINE":
+        return candidates
+
+    value = (
+        getattr(field, "effective_value", None)
+        or getattr(field, "proposed_value", None)
+    )
+    if value is not None:
+        target_key = canonical_ppq_value_key(field_name, value)
+        if target_key:
+            value_matches = tuple(
+                item
+                for item in candidates
+                if canonical_ppq_value_key(
+                    field_name,
+                    item.normalized_value
+                    or item.display_text
+                    or item.original_text,
+                )
+                == target_key
+            )
+            if value_matches:
+                return value_matches
+
+    source_locator = str(getattr(field, "source_locator", "") or "").strip()
+    if source_locator:
+        locator_matches = tuple(
+            item
+            for item in candidates
+            if str(item.source_locator or "").strip() == source_locator
+        )
+        if locator_matches:
+            return locator_matches
+
+    # Showing no semantic evidence is safer than leaking evidence from another
+    # merchandise line. The card's own source metadata remains available.
+    return ()
 
 
 def _semantic_evidence_markup(evidence: EvidenceTextView) -> Markup:
