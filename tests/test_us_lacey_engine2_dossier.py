@@ -81,3 +81,44 @@ def test_non_current_dossier_states_hide_canonical_values():
     for availability in (Engine2DossierAvailability.DISABLED, Engine2DossierAvailability.NOT_AVAILABLE, Engine2DossierAvailability.STALE, Engine2DossierAvailability.FAILED, Engine2DossierAvailability.INVALID):
         html = _html(Engine2DossierView(availability, fields=(Engine2DossierFieldView("species", "Species", "SUPPORTED", ("radiata",), ()),), safe_status_message="Safe state."))
         assert f'data-engine2-availability="{availability}"' in html and "Safe state." in html and "radiata" not in html
+
+
+def test_dossier_groups_line_evidence_before_global_cross_line_evidence():
+    line_one = Engine2DossierEvidenceView(
+        "botanical.pdf", 2, "Pinus radiata", "radiata", "RADIATA",
+        "EXPLICIT", .99, .95, "PLANT_COMPONENT", "SKU:PINE-001", None, None
+    )
+    line_two = Engine2DossierEvidenceView(
+        "botanical.pdf", 3, "Eucalyptus grandis", "grandis", "GRANDIS",
+        "EXPLICIT", .99, .95, "PLANT_COMPONENT", "SKU:EUC-002", None, None
+    )
+    global_item = Engine2DossierEvidenceView(
+        "invoice.pdf", 1, "Mixed wood products", "wood", "WOOD",
+        "EXPLICIT", .80, .70, "SHIPMENT", None, None, None
+    )
+    dossier = Engine2DossierView(
+        Engine2DossierAvailability.CURRENT,
+        "REVIEW_REQUIRED",
+        "engine",
+        "rules",
+        "schema",
+        document_count=2,
+        fields=(
+            Engine2DossierFieldView(
+                "species",
+                "Species",
+                "SUPPORTED_MULTIPLE",
+                ("radiata", "grandis"),
+                (line_one, line_two, global_item),
+            ),
+        ),
+    )
+
+    html = _html(dossier)
+
+    assert 'data-engine2-line-evidence="SKU:PINE-001"' in html
+    assert 'data-engine2-line-evidence="SKU:EUC-002"' in html
+    assert "Line SKU:PINE-001 evidence" in html
+    assert "Line SKU:EUC-002 evidence" in html
+    assert 'data-engine2-global-evidence' in html
+    assert "Global / cross-line evidence" in html
