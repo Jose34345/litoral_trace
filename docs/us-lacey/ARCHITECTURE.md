@@ -183,6 +183,11 @@ P1-01 treats species equivalence as an Entity Resolution concern, not as source-
 
 The comparison identity is ephemeral/non-evidentiary: it may group candidates, prevent a false conflict, or resolve a metadata-only reconciliation issue, but it must never overwrite the extracted raw value, normalized source value, evidence span, document/page/locator, or human value. Missing, low-confidence, competing or unbound genus context fails closed to ordinary comparison and human review. Cross-line inference is prohibited.
 
+### Shadow-vs-Canonical benchmark (offline)
+P2-01 lives in `src/litoral_trace/lacey_benchmark/` with versioned fixtures under `benchmarks/lacey/v2/`. It is deterministic QA/observability infrastructure, not a runtime decision path. It compares Engine 2 Shadow evidence against Canonical ShipmentTruth by exact shipment/line/entity field slots and records agreement, Shadow-supported/Canonical-missing, Canonical-supported/Shadow-missing and false-conflict deltas.
+
+The evaluator deliberately adds no fuzzy normalization, line inference, authority override or publication behavior. Missing on both layers is excluded from the agreement denominator so unresolved fields cannot inflate benchmark quality. Production extraction, reconciliation, routing, workers, RLS and canonical publication must not import or depend on this evaluator.
+
 ### Exception-first review (active)
 The existing human-review workflow now projects unresolved/blocked/review-required fields as the primary workspace. Unambiguous FOUND suggestions remain unconfirmed domain state but are grouped behind a collapsed confirmation surface, while confirmed fields stay secondary. Rule-level FAIL/INDETERMINATE results remain visible and PASS results are collapsed. Review timing/edit telemetry is non-authoritative and attaches to the existing completion audit trail rather than creating a parallel decision system.
 
