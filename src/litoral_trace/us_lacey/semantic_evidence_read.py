@@ -51,10 +51,6 @@ class EvidenceTextView:
     scope: str | None = None
     local_entity_key: str | None = None
     canonical_entity_id: str | None = None
-    normalized_value: str | None = None
-    scope: str | None = None
-    local_entity_key: str | None = None
-    canonical_entity_id: str | None = None
 
 
 def evidence_text_view(
@@ -187,6 +183,7 @@ class SemanticEvidenceReadService:
                         normalized_value=node.normalized_value,
                         scope=node.scope,
                         local_entity_key=node.local_entity_key,
+                        canonical_entity_id=snapshot_node.canonical_entity_id,
                     )
                 )
             return {key: tuple(values) for key, values in by_field.items()}
