@@ -48,6 +48,7 @@ from litoral_trace.lacey_engine.multi_agent.field_judge import (
 )
 from litoral_trace.lacey_engine.multi_agent.fusion import FusionConflict, FusionKey
 from litoral_trace.lacey_engine.multi_agent.gemini_specialist_adapter import GeminiSpecialistProvider
+from litoral_trace.lacey_engine.multi_agent.line_binding import LINE_BINDING_VERSION
 from litoral_trace.lacey_engine.multi_agent.orchestrator import orchestrate_specialists
 from litoral_trace.lacey_engine.multi_agent.router import RoutingAssignment, RoutingPlan, build_routing_plan, route_document
 from litoral_trace.lacey_engine.multi_agent.specialist_runtime import ScopedAIExtractionProvider, SpecialistInputDocument
@@ -67,7 +68,7 @@ from litoral_trace.us_lacey.specialized_taxonomy import (
 )
 
 LOGGER = logging.getLogger(__name__)
-SPECIALIZED_SHADOW_SCHEMA_VERSION = "lacey_multi_agent_shadow_v6"
+SPECIALIZED_SHADOW_SCHEMA_VERSION = "lacey_multi_agent_shadow_v7"
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,15 +109,16 @@ def specialized_engine_version(*, provider: str, model: str, source_set_fingerpr
     effective_judge_mode = _effective_judge_mode(judge_mode)
     effective_projection_mode = _effective_projection_mode(projection_mode)
     identity = (
-        f"v6|{provider}|{model}|schema={SPECIALIZED_SHADOW_SCHEMA_VERSION}|"
+        f"v7|{provider}|{model}|schema={SPECIALIZED_SHADOW_SCHEMA_VERSION}|"
         "evidence=engine2-exact|"
         f"judge={FIELD_JUDGE_VERSION}:{effective_judge_mode.value}|"
         f"projection={SPECIALIZED_PROJECTION_VERSION}:{effective_projection_mode.value}|"
-        f"taxonomy={SPECIALIZED_TAXONOMY_VERSION}"
+        f"taxonomy={SPECIALIZED_TAXONOMY_VERSION}|"
+        f"line_binding={LINE_BINDING_VERSION}"
     )
     if source_set_fingerprint:
         identity += f"|source_set={source_set_fingerprint}"
-    return f"multi-agent-v6:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:32]}"
+    return f"multi-agent-v7:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:32]}"
 
 
 def _sum_reported(values: list[int | None]) -> int | None:
@@ -540,6 +542,7 @@ def _try_cache(*, documents: tuple[SpecializedShadowDocument, ...], config: AIPr
             projection_mode=_effective_projection_mode(None).value, specialized_schema_version=SPECIALIZED_SHADOW_SCHEMA_VERSION,
             field_judge_version=FIELD_JUDGE_VERSION, projection_version=SPECIALIZED_PROJECTION_VERSION,
             taxonomy_version=SPECIALIZED_TAXONOMY_VERSION,
+            line_binding_version=LINE_BINDING_VERSION,
         )
         payloads = find_cached_specialized_payloads(organization_id=organization_id, documents=tuple(documents), computation_fingerprint=computation_fingerprint, schema_version=SPECIALIZED_SHADOW_SCHEMA_VERSION)
         if payloads is None:
