@@ -420,12 +420,22 @@ def _build_regulatory_assessment_snapshot(*, organization_id: int, operation_id:
 
 
 def _reconcile_candidate_equivalence(*, organization_id: int, operation_id: int) -> int:
-    """Resolve source-set-complete false conflicts before canonical publication."""
-    result = reconcile_duplicate_field_candidates(
-        organization_id=organization_id,
-        operation_id=operation_id,
-    )
-    return int(result.resolved_conflict_count)
+    """Resolve false conflicts fail-closed; failure leaves human review intact."""
+    try:
+        result = reconcile_duplicate_field_candidates(
+            organization_id=organization_id,
+            operation_id=operation_id,
+        )
+        return int(result.resolved_conflict_count)
+    except Exception:
+        LOGGER.exception(
+            "Lacey candidate-equivalence reconciliation failed closed",
+            extra={
+                "organization_id": organization_id,
+                "operation_id": operation_id,
+            },
+        )
+        return 0
 
 
 def _project_verified_ai_suggestions(*, organization_id: int, operation_id: int) -> int:
