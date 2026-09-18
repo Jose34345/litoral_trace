@@ -30,7 +30,10 @@ from litoral_trace.lacey_engine.multi_agent.field_judge import (
     FieldJudgeMode,
     candidate_identity as field_judge_candidate_identity,
 )
-from litoral_trace.lacey_engine.multi_agent.line_binding import LINE_SCOPED_FIELDS
+from litoral_trace.lacey_engine.multi_agent.line_binding import (
+    LINE_SCOPED_FIELDS,
+    line_identity_scope,
+)
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
     PPQ505_PLANT_FIELDS,
@@ -43,7 +46,7 @@ from litoral_trace.us_lacey.ppq505 import (
 
 LOGGER = logging.getLogger(__name__)
 _SPECIALIZED_PROJECTION_MODE_ENV = "LT_AI_SPECIALIZED_PROJECTION_MODE"
-SPECIALIZED_PROJECTION_VERSION = "lacey_specialized_projection_v1"
+SPECIALIZED_PROJECTION_VERSION = "lacey_specialized_projection_v2"
 
 _ROW_KEY = re.compile(
     r"^ROW:(?P<document>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
@@ -124,6 +127,26 @@ def _derived_line_reference(line_item_key: str) -> str:
     return f"LT-{digest}"
 
 
+def _materialization_identity(candidate: CandidateEnvelope) -> tuple[str, str] | None:
+    raw_key = str(candidate.line_item_key or "").strip()
+    if not raw_key or not _stable_line_key(raw_key):
+        return None
+    if _SKU_KEY.fullmatch(raw_key):
+        return raw_key, raw_key
+    if _LINE_KEY.fullmatch(raw_key):
+        return f"{raw_key}|DOC:{candidate.document_id}", raw_key
+    # ROW already embeds source document identity in the key.
+    return raw_key, raw_key
+
+
+def _line_reference_for_candidate(candidate: CandidateEnvelope) -> str | None:
+    identity = _materialization_identity(candidate)
+    if identity is None:
+        return None
+    seed, _raw_key = identity
+    return _derived_line_reference(seed)
+
+
 def plan_line_materialization(
     candidates: Iterable[CandidateEnvelope],
     *,
@@ -135,7 +158,7 @@ def plan_line_materialization(
     ``ROW`` identities are stable enough for deterministic materialization. ``FP`` and
     any unknown/malformed non-empty identity remain review-only in V1.
     """
-    materializable: set[str] = set()
+    materializable: dict[str, str] = {}
     review_only: set[str] = set()
 
     for envelope in candidates:
@@ -144,16 +167,19 @@ def plan_line_materialization(
         raw_key = str(envelope.line_item_key or "").strip()
         if not raw_key:
             continue
-        if _stable_line_key(raw_key):
-            materializable.add(raw_key)
+        identity = _materialization_identity(envelope)
+        if identity is not None:
+            seed, display_key = identity
+            materializable.setdefault(seed, display_key)
         elif _FINGERPRINT_KEY.fullmatch(raw_key) or raw_key:
             review_only.add(raw_key)
 
     existing = tuple(existing_line_references)
     existing_set = set(existing)
     generated: list[PlannedPlantLine] = []
-    for line_item_key in sorted(materializable):
-        line_reference = _derived_line_reference(line_item_key)
+    for materialization_seed in sorted(materializable):
+        line_item_key = materializable[materialization_seed]
+        line_reference = _derived_line_reference(materialization_seed)
         if line_reference in existing_set:
             continue
         generated.append(
@@ -298,10 +324,7 @@ def _target_reference(candidate: CandidateEnvelope, *, ppq_field_key: str) -> st
             return None
         return PPQ505_SHIPMENT_REFERENCE
 
-    raw_key = str(candidate.line_item_key or "").strip()
-    if not raw_key or not _stable_line_key(raw_key):
-        return None
-    return _derived_line_reference(raw_key)
+    return _line_reference_for_candidate(candidate)
 
 
 def _target_is_unreviewed(target: object) -> bool:
@@ -418,8 +441,17 @@ def project_specialized_candidates(
             skipped += 1
             continue
 
-        conflict_key = (candidate.field_key, envelope.line_item_key)
-        if conflict_key in conflict_keys:
+        field_key = candidate.field_key
+        if field_key in LINE_SCOPED_FIELDS:
+            line_key, document_scope = line_identity_scope(envelope)
+        else:
+            line_key, document_scope = envelope.line_item_key, None
+        scoped_conflict_key = (field_key, line_key, document_scope)
+        legacy_conflict_key = (field_key, line_key)
+        if (
+            scoped_conflict_key in conflict_keys
+            or legacy_conflict_key in conflict_keys
+        ):
             review += 1
             continue
 
