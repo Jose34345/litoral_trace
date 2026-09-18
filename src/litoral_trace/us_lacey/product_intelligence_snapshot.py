@@ -22,6 +22,7 @@ from litoral_trace.assurance.parsers import DocumentParseError, SourceLocation, 
 from litoral_trace.db.models import (
     AssuranceDocument,
     UsLaceyOperation,
+    UsLaceyPpqPlantLine,
     UsLaceyProductIntelligenceSnapshot,
     UsLaceySourceSetMember,
     UsLaceySourceSetRevision,
@@ -42,9 +43,12 @@ from litoral_trace.product_intelligence.domain import (
 from litoral_trace.services.vault import VaultError, VaultService
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.regulatory.taxonomy import resolve_taxonomy
+from litoral_trace.us_lacey.shipment_product_bridge import (
+    build_shipment_product_bridge,
+)
 from litoral_trace.us_lacey.storage import build_us_lacey_storage_settings, get_us_lacey_storage_client
 
-SNAPSHOT_SCHEMA_VERSION = "product-intelligence-snapshot-v1"
+SNAPSHOT_SCHEMA_VERSION = "product-intelligence-snapshot-v2"
 _ELIGIBLE_EXTENSIONS = frozenset({".csv", ".xls", ".xlsx", ".pdf"})
 SessionFactory = Callable[[], Session]
 
@@ -463,6 +467,20 @@ def build_product_intelligence_snapshot(
         # Copy identifiers while the tenant-scoped session is live; object bytes are
         # materialized outside this database transaction.
         descriptors = [tuple(row) for row in rows]
+        plant_line_references = tuple(
+            str(value)
+            for value in session.scalars(
+                select(UsLaceyPpqPlantLine.line_reference)
+                .where(
+                    UsLaceyPpqPlantLine.organization_id == organization_id,
+                    UsLaceyPpqPlantLine.operation_id == operation_id,
+                )
+                .order_by(
+                    UsLaceyPpqPlantLine.ordinal.asc(),
+                    UsLaceyPpqPlantLine.id.asc(),
+                )
+            ).all()
+        )
     finally:
         session.close()
 
@@ -507,6 +525,10 @@ def build_product_intelligence_snapshot(
         "generation": int(claim.generation),
         "fingerprint": str(claim.fingerprint),
     }
+    payload["shipment_product_bridge"] = build_shipment_product_bridge(
+        payload,
+        line_references=plant_line_references,
+    )
 
     session = factory()
     try:
