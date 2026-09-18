@@ -178,8 +178,8 @@ Explicit CSV/XLS/XLSX BOM composition lives in `src/litoral_trace/product_intell
 ### U.S. Lacey Regulatory Intelligence (active)
 Taxonomy resolution and versioned regulatory rules live under `src/litoral_trace/us_lacey/regulatory/`. Extend explicit inputs/results/ruleset versions and evidence references rather than hiding compliance conclusions solely in prompts or UI code. Keep every result rule-scoped and non-canonical until a separately designed authority/review boundary says otherwise.
 
-### Exception-first review (planned)
-Extend the existing review model so specialists primarily see unresolved/blocked/review-required items with direct source links rather than re-reading every document.
+### Exception-first review (active)
+The existing human-review workflow now projects unresolved/blocked/review-required fields as the primary workspace. Unambiguous FOUND suggestions remain unconfirmed domain state but are grouped behind a collapsed confirmation surface, while confirmed fields stay secondary. Rule-level FAIL/INDETERMINATE results remain visible and PASS results are collapsed. Review timing/edit telemetry is non-authoritative and attaches to the existing completion audit trail rather than creating a parallel decision system.
 
 ## Design rule for agents
 Before implementing a new feature, answer:
