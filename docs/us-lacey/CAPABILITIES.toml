@@ -289,9 +289,19 @@ workflows = [
 notes = "Versioned DE_MINIMIS and SPECIAL_COMPOSITE evaluators produce rule-scoped PASS/FAIL/INDETERMINATE with reason codes, calculation traces and evidence references. Exact inputs plus ruleset/source-set identity are fingerprinted into a tenant-scoped CURRENT/STALE snapshot. Missing inputs remain INDETERMINATE; a rule PASS is never an overall shipment verdict. Regulatory Assessment remains non-canonical and cannot write canonical shipment truth, PPQ505, LAWGS or ACE."
 
 [capabilities.exception_first_review]
-status = "PLANNED"
+status = "ACTIVE"
 owner = "us_lacey review extension"
 authority = "review_required"
-implementation = []
-tests = []
-notes = "Planned queue that surfaces only unresolved/conflicting/missing-evidence cases and links each issue to source evidence."
+implementation = [
+  "src/litoral_trace/web/us_lacey_operational_views.py",
+  "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html",
+  "src/litoral_trace/templates/us_lacey/fragments/regulatory_assessment_card.html",
+  "src/litoral_trace/static/src/js/us-lacey-workspace.js",
+  "src/litoral_trace/us_lacey/review_telemetry.py"
+]
+tests = [
+  "tests/test_us_lacey_p2_exception_first.py",
+  "tests/test_us_lacey_review_ux_normalization.py",
+  "tests/test_us_lacey_regulatory_assessment_ui.py"
+]
+notes = "Customer review expands unresolved, conflicting and missing-evidence items first; unambiguous FOUND suggestions remain unconfirmed authority and are collapsed behind an explicit bulk-confirmation surface. Rule-level FAIL/INDETERMINATE results remain visible. Lightweight UX telemetry is non-authoritative and audit-attached."
