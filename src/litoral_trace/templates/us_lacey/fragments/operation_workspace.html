@@ -148,7 +148,7 @@
       {% set review_index = namespace(value=0) %}
       {% for line_reference, fields in attention_fields|groupby("line_reference") %}
       <section class="grid gap-3" data-review-line="{{ line_reference }}">
-        <div class="flex items-center gap-3 border-b border-slate-200 pb-2"><h3 class="text-sm font-bold text-slate-800">{% if fields[0].scope == "SHIPMENT" %}Shipment information{% else %}Plant line {{ line_reference }}{% endif %}</h3><span class="text-xs font-semibold text-slate-500">{{ fields|length }} exception{{ '' if fields|length == 1 else 's' }}</span></div>
+        <div class="flex items-center gap-3 border-b border-slate-200 pb-3"><h3 class="text-sm font-bold text-slate-800">{% if fields[0].scope == "SHIPMENT" %}Shipment information{% else %}Plant line {{ line_reference }}{% endif %}</h3><span class="text-xs font-semibold text-slate-500">{{ fields|length }} exception{{ '' if fields|length == 1 else 's' }}</span></div>
         {% for field in fields %}{% set review_index.value = review_index.value + 1 %}{{ review_field(field, review_index.value) }}{% endfor %}
       </section>
       {% else %}
