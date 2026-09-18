@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from uuid import NAMESPACE_URL, uuid5, uuid4
 
 from litoral_trace.lacey_engine.ai_shadow import AICandidate
@@ -184,3 +186,82 @@ def test_bind_line_item_never_overwrites_with_an_invented_value():
     envelope = _envelope("species", "Acacia", value="Acacia", document_type=DocumentType.BOTANICAL_DECLARATION)
     bound = bind_line_item(envelope)
     assert bound.line_item_key is None
+
+
+
+def test_same_local_line_number_in_different_documents_is_not_reconciled_as_one_group() -> None:
+    sku = _envelope(
+        "description",
+        "SKU: ACT-TRAY-18 Acacia solid wood serving tray",
+        value="Acacia solid wood serving tray",
+    )
+    matching_local = replace(
+        _envelope(
+            "description",
+            "Line 1 Acacia solid wood serving tray",
+            value="Acacia solid wood serving tray",
+            document_type=DocumentType.PACKING_LIST,
+        ),
+        document_id=uuid5(NAMESPACE_URL, "packing-list-match"),
+    )
+    unrelated_local = replace(
+        _envelope(
+            "description",
+            "Line 1 Rubberwood cutting board",
+            value="Rubberwood cutting board",
+            document_type=DocumentType.ENTRY_WORKSHEET,
+        ),
+        document_id=uuid5(NAMESPACE_URL, "entry-unrelated"),
+    )
+
+    bound = bind_line_items((sku, matching_local, unrelated_local))
+
+    assert bound[0].line_item_key == "SKU:ACT-TRAY-18"
+    assert bound[1].line_item_key == "SKU:ACT-TRAY-18"
+    assert bound[2].line_item_key == "LINE:1"
+
+
+def test_same_local_line_number_can_reconcile_independently_to_different_skus() -> None:
+    sku_a = replace(
+        _envelope(
+            "description",
+            "SKU: ACT-TRAY-18 Acacia solid wood serving tray",
+            value="Acacia solid wood serving tray",
+        ),
+        document_id=uuid5(NAMESPACE_URL, "invoice-a"),
+    )
+    sku_b = replace(
+        _envelope(
+            "description",
+            "SKU: RUB-BOARD-2 Rubberwood cutting board",
+            value="Rubberwood cutting board",
+        ),
+        document_id=uuid5(NAMESPACE_URL, "invoice-b"),
+    )
+    local_a = replace(
+        _envelope(
+            "description",
+            "Line 1 Acacia solid wood serving tray",
+            value="Acacia solid wood serving tray",
+            document_type=DocumentType.PACKING_LIST,
+        ),
+        document_id=uuid5(NAMESPACE_URL, "packing-a"),
+    )
+    local_b = replace(
+        _envelope(
+            "description",
+            "Line 1 Rubberwood cutting board",
+            value="Rubberwood cutting board",
+            document_type=DocumentType.ENTRY_WORKSHEET,
+        ),
+        document_id=uuid5(NAMESPACE_URL, "entry-b"),
+    )
+
+    bound = bind_line_items((sku_a, sku_b, local_a, local_b))
+
+    assert [item.line_item_key for item in bound] == [
+        "SKU:ACT-TRAY-18",
+        "SKU:RUB-BOARD-2",
+        "SKU:ACT-TRAY-18",
+        "SKU:RUB-BOARD-2",
+    ]
