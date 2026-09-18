@@ -193,7 +193,7 @@ def test_runtime_shadow_projection_records_telemetry_without_mutating_field(
     assert field.field_status == "MISSING"
     assert field.normalized_value is None
     assert run.resolution_json["projection"] == {
-        "version": "lacey_specialized_projection_v1",
+        "version": "lacey_specialized_projection_v2",
         "mode": "shadow",
         "eligible_count": 1,
         "projected_count": 0,
