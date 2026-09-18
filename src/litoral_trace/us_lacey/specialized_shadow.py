@@ -70,7 +70,7 @@ from litoral_trace.us_lacey.specialized_taxonomy import (
 )
 
 LOGGER = logging.getLogger(__name__)
-SPECIALIZED_SHADOW_SCHEMA_VERSION = "lacey_multi_agent_shadow_v6"
+SPECIALIZED_SHADOW_SCHEMA_VERSION = "lacey_multi_agent_shadow_v7"
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,7 +111,7 @@ def specialized_engine_version(*, provider: str, model: str, source_set_fingerpr
     effective_judge_mode = _effective_judge_mode(judge_mode)
     effective_projection_mode = _effective_projection_mode(projection_mode)
     identity = (
-        f"v6|{provider}|{model}|schema={SPECIALIZED_SHADOW_SCHEMA_VERSION}|"
+        f"v7|{provider}|{model}|schema={SPECIALIZED_SHADOW_SCHEMA_VERSION}|"
         "evidence=engine2-exact|"
         f"judge={FIELD_JUDGE_VERSION}:{effective_judge_mode.value}|"
         f"projection={SPECIALIZED_PROJECTION_VERSION}:{effective_projection_mode.value}|"
@@ -119,7 +119,7 @@ def specialized_engine_version(*, provider: str, model: str, source_set_fingerpr
     )
     if source_set_fingerprint:
         identity += f"|source_set={source_set_fingerprint}"
-    return f"multi-agent-v6:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:32]}"
+    return f"multi-agent-v7:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:32]}"
 
 
 def _sum_reported(values: list[int | None]) -> int | None:
@@ -132,6 +132,43 @@ def _page_texts(resolution: DocumentResolution) -> dict[int, str]:
     return {page: "\n".join(block.text for block in resolution.layout.blocks if block.page == page) for page in range(1, page_count + 1)}
 
 
+def _row_identity_text(value: object) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def _verified_row_sidecar(
+    envelope: CandidateEnvelope,
+    *,
+    resolution: DocumentResolution,
+    candidate: AICandidate,
+) -> tuple[str | None, str | None, int | None]:
+    line_key = " ".join(str(envelope.source_line_key or "").split()).strip() or None
+    table_id = " ".join(str(envelope.source_table_id or "").split()).strip() or None
+    row_index = envelope.source_row_index
+
+    source_key = _row_identity_text(candidate.source_text)
+    if table_id is not None and row_index is not None:
+        row_blocks = tuple(
+            block
+            for block in resolution.layout.blocks
+            if block.page == candidate.page
+            and _row_identity_text(block.table_id) == _row_identity_text(table_id)
+            and block.row_index == row_index
+        )
+        row_text = _row_identity_text("\n".join(block.text for block in row_blocks))
+        if not row_text or not source_key or source_key not in row_text:
+            return None, None, None
+        if line_key is not None and _row_identity_text(line_key) not in row_text:
+            line_key = None
+        return line_key, table_id, row_index
+
+    # Partial row locators are not trustworthy. A standalone line key is kept only
+    # when the exact key is visibly present in the candidate's verified source text.
+    if line_key is not None and _row_identity_text(line_key) in source_key:
+        return line_key, None, None
+    return None, None, None
+
+
 def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions: dict[UUID, DocumentResolution]) -> tuple[CandidateEnvelope, ...]:
     verified: list[CandidateEnvelope] = []
     for envelope in candidates:
@@ -140,7 +177,21 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
             raise AIShadowError("Specialized candidate has no Engine 2 evidence context.")
         singleton = AIExtractionResult(provider=envelope.candidate.provider, model=envelope.candidate.model, schema_version=SPECIALIZED_SHADOW_SCHEMA_VERSION, candidates=(envelope.candidate,), page_count=resolution.layout.page_count, latency_ms=None)
         checked = verify_ai_evidence(engine2=resolution, ai=singleton)
-        verified.append(replace(envelope, candidate=checked.candidates[0]))
+        candidate = checked.candidates[0]
+        line_key, table_id, row_index = _verified_row_sidecar(
+            envelope,
+            resolution=resolution,
+            candidate=candidate,
+        )
+        verified.append(
+            replace(
+                envelope,
+                candidate=candidate,
+                source_line_key=line_key,
+                source_table_id=table_id,
+                source_row_index=row_index,
+            )
+        )
     return tuple(verified)
 
 
