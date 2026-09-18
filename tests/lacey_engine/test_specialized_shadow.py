@@ -15,6 +15,9 @@ from litoral_trace.lacey_engine.domain import (
     LayoutBlock,
     ParsedLayout,
 )
+from litoral_trace.lacey_engine.multi_agent.authority import (
+    candidate_identity as admission_candidate_identity,
+)
 from litoral_trace.lacey_engine.multi_agent.candidate_admission import (
     CANDIDATE_ADMISSION_VERSION,
     CandidateAdmissionDecision,
@@ -509,6 +512,87 @@ def test_specialized_cache_rehydrates_document_routing_plan() -> None:
         ("COMMERCIAL_LINES",),
     ]
 
+
+
+def test_specialized_cache_rebinds_admission_candidate_identity_to_current_document() -> None:
+    original = _document()
+    run = run_specialized_shadow_operation(
+        documents=(original,),
+        provider=FakeSpecialistProvider(),
+        concurrency=1,
+    )
+    payload = serialize_specialized_document_run(
+        run=run,
+        document_id=original.document_id,
+        source_set_fingerprint="source-set-admission-rebind-fixture",
+    )
+    old_candidate_id = payload["candidate_admission"]["records"][0]["candidate_id"]
+
+    rebound_document = SpecializedShadowDocument(
+        document_id=uuid5(NAMESPACE_URL, "shadow-invoice-rebound"),
+        operation_document_id=110,
+        assurance_document_id=120,
+        source_sha256=original.source_sha256,
+        role_hint=original.role_hint,
+        filename=original.filename,
+        content=original.content,
+        engine2_resolution=original.engine2_resolution,
+    )
+    cached = _rehydrate_cached_run(
+        (payload,),
+        documents=(rebound_document,),
+        computation_fingerprint="admission-rebind-cache-fixture",
+    )
+
+    assert cached is not None
+    assert len(cached.result.fused_candidates) == 1
+    assert cached.result.candidate_admission is not None
+    record = cached.result.candidate_admission.records[0]
+    rebound_candidate = cached.result.fused_candidates[0]
+    assert record.document_id == rebound_document.document_id
+    assert record.candidate_id == admission_candidate_identity(rebound_candidate)
+    assert record.candidate_id != old_candidate_id
+
+
+def test_specialized_cache_fails_closed_when_admission_record_cannot_be_rebound() -> None:
+    original = _document()
+    run = run_specialized_shadow_operation(
+        documents=(original,),
+        provider=FakeSpecialistProvider(),
+        concurrency=1,
+    )
+    payload = serialize_specialized_document_run(
+        run=run,
+        document_id=original.document_id,
+        source_set_fingerprint="source-set-admission-unmatched-fixture",
+    )
+    payload["candidates"] = []
+    payload["candidate_count"] = 0
+    payload["operation_candidate_count"] = 0
+    payload["candidate_admission"]["admitted_count"] = 0
+    payload["candidate_admission"]["blocked_count"] = 1
+    payload["candidate_admission"]["records"][0]["decision"] = "BLOCKED"
+    payload["candidate_admission"]["records"][0]["reason"] = "INVALID_VALUE"
+
+    rebound_document = SpecializedShadowDocument(
+        document_id=uuid5(NAMESPACE_URL, "shadow-invoice-unmatched-rebound"),
+        operation_document_id=210,
+        assurance_document_id=220,
+        source_sha256=original.source_sha256,
+        role_hint=original.role_hint,
+        filename=original.filename,
+        content=original.content,
+        engine2_resolution=original.engine2_resolution,
+    )
+
+    assert (
+        _rehydrate_cached_run(
+            (payload,),
+            documents=(rebound_document,),
+            computation_fingerprint="admission-unmatched-cache-fixture",
+        )
+        is None
+    )
 
 
 class MislabelledBolProvider:
