@@ -16,6 +16,9 @@ from uuid import UUID
 from .contracts import CandidateEnvelope
 
 
+LINE_BINDING_VERSION = "lacey_document_local_line_binding_v1"
+
+
 LINE_SCOPED_FIELDS = frozenset(
     {
         "description",
@@ -62,6 +65,20 @@ def source_locator_key(envelope: CandidateEnvelope) -> SourceLocatorKey:
         envelope.candidate.page,
         " ".join(envelope.candidate.source_text.split()),
     )
+
+
+def line_identity_scope(envelope: CandidateEnvelope) -> tuple[str | None, str | None]:
+    """Return the comparison scope for one line identity.
+
+    Explicit SKUs are packet-global. Every other derived line identity remains local
+    to its source document until deterministic reconciliation rewrites it to a SKU.
+    """
+    key = envelope.line_item_key
+    if key is None:
+        return None, str(envelope.document_id)
+    if key.startswith("SKU:"):
+        return key, None
+    return key, str(envelope.document_id)
 
 
 def derive_line_item_key(
@@ -212,22 +229,25 @@ def _reconcile_to_unique_sku(
     genus+species phrase contained in the commercial description. Ambiguous matches
     remain separate for human review.
     """
-    groups: dict[str, list[CandidateEnvelope]] = {}
+    groups: dict[tuple[str | None, str | None], list[CandidateEnvelope]] = {}
     for envelope in bound:
         if envelope.line_item_key:
-            groups.setdefault(envelope.line_item_key, []).append(envelope)
+            groups.setdefault(line_identity_scope(envelope), []).append(envelope)
 
     sku_groups = {
-        key: tuple(group)
-        for key, group in groups.items()
-        if key.startswith("SKU:")
+        line_key: tuple(group)
+        for (line_key, document_scope), group in groups.items()
+        if line_key is not None
+        and line_key.startswith("SKU:")
+        and document_scope is None
     }
     if not sku_groups:
         return tuple(bound)
 
-    proposals: dict[str, str] = {}
-    for source_key, source_group in groups.items():
-        if source_key.startswith("SKU:"):
+    proposals: dict[tuple[str | None, str | None], str] = {}
+    for source_scope, source_group in groups.items():
+        source_key, document_scope = source_scope
+        if source_key is None or source_key.startswith("SKU:"):
             continue
         matches = [
             sku_key
@@ -235,23 +255,31 @@ def _reconcile_to_unique_sku(
             if _group_matches_sku(source_group, sku_group)
         ]
         if len(matches) == 1:
-            proposals[source_key] = matches[0]
+            proposals[source_scope] = matches[0]
 
-    # Enforce one-to-one reconciliation. If two local rows claim the same SKU, no
-    # automatic rewrite is safe because the evidence cannot distinguish them.
-    reverse_counts: dict[str, int] = {}
-    for sku_key in proposals.values():
-        reverse_counts[sku_key] = reverse_counts.get(sku_key, 0) + 1
+    # Multiple documents may independently corroborate the same SKU. What is unsafe
+    # is two different local rows inside one document claiming the same SKU.
+    reverse_counts: dict[tuple[str | None, str], int] = {}
+    for source_scope, sku_key in proposals.items():
+        _source_key, document_scope = source_scope
+        counter_key = (document_scope, sku_key)
+        reverse_counts[counter_key] = reverse_counts.get(counter_key, 0) + 1
     accepted = {
-        source_key: sku_key
-        for source_key, sku_key in proposals.items()
-        if reverse_counts[sku_key] == 1
+        source_scope: sku_key
+        for source_scope, sku_key in proposals.items()
+        if reverse_counts[(source_scope[1], sku_key)] == 1
     }
     if not accepted:
         return tuple(bound)
 
     return tuple(
-        replace(envelope, line_item_key=accepted.get(envelope.line_item_key, envelope.line_item_key))
+        replace(
+            envelope,
+            line_item_key=accepted.get(
+                line_identity_scope(envelope),
+                envelope.line_item_key,
+            ),
+        )
         for envelope in bound
     )
 

@@ -462,3 +462,32 @@ def test_species_equivalence_fails_closed_when_line_has_multiple_genera() -> Non
 
     conflict_fields = {item.key.field_key for item in result.conflicts}
     assert conflict_fields == {"genus", "species"}
+
+
+
+def test_same_local_line_number_from_different_documents_never_fuses_without_proven_identity() -> None:
+    first = _envelope(
+        "hts_code",
+        "4407.11.0190",
+        document_type=DocumentType.ENTRY_WORKSHEET,
+        specialist=SpecialistRole.COMMERCIAL_LINES,
+        line_item_key="LINE:1",
+        document_seed="entry-line-1",
+    )
+    second = _envelope(
+        "hts_code",
+        "4418.99.9090",
+        document_type=DocumentType.COMMERCIAL_INVOICE,
+        specialist=SpecialistRole.COMMERCIAL_LINES,
+        line_item_key="LINE:1",
+        document_seed="invoice-line-1",
+    )
+
+    result = fuse_candidates((first, second))
+
+    assert len(result.fused_candidates) == 2
+    assert {item.candidate.value for item in result.fused_candidates} == {
+        "4407.11.0190",
+        "4418.99.9090",
+    }
+    assert result.conflicts == ()

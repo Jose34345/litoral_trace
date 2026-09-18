@@ -160,7 +160,7 @@ def _document() -> SpecializedShadowDocument:
 
 
 def test_specialized_shadow_has_distinct_non_authoritative_schema() -> None:
-    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v7"
+    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v8"
     assert SPECIALIZED_SHADOW_SCHEMA_VERSION != AI_SHADOW_SCHEMA_VERSION
 
 
@@ -371,7 +371,7 @@ def test_specialized_engine_identity_changes_with_effective_judge_mode() -> None
     enforce = specialized_engine_version(**common, judge_mode=FieldJudgeMode.ENFORCE)
 
     assert len({off, shadow, enforce}) == 3
-    assert off.startswith("multi-agent-v7:")
+    assert off.startswith("multi-agent-v8:")
 
 class EmptySpecialistProvider:
     name = "gemini"
@@ -903,3 +903,48 @@ def test_verify_candidates_requires_explicit_line_key_when_no_verified_row_locat
 
     assert verified.candidate.evidence_verified is True
     assert verified.source_line_key is None
+
+
+
+def test_specialized_cache_rebinds_document_local_conflict_scope() -> None:
+    original = _mixed_document()
+    run = run_specialized_shadow_operation(
+        documents=(original,),
+        provider=EmptySpecialistProvider(),
+        concurrency=1,
+    )
+    payload = serialize_specialized_document_run(
+        run=run,
+        document_id=original.document_id,
+        source_set_fingerprint="source-set-local-conflict-rebind",
+    )
+    payload["fusion_conflicts"] = [
+        {
+            "field_key": "hts_code",
+            "line_item_key": "LINE:1",
+            "unbound_identity": str(original.document_id),
+            "requires_ai_resolution": True,
+        }
+    ]
+
+    rebound_document = SpecializedShadowDocument(
+        document_id=uuid5(NAMESPACE_URL, "shadow-mixed-packet-local-scope-rebound"),
+        operation_document_id=111,
+        assurance_document_id=121,
+        source_sha256=original.source_sha256,
+        role_hint=original.role_hint,
+        filename=original.filename,
+        content=original.content,
+        engine2_resolution=original.engine2_resolution,
+    )
+    cached = _rehydrate_cached_run(
+        (payload,),
+        documents=(rebound_document,),
+        computation_fingerprint="local-conflict-rebind-cache",
+    )
+
+    assert cached is not None
+    assert len(cached.result.fusion_conflicts) == 1
+    key = cached.result.fusion_conflicts[0].key
+    assert key.line_item_key == "LINE:1"
+    assert key.unbound_identity == str(rebound_document.document_id)
