@@ -26,6 +26,7 @@ from litoral_trace.lacey_engine.multi_agent.field_judge import (
     FieldJudgeDecision,
     FieldJudgeMode,
 )
+from litoral_trace.us_lacey.specialized_taxonomy import SPECIALIZED_TAXONOMY_VERSION
 from litoral_trace.us_lacey.specialized_shadow import (
     SPECIALIZED_SHADOW_SCHEMA_VERSION,
     SpecializedShadowDocument,
@@ -150,7 +151,7 @@ def _document() -> SpecializedShadowDocument:
 
 
 def test_specialized_shadow_has_distinct_non_authoritative_schema() -> None:
-    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v5"
+    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v6"
     assert SPECIALIZED_SHADOW_SCHEMA_VERSION != AI_SHADOW_SCHEMA_VERSION
 
 
@@ -361,7 +362,7 @@ def test_specialized_engine_identity_changes_with_effective_judge_mode() -> None
     enforce = specialized_engine_version(**common, judge_mode=FieldJudgeMode.ENFORCE)
 
     assert len({off, shadow, enforce}) == 3
-    assert off.startswith("multi-agent-v5:")
+    assert off.startswith("multi-agent-v6:")
 
 class EmptySpecialistProvider:
     name = "gemini"
@@ -583,4 +584,114 @@ def test_specialized_admission_blocks_semantic_role_mismatch_before_fusion() -> 
     assert (
         run.result.candidate_admission.records[0].reason
         is CandidateAdmissionReason.SEMANTIC_ROLE_MISMATCH
+    )
+
+
+
+class BotanicalTaxonomyProvider:
+    name = "gemini"
+    model = "fixture-botanical-taxonomy-model"
+
+    def extract_scoped(self, *, filename, content, pages, allowed_fields, prompt):
+        candidates = ()
+        if {"genus", "species"} & set(allowed_fields):
+            candidates = tuple(
+                candidate
+                for candidate in (
+                    AICandidate(
+                        field_key="genus",
+                        value="Hevea",
+                        normalized_value="Hevea",
+                        evidence_class=EvidenceClass.EXPLICIT,
+                        page=1,
+                        source_text="SKU RUBBER-1 Genus: Hevea Species: brasiliensis",
+                        confidence=0.99,
+                        provider=self.name,
+                        model=self.model,
+                        evidence_verified=False,
+                    ),
+                    AICandidate(
+                        field_key="species",
+                        value="brasiliensis",
+                        normalized_value="brasiliensis",
+                        evidence_class=EvidenceClass.EXPLICIT,
+                        page=1,
+                        source_text="SKU RUBBER-1 Genus: Hevea Species: brasiliensis",
+                        confidence=0.99,
+                        provider=self.name,
+                        model=self.model,
+                        evidence_verified=False,
+                    ),
+                )
+                if candidate.field_key in allowed_fields
+            )
+        return AIExtractionResult(
+            provider=self.name,
+            model=self.model,
+            schema_version=AI_SHADOW_SCHEMA_VERSION,
+            candidates=candidates,
+            page_count=len(pages),
+            latency_ms=1,
+        )
+
+
+def _botanical_taxonomy_document() -> SpecializedShadowDocument:
+    block = LayoutBlock(
+        block_id="botanical-page-1",
+        page=1,
+        bbox=None,
+        text=(
+            "BOTANICAL DECLARATION\n"
+            "SKU RUBBER-1 Genus: Hevea Species: brasiliensis"
+        ),
+        block_type="text",
+    )
+    resolution = DocumentResolution(
+        filename="botanical.pdf",
+        engine_version="fixture-engine2",
+        document_type=EngineDocumentType.SPECIES_DECLARATION,
+        type_confidence=0.99,
+        layout=ParsedLayout(blocks=(block,), page_count=1),
+        sections=(),
+        fields={},
+    )
+    return SpecializedShadowDocument(
+        document_id=uuid5(NAMESPACE_URL, "shadow-botanical-taxonomy"),
+        operation_document_id=13,
+        assurance_document_id=23,
+        source_sha256="d" * 64,
+        role_hint="BOTANICAL_DECLARATION",
+        filename="botanical.pdf",
+        content=b"%PDF-botanical-fixture",
+        engine2_resolution=resolution,
+    )
+
+
+def test_specialized_serialization_persists_noncanonical_taxonomy_for_pdf_candidates() -> None:
+    document = _botanical_taxonomy_document()
+    run = run_specialized_shadow_operation(
+        documents=(document,),
+        provider=BotanicalTaxonomyProvider(),
+        concurrency=1,
+    )
+
+    payload = serialize_specialized_document_run(
+        run=run,
+        document_id=document.document_id,
+        source_set_fingerprint="source-set-taxonomy-fixture",
+    )
+
+    by_field = {item["field_key"]: item for item in payload["candidates"]}
+    assert by_field["genus"]["value"] == "Hevea"
+    assert by_field["genus"]["taxonomy"]["version"] == SPECIALIZED_TAXONOMY_VERSION
+    assert by_field["genus"]["taxonomy"]["status"] == "REVIEW_REQUIRED"
+
+    assert by_field["species"]["value"] == "brasiliensis"
+    assert by_field["species"]["normalized_value"] == "brasiliensis"
+    assert by_field["species"]["taxonomy"]["query"] == "Hevea brasiliensis"
+    assert by_field["species"]["taxonomy"]["query_source"] == "LINE_GENUS_CONTEXT"
+    assert by_field["species"]["taxonomy"]["status"] == "RESOLVED"
+    assert (
+        by_field["species"]["taxonomy"]["candidates"][0]["scientific_name"]
+        == "Hevea brasiliensis"
     )
