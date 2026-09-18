@@ -81,6 +81,7 @@ def _source_document_id(candidate: object) -> int | None:
     except (TypeError, ValueError):
         return None
 
+
 def derive_taxonomic_comparison_context(
     genus_candidates: Iterable[object],
     *,
