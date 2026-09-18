@@ -15,6 +15,55 @@ def _document(identifier, values, document_type=DocumentType.BILL_OF_LADING):
     return DocumentResolution(f"{identifier}.pdf", "test", document_type, 1, ParsedLayout((), 1), (), fields)
 
 
+def _component_document(identifier, values, document_type=DocumentType.SPECIES_DECLARATION):
+    """Build explicit same-component evidence without taxon-derived association."""
+    fields = {}
+    for index, (key, item) in enumerate(values.items()):
+        value, label = item if isinstance(item, tuple) else (item, key)
+        block = LayoutBlock(f"{identifier}-{index}", 1, None, value, "TEXT_LINE")
+        raw = RawCandidate(
+            key,
+            value,
+            value,
+            block,
+            EvidenceClass.EXPLICIT,
+            "test",
+            "1",
+            label=label,
+        )
+        candidate = AdmittedCandidate(
+            raw,
+            Provenance(
+                f"{identifier}.pdf",
+                1,
+                None,
+                block.block_id,
+                label,
+                "test",
+                "1",
+                EvidenceClass.EXPLICIT,
+            ),
+            90,
+            document_type,
+        )
+        fields[key] = ResolvedField(
+            key,
+            FieldStatus.MATCHED,
+            value,
+            candidate,
+            (candidate,),
+        )
+    return DocumentResolution(
+        f"{identifier}.pdf",
+        "test",
+        document_type,
+        1,
+        ParsedLayout((), 1),
+        (),
+        fields,
+    )
+
+
 def _shipment(*docs, ruleset=LaceyRuleset()):
     return process_shipment(documents=[ShipmentDocumentInput(str(i), f"{i}.pdf", resolution=doc) for i, doc in enumerate(docs)], ruleset=ruleset)
 
@@ -42,15 +91,15 @@ def test_dossier_2_same_component_disagreement_is_conflict():
 
 def test_species_epithet_and_binomial_collapse_with_unique_high_confidence_genus():
     result = _shipment(
-        _document(
+        _component_document(
             "botanical",
             {
                 "genus": ("Eucalyptus", "Component A"),
                 "species": ("grandis", "Component A"),
             },
-            DocumentType.BOTANICAL_DECLARATION,
+            DocumentType.SPECIES_DECLARATION,
         ),
-        _document(
+        _component_document(
             "supplier",
             {
                 "genus": ("Eucalyptus", "Component A"),
@@ -71,15 +120,15 @@ def test_species_epithet_and_binomial_collapse_with_unique_high_confidence_genus
 
 def test_species_true_conflict_remains_with_unique_genus_context():
     result = _shipment(
-        _document(
+        _component_document(
             "botanical",
             {
                 "genus": ("Pinus", "Component A"),
                 "species": ("taeda", "Component A"),
             },
-            DocumentType.BOTANICAL_DECLARATION,
+            DocumentType.SPECIES_DECLARATION,
         ),
-        _document(
+        _component_document(
             "supplier",
             {
                 "genus": ("Pinus", "Component A"),
@@ -98,8 +147,8 @@ def test_species_true_conflict_remains_with_unique_genus_context():
 
 def test_species_epithet_and_binomial_fail_closed_without_genus_context():
     result = _shipment(
-        _document("a", {"species": ("grandis", "Component A")}),
-        _document("b", {"species": ("Eucalyptus grandis", "Component A")}),
+        _component_document("a", {"species": ("grandis", "Component A")}),
+        _component_document("b", {"species": ("Eucalyptus grandis", "Component A")}),
     )
 
     assert result.canonical_fields["species"].state in {
