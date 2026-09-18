@@ -27,6 +27,11 @@ from litoral_trace.db.models import (
     UsLaceyProcessingJob,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.us_lacey.candidate_normalization import (
+    TaxonomicComparisonContext,
+    candidate_comparison_key,
+    derive_taxonomic_comparison_context,
+)
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
@@ -686,6 +691,50 @@ def _field_evidence_value(field: UsLaceyOperationField) -> str:
     return str(field.human_value or field.normalized_value or field.original_value or "").strip()
 
 
+def _taxonomic_comparison_context_for_line(
+    *,
+    line_reference: str,
+    indexed: dict[tuple[str, str], UsLaceyOperationField],
+    document_candidates: dict[
+        tuple[str, str],
+        list[tuple[int, ExtractedDocumentField]],
+    ],
+) -> TaxonomicComparisonContext | None:
+    """Return one comparison-only genus context for a plant line.
+
+    The current document's high-confidence genus observations and any persisted
+    unconfirmed genus evidence are considered together. A human-confirmed genus
+    is authoritative for comparison context. Competing genera fail closed.
+    """
+    genus_field = indexed.get((line_reference, "genus"))
+    genus_sources = [
+        source
+        for _priority, source in document_candidates.get(
+            (line_reference, "genus"),
+            [],
+        )
+    ]
+
+    if genus_field is None:
+        return derive_taxonomic_comparison_context(genus_sources)
+
+    confirmed_genus = str(genus_field.human_value or "").strip() or None
+    if confirmed_genus is not None:
+        return derive_taxonomic_comparison_context(
+            genus_sources,
+            confirmed_genus=confirmed_genus,
+        )
+
+    contextual_candidates: list[object] = list(genus_sources)
+    persisted_genus = str(
+        genus_field.normalized_value or genus_field.original_value or ""
+    ).strip()
+    if persisted_genus:
+        contextual_candidates.append(genus_field)
+
+    return derive_taxonomic_comparison_context(contextual_candidates)
+
+
 def _apply_percent_recycled_condition(
     session,
     *,
@@ -925,7 +974,16 @@ def project_assurance_document_to_us_lacey(
             field = indexed.get((line, target))
             if field is None:
                 continue
-            distinct: dict[str, ExtractedDocumentField] = {}
+            comparison_context = (
+                _taxonomic_comparison_context_for_line(
+                    line_reference=line,
+                    indexed=indexed,
+                    document_candidates=candidates,
+                )
+                if target == "species"
+                else None
+            )
+            distinct: dict[str, tuple[str, ExtractedDocumentField]] = {}
             for _priority, source in sources:
                 raw = str(source.original_value or source.normalized_value or "").strip()
                 validation = validate_ppq_value(target, raw)
@@ -957,10 +1015,19 @@ def project_assurance_document_to_us_lacey(
                         fingerprint=fingerprint,
                     ))
                 candidate_value = validation.normalized_value or raw
-                distinct.setdefault(candidate_value, source)
+                comparison_key = candidate_comparison_key(
+                    target,
+                    candidate_value,
+                    comparison_context=comparison_context,
+                )
+                if comparison_key:
+                    distinct.setdefault(
+                        comparison_key,
+                        (candidate_value, source),
+                    )
 
             if len(distinct) > 1:
-                alternatives = list(distinct.items())
+                alternatives = list(distinct.values())
                 left_value, left_source = alternatives[0]
                 field.original_value = str(left_source.original_value or left_value)
                 field.normalized_value = None
@@ -984,17 +1051,29 @@ def project_assurance_document_to_us_lacey(
 
             if not distinct:
                 continue
-            source = next(iter(distinct.values()))
+            new_comparison_key, (candidate_value, source) = next(iter(distinct.items()))
             raw_value = str(source.original_value or source.normalized_value).strip()
             validation = validate_ppq_value(target, raw_value)
-            new_value = validation.normalized_value or raw_value
+            new_value = validation.normalized_value or candidate_value
             existing_value = field.human_value or field.normalized_value or field.original_value
             human_confirmed = bool(
                 field.field_status == "MATCHED"
                 and field.human_value is not None
                 and str(field.human_value).strip()
             )
-            if existing_value and str(existing_value).strip() != new_value:
+            existing_comparison_key = (
+                candidate_comparison_key(
+                    target,
+                    existing_value,
+                    comparison_context=comparison_context,
+                )
+                if existing_value
+                else ""
+            )
+            if (
+                existing_value
+                and existing_comparison_key != new_comparison_key
+            ):
                 _upsert_conflict(
                     session,
                     organization_id=org_id,
