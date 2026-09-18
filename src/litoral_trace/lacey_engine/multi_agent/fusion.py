@@ -49,10 +49,18 @@ def fusion_key(candidate: CandidateEnvelope) -> FusionKey:
 
 def _genus_contexts(
     candidates: tuple[CandidateEnvelope, ...],
+    *,
+    minimum_confidence: float = 0.90,
 ) -> dict[tuple[str, str | None], frozenset[str]]:
+    """Return only verified, high-confidence genus context per line identity."""
     by_line: dict[tuple[str, str | None], set[str]] = {}
     for candidate in candidates:
         if candidate.candidate.field_key != "genus" or candidate.line_item_key is None:
+            continue
+        if (
+            not candidate.candidate.evidence_verified
+            or float(candidate.candidate.confidence) < minimum_confidence
+        ):
             continue
         genus = normalized_candidate_value(candidate)
         line_key, document_scope = line_identity_scope(candidate)
