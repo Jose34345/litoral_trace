@@ -28,8 +28,22 @@
 {% endfor %}</ol>
 
 <section class="lt-card p-6" id="documents"><div class="flex flex-wrap items-start justify-between gap-4"><div><h2 class="text-lg font-bold text-slate-950">Shipment documents</h2><p class="mt-1 text-sm text-slate-600">Add any remaining source files. The original files are preserved as evidence and document type is detected automatically when possible.</p></div><span class="text-sm font-semibold text-slate-600">{{ detail.document_count }} document{{ '' if detail.document_count == 1 else 's' }}</span></div>
-<!-- Tailwind compatibility safelist for the tracked stylesheet: md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] -->
-<form method="post" enctype="multipart/form-data" action="/operations/{{ detail.public_id }}/upload" class="lt-form mt-5 grid gap-4 md:grid-cols-[1fr_auto] md:items-end"><input type="hidden" name="csrf_token" value="{{ upload_csrf }}"><label class="lt-field"><span class="lt-field__label">Add PDF, XLSX, XLS or CSV</span><input id="document" class="lt-control" name="document" type="file" accept=".pdf,.xlsx,.xls,.csv" required></label>{{ button("Upload and analyze", variant="primary", button_type="submit") }}<details class="md:col-span-2 text-sm text-slate-600"><summary class="cursor-pointer font-semibold">Advanced: set document type manually</summary><label class="lt-field mt-3 max-w-md"><span class="lt-field__label">Document type</span><select id="document_role" class="lt-control" name="document_role"><option value="UNKNOWN" selected>Auto-detect</option>{% for value,label in [("COMMERCIAL_INVOICE","Commercial invoice"),("PACKING_LIST","Packing list"),("BILL_OF_LADING","Bill of lading"),("SUPPLIER_DECLARATION","Supplier declaration"),("CERTIFICATE","Certificate"),("OTHER","Other document")] %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select><span class="mt-1 block text-xs text-slate-500">Only override auto-detection when you know the document type.</span></label></details></form>
+<form method="post" enctype="multipart/form-data" action="/operations/{{ detail.public_id }}/upload" class="lt-form mt-5" data-file-staging-form>
+  <input type="hidden" name="csrf_token" value="{{ upload_csrf }}">
+  <label for="operation-documents" class="lt-upload-dropzone" data-file-dropzone role="button" tabindex="0">
+    <span class="lt-upload-dropzone__icon" aria-hidden="true"><i class="fa-solid fa-cloud-arrow-up"></i></span>
+    <span class="lt-upload-dropzone__title">Drop shipment files here or click to browse</span>
+    <span class="lt-upload-dropzone__help">PDF, XLSX, XLS or CSV · multiple files supported</span>
+  </label>
+  <input id="operation-documents" hidden name="documents" type="file" accept=".pdf,.xlsx,.xls,.csv" multiple required data-file-dropzone-input aria-describedby="operation-file-summary">
+  <div id="operation-file-summary" class="mt-3 text-sm text-slate-600" aria-live="polite" data-file-empty-state>No files selected.</div>
+  <div class="lt-upload-staging" hidden data-file-staging>
+    <div class="lt-upload-staging__header"><span>Ready to upload</span><span data-file-count></span></div>
+    <ul class="lt-upload-staging__list" data-file-staging-list></ul>
+  </div>
+  <div class="mt-5 flex flex-wrap items-center gap-3">{{ button("Upload and analyze", variant="primary", button_type="submit", icon="fa-wand-magic-sparkles") }}</div>
+  <details class="mt-4 text-sm text-slate-600"><summary class="cursor-pointer font-semibold">Advanced: set document type manually</summary><label class="lt-field mt-3 max-w-md"><span class="lt-field__label">Document type</span><select id="document_role" class="lt-control" name="document_role"><option value="UNKNOWN" selected>Auto-detect</option>{% for value,label in [("COMMERCIAL_INVOICE","Commercial invoice"),("PACKING_LIST","Packing list"),("BILL_OF_LADING","Bill of lading"),("SUPPLIER_DECLARATION","Supplier declaration"),("CERTIFICATE","Certificate"),("OTHER","Other document")] %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select><span class="mt-1 block text-xs text-slate-500">Only override auto-detection when you know the document type.</span></label></details>
+</form>
 <div class="mt-5 grid gap-2">{% for doc in detail.documents %}<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2"><span class="font-semibold text-slate-900">{{ doc.filename }}</span><span class="text-xs font-semibold text-slate-600">{{ 'Auto-detect' if doc.document_role == 'UNKNOWN' else doc.document_role|replace('_', ' ')|title }}</span></div>{% else %}<p class="text-sm text-slate-600">No documents uploaded yet.</p>{% endfor %}</div></section>
 
 {# A rejected upload is request-local feedback. Do not mix it with stale analysis
