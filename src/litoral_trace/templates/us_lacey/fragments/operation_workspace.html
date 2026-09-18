@@ -156,9 +156,9 @@
       {% endfor %}
 
       {% if auto_supported_fields %}
-      <details class="rounded-xl border border-emerald-200 bg-emerald-50/30 p-4" data-auto-supported-fields>
-        <summary class="cursor-pointer list-none">
-          <div class="flex flex-wrap items-center justify-between gap-3"><div><p class="font-bold text-emerald-800">✓ {{ auto_supported_fields|length }} fields extracted and automatically supported</p><p class="mt-1 text-xs text-slate-500">Supported by the current evidence. Human confirmation is still required.</p></div><i class="fa-solid fa-chevron-down text-slate-400" aria-hidden="true"></i></div>
+      <details class="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4" data-auto-supported-fields>
+        <summary class="cursor-pointer">
+          <div><p class="font-bold text-emerald-800">✓ {{ auto_supported_fields|length }} fields extracted and automatically supported</p><p class="mt-1 text-xs text-slate-500">Supported by the current evidence. Human confirmation is still required.</p></div>
         </summary>
         <div class="mt-5 grid gap-3">
           {% for field in auto_supported_fields %}{{ review_field(field, loop.index) }}{% endfor %}
