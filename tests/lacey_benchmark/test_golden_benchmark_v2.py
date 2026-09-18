@@ -54,6 +54,20 @@ def test_versioned_router_corpus_materializes_105_documents_with_required_covera
         "SUPPLIER_ORIGIN",
         "ARRIVAL_NOTICE",
     }
+    assert all(item.filename.startswith("golden_") for item in documents)
+    assert not any(
+        hint in item.filename.casefold()
+        for item in documents
+        for hint in (
+            "invoice",
+            "packing",
+            "lading",
+            "entry",
+            "botanical",
+            "supplier",
+            "arrival",
+        )
+    )
 
 
 def test_current_router_scores_all_105_versioned_documents():
