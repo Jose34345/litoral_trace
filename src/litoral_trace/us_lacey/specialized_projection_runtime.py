@@ -165,7 +165,11 @@ def apply_specialized_projection_runtime(
         if _is_empty_target(target)
     }
     conflict_keys = frozenset(
-        (conflict.key.field_key, conflict.key.line_item_key)
+        (
+            conflict.key.field_key,
+            conflict.key.line_item_key,
+            conflict.key.unbound_identity,
+        )
         for conflict in fusion_conflicts
     )
 
