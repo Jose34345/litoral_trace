@@ -33,6 +33,7 @@ from litoral_trace.us_lacey.domain import US_LACEY_REVIEW_FIELDS
 from litoral_trace.us_lacey.operations import UsLaceyOperationNotFound
 from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
 from litoral_trace.us_lacey.reconciliation_invariants import reconcile_entered_value_invariant
+from litoral_trace.us_lacey.review_telemetry import ReviewTelemetry
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS,
     PPQ505_PLANT_FIELDS,
@@ -341,6 +342,7 @@ def finalize_us_lacey_review(
     operation_public_id: UUID | str,
     user_id: int,
     user_email: str,
+    telemetry: ReviewTelemetry | None = None,
 ) -> UsLaceyFinalizeResult:
     """Close human review only when no unresolved preparation item remains."""
     org_id = int(organization_id)
@@ -414,6 +416,24 @@ def finalize_us_lacey_review(
                 "Resolve every missing field, review item and contradiction before completing review."
             )
 
+        modified_review_fields: list[dict[str, object]] = []
+        if telemetry is not None and telemetry.modified_field_ids:
+            rows = session.scalars(
+                select(UsLaceyOperationField).where(
+                    UsLaceyOperationField.organization_id == org_id,
+                    UsLaceyOperationField.operation_id == operation.id,
+                    UsLaceyOperationField.id.in_(telemetry.modified_field_ids),
+                )
+            ).all()
+            modified_review_fields = [
+                {
+                    "field_id": row.id,
+                    "field_name": row.field_name,
+                    "line_reference": row.merchandise_line_reference,
+                }
+                for row in rows
+            ]
+
         operation.status = "COMPLETED"
         operation.review_result = "DOCUMENT_REVIEW_COMPLETE"
         actor = AuditActor(
@@ -432,6 +452,11 @@ def finalize_us_lacey_review(
             metadata={
                 "operation_public_id": str(operation.public_id),
                 "review_result": operation.review_result,
+                "review_telemetry": {
+                    "client_started_at": None if telemetry is None else telemetry.started_at,
+                    "client_elapsed_seconds": None if telemetry is None else telemetry.elapsed_seconds,
+                    "modified_review_required_fields": modified_review_fields,
+                },
             },
             after_data={
                 "operation_status": operation.status,
