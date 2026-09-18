@@ -342,7 +342,8 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
     assert operation.status_code == 200
     assert 'enctype="multipart/form-data"' in operation.text
     assert 'action="/operations/OP-DEMO/upload"' in operation.text
-    assert 'name="document"' in operation.text
+    assert 'name="documents"' in operation.text
+    assert 'multiple required' in operation.text
     assert 'action="/operations/OP-DEMO/complete"' not in operation.text
 
 
