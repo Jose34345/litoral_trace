@@ -23,7 +23,12 @@ from litoral_trace.lacey_engine.multi_agent.candidate_admission import (
     CandidateAdmissionDecision,
     CandidateAdmissionReason,
 )
-from litoral_trace.lacey_engine.multi_agent.contracts import OperationStatus, SpecialistRole
+from litoral_trace.lacey_engine.multi_agent.contracts import (
+    CandidateEnvelope,
+    DocumentType as SpecializedDocumentType,
+    OperationStatus,
+    SpecialistRole,
+)
 from litoral_trace.lacey_engine.multi_agent.field_judge import (
     FIELD_JUDGE_VERSION,
     FieldJudgeDecision,
