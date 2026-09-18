@@ -17,7 +17,10 @@ from litoral_trace.us_lacey.translation_backfill import (
     run_translation_backfill,
 )
 from litoral_trace.web import us_lacey_pilot_app as pilot_app
-from litoral_trace.web.us_lacey_operational_views import _decorate_review_fields
+from litoral_trace.web.us_lacey_operational_views import (
+    _decorate_review_fields,
+    _evidence_for_field,
+)
 
 
 def test_read_projection_falls_back_to_original_text_without_translation():
@@ -242,3 +245,72 @@ def test_review_card_uses_display_text_and_keeps_original_in_tooltip():
     # Form/edit value remains separate; only the customer-facing proposed-value
     # presentation is enriched with semantic evidence.
     assert rendered.startswith("Normalized merchandise description")
+
+
+@dataclass(frozen=True)
+class _LineScopedField:
+    field_name: str
+    proposed_value: str
+    effective_value: str | None
+    source_assurance_document_id: int | None
+    source_page: int | None
+    source_locator: str | None
+    scope: str
+    line_reference: str
+
+
+def _evidence_view(*, value: str, source_span_id: int, locator: str) -> EvidenceTextView:
+    return EvidenceTextView(
+        source_span_id=source_span_id,
+        target_field="species",
+        original_text=value,
+        original_language="en",
+        translated_text=None,
+        display_text=value,
+        is_translated=False,
+        original_language_label="English",
+        source_assurance_document_id=7,
+        source_page=4,
+        source_locator=locator,
+        normalized_value=value,
+        scope="PLANT_COMPONENT",
+        local_entity_key=f"doc:7:{locator}",
+        canonical_entity_id=None,
+    )
+
+
+def test_line_scoped_review_evidence_matches_value_and_does_not_leak_other_species():
+    field = _LineScopedField(
+        field_name="species",
+        proposed_value="radiata",
+        effective_value="radiata",
+        source_assurance_document_id=7,
+        source_page=4,
+        source_locator="row:1",
+        scope="PLANT_LINE",
+        line_reference="LINE-1",
+    )
+    radiata = _evidence_view(value="radiata", source_span_id=41, locator="row:1")
+    taeda = _evidence_view(value="taeda", source_span_id=42, locator="row:2")
+
+    selected = _evidence_for_field(field, {"species": (radiata, taeda)})
+
+    assert selected == (radiata,)
+    assert taeda not in selected
+
+
+def test_line_scoped_review_evidence_fails_closed_when_no_value_matches():
+    field = _LineScopedField(
+        field_name="species",
+        proposed_value="grandis",
+        effective_value="grandis",
+        source_assurance_document_id=7,
+        source_page=4,
+        source_locator=None,
+        scope="PLANT_LINE",
+        line_reference="LINE-3",
+    )
+    radiata = _evidence_view(value="radiata", source_span_id=41, locator="row:1")
+    taeda = _evidence_view(value="taeda", source_span_id=42, locator="row:2")
+
+    assert _evidence_for_field(field, {"species": (radiata, taeda)}) == ()

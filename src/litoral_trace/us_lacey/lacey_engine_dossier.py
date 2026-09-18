@@ -29,7 +29,30 @@ class Engine2DossierEvidenceView:
     source_filename: str; page: int; source_text: str; raw_text: str; normalized_value: str; evidence_class: str; candidate_score: float; source_authority: float; scope: str; line_key: str | None; component_key: str | None; bbox: tuple[float, float, float, float] | None
 @dataclass(frozen=True, slots=True)
 class Engine2DossierFieldView:
-    field_key: str; label: str; state: str; values: tuple[str, ...]; evidence: tuple[Engine2DossierEvidenceView, ...]
+    field_key: str
+    label: str
+    state: str
+    values: tuple[str, ...]
+    evidence: tuple[Engine2DossierEvidenceView, ...]
+
+    @property
+    def line_evidence_groups(
+        self,
+    ) -> tuple[tuple[str, tuple[Engine2DossierEvidenceView, ...]], ...]:
+        grouped: dict[str, list[Engine2DossierEvidenceView]] = {}
+        for item in self.evidence:
+            line_key = str(item.line_key or "").strip()
+            if not line_key:
+                continue
+            grouped.setdefault(line_key, []).append(item)
+        return tuple(
+            (line_key, tuple(items))
+            for line_key, items in grouped.items()
+        )
+
+    @property
+    def global_evidence(self) -> tuple[Engine2DossierEvidenceView, ...]:
+        return tuple(item for item in self.evidence if not str(item.line_key or "").strip())
 @dataclass(frozen=True, slots=True)
 class Engine2DossierIssueView:
     field_key: str; label: str; severity: str; issue_type: str; message: str; requires_human_review: bool; source_filenames: tuple[str, ...]; line_key: str | None; component_key: str | None

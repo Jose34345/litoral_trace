@@ -47,6 +47,10 @@ class EvidenceTextView:
     source_assurance_document_id: int
     source_page: int
     source_locator: str | None
+    normalized_value: str | None = None
+    scope: str | None = None
+    local_entity_key: str | None = None
+    canonical_entity_id: str | None = None
 
 
 def evidence_text_view(
@@ -54,6 +58,10 @@ def evidence_text_view(
     span: DocumentTextSpan,
     target_field: str,
     translation: DocumentTextTranslation | None,
+    normalized_value: str | None = None,
+    scope: str | None = None,
+    local_entity_key: str | None = None,
+    canonical_entity_id: str | None = None,
 ) -> EvidenceTextView:
     """Build the immutable-source/fallback contract independently of SQL."""
     original_text = str(span.original_text or "")
@@ -75,6 +83,10 @@ def evidence_text_view(
         source_assurance_document_id=int(span.assurance_document_id),
         source_page=int(span.page),
         source_locator=span.source_locator,
+        normalized_value=None if normalized_value is None else str(normalized_value),
+        scope=None if scope is None else str(scope),
+        local_entity_key=None if local_entity_key is None else str(local_entity_key),
+        canonical_entity_id=None if canonical_entity_id is None else str(canonical_entity_id),
     )
 
 
@@ -163,6 +175,9 @@ class SemanticEvidenceReadService:
                         span=span,
                         target_field=node.target_field,
                         translation=translation,
+                        normalized_value=node.normalized_value,
+                        scope=node.scope,
+                        local_entity_key=node.local_entity_key,
                     )
                 )
             return {key: tuple(values) for key, values in by_field.items()}
