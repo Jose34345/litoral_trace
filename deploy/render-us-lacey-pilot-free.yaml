@@ -12,6 +12,8 @@ services:
     branch: feature/us-lacey-pilot-platform
     region: virginia
     plan: free
+    # checksPass is deliberate: the integration-branch Neon Schema Gate must
+    # migrate/verify the database before Render may deploy the candidate revision.
     autoDeployTrigger: checksPass
     buildCommand: pip install --no-cache-dir -r requirements.txt
     startCommand: uvicorn litoral_trace.web.us_lacey_unified_app:app --host 0.0.0.0 --port $PORT
