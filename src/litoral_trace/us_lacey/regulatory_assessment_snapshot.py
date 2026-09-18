@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import (
     UsLaceyOperation,
+    UsLaceyOperationField,
     UsLaceyProductIntelligenceSnapshot,
     UsLaceyRegulatoryAssessmentSnapshot,
     UsLaceySourceSetRevision,
@@ -27,6 +28,10 @@ from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.product_intelligence_snapshot import (
     enrich_product_intelligence_taxonomy,
     snapshot_matches_claim,
+)
+from litoral_trace.us_lacey.regulatory_input_contract import (
+    InputStatus,
+    build_regulatory_input_contract,
 )
 from litoral_trace.us_lacey.regulatory.rules import (
     RULESET_VERSION,
@@ -43,7 +48,7 @@ from litoral_trace.us_lacey.regulatory.rules import (
 )
 
 
-SNAPSHOT_SCHEMA_VERSION = "regulatory-assessment-snapshot-v1"
+SNAPSHOT_SCHEMA_VERSION = "regulatory-assessment-snapshot-v2"
 SessionFactory = Callable[[], Session]
 
 
@@ -127,6 +132,7 @@ def build_regulatory_assessment_payload(
     *,
     product_intelligence_payload: Mapping[str, Any],
     source_set: Mapping[str, Any],
+    regulatory_input_contract: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build conservative rule assessments from supported Product Intelligence facts.
 
@@ -137,21 +143,69 @@ def build_regulatory_assessment_payload(
     such as plywood while other missing facts remain reviewable.
     """
     assessments: list[dict[str, Any]] = []
+    input_contract = (
+        regulatory_input_contract
+        if isinstance(regulatory_input_contract, Mapping)
+        else {"subjects": ()}
+    )
+    contract_by_subject = {
+        str(item.get("subject_ref") or ""): item
+        for item in input_contract.get("subjects", ())
+        if isinstance(item, Mapping)
+    }
 
     for composition in _iter_compositions(product_intelligence_payload):
         sku = str(composition.get("sku") or "").strip()
         if not sku:
             continue
 
+        contract_subject = contract_by_subject.get(sku, {})
+        contract_inputs = (
+            contract_subject.get("inputs", {})
+            if isinstance(contract_subject, Mapping)
+            else {}
+        )
+        hts_input = (
+            contract_inputs.get("hts10", {})
+            if isinstance(contract_inputs, Mapping)
+            else {}
+        )
+        hts10 = (
+            str(hts_input.get("value"))
+            if isinstance(hts_input, Mapping)
+            and hts_input.get("status") == InputStatus.SUPPORTED.value
+            and hts_input.get("value")
+            else None
+        )
+        evidence_refs: tuple[EvidenceRef, ...] = ()
+        if hts10 and isinstance(hts_input, Mapping):
+            evidence = hts_input.get("evidence")
+            if isinstance(evidence, Mapping):
+                evidence_refs = (
+                    EvidenceRef(
+                        source_type="REVIEWED_HTS10",
+                        source_id=(
+                            None
+                            if evidence.get("source_assurance_document_id") is None
+                            else str(evidence.get("source_assurance_document_id"))
+                        ),
+                        locator=(
+                            None
+                            if evidence.get("source_locator") is None
+                            else str(evidence.get("source_locator"))
+                        ),
+                    ),
+                )
+
         de_minimis = evaluate_de_minimis(
             DeMinimisInput(
                 subject_ref=sku,
-                hts10=None,
+                hts10=hts10,
                 plant_mass_per_unit_kg=None,
                 total_unit_mass_kg=None,
                 entry_same_hts_plant_mass_kg=None,
                 protected_status=ProtectedPlantStatus.UNKNOWN,
-                evidence_refs=(),
+                evidence_refs=evidence_refs,
             )
         )
         assessments.append(_serialize_assessment(de_minimis, subject_ref=sku))
@@ -192,6 +246,7 @@ def build_regulatory_assessment_payload(
             "assessment_count": len(assessments),
             "indeterminate_count": int(indeterminate_count),
         },
+        "regulatory_input_contract": dict(input_contract),
         "assessments": assessments,
     }
 
@@ -264,6 +319,18 @@ def build_regulatory_assessment_snapshot(
             return None
 
         product_payload = enrich_product_intelligence_taxonomy(dict(product_snapshot.payload_json or {}))
+        operation_fields = tuple(
+            session.scalars(
+                select(UsLaceyOperationField).where(
+                    UsLaceyOperationField.organization_id == organization_id,
+                    UsLaceyOperationField.operation_id == operation_id,
+                )
+            ).all()
+        )
+        regulatory_input_contract = build_regulatory_input_contract(
+            product_intelligence_payload=product_payload,
+            operation_fields=operation_fields,
+        )
         source_set = {
             "revision_id": revision_id,
             "generation": int(claim.generation),
@@ -272,11 +339,13 @@ def build_regulatory_assessment_snapshot(
         payload = build_regulatory_assessment_payload(
             product_intelligence_payload=product_payload,
             source_set=source_set,
+            regulatory_input_contract=regulatory_input_contract,
         )
         exact_inputs = {
             "ruleset_version": RULESET_VERSION,
             "source_set": source_set,
             "product_intelligence": product_payload,
+            "regulatory_input_contract": regulatory_input_contract,
         }
         input_fingerprint = fingerprint_rule_inputs(exact_inputs)
 
