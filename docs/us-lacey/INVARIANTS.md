@@ -27,3 +27,12 @@ These are change constraints, not aspirational copy. If a change needs to violat
 - An epithet may inherit genus context only inside the same proven line/component and only from one verified high-confidence genus (>=0.90) or a human-confirmed genus.
 - Missing, low-confidence, competing or cross-line genus context must remain ambiguous/review-required.
 - Comparison-equivalence may suppress a false conflict, but it must preserve every original candidate value and provenance row for audit.
+
+## Quantitative line binding
+
+- Quantitative plant facts may bind across documents only through explicit SKU, source-local unambiguous line identity, or an exact unique HTS plus taxon signature.
+- HTS alone, row/ordinal proximity, numeric similarity and document position are never sufficient identity evidence.
+- Ambiguous quantities/units remain unbound; quantitative rows do not create plant-component identity by themselves.
+- Strong source-line signatures are frozen before canonical derived-key rewrites so binding is deterministic and independent of field iteration order.
+- A shipment total entered value may seed one line only when there is exactly one resolved declarable line and exactly one supported total; the resulting line value is always REVIEW_REQUIRED.
+- Derived binding keys may exist in the canonical working copy, but raw candidate values, source spans and provenance must remain unchanged.
