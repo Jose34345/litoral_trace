@@ -1,0 +1,165 @@
+{
+  "version": "p2-shadow-canonical-v2-adversarial",
+  "pack_id": "pack-adversarial-authority-conflict",
+  "description": "LINE:1 is explicitly associated with incompatible Eucalyptus grandis and Tectona grandis observations. Canonical must preserve a hard review conflict.",
+  "shadow": {
+    "availability": "CURRENT",
+    "fields": [
+      {
+        "field_key": "hts_code",
+        "state": "SUPPORTED",
+        "values": [
+          "4407990190"
+        ],
+        "evidence": [
+          {
+            "scope": "MERCHANDISE_LINE",
+            "line_key": "LINE:1",
+            "component_key": null,
+            "normalized_value": "4407990190",
+            "source_filename": "01_Commercial_Invoice_Conflict.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "entered_value",
+        "state": "SUPPORTED",
+        "values": [
+          "9800"
+        ],
+        "evidence": [
+          {
+            "scope": "MERCHANDISE_LINE",
+            "line_key": "LINE:1",
+            "component_key": null,
+            "normalized_value": "9800",
+            "source_filename": "01_Commercial_Invoice_Conflict.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "genus",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "Eucalyptus",
+          "Tectona"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "LINE:1",
+            "component_key": "LINE:1",
+            "normalized_value": "Eucalyptus",
+            "source_filename": "01_Commercial_Invoice_Conflict.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "LINE:1",
+            "component_key": "LINE:1",
+            "normalized_value": "Tectona",
+            "source_filename": "02_Botanical_Declaration_Conflict.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "species",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "Eucalyptus grandis",
+          "Tectona grandis"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "LINE:1",
+            "component_key": "LINE:1",
+            "normalized_value": "Eucalyptus grandis",
+            "source_filename": "01_Commercial_Invoice_Conflict.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "LINE:1",
+            "component_key": "LINE:1",
+            "normalized_value": "Tectona grandis",
+            "source_filename": "02_Botanical_Declaration_Conflict.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      }
+    ]
+  },
+  "canonical": {
+    "shipment_fields": {},
+    "plant_lines": [
+      {
+        "entity_key": "LINE:1",
+        "fields": {
+          "entered_value": {
+            "state": "SUPPORTED",
+            "values": [
+              "9800"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "genus": {
+            "state": "CONFLICT",
+            "values": [
+              "Eucalyptus",
+              "Tectona"
+            ],
+            "publication_status": "REVIEW",
+            "issue_types": [
+              "INCONSISTENT_SET"
+            ]
+          },
+          "hts_code": {
+            "state": "SUPPORTED",
+            "values": [
+              "4407990190"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "species": {
+            "state": "CONFLICT",
+            "values": [
+              "Eucalyptus grandis",
+              "Tectona grandis"
+            ],
+            "publication_status": "REVIEW",
+            "issue_types": [
+              "INCONSISTENT_SET"
+            ]
+          }
+        }
+      }
+    ],
+    "unresolved_component_keys": []
+  },
+  "expected_diff": {
+    "comparable_slots": 4,
+    "agreement_count": 2,
+    "shadow_supported_but_canonical_missing": 0,
+    "canonical_supported_but_shadow_missing": 0,
+    "false_conflict_count": 0,
+    "safe_review_count": 2
+  }
+}

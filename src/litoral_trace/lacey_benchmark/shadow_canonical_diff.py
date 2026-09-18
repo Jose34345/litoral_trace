@@ -84,6 +84,7 @@ class CanonicalPlantLineSnapshot(_StrictModel):
 class ShipmentTruthSnapshot(_StrictModel):
     shipment_fields: dict[str, CanonicalFieldSnapshot] = Field(default_factory=dict)
     plant_lines: tuple[CanonicalPlantLineSnapshot, ...] = ()
+    unresolved_component_keys: tuple[str, ...] = ()
 
 
 class ExpectedDiff(_StrictModel):
@@ -92,6 +93,7 @@ class ExpectedDiff(_StrictModel):
     shadow_supported_but_canonical_missing: int = Field(ge=0)
     canonical_supported_but_shadow_missing: int = Field(ge=0)
     false_conflict_count: int = Field(ge=0)
+    safe_review_count: int = Field(default=0, ge=0)
 
 
 class BenchmarkFixture(_StrictModel):
@@ -112,6 +114,7 @@ class ComparisonOutcome(str, Enum):
         "canonical_supported_but_shadow_missing"
     )
     FALSE_CONFLICT = "false_conflict"
+    SAFE_REVIEW = "safe_review"
 
 
 class _LayerSlot(_StrictModel):
@@ -143,8 +146,10 @@ class FieldDiffSummary(_StrictModel):
     shadow_supported_but_canonical_missing: int
     canonical_supported_but_shadow_missing: int
     false_conflict_count: int
+    safe_review_count: int
     agreement_rate: float
     false_conflict_rate: float
+    safe_review_rate: float
 
 
 class ShadowCanonicalScorecard(_StrictModel):
@@ -154,8 +159,10 @@ class ShadowCanonicalScorecard(_StrictModel):
     shadow_supported_but_canonical_missing: int
     canonical_supported_but_shadow_missing: int
     false_conflict_count: int
+    safe_review_count: int
     agreement_rate: float
     false_conflict_rate: float
+    safe_review_rate: float
     shadow_supported_but_canonical_missing_rate: float
     canonical_supported_but_shadow_missing_rate: float
     by_field: dict[str, FieldDiffSummary]
@@ -170,6 +177,7 @@ class ShadowCanonicalScorecard(_StrictModel):
             and self.canonical_supported_but_shadow_missing
             == expected.canonical_supported_but_shadow_missing
             and self.false_conflict_count == expected.false_conflict_count
+            and self.safe_review_count == expected.safe_review_count
         )
 
 
@@ -323,6 +331,8 @@ def _classify(
     canonical_supported = _canonical_supported(canonical)
 
     if shadow_supported and _canonical_conflicted(canonical):
+        if shadow is not None and len(shadow.values) > 1:
+            return ComparisonOutcome.SAFE_REVIEW
         return ComparisonOutcome.FALSE_CONFLICT
 
     if shadow_supported and canonical_supported:
@@ -363,6 +373,10 @@ def _field_summary(
         item.outcome is ComparisonOutcome.FALSE_CONFLICT
         for item in entries
     )
+    safe_reviews = sum(
+        item.outcome is ComparisonOutcome.SAFE_REVIEW
+        for item in entries
+    )
     return FieldDiffSummary(
         field_key=field_key,
         comparable_slots=comparable,
@@ -370,8 +384,10 @@ def _field_summary(
         shadow_supported_but_canonical_missing=shadow_only,
         canonical_supported_but_shadow_missing=canonical_only,
         false_conflict_count=conflicts,
+        safe_review_count=safe_reviews,
         agreement_rate=_rate(agreement, comparable),
         false_conflict_rate=_rate(conflicts, comparable),
+        safe_review_rate=_rate(safe_reviews, comparable),
     )
 
 
@@ -445,6 +461,10 @@ def evaluate_shadow_canonical_diff(
         item.outcome is ComparisonOutcome.FALSE_CONFLICT
         for item in ordered_entries
     )
+    safe_reviews = sum(
+        item.outcome is ComparisonOutcome.SAFE_REVIEW
+        for item in ordered_entries
+    )
 
     by_field_entries: dict[str, list[DiffEntry]] = defaultdict(list)
     for item in ordered_entries:
@@ -461,8 +481,10 @@ def evaluate_shadow_canonical_diff(
         shadow_supported_but_canonical_missing=shadow_only,
         canonical_supported_but_shadow_missing=canonical_only,
         false_conflict_count=conflicts,
+        safe_review_count=safe_reviews,
         agreement_rate=_rate(agreement, comparable),
         false_conflict_rate=_rate(conflicts, comparable),
+        safe_review_rate=_rate(safe_reviews, comparable),
         shadow_supported_but_canonical_missing_rate=_rate(
             shadow_only,
             comparable,
@@ -528,6 +550,11 @@ def print_report(
             report.false_conflict_count,
             report.false_conflict_rate,
         ),
+        (
+            "safe_review_rate",
+            report.safe_review_count,
+            report.safe_review_rate,
+        ),
     )
     for label, count, rate in metrics:
         print(
@@ -544,7 +571,8 @@ def print_report(
     print("-" * 108, file=stream)
     print(
         f"{'Field':24} {'Slots':>7} {'Agree':>7} {'Shadow>Canon':>14} "
-        f"{'Canon>Shadow':>14} {'FalseConflict':>15} {'Agreement':>12}",
+        f"{'Canon>Shadow':>14} {'FalseConflict':>15} {'SafeReview':>11} "
+        f"{'Agreement':>12}",
         file=stream,
     )
     print("-" * 108, file=stream)
@@ -556,6 +584,7 @@ def print_report(
             f"{summary.shadow_supported_but_canonical_missing:>14} "
             f"{summary.canonical_supported_but_shadow_missing:>14} "
             f"{summary.false_conflict_count:>15} "
+            f"{summary.safe_review_count:>11} "
             f"{_percent(summary.agreement_rate):>12}",
             file=stream,
         )

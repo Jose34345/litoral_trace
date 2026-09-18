@@ -86,6 +86,7 @@ authority = "observation"
 implementation = [
   "src/litoral_trace/lacey_benchmark/shadow_canonical_diff.py",
   "src/litoral_trace/lacey_benchmark/baseline_refresh.py",
+  "src/litoral_trace/lacey_benchmark/adversarial_fixtures.py",
   "benchmarks/lacey/v2"
 ]
 tests = [
@@ -93,7 +94,7 @@ tests = [
   "tests/lacey_benchmark/test_shadow_canonical_refresh.py"
 ]
 workflows = [".github/workflows/ci.yml"]
-notes = "Offline P2-01 QA only. Compares Engine 2 Shadow and Canonical ShipmentTruth by exact field/entity slots; it has no runtime publication, routing, reconciliation, persistence or regulatory authority. The multilingual fixture is reproducibly refreshed through current Canonical ShipmentTruth. After P1-02 it covers 19 comparable slots at 19/19 agreement; plant_quantity, metric_unit and entered_value each have 3/3 agreement, zero Shadow>Canonical missing and zero false conflicts."
+notes = "Offline P2-01/P2-02 QA only. Compares Engine 2 Shadow and Canonical ShipmentTruth by exact field/entity slots; it has no runtime publication, routing, reconciliation, persistence or regulatory authority. Typed adversarial Pydantic seeds are refreshed through current Canonical ShipmentTruth. safe_review means Canonical correctly preserved review for a Shadow slot that already contained multiple contradictory values; false_conflict remains reserved for unjustified Canonical disagreement."
 
 [capabilities.operation_workflow]
 status = "ACTIVE"

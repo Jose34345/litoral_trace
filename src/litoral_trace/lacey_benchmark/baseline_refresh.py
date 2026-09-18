@@ -10,6 +10,9 @@ from pathlib import Path
 import json
 from typing import Mapping
 
+from litoral_trace.lacey_benchmark.adversarial_fixtures import (
+    adversarial_fixture_seeds,
+)
 from litoral_trace.lacey_benchmark.shadow_canonical_diff import (
     BenchmarkFixture,
     CanonicalFieldSnapshot,
@@ -134,7 +137,11 @@ def _field_snapshot(field: CanonicalFieldTruth) -> CanonicalFieldSnapshot:
         state=field.state.value,
         values=field.values,
         publication_status=_publication_status(field),
-        issue_types=(),
+        issue_types=(
+            ("INCONSISTENT_SET",)
+            if field.state is CanonicalTruthState.CONFLICT
+            else ()
+        ),
     )
 
 
@@ -156,15 +163,21 @@ def shipment_truth_snapshot(
             )
             for line in truth.plant_lines
         ),
+        unresolved_component_keys=truth.unresolved_component_keys,
     )
+
+
+def regenerate_truth_from_shadow(
+    shadow: Engine2DossierSnapshot,
+) -> CanonicalShipmentTruth:
+    payload = shipment_resolution_payload_from_shadow(shadow)
+    return build_canonical_shipment_truth(payload)
 
 
 def regenerate_canonical_from_shadow(
     shadow: Engine2DossierSnapshot,
 ) -> ShipmentTruthSnapshot:
-    payload = shipment_resolution_payload_from_shadow(shadow)
-    truth = build_canonical_shipment_truth(payload)
-    return shipment_truth_snapshot(truth)
+    return shipment_truth_snapshot(regenerate_truth_from_shadow(shadow))
 
 
 def refreshed_fixture_payload(payload: Mapping) -> dict:
@@ -181,6 +194,7 @@ def refreshed_fixture_payload(payload: Mapping) -> dict:
             report.canonical_supported_but_shadow_missing
         ),
         false_conflict_count=report.false_conflict_count,
+        safe_review_count=report.safe_review_count,
     )
     refreshed = deepcopy(dict(payload))
     refreshed["canonical"] = canonical.model_dump(mode="json")
@@ -197,3 +211,23 @@ def refresh_fixture(path: Path) -> dict:
         encoding="utf-8",
     )
     return refreshed
+
+def refreshed_fixture_from_model(fixture: BenchmarkFixture) -> dict:
+    """Materialize one typed benchmark seed through current Canonical truth."""
+    return refreshed_fixture_payload(fixture.model_dump(mode="json"))
+
+
+def refresh_adversarial_fixtures(directory: Path) -> dict[str, dict]:
+    """Write every typed adversarial seed as a versioned refreshed benchmark."""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    refreshed: dict[str, dict] = {}
+    for filename, seed in sorted(adversarial_fixture_seeds().items()):
+        payload = refreshed_fixture_from_model(seed)
+        (directory / filename).write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        refreshed[filename] = payload
+    return refreshed
+
