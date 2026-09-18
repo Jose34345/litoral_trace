@@ -16,6 +16,9 @@ from uuid import UUID
 from .contracts import CandidateEnvelope
 
 
+LINE_BINDING_VERSION = "lacey_document_local_line_binding_v1"
+
+
 LINE_SCOPED_FIELDS = frozenset(
     {
         "description",
