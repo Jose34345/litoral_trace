@@ -256,7 +256,9 @@ def test_builder_reinstalls_runtime_tenant_context_before_refresh(
         assert snapshot is not None
         assert snapshot.organization_id == org
         assert snapshot.source_set_revision_id == revision.id
-        assert snapshot.status == "NOT_APPLICABLE"
+        assert snapshot.status == "FAILED"
+        assert snapshot.eligible_document_count == 1
+        assert snapshot.issue_count == 1
     finally:
         runtime_engine.dispose()
 
@@ -341,7 +343,9 @@ def test_builder_reinstalls_runtime_tenant_context_after_integrity_error_rollbac
         assert snapshot is not None
         assert snapshot.organization_id == org
         assert snapshot.source_set_revision_id == revision.id
-        assert snapshot.status == "NOT_APPLICABLE"
+        assert snapshot.status == "FAILED"
+        assert snapshot.eligible_document_count == 1
+        assert snapshot.issue_count == 1
     finally:
         runtime_engine.dispose()
 
