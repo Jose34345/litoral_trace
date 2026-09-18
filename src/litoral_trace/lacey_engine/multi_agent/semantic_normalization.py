@@ -102,12 +102,12 @@ def semantic_value_key(
     if field == "species":
         taxon = _taxon_key(raw)
         tokens = taxon.split()
-        if (
-            len(tokens) >= 2
-            and len(genus_context) == 1
-            and tokens[0] in genus_context
-        ):
-            return " ".join(tokens[1:])
+        if len(genus_context) == 1:
+            genus = next(iter(genus_context))
+            if len(tokens) == 1:
+                return f"taxon:{genus}:{tokens[0]}"
+            if len(tokens) == 2 and tokens[0] == genus:
+                return f"taxon:{genus}:{tokens[1]}"
         return taxon
 
     existing = comparison_key(field, raw)
