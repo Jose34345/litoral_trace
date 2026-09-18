@@ -51,6 +51,10 @@ class EvidenceTextView:
     scope: str | None = None
     local_entity_key: str | None = None
     canonical_entity_id: str | None = None
+    normalized_value: str | None = None
+    scope: str | None = None
+    local_entity_key: str | None = None
+    canonical_entity_id: str | None = None
 
 
 def evidence_text_view(
@@ -124,7 +128,12 @@ class SemanticEvidenceReadService:
                 else_=0,
             )
             rows = session.execute(
-                select(SemanticEvidenceNode, DocumentTextSpan, DocumentTextTranslation)
+                select(
+                    SemanticEvidenceNode,
+                    SemanticSnapshotNode,
+                    DocumentTextSpan,
+                    DocumentTextTranslation,
+                )
                 .join(
                     SemanticSnapshotNode,
                     and_(
@@ -163,7 +172,7 @@ class SemanticEvidenceReadService:
 
             by_field: dict[str, list[EvidenceTextView]] = {}
             seen: set[tuple[str, int]] = set()
-            for node, span, translation in rows:
+            for node, snapshot_node, span, translation in rows:
                 key = (str(node.target_field), int(span.id))
                 # The ORDER BY puts the preferred English interpretation first.
                 # Keep exactly one presentation row per immutable source span.
