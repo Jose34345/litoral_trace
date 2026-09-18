@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import re
 from typing import Generic, Iterable, TypeVar
 
+from litoral_trace.lacey_engine.multi_agent.semantic_normalization import semantic_value_key
 from litoral_trace.us_lacey.ppq505 import canonical_ppq_value_key
 from litoral_trace.us_lacey.regulatory.taxonomy.resolver import normalize_taxonomy_query
 
@@ -114,40 +115,6 @@ def derive_taxonomic_comparison_context(
     return TaxonomicComparisonContext(genus=next(iter(by_genus.values())))
 
 
-def _species_taxonomic_comparison_key(
-    value: object,
-    *,
-    context: TaxonomicComparisonContext | None,
-) -> str | None:
-    """Return an exact genus+epithet identity when line context proves the genus.
-
-    This is deliberately not a taxonomy assertion. It only says that within a
-    line whose genus is uniquely known, "grandis" and "Eucalyptus grandis"
-    express the same genus/epithet pair. Values with another explicit genus,
-    more complex ranks, or no unique genus context fail closed to the ordinary
-    PPQ comparison key.
-    """
-    if context is None:
-        return None
-
-    genus = normalize_taxonomy_query(context.genus)
-    if len(genus.split()) != 1:
-        return None
-
-    species = normalize_taxonomy_query(str(value or ""))
-    parts = species.split()
-    if len(parts) == 1:
-        epithet = parts[0]
-    elif len(parts) == 2 and parts[0] == genus:
-        epithet = parts[1]
-    else:
-        return None
-
-    if not epithet:
-        return None
-    return f"taxon:{genus}:{epithet}"
-
-
 def candidate_comparison_key(
     field_name: str,
     value: object,
@@ -156,13 +123,16 @@ def candidate_comparison_key(
 ) -> str:
     """Return a comparison-only key without mutating caller-owned evidence."""
     normalized_field = str(field_name or "").strip().casefold()
-    if normalized_field == "species":
-        contextual = _species_taxonomic_comparison_key(
-            value,
-            context=comparison_context,
-        )
-        if contextual:
-            return contextual
+    if normalized_field == "species" and comparison_context is not None:
+        genus = normalize_taxonomy_query(comparison_context.genus)
+        if len(genus.split()) == 1:
+            contextual = semantic_value_key(
+                "species",
+                value,
+                genus_context=frozenset({genus}),
+            )
+            if contextual.startswith("taxon:"):
+                return contextual
     return canonical_ppq_value_key(field_name, value)
 
 
