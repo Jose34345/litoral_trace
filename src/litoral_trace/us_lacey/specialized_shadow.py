@@ -17,6 +17,9 @@ from uuid import UUID
 from litoral_trace.lacey_engine.ai_providers import AIProviderConfig
 from litoral_trace.lacey_engine.ai_shadow import AICandidate, AIExtractionResult, AIShadowError, verify_ai_evidence
 from litoral_trace.lacey_engine.domain import BoundingBox, DocumentResolution, EvidenceClass
+from litoral_trace.lacey_engine.multi_agent.authority import (
+    candidate_identity as admission_candidate_identity,
+)
 from litoral_trace.lacey_engine.multi_agent.candidate_admission import (
     CANDIDATE_ADMISSION_VERSION,
     CandidateAdmissionDecision,
@@ -377,6 +380,7 @@ def _rehydrate_cached_run(payloads: tuple[Mapping[str, object], ...], *, documen
 
     rebound_candidates: list[CandidateEnvelope] = []
     rebound_by_old_candidate_id: dict[str, CandidateEnvelope] = {}
+    rebound_by_old_admission_candidate_id: dict[str, CandidateEnvelope] = {}
     admission_records: list[CandidateAdmissionRecord] = []
     routing_assignments: list[RoutingAssignment] = []
     document_replacements: dict[UUID, UUID] = {}
@@ -483,6 +487,26 @@ def _rehydrate_cached_run(payloads: tuple[Mapping[str, object], ...], *, documen
                 return None
             rebound_candidates.append(new_envelope)
             rebound_by_old_candidate_id[field_judge_candidate_identity(old_envelope)] = new_envelope
+            rebound_by_old_admission_candidate_id[
+                admission_candidate_identity(old_envelope)
+            ] = new_envelope
+
+    rebound_admission_records: list[CandidateAdmissionRecord] = []
+    for record in admission_records:
+        rebound = rebound_by_old_admission_candidate_id.get(record.candidate_id)
+        if rebound is None:
+            # The cached audit record cannot be correlated to a reconstructed
+            # current-operation candidate. Fail closed so the caller recomputes.
+            return None
+        rebound_admission_records.append(
+            replace(
+                record,
+                candidate_id=admission_candidate_identity(rebound),
+                document_id=rebound.document_id,
+                field_key=rebound.candidate.field_key,
+                line_item_key=rebound.line_item_key,
+            )
+        )
 
     judge = _cached_field_judge(first, rebound_by_old_candidate_id=rebound_by_old_candidate_id)
     raw_judge = first.get("field_judge")
@@ -507,7 +531,7 @@ def _rehydrate_cached_run(payloads: tuple[Mapping[str, object], ...], *, documen
     admission = CandidateAdmissionEvaluation(
         version=CANDIDATE_ADMISSION_VERSION,
         admitted_candidates=tuple(rebound_candidates),
-        records=tuple(admission_records),
+        records=tuple(rebound_admission_records),
     )
     result = MultiAgentExtractionResult(
         routing_plan=RoutingPlan(tuple(routing_assignments)),
