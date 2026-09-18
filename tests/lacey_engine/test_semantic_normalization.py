@@ -27,17 +27,18 @@ def test_brazil_multilingual_country_variants_are_equivalent() -> None:
     assert semantic_value_key("country_of_harvest", "BR") == "BR"
 
 
-def test_species_binomial_collapses_to_epithet_only_with_known_genus_context() -> None:
+def test_species_binomial_collapses_to_contextual_taxon_identity_with_known_genus_context() -> None:
     context = frozenset({"eucalyptus"})
 
-    assert semantic_value_key("species", "grandis", genus_context=context) == "grandis"
+    expected = "taxon:eucalyptus:grandis"
+    assert semantic_value_key("species", "grandis", genus_context=context) == expected
     assert (
         semantic_value_key(
             "species",
             "Eucalyptus grandis",
             genus_context=context,
         )
-        == "grandis"
+        == expected
     )
 
 

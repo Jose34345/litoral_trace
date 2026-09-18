@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 import re
+from typing import Mapping
 
 from .domain import AdmittedCandidate, DocumentResolution, EvidenceClass, FieldStatus
 from .pipeline import ENGINE_VERSION, process_document
 from .semantic_graph import association_key, is_out_of_scope_context, semantic_normalize
+from .multi_agent.semantic_normalization import semantic_value_key
 from .source_authority import authority
 
 
@@ -245,10 +247,66 @@ def _cardinality(field_key: str) -> FieldCardinality:
     return _CATALOG[field_key]
 
 
-def _normal(field_key: str, value: str) -> str:
+def _normal(
+    field_key: str,
+    value: str,
+    *,
+    genus_context: frozenset[str] = frozenset(),
+) -> str:
     semantic_key = PLANT_LINE_ENTERED_VALUE if field_key == SHIPMENT_TOTAL_ENTERED_VALUE else field_key
-    normalized = semantic_normalize(semantic_key, value)
+    if semantic_key == "species" and genus_context:
+        normalized = semantic_value_key(
+            "species",
+            value,
+            genus_context=genus_context,
+        )
+    else:
+        normalized = semantic_normalize(semantic_key, value)
     return normalized.upper() if semantic_key not in {"entered_value", "plant_quantity", "percent_recycled"} else normalized
+
+
+def _high_confidence_genus_contexts(
+    evidence_by_field: Mapping[str, list[ShipmentEvidence]],
+    *,
+    minimum_score: float = 90.0,
+) -> dict[str, frozenset[str]]:
+    """Return comparison-only genus context for explicitly associated components."""
+    by_component: dict[str, set[str]] = {}
+    for item in evidence_by_field.get("genus", []):
+        if item.component_key is None or float(item.candidate_score) < minimum_score:
+            continue
+        genus = semantic_normalize("genus", item.normalized_value)
+        if genus:
+            by_component.setdefault(item.component_key, set()).add(genus)
+    return {key: frozenset(values) for key, values in by_component.items()}
+
+
+def _genus_context_for_evidence(
+    item: ShipmentEvidence,
+    contexts: Mapping[str, frozenset[str]],
+) -> frozenset[str]:
+    if item.component_key is None:
+        return frozenset()
+    return contexts.get(item.component_key, frozenset())
+
+
+def _canonical_display_value(
+    field_key: str,
+    comparison_key: str,
+    items: list[ShipmentEvidence],
+) -> str:
+    """Keep comparison identities out of customer/audit values."""
+    if field_key == "species" and comparison_key.startswith("TAXON:"):
+        representative = max(
+            items,
+            key=lambda item: (
+                float(item.source_authority),
+                float(item.candidate_score),
+                item.candidate_id,
+            ),
+        )
+        return representative.normalized_value
+    return comparison_key
 
 
 def _scope(cardinality: FieldCardinality) -> EvidenceScope:
@@ -275,8 +333,20 @@ def _quantity_semantic_type(label: str) -> QuantitySemanticType:
     return QuantitySemanticType.OTHER
 
 
-def _atomic_state(field_key: str, evidence: list[ShipmentEvidence]) -> ReconciliationState:
-    groups = {_normal(field_key, item.normalized_value) for item in evidence}
+def _atomic_state(
+    field_key: str,
+    evidence: list[ShipmentEvidence],
+    *,
+    genus_contexts: Mapping[str, frozenset[str]] | None = None,
+) -> ReconciliationState:
+    groups = {
+        _normal(
+            field_key,
+            item.normalized_value,
+            genus_context=_genus_context_for_evidence(item, genus_contexts or {}),
+        )
+        for item in evidence
+    }
     if len(groups) == 1:
         return ReconciliationState.SUPPORTED_MULTIPLE if len(evidence) > 1 else ReconciliationState.SUPPORTED
     if field_key in {PLANT_LINE_ENTERED_VALUE, SHIPMENT_TOTAL_ENTERED_VALUE}:
@@ -287,15 +357,28 @@ def _atomic_state(field_key: str, evidence: list[ShipmentEvidence]) -> Reconcili
     return ReconciliationState.REVIEW_REQUIRED if len({item.source_authority for item in evidence}) > 1 else ReconciliationState.CONFLICT
 
 
-def _reconcile(field_key: str, evidence: list[ShipmentEvidence]) -> ReconciliationResult:
+def _reconcile(
+    field_key: str,
+    evidence: list[ShipmentEvidence],
+    *,
+    genus_contexts: Mapping[str, frozenset[str]] | None = None,
+) -> ReconciliationResult:
     if not evidence:
         return ReconciliationResult(field_key, ReconciliationState.MISSING, (), ())
     groups: dict[str, list[ShipmentEvidence]] = {}
     for item in evidence:
-        groups.setdefault(_normal(field_key, item.normalized_value), []).append(item)
+        comparison_key = _normal(
+            field_key,
+            item.normalized_value,
+            genus_context=_genus_context_for_evidence(item, genus_contexts or {}),
+        )
+        groups.setdefault(comparison_key, []).append(item)
     values = tuple(
-        CanonicalFieldCandidate(value, tuple(item.candidate_id for item in items))
-        for value, items in groups.items()
+        CanonicalFieldCandidate(
+            _canonical_display_value(field_key, comparison_key, items),
+            tuple(item.candidate_id for item in items),
+        )
+        for comparison_key, items in groups.items()
     )
     cardinality = _cardinality(field_key)
     if cardinality is FieldCardinality.SET:
@@ -311,12 +394,27 @@ def _reconcile(field_key: str, evidence: list[ShipmentEvidence]) -> Reconciliati
             for item in evidence
         ]
         if None in association_keys:
-            state = ReconciliationState.REVIEW_REQUIRED if len(groups) > 1 else _atomic_state(field_key, evidence)
+            state = (
+                ReconciliationState.REVIEW_REQUIRED
+                if len(groups) > 1
+                else _atomic_state(
+                    field_key,
+                    evidence,
+                    genus_contexts=genus_contexts or {},
+                )
+            )
             return ReconciliationResult(field_key, state, values, tuple(evidence))
         partitions: dict[str, list[ShipmentEvidence]] = {}
         for item, key in zip(evidence, association_keys):
             partitions.setdefault(key or "", []).append(item)
-        states = [_atomic_state(field_key, items) for items in partitions.values()]
+        states = [
+            _atomic_state(
+                field_key,
+                items,
+                genus_contexts=genus_contexts or {},
+            )
+            for items in partitions.values()
+        ]
         if ReconciliationState.CONFLICT in states:
             state = ReconciliationState.CONFLICT
         elif ReconciliationState.REVIEW_REQUIRED in states:
@@ -511,7 +609,15 @@ def process_shipment(*, documents: list[ShipmentDocumentInput], ruleset: LaceyRu
                 )
                 evidence_by_field.setdefault(field_key, []).append(record)
 
-    fields = {key: _reconcile(key, evidence_by_field.get(key, [])) for key in _CATALOG}
+    genus_contexts = _high_confidence_genus_contexts(evidence_by_field)
+    fields = {
+        key: _reconcile(
+            key,
+            evidence_by_field.get(key, []),
+            genus_contexts=genus_contexts if key == "species" else {},
+        )
+        for key in _CATALOG
+    }
     if evidence_by_field.get(SHIPMENT_TOTAL_ENTERED_VALUE):
         fields[SHIPMENT_TOTAL_ENTERED_VALUE] = _reconcile(
             SHIPMENT_TOTAL_ENTERED_VALUE,

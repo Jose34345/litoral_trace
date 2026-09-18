@@ -13,6 +13,7 @@ Use this as a routing guide. Exact test names evolve; search existing tests befo
 | Product Intelligence worker ordering/idempotency | `tests/test_us_lacey_product_intelligence_worker.py` | general CI + U.S. Lacey PostgreSQL Gate |
 | Product Intelligence RLS/supersession | `tests/test_us_lacey_product_intelligence_snapshot_postgres.py` | U.S. Lacey PostgreSQL Gate, no skip allowed for targeted Product Intelligence PostgreSQL acceptance |
 | Taxonomy Resolver | `tests/test_us_lacey_taxonomy_resolver.py` + `tests/test_us_lacey_product_intelligence_taxonomy.py` | general CI + U.S. Lacey PostgreSQL Gate |
+| P1-01 taxonomic candidate equivalence | `tests/test_us_lacey_taxonomic_candidate_equivalence.py` + `tests/lacey_engine/test_semantic_normalization.py` + fusion/shipment worker regressions | general CI + U.S. Lacey PostgreSQL Gate |
 | Regulatory Rules pure domain | `tests/test_us_lacey_regulatory_rules.py` | general CI pytest |
 | Regulatory Assessment payload/snapshot/read | `tests/test_us_lacey_regulatory_assessment_payload.py` + `tests/test_us_lacey_regulatory_assessment_snapshot.py` + UI tests | general CI + U.S. Lacey PostgreSQL Gate |
 | Regulatory Assessment worker ordering | `tests/test_us_lacey_regulatory_assessment_worker.py` + worker stage timing test | general CI + U.S. Lacey PostgreSQL Gate |

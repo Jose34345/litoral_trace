@@ -20,3 +20,10 @@ These are change constraints, not aspirational copy. If a change needs to violat
 16. **One provenance system.** Future Product Intelligence/Taxonomy/Regulatory decisions must reference the existing evidence/document chain rather than inventing a separate unverifiable evidence store.
 17. **No live-integration claims without live integration.** Export preparation/PPQ505/LAWGS builders must not be described as successful federal submission unless a verified live submission path exists.
 18. **Tests are part of the contract.** Changes to source sets, RLS, workers, canonical truth, review or export require the relevant focused tests and broader gates before merge.
+
+## Taxonomic comparison identity
+
+- Taxonomic comparison identities are not evidence and are never published as raw, normalized source, PPQ505, LAWGS or human-confirmed values.
+- An epithet may inherit genus context only inside the same proven line/component and only from one verified high-confidence genus (>=0.90) or a human-confirmed genus.
+- Missing, low-confidence, competing or cross-line genus context must remain ambiguous/review-required.
+- Comparison-equivalence may suppress a false conflict, but it must preserve every original candidate value and provenance row for audit.

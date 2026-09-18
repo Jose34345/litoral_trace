@@ -38,6 +38,11 @@ def _stub_success_path(monkeypatch, calls: list[str]) -> None:
         return SimpleNamespace(projected_count=3, conflict_count=1)
 
     monkeypatch.setattr(worker, "project_assurance_document_to_us_lacey", project)
+    monkeypatch.setattr(
+        worker,
+        "_reconcile_candidate_equivalence",
+        lambda **_: (calls.append("candidate_equivalence"), 0)[1],
+    )
     monkeypatch.setattr(worker, "_shadow_engine2", lambda **_: calls.append("engine2"))
 
     def engine2_suggestions(**_: object) -> int:
@@ -78,6 +83,7 @@ def test_worker_marks_customer_visible_completion_before_non_authoritative_ai_re
     assert calls == [
         "process",
         "project",
+        "candidate_equivalence",
         "engine2",
         "ai_suggestions",
         "engine2_suggestions",
@@ -123,6 +129,7 @@ def test_post_completion_ai_review_failure_cannot_requeue_completed_job(monkeypa
     assert calls == [
         "process",
         "project",
+        "candidate_equivalence",
         "engine2",
         "ai_suggestions",
         "engine2_suggestions",
