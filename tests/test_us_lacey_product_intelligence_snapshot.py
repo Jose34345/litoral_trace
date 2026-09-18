@@ -3,8 +3,11 @@ from __future__ import annotations
 from io import BytesIO
 from types import SimpleNamespace
 
+from fpdf import FPDF
 from openpyxl import Workbook
 import pytest
+
+from litoral_trace.assurance.parsers import ParsedDocument, ParsedTable, SourceLocation
 
 from litoral_trace.product_intelligence.domain import BomIssueSeverity
 from litoral_trace.us_lacey.product_intelligence_snapshot import (
@@ -175,3 +178,159 @@ def test_snapshot_claim_match_rejects_unclaimed_or_mismatched_claim():
 
     wrong = SourceSetClaim(9, 3, "e" * 64, True, "CLAIMED", token)
     assert snapshot_matches_claim(revision, wrong) is False
+
+
+
+def _pdf_bom_bytes() -> bytes:
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=8)
+    headers = ("SKU", "Product", "Component", "Material", "Qty", "Weight", "UOM")
+    widths = (25, 30, 30, 30, 15, 20, 15)
+    for header, width in zip(headers, widths):
+        pdf.cell(width, 8, header, border=1)
+    pdf.ln()
+    for row in (
+        ("CHAIR-PDF-1", "Chair", "Leg", "Rubberwood", "4", "0.5", "kg"),
+        ("CHAIR-PDF-1", "Chair", "Seat", "Plywood", "1", "1.2", "kg"),
+    ):
+        for value, width in zip(row, widths):
+            pdf.cell(width, 8, value, border=1)
+        pdf.ln()
+    output = pdf.output()
+    return bytes(output) if not isinstance(output, str) else output.encode("latin-1")
+
+
+def test_pdf_explicit_bom_table_builds_ready_product_intelligence(monkeypatch) -> None:
+    import litoral_trace.us_lacey.product_intelligence_snapshot as module
+
+    parsed = ParsedDocument(
+        file_kind="PDF",
+        text="Bill of materials",
+        tables=(
+            ParsedTable(
+                name="page_2_table_1",
+                headers=("SKU", "Product", "Component", "Material", "Qty", "Weight", "UOM"),
+                rows=(
+                    {
+                        "SKU": "CHAIR-PDF-1",
+                        "Product": "Chair",
+                        "Component": "Leg",
+                        "Material": "Rubberwood",
+                        "Qty": "4",
+                        "Weight": "0.5",
+                        "UOM": "kg",
+                    },
+                ),
+                source=SourceLocation(
+                    page=2,
+                    row=1,
+                    locator="pdf:page:2;table:1;header_row:1",
+                ),
+                row_numbers=(2,),
+            ),
+        ),
+        metadata={"page_count": 2},
+        ocr_required=False,
+    )
+    calls: list[str] = []
+
+    def fake_parse(filename: str, content: bytes) -> ParsedDocument:
+        calls.append(filename)
+        assert content == b"%PDF-explicit-bom"
+        return parsed
+
+    monkeypatch.setattr(module, "parse_document", fake_parse)
+
+    result = analyze_product_intelligence_documents(
+        (_source("bom.pdf", b"%PDF-explicit-bom"),)
+    )
+
+    assert calls == ["bom.pdf"]
+    assert result.status == "READY"
+    assert result.eligible_document_count == 1
+    assert result.recognized_bom_table_count == 1
+    assert result.unique_sku_count == 1
+    assert result.component_count == 1
+    table = result.payload["sources"][0]["tables"][0]
+    assert table["source"]["page"] == 2
+    assert table["source"]["locator"] == "pdf:page:2;table:1;header_row:1"
+    component = table["compositions"][0]["components"][0]
+    assert component["source"]["row"] == 2
+    assert component["material"]["source"]["row"] == 2
+
+
+def test_real_digital_pdf_bom_flows_through_pdfplumber_into_product_intelligence() -> None:
+    result = analyze_product_intelligence_documents(
+        (_source("bom.pdf", _pdf_bom_bytes()),)
+    )
+
+    assert result.status == "READY"
+    assert result.eligible_document_count == 1
+    assert result.recognized_bom_table_count == 1
+    assert result.unique_sku_count == 1
+    assert result.component_count == 2
+    table = result.payload["sources"][0]["tables"][0]
+    assert table["source"]["page"] == 1
+    assert str(table["source"]["locator"]).startswith("pdf:page:1;table:")
+    assert table["compositions"][0]["sku"] == "CHAIR-PDF-1"
+
+
+def test_pdf_free_prose_without_explicit_table_remains_not_applicable(monkeypatch) -> None:
+    import litoral_trace.us_lacey.product_intelligence_snapshot as module
+
+    parsed = ParsedDocument(
+        file_kind="PDF",
+        text=(
+            "SKU CHAIR-1 uses four rubberwood legs weighing 0.5 kg each. "
+            "This prose must never be reconstructed into a BOM."
+        ),
+        tables=(),
+        metadata={"page_count": 1},
+        ocr_required=False,
+    )
+    monkeypatch.setattr(module, "parse_document", lambda _filename, _content: parsed)
+
+    result = analyze_product_intelligence_documents(
+        (_source("narrative.pdf", b"%PDF-free-prose"),)
+    )
+
+    assert result.status == "NOT_APPLICABLE"
+    assert result.eligible_document_count == 1
+    assert result.recognized_bom_table_count == 0
+    assert result.component_count == 0
+    assert result.payload["sources"][0]["tables"] == []
+
+
+def test_pdf_non_bom_table_remains_not_applicable(monkeypatch) -> None:
+    import litoral_trace.us_lacey.product_intelligence_snapshot as module
+
+    parsed = ParsedDocument(
+        file_kind="PDF",
+        text="Commercial invoice",
+        tables=(
+            ParsedTable(
+                name="page_1_table_1",
+                headers=("Invoice", "Amount", "Currency"),
+                rows=({"Invoice": "INV-1", "Amount": "100", "Currency": "USD"},),
+                source=SourceLocation(
+                    page=1,
+                    row=1,
+                    locator="pdf:page:1;table:1;header_row:1",
+                ),
+                row_numbers=(2,),
+            ),
+        ),
+        metadata={"page_count": 1},
+        ocr_required=False,
+    )
+    monkeypatch.setattr(module, "parse_document", lambda _filename, _content: parsed)
+
+    result = analyze_product_intelligence_documents(
+        (_source("invoice.pdf", b"%PDF-invoice-table"),)
+    )
+
+    assert result.status == "NOT_APPLICABLE"
+    assert result.eligible_document_count == 1
+    assert result.recognized_bom_table_count == 0
+    assert result.component_count == 0
