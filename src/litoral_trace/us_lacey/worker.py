@@ -32,6 +32,9 @@ from litoral_trace.us_lacey.batch_hardening import (
     enforce_streamed_csv_budget,
     shipment_spreadsheet_limits,
 )
+from litoral_trace.us_lacey.candidate_reconciliation import (
+    reconcile_duplicate_field_candidates,
+)
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.engine2_suggestions import project_engine2_supported_suggestions
 from litoral_trace.us_lacey.jobs import (
@@ -416,6 +419,15 @@ def _build_regulatory_assessment_snapshot(*, organization_id: int, operation_id:
         return None
 
 
+def _reconcile_candidate_equivalence(*, organization_id: int, operation_id: int) -> int:
+    """Resolve source-set-complete false conflicts before canonical publication."""
+    result = reconcile_duplicate_field_candidates(
+        organization_id=organization_id,
+        operation_id=operation_id,
+    )
+    return int(result.resolved_conflict_count)
+
+
 def _project_verified_ai_suggestions(*, organization_id: int, operation_id: int) -> int:
     """Best-effort AI bridge; return how many review fields actually changed."""
     try:
@@ -736,6 +748,15 @@ def process_one_us_lacey_job(
             source_set_fingerprint = source_set_claim.fingerprint
 
             if finalize_source_set:
+                with _timed_worker_stage(
+                    job=job,
+                    stage="candidate_equivalence_reconciliation",
+                    source_set_fingerprint=source_set_fingerprint,
+                ):
+                    _reconcile_candidate_equivalence(
+                        organization_id=job.organization_id,
+                        operation_id=job.operation_id,
+                    )
                 with _timed_worker_stage(
                     job=job,
                     stage="engine2_shadow",
