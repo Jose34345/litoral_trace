@@ -45,7 +45,7 @@ from litoral_trace.us_lacey.regulatory.taxonomy import resolve_taxonomy
 from litoral_trace.us_lacey.storage import build_us_lacey_storage_settings, get_us_lacey_storage_client
 
 SNAPSHOT_SCHEMA_VERSION = "product-intelligence-snapshot-v1"
-_ELIGIBLE_EXTENSIONS = frozenset({".csv", ".xls", ".xlsx"})
+_ELIGIBLE_EXTENSIONS = frozenset({".csv", ".xls", ".xlsx", ".pdf"})
 SessionFactory = Callable[[], Session]
 
 
