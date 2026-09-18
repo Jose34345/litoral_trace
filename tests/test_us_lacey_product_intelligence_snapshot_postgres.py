@@ -10,12 +10,17 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from litoral_trace.config.settings import normalize_database_url
 from litoral_trace.db.models import (
+    UsLaceyPpqPlantLine,
     UsLaceyProductIntelligenceSnapshot,
     UsLaceySourceSetRevision,
+    VaultDocument,
 )
 from litoral_trace.us_lacey.product_intelligence_snapshot import (
     build_product_intelligence_snapshot,
     mark_product_intelligence_snapshots_stale,
+)
+from litoral_trace.us_lacey.specialized_projection import (
+    derived_line_reference_for_identity,
 )
 from litoral_trace.us_lacey.source_sets import SourceSetClaim, seal_current_source_set
 from tests.us_lacey_engine2_postgres import (
@@ -446,3 +451,64 @@ def test_new_source_set_generation_marks_prior_product_intelligence_snapshot_sta
     ).all()
     assert [revision.id for revision in current_revisions] == [second_revision.id]
     session.close()
+
+
+def test_builder_persists_deterministic_shipment_product_bridge(
+    engine2_postgres_engine,
+    engine2_postgres_session_factory,
+):
+    if "us_lacey_product_intelligence_snapshots" not in inspect(engine2_postgres_engine).get_table_names():
+        pytest.skip("POSTGRES_SCHEMA_NOT_MIGRATED_TO_049")
+
+    org, operation, _, _, vault_id, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        content=b"pi-bridge-source",
+    )
+    generated_line = derived_line_reference_for_identity("SKU:CHAIR-001")
+
+    session = tenant_session(engine2_postgres_session_factory, org)
+    vault = session.get(VaultDocument, vault_id)
+    assert vault is not None
+    vault.original_filename = "bom.csv"
+    vault.content_type = "text/csv"
+    session.add(
+        UsLaceyPpqPlantLine(
+            organization_id=org,
+            operation_id=operation,
+            line_reference=generated_line,
+            ordinal=1,
+        )
+    )
+    session.commit()
+    session.close()
+
+    revision = seal_current_source_set(
+        organization_id=org,
+        operation_id=operation,
+        session_factory=engine2_postgres_session_factory,
+    )
+    claim = _claim_revision(
+        engine2_postgres_session_factory,
+        organization_id=org,
+        revision=revision,
+    )
+    csv = (
+        b"SKU,Product,Component,Material,Qty,Weight,UOM\n"
+        b"CHAIR-001,Chair,Leg,Rubberwood,4,0.5,kg\n"
+    )
+
+    snapshot = build_product_intelligence_snapshot(
+        organization_id=org,
+        operation_id=operation,
+        claim=claim,
+        session_factory=engine2_postgres_session_factory,
+        vault_service=FakeVault(csv),
+    )
+
+    assert snapshot is not None
+    bridge = snapshot.payload_json["shipment_product_bridge"]
+    assert bridge["linked_count"] == 1
+    assert bridge["review_count"] == 0
+    assert bridge["links"][0]["status"] == "LINKED"
+    assert bridge["links"][0]["shipment_line_reference"] == generated_line
+    assert bridge["links"][0]["product"]["sku"] == "CHAIR-001"

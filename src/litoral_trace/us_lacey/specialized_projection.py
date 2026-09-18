@@ -122,9 +122,14 @@ def _stable_line_key(value: str) -> bool:
     )
 
 
-def _derived_line_reference(line_item_key: str) -> str:
-    digest = hashlib.sha256(line_item_key.encode("utf-8")).hexdigest()[:20].upper()
+def derived_line_reference_for_identity(line_item_key: str) -> str:
+    """Return the deterministic shipment-line reference for one stable line identity."""
+    digest = hashlib.sha256(str(line_item_key).encode("utf-8")).hexdigest()[:20].upper()
     return f"LT-{digest}"
+
+
+def _derived_line_reference(line_item_key: str) -> str:
+    return derived_line_reference_for_identity(line_item_key)
 
 
 def _materialization_identity(candidate: CandidateEnvelope) -> tuple[str, str] | None:
