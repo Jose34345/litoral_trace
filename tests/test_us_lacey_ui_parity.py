@@ -85,5 +85,5 @@ def test_us_lacey_templates_preserve_portal_actions_and_statuses() -> None:
     combined = "\n".join(path.read_text(encoding="utf-8") for path in TEMPLATES.glob("*.html"))
     for value in ("/signup", "/login", "/billing", "/operations", "/logout", "PAYMENT_PENDING", "PILOT"):
         assert value in combined
-    for field in ("legal_name", "admin_email", "accept_terms", "csrf_token", "document"):
+    for field in ("legal_name", "admin_email", "accept_terms", "csrf_token", "documents"):
         assert f'name=\"{field}\"' in combined

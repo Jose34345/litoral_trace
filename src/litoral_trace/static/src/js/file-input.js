@@ -22,7 +22,11 @@ function transferExternalSpacing(input, wrapper) {
 }
 
 function enhanceFileInput(input) {
-  if (input.getAttribute("data-file-input-enhanced") === "true") return;
+  if (
+    input.hidden ||
+    input.hasAttribute("data-file-dropzone-input") ||
+    input.getAttribute("data-file-input-enhanced") === "true"
+  ) return;
 
   const parent = input.parentNode;
   if (!parent) return;
@@ -56,6 +60,131 @@ function enhanceFileInput(input) {
   refresh();
 }
 
+function formatFileSize(bytes) {
+  const kb = Number(bytes || 0) / 1024;
+  return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
+}
+
+function fileKey(file) {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function assignFiles(input, files) {
+  const transfer = new DataTransfer();
+  files.forEach((file) => transfer.items.add(file));
+  input.files = transfer.files;
+}
+
+function initializeFileStaging(form) {
+  if (!form || form.dataset.fileStagingEnhanced === "true") return;
+
+  const input = form.querySelector("[data-file-dropzone-input]");
+  const dropzone = form.querySelector("[data-file-dropzone]");
+  const staging = form.querySelector("[data-file-staging]");
+  const list = form.querySelector("[data-file-staging-list]");
+  const count = form.querySelector("[data-file-count]");
+  const emptyState = form.querySelector("[data-file-empty-state]");
+  const submit = form.querySelector('button[type="submit"]');
+
+  if (!input || !dropzone || !staging || !list) return;
+
+  let files = [];
+
+  const render = () => {
+    list.replaceChildren();
+    staging.hidden = files.length === 0;
+    if (emptyState) emptyState.hidden = files.length > 0;
+    if (submit) submit.disabled = files.length === 0;
+
+    if (count) {
+      count.textContent = `${files.length} file${files.length === 1 ? "" : "s"}`;
+    }
+
+    files.forEach((file) => {
+      const item = document.createElement("li");
+      item.className = "lt-upload-staging__item";
+
+      const info = document.createElement("div");
+      info.className = "lt-upload-staging__info";
+
+      const name = document.createElement("span");
+      name.className = "lt-upload-staging__name";
+      name.textContent = file.name;
+      name.title = file.name;
+
+      const size = document.createElement("span");
+      size.className = "lt-upload-staging__size";
+      size.textContent = formatFileSize(file.size);
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "lt-upload-staging__remove";
+      remove.setAttribute("aria-label", `Remove ${file.name}`);
+      remove.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+
+      remove.addEventListener("click", () => {
+        const key = fileKey(file);
+        files = files.filter((candidate) => fileKey(candidate) !== key);
+        assignFiles(input, files);
+        render();
+      });
+
+      info.append(name, size);
+      item.append(info, remove);
+      list.appendChild(item);
+    });
+  };
+
+  const mergeFiles = (incoming) => {
+    const byKey = new Map(files.map((file) => [fileKey(file), file]));
+    Array.from(incoming || []).forEach((file) => byKey.set(fileKey(file), file));
+    files = Array.from(byKey.values());
+    assignFiles(input, files);
+    render();
+  };
+
+  input.addEventListener("change", () => mergeFiles(input.files));
+
+  dropzone.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    input.click();
+  });
+
+  ["dragenter", "dragover"].forEach((type) => {
+    dropzone.addEventListener(type, (event) => {
+      event.preventDefault();
+      dropzone.classList.add("is-dragging");
+    });
+  });
+
+  ["dragleave", "drop"].forEach((type) => {
+    dropzone.addEventListener(type, () => dropzone.classList.remove("is-dragging"));
+  });
+
+  dropzone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    mergeFiles(event.dataTransfer?.files);
+  });
+
+  form.addEventListener("reset", () => {
+    files = [];
+    window.setTimeout(render, 0);
+  });
+
+  form.dataset.fileStagingEnhanced = "true";
+  render();
+}
+
+function initializeFileStagingForms(root = document) {
+  if (!root) return;
+
+  if (root.matches?.("[data-file-staging-form]")) {
+    initializeFileStaging(root);
+  }
+  root.querySelectorAll?.("[data-file-staging-form]").forEach(initializeFileStaging);
+}
+
 function initializeFileInputs(root = document) {
   if (!root) return;
 
@@ -68,13 +197,24 @@ function initializeFileInputs(root = document) {
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => initializeFileInputs());
+  document.addEventListener("DOMContentLoaded", () => {
+    initializeFileInputs();
+    initializeFileStagingForms();
+  });
 } else {
   initializeFileInputs();
+  initializeFileStagingForms();
 }
 
 document.addEventListener("htmx:load", (event) => {
-  initializeFileInputs(event.detail?.elt || event.target);
+  const root = event.detail?.elt || event.target;
+  initializeFileInputs(root);
+  initializeFileStagingForms(root);
 });
 
-export { enhanceFileInput, initializeFileInputs, selectedFileLabel };
+export {
+  enhanceFileInput,
+  initializeFileInputs,
+  initializeFileStagingForms,
+  selectedFileLabel,
+};

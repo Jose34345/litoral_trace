@@ -63,6 +63,7 @@ from litoral_trace.us_lacey.review import (
     finalize_us_lacey_review,
     review_us_lacey_field,
 )
+from litoral_trace.us_lacey.review_telemetry import parse_review_telemetry
 from litoral_trace.us_lacey.self_service import (
     UsLaceySelfServiceError,
     get_us_lacey_billing_summary,
@@ -74,6 +75,7 @@ from litoral_trace.us_lacey.workflow import (
     UsLaceyWorkflowError,
     create_us_lacey_customer_operation,
     upload_and_enqueue_us_lacey_document,
+    upload_and_enqueue_us_lacey_document_batch,
 )
 from litoral_trace.web.us_lacey_operational_views import (
     render_new_operation,
@@ -614,7 +616,8 @@ def operation_workspace_fragment(
 async def operation_upload_submit(
     operation_public_id: str,
     request: Request,
-    document: UploadFile = File(...),
+    documents: list[UploadFile] | None = File(None),
+    document: UploadFile | None = File(None),
     document_role: str = Form("UNKNOWN"),
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
@@ -626,17 +629,29 @@ async def operation_upload_submit(
             purpose=f"upload:{operation_public_id}",
             submitted_token=csrf_token,
         )
-        content = await document.read()
-        if not content:
-            raise UsLaceyWorkflowError("The uploaded document is empty.")
-        upload_and_enqueue_us_lacey_document(
+        uploads = list(documents or ())
+        if document is not None:
+            uploads.append(document)
+        if not uploads:
+            raise UsLaceyWorkflowError("Choose at least one shipment or supplier document.")
+
+        payloads: list[tuple[str, str, bytes, str]] = []
+        for upload in uploads:
+            content = await upload.read()
+            if not content:
+                raise UsLaceyWorkflowError("The uploaded document is empty.")
+            payloads.append((
+                upload.filename or "document",
+                upload.content_type or "application/octet-stream",
+                content,
+                document_role,
+            ))
+
+        upload_and_enqueue_us_lacey_document_batch(
             organization_id=identity.organization_id,
             user_id=identity.user_id,
             operation_public_id=operation_public_id,
-            filename=document.filename or "document",
-            content_type=document.content_type or "application/octet-stream",
-            content=content,
-            document_role=document_role,
+            documents=tuple(payloads),
         )
         return RedirectResponse(
             f"/operations/{operation_public_id}?uploaded=1",
@@ -717,6 +732,9 @@ def operation_complete_submit(
     operation_public_id: str,
     request: Request,
     csrf_token: str = Form(...),
+    review_started_at: str = Form(""),
+    review_elapsed_seconds: str = Form(""),
+    review_modified_field_ids: str = Form(""),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
@@ -726,11 +744,17 @@ def operation_complete_submit(
             purpose=f"complete:{operation_public_id}",
             submitted_token=csrf_token,
         )
+        telemetry = parse_review_telemetry(
+            started_at=review_started_at,
+            elapsed_seconds=review_elapsed_seconds,
+            modified_field_ids=review_modified_field_ids,
+        )
         finalize_us_lacey_review(
             organization_id=identity.organization_id,
             operation_public_id=operation_public_id,
             user_id=identity.user_id,
             user_email=identity.email,
+            telemetry=telemetry,
         )
         return RedirectResponse(f"/operations/{operation_public_id}?completed=1", status_code=303)
     except UsLaceyPortalAuthError:

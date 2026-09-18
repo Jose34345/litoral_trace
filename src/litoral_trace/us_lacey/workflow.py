@@ -179,6 +179,17 @@ def upload_and_enqueue_us_lacey_document_batch(
     """Attach an entire HTTP batch before sealing or making any job eligible."""
     if not documents:
         raise UsLaceyWorkflowError("Choose at least one shipment or supplier document.")
+
+    # Validate the full HTTP batch before the first Vault write. A rejected
+    # multi-shipment source must not leave a partially-attached source set behind.
+    for filename, _content_type, content, _document_role in documents:
+        if not content:
+            raise UsLaceyWorkflowError("The uploaded document is empty.")
+        try:
+            enforce_shipment_document_budget(filename=filename, content=content)
+        except ShipmentBatchRejected as exc:
+            raise UsLaceyWorkflowError(exc.safe_message) from exc
+
     operation_service = operations or UsLaceyOperationService()
     operation_id = operation_service.get_internal_id(
         organization_id=organization_id, operation_public_id=operation_public_id,

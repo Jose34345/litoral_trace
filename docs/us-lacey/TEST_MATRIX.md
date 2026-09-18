@@ -23,6 +23,7 @@ Use this as a routing guide. Exact test names evolve; search existing tests befo
 | semantic evidence/snapshots | evidence/text/semantic tests | PostgreSQL migration gate + U.S. Lacey PostgreSQL gate |
 | RLS/tenant-owned persistence | negative cross-tenant/RLS tests | PostgreSQL gates |
 | review/audit behavior | review/bulk-review/audit tests | general CI + relevant PostgreSQL gate |
+| exception-first review / staging / UX telemetry | `tests/test_us_lacey_p2_exception_first.py` + review UX/regulatory UI tests | general CI + `lacey-visual-qa.yml` for material presentation changes |
 | PPQ505/exporters | export snapshot, Excel/XML/PPQ505 tests | general CI; live gate only if runtime integration affected |
 | portal/auth/self-service | auth/access/portal tests | general CI + relevant live gate when deployment behavior changes |
 | billing | billing/webhook/payment-event tests | general CI |
