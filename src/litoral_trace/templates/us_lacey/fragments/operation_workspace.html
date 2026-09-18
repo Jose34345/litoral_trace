@@ -144,23 +144,23 @@
       <div><h2 class="text-lg font-bold text-slate-950">Review exceptions</h2><p class="mt-1 text-sm text-slate-600">Focus on missing, ambiguous or conflicting information. Supported extraction stays grouped separately unless you choose to inspect it.</p></div>
       {% if attention_fields %}<span class="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-800">{{ attention_fields|length }} need attention</span>{% else %}<span class="rounded-full bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-800">No unresolved exceptions</span>{% endif %}
     </div>
-    <div id="review-field-list" class="mt-5 grid gap-6">
+    <div id="review-field-list" class="mt-5 grid grid-cols-1 gap-6 items-start lg:grid-cols-2">
       {% set review_index = namespace(value=0) %}
       {% for line_reference, fields in attention_fields|groupby("line_reference") %}
-      <section class="grid gap-3" data-review-line="{{ line_reference }}">
-        <div class="flex items-center gap-3 border-b border-slate-200 pb-3"><h3 class="text-sm font-bold text-slate-800">{% if fields[0].scope == "SHIPMENT" %}Shipment information{% else %}Plant line {{ line_reference }}{% endif %}</h3><span class="text-xs font-semibold text-slate-500">{{ fields|length }} exception{{ '' if fields|length == 1 else 's' }}</span></div>
+      <section class="col-span-full grid grid-cols-1 gap-3 items-start lg:grid-cols-2" data-review-line="{{ line_reference }}">
+        <div class="col-span-full flex items-center gap-3 border-b border-slate-200 pb-3"><h3 class="text-sm font-bold text-slate-800">{% if fields[0].scope == "SHIPMENT" %}Shipment information{% else %}Plant line {{ line_reference }}{% endif %}</h3><span class="text-xs font-semibold text-slate-500">{{ fields|length }} exception{{ '' if fields|length == 1 else 's' }}</span></div>
         {% for field in fields %}{% set review_index.value = review_index.value + 1 %}{{ review_field(field, review_index.value) }}{% endfor %}
       </section>
       {% else %}
-        {{ empty_state("No unresolved exception items", icon="fa-circle-check") }}
+        <div class="col-span-full">{{ empty_state("No unresolved exception items", icon="fa-circle-check") }}</div>
       {% endfor %}
 
       {% if auto_supported_fields %}
-      <details class="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4" data-auto-supported-fields>
+      <details class="col-span-full rounded-xl border border-emerald-200 bg-emerald-50/40 p-4" data-auto-supported-fields>
         <summary class="cursor-pointer">
           <div><p class="font-bold text-emerald-800">✓ {{ auto_supported_fields|length }} fields extracted and automatically supported</p><p class="mt-1 text-xs text-slate-500">Supported by the current evidence. Human confirmation is still required.</p></div>
         </summary>
-        <div class="mt-5 grid gap-3">
+        <div class="mt-5 grid grid-cols-1 gap-3 items-start lg:grid-cols-2">
           {% for field in auto_supported_fields %}{{ review_field(field, loop.index) }}{% endfor %}
         </div>
         <form class="mt-5" method="post" action="/operations/{{ detail.public_id }}/review/actions/accept-supported" hx-post="/operations/{{ detail.public_id }}/review/actions/accept-supported" hx-target="#review-field-list" hx-select="#review-field-list" hx-swap="outerHTML" data-review-action data-review-bulk><input type="hidden" name="csrf_token" value="{{ complete_csrf }}">{{ button("Confirm all supported fields (" ~ auto_supported_fields|length ~ ")", variant="primary", button_type="submit", icon="fa-check-double") }}</form>
