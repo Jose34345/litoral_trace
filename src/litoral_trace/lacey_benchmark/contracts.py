@@ -70,6 +70,7 @@ class FieldTruth:
 @dataclass(frozen=True, slots=True)
 class FieldTruthCorpus:
     version: str
+    source_fixture: str
     fields: tuple[FieldTruth, ...]
 
 
