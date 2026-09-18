@@ -79,6 +79,20 @@ migrations = ["alembic/versions/043_add_us_lacey_engine2_shadow.py"]
 tests = ["tests/lacey_engine"]
 notes = "Shadow output must not silently alter canonical customer-facing truth."
 
+[capabilities.shadow_canonical_benchmark]
+status = "ACTIVE"
+owner = "lacey_benchmark"
+authority = "observation"
+implementation = [
+  "src/litoral_trace/lacey_benchmark/shadow_canonical_diff.py",
+  "benchmarks/lacey/v2"
+]
+tests = [
+  "tests/lacey_benchmark/test_shadow_canonical_diff.py"
+]
+workflows = [".github/workflows/ci.yml"]
+notes = "Offline P2-01 QA only. Compares Engine 2 Shadow and Canonical ShipmentTruth by exact field/entity slots; it has no runtime publication, routing, reconciliation, persistence or regulatory authority."
+
 [capabilities.operation_workflow]
 status = "ACTIVE"
 owner = "us_lacey"
