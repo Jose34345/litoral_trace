@@ -119,23 +119,6 @@ def _product_intelligence() -> ProductIntelligenceView:
                 }
             ],
             "issues": [],
-            "shipment_product_bridge": {
-                "schema_version": "shipment-product-bridge-v1",
-                "shipment_line_count": 1,
-                "composition_count": 1,
-                "linked_count": 1,
-                "review_count": 0,
-                "links": [
-                    {
-                        "status": "LINKED",
-                        "line_item_key": "SKU:CHAIR-001",
-                        "shipment_line_reference": "LT-ABC123",
-                        "candidate_line_references": ["LT-ABC123"],
-                        "source": {"filename": "BOM.xlsx", "table_name": "BOM"},
-                        "product": {"sku": "CHAIR-001", "product_name": "Chair", "components": []},
-                    }
-                ],
-            },
         },
     )
 
@@ -163,9 +146,6 @@ def test_operation_detail_renders_product_composition_with_source_provenance(mon
     assert "Plywood" in html
     assert "BOM.xlsx" in html
     assert "row 2" in html
-    assert 'data-shipment-product-bridge' in html
-    assert 'data-shipment-product-link-status="LINKED"' in html
-    assert "shipment line LT-ABC123" in html
 
 
 def test_operation_detail_renders_non_applicable_product_intelligence_compactly(monkeypatch):
