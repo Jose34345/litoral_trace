@@ -124,6 +124,8 @@ _COMPONENT_FIELDS = frozenset(
         "percent_recycled",
     }
 )
+_QUANTITATIVE_COMPONENT_FIELDS = frozenset({"plant_quantity", "metric_unit"})
+_SHIPMENT_TOTAL_ENTERED_VALUE = "shipment_total_entered_value"
 _BOTANICAL_PPQ_FIELDS = frozenset(_ENGINE_TO_PPQ[key] for key in _COMPONENT_FIELDS)
 _ROW_ORDINAL = re.compile(r"(?:^|:)row:(\d+)$", re.IGNORECASE)
 _TAXON = re.compile(r"^taxon:([^:]+):([^:]+)$", re.IGNORECASE)
@@ -242,6 +244,32 @@ def _contains_taxon(text: str, taxon_key: str) -> bool:
     )
 
 
+def _explicit_component_line_matches(
+    *,
+    component_key: str,
+    merchandise_keys: tuple[str, ...] | list[str],
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+) -> tuple[str, ...] | None:
+    """Return explicit SKU/line bindings for one taxon-bearing component.
+
+    Genus/species observations already carrying both component_key and line_key
+    are direct identity evidence. Multiple explicit lines remain ambiguous and
+    are returned as such so callers fail closed instead of falling back to
+    description matching.
+    """
+    known_lines = frozenset(merchandise_keys)
+    lines = {
+        row.line_key
+        for field_key in ("genus", "species")
+        for row in evidence_by_field.get(field_key, ())
+        if row.component_key == component_key
+        and row.line_key in known_lines
+    }
+    if not lines:
+        return None
+    return tuple(sorted(lines))
+
+
 def _low_authority_review_fields(payload: Mapping) -> frozenset[str]:
     fields: set[str] = set()
     for issue in payload.get("issues") or ():
@@ -253,6 +281,131 @@ def _low_authority_review_fields(payload: Mapping) -> frozenset[str]:
         if field:
             fields.add(field)
     return frozenset(fields)
+
+
+def _line_has_single_valid_hts(
+    *,
+    line_key: str,
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+) -> bool:
+    values = {
+        row.normalized_value
+        for row in evidence_by_field.get("hts_code", ())
+        if row.line_key == line_key
+        and validate_ppq_value("hts_code", row.normalized_value).status.value == "VALID"
+    }
+    return len(values) == 1
+
+
+def _quantitative_component_rows(
+    *,
+    engine_key: str,
+    line_key: str,
+    component_key: str,
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+) -> tuple[CanonicalEvidence, ...]:
+    """Return only quantitative rows with deterministic line-binding proof.
+
+    A derived line_key is produced upstream only by explicit SKU/LINE identity or
+    exact HTS+taxon binding. Taxon-scoped rows remain admissible when the canonical
+    line itself has one valid HTS and the taxon->line mapping is unique.
+    """
+    strong_taxon_signature = _line_has_single_valid_hts(
+        line_key=line_key,
+        evidence_by_field=evidence_by_field,
+    )
+    return tuple(
+        row
+        for row in evidence_by_field.get(engine_key, ())
+        if row.line_key == line_key
+        or (
+            strong_taxon_signature
+            and row.component_key == component_key
+        )
+    )
+
+
+def _unique_shipment_total_entered_value(
+    *,
+    field_payloads: Mapping[str, Mapping],
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+) -> CanonicalFieldTruth | None:
+    field_payload = field_payloads.get(_SHIPMENT_TOTAL_ENTERED_VALUE)
+    if field_payload is None:
+        return None
+    if str(field_payload.get("state") or "") not in {
+        CanonicalTruthState.SUPPORTED.value,
+        CanonicalTruthState.SUPPORTED_MULTIPLE.value,
+    }:
+        return None
+
+    raw_rows = tuple(
+        row
+        for row in (field_payload.get("supporting_evidence") or ())
+        if isinstance(row, Mapping)
+    )
+    if not raw_rows:
+        return None
+    if any(
+        str(row.get("scope") or "").upper() != "SHIPMENT"
+        or row.get("line_key")
+        or row.get("component_key")
+        for row in raw_rows
+    ):
+        return None
+
+    rows = evidence_by_field.get(_SHIPMENT_TOTAL_ENTERED_VALUE, ())
+    if len(_distinct_values(rows)) != 1:
+        return None
+
+    return _field_truth(
+        target_key="entered_value",
+        field_payload=field_payload,
+        rows=rows,
+        force_review=True,
+    )
+
+
+def _apply_single_line_entered_value_inference(
+    *,
+    line_truths: list[CanonicalPlantLineTruth],
+    unresolved: set[str],
+    field_payloads: Mapping[str, Mapping],
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+) -> list[CanonicalPlantLineTruth]:
+    """Use one shipment total for one proven line, always as REVIEW_REQUIRED."""
+    if len(line_truths) != 1 or unresolved:
+        return line_truths
+
+    line = line_truths[0]
+    if (
+        line.taxon_key is None
+        or "hts_code" not in line.fields
+        or "entered_value" in line.fields
+        or not _line_has_single_valid_hts(
+            line_key=line.entity_key,
+            evidence_by_field=evidence_by_field,
+        )
+    ):
+        return line_truths
+
+    inferred = _unique_shipment_total_entered_value(
+        field_payloads=field_payloads,
+        evidence_by_field=evidence_by_field,
+    )
+    if inferred is None:
+        return line_truths
+
+    fields = dict(line.fields)
+    fields["entered_value"] = inferred
+    return [
+        CanonicalPlantLineTruth(
+            entity_key=line.entity_key,
+            ordinal_hint=line.ordinal_hint,
+            taxon_key=line.taxon_key,
+            fields=fields,
+        )
+    ]
 
 
 def _composed_merchandise_description(
@@ -324,7 +477,7 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
     component_keys = sorted(
         {
             row.component_key
-            for key in _COMPONENT_FIELDS
+            for key in (_COMPONENT_FIELDS - _QUANTITATIVE_COMPONENT_FIELDS)
             for row in evidence_by_field.get(key, ())
             if row.component_key
         }
@@ -342,13 +495,28 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
 
     matches_by_component: dict[str, tuple[str, ...]] = {}
     for component_key in component_keys:
-        matches = tuple(
-            line_key
-            for line_key in merchandise_keys
-            if _contains_taxon(description_text_by_line.get(line_key, ""), component_key)
+        explicit_matches = _explicit_component_line_matches(
+            component_key=component_key,
+            merchandise_keys=merchandise_keys,
+            evidence_by_field=evidence_by_field,
         )
-        if not matches and len(merchandise_keys) == 1 and len(component_keys) == 1:
-            matches = (merchandise_keys[0],)
+        if explicit_matches is not None:
+            matches = explicit_matches
+        else:
+            matches = tuple(
+                line_key
+                for line_key in merchandise_keys
+                if _contains_taxon(
+                    description_text_by_line.get(line_key, ""),
+                    component_key,
+                )
+            )
+            if (
+                not matches
+                and len(merchandise_keys) == 1
+                and len(component_keys) == 1
+            ):
+                matches = (merchandise_keys[0],)
         matches_by_component[component_key] = matches
 
     component_for_line: dict[str, str] = {}
@@ -388,11 +556,19 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
                 field_payload = field_payloads.get(engine_key)
                 if field_payload is None:
                     continue
-                rows = tuple(
-                    row
-                    for row in evidence_by_field.get(engine_key, ())
-                    if row.component_key == component_key
-                )
+                if engine_key in _QUANTITATIVE_COMPONENT_FIELDS:
+                    rows = _quantitative_component_rows(
+                        engine_key=engine_key,
+                        line_key=line_key,
+                        component_key=component_key,
+                        evidence_by_field=evidence_by_field,
+                    )
+                else:
+                    rows = tuple(
+                        row
+                        for row in evidence_by_field.get(engine_key, ())
+                        if row.component_key == component_key
+                    )
                 if not rows:
                     continue
                 line_fields[_ENGINE_TO_PPQ[engine_key]] = _field_truth(
@@ -440,6 +616,12 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
                 )
             )
 
+    line_truths = _apply_single_line_entered_value_inference(
+        line_truths=line_truths,
+        unresolved=unresolved,
+        field_payloads=field_payloads,
+        evidence_by_field=evidence_by_field,
+    )
     plant_lines = tuple(line_truths)
     shipment_fields: dict[str, CanonicalFieldTruth] = {}
     for engine_key, field_payload in field_payloads.items():

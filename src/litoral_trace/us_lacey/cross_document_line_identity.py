@@ -30,7 +30,10 @@ _COMPONENT_FIELDS = (
     "metric_unit",
     "percent_recycled",
 )
+_QUANTITATIVE_COMPONENT_FIELDS = frozenset({"plant_quantity", "metric_unit"})
 _TAXON = re.compile(r"^taxon:([^:]+):([^:]+)$", re.IGNORECASE)
+_EXPLICIT_SKU = re.compile(r"^SKU:[A-Z0-9][A-Z0-9._/-]*$", re.IGNORECASE)
+_EXPLICIT_LINE = re.compile(r"^LINE:(\d{1,6})$", re.IGNORECASE)
 _ROW = re.compile(r"^(?P<document>[^:]+):(?P<table>.+):row:(?P<row>\d+)$", re.IGNORECASE)
 
 
@@ -129,6 +132,36 @@ def _hts_identity(value: str) -> str | None:
     return validation.normalized_value
 
 
+def _taxon_tokens(taxon: str) -> tuple[str, str] | None:
+    match = _TAXON.fullmatch(taxon)
+    if not match:
+        return None
+    return match.group(1).casefold(), match.group(2).casefold()
+
+
+def _text_contains_taxon(text: object, taxon: str) -> bool:
+    parts = _taxon_tokens(taxon)
+    if parts is None:
+        return False
+    normalized = " ".join(
+        re.sub(r"[^a-z0-9]+", " ", str(text or "").casefold()).split()
+    )
+    genus, species = parts
+    return bool(
+        re.search(rf"\b{re.escape(genus)}\b", normalized)
+        and re.search(rf"\b{re.escape(species)}\b", normalized)
+    )
+
+
+def _known_component_taxa(fields: Mapping) -> frozenset[str]:
+    return frozenset(
+        taxon
+        for field_name in ("genus", "species")
+        for row in _field_rows(fields, field_name)
+        if (taxon := _taxon_key(row.get("component_key"))) is not None
+    )
+
+
 def _anchored_taxa(fields: Mapping, known_line_keys: frozenset[str]) -> dict[str, frozenset[str]]:
     taxa: dict[str, set[str]] = defaultdict(set)
     for field_name in ("genus", "species"):
@@ -139,6 +172,37 @@ def _anchored_taxa(fields: Mapping, known_line_keys: frozenset[str]) -> dict[str
             source_line = _source_line_key(row, known_line_keys)
             if source_line is not None:
                 taxa[source_line].add(taxon)
+
+    # A commercial description may contribute to the strong signature only when
+    # it literally contains exactly one taxon already observed elsewhere in the
+    # shipment. This is exact entity resolution, not taxonomy inference.
+    known_taxa = _known_component_taxa(fields)
+    if known_taxa:
+        for line_key in known_line_keys:
+            description_rows = [
+                row
+                for row in _field_rows(fields, "description")
+                if str(row.get("line_key") or "").strip() == line_key
+            ]
+            matches = {
+                taxon
+                for row in description_rows
+                for taxon in known_taxa
+                if _text_contains_taxon(
+                    " ".join(
+                        value
+                        for value in (
+                            _normalized(row),
+                            _provenance(row).get("source_text"),
+                        )
+                        if value
+                    ),
+                    taxon,
+                )
+            }
+            if len(matches) == 1:
+                taxa[line_key].update(matches)
+
     return {key: frozenset(values) for key, values in taxa.items()}
 
 
@@ -232,6 +296,124 @@ def _taxon_to_unique_rep(rep_to_taxon: Mapping[str, str]) -> dict[str, str]:
         for taxon, reps in reps_by_taxon.items()
         if len(reps) == 1
     }
+
+
+def _line_documents(
+    fields: Mapping,
+    known_line_keys: frozenset[str],
+) -> dict[str, frozenset[str]]:
+    """Return source-document ownership for each merchandise line identity."""
+    documents: dict[str, set[str]] = defaultdict(set)
+    for field_name in _MERCHANDISE_FIELDS:
+        for row in _field_rows(fields, field_name):
+            line_key = str(row.get("line_key") or "").strip()
+            document_id = str(row.get("document_id") or "").strip()
+            if line_key in known_line_keys and document_id:
+                documents[line_key].add(document_id)
+    return {key: frozenset(values) for key, values in documents.items()}
+
+
+def _line_signatures(
+    *,
+    fields: Mapping,
+    line_keys: tuple[str, ...],
+    taxa_by_line: Mapping[str, frozenset[str]],
+) -> dict[str, tuple[str, str]]:
+    """Freeze strong source-line signatures before any derived rewrite occurs."""
+    signatures: dict[str, tuple[str, str]] = {}
+    for line_key in line_keys:
+        signature = _strong_signature(
+            fields=fields,
+            line_key=line_key,
+            taxa_by_line=taxa_by_line,
+        )
+        if signature is not None:
+            signatures[line_key] = signature
+    return signatures
+
+
+def _signature_to_unique_rep(
+    *,
+    line_signatures: Mapping[str, tuple[str, str]],
+    member_to_rep: Mapping[str, str],
+) -> dict[tuple[str, str], str]:
+    reps_by_signature: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for line_key, signature in line_signatures.items():
+        reps_by_signature[signature].add(member_to_rep[line_key])
+    return {
+        signature: next(iter(representatives))
+        for signature, representatives in reps_by_signature.items()
+        if len(representatives) == 1
+    }
+
+
+def _explicit_quantitative_rep(
+    row: Mapping,
+    *,
+    known_line_keys: frozenset[str],
+    member_to_rep: Mapping[str, str],
+    line_documents: Mapping[str, frozenset[str]],
+) -> str | None:
+    """Resolve only explicit SKU or document-local line-number identities."""
+    document_id = str(row.get("document_id") or "").strip()
+    for raw in (row.get("line_key"), row.get("component_key")):
+        identity = str(raw or "").strip()
+        if not identity or identity not in known_line_keys:
+            continue
+        if _EXPLICIT_SKU.fullmatch(identity):
+            return member_to_rep.get(identity)
+        if _EXPLICIT_LINE.fullmatch(identity):
+            owners = line_documents.get(identity, frozenset())
+            if owners == frozenset({document_id}):
+                return member_to_rep.get(identity)
+    return None
+
+
+def _strong_signature_quantitative_rep(
+    row: Mapping,
+    *,
+    known_line_keys: frozenset[str],
+    line_signatures: Mapping[str, tuple[str, str]],
+    member_to_rep: Mapping[str, str],
+    signature_to_rep: Mapping[tuple[str, str], str],
+) -> str | None:
+    """Resolve a quantitative row only through its frozen source-row signature."""
+    source_line = _source_line_key(row, known_line_keys)
+    if source_line is None:
+        return None
+    signature = line_signatures.get(source_line)
+    if signature is None:
+        return None
+    representative = signature_to_rep.get(signature)
+    if representative is None:
+        return None
+    return representative if member_to_rep[source_line] == representative else None
+
+
+def _quantitative_rep(
+    row: Mapping,
+    *,
+    known_line_keys: frozenset[str],
+    line_signatures: Mapping[str, tuple[str, str]],
+    member_to_rep: Mapping[str, str],
+    signature_to_rep: Mapping[tuple[str, str], str],
+    line_documents: Mapping[str, frozenset[str]],
+) -> str | None:
+    explicit = _explicit_quantitative_rep(
+        row,
+        known_line_keys=known_line_keys,
+        member_to_rep=member_to_rep,
+        line_documents=line_documents,
+    )
+    if explicit is not None:
+        return explicit
+    return _strong_signature_quantitative_rep(
+        row,
+        known_line_keys=known_line_keys,
+        line_signatures=line_signatures,
+        member_to_rep=member_to_rep,
+        signature_to_rep=signature_to_rep,
+    )
 
 
 def _row_rep(
@@ -336,10 +518,15 @@ def _rewrite_field_rows(
     field_payload: object,
     *,
     field_name: str,
+    fields: Mapping,
     known_line_keys: frozenset[str],
+    taxa_by_line: Mapping[str, frozenset[str]],
+    line_signatures: Mapping[str, tuple[str, str]],
     member_to_rep: Mapping[str, str],
     rep_to_taxon: Mapping[str, str],
     taxon_to_rep: Mapping[str, str],
+    signature_to_rep: Mapping[tuple[str, str], str],
+    line_documents: Mapping[str, frozenset[str]],
 ) -> None:
     if not isinstance(field_payload, dict):
         return
@@ -357,6 +544,26 @@ def _rewrite_field_rows(
 
         if field_name not in _COMPONENT_FIELDS:
             continue
+
+        if field_name in _QUANTITATIVE_COMPONENT_FIELDS:
+            representative = _quantitative_rep(
+                row,
+                known_line_keys=known_line_keys,
+                line_signatures=line_signatures,
+                member_to_rep=member_to_rep,
+                signature_to_rep=signature_to_rep,
+                line_documents=line_documents,
+            )
+            if representative is None:
+                continue
+            # This is a derived canonical binding proof only. Candidate/raw
+            # evidence retains its original component/source identities.
+            row["line_key"] = representative
+            taxon = rep_to_taxon.get(representative)
+            if taxon is not None:
+                row["component_key"] = taxon
+            continue
+
         representative = _row_rep(
             row,
             known_line_keys=known_line_keys,
@@ -412,7 +619,7 @@ def reconcile_cross_document_line_identity(payload: Mapping) -> dict:
             ),
         )
     )
-    if len(line_keys) < 2:
+    if not line_keys:
         return rewritten
 
     known_line_keys = frozenset(line_keys)
@@ -422,14 +629,24 @@ def reconcile_cross_document_line_identity(payload: Mapping) -> dict:
         line_keys=line_keys,
         taxa_by_line=taxa_by_line,
     )
-    if not any(len(members) > 1 for members in rep_to_members.values()):
-        return rewritten
-
     taxon_to_rep = _taxon_to_unique_rep(rep_to_taxon)
+    line_signatures = _line_signatures(
+        fields=fields,
+        line_keys=line_keys,
+        taxa_by_line=taxa_by_line,
+    )
+    signature_to_rep = _signature_to_unique_rep(
+        line_signatures=line_signatures,
+        member_to_rep=member_to_rep,
+    )
+    line_documents = _line_documents(fields, known_line_keys)
 
     description_payload = fields.get("description")
     original_description_rows = _field_rows(fields, "description")
-    synthesize_description = not original_description_rows
+    has_collapsed_equivalence = any(
+        len(members) > 1 for members in rep_to_members.values()
+    )
+    synthesize_description = has_collapsed_equivalence and not original_description_rows
     synthesized = (
         _synthesized_descriptions(
             fields=fields,
@@ -445,10 +662,15 @@ def reconcile_cross_document_line_identity(payload: Mapping) -> dict:
         _rewrite_field_rows(
             field_payload,
             field_name=str(field_name),
+            fields=fields,
             known_line_keys=known_line_keys,
+            taxa_by_line=taxa_by_line,
+            line_signatures=line_signatures,
             member_to_rep=member_to_rep,
             rep_to_taxon=rep_to_taxon,
             taxon_to_rep=taxon_to_rep,
+            signature_to_rep=signature_to_rep,
+            line_documents=line_documents,
         )
 
     if synthesize_description and synthesized:

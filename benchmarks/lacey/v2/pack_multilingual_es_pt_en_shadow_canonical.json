@@ -1,0 +1,452 @@
+{
+  "version": "p2-shadow-canonical-v1",
+  "pack_id": "pack-multilingual-es-pt-en",
+  "description": "Multilingual ES/PT/EN regression packet derived from the synthetic seven-document Lacey packet; Shadow now covers HTS, entered value and metric unit so P1-02 quantitative binding is measured end-to-end.",
+  "shadow": {
+    "availability": "CURRENT",
+    "fields": [
+      {
+        "field_key": "species",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "Acacia mangium",
+          "Hevea brasiliensis",
+          "Tectona grandis"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:ACT-TRAY-18",
+            "component_key": "taxon:acacia:mangium",
+            "normalized_value": "Acacia mangium",
+            "source_filename": "04_Declaracion_Botanica_ES.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "es"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:RUB-CB-32",
+            "component_key": "taxon:hevea:brasiliensis",
+            "normalized_value": "Hevea brasiliensis",
+            "source_filename": "05_Declaracao_Fornecedor_PT.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "pt"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:TEK-SRV-04",
+            "component_key": "taxon:tectona:grandis",
+            "normalized_value": "Tectona grandis",
+            "source_filename": "06_Botanical_Support_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "country_of_harvest",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "Vietnam",
+          "Indonesia"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:ACT-TRAY-18",
+            "component_key": "taxon:acacia:mangium",
+            "normalized_value": "Vietnam",
+            "source_filename": "04_Declaracion_Botanica_ES.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "es"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:RUB-CB-32",
+            "component_key": "taxon:hevea:brasiliensis",
+            "normalized_value": "Vietnam",
+            "source_filename": "05_Declaracao_Fornecedor_PT.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "pt"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:TEK-SRV-04",
+            "component_key": "taxon:tectona:grandis",
+            "normalized_value": "Indonesia",
+            "source_filename": "06_Botanical_Support_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "plant_quantity",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "315",
+          "510",
+          "145"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:ACT-TRAY-18",
+            "component_key": "taxon:acacia:mangium",
+            "normalized_value": "315",
+            "source_filename": "04_Declaracion_Botanica_ES.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "es"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:RUB-CB-32",
+            "component_key": "taxon:hevea:brasiliensis",
+            "normalized_value": "510",
+            "source_filename": "05_Declaracao_Fornecedor_PT.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "pt"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:TEK-SRV-04",
+            "component_key": "taxon:tectona:grandis",
+            "normalized_value": "145",
+            "source_filename": "06_Botanical_Support_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "hts_code",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "4419909000",
+          "4419908000",
+          "4421999880"
+        ],
+        "evidence": [
+          {
+            "scope": "MERCHANDISE_LINE",
+            "line_key": "SKU:ACT-TRAY-18",
+            "component_key": null,
+            "normalized_value": "4419909000",
+            "source_filename": "03_Entry_Worksheet_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          },
+          {
+            "scope": "MERCHANDISE_LINE",
+            "line_key": "SKU:RUB-CB-32",
+            "component_key": null,
+            "normalized_value": "4419908000",
+            "source_filename": "03_Entry_Worksheet_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          },
+          {
+            "scope": "MERCHANDISE_LINE",
+            "line_key": "SKU:TEK-SRV-04",
+            "component_key": null,
+            "normalized_value": "4421999880",
+            "source_filename": "03_Entry_Worksheet_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "metric_unit",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "KG"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:ACT-TRAY-18",
+            "component_key": "taxon:acacia:mangium",
+            "normalized_value": "KG",
+            "source_filename": "04_Declaracion_Botanica_ES.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "es"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:RUB-CB-32",
+            "component_key": "taxon:hevea:brasiliensis",
+            "normalized_value": "KG",
+            "source_filename": "05_Declaracao_Fornecedor_PT.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "pt"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:TEK-SRV-04",
+            "component_key": "taxon:tectona:grandis",
+            "normalized_value": "KG",
+            "source_filename": "06_Botanical_Support_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "entered_value",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "18900",
+          "17760",
+          "11200"
+        ],
+        "evidence": [
+          {
+            "scope": "MERCHANDISE_LINE",
+            "line_key": "SKU:ACT-TRAY-18",
+            "component_key": null,
+            "normalized_value": "18900",
+            "source_filename": "03_Entry_Worksheet_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          },
+          {
+            "scope": "MERCHANDISE_LINE",
+            "line_key": "SKU:RUB-CB-32",
+            "component_key": null,
+            "normalized_value": "17760",
+            "source_filename": "03_Entry_Worksheet_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          },
+          {
+            "scope": "MERCHANDISE_LINE",
+            "line_key": "SKU:TEK-SRV-04",
+            "component_key": null,
+            "normalized_value": "11200",
+            "source_filename": "03_Entry_Worksheet_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "manufacturer_id",
+        "state": "SUPPORTED",
+        "values": [
+          "VNMKHOM123HCM"
+        ],
+        "evidence": [
+          {
+            "scope": "SHIPMENT",
+            "line_key": null,
+            "component_key": null,
+            "normalized_value": "VNMKHOM123HCM",
+            "source_filename": "01_Commercial_Invoice_EN.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      }
+    ]
+  },
+  "canonical": {
+    "shipment_fields": {
+      "manufacturer_id": {
+        "state": "SUPPORTED",
+        "values": [
+          "VNMKHOM123HCM"
+        ],
+        "publication_status": "FOUND",
+        "issue_types": []
+      }
+    },
+    "plant_lines": [
+      {
+        "entity_key": "SKU:ACT-TRAY-18",
+        "fields": {
+          "country_of_harvest": {
+            "state": "SUPPORTED",
+            "values": [
+              "Vietnam"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "entered_value": {
+            "state": "SUPPORTED",
+            "values": [
+              "18900"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "hts_code": {
+            "state": "SUPPORTED",
+            "values": [
+              "4419909000"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "metric_unit": {
+            "state": "SUPPORTED",
+            "values": [
+              "KG"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "plant_quantity": {
+            "state": "SUPPORTED",
+            "values": [
+              "315"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "species": {
+            "state": "SUPPORTED",
+            "values": [
+              "Acacia mangium"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          }
+        }
+      },
+      {
+        "entity_key": "SKU:RUB-CB-32",
+        "fields": {
+          "country_of_harvest": {
+            "state": "SUPPORTED",
+            "values": [
+              "Vietnam"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "entered_value": {
+            "state": "SUPPORTED",
+            "values": [
+              "17760"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "hts_code": {
+            "state": "SUPPORTED",
+            "values": [
+              "4419908000"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "metric_unit": {
+            "state": "SUPPORTED",
+            "values": [
+              "KG"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "plant_quantity": {
+            "state": "SUPPORTED",
+            "values": [
+              "510"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "species": {
+            "state": "SUPPORTED",
+            "values": [
+              "Hevea brasiliensis"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          }
+        }
+      },
+      {
+        "entity_key": "SKU:TEK-SRV-04",
+        "fields": {
+          "country_of_harvest": {
+            "state": "SUPPORTED",
+            "values": [
+              "Indonesia"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "entered_value": {
+            "state": "SUPPORTED",
+            "values": [
+              "11200"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "hts_code": {
+            "state": "SUPPORTED",
+            "values": [
+              "4421999880"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "metric_unit": {
+            "state": "SUPPORTED",
+            "values": [
+              "KG"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "plant_quantity": {
+            "state": "SUPPORTED",
+            "values": [
+              "145"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "species": {
+            "state": "SUPPORTED",
+            "values": [
+              "Tectona grandis"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          }
+        }
+      }
+    ]
+  },
+  "expected_diff": {
+    "comparable_slots": 19,
+    "agreement_count": 19,
+    "shadow_supported_but_canonical_missing": 0,
+    "canonical_supported_but_shadow_missing": 0,
+    "false_conflict_count": 0
+  }
+}

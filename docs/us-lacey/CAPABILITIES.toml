@@ -79,6 +79,22 @@ migrations = ["alembic/versions/043_add_us_lacey_engine2_shadow.py"]
 tests = ["tests/lacey_engine"]
 notes = "Shadow output must not silently alter canonical customer-facing truth."
 
+[capabilities.shadow_canonical_benchmark]
+status = "ACTIVE"
+owner = "lacey_benchmark"
+authority = "observation"
+implementation = [
+  "src/litoral_trace/lacey_benchmark/shadow_canonical_diff.py",
+  "src/litoral_trace/lacey_benchmark/baseline_refresh.py",
+  "benchmarks/lacey/v2"
+]
+tests = [
+  "tests/lacey_benchmark/test_shadow_canonical_diff.py",
+  "tests/lacey_benchmark/test_shadow_canonical_refresh.py"
+]
+workflows = [".github/workflows/ci.yml"]
+notes = "Offline P2-01 QA only. Compares Engine 2 Shadow and Canonical ShipmentTruth by exact field/entity slots; it has no runtime publication, routing, reconciliation, persistence or regulatory authority. The multilingual fixture is reproducibly refreshed through current Canonical ShipmentTruth. After P1-02 it covers 19 comparable slots at 19/19 agreement; plant_quantity, metric_unit and entered_value each have 3/3 agreement, zero Shadow>Canonical missing and zero false conflicts."
+
 [capabilities.operation_workflow]
 status = "ACTIVE"
 owner = "us_lacey"
@@ -282,6 +298,26 @@ workflows = [
   ".github/workflows/us-lacey-postgres-gate.yml"
 ]
 notes = "P1-01 comparison-only identity collapses epithet-only and matching binomial species representations only when the same line/component has one verified high-confidence genus (>=0.90) or a human-confirmed genus. Raw/normalized source candidate values, spans and provenance are never rewritten. Missing, low-confidence or competing genus context remains review-required."
+
+[capabilities.quantitative_line_binding]
+status = "ACTIVE"
+owner = "us_lacey.cross_document_line_identity + canonical_shipment_truth"
+authority = "deterministic + review_required"
+implementation = [
+  "src/litoral_trace/us_lacey/cross_document_line_identity.py",
+  "src/litoral_trace/us_lacey/canonical_shipment_truth.py"
+]
+tests = [
+  "tests/lacey_engine/test_quantitative_line_binding.py",
+  "tests/lacey_engine/test_cross_document_line_identity.py",
+  "tests/lacey_engine/test_cross_document_line_identity_fail_closed.py",
+  "tests/lacey_engine/test_canonical_shipment_truth.py"
+]
+workflows = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/us-lacey-postgres-gate.yml"
+]
+notes = "P1-02 binds plant_quantity/metric_unit only with explicit SKU, source-local unambiguous LINE:n, or an exact unique HTS+taxon product signature. HTS alone, row proximity, ordinal similarity and orphan quantitative component IDs never bind. A unique shipment_total_entered_value may seed entered_value only when exactly one declarable line has one valid HTS and one resolved taxon; that derived value is always REVIEW_REQUIRED and preserves shipment-total evidence provenance."
 
 [capabilities.regulatory_rules]
 status = "ACTIVE"
