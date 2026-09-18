@@ -34,6 +34,7 @@ from litoral_trace.us_lacey.specialized_shadow import (
     SPECIALIZED_SHADOW_SCHEMA_VERSION,
     SpecializedShadowDocument,
     _rehydrate_cached_run,
+    _verify_candidates,
     run_specialized_shadow_operation,
     serialize_specialized_document_run,
     specialized_engine_version,
@@ -154,7 +155,7 @@ def _document() -> SpecializedShadowDocument:
 
 
 def test_specialized_shadow_has_distinct_non_authoritative_schema() -> None:
-    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v6"
+    assert SPECIALIZED_SHADOW_SCHEMA_VERSION == "lacey_multi_agent_shadow_v7"
     assert SPECIALIZED_SHADOW_SCHEMA_VERSION != AI_SHADOW_SCHEMA_VERSION
 
 
@@ -365,7 +366,7 @@ def test_specialized_engine_identity_changes_with_effective_judge_mode() -> None
     enforce = specialized_engine_version(**common, judge_mode=FieldJudgeMode.ENFORCE)
 
     assert len({off, shadow, enforce}) == 3
-    assert off.startswith("multi-agent-v6:")
+    assert off.startswith("multi-agent-v7:")
 
 class EmptySpecialistProvider:
     name = "gemini"
@@ -779,3 +780,121 @@ def test_specialized_serialization_persists_noncanonical_taxonomy_for_pdf_candid
         by_field["species"]["taxonomy"]["candidates"][0]["scientific_name"]
         == "Hevea brasiliensis"
     )
+
+
+
+def _row_identity_resolution() -> DocumentResolution:
+    return DocumentResolution(
+        filename="botanical-rows.pdf",
+        engine_version="fixture-engine2",
+        document_type=EngineDocumentType.SPECIES_DECLARATION,
+        type_confidence=0.99,
+        layout=ParsedLayout(
+            blocks=(
+                LayoutBlock(
+                    block_id="row-0",
+                    page=1,
+                    bbox=None,
+                    text="PT-38 Pinus taeda 30 m3",
+                    block_type="table_cell",
+                    table_id="botanical-lines",
+                    row_index=0,
+                ),
+                LayoutBlock(
+                    block_id="row-1",
+                    page=1,
+                    bbox=None,
+                    text="Eucalyptus grandis 16 m3",
+                    block_type="table_cell",
+                    table_id="botanical-lines",
+                    row_index=1,
+                ),
+            ),
+            page_count=1,
+        ),
+        sections=(),
+        fields={},
+    )
+
+
+def _row_identity_envelope(
+    *,
+    line_key: str | None,
+    table_id: str | None,
+    row_index: int | None,
+    source_text: str = "Eucalyptus grandis 16 m3",
+) -> CandidateEnvelope:
+    return CandidateEnvelope(
+        candidate=AICandidate(
+            field_key="species",
+            value="Eucalyptus grandis",
+            normalized_value="Eucalyptus grandis",
+            evidence_class=EvidenceClass.EXPLICIT,
+            page=1,
+            source_text=source_text,
+            confidence=0.99,
+            provider="fixture",
+            model="fixture",
+            evidence_verified=False,
+        ),
+        document_id=uuid5(NAMESPACE_URL, "row-identity-document"),
+        document_type=SpecializedDocumentType.BOTANICAL_DECLARATION,
+        specialist=SpecialistRole.BOTANICAL,
+        agent_run_id=uuid5(NAMESPACE_URL, "row-identity-run"),
+        line_item_key=None,
+        source_span_id=None,
+        source_line_key=line_key,
+        source_table_id=table_id,
+        source_row_index=row_index,
+    )
+
+
+def test_verify_candidates_drops_sidecar_when_engine2_row_does_not_match_evidence() -> None:
+    envelope = _row_identity_envelope(
+        line_key="PT-38",
+        table_id="botanical-lines",
+        row_index=0,
+    )
+
+    verified = _verify_candidates(
+        (envelope,),
+        resolutions={envelope.document_id: _row_identity_resolution()},
+    )[0]
+
+    assert verified.candidate.evidence_verified is True
+    assert verified.source_line_key is None
+    assert verified.source_table_id is None
+    assert verified.source_row_index is None
+
+
+def test_verify_candidates_preserves_sidecar_only_when_engine2_row_matches_evidence() -> None:
+    envelope = _row_identity_envelope(
+        line_key=None,
+        table_id="botanical-lines",
+        row_index=1,
+    )
+
+    verified = _verify_candidates(
+        (envelope,),
+        resolutions={envelope.document_id: _row_identity_resolution()},
+    )[0]
+
+    assert verified.candidate.evidence_verified is True
+    assert verified.source_table_id == "botanical-lines"
+    assert verified.source_row_index == 1
+
+
+def test_verify_candidates_requires_explicit_line_key_when_no_verified_row_locator() -> None:
+    envelope = _row_identity_envelope(
+        line_key="PT-38",
+        table_id=None,
+        row_index=None,
+    )
+
+    verified = _verify_candidates(
+        (envelope,),
+        resolutions={envelope.document_id: _row_identity_resolution()},
+    )[0]
+
+    assert verified.candidate.evidence_verified is True
+    assert verified.source_line_key is None
