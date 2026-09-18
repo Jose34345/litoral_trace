@@ -337,13 +337,13 @@ def _atomic_state(
     field_key: str,
     evidence: list[ShipmentEvidence],
     *,
-    genus_contexts: Mapping[str, frozenset[str]] = {},
+    genus_contexts: Mapping[str, frozenset[str]] | None = None,
 ) -> ReconciliationState:
     groups = {
         _normal(
             field_key,
             item.normalized_value,
-            genus_context=_genus_context_for_evidence(item, genus_contexts),
+            genus_context=_genus_context_for_evidence(item, genus_contexts or {}),
         )
         for item in evidence
     }
@@ -361,7 +361,7 @@ def _reconcile(
     field_key: str,
     evidence: list[ShipmentEvidence],
     *,
-    genus_contexts: Mapping[str, frozenset[str]] = {},
+    genus_contexts: Mapping[str, frozenset[str]] | None = None,
 ) -> ReconciliationResult:
     if not evidence:
         return ReconciliationResult(field_key, ReconciliationState.MISSING, (), ())
@@ -370,7 +370,7 @@ def _reconcile(
         comparison_key = _normal(
             field_key,
             item.normalized_value,
-            genus_context=_genus_context_for_evidence(item, genus_contexts),
+            genus_context=_genus_context_for_evidence(item, genus_contexts or {}),
         )
         groups.setdefault(comparison_key, []).append(item)
     values = tuple(
@@ -400,7 +400,7 @@ def _reconcile(
                 else _atomic_state(
                     field_key,
                     evidence,
-                    genus_contexts=genus_contexts,
+                    genus_contexts=genus_contexts or {},
                 )
             )
             return ReconciliationResult(field_key, state, values, tuple(evidence))
@@ -411,7 +411,7 @@ def _reconcile(
             _atomic_state(
                 field_key,
                 items,
-                genus_contexts=genus_contexts,
+                genus_contexts=genus_contexts or {},
             )
             for items in partitions.values()
         ]
