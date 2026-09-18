@@ -554,6 +554,47 @@ def test_specialized_cache_rebinds_admission_candidate_identity_to_current_docum
     assert record.candidate_id != old_candidate_id
 
 
+def test_specialized_cache_fails_closed_when_admission_record_cannot_be_rebound() -> None:
+    original = _document()
+    run = run_specialized_shadow_operation(
+        documents=(original,),
+        provider=FakeSpecialistProvider(),
+        concurrency=1,
+    )
+    payload = serialize_specialized_document_run(
+        run=run,
+        document_id=original.document_id,
+        source_set_fingerprint="source-set-admission-unmatched-fixture",
+    )
+    payload["candidates"] = []
+    payload["candidate_count"] = 0
+    payload["operation_candidate_count"] = 0
+    payload["candidate_admission"]["admitted_count"] = 0
+    payload["candidate_admission"]["blocked_count"] = 1
+    payload["candidate_admission"]["records"][0]["decision"] = "BLOCKED"
+    payload["candidate_admission"]["records"][0]["reason"] = "INVALID_VALUE"
+
+    rebound_document = SpecializedShadowDocument(
+        document_id=uuid5(NAMESPACE_URL, "shadow-invoice-unmatched-rebound"),
+        operation_document_id=210,
+        assurance_document_id=220,
+        source_sha256=original.source_sha256,
+        role_hint=original.role_hint,
+        filename=original.filename,
+        content=original.content,
+        engine2_resolution=original.engine2_resolution,
+    )
+
+    assert (
+        _rehydrate_cached_run(
+            (payload,),
+            documents=(rebound_document,),
+            computation_fingerprint="admission-unmatched-cache-fixture",
+        )
+        is None
+    )
+
+
 class MislabelledBolProvider:
     name = "gemini"
     model = "fixture-mislabelled-bol-model"
