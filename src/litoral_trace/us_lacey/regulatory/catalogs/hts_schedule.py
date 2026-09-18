@@ -103,11 +103,11 @@ APHIS_HTS_SCHEDULE = HtsScheduleCatalog(
             hts_prefix="4407",
             effective_from=date(2009, 4, 1),
         ),
-        # APHIS current guidance uses 4419199010 (wood coasters) as a
-        # declaration example; keep the seed exact instead of broadening 4419.
+        # APHIS implementation schedule: 4415, wooden cases/boxes/crates,
+        # containers and pallets, effective October 1, 2021.
         HtsScheduleEntry(
-            hts_prefix="4419199010",
-            effective_from=date(2024, 12, 1),
+            hts_prefix="4415",
+            effective_from=date(2021, 10, 1),
         ),
         # APHIS Special Use Designation guidance uses 9401692010 for wooden
         # seats/components. Exact-code seeding avoids treating all 9401 goods
