@@ -178,6 +178,11 @@ Explicit CSV/XLS/XLSX BOM composition lives in `src/litoral_trace/product_intell
 ### U.S. Lacey Regulatory Intelligence (active)
 Taxonomy resolution and versioned regulatory rules live under `src/litoral_trace/us_lacey/regulatory/`. Extend explicit inputs/results/ruleset versions and evidence references rather than hiding compliance conclusions solely in prompts or UI code. Keep every result rule-scoped and non-canonical until a separately designed authority/review boundary says otherwise.
 
+### Taxonomic candidate equivalence (active)
+P1-01 treats species equivalence as an Entity Resolution concern, not as source-data normalization. Within a proven plant line/component, a verified high-confidence unique genus (or human-confirmed genus) may provide comparison context so an epithet-only observation such as `grandis` and a matching binomial such as `Eucalyptus grandis` share the comparison identity `taxon:eucalyptus:grandis`.
+
+The comparison identity is ephemeral/non-evidentiary: it may group candidates, prevent a false conflict, or resolve a metadata-only reconciliation issue, but it must never overwrite the extracted raw value, normalized source value, evidence span, document/page/locator, or human value. Missing, low-confidence, competing or unbound genus context fails closed to ordinary comparison and human review. Cross-line inference is prohibited.
+
 ### Exception-first review (active)
 The existing human-review workflow now projects unresolved/blocked/review-required fields as the primary workspace. Unambiguous FOUND suggestions remain unconfirmed domain state but are grouped behind a collapsed confirmation surface, while confirmed fields stay secondary. Rule-level FAIL/INDETERMINATE results remain visible and PASS results are collapsed. Review timing/edit telemetry is non-authoritative and attaches to the existing completion audit trail rather than creating a parallel decision system.
 
