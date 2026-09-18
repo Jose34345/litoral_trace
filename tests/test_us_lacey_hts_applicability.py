@@ -49,6 +49,21 @@ def test_catalog_is_versioned_and_matches_4407_by_prefix():
     assert match.effective_from == date(2009, 4, 1)
 
 
+def test_catalog_matches_4415_only_after_its_effective_date():
+    assert APHIS_HTS_SCHEDULE.match(
+        "4415204000",
+        effective_date=date(2021, 9, 30),
+    ) is None
+
+    match = APHIS_HTS_SCHEDULE.match(
+        "4415204000",
+        effective_date=date(2021, 10, 1),
+    )
+
+    assert match is not None
+    assert match.hts_prefix == "4415"
+
+
 def test_catalog_uses_longest_active_prefix_match():
     catalog = HtsScheduleCatalog(
         version="test-catalog",
