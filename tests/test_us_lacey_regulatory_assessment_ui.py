@@ -103,7 +103,7 @@ def test_terminal_workspace_hydrates_rule_scoped_regulatory_panel(monkeypatch):
     assert "INDETERMINATE" in html
     assert "SPECIAL_COMPOSITE" in html
     assert "FAIL" in html
-    assert "does not replace final compliance determination" in html.lower()
+    assert "does not replace the final compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
 
 
@@ -126,5 +126,5 @@ def test_direct_operation_detail_renders_same_noncanonical_regulatory_panel(monk
     assert 'data-regulatory-assessment-status="CURRENT"' in html
     assert "DE_MINIMIS" in html
     assert "SPECIAL_COMPOSITE" in html
-    assert "does not replace final compliance determination" in html.lower()
+    assert "does not replace the final compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
