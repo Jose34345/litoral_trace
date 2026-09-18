@@ -53,6 +53,9 @@ from litoral_trace.us_lacey.portal_config import (
     UsLaceyPortalConfigurationError,
     load_us_lacey_portal_config,
 )
+from litoral_trace.us_lacey.schema_compatibility import (
+    probe_us_lacey_schema_compatibility,
+)
 from litoral_trace.us_lacey.review import (
     UsLaceyReviewError,
     export_us_lacey_csv,
@@ -239,6 +242,12 @@ def ready() -> dict[str, str]:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="U.S. Lacey pilot runtime is not safely configured.",
         ) from exc
+
+    if not probe_us_lacey_schema_compatibility():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="U.S. Lacey pilot database schema is not compatible with this release.",
+        )
 
     return {
         "status": "ready",
