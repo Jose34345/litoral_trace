@@ -170,6 +170,30 @@ def _review_field_sets(detail):
     return exception_fields, settled_fields
 
 
+def _review_field_groups(detail):
+    """Split review presentation into attention, supported and settled buckets.
+
+    This is presentation-only grouping. FOUND remains an unconfirmed server-side
+    suggestion and is never promoted to a new authority state by the UI.
+    """
+    exception_fields, settled_fields = _review_field_sets(detail)
+    auto_supported_fields = tuple(
+        field
+        for field in exception_fields
+        if (
+            getattr(field, "status", None) == "FOUND"
+            and getattr(field, "validation_status", None) != "REVIEW_REQUIRED"
+            and bool(getattr(field, "proposed_value", None))
+            and len(getattr(field, "candidates", ())) <= 1
+        )
+    )
+    auto_supported_ids = {field.id for field in auto_supported_fields}
+    attention_fields = tuple(
+        field for field in exception_fields if field.id not in auto_supported_ids
+    )
+    return attention_fields, auto_supported_fields, tuple(settled_fields)
+
+
 def _semantic_evidence_for_detail(identity, detail) -> dict[str, tuple[EvidenceTextView, ...]]:
     organization_id = getattr(identity, "organization_id", None)
     operation_public_id = getattr(detail, "public_id", None)
@@ -304,6 +328,16 @@ def _review_field_sets_with_semantic_evidence(identity, detail):
     )
 
 
+def _review_field_groups_with_semantic_evidence(identity, detail):
+    attention_fields, auto_supported_fields, settled_fields = _review_field_groups(detail)
+    evidence_by_field = _semantic_evidence_for_detail(identity, detail)
+    return (
+        _decorate_review_fields(attention_fields, evidence_by_field),
+        _decorate_review_fields(auto_supported_fields, evidence_by_field),
+        _decorate_review_fields(settled_fields, evidence_by_field),
+    )
+
+
 def _product_intelligence_for_detail(identity, detail, explicit_view=None):
     """Best-effort additive read; canonical review UI must remain available on failure."""
     if explicit_view is not None:
@@ -355,11 +389,28 @@ def render_new_operation(*, request, identity, entitlement, csrf_token: str, err
 
 
 def render_operation_detail(*, request, identity, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], product_intelligence=None, regulatory_assessment=None, error: str | None = None, notice: str | None = None) -> str:
-    exception_fields, settled_fields = _review_field_sets_with_semantic_evidence(identity, detail)
+    attention_fields, auto_supported_fields, settled_fields = _review_field_groups_with_semantic_evidence(identity, detail)
     progress = processing_view(detail)
     product_intelligence = _product_intelligence_for_detail(identity, detail, product_intelligence)
     regulatory_assessment = _regulatory_assessment_for_detail(identity, detail, regulatory_assessment)
-    return _render(request, "operation_detail", identity=identity, detail=detail, engine2_dossier=engine2_dossier, product_intelligence=product_intelligence, regulatory_assessment=regulatory_assessment, upload_csrf=upload_csrf, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, processing=progress, error=error, notice=notice)
+    return _render(
+        request,
+        "operation_detail",
+        identity=identity,
+        detail=detail,
+        engine2_dossier=engine2_dossier,
+        product_intelligence=product_intelligence,
+        regulatory_assessment=regulatory_assessment,
+        upload_csrf=upload_csrf,
+        complete_csrf=complete_csrf,
+        review_csrf=review_csrf,
+        attention_fields=attention_fields,
+        auto_supported_fields=auto_supported_fields,
+        settled_fields=settled_fields,
+        processing=progress,
+        error=error,
+        notice=notice,
+    )
 
 
 def render_processing_fragment(*, request, detail) -> str:
@@ -367,10 +418,23 @@ def render_processing_fragment(*, request, detail) -> str:
 
 
 def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None, is_oob_update: bool | None = None) -> str:
-    exception_fields, settled_fields = _review_field_sets_with_semantic_evidence(identity, detail)
+    attention_fields, auto_supported_fields, settled_fields = _review_field_groups_with_semantic_evidence(identity, detail)
     if is_oob_update is None:
         is_oob_update = str(getattr(request, "method", "GET")).upper() == "POST"
-    workspace = _render(request, "fragments/operation_workspace", identity=identity, detail=detail, engine2_dossier=engine2_dossier, complete_csrf=complete_csrf, review_csrf=review_csrf, exception_fields=exception_fields, settled_fields=settled_fields, error=error, is_oob_update=is_oob_update)
+    workspace = _render(
+        request,
+        "fragments/operation_workspace",
+        identity=identity,
+        detail=detail,
+        engine2_dossier=engine2_dossier,
+        complete_csrf=complete_csrf,
+        review_csrf=review_csrf,
+        attention_fields=attention_fields,
+        auto_supported_fields=auto_supported_fields,
+        settled_fields=settled_fields,
+        error=error,
+        is_oob_update=is_oob_update,
+    )
     scope = getattr(request, "scope", {}) or {}
     raw_query = scope.get("query_string", b"")
     if isinstance(raw_query, bytes):
