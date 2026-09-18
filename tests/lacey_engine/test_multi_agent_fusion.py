@@ -260,3 +260,100 @@ def test_cross_document_fusion_accuracy_uses_normalized_winner_value():
     key = FusionKey("hts_code", "SKU:ACT-TRAY-18")
 
     assert cross_document_fusion_accuracy({key: "4419.90.9000"}, result) == 1.0
+
+
+
+def test_semantic_equivalence_prevents_false_country_conflict() -> None:
+    brazil = _envelope(
+        "country_of_harvest",
+        "Brazil",
+        document_type=DocumentType.BOTANICAL_DECLARATION,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key="SKU:WOOD-1",
+        document_seed="brazil",
+    )
+    brasil = _envelope(
+        "country_of_harvest",
+        "Brasil",
+        document_type=DocumentType.SUPPLIER_ORIGIN,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key="SKU:WOOD-1",
+        document_seed="brasil",
+    )
+
+    result = fuse_candidates((brazil, brasil))
+
+    assert len(result.fused_candidates) == 1
+    assert result.conflicts == ()
+
+
+def test_semantic_equivalence_prevents_false_unit_and_hts_conflicts() -> None:
+    unit_a = _envelope(
+        "metric_unit",
+        "m³",
+        document_type=DocumentType.BOTANICAL_DECLARATION,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key="SKU:WOOD-1",
+        document_seed="unit-a",
+    )
+    unit_b = _envelope(
+        "metric_unit",
+        "M3",
+        document_type=DocumentType.SUPPLIER_ORIGIN,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key="SKU:WOOD-1",
+        document_seed="unit-b",
+    )
+    hts_a = _envelope(
+        "hts_code",
+        "4407.11.0190",
+        document_type=DocumentType.ENTRY_WORKSHEET,
+        specialist=SpecialistRole.COMMERCIAL_LINES,
+        line_item_key="SKU:WOOD-1",
+        document_seed="hts-a",
+    )
+    hts_b = _envelope(
+        "hts_code",
+        "4407110190",
+        document_type=DocumentType.COMMERCIAL_INVOICE,
+        specialist=SpecialistRole.COMMERCIAL_LINES,
+        line_item_key="SKU:WOOD-1",
+        document_seed="hts-b",
+    )
+
+    result = fuse_candidates((unit_a, unit_b, hts_a, hts_b))
+
+    assert len(result.fused_candidates) == 2
+    assert result.conflicts == ()
+
+
+def test_semantic_equivalence_uses_unique_genus_to_match_species_epithet_and_binomial() -> None:
+    genus = _envelope(
+        "genus",
+        "Eucalyptus",
+        document_type=DocumentType.BOTANICAL_DECLARATION,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key="SKU:WOOD-1",
+        document_seed="genus",
+    )
+    epithet = _envelope(
+        "species",
+        "grandis",
+        document_type=DocumentType.BOTANICAL_DECLARATION,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key="SKU:WOOD-1",
+        document_seed="epithet",
+    )
+    binomial = _envelope(
+        "species",
+        "Eucalyptus grandis",
+        document_type=DocumentType.SUPPLIER_ORIGIN,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key="SKU:WOOD-1",
+        document_seed="binomial",
+    )
+
+    result = fuse_candidates((genus, epithet, binomial))
+
+    assert len(result.fused_candidates) == 2
+    assert result.conflicts == ()
