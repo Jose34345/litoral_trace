@@ -63,7 +63,9 @@ def test_workspace_offers_safe_bulk_confirmation_but_keeps_conflicts_explicit():
     assert "/review/fields/" in source
     assert "/review/accept-supported" not in source
     assert "/review-supported/" not in source
-    assert "Accept all safe suggestions" in source
+    assert "Confirm all supported fields" in source
+    assert "Review exceptions" in source
+    assert "fields extracted and automatically supported" in source
     assert "Conflicting values found." in source
     assert "The prefilled value may be wrong." in source
     assert 'field.status == "FOUND"' in source
