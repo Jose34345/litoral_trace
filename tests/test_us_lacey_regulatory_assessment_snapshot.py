@@ -67,3 +67,125 @@ def test_rule_input_fingerprint_is_stable_and_ruleset_sensitive():
     assert snapshot.fingerprint_rule_inputs(payload_a) == expected
     assert snapshot.fingerprint_rule_inputs(payload_b) == expected
     assert snapshot.fingerprint_rule_inputs({**payload_a, "ruleset_version": "rules-v2"}) != expected
+
+
+def test_assessment_consumes_supported_hts_but_stays_indeterminate_without_mass_inputs():
+    snapshot = _snapshot_module()
+    product_payload = {
+        "sources": [
+            {
+                "tables": [
+                    {
+                        "compositions": [
+                            {
+                                "sku": "CHAIR-001",
+                                "components": [],
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    contract = {
+        "schema_version": "regulatory-input-contract-v1",
+        "subjects": [
+            {
+                "subject_ref": "CHAIR-001",
+                "shipment_line_reference": "LT-LINE-1",
+                "link_status": "LINKED",
+                "inputs": {
+                    "hts10": {
+                        "status": "SUPPORTED",
+                        "value": "9401692010",
+                        "evidence": {
+                            "source_assurance_document_id": 11,
+                            "source_locator": "entry:line:1",
+                        },
+                    }
+                },
+            }
+        ],
+    }
+
+    payload = snapshot.build_regulatory_assessment_payload(
+        product_intelligence_payload=product_payload,
+        source_set={
+            "revision_id": 9,
+            "generation": 2,
+            "fingerprint": "f" * 64,
+        },
+        regulatory_input_contract=contract,
+    )
+
+    de_minimis = next(
+        item for item in payload["assessments"] if item["rule_id"] == "DE_MINIMIS"
+    )
+    assert de_minimis["status"] == "INDETERMINATE"
+    assert "MISSING_REQUIRED_INPUTS" in de_minimis["reason_codes"]
+    assert de_minimis["calculation_trace"] == {}
+    assert de_minimis["evidence_refs"] == [
+        {
+            "source_type": "REVIEWED_HTS10",
+            "source_id": "11",
+            "locator": "entry:line:1",
+        }
+    ]
+    assert payload["regulatory_input_contract"] == contract
+
+
+def test_assessment_never_uses_unsafe_bom_weight_as_de_minimis_mass():
+    snapshot = _snapshot_module()
+    product_payload = {
+        "sources": [
+            {
+                "tables": [
+                    {
+                        "compositions": [
+                            {
+                                "sku": "CHAIR-001",
+                                "components": [
+                                    {
+                                        "component_key": "LEG",
+                                        "material": {
+                                            "name_raw": "Rubberwood",
+                                            "mass": {"kilograms": "0.5"},
+                                        },
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    contract = {
+        "schema_version": "regulatory-input-contract-v1",
+        "subjects": [
+            {
+                "subject_ref": "CHAIR-001",
+                "inputs": {
+                    "hts10": {"status": "SUPPORTED", "value": "9401692010"},
+                    "plant_mass_per_unit_kg": {
+                        "status": "UNSAFE_SEMANTICS",
+                        "value": None,
+                        "observed_value": "0.5",
+                    },
+                },
+            }
+        ],
+    }
+
+    payload = snapshot.build_regulatory_assessment_payload(
+        product_intelligence_payload=product_payload,
+        source_set={},
+        regulatory_input_contract=contract,
+    )
+
+    de_minimis = next(
+        item for item in payload["assessments"] if item["rule_id"] == "DE_MINIMIS"
+    )
+    assert de_minimis["status"] == "INDETERMINATE"
+    assert "MISSING_REQUIRED_INPUTS" in de_minimis["reason_codes"]
+    assert "0.5" not in str(de_minimis["calculation_trace"])
