@@ -40,6 +40,75 @@ def test_dossier_2_same_component_disagreement_is_conflict():
     assert result.canonical_fields["species"].state is ReconciliationState.CONFLICT
 
 
+def test_species_epithet_and_binomial_collapse_with_unique_high_confidence_genus():
+    result = _shipment(
+        _document(
+            "botanical",
+            {
+                "genus": ("Eucalyptus", "Component A"),
+                "species": ("grandis", "Component A"),
+            },
+            DocumentType.BOTANICAL_DECLARATION,
+        ),
+        _document(
+            "supplier",
+            {
+                "genus": ("Eucalyptus", "Component A"),
+                "species": ("Eucalyptus grandis", "Component A"),
+            },
+            DocumentType.SUPPLIER_DECLARATION,
+        ),
+    )
+
+    species = result.canonical_fields["species"]
+    assert species.state is ReconciliationState.SUPPORTED_MULTIPLE
+    assert not any(issue.field_key == "species" for issue in result.issues)
+    assert {item.normalized_value for item in species.supporting_evidence} == {
+        "grandis",
+        "Eucalyptus grandis",
+    }
+
+
+def test_species_true_conflict_remains_with_unique_genus_context():
+    result = _shipment(
+        _document(
+            "botanical",
+            {
+                "genus": ("Pinus", "Component A"),
+                "species": ("taeda", "Component A"),
+            },
+            DocumentType.BOTANICAL_DECLARATION,
+        ),
+        _document(
+            "supplier",
+            {
+                "genus": ("Pinus", "Component A"),
+                "species": ("grandis", "Component A"),
+            },
+            DocumentType.SUPPLIER_DECLARATION,
+        ),
+    )
+
+    assert result.canonical_fields["species"].state in {
+        ReconciliationState.CONFLICT,
+        ReconciliationState.REVIEW_REQUIRED,
+    }
+    assert any(issue.field_key == "species" for issue in result.issues)
+
+
+def test_species_epithet_and_binomial_fail_closed_without_genus_context():
+    result = _shipment(
+        _document("a", {"species": ("grandis", "Component A")}),
+        _document("b", {"species": ("Eucalyptus grandis", "Component A")}),
+    )
+
+    assert result.canonical_fields["species"].state in {
+        ReconciliationState.CONFLICT,
+        ReconciliationState.REVIEW_REQUIRED,
+    }
+    assert any(issue.field_key == "species" for issue in result.issues)
+
+
 def test_dossier_3_origin_never_populates_harvest_country():
     result = _shipment(_document("origin", {"country_of_origin": "NEW ZEALAND"}), _document("harvest", {"country_of_harvest": "CHILE"}, DocumentType.HARVEST_DECLARATION))
     harvest = result.canonical_fields["country_of_harvest"]
