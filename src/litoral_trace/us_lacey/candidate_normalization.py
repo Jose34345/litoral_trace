@@ -12,9 +12,24 @@ import re
 from typing import Generic, Iterable, TypeVar
 
 from litoral_trace.us_lacey.ppq505 import canonical_ppq_value_key
+from litoral_trace.us_lacey.regulatory.taxonomy.resolver import normalize_taxonomy_query
 
 
 T = TypeVar("T")
+
+TAXONOMIC_CONTEXT_MIN_CONFIDENCE = 0.90
+
+
+@dataclass(frozen=True, slots=True)
+class TaxonomicComparisonContext:
+    """Comparison-only context for one declaration line.
+
+    The genus is never written back to source candidates. It exists solely so
+    an epithet-only species observation can be compared with an explicit
+    binomial from another source without manufacturing a new evidence value.
+    """
+
+    genus: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +80,91 @@ def _source_document_id(candidate: object) -> int | None:
     except (TypeError, ValueError):
         return None
 
+def derive_taxonomic_comparison_context(
+    genus_candidates: Iterable[object],
+    *,
+    confirmed_genus: object | None = None,
+    minimum_confidence: float = TAXONOMIC_CONTEXT_MIN_CONFIDENCE,
+) -> TaxonomicComparisonContext | None:
+    """Return one fail-closed genus context for a single plant line.
+
+    A human-confirmed genus is sufficient authority. Otherwise only candidate
+    observations meeting the confidence threshold participate, and they must
+    collapse to exactly one genus identity. Missing, malformed or competing
+    high-confidence genera deliberately return None.
+    """
+    if confirmed_genus is not None and str(confirmed_genus).strip():
+        normalized = normalize_taxonomy_query(str(confirmed_genus))
+        if len(normalized.split()) == 1:
+            return TaxonomicComparisonContext(genus=str(confirmed_genus).strip())
+        return None
+
+    by_genus: dict[str, str] = {}
+    for candidate in genus_candidates:
+        if _confidence(candidate) < float(minimum_confidence):
+            continue
+        value = str(_candidate_value(candidate) or "").strip()
+        normalized = normalize_taxonomy_query(value)
+        if len(normalized.split()) != 1:
+            continue
+        by_genus.setdefault(normalized, value)
+
+    if len(by_genus) != 1:
+        return None
+    return TaxonomicComparisonContext(genus=next(iter(by_genus.values())))
+
+
+def _species_taxonomic_comparison_key(
+    value: object,
+    *,
+    context: TaxonomicComparisonContext | None,
+) -> str | None:
+    """Return an exact genus+epithet identity when line context proves the genus.
+
+    This is deliberately not a taxonomy assertion. It only says that within a
+    line whose genus is uniquely known, "grandis" and "Eucalyptus grandis"
+    express the same genus/epithet pair. Values with another explicit genus,
+    more complex ranks, or no unique genus context fail closed to the ordinary
+    PPQ comparison key.
+    """
+    if context is None:
+        return None
+
+    genus = normalize_taxonomy_query(context.genus)
+    if len(genus.split()) != 1:
+        return None
+
+    species = normalize_taxonomy_query(str(value or ""))
+    parts = species.split()
+    if len(parts) == 1:
+        epithet = parts[0]
+    elif len(parts) == 2 and parts[0] == genus:
+        epithet = parts[1]
+    else:
+        return None
+
+    if not epithet:
+        return None
+    return f"taxon:{genus}:{epithet}"
+
+
+def candidate_comparison_key(
+    field_name: str,
+    value: object,
+    *,
+    comparison_context: TaxonomicComparisonContext | None = None,
+) -> str:
+    """Return a comparison-only key without mutating caller-owned evidence."""
+    normalized_field = str(field_name or "").strip().casefold()
+    if normalized_field == "species":
+        contextual = _species_taxonomic_comparison_key(
+            value,
+            context=comparison_context,
+        )
+        if contextual:
+            return contextual
+    return canonical_ppq_value_key(field_name, value)
+
 
 def merchandise_description_candidate_role(value: object) -> str | None:
     """Reject structural/material evidence from the commercial-description pool.
@@ -102,12 +202,16 @@ def merchandise_description_candidate_role(value: object) -> str | None:
 def group_candidate_evidence(
     field_name: str,
     candidates: Iterable[T],
+    *,
+    comparison_context: TaxonomicComparisonContext | None = None,
 ) -> tuple[CandidateEvidenceGroup[T], ...]:
     """Collapse same-value evidence while retaining every provenance row.
 
     The group key is scoped by the caller's field. In the database each operation
     field already belongs to one shipment/plant line, so this function never merges
-    evidence across declaration lines. The highest-confidence row is the display
+    evidence across declaration lines. Species may receive an explicit comparison-only
+    genus context from that same line; raw candidate values and provenance remain
+    untouched. The highest-confidence row is the display
     representative; ties resolve deterministically to the lowest candidate id.
 
     Structural evidence may remain persisted for audit while being excluded from
@@ -123,7 +227,11 @@ def group_candidate_evidence(
             and merchandise_description_candidate_role(value) is not None
         ):
             continue
-        key = canonical_ppq_value_key(field_name, value)
+        key = candidate_comparison_key(
+            field_name,
+            value,
+            comparison_context=comparison_context,
+        )
         if not key:
             continue
         if key not in grouped:
