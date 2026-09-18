@@ -359,6 +359,7 @@ def test_species_epithet_and_binomial_are_equivalent_when_line_genus_is_known() 
         "Eucalyptus",
         document_type=DocumentType.BOTANICAL_DECLARATION,
         specialist=SpecialistRole.BOTANICAL,
+        confidence=0.95,
         line_item_key=line_key,
         document_seed="genus",
     )
@@ -385,6 +386,40 @@ def test_species_epithet_and_binomial_are_equivalent_when_line_genus_is_known() 
     species = [item for item in result.fused_candidates if item.candidate.field_key == "species"]
     assert species == [full_species]
     assert species[0].candidate.value == "Eucalyptus grandis"
+
+
+def test_species_equivalence_fails_closed_with_low_confidence_genus_context() -> None:
+    line_key = "SKU:LOW-CONFIDENCE-TAXON"
+    genus = _envelope(
+        "genus",
+        "Eucalyptus",
+        document_type=DocumentType.BOTANICAL_DECLARATION,
+        specialist=SpecialistRole.BOTANICAL,
+        confidence=0.89,
+        line_item_key=line_key,
+        document_seed="low-confidence-genus",
+    )
+    full_species = _envelope(
+        "species",
+        "Eucalyptus grandis",
+        document_type=DocumentType.BOTANICAL_DECLARATION,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key=line_key,
+        document_seed="low-confidence-full",
+    )
+    epithet = _envelope(
+        "species",
+        "grandis",
+        document_type=DocumentType.SUPPLIER_ORIGIN,
+        specialist=SpecialistRole.BOTANICAL,
+        line_item_key=line_key,
+        document_seed="low-confidence-epithet",
+    )
+
+    result = fuse_candidates((genus, full_species, epithet))
+
+    assert len(result.conflicts) == 1
+    assert result.conflicts[0].key.field_key == "species"
 
 
 def test_species_binomial_and_epithet_remain_distinct_without_matching_genus_context() -> None:
