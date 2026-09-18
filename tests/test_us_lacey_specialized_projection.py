@@ -479,3 +479,111 @@ def test_projection_requires_judge_accept_when_judge_is_enforcing() -> None:
     assert result.projected_count == 0
     assert result.review_count == 1
     assert target.field_status == "MISSING"
+
+
+
+def test_same_local_line_number_from_distinct_documents_gets_distinct_materialized_references() -> None:
+    first = _candidate(
+        field_key="hts_code",
+        line_item_key="LINE:1",
+        value="4407.11.0190",
+        seed="local-line-a",
+    )
+    second = _candidate(
+        field_key="hts_code",
+        line_item_key="LINE:1",
+        value="4418.99.9090",
+        seed="local-line-b",
+    )
+
+    plan = plan_line_materialization(
+        (first, second),
+        existing_line_references=(),
+    )
+
+    assert len(plan.generated_lines) == 2
+    assert [line.line_item_key for line in plan.generated_lines] == [
+        "LINE:1",
+        "LINE:1",
+    ]
+    assert len({line.line_reference for line in plan.generated_lines}) == 2
+
+
+def test_same_explicit_sku_across_documents_materializes_one_shared_reference() -> None:
+    first = _candidate(
+        field_key="hts_code",
+        line_item_key="SKU:WOOD-1",
+        value="4407.11.0190",
+        seed="sku-doc-a",
+    )
+    second = _candidate(
+        field_key="species",
+        line_item_key="SKU:WOOD-1",
+        value="grandis",
+        seed="sku-doc-b",
+    )
+
+    plan = plan_line_materialization(
+        (first, second),
+        existing_line_references=(),
+    )
+
+    assert len(plan.generated_lines) == 1
+    assert plan.generated_lines[0].line_item_key == "SKU:WOOD-1"
+
+
+def test_scoped_projection_conflict_for_local_line_does_not_block_other_document() -> None:
+    first = _candidate(
+        field_key="hts_code",
+        line_item_key="LINE:1",
+        value="4407.11.0190",
+        seed="projection-local-a",
+    )
+    second = _candidate(
+        field_key="hts_code",
+        line_item_key="LINE:1",
+        value="4418.99.9090",
+        seed="projection-local-b",
+    )
+    first_ref = plan_line_materialization(
+        (first,),
+        existing_line_references=(),
+    ).generated_lines[0].line_reference
+    second_ref = plan_line_materialization(
+        (second,),
+        existing_line_references=(),
+    ).generated_lines[0].line_reference
+
+    assert first_ref != second_ref
+
+    first_target = _target(
+        field_name="hts_code",
+        line_reference=first_ref,
+        field_scope="PLANT_LINE",
+    )
+    second_target = _target(
+        field_name="hts_code",
+        line_reference=second_ref,
+        field_scope="PLANT_LINE",
+    )
+
+    result = project_specialized_candidates(
+        candidates=(first, second),
+        targets=(first_target, second_target),
+        mode=SpecializedProjectionMode.ENFORCE,
+        conflict_keys=frozenset(
+            {
+                (
+                    "hts_code",
+                    "LINE:1",
+                    str(first.document_id),
+                )
+            }
+        ),
+    )
+
+    assert result.review_count == 1
+    assert result.projected_count == 1
+    assert first_target.field_status == "MISSING"
+    assert second_target.field_status == "FOUND"
+    assert second_target.normalized_value == "4418999090"
