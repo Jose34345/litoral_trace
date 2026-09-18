@@ -1,6 +1,5 @@
 """Public deterministic rule API for non-canonical U.S. Lacey assessments."""
 from .de_minimis import evaluate_de_minimis
-from .hts_applicability import HtsApplicabilityRule
 from .domain import (
     RULESET_VERSION,
     CompositeMaterialFacts,
@@ -17,7 +16,6 @@ from .special_composite import classify_composite_material_name, evaluate_specia
 __all__ = [
     "RULESET_VERSION",
     "CompositeMaterialFacts",
-    "HtsApplicabilityRule",
     "DeMinimisInput",
     "EvidenceRef",
     "ProtectedPlantStatus",
