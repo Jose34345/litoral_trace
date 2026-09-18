@@ -440,13 +440,15 @@
           }
         }
       }
-    ]
+    ],
+    "unresolved_component_keys": []
   },
   "expected_diff": {
     "comparable_slots": 19,
     "agreement_count": 19,
     "shadow_supported_but_canonical_missing": 0,
     "canonical_supported_but_shadow_missing": 0,
-    "false_conflict_count": 0
+    "false_conflict_count": 0,
+    "safe_review_count": 0
   }
 }
