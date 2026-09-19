@@ -61,6 +61,13 @@ def _install_workflow_seams(monkeypatch, events: list[tuple[str, object]]) -> No
     )
 
 
+def _sandbox_capacity_guard(events: list[tuple[str, object]]):
+    def guard(**kwargs):
+        events.append(("sandbox_capacity", kwargs["operation_id"]))
+
+    return guard
+
+
 def test_single_upload_mutation_is_one_operation_locked_critical_section(monkeypatch) -> None:
     events: list[tuple[str, object]] = []
     _install_workflow_seams(monkeypatch, events)
@@ -75,11 +82,13 @@ def test_single_upload_mutation_is_one_operation_locked_critical_section(monkeyp
         document_role="BILL_OF_LADING",
         ingestion=_Ingestion(events),
         operations=_Operations(),
+        sandbox_capacity_guard=_sandbox_capacity_guard(events),
     )
 
     assert result.job.status == "QUEUED"
     assert events == [
         ("lock_enter", 91),
+        ("sandbox_capacity", 91),
         ("ingest", "single.pdf"),
         ("seal", 91),
         ("enqueue", 1),
@@ -102,11 +111,13 @@ def test_batch_upload_mutation_is_one_operation_locked_critical_section(monkeypa
         ),
         ingestion=_Ingestion(events),
         operations=_Operations(),
+        sandbox_capacity_guard=_sandbox_capacity_guard(events),
     )
 
     assert len(queued) == 2
     assert events == [
         ("lock_enter", 91),
+        ("sandbox_capacity", 91),
         ("ingest", "first.pdf"),
         ("ingest", "second.pdf"),
         ("seal", 91),

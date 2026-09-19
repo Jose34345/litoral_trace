@@ -6,6 +6,7 @@ second storage or job system for the U.S. product.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from uuid import UUID
@@ -22,6 +23,10 @@ from litoral_trace.us_lacey.jobs import UsLaceyJob, enqueue_us_lacey_document_jo
 from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_lock
 from litoral_trace.us_lacey.operations import OperationSnapshot, UsLaceyOperationService
 from litoral_trace.us_lacey.source_sets import seal_current_source_set
+from litoral_trace.us_lacey.sandbox import (
+    UsLaceySandboxError,
+    enforce_sandbox_document_capacity,
+)
 
 
 class UsLaceyWorkflowError(RuntimeError):
@@ -104,6 +109,7 @@ def upload_and_enqueue_us_lacey_document(
     document_role: str = "UNKNOWN",
     ingestion: UsLaceyIngestionService | None = None,
     operations: UsLaceyOperationService | None = None,
+    sandbox_capacity_guard: Callable[..., None] | None = None,
 ) -> UsLaceyQueuedUpload:
     """Persist one-shipment evidence, link it, then queue bounded processing."""
     # This operation has already consumed its plan slot. Customers must always be
@@ -125,6 +131,7 @@ def upload_and_enqueue_us_lacey_document(
         operation_public_id=operation_public_id,
     )
     ingestion_service = ingestion or UsLaceyIngestionService()
+    capacity_guard = sandbox_capacity_guard or enforce_sandbox_document_capacity
 
     # Source membership mutation and operation-level finalization share one
     # PostgreSQL advisory lock. A worker can therefore observe either the complete
@@ -133,6 +140,15 @@ def upload_and_enqueue_us_lacey_document(
         organization_id=organization_id,
         operation_id=operation_id,
     ):
+        try:
+            capacity_guard(
+                organization_id=organization_id,
+                operation_id=operation_id,
+                incoming_document_count=1,
+            )
+        except UsLaceySandboxError as exc:
+            raise UsLaceyWorkflowError(str(exc)) from exc
+
         ingested = ingestion_service.ingest_document(
             organization_id=organization_id,
             user_id=user_id,
@@ -175,6 +191,7 @@ def upload_and_enqueue_us_lacey_document_batch(
     documents: tuple[tuple[str, str, bytes, str], ...],
     ingestion: UsLaceyIngestionService | None = None,
     operations: UsLaceyOperationService | None = None,
+    sandbox_capacity_guard: Callable[..., None] | None = None,
 ) -> tuple[UsLaceyQueuedUpload, ...]:
     """Attach an entire HTTP batch before sealing or making any job eligible."""
     if not documents:
@@ -195,6 +212,7 @@ def upload_and_enqueue_us_lacey_document_batch(
         organization_id=organization_id, operation_public_id=operation_public_id,
     )
     ingestion_service = ingestion or UsLaceyIngestionService()
+    capacity_guard = sandbox_capacity_guard or enforce_sandbox_document_capacity
 
     # Hold one lock for the entire request: all documents become visible together,
     # then exactly one revision is sealed and only then are its jobs made eligible.
@@ -202,6 +220,15 @@ def upload_and_enqueue_us_lacey_document_batch(
         organization_id=organization_id,
         operation_id=operation_id,
     ):
+        try:
+            capacity_guard(
+                organization_id=organization_id,
+                operation_id=operation_id,
+                incoming_document_count=len(documents),
+            )
+        except UsLaceySandboxError as exc:
+            raise UsLaceyWorkflowError(str(exc)) from exc
+
         ingested = tuple(
             ingestion_service.ingest_document(
                 organization_id=organization_id, user_id=user_id,
