@@ -296,6 +296,12 @@ def start_us_lacey_sandbox_session(
         raise
     except Exception as exc:
         session.rollback()
+        sqlstate = getattr(getattr(exc, "orig", None), "sqlstate", None)
+        if sqlstate == "54000":
+            raise UsLaceyPortalAuthError(
+                "Sandbox trial limit reached. Try again later.",
+                code="sandbox_rate_limited",
+            ) from exc
         raise UsLaceyPortalAuthError(
             "Unable to start the sandbox right now.",
             code="sandbox_unavailable",
