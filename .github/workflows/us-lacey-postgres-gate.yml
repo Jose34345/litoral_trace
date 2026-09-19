@@ -23,6 +23,7 @@ on:
       - "alembic/versions/052_add_us_lacey_ephemeral_sandbox.py"
       - "alembic/versions/053_sandbox_purge_queue.py"
       - "alembic/versions/054_us_lacey_control_plane_audit_billing.py"
+      - "alembic/versions/055_us_lacey_readonly_impersonation.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
@@ -161,7 +162,7 @@ jobs:
           python -m alembic upgrade 049_lacey_product_intelligence_snapshots
           python -m alembic upgrade 050_lacey_regulatory_assessment_snapshots
           python -m alembic upgrade 052_us_lacey_ephemeral_sandbox
-          python -m alembic upgrade 054_us_lacey_control_plane_audit_billing
+          python -m alembic upgrade 055_us_lacey_readonly_impersonation
       - name: Bind dedicated worker login to queue capability
         shell: bash
         run: |
@@ -186,7 +187,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "054_us_lacey_control_plane_audit_billing (head)" /tmp/alembic-current.txt
+          grep -Fx "055_us_lacey_readonly_impersonation (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -594,7 +595,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "054_us_lacey_control_plane_audit_billing (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "055_us_lacey_readonly_impersonation (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
