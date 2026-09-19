@@ -44,7 +44,7 @@ class _Engine:
 
 
 def test_required_schema_revision_is_repository_canonical_head() -> None:
-    assert schema_compatibility.required_us_lacey_schema_revision() == "054_us_lacey_control_plane_audit_billing"
+    assert schema_compatibility.required_us_lacey_schema_revision() == "055_us_lacey_readonly_impersonation"
 
 
 def test_schema_probe_is_ready_only_on_exact_canonical_head(monkeypatch) -> None:
