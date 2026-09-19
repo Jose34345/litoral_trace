@@ -80,20 +80,36 @@ def _field(
     )
 
 
-def test_contract_accepts_only_reviewed_valid_hts10_as_supported():
+def test_contract_is_line_first_and_accepts_reviewed_valid_hts10_as_supported():
     contract = build_regulatory_input_contract(
         product_intelligence_payload=_pi_payload(),
         operation_fields=(_field(),),
     )
 
     assert contract["schema_version"] == INPUT_CONTRACT_SCHEMA_VERSION
+    assert contract["schema_version"] == "regulatory-input-contract-v2"
     item = contract["subjects"][0]
-    assert item["subject_ref"] == "CHAIR-001"
+    assert item["subject_ref"] == "LT-LINE-1"
     assert item["shipment_line_reference"] == "LT-LINE-1"
+    assert item["link_status"] == "LINKED"
     hts = item["inputs"]["hts10"]
     assert hts["status"] == InputStatus.SUPPORTED.value
     assert hts["value"] == "9401692010"
     assert hts["evidence"]["source_assurance_document_id"] == 11
+
+
+def test_contract_creates_subject_without_any_bom_or_product_intelligence():
+    contract = build_regulatory_input_contract(
+        product_intelligence_payload={},
+        operation_fields=(_field(line_reference="LINE-NO-BOM"),),
+        plant_line_references=("LINE-NO-BOM",),
+    )
+
+    assert contract["summary"]["subject_count"] == 1
+    item = contract["subjects"][0]
+    assert item["subject_ref"] == "LINE-NO-BOM"
+    assert item["link_status"] == "NO_BOM_LINK"
+    assert item["inputs"]["hts10"]["status"] == InputStatus.SUPPORTED.value
 
 
 def test_unreviewed_hts10_remains_review_required_not_supported():
@@ -136,7 +152,7 @@ def test_bom_weight_is_explicitly_unsafe_for_de_minimis_plant_mass():
     assert item["inputs"]["protected_status"]["status"] == InputStatus.MISSING.value
 
 
-def test_unlinked_product_stays_review_required_and_never_inherits_another_line_hts():
+def test_unlinked_product_does_not_control_subject_inventory_or_line_hts():
     payload = _pi_payload()
     payload["shipment_product_bridge"]["links"][0]["status"] = "UNLINKED_REVIEW"
     payload["shipment_product_bridge"]["links"][0]["shipment_line_reference"] = None
@@ -147,9 +163,10 @@ def test_unlinked_product_stays_review_required_and_never_inherits_another_line_
     )
 
     item = contract["subjects"][0]
-    assert item["link_status"] == "UNLINKED_REVIEW"
-    assert item["inputs"]["hts10"]["status"] == InputStatus.MISSING.value
-    assert item["inputs"]["hts10"]["value"] is None
+    assert item["subject_ref"] == "OTHER-LINE"
+    assert item["link_status"] == "NO_BOM_LINK"
+    assert item["inputs"]["hts10"]["status"] == InputStatus.SUPPORTED.value
+    assert item["inputs"]["hts10"]["value"] == "9401692010"
 
 
 def test_contract_summary_counts_supported_missing_review_and_unsafe_inputs():
