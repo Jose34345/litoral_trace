@@ -15,7 +15,7 @@ from uuid import uuid4
 from sqlalchemy import select, text
 
 from litoral_trace.auth.passwords import hash_password
-from litoral_trace.db.models import Organization, UsLaceyOperation
+from litoral_trace.db.models import UsLaceyOperation, UsLaceySubscription
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
@@ -135,19 +135,22 @@ def get_us_lacey_sandbox_policy(
     session = get_us_lacey_db_session()
     try:
         set_tenant_db_context(session, org_id)
-        organization = session.scalar(
-            select(Organization).where(Organization.id == org_id)
+        subscription = session.scalar(
+            select(UsLaceySubscription).where(
+                UsLaceySubscription.organization_id == org_id
+            )
         )
-        if organization is None:
-            raise UsLaceySandboxError("Sandbox organization is unavailable.")
+        if subscription is None:
+            raise UsLaceySandboxError("Workspace is unavailable.")
+        is_sandbox = str(subscription.plan_code) == "SANDBOX"
         expires_at = (
-            _utc(organization.sandbox_expires_at)
-            if organization.sandbox_expires_at is not None
+            _utc(subscription.renews_at)
+            if is_sandbox and subscription.renews_at is not None
             else None
         )
         return UsLaceySandboxPolicy(
             organization_id=org_id,
-            is_sandbox=bool(organization.is_sandbox),
+            is_sandbox=is_sandbox,
             expires_at=expires_at,
         )
     except UsLaceySandboxError:
@@ -180,17 +183,19 @@ def enforce_sandbox_document_capacity(
     session = get_us_lacey_db_session()
     try:
         set_tenant_db_context(session, org_id)
-        organization = session.scalar(
-            select(Organization).where(Organization.id == org_id)
+        subscription = session.scalar(
+            select(UsLaceySubscription).where(
+                UsLaceySubscription.organization_id == org_id
+            )
         )
-        if organization is None:
+        if subscription is None:
             raise UsLaceySandboxError("Workspace is unavailable.")
-        if not organization.is_sandbox:
+        if str(subscription.plan_code) != "SANDBOX":
             return
 
         expires_at = (
-            _utc(organization.sandbox_expires_at)
-            if organization.sandbox_expires_at is not None
+            _utc(subscription.renews_at)
+            if subscription.renews_at is not None
             else None
         )
         if expires_at is None or expires_at <= current_time:
