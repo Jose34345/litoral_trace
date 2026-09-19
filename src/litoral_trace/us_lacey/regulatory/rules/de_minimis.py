@@ -1,8 +1,12 @@
 """Deterministic APHIS Lacey de minimis assessment."""
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import re
+from typing import TYPE_CHECKING, Mapping
+
+if TYPE_CHECKING:
+    from litoral_trace.us_lacey.regulatory.engine import RegulatoryContext, RegulatorySubject
 
 from .domain import (
     RULESET_VERSION,
@@ -128,3 +132,80 @@ def evaluate_de_minimis(inputs: DeMinimisInput) -> RuleAssessment:
         explanation="The supplied evidence satisfies the rule-scoped de minimis weight criteria.",
         trace=trace,
     )
+
+
+def _decimal_from_rule_input(value: object) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return Decimal("NaN")
+
+
+def _protected_status_from_rule_input(value: object) -> ProtectedPlantStatus:
+    if isinstance(value, ProtectedPlantStatus):
+        return value
+    try:
+        return ProtectedPlantStatus(str(value).strip().upper())
+    except (ValueError, AttributeError):
+        return ProtectedPlantStatus.UNKNOWN
+
+
+class DeMinimisRule:
+    """Protocol adapter around the existing pure de minimis evaluator."""
+
+    rule_id = "DE_MINIMIS"
+
+    def evaluate(
+        self,
+        *,
+        subject: "RegulatorySubject",
+        context: "RegulatoryContext",
+    ) -> RuleAssessment:
+        del context
+        configured = subject.rule_inputs.get(self.rule_id)
+
+        if isinstance(configured, DeMinimisInput):
+            inputs = DeMinimisInput(
+                subject_ref=subject.subject_ref,
+                hts10=configured.hts10,
+                plant_mass_per_unit_kg=configured.plant_mass_per_unit_kg,
+                total_unit_mass_kg=configured.total_unit_mass_kg,
+                entry_same_hts_plant_mass_kg=configured.entry_same_hts_plant_mass_kg,
+                protected_status=configured.protected_status,
+                evidence_refs=configured.evidence_refs or subject.evidence_refs,
+            )
+            return evaluate_de_minimis(inputs)
+
+        values: Mapping[str, object]
+        if isinstance(configured, Mapping):
+            values = configured
+        else:
+            values = {}
+
+        inputs = DeMinimisInput(
+            subject_ref=subject.subject_ref,
+            hts10=str(values.get("hts10") or subject.hts10).strip()
+            if (values.get("hts10") or subject.hts10)
+            else None,
+            plant_mass_per_unit_kg=_decimal_from_rule_input(
+                values.get("plant_mass_per_unit_kg")
+            ),
+            total_unit_mass_kg=_decimal_from_rule_input(
+                values.get("total_unit_mass_kg")
+            ),
+            entry_same_hts_plant_mass_kg=_decimal_from_rule_input(
+                values.get("entry_same_hts_plant_mass_kg")
+            ),
+            protected_status=_protected_status_from_rule_input(
+                values.get("protected_status")
+            ),
+            evidence_refs=subject.evidence_refs,
+        )
+        return evaluate_de_minimis(inputs)
+
+
+__all__ = ["DeMinimisRule", "evaluate_de_minimis"]
