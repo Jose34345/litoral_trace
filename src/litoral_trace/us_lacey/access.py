@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from litoral_trace.db.models import UsLaceyOrganizationProfile, UsLaceySubscription
+from litoral_trace.db.models import Organization, UsLaceyOrganizationProfile, UsLaceySubscription
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
@@ -21,6 +22,8 @@ class UsLaceyOperationalEntitlement:
     subscription_status: str
     monthly_operation_limit: int
     used_operations: int
+    is_sandbox: bool = False
+    expires_at: datetime | None = None
 
     @property
     def remaining_operations(self) -> int:
@@ -51,6 +54,32 @@ def require_us_lacey_operational_access(
     session = get_us_lacey_db_session()
     try:
         set_tenant_db_context(session, org_id)
+        organization = session.scalar(
+            select(Organization).where(Organization.id == org_id)
+        )
+        if organization is None or not bool(organization.is_active):
+            raise UsLaceyOperationalAccessError(
+                "This workspace is not available."
+            )
+
+        is_sandbox = bool(getattr(organization, "is_sandbox", False))
+        expires_at = getattr(organization, "expires_at", None)
+        if is_sandbox:
+            if expires_at is None:
+                raise UsLaceyOperationalAccessError(
+                    "This sandbox is not available."
+                )
+            normalized_expiry = (
+                expires_at.replace(tzinfo=timezone.utc)
+                if expires_at.tzinfo is None
+                else expires_at.astimezone(timezone.utc)
+            )
+            if normalized_expiry <= datetime.now(timezone.utc):
+                raise UsLaceyOperationalAccessError(
+                    "This sandbox has expired."
+                )
+            expires_at = normalized_expiry
+
         profile = session.scalar(
             select(UsLaceyOrganizationProfile).where(
                 UsLaceyOrganizationProfile.organization_id == org_id
@@ -88,6 +117,8 @@ def require_us_lacey_operational_access(
             subscription_status=subscription_status,
             monthly_operation_limit=limit,
             used_operations=used,
+            is_sandbox=is_sandbox,
+            expires_at=expires_at,
         )
     except UsLaceyOperationalAccessError:
         raise
