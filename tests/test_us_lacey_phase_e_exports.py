@@ -19,6 +19,7 @@ from litoral_trace.us_lacey.exporters import (
     consolidate_export_snapshot,
 )
 from litoral_trace.us_lacey.semantic_evidence_read import EvidenceTextView
+from litoral_trace.us_lacey.exporters.lawgs_xml_builder import LAWGS_XML_NAMESPACE
 
 
 OPERATION_ID = "11111111-2222-3333-4444-555555555555"
@@ -35,8 +36,8 @@ def _phase_e_snapshot() -> LaceyExportSnapshot:
         ),
         plant_lines=(
             LaceyExportPlantLine(
-                line_reference="LINE-1",
-                hts_number="440711",
+                line_reference="001",
+                hts_number="4407110000",
                 entered_value="18600",
                 article_component="Sawn pine wood boards",
                 genus="Pinus",
@@ -44,6 +45,7 @@ def _phase_e_snapshot() -> LaceyExportSnapshot:
                 country_of_harvest="Argentina",
                 quantity="24.5",
                 unit="m3",
+                percent_recycled="0",
             ),
         ),
     )
@@ -105,10 +107,12 @@ def test_lawgs_xml_and_excel_share_same_english_projection():
 
     xml_data = build_lawgs_xml(snapshot)
     root = ET.fromstring(xml_data)
-    assert root.tag == "LaceyActDeclaration"
-    assert root.findtext("./Header/EntryNumber") == "123-4567890-1"
-    assert root.findtext("./PlantLines/PlantLine/ArticleComponent") == "Sawn pine wood boards"
-    assert root.findtext("./PlantLines/PlantLine/PlantScientificName/Genus") == "Pinus"
+    ns = {"lawgs": LAWGS_XML_NAMESPACE}
+    assert root.tag == f"{{{LAWGS_XML_NAMESPACE}}}merchandiseList"
+    assert root.findtext("./lawgs:merchandise/lawgs:articleComponent", namespaces=ns) == "Sawn pine wood boards"
+    assert root.findtext("./lawgs:merchandise/lawgs:genus", namespaces=ns) == "Pinus"
+    assert root.findtext("./lawgs:merchandise/lawgs:htsusNumber", namespaces=ns) == "4407110000"
+    assert root.find("./Header") is None
 
     excel_io = build_lacey_excel(snapshot)
     workbook = load_workbook(excel_io, read_only=True)
@@ -134,7 +138,8 @@ def test_export_endpoints_return_valid_xml_and_xlsx_with_english_text(monkeypatc
     assert xml_response.headers["content-type"].startswith("application/xml")
     assert f"lawgs_declaration_{OPERATION_ID}.xml" in xml_response.headers["content-disposition"]
     root = ET.fromstring(xml_response.content)
-    assert root.findtext("./PlantLines/PlantLine/ArticleComponent") == "Sawn pine wood boards"
+    ns = {"lawgs": LAWGS_XML_NAMESPACE}
+    assert root.findtext("./lawgs:merchandise/lawgs:articleComponent", namespaces=ns) == "Sawn pine wood boards"
 
     excel_response = client.get(f"/operations/{OPERATION_ID}/export/excel")
     assert excel_response.status_code == 200
