@@ -156,3 +156,30 @@ def test_sandbox_start_never_overwrites_existing_paid_session(monkeypatch):
     assert response.status_code == 303
     assert response.headers["location"] == "/operations"
     assert "set-cookie" not in response.headers
+
+
+def test_sandbox_start_returns_429_when_provisioning_budget_is_exhausted(monkeypatch):
+    def rate_limited(**_kwargs):
+        raise sandbox_module.UsLaceyPortalAuthError(
+            "Sandbox trial limit reached.",
+            code="sandbox_rate_limited",
+        )
+
+    monkeypatch.setattr(
+        sandbox_module,
+        "start_us_lacey_sandbox_session",
+        rate_limited,
+    )
+    monkeypatch.setattr(
+        sandbox_module,
+        "load_us_lacey_portal_config",
+        lambda: SimpleNamespace(session_cookie_secure=True),
+    )
+
+    with TestClient(_app(), follow_redirects=False) as client:
+        response = client.get("/sandbox/start")
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "3600"
+    assert "set-cookie" not in response.headers
+    assert "trial limit reached" in response.text.lower()
