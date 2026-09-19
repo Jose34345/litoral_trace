@@ -948,6 +948,12 @@ jobs:
           PY
       - name: Prove Lemon fail-closed parsing contracts
         run: python -m pytest -q -rs tests/test_us_lacey_lemon_squeezy.py
+      - name: Prove zero-touch sandbox provisioning and FORCE RLS
+        env:
+          DATABASE_URL: ""
+        run: >-
+          python -m pytest -q -rs
+          tests/test_us_lacey_sandbox_postgres.py
       - name: Prove portal login, opaque session and logout
         env:
           DATABASE_URL: ""
