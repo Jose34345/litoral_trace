@@ -86,12 +86,9 @@ def _plain_decimal(value: object | None, *, currency: bool = False) -> str:
     if not decimal_value.is_finite():
         return raw
 
-    plain = format(decimal_value, "f")
-    if "." in plain:
-        plain = plain.rstrip("0").rstrip(".")
-    if plain in {"", "-0"}:
-        return "0"
-    return plain
+    # Decimal's fixed-point formatter removes scientific notation while
+    # preserving meaningful source scale (for example 2432.00 stays 2432.00).
+    return format(decimal_value, "f")
 
 
 def _htsus(value: object | None) -> str:
