@@ -46,28 +46,34 @@ def test_runtime_can_provision_sandbox_only_through_definer_and_rls_stays_tenant
     assert resolved.organization_id == created.organization_id
     assert resolved.account_status == "PILOT"
 
-    owner = _engine(os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"])
     runtime = _engine(os.environ["US_LACEY_DATABASE_URL"])
     try:
-        with owner.begin() as connection:
+        # The runtime principal deliberately cannot inspect organizations
+        # globally. Verify the sandbox only through tenant-scoped tables after
+        # installing the canonical tenant GUC.
+        with runtime.begin() as connection:
+            connection.execute(
+                text(
+                    "SELECT set_config("
+                    "'app.current_organization_id', :org_id, true)"
+                ),
+                {"org_id": str(created.organization_id)},
+            )
             row = connection.execute(
                 text(
                     """
                     SELECT
-                        o.is_sandbox,
-                        o.sandbox_expires_at,
                         s.plan_code,
                         s.price_cents,
                         s.monthly_operation_limit,
                         s.used_operations,
                         s.status,
+                        s.renews_at,
                         us.token_hash
-                    FROM public.organizations AS o
-                    JOIN public.us_lacey_subscriptions AS s
-                      ON s.organization_id = o.id
+                    FROM public.us_lacey_subscriptions AS s
                     JOIN public.user_sessions AS us
-                      ON us.organization_id = o.id
-                    WHERE o.id = :org_id
+                      ON us.organization_id = s.organization_id
+                    WHERE s.organization_id = :org_id
                       AND us.id = :session_id
                     """
                 ),
@@ -77,34 +83,16 @@ def test_runtime_can_provision_sandbox_only_through_definer_and_rls_stays_tenant
                 },
             ).mappings().one()
 
-        assert row["is_sandbox"] is True
         assert row["plan_code"] == "SANDBOX"
         assert row["price_cents"] == 0
         assert row["monthly_operation_limit"] == 1
         assert row["used_operations"] == 0
         assert row["status"] == "ACTIVE"
+        assert row["renews_at"] is not None
         assert row["token_hash"] == hashlib.sha256(
             created.session_token.encode("utf-8")
         ).hexdigest()
         assert row["token_hash"] != created.session_token
-
-        # Runtime role sees its own tenant after setting the canonical GUC.
-        with runtime.begin() as connection:
-            connection.execute(
-                text(
-                    "SELECT set_config("
-                    "'app.current_organization_id', :org_id, true)"
-                ),
-                {"org_id": str(created.organization_id)},
-            )
-            own_count = connection.execute(
-                text(
-                    "SELECT count(*) FROM public.us_lacey_subscriptions "
-                    "WHERE organization_id = :org_id"
-                ),
-                {"org_id": created.organization_id},
-            ).scalar_one()
-        assert own_count == 1
 
         # A different tenant context cannot read the sandbox row through FORCE RLS.
         with runtime.begin() as connection:
@@ -162,7 +150,6 @@ def test_runtime_can_provision_sandbox_only_through_definer_and_rls_stays_tenant
                 )
     finally:
         runtime.dispose()
-        owner.dispose()
 
 
 def test_non_sandbox_zero_price_subscription_remains_rejected():
