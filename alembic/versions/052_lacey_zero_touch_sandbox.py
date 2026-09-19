@@ -152,7 +152,7 @@ def _replace_portal_auth_functions() -> None:
                 requested_token_hash,
                 now(),
                 requested_expires_at,
-                NULLIF(left(btrim(coalesce(requested_ip, '')), 45), ''),
+                normalized_ip,
                 NULLIF(left(btrim(coalesce(requested_user_agent, '')), 512), '')
             )
             RETURNING id INTO new_session_id;
@@ -295,6 +295,9 @@ def _create_sandbox_provision_function() -> None:
             sandbox_expiry timestamptz;
             new_org_id integer;
             new_user_id integer;
+            normalized_ip text;
+            recent_ip_count integer;
+            recent_global_count integer;
         BEGIN
             IF requested_password_hash IS NULL
                OR char_length(btrim(requested_password_hash)) < 40 THEN
@@ -316,6 +319,40 @@ def _create_sandbox_provision_function() -> None:
                OR requested_ttl_minutes > 240 THEN
                 RAISE EXCEPTION 'sandbox TTL must be between 15 and 240 minutes'
                     USING ERRCODE = '22023';
+            END IF;
+
+            normalized_ip := NULLIF(
+                left(btrim(coalesce(requested_ip, '')), 45),
+                ''
+            );
+            IF normalized_ip IS NULL THEN
+                RAISE EXCEPTION 'sandbox client address is required'
+                    USING ERRCODE = '22023';
+            END IF;
+
+            SELECT count(DISTINCT organizations.id)::integer
+            INTO recent_ip_count
+            FROM public.organizations AS organizations
+            JOIN public.user_sessions AS sessions
+              ON sessions.organization_id = organizations.id
+            WHERE organizations.is_sandbox
+              AND organizations.created_at >= now() - interval '24 hours'
+              AND sessions.created_ip = normalized_ip;
+
+            IF recent_ip_count >= 3 THEN
+                RAISE EXCEPTION 'sandbox provisioning rate limit exceeded'
+                    USING ERRCODE = '54000';
+            END IF;
+
+            SELECT count(*)::integer
+            INTO recent_global_count
+            FROM public.organizations AS organizations
+            WHERE organizations.is_sandbox
+              AND organizations.created_at >= now() - interval '1 hour';
+
+            IF recent_global_count >= 30 THEN
+                RAISE EXCEPTION 'sandbox provisioning capacity limit exceeded'
+                    USING ERRCODE = '54000';
             END IF;
 
             sandbox_expiry := now() + make_interval(mins => requested_ttl_minutes);
