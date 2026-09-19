@@ -111,3 +111,22 @@ def test_sandbox_provisioning_is_ephemeral_rls_tenant_with_opaque_session(monkey
     with pytest.raises(UsLaceyPortalAuthError) as expired:
         resolve_us_lacey_session(sandbox.session_token)
     assert expired.value.code == "session_invalid"
+
+
+    # Expired sandboxes still count against the anti-abuse provisioning window.
+    second = start_us_lacey_sandbox_session(
+        client_ip="203.0.113.10",
+        user_agent="pytest-sandbox-2",
+    )
+    third = start_us_lacey_sandbox_session(
+        client_ip="203.0.113.10",
+        user_agent="pytest-sandbox-3",
+    )
+    assert second.identity.organization_id != third.identity.organization_id
+
+    with pytest.raises(UsLaceyPortalAuthError) as limited:
+        start_us_lacey_sandbox_session(
+            client_ip="203.0.113.10",
+            user_agent="pytest-sandbox-4",
+        )
+    assert limited.value.code == "sandbox_rate_limited"
