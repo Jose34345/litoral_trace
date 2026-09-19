@@ -110,7 +110,7 @@ def test_sandbox_document_cap_allows_third_document_and_rejects_fourth(monkeypat
 
     allowed = _ScalarSession(
         [
-            SimpleNamespace(is_sandbox=True, sandbox_expires_at=expires_at),
+            SimpleNamespace(plan_code="SANDBOX", renews_at=expires_at),
             SimpleNamespace(document_count=2),
         ]
     )
@@ -126,7 +126,7 @@ def test_sandbox_document_cap_allows_third_document_and_rejects_fourth(monkeypat
 
     blocked = _ScalarSession(
         [
-            SimpleNamespace(is_sandbox=True, sandbox_expires_at=expires_at),
+            SimpleNamespace(plan_code="SANDBOX", renews_at=expires_at),
             SimpleNamespace(document_count=2),
         ]
     )
@@ -144,7 +144,7 @@ def test_sandbox_document_cap_allows_third_document_and_rejects_fourth(monkeypat
 
 def test_paid_tenant_is_not_subject_to_sandbox_document_cap(monkeypatch):
     fake = _ScalarSession(
-        [SimpleNamespace(is_sandbox=False, sandbox_expires_at=None)]
+        [SimpleNamespace(plan_code="PRIVATE_BETA", renews_at=None)]
     )
     monkeypatch.setattr(sandbox_service, "get_us_lacey_db_session", lambda: fake)
     monkeypatch.setattr(sandbox_service, "set_tenant_db_context", lambda *_args: None)
