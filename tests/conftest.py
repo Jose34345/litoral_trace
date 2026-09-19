@@ -3,6 +3,12 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
+# Register the isolated Engine 2 PostgreSQL fixtures once for the test suite.
+# They are inert unless a test explicitly requests them, while allowing gate
+# modules to reuse the same real-PostgreSQL fixture contract without wrappers
+# having to re-import fixture functions solely for pytest discovery.
+pytest_plugins = ("tests.us_lacey_engine2_postgres",)
+
 # Ensure the source package directory is importable from pytest.
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT_DIR / "src"

@@ -1,0 +1,96 @@
+{% extends "us_lacey/base.html" %}
+{% block lacey_title %}Platform Admin{% endblock %}
+{% block lacey_content %}
+<section class="space-y-6">
+  <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div>
+        <div class="mb-2 flex flex-wrap items-center gap-2">
+          <span class="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-xs font-bold text-purple-800"><i class="fa-solid fa-crown mr-1" aria-hidden="true"></i>Global Platform Admin</span>
+          <span class="text-xs font-semibold text-slate-500">Superadmin only</span>
+        </div>
+        <h1 class="text-2xl font-bold tracking-tight text-slate-950">U.S. Lacey owner control plane</h1>
+        <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Cross-tenant account status, usage, users and processing failures. Mutations below use the audited capability-scoped PostgreSQL control plane.</p>
+      </div>
+      <a href="/operations" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Back to operations</a>
+    </div>
+  </div>
+
+  {% if notice %}
+  <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{{ notice }}</div>
+  {% endif %}
+
+  <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Active</p><p class="mt-1 text-2xl font-bold text-slate-950">{{ active_count }}</p></div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Pilot</p><p class="mt-1 text-2xl font-bold text-slate-950">{{ pilot_count }}</p></div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Pending</p><p class="mt-1 text-2xl font-bold text-slate-950">{{ pending_count }}</p></div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Failed jobs</p><p class="mt-1 text-2xl font-bold text-slate-950">{{ failed_job_count }}</p></div>
+  </div>
+
+  <article class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div class="border-b border-slate-200 px-5 py-4"><h2 class="text-lg font-bold text-slate-950">Accounts</h2><p class="mt-1 text-xs text-slate-500">{{ account_count }} U.S. Lacey account(s)</p></div>
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[53rem] text-left text-xs">
+        <thead class="bg-slate-50 uppercase text-slate-600"><tr><th class="p-3">Account</th><th class="p-3">Status</th><th class="p-3">Payment</th><th class="p-3">Usage</th><th class="p-3">Jobs</th><th class="p-3">Controls</th></tr></thead>
+        <tbody class="divide-y divide-slate-200 text-slate-700">
+        {% for account in accounts %}
+          <tr>
+            <td class="p-3"><div class="font-bold text-slate-950">{{ account.legal_name }}</div><div class="mt-1 text-slate-500">{{ account.admin_contact_email or '—' }} · Org {{ account.organization_id }}</div></td>
+            <td class="p-3"><span class="rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-800">{{ account.account_status }}</span></td>
+            <td class="p-3"><div class="font-semibold">{{ account.payment_provider or '—' }} · {{ account.payment_status or '—' }}</div><div class="mt-1 text-slate-500">Subscription: {{ account.subscription_status or '—' }}</div></td>
+            <td class="p-3"><div class="font-bold">{{ account.used_operations or 0 }} / {{ account.monthly_operation_limit or 0 }}</div><form method="post" action="/admin/us-lacey/accounts/{{ account.organization_id }}/operation-limit" class="mt-2 flex gap-2"><input type="hidden" name="csrf_token" value="{{ limit_csrf[account.organization_id] }}"><input type="number" name="monthly_operation_limit" min="1" max="100000" value="{{ account.monthly_operation_limit or 25 }}" class="w-32 rounded border border-slate-300 px-2 py-1"><button class="rounded bg-slate-900 px-2 py-1 font-bold text-white">Set limit</button></form></td>
+            <td class="p-3"><div>{{ account.queued_jobs or 0 }} queued · {{ account.running_jobs or 0 }} running</div><div class="mt-1">{{ account.retry_jobs or 0 }} retry · <span class="font-bold text-rose-700">{{ account.failed_jobs or 0 }} failed</span></div></td>
+            <td class="p-3">
+              <form method="post" action="/admin/us-lacey/accounts/{{ account.organization_id }}/status" class="flex flex-wrap gap-1">
+                <input type="hidden" name="csrf_token" value="{{ status_csrf[account.organization_id] }}">
+                <button name="account_status" value="PILOT" class="rounded bg-purple-100 px-2 py-1 font-bold text-purple-800">PILOT</button>
+                <button name="account_status" value="SUSPENDED" class="rounded bg-rose-100 px-2 py-1 font-bold text-rose-800">Suspend</button>
+                <button name="account_status" value="ACTIVE" class="rounded bg-emerald-100 px-2 py-1 font-bold text-emerald-800">Activate</button>
+              </form>
+              {% if account.account_status == 'PILOT' %}
+              <form method="post" action="/admin/us-lacey/accounts/{{ account.organization_id }}/reset-pilot" class="mt-2" onsubmit="return confirm('Reset only this PILOT account test data?');">
+                <input type="hidden" name="csrf_token" value="{{ reset_csrf[account.organization_id] }}">
+                <button class="rounded bg-amber-100 px-2 py-1 font-bold text-amber-800">Reset test data</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="p-6 text-center text-slate-500">No U.S. Lacey accounts found.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <div class="grid gap-6 lg:grid-cols-2">
+    <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h2 class="text-lg font-bold text-slate-950">Users</h2>
+      <p class="mt-1 text-xs text-slate-500">Global user inventory. Password administration is intentionally not exposed.</p>
+      <div class="mt-4 max-h-72 divide-y divide-slate-100 overflow-auto">
+      {% for platform_user in users %}
+        <div class="flex items-start justify-between gap-3 py-3">
+          <div class="min-w-0"><p class="break-all text-sm font-bold text-slate-950">{{ platform_user.email }}</p><p class="mt-1 text-xs text-slate-500">{{ platform_user.organization_name }} · {{ platform_user.role }} · user {{ platform_user.user_id }}</p></div>
+          <form method="post" action="/admin/users/{{ platform_user.user_id }}/revoke-sessions" onsubmit="return confirm('Revoke all active sessions for this user?');">
+            <input type="hidden" name="csrf_token" value="{{ revoke_csrf[platform_user.user_id] }}">
+            <button class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[10px] font-bold text-slate-700">Revoke sessions</button>
+          </form>
+        </div>
+      {% else %}<p class="py-4 text-sm text-slate-500">No users found.</p>{% endfor %}
+      </div>
+    </article>
+
+    <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h2 class="text-lg font-bold text-slate-950">Processing / errors</h2>
+      <p class="mt-1 text-xs text-slate-500">Recent failed document-processing jobs across tenants.</p>
+      <div class="mt-4 max-h-72 divide-y divide-slate-100 overflow-auto">
+      {% for job in failed_jobs %}
+        <div class="py-3"><p class="text-sm font-bold text-slate-950">{{ job.organization_name }}</p><p class="mt-1 text-xs font-semibold text-rose-700">{{ job.error_code or 'FAILED' }}</p><p class="mt-1 text-xs leading-5 text-slate-500">{{ job.error_message }}</p></div>
+      {% else %}<p class="py-4 text-sm text-slate-500">No failed jobs.</p>{% endfor %}
+      </div>
+    </article>
+  </div>
+
+  <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">This owner console does not submit data to ACE or LAWGS and does not create or verify payments. PILOT reset remains blocked for accounts with verified Lemon commercial history.</div>
+</section>
+{% endblock %}

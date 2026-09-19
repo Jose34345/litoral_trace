@@ -1,7 +1,8 @@
 """Modelo Organization - Entidad raíz multi-tenant."""
 from __future__ import annotations
+from datetime import datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Text, Boolean
+from sqlalchemy import String, Text, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from litoral_trace.db.base import Base, TimestampMixin
 
@@ -25,6 +26,11 @@ class Organization(Base, TimestampMixin):
     tier: Mapped[str] = mapped_column(String(50), nullable=False, default="pro")  # free, pro, enterprise
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_sandbox: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    sandbox_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     # Relaciones
     users: Mapped[list[User]] = relationship("User", back_populates="organization", cascade="all, delete-orphan")
@@ -36,4 +42,7 @@ class Organization(Base, TimestampMixin):
     sessions: Mapped[list[UserSession]] = relationship("UserSession", back_populates="organization", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
-        return f"<Organization id={self.id} slug='{self.slug}' tier='{self.tier}'>"
+        return (
+            f"<Organization id={self.id} slug='{self.slug}' tier='{self.tier}' "
+            f"is_sandbox={self.is_sandbox}>"
+        )

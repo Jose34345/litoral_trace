@@ -21,6 +21,7 @@ from litoral_trace.assurance.normalization import (
     normalize_quantity,
 )
 from litoral_trace.assurance.parsers import (
+    _records_from_rows,
     _ocr_timeout_seconds,
     parse_csv,
     parse_pdf,
@@ -119,6 +120,79 @@ def test_xlsx_parser_reads_multiple_sheets_and_skips_total_rows():
     assert len(by_name["Despachos"].rows) == 1
     assert by_name["Despachos"].rows[0]["CUIT"] == "30-70832310-8"
     assert by_name["Despachos"].source.row == 3
+
+
+def test_key_value_matrix_keeps_each_label_bound_to_its_adjacent_value():
+    """A physical BOL matrix must not reuse its first row as column headers."""
+    headers, records = _records_from_rows(
+        [
+            ["BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda."],
+            ["Consignee", "Harborline Timber LLC", "Container", "FSCU7231845"],
+            ["Vessel", "MSC Test", "POL", "Santos"],
+            ["POD", "Houston", "ETA", "2026-10-02"],
+            ["Pieces", "480", None, None],
+        ],
+        header_index=0,
+        allow_key_value_matrix=True,
+    )
+
+    assert headers == (
+        "BOL", "Shipper", "Consignee", "Container", "Vessel", "POL", "POD", "ETA", "Pieces"
+    )
+    assert records == (
+        {"BOL": "VSL-SAV-260913-01", "Shipper": "VerdeSul Madeiras Ltda."},
+        {"Consignee": "Harborline Timber LLC", "Container": "FSCU7231845"},
+        {"Vessel": "MSC Test", "POL": "Santos"},
+        {"POD": "Houston", "ETA": "2026-10-02"},
+        {"Pieces": "480"},
+    )
+
+
+def test_commercial_table_keeps_two_line_items_in_the_tabular_path():
+    headers, records = _records_from_rows(
+        [
+            ["HTS", "Description", "Quantity", "Value"],
+            ["4407110190", "Pinus taeda boards", "30", "18300.00"],
+            ["4407990190", "Eucalyptus grandis boards", "16", "12640.00"],
+        ],
+        header_index=0,
+    )
+    assert headers == ("HTS", "Description", "Quantity", "Value")
+    assert records == (
+        {"HTS": "4407110190", "Description": "Pinus taeda boards", "Quantity": "30", "Value": "18300.00"},
+        {"HTS": "4407990190", "Description": "Eucalyptus grandis boards", "Quantity": "16", "Value": "12640.00"},
+    )
+
+
+@pytest.mark.parametrize(
+    "rows",
+    (
+        [["Country", "Brazil", "Country", "Argentina"], ["BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda."], ["Consignee", "Harborline Timber LLC", "Container", "FSCU7231845"]],
+        [[None, "orphan-value", "Container", "FSCU7231845"], ["BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda."], ["Consignee", "Harborline Timber LLC", "ETA", "2026-10-02"]],
+        [["Container", None, "ETA", "2026-10-02"], ["BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda."], ["Consignee", "Harborline Timber LLC", "POD", "Houston"]],
+    ),
+)
+def test_ambiguous_key_value_pairs_are_not_reinterpreted(rows):
+    from litoral_trace.assurance.parsers import _looks_like_key_value_matrix
+
+    assert _looks_like_key_value_matrix(rows) is False
+
+
+def test_key_value_matrix_is_opt_in_for_pdf_only():
+    rows = [
+        ["BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda."],
+        ["Consignee", "Harborline Timber LLC", "Container", "FSCU7231845"],
+    ]
+    legacy_headers, _ = _records_from_rows(rows, header_index=0)
+    pdf_headers, _ = _records_from_rows(rows, header_index=0, allow_key_value_matrix=True)
+    assert legacy_headers == ("BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda.")
+    assert pdf_headers == ("BOL", "Shipper", "Consignee", "Container")
+
+def test_parse_csv_does_not_opt_into_key_value_matrix():
+    payload = b"BOL,VSL-SAV-260913-01,Shipper,VerdeSul Madeiras Ltda.\nConsignee,Harborline Timber LLC,Container,FSCU7231845\n"
+    parsed = parse_csv(payload)
+    assert parsed.tables[0].headers == ("BOL", "VSL-SAV-260913-01", "Shipper", "VerdeSul Madeiras Ltda.")
+    assert parsed.tables[0].rows[0]["BOL"] == "Consignee"
 
 
 def test_csv_parser_detects_semicolon_and_cp1252_encoding():

@@ -182,7 +182,7 @@ jobs:
           PY
 
       - name: Execute Assurance migrations 030 through 033
-        run: python -m alembic upgrade head
+        run: python -m alembic upgrade 033_assurance_suppliers
 
       - name: Verify canonical head 033
         shell: bash

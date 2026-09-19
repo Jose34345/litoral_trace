@@ -120,25 +120,27 @@ def patch_successful_pipeline(monkeypatch, *, version: str):
 
 def test_new_extractor_version_can_force_reprocess_without_duplicate_silent_run(monkeypatch):
     f = factory()
-    public_id = seed(f, status=DocumentProcessingStatus.EXTRACTED.value)
+    public_id = seed(f, status=DocumentProcessingStatus.UPLOADED.value)
     patch_successful_pipeline(monkeypatch, version="9.9.9")
     service = AssuranceProcessingService(
         session_factory=f,
         vault_service=FakeVaultService(),
     )
 
-    # Normal processing of an already-terminal document is idempotent.
+    # The first pass creates a versioned, reproducible extraction run.
     assert service.process(
         organization_id=42,
         assurance_public_id=public_id,
         force_reprocess=False,
     ) == DocumentProcessingStatus.EXTRACTED.value
     session: Session = f()
-    assert session.scalars(select(DocumentExtractionRun)).all() == []
-    assert session.scalars(select(AuditLog)).all() == []
+    runs = session.scalars(select(DocumentExtractionRun)).all()
+    audits = session.scalars(select(AuditLog)).all()
+    assert len(runs) == 1
+    assert len(audits) == 1
     session.close()
 
-    # A deliberate reprocess creates a new reproducible run with the new version.
+    # A deliberate reprocess creates a second reproducible run with the same version.
     assert service.process(
         organization_id=42,
         assurance_public_id=public_id,
@@ -147,13 +149,13 @@ def test_new_extractor_version_can_force_reprocess_without_duplicate_silent_run(
     session = f()
     runs = session.scalars(select(DocumentExtractionRun)).all()
     audits = session.scalars(select(AuditLog)).all()
-    assert len(runs) == 1
-    assert runs[0].engine_version == "9.9.9"
-    assert runs[0].status == ExtractionRunStatus.SUCCEEDED.value
-    assert runs[0].extraction_metadata["force_reprocess"] is True
+    assert len(runs) == 2
+    assert runs[-1].engine_version == "9.9.9"
+    assert runs[-1].status == ExtractionRunStatus.SUCCEEDED.value
+    assert runs[-1].extraction_metadata["force_reprocess"] is True
 
-    assert len(audits) == 1
-    audit = audits[0]
+    assert len(audits) == 2
+    audit = audits[-1]
     assert audit.organization_id == 42
     assert audit.user_id is None
     assert audit.username == "system"
