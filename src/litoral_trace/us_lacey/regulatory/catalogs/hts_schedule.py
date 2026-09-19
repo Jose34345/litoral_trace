@@ -52,6 +52,7 @@ class HtsScheduleCatalog:
     as_of: date
     entries: tuple[HtsScheduleEntry, ...]
     source_url: str = APHIS_HTS_SCHEDULE_SOURCE
+    is_complete: bool = False
 
     def __post_init__(self) -> None:
         if not self.version.strip():
