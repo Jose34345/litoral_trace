@@ -130,6 +130,20 @@ def upgrade() -> None:
             sandbox_email :=
                 'sandbox+' || substr(random_identity, 1, 24) || '@sandbox.invalid';
 
+            IF NULLIF(btrim(coalesce(requested_ip, '')), '') IS NOT NULL
+               AND (
+                    SELECT count(*)
+                    FROM public.user_sessions AS sessions
+                    JOIN public.organizations AS organizations
+                      ON organizations.id = sessions.organization_id
+                    WHERE organizations.is_sandbox
+                      AND sessions.created_ip = left(btrim(requested_ip), 45)
+                      AND sessions.issued_at > now() - interval '1 hour'
+               ) >= 3 THEN
+                RAISE EXCEPTION 'sandbox start rate limit exceeded'
+                    USING ERRCODE = 'P4290';
+            END IF;
+
             INSERT INTO public.organizations (
                 name,
                 slug,
