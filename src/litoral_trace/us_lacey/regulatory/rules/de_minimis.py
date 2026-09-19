@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 import re
-from typing import TYPE_CHECKING, Mapping
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from litoral_trace.us_lacey.regulatory.engine import RegulatoryContext, RegulatorySubject
