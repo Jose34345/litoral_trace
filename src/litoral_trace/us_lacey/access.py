@@ -4,9 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
-from litoral_trace.db.models import Organization, UsLaceyOrganizationProfile, UsLaceySubscription
+from litoral_trace.db.models import UsLaceyOrganizationProfile, UsLaceySubscription
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
@@ -54,16 +54,19 @@ def require_us_lacey_operational_access(
     session = get_us_lacey_db_session()
     try:
         set_tenant_db_context(session, org_id)
-        organization = session.scalar(
-            select(Organization).where(Organization.id == org_id)
-        )
-        if organization is None or not bool(organization.is_active):
+        tenant_state = session.execute(
+            text(
+                "SELECT * FROM public.us_lacey_tenant_runtime_state(:organization_id)"
+            ),
+            {"organization_id": org_id},
+        ).mappings().one_or_none()
+        if tenant_state is None or not bool(tenant_state["is_active"]):
             raise UsLaceyOperationalAccessError(
                 "This workspace is not available."
             )
 
-        is_sandbox = bool(getattr(organization, "is_sandbox", False))
-        expires_at = getattr(organization, "expires_at", None)
+        is_sandbox = bool(tenant_state["is_sandbox"])
+        expires_at = tenant_state["expires_at"]
         if is_sandbox:
             if expires_at is None:
                 raise UsLaceyOperationalAccessError(
