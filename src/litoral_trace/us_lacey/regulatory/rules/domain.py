@@ -73,6 +73,14 @@ class SpecialCompositeInput:
 
 
 @dataclass(frozen=True, slots=True)
+class SpecialRecycledInput:
+    subject_ref: str
+    highly_processed_recycled_material: TriState
+    species_determinable_after_due_care: TriState
+    evidence_refs: tuple[EvidenceRef, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class CompositeMaterialFacts:
     material_normalized: str
     small_fibers_more_than_one_plant_kind: TriState
