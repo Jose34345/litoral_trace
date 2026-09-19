@@ -1,0 +1,25 @@
+name: Temporary LAWGS schema probe
+on:
+  push:
+    branches:
+      - feature/sprint-a-lawgs-xml-pipeline
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch public synthetic LAWGS XML fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://laceyfilecheck.com/samples/lacey-filecheck-synthetic-lawgs.xml"
+          curl --fail --silent --show-error --location --max-time 30 "$url" -o /tmp/lawgs.xml
+          echo "sha256=$(sha256sum /tmp/lawgs.xml | awk '{print $1}')"
+          echo "bytes=$(wc -c < /tmp/lawgs.xml)"
+          echo "---BEGIN_PUBLIC_SYNTHETIC_XML---"
+          cat /tmp/lawgs.xml
+          echo
+          echo "---END_PUBLIC_SYNTHETIC_XML---"
