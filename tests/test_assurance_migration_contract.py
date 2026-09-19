@@ -14,6 +14,9 @@ US_LACEY_OWNER_ADMIN_MIGRATION = Path("alembic/versions/042_add_us_lacey_owner_a
 US_LACEY_CONTROL_PLANE_AUDIT_BILLING_MIGRATION = Path(
     "alembic/versions/054_us_lacey_control_plane_audit_billing.py"
 )
+US_LACEY_READONLY_IMPERSONATION_MIGRATION = Path(
+    "alembic/versions/055_us_lacey_readonly_impersonation.py"
+)
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -143,9 +146,26 @@ def test_us_lacey_control_plane_audit_billing_follows_sandbox_purge():
     assert "sa.ForeignKey" not in text
 
 
+def test_us_lacey_readonly_impersonation_follows_control_plane_audit():
+    text = US_LACEY_READONLY_IMPERSONATION_MIGRATION.read_text(encoding="utf-8")
+
+    assert 'revision: str = "055_us_lacey_readonly_impersonation"' in text
+    assert '"054_us_lacey_control_plane_audit_billing"' in text
+    assert "litoral_trace_impersonation_reader" in text
+    assert "NOLOGIN" in text
+    assert "NOBYPASSRLS" in text
+    assert "AS RESTRICTIVE" in text
+    assert "us_lacey_admin_impersonation_sessions" in text
+    assert "interval '15 minutes'" in text
+    assert "READONLY_IMPERSONATION_STARTED" in text
+    assert "READONLY_IMPERSONATION_ENDED" in text
+    assert "_assert_reader_is_locked_down" in text
+    assert "sa.ForeignKey" not in text
+
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "054_us_lacey_control_plane_audit_billing (head)" in text
+    assert "055_us_lacey_readonly_impersonation (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():
