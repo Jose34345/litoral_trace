@@ -60,6 +60,13 @@ def _create_expired_sandbox_delete_policy(table_name: str) -> None:
     op.execute(
         f"GRANT DELETE ON TABLE public.{table_name} TO {PLATFORM_ROLE}"
     )
+    # DELETE ... WHERE organization_id = ... also requires SELECT privilege
+    # on the predicate column. Keep this column-scoped instead of granting
+    # cross-tenant table-wide reads to the non-login definer.
+    op.execute(
+        f"GRANT SELECT (organization_id) "
+        f"ON TABLE public.{table_name} TO {PLATFORM_ROLE}"
+    )
 
 
 def upgrade() -> None:
