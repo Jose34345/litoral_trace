@@ -22,6 +22,10 @@ from litoral_trace.us_lacey.jobs import UsLaceyJob, enqueue_us_lacey_document_jo
 from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_lock
 from litoral_trace.us_lacey.operations import OperationSnapshot, UsLaceyOperationService
 from litoral_trace.us_lacey.source_sets import seal_current_source_set
+from litoral_trace.us_lacey.sandbox import (
+    UsLaceySandboxError,
+    enforce_sandbox_document_capacity,
+)
 
 
 class UsLaceyWorkflowError(RuntimeError):
@@ -133,6 +137,15 @@ def upload_and_enqueue_us_lacey_document(
         organization_id=organization_id,
         operation_id=operation_id,
     ):
+        try:
+            enforce_sandbox_document_capacity(
+                organization_id=organization_id,
+                operation_id=operation_id,
+                incoming_document_count=1,
+            )
+        except UsLaceySandboxError as exc:
+            raise UsLaceyWorkflowError(str(exc)) from exc
+
         ingested = ingestion_service.ingest_document(
             organization_id=organization_id,
             user_id=user_id,
@@ -202,6 +215,15 @@ def upload_and_enqueue_us_lacey_document_batch(
         organization_id=organization_id,
         operation_id=operation_id,
     ):
+        try:
+            enforce_sandbox_document_capacity(
+                organization_id=organization_id,
+                operation_id=operation_id,
+                incoming_document_count=len(documents),
+            )
+        except UsLaceySandboxError as exc:
+            raise UsLaceyWorkflowError(str(exc)) from exc
+
         ingested = tuple(
             ingestion_service.ingest_document(
                 organization_id=organization_id, user_id=user_id,
