@@ -48,7 +48,7 @@ def test_required_schema_revision_is_repository_canonical_head() -> None:
 
 
 def test_schema_probe_is_ready_only_on_exact_canonical_head(monkeypatch) -> None:
-    engine = _Engine("054_us_lacey_control_plane_audit_billing")
+    engine = _Engine("055_us_lacey_readonly_impersonation")
     monkeypatch.setattr(schema_compatibility, "get_us_lacey_engine", lambda: engine)
 
     assert schema_compatibility.probe_us_lacey_schema_compatibility() is True
