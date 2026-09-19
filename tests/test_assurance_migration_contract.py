@@ -11,6 +11,9 @@ US_LACEY_STATUS_FIX_MIGRATION = Path("alembic/versions/036_fix_us_lacey_status_a
 US_LACEY_PORTAL_AUTH_MIGRATION = Path("alembic/versions/037_add_us_lacey_portal_auth_functions.py")
 US_LACEY_PILOT_ACTIVATION_MIGRATION = Path("alembic/versions/038_us_lacey_pilot_activation.py")
 US_LACEY_OWNER_ADMIN_MIGRATION = Path("alembic/versions/042_add_us_lacey_owner_admin_overview.py")
+US_LACEY_CONTROL_PLANE_AUDIT_BILLING_MIGRATION = Path(
+    "alembic/versions/054_us_lacey_control_plane_audit_billing.py"
+)
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -114,9 +117,35 @@ def test_us_lacey_owner_admin_follows_lemon_head():
     assert "platform_us_lacey_account_overview" in text
 
 
+def test_us_lacey_control_plane_audit_billing_follows_sandbox_purge():
+    text = US_LACEY_CONTROL_PLANE_AUDIT_BILLING_MIGRATION.read_text(encoding="utf-8")
+
+    assert 'revision: str = "054_us_lacey_control_plane_audit_billing"' in text
+    assert '"053_sandbox_purge_queue"' in text
+    for column in (
+        "billing_provider",
+        "provider_customer_id",
+        "provider_subscription_id",
+        "billing_sync_status",
+        "billing_last_sync_attempt_at",
+        "billing_last_synced_at",
+        "billing_last_error_code",
+        "provider_updated_at",
+    ):
+        assert column in text
+    assert "us_lacey_admin_audit_logs" in text
+    assert "ENABLE ROW LEVEL SECURITY" in text
+    assert "FORCE ROW LEVEL SECURITY" in text
+    assert "GRANT SELECT, INSERT" in text
+    assert "public._us_lacey_admin_audit" in text
+    assert "public._platform_insert_audit_log" in text
+    assert "_restore_044_platform_mutations" in text
+    assert "sa.ForeignKey" not in text
+
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "053_sandbox_purge_queue (head)" in text
+    assert "054_us_lacey_control_plane_audit_billing (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():
