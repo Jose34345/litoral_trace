@@ -87,6 +87,21 @@ class HtsApplicabilityRule:
         }
 
         if match is None:
+            if not self._catalog.is_complete:
+                return RuleAssessment(
+                    rule_id=self.rule_id,
+                    ruleset_version=RULESET_VERSION,
+                    status=RuleStatus.INDETERMINATE,
+                    reason_codes=("HTS_NOT_IN_PARTIAL_CATALOG",),
+                    explanation=(
+                        f"HTS {raw_hts} is not present in the configured partial APHIS "
+                        "implementation-schedule catalog; schedule coverage cannot be "
+                        "determined from this catalog alone."
+                    ),
+                    calculation_trace=trace,
+                    evidence_refs=subject.evidence_refs,
+                    review_required=True,
+                )
             return RuleAssessment(
                 rule_id=self.rule_id,
                 ruleset_version=RULESET_VERSION,
