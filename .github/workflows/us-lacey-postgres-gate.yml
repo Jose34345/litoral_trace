@@ -23,6 +23,7 @@ on:
       - "alembic/versions/052_add_us_lacey_ephemeral_sandbox.py"
       - "alembic/versions/053_sandbox_purge_queue.py"
       - "alembic/versions/054_us_lacey_control_plane_audit_billing.py"
+      - "alembic/versions/055_us_lacey_readonly_impersonation.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
@@ -161,7 +162,7 @@ jobs:
           python -m alembic upgrade 049_lacey_product_intelligence_snapshots
           python -m alembic upgrade 050_lacey_regulatory_assessment_snapshots
           python -m alembic upgrade 052_us_lacey_ephemeral_sandbox
-          python -m alembic upgrade 054_us_lacey_control_plane_audit_billing
+          python -m alembic upgrade 055_us_lacey_readonly_impersonation
       - name: Bind dedicated worker login to queue capability
         shell: bash
         run: |
@@ -186,36 +187,36 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "054_us_lacey_control_plane_audit_billing (head)" /tmp/alembic-current.txt
+          grep -Fx "055_us_lacey_readonly_impersonation (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
 
           expected_policy_counts = {
               "us_lacey_organization_profiles": 5,
-              "us_lacey_operations": 7,
-              "us_lacey_operation_documents": 4,
-              "us_lacey_operation_fields": 4,
+              "us_lacey_operations": 9,
+              "us_lacey_operation_documents": 6,
+              "us_lacey_operation_fields": 6,
               "us_lacey_subscriptions": 5,
               "us_lacey_payments": 5,
               "us_lacey_terms_acceptances": 5,
-              "us_lacey_processing_jobs": 6,
-              "us_lacey_ppq_shipments": 4,
-              "us_lacey_ppq_plant_lines": 4,
-              "us_lacey_plant_declarations": 4,
-              "us_lacey_field_candidates": 4,
-              "us_lacey_engine_document_runs": 4,
-              "us_lacey_engine_shipment_runs": 4,
+              "us_lacey_processing_jobs": 8,
+              "us_lacey_ppq_shipments": 6,
+              "us_lacey_ppq_plant_lines": 6,
+              "us_lacey_plant_declarations": 6,
+              "us_lacey_field_candidates": 6,
+              "us_lacey_engine_document_runs": 6,
+              "us_lacey_engine_shipment_runs": 6,
               "us_lacey_payment_events": 1,
-              "us_lacey_evidence_snapshots": 4,
-              "us_lacey_evidence_snapshot_documents": 4,
-              "document_text_spans": 4,
-              "document_text_translations": 4,
-              "semantic_evidence_nodes": 4,
-              "semantic_snapshot_nodes": 4,
-              "semantic_evidence_edges": 4,
-              "us_lacey_product_intelligence_snapshots": 4,
-              "us_lacey_regulatory_assessment_snapshots": 4,
+              "us_lacey_evidence_snapshots": 6,
+              "us_lacey_evidence_snapshot_documents": 6,
+              "document_text_spans": 6,
+              "document_text_translations": 6,
+              "semantic_evidence_nodes": 6,
+              "semantic_snapshot_nodes": 6,
+              "semantic_evidence_edges": 6,
+              "us_lacey_product_intelligence_snapshots": 6,
+              "us_lacey_regulatory_assessment_snapshots": 6,
           }
           ppq_tables = (
               "us_lacey_ppq_shipments",
@@ -594,7 +595,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "054_us_lacey_control_plane_audit_billing (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "055_us_lacey_readonly_impersonation (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
@@ -685,6 +686,15 @@ jobs:
           python -m pytest -q -rs tests/test_platform_admin_control_plane_postgres.py | tee /tmp/platform-admin-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/platform-admin-postgres.txt; then
             echo "Platform-admin PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
+      - name: Prove zero-trust read-only impersonation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs tests/test_us_lacey_readonly_impersonation_postgres.py | tee /tmp/readonly-impersonation-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/readonly-impersonation-postgres.txt; then
+            echo "Read-only impersonation PostgreSQL acceptance must not skip in CI."
             exit 1
           fi
       - name: Prove Engine 2 shadow-worker contracts

@@ -57,4 +57,4 @@ def test_engine2_tables_have_forced_rls_and_tenant_policies(engine2_postgres_eng
         rows = conn.execute(text("SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname IN ('us_lacey_engine_document_runs', 'us_lacey_engine_shipment_runs')")).all()
         assert {(row[0], row[1], row[2]) for row in rows} == {("us_lacey_engine_document_runs", True, True), ("us_lacey_engine_shipment_runs", True, True)}
         policies = conn.execute(text("SELECT tablename, count(*) FROM pg_policies WHERE tablename IN ('us_lacey_engine_document_runs', 'us_lacey_engine_shipment_runs') GROUP BY tablename")).all()
-        assert dict(policies) == {"us_lacey_engine_document_runs": 4, "us_lacey_engine_shipment_runs": 4}
+        assert dict(policies) == {"us_lacey_engine_document_runs": 6, "us_lacey_engine_shipment_runs": 6}

@@ -13,6 +13,7 @@ is introduced.
 """
 from __future__ import annotations
 
+import secrets
 from typing import Any
 
 from fastapi import APIRouter, Cookie, Form, HTTPException, Request, status
@@ -30,6 +31,10 @@ from litoral_trace.us_lacey.csrf import (
     verify_us_lacey_csrf,
 )
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
+from litoral_trace.us_lacey.impersonation_db import (
+    IMPERSONATION_COOKIE,
+    hash_impersonation_token,
+)
 from litoral_trace.us_lacey.portal_auth import (
     US_LACEY_SESSION_COOKIE,
     UsLaceyPortalAuthError,
@@ -224,6 +229,45 @@ def revoke_user_sessions_superadmin(
     )[0]
 
 
+def start_readonly_impersonation_superadmin(
+    *,
+    refresh_token: str,
+    organization_id: int,
+    reason: str,
+    token_hash: str,
+) -> dict[str, Any]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM "
+            "public.platform_admin_start_readonly_impersonation("
+            ":actor_refresh_token_hash, :organization_id, :reason, :token_hash)"
+        ),
+        values={
+            "organization_id": organization_id,
+            "reason": reason,
+            "token_hash": token_hash,
+        },
+        commit=True,
+    )[0]
+
+
+def end_readonly_impersonation_superadmin(
+    *,
+    refresh_token: str,
+    token_hash: str,
+) -> None:
+    _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT public.platform_admin_end_readonly_impersonation("
+            ":actor_refresh_token_hash, :token_hash)"
+        ),
+        values={"token_hash": token_hash},
+        commit=True,
+    )
+
+
 def _require_us_session(us_session: str | None) -> str:
     if not us_session:
         raise UsLaceyPortalAuthError("Sign in to continue.", code="session_invalid")
@@ -286,6 +330,20 @@ def _admin_context(*, request: Request, us_session: str, notice: str | None = No
             )
             for user in users
         },
+        "impersonate_csrf": {
+            int(account["organization_id"]): us_lacey_csrf_token(
+                session_token=us_session,
+                purpose=(
+                    "platform-admin-impersonate:"
+                    f"{int(account['organization_id'])}"
+                ),
+            )
+            for account in accounts
+        },
+        "impersonation_end_csrf": us_lacey_csrf_token(
+            session_token=us_session,
+            purpose="platform-admin-impersonation-end",
+        ),
     }
 
 
@@ -459,3 +517,108 @@ def platform_admin_revoke_sessions(
             "The admin form expired. Refresh and try again.",
             status_code=403,
         )
+
+@router.post("/admin/accounts/{organization_id}/impersonate")
+def platform_admin_start_impersonation(
+    request: Request,
+    organization_id: int,
+    reason: str = Form(...),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        session_token = _require_us_session(us_session)
+        verify_us_lacey_csrf(
+            session_token=session_token,
+            purpose=f"platform-admin-impersonate:{organization_id}",
+            submitted_token=csrf_token,
+        )
+
+        refresh_token = _platform_admin_refresh_token(session_token)
+        raw_impersonation_token = secrets.token_urlsafe(32)
+        token_hash = hash_impersonation_token(raw_impersonation_token)
+
+        start_readonly_impersonation_superadmin(
+            refresh_token=refresh_token,
+            organization_id=organization_id,
+            reason=reason,
+            token_hash=token_hash,
+        )
+
+        response = RedirectResponse(
+            "/admin?notice=Read-only%20impersonation%20started",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+        response.set_cookie(
+            IMPERSONATION_COOKIE,
+            raw_impersonation_token,
+            max_age=15 * 60,
+            httponly=True,
+            secure=True,
+            samesite="strict",
+            path="/admin",
+        )
+        return response
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyCsrfError:
+        return _safe_error(
+            request,
+            "The admin form expired. Refresh and try again.",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+
+@router.post("/admin/impersonation/end")
+def platform_admin_end_impersonation(
+    request: Request,
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+    impersonation_token: str | None = Cookie(
+        None,
+        alias=IMPERSONATION_COOKIE,
+    ),
+):
+    try:
+        session_token = _require_us_session(us_session)
+        verify_us_lacey_csrf(
+            session_token=session_token,
+            purpose="platform-admin-impersonation-end",
+            submitted_token=csrf_token,
+        )
+
+        if not impersonation_token:
+            return _safe_error(
+                request,
+                "No active read-only impersonation session was found.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        refresh_token = _platform_admin_refresh_token(session_token)
+        token_hash = hash_impersonation_token(impersonation_token)
+        end_readonly_impersonation_superadmin(
+            refresh_token=refresh_token,
+            token_hash=token_hash,
+        )
+
+        response = RedirectResponse(
+            "/admin?notice=Read-only%20impersonation%20ended",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+        response.delete_cookie(
+            IMPERSONATION_COOKIE,
+            path="/admin",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+        return response
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyCsrfError:
+        return _safe_error(
+            request,
+            "The admin form expired. Refresh and try again.",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
