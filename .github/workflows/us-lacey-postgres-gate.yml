@@ -22,6 +22,7 @@ on:
       - "alembic/versions/051_lacey_schema_readiness.py"
       - "alembic/versions/052_add_us_lacey_ephemeral_sandbox.py"
       - "alembic/versions/053_sandbox_purge_queue.py"
+      - "alembic/versions/054_us_lacey_control_plane_audit_billing.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
@@ -160,7 +161,7 @@ jobs:
           python -m alembic upgrade 049_lacey_product_intelligence_snapshots
           python -m alembic upgrade 050_lacey_regulatory_assessment_snapshots
           python -m alembic upgrade 052_us_lacey_ephemeral_sandbox
-          python -m alembic upgrade 053_sandbox_purge_queue
+          python -m alembic upgrade 054_us_lacey_control_plane_audit_billing
       - name: Bind dedicated worker login to queue capability
         shell: bash
         run: |
