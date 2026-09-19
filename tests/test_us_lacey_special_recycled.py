@@ -99,3 +99,27 @@ def test_special_recycled_pure_evaluator_is_fail_closed_on_unknown_recycled_stat
 
     assert result.status is RuleStatus.FAIL
     assert result.reason_codes == ("NO_RECYCLED_MATERIAL_EVIDENCE",)
+
+
+def test_known_species_overrides_contradictory_due_care_rule_input():
+    subject = RegulatorySubject(
+        subject_ref="LINE-1",
+        line_reference="LINE-1",
+        genus="Quercus",
+        species="rubra",
+        rule_inputs={
+            "SPECIAL_RECYCLED": SpecialRecycledInput(
+                subject_ref="LINE-1",
+                highly_processed_recycled_material=TriState.YES,
+                species_determinable_after_due_care=TriState.NO,
+            )
+        },
+    )
+
+    result = SpecialRecycledRule().evaluate(
+        subject=subject,
+        context=_context(subject),
+    )
+
+    assert result.status is RuleStatus.FAIL
+    assert result.reason_codes == ("SPECIES_DETERMINABLE_AFTER_DUE_CARE",)
