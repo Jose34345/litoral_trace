@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Cookie, Form, Request, status
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 
 from litoral_trace.us_lacey.portal_auth import (
     US_LACEY_SESSION_COOKIE,
@@ -19,26 +19,10 @@ from litoral_trace.us_lacey.sandbox import (
     UsLaceySandboxError,
     provision_us_lacey_sandbox,
 )
+from litoral_trace.web.templates import render_template
 
 
 router = APIRouter(tags=["U.S. Lacey Sandbox"])
-
-
-_SANDBOX_START_HTML = """
-<main>
-    <h1>Try Litoral Trace</h1>
-    <p>
-        This creates a temporary private workspace for testing
-        Litoral Trace with your shipment documents.
-    </p>
-    <p><strong>Files are automatically deleted after 4 hours</strong></p>
-    <form method="post" action="/sandbox/start">
-        <button type="submit" name="consent" value="accepted">
-            Start sandbox
-        </button>
-    </form>
-</main>
-"""
 
 
 def _harden_public_response(response):
@@ -50,6 +34,7 @@ def _harden_public_response(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; "
+        "style-src 'self'; "
         "form-action 'self'; "
         "base-uri 'none'; "
         "frame-ancestors 'none'"
@@ -58,15 +43,16 @@ def _harden_public_response(response):
 
 
 @router.get("/sandbox/start", include_in_schema=False)
-def sandbox_start_view():
+def sandbox_start_view(request: Request):
     """Render the consent screen without creating any tenant or browser state."""
 
-    return _harden_public_response(
-        HTMLResponse(
-            _SANDBOX_START_HTML,
-            status_code=status.HTTP_200_OK,
-        )
+    response = render_template(
+        request,
+        "us_lacey/sandbox_start.html",
+        {},
+        status_code=status.HTTP_200_OK,
     )
+    return _harden_public_response(response)
 
 
 @router.post("/sandbox/start", include_in_schema=False)
