@@ -19,6 +19,7 @@ PLATFORM_ROLE = "litoral_trace_platform_definer"
 SANDBOX_FUNCTION = (
     "public.us_lacey_sandbox_provision(text,text,text,integer,text,text)"
 )
+TENANT_STATE_FUNCTION = "public.us_lacey_tenant_runtime_state(integer)"
 
 
 def _grant_platform_role() -> None:
@@ -219,6 +220,53 @@ def _replace_portal_auth_functions() -> None:
         $$;
         """
     )
+
+
+def _create_tenant_state_function() -> None:
+    op.execute(
+        """
+        CREATE FUNCTION public.us_lacey_tenant_runtime_state(
+            requested_organization_id integer
+        )
+        RETURNS TABLE (
+            is_active boolean,
+            is_sandbox boolean,
+            expires_at timestamptz
+        )
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path = public, pg_temp
+        AS $
+        DECLARE
+            current_tenant text;
+        BEGIN
+            current_tenant := current_setting(
+                'app.current_organization_id',
+                true
+            );
+            IF current_tenant IS NULL
+               OR current_tenant = ''
+               OR requested_organization_id IS NULL
+               OR requested_organization_id <= 0
+               OR requested_organization_id <> current_tenant::integer THEN
+                RAISE EXCEPTION 'tenant context mismatch'
+                    USING ERRCODE = '42501';
+            END IF;
+
+            RETURN QUERY
+            SELECT
+                organizations.is_active,
+                organizations.is_sandbox,
+                organizations.expires_at
+            FROM public.organizations AS organizations
+            WHERE organizations.id = requested_organization_id
+            LIMIT 1;
+        END;
+        $;
+        """
+    )
+    op.execute(f"REVOKE ALL ON FUNCTION {TENANT_STATE_FUNCTION} FROM PUBLIC")
+    op.execute(f"GRANT EXECUTE ON FUNCTION {TENANT_STATE_FUNCTION} TO {RUNTIME_ROLE}")
 
 
 def _create_sandbox_provision_function() -> None:
@@ -443,6 +491,7 @@ def upgrade() -> None:
     op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")
     op.execute(f"SET LOCAL ROLE {PLATFORM_ROLE}")
     _replace_portal_auth_functions()
+    _create_tenant_state_function()
     _create_sandbox_provision_function()
     op.execute("RESET ROLE")
     op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
@@ -455,6 +504,7 @@ def downgrade() -> None:
     op.execute(f"SET LOCAL ROLE {PLATFORM_ROLE}")
 
     op.execute(f"DROP FUNCTION IF EXISTS {SANDBOX_FUNCTION}")
+    op.execute(f"DROP FUNCTION IF EXISTS {TENANT_STATE_FUNCTION}")
 
     # Restore pre-sandbox lookup semantics.
     op.execute(
