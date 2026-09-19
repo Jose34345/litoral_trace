@@ -236,7 +236,7 @@ def _create_tenant_state_function() -> None:
         LANGUAGE plpgsql
         SECURITY DEFINER
         SET search_path = public, pg_temp
-        AS $
+        AS $$
         DECLARE
             current_tenant text;
         BEGIN
@@ -262,7 +262,7 @@ def _create_tenant_state_function() -> None:
             WHERE organizations.id = requested_organization_id
             LIMIT 1;
         END;
-        $;
+        $$;
         """
     )
     op.execute(f"REVOKE ALL ON FUNCTION {TENANT_STATE_FUNCTION} FROM PUBLIC")
