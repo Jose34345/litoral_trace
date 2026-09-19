@@ -149,7 +149,7 @@ def test_hts_rule_malformed_code_is_indeterminate_fail_closed():
     assert result.review_required is True
 
 
-def test_hts_rule_returns_fail_when_code_is_not_in_configured_catalog():
+def test_hts_rule_partial_catalog_miss_is_indeterminate_fail_closed():
     subject = _subject("0101210010")
     rule = HtsApplicabilityRule()
 
@@ -161,9 +161,38 @@ def test_hts_rule_returns_fail_when_code_is_not_in_configured_catalog():
         ),
     )
 
+    assert result.status is RuleStatus.INDETERMINATE
+    assert result.reason_codes == ("HTS_NOT_IN_PARTIAL_CATALOG",)
+    assert result.review_required is True
+    assert result.calculation_trace["matched_prefix"] is None
+
+
+def test_hts_rule_complete_catalog_miss_can_return_fail():
+    subject = _subject("0101210010")
+    complete_catalog = HtsScheduleCatalog(
+        version="complete-test-catalog",
+        as_of=date(2026, 9, 18),
+        entries=(
+            HtsScheduleEntry(
+                hts_prefix="4407",
+                effective_from=date(2009, 4, 1),
+            ),
+        ),
+        is_complete=True,
+    )
+    rule = HtsApplicabilityRule(complete_catalog)
+
+    result = rule.evaluate(
+        subject=subject,
+        context=RegulatoryContext(
+            subjects=(subject,),
+            evaluation_date=date(2026, 9, 18),
+        ),
+    )
+
     assert result.status is RuleStatus.FAIL
     assert result.reason_codes == ("HTS_NOT_ON_APHIS_SCHEDULE",)
-    assert result.calculation_trace["matched_prefix"] is None
+    assert result.review_required is False
 
 
 def test_hts_rule_passes_4407_with_exact_defensive_copy():
