@@ -51,7 +51,8 @@ def test_us_lacey_templates_use_shared_design_system_with_isolated_english_shell
             # script-free shell while still consuming the canonical Tailwind
             # build. This is the only U.S. Lacey template allowed to bypass the
             # authenticated portal chrome.
-            assert "/static/dist/app.css" in source
+            assert "url_for('static'" in source
+            assert "path='/dist/app.css'" in source
             assert "<style" not in source
             assert "style=" not in source
             continue
