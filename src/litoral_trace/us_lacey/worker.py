@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import logging
 import os
 from pathlib import PurePath
@@ -15,6 +16,7 @@ from sqlalchemy import select
 from litoral_trace.assurance.processing import AssuranceProcessingService
 from litoral_trace.db.models import (
     AssuranceDocument,
+    Organization,
     UsLaceyEngineDocumentRun,
     UsLaceyOperation,
     UsLaceyOperationDocument,
@@ -600,6 +602,38 @@ def _preflight_existing_document(*, organization_id: int, descriptor: _DocumentD
         )
 
 
+def _sandbox_tenant_expired(*, organization_id: int) -> bool:
+    """Return True only for an expired ephemeral tenant.
+
+    Paid/pilot organizations are deliberately unaffected by this worker guard.
+    The query runs under the ordinary tenant GUC and FORCE RLS, not a cross-tenant
+    worker privilege.
+    """
+
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, organization_id)
+        organization = session.scalar(
+            select(Organization).where(Organization.id == int(organization_id))
+        )
+        if organization is None:
+            raise UsLaceyWorkerError("Queued tenant no longer exists.")
+        if not bool(getattr(organization, "is_sandbox", False)):
+            return False
+
+        expires_at = getattr(organization, "expires_at", None)
+        if expires_at is None:
+            return True
+        normalized = (
+            expires_at.replace(tzinfo=timezone.utc)
+            if expires_at.tzinfo is None
+            else expires_at.astimezone(timezone.utc)
+        )
+        return normalized <= datetime.now(timezone.utc)
+    finally:
+        session.close()
+
+
 def _refresh_operation(*, organization_id: int, operation_id: int) -> str:
     session = get_us_lacey_db_session()
     try:
@@ -657,6 +691,28 @@ def process_one_us_lacey_job(
     )
     heartbeat.start()
     try:
+        if _sandbox_tenant_expired(organization_id=job.organization_id):
+            queue_status = fail_us_lacey_job(
+                job_id=job.id,
+                worker_id=worker_id,
+                error_code="SANDBOX_EXPIRED",
+                safe_error_message="This sandbox expired before processing started.",
+                retryable=False,
+            )
+            operation_status = _refresh_operation(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+            )
+            return UsLaceyWorkerResult(
+                claimed=True,
+                job_id=job.id,
+                job_status=queue_status,
+                document_status=None,
+                operation_status=operation_status,
+                projected_count=0,
+                conflict_count=0,
+            )
+
         assurance_public_id = _assurance_public_id(
             organization_id=job.organization_id,
             document_id=job.assurance_document_id,
