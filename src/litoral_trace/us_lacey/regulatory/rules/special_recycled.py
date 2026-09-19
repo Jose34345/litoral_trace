@@ -42,7 +42,7 @@ def _textual_recycled_evidence(subject: "RegulatorySubject") -> bool:
         subject.article_component,
     )
     return any(
-        _RECYLED_HIGHLY_PROCESSED.search(str(value or "")) is not None
+        _RECYCLED_HIGHLY_PROCESSED.search(str(value or "")) is not None
         for value in candidates
     )
 
