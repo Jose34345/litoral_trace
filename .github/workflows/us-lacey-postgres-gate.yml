@@ -185,14 +185,14 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "052_us_lacey_ephemeral_sandbox (head)" /tmp/alembic-current.txt
+          grep -Fx "053_sandbox_purge_queue (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
 
           expected_policy_counts = {
               "us_lacey_organization_profiles": 5,
-              "us_lacey_operations": 6,
+              "us_lacey_operations": 7,
               "us_lacey_operation_documents": 4,
               "us_lacey_operation_fields": 4,
               "us_lacey_subscriptions": 5,
@@ -593,7 +593,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "052_us_lacey_ephemeral_sandbox (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "053_sandbox_purge_queue (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
