@@ -19,8 +19,8 @@ def test_seven_document_batch_seals_all_members_before_any_job_is_eligible(monke
             events.append(("ingest", sequence))
             return SimpleNamespace(assurance_document_id=sequence)
 
-    # This unit test proves batch ordering only.  The real PostgreSQL advisory-lock
-    # behavior has its own dedicated acceptance coverage, so keep this seam local.
+    # This unit test proves batch ordering only. The real PostgreSQL advisory-lock
+    # behavior and sandbox capacity policy have dedicated acceptance coverage.
     monkeypatch.setattr(
         workflow,
         "us_lacey_operation_projection_lock",
@@ -45,6 +45,7 @@ def test_seven_document_batch_seals_all_members_before_any_job_is_eligible(monke
         documents=tuple((f"doc-{number}.pdf", "application/pdf", b"x", "UNKNOWN") for number in range(1, 8)),
         ingestion=Ingestion(),
         operations=Operations(),
+        sandbox_capacity_guard=lambda **_: None,
     )
 
     assert [item.ingestion.assurance_document_id for item in queued] == list(range(1, 8))
