@@ -184,12 +184,19 @@ def test_public_sandbox_get_is_side_effect_free(monkeypatch):
     response = client.get("/sandbox/start", follow_redirects=False)
 
     assert response.status_code == 200
-    assert "Files are automatically deleted after 4 hours" in response.text
+    assert "U.S. Lacey Act Sandbox" in response.text
+    assert "Start Document Analysis" in response.text
+    assert "Test the compliance engine with your own shipment documents." in response.text
+    assert "permanently destroyed after 4 hours" in response.text
     assert 'method="post"' in response.text
     assert 'action="/sandbox/start"' in response.text
+    assert 'name="consent"' in response.text
+    assert 'value="accepted"' in response.text
+    assert "/static/dist/app.css" in response.text
     assert "set-cookie" not in response.headers
     assert response.headers["cache-control"] == "no-store, max-age=0"
     assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
+    assert "style-src 'self'" in response.headers["content-security-policy"]
 
 
 def test_public_sandbox_post_sets_opaque_cookie_and_redirects_to_new_operation(monkeypatch):
