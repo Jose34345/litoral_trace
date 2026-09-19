@@ -36,6 +36,7 @@ class LaceyExportPlantLine:
     country_of_harvest: str
     quantity: str
     unit: str
+    percent_recycled: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +149,7 @@ def consolidate_export_snapshot(
                 country_of_harvest=plant("country_of_harvest"),
                 quantity=plant("plant_quantity"),
                 unit=plant("metric_unit"),
+                percent_recycled=plant("percent_recycled"),
             )
         )
 
