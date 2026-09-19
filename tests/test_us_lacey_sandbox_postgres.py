@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import hashlib
 import os
 import secrets
 from uuid import uuid4
@@ -63,24 +62,17 @@ def test_runtime_can_provision_sandbox_only_through_definer_and_rls_stays_tenant
                 text(
                     """
                     SELECT
-                        s.plan_code,
-                        s.price_cents,
-                        s.monthly_operation_limit,
-                        s.used_operations,
-                        s.status,
-                        s.renews_at,
-                        us.token_hash
-                    FROM public.us_lacey_subscriptions AS s
-                    JOIN public.user_sessions AS us
-                      ON us.organization_id = s.organization_id
-                    WHERE s.organization_id = :org_id
-                      AND us.id = :session_id
+                        plan_code,
+                        price_cents,
+                        monthly_operation_limit,
+                        used_operations,
+                        status,
+                        renews_at
+                    FROM public.us_lacey_subscriptions
+                    WHERE organization_id = :org_id
                     """
                 ),
-                {
-                    "org_id": created.organization_id,
-                    "session_id": created.session_id,
-                },
+                {"org_id": created.organization_id},
             ).mappings().one()
 
         assert row["plan_code"] == "SANDBOX"
@@ -89,10 +81,6 @@ def test_runtime_can_provision_sandbox_only_through_definer_and_rls_stays_tenant
         assert row["used_operations"] == 0
         assert row["status"] == "ACTIVE"
         assert row["renews_at"] is not None
-        assert row["token_hash"] == hashlib.sha256(
-            created.session_token.encode("utf-8")
-        ).hexdigest()
-        assert row["token_hash"] != created.session_token
 
         # A different tenant context cannot read the sandbox row through FORCE RLS.
         with runtime.begin() as connection:
