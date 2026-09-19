@@ -64,6 +64,12 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
         with runtime.begin() as c:
             with pytest.raises(DBAPIError): c.execute(text("SELECT * FROM public.platform_admin_set_us_lacey_account_status(:t,:o,'PILOT')"), {"t":normal_token,"o":tenant_b})
         with runtime.begin() as c:
+            suspended = c.execute(
+                text("SELECT * FROM public.platform_admin_set_us_lacey_account_status(:t,:o,'SUSPENDED')"),
+                {"t": actor_token, "o": tenant_b},
+            ).mappings().one()
+            assert suspended["account_status"] == "SUSPENDED"
+        with runtime.begin() as c:
             with pytest.raises(DBAPIError):
                 c.execute(text("SELECT * FROM public.platform_admin_reset_pilot_account(:t,:o)"), {"t": actor_token, "o": platform})
         with audit.connect() as c:
@@ -82,6 +88,159 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
             assert c.execute(text("SELECT count(*) FROM public.us_lacey_operations WHERE organization_id=:o"), {"o":tenant_b}).scalar_one() == 1
             assert c.execute(text("SELECT count(*) FROM public.us_lacey_operations WHERE organization_id=:o"), {"o":platform}).scalar_one() == 1
             assert c.execute(text("SELECT count(*) FROM public.us_lacey_payments WHERE organization_id=:o AND status='VERIFIED'"), {"o": platform}).scalar_one() == 1
+
+            admin_audit_privileges = c.execute(text("""
+                SELECT
+                    has_table_privilege(
+                        'litoral_trace_platform_definer',
+                        'public.us_lacey_admin_audit_logs',
+                        'SELECT'
+                    ) AS definer_select,
+                    has_table_privilege(
+                        'litoral_trace_platform_definer',
+                        'public.us_lacey_admin_audit_logs',
+                        'INSERT'
+                    ) AS definer_insert,
+                    has_table_privilege(
+                        'litoral_trace_platform_definer',
+                        'public.us_lacey_admin_audit_logs',
+                        'UPDATE'
+                    ) AS definer_update,
+                    has_table_privilege(
+                        'litoral_trace_platform_definer',
+                        'public.us_lacey_admin_audit_logs',
+                        'DELETE'
+                    ) AS definer_delete,
+                    has_table_privilege(
+                        'litoral_trace_app',
+                        'public.us_lacey_admin_audit_logs',
+                        'SELECT'
+                    ) AS runtime_select,
+                    has_table_privilege(
+                        'litoral_trace_app',
+                        'public.us_lacey_admin_audit_logs',
+                        'INSERT'
+                    ) AS runtime_insert,
+                    has_table_privilege(
+                        'litoral_trace_us_lacey_worker',
+                        'public.us_lacey_admin_audit_logs',
+                        'SELECT'
+                    ) AS worker_select,
+                    has_table_privilege(
+                        'public',
+                        'public.us_lacey_admin_audit_logs',
+                        'SELECT'
+                    ) AS public_select
+            """)).mappings().one()
+            assert dict(admin_audit_privileges) == {
+                "definer_select": True,
+                "definer_insert": True,
+                "definer_update": False,
+                "definer_delete": False,
+                "runtime_select": False,
+                "runtime_insert": False,
+                "worker_select": False,
+                "public_select": False,
+            }
+
+            admin_audit_rls = c.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class
+                WHERE oid = 'public.us_lacey_admin_audit_logs'::regclass
+            """)).mappings().one()
+            assert dict(admin_audit_rls) == {
+                "relrowsecurity": True,
+                "relforcerowsecurity": True,
+            }
+
+            assert c.execute(text("""
+                SELECT count(*)
+                FROM pg_constraint
+                WHERE conrelid = 'public.us_lacey_admin_audit_logs'::regclass
+                  AND contype = 'f'
+            """)).scalar_one() == 0
+
+            helper_contract = c.execute(text("""
+                SELECT
+                    p.prosecdef,
+                    owner_role.rolname AS owner_role,
+                    has_function_privilege(
+                        'litoral_trace_platform_definer',
+                        p.oid,
+                        'EXECUTE'
+                    ) AS definer_execute,
+                    has_function_privilege(
+                        'litoral_trace_app',
+                        p.oid,
+                        'EXECUTE'
+                    ) AS runtime_execute,
+                    has_function_privilege(
+                        'litoral_trace_us_lacey_worker',
+                        p.oid,
+                        'EXECUTE'
+                    ) AS worker_execute,
+                    has_function_privilege(
+                        'public',
+                        p.oid,
+                        'EXECUTE'
+                    ) AS public_execute
+                FROM pg_proc AS p
+                JOIN pg_roles AS owner_role
+                  ON owner_role.oid = p.proowner
+                WHERE p.oid = (
+                    'public._us_lacey_admin_audit('
+                    'integer,integer,text,integer,integer,jsonb,jsonb,uuid,jsonb'
+                    ')'
+                )::regprocedure
+            """)).mappings().one()
+            assert dict(helper_contract) == {
+                "prosecdef": True,
+                "owner_role": "litoral_trace_platform_definer",
+                "definer_execute": True,
+                "runtime_execute": False,
+                "worker_execute": False,
+                "public_execute": False,
+            }
+
+            new_audit_actions = {
+                row["action_type"]
+                for row in c.execute(text("""
+                    SELECT action_type
+                    FROM public.us_lacey_admin_audit_logs
+                    WHERE admin_user_id = :actor
+                      AND target_organization_id = ANY(:targets)
+                """), {
+                    "actor": actor,
+                    "targets": [tenant_a, tenant_b],
+                }).mappings().all()
+            }
+            assert {
+                "PROMOTE_USER",
+                "SET_ACCOUNT_STATUS",
+                "SET_LIMIT",
+                "RESET_PILOT",
+                "SUSPEND_ACCOUNT",
+            }.issubset(new_audit_actions)
+
+            limit_audit = c.execute(text("""
+                SELECT previous_state, new_state
+                FROM public.us_lacey_admin_audit_logs
+                WHERE admin_user_id = :actor
+                  AND target_organization_id = :organization_id
+                  AND action_type = 'SET_LIMIT'
+                ORDER BY timestamp DESC
+                LIMIT 1
+            """), {
+                "actor": actor,
+                "organization_id": tenant_a,
+            }).mappings().one()
+            assert limit_audit["previous_state"] == {
+                "monthly_operation_limit": 5
+            }
+            assert limit_audit["new_state"] == {
+                "monthly_operation_limit": 9
+            }
+
             assert c.execute(text("SELECT count(*) FROM public.audit_logs WHERE organization_id=:o AND action IN ('FOUNDER_PROMOTED','ACCOUNT_STATUS_CHANGED','OPERATION_LIMIT_CHANGED','PILOT_TEST_RESET')"), {"o":tenant_a}).scalar_one() >= 4
     finally:
         with audit.begin() as c:
@@ -92,6 +251,7 @@ def test_044_control_plane_authorization_promotion_reset_and_paid_guard() -> Non
                 c.execute(text("DELETE FROM public.us_lacey_subscriptions WHERE organization_id = ANY(:ids)"), {"ids": ids})
                 c.execute(text("DELETE FROM public.us_lacey_organization_profiles WHERE organization_id = ANY(:ids)"), {"ids": ids})
                 c.execute(text("DELETE FROM public.user_sessions WHERE organization_id = ANY(:ids)"), {"ids": ids})
+                c.execute(text("DELETE FROM public.us_lacey_admin_audit_logs WHERE target_organization_id = ANY(:ids) OR admin_organization_id = ANY(:ids)"), {"ids": ids})
                 c.execute(text("DELETE FROM public.audit_logs WHERE organization_id = ANY(:ids)"), {"ids": ids})
                 c.execute(text("DELETE FROM public.users WHERE organization_id = ANY(:ids)"), {"ids": ids})
                 c.execute(text("DELETE FROM public.organizations WHERE id = ANY(:ids)"), {"ids": ids})
