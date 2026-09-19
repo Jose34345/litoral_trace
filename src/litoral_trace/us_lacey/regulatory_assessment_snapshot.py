@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from litoral_trace.db.models import (
     UsLaceyOperation,
     UsLaceyOperationField,
+    UsLaceyPpqPlantLine,
     UsLaceyProductIntelligenceSnapshot,
     UsLaceyRegulatoryAssessmentSnapshot,
     UsLaceySourceSetRevision,
@@ -33,22 +34,26 @@ from litoral_trace.us_lacey.regulatory_input_contract import (
     InputStatus,
     build_regulatory_input_contract,
 )
+from litoral_trace.us_lacey.regulatory.engine import (
+    RegulatoryContext,
+    RegulatorySubject,
+    evaluate_regulatory_rules,
+)
 from litoral_trace.us_lacey.regulatory.rules import (
     RULESET_VERSION,
-    DeMinimisInput,
+    DeMinimisRule,
     EvidenceRef,
-    ProtectedPlantStatus,
     RuleAssessment,
     RuleStatus,
-    SpecialCompositeInput,
-    TriState,
-    classify_composite_material_name,
-    evaluate_de_minimis,
-    evaluate_special_composite,
+    SpecialCompositeRule,
+    SpecialRecycledRule,
+)
+from litoral_trace.us_lacey.regulatory.rules.hts_applicability import (
+    HtsApplicabilityRule,
 )
 
 
-SNAPSHOT_SCHEMA_VERSION = "regulatory-assessment-snapshot-v2"
+SNAPSHOT_SCHEMA_VERSION = "regulatory-assessment-snapshot-v3"
 SessionFactory = Callable[[], Session]
 
 
@@ -75,27 +80,11 @@ def fingerprint_rule_inputs(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _evidence_ref(source: object) -> EvidenceRef:
-    source_map = source if isinstance(source, Mapping) else {}
-    document_id = source_map.get("document_id")
-    sheet = source_map.get("sheet")
-    row = source_map.get("row")
-    locator = source_map.get("locator")
-    if not locator:
-        parts = []
-        if sheet:
-            parts.append(str(sheet))
-        if row is not None:
-            parts.append(f"row:{row}")
-        locator = ":".join(parts) or None
-    return EvidenceRef(
-        source_type="BOM_MATERIAL",
-        source_id=None if document_id is None else str(document_id),
-        locator=None if locator is None else str(locator),
-    )
-
-
-def _serialize_assessment(assessment: RuleAssessment, *, subject_ref: str) -> dict[str, Any]:
+def _serialize_assessment(
+    assessment: RuleAssessment,
+    *,
+    subject_ref: str,
+) -> dict[str, Any]:
     return {
         "rule_id": assessment.rule_id,
         "ruleset_version": assessment.ruleset_version,
@@ -116,124 +105,351 @@ def _serialize_assessment(assessment: RuleAssessment, *, subject_ref: str) -> di
     }
 
 
-def _iter_compositions(payload: Mapping[str, Any]):
-    for source in payload.get("sources", ()):
-        if not isinstance(source, Mapping):
+def _plant_line_references(
+    operation_fields: tuple[object, ...],
+    explicit_references: tuple[str, ...],
+) -> tuple[str, ...]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    for value in explicit_references:
+        reference = str(value or "").strip()
+        if reference and reference not in seen:
+            seen.add(reference)
+            ordered.append(reference)
+
+    for field in operation_fields:
+        if str(getattr(field, "field_scope", "") or "").upper() != "PLANT_LINE":
             continue
-        for table in source.get("tables", ()):
-            if not isinstance(table, Mapping):
-                continue
-            for composition in table.get("compositions", ()):
-                if isinstance(composition, Mapping):
-                    yield composition
+        reference = str(
+            getattr(field, "merchandise_line_reference", "") or ""
+        ).strip()
+        if reference and reference not in seen:
+            seen.add(reference)
+            ordered.append(reference)
+
+    return tuple(ordered)
+
+
+def _field_value(field: object | None) -> str | None:
+    if field is None:
+        return None
+    human = str(getattr(field, "human_value", None) or "").strip()
+    if human:
+        return human
+    if str(getattr(field, "validation_status", "") or "").upper() != "VALID":
+        return None
+    value = str(
+        getattr(field, "normalized_value", None)
+        or getattr(field, "original_value", None)
+        or ""
+    ).strip()
+    return value or None
+
+
+def _fields_by_line(
+    operation_fields: tuple[object, ...],
+) -> dict[str, dict[str, object]]:
+    grouped: dict[str, dict[str, object]] = {}
+    for field in operation_fields:
+        if str(getattr(field, "field_scope", "") or "").upper() != "PLANT_LINE":
+            continue
+        line_reference = str(
+            getattr(field, "merchandise_line_reference", "") or ""
+        ).strip()
+        field_name = str(getattr(field, "field_name", "") or "").strip()
+        if not line_reference or not field_name:
+            continue
+        grouped.setdefault(line_reference, {})[field_name] = field
+    return grouped
+
+
+def _contract_by_line(
+    regulatory_input_contract: Mapping[str, Any],
+) -> dict[str, Mapping[str, Any]]:
+    result: dict[str, Mapping[str, Any]] = {}
+    for item in regulatory_input_contract.get("subjects", ()):
+        if not isinstance(item, Mapping):
+            continue
+        line_reference = str(
+            item.get("shipment_line_reference")
+            or item.get("subject_ref")
+            or ""
+        ).strip()
+        if line_reference:
+            result[line_reference] = item
+    return result
+
+
+def _supported_contract_value(
+    contract_inputs: Mapping[str, Any],
+    key: str,
+) -> object | None:
+    item = contract_inputs.get(key)
+    if not isinstance(item, Mapping):
+        return None
+    if item.get("status") != InputStatus.SUPPORTED.value:
+        return None
+    return item.get("value")
+
+
+def _hts_evidence_refs(
+    contract_inputs: Mapping[str, Any],
+) -> tuple[EvidenceRef, ...]:
+    item = contract_inputs.get("hts10")
+    if not isinstance(item, Mapping):
+        return ()
+    if item.get("status") != InputStatus.SUPPORTED.value:
+        return ()
+    evidence = item.get("evidence")
+    if not isinstance(evidence, Mapping):
+        return ()
+    return (
+        EvidenceRef(
+            source_type="REVIEWED_HTS10",
+            source_id=(
+                None
+                if evidence.get("source_assurance_document_id") is None
+                else str(evidence.get("source_assurance_document_id"))
+            ),
+            locator=(
+                None
+                if evidence.get("source_locator") is None
+                else str(evidence.get("source_locator"))
+            ),
+        ),
+    )
+
+
+def _linked_product_enrichment(
+    *,
+    product_intelligence_payload: Mapping[str, Any],
+    line_reference: str,
+    article_component: str | None,
+) -> dict[str, Any]:
+    bridge = product_intelligence_payload.get("shipment_product_bridge")
+    links = bridge.get("links", ()) if isinstance(bridge, Mapping) else ()
+    linked = [
+        item
+        for item in links
+        if isinstance(item, Mapping)
+        and str(item.get("status") or "") == "LINKED"
+        and str(item.get("shipment_line_reference") or "").strip()
+        == line_reference
+        and isinstance(item.get("product"), Mapping)
+    ]
+    if len(linked) != 1:
+        return {}
+
+    link = linked[0]
+    product = link["product"]
+    enrichment: dict[str, Any] = {
+        "bridge_status": "LINKED",
+        "line_item_key": link.get("line_item_key"),
+        "product": dict(product),
+    }
+
+    components = tuple(
+        component
+        for component in product.get("components", ())
+        if isinstance(component, Mapping)
+    )
+    selected: Mapping[str, Any] | None = None
+    normalized_article = str(article_component or "").strip().casefold()
+    if normalized_article:
+        matches = tuple(
+            component
+            for component in components
+            if str(component.get("description_raw") or "").strip().casefold()
+            == normalized_article
+        )
+        if len(matches) == 1:
+            selected = matches[0]
+    elif len(components) == 1:
+        selected = components[0]
+
+    if selected is not None:
+        material = selected.get("material")
+        if isinstance(material, Mapping):
+            material_name = str(
+                material.get("name_raw")
+                or material.get("name_normalized")
+                or ""
+            ).strip()
+            if material_name:
+                enrichment["material"] = material_name
+                enrichment["material_description"] = material_name
+            enrichment["component"] = dict(selected)
+
+    return enrichment
+
+
+def _operation_field_fingerprint_payload(
+    operation_fields: tuple[object, ...],
+) -> list[dict[str, Any]]:
+    relevant = []
+    for field in operation_fields:
+        if str(getattr(field, "field_scope", "") or "").upper() != "PLANT_LINE":
+            continue
+        relevant.append(
+            {
+                "line_reference": str(
+                    getattr(field, "merchandise_line_reference", "") or ""
+                ),
+                "field_name": str(getattr(field, "field_name", "") or ""),
+                "original_value": getattr(field, "original_value", None),
+                "normalized_value": getattr(field, "normalized_value", None),
+                "human_value": getattr(field, "human_value", None),
+                "validation_status": getattr(field, "validation_status", None),
+                "field_status": getattr(field, "field_status", None),
+                "source_assurance_document_id": getattr(
+                    field, "source_assurance_document_id", None
+                ),
+                "source_page": getattr(field, "source_page", None),
+                "source_locator": getattr(field, "source_locator", None),
+            }
+        )
+    return sorted(
+        relevant,
+        key=lambda item: (
+            item["line_reference"],
+            item["field_name"],
+        ),
+    )
+
+
+def _build_regulatory_subjects(
+    *,
+    operation_fields: tuple[object, ...],
+    plant_line_references: tuple[str, ...],
+    product_intelligence_payload: Mapping[str, Any],
+    regulatory_input_contract: Mapping[str, Any],
+) -> tuple[RegulatorySubject, ...]:
+    refs = _plant_line_references(operation_fields, plant_line_references)
+    fields_by_line = _fields_by_line(operation_fields)
+    contract_by_line = _contract_by_line(regulatory_input_contract)
+    subjects: list[RegulatorySubject] = []
+
+    for line_reference in refs:
+        line_fields = fields_by_line.get(line_reference, {})
+        contract_subject = contract_by_line.get(line_reference, {})
+        contract_inputs = (
+            contract_subject.get("inputs", {})
+            if isinstance(contract_subject, Mapping)
+            else {}
+        )
+        if not isinstance(contract_inputs, Mapping):
+            contract_inputs = {}
+
+        hts10_value = _supported_contract_value(contract_inputs, "hts10")
+        hts10 = (
+            str(hts10_value).strip()
+            if hts10_value is not None and str(hts10_value).strip()
+            else None
+        )
+        article_component = _field_value(line_fields.get("article_component"))
+        genus = _field_value(line_fields.get("genus"))
+        species = _field_value(line_fields.get("species"))
+        country_of_harvest = _field_value(
+            line_fields.get("country_of_harvest")
+        )
+        quantity = _field_value(line_fields.get("plant_quantity"))
+        unit = _field_value(line_fields.get("metric_unit"))
+
+        de_minimis_inputs = {
+            "hts10": hts10,
+            "plant_mass_per_unit_kg": _supported_contract_value(
+                contract_inputs,
+                "plant_mass_per_unit_kg",
+            ),
+            "total_unit_mass_kg": _supported_contract_value(
+                contract_inputs,
+                "total_unit_mass_kg",
+            ),
+            "entry_same_hts_plant_mass_kg": _supported_contract_value(
+                contract_inputs,
+                "entry_same_hts_plant_mass_kg",
+            ),
+            "protected_status": _supported_contract_value(
+                contract_inputs,
+                "protected_status",
+            ),
+        }
+
+        subjects.append(
+            RegulatorySubject(
+                subject_ref=line_reference,
+                line_reference=line_reference,
+                hts10=hts10,
+                article_component=article_component,
+                genus=genus,
+                species=species,
+                country_of_harvest=country_of_harvest,
+                quantity=quantity,
+                unit=unit,
+                evidence_refs=_hts_evidence_refs(contract_inputs),
+                rule_inputs={"DE_MINIMIS": de_minimis_inputs},
+                enrichment=_linked_product_enrichment(
+                    product_intelligence_payload=product_intelligence_payload,
+                    line_reference=line_reference,
+                    article_component=article_component,
+                ),
+            )
+        )
+
+    return tuple(subjects)
 
 
 def build_regulatory_assessment_payload(
     *,
     product_intelligence_payload: Mapping[str, Any],
     source_set: Mapping[str, Any],
+    operation_fields: tuple[object, ...] = (),
+    plant_line_references: tuple[str, ...] = (),
     regulatory_input_contract: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build conservative rule assessments from supported Product Intelligence facts.
+    """Evaluate every botanical shipment line, with Product Intelligence optional."""
 
-    Hito 8 intentionally does not guess entry-level facts that Product Intelligence
-    does not yet model (10-digit HTS grouping, total unit weight, protected status).
-    De minimis therefore remains INDETERMINATE until those exact inputs exist.
-    SPECIAL/COMPOSITE can still deterministically reject disqualifying construction
-    such as plywood while other missing facts remain reviewable.
-    """
-    assessments: list[dict[str, Any]] = []
+    fields = tuple(operation_fields)
+    line_refs = tuple(plant_line_references)
     input_contract = (
         regulatory_input_contract
         if isinstance(regulatory_input_contract, Mapping)
-        else {"subjects": ()}
+        else build_regulatory_input_contract(
+            product_intelligence_payload=product_intelligence_payload,
+            operation_fields=fields,
+            plant_line_references=line_refs,
+        )
     )
-    contract_by_subject = {
-        str(item.get("subject_ref") or ""): item
-        for item in input_contract.get("subjects", ())
-        if isinstance(item, Mapping)
-    }
 
-    for composition in _iter_compositions(product_intelligence_payload):
-        sku = str(composition.get("sku") or "").strip()
-        if not sku:
-            continue
-
-        contract_subject = contract_by_subject.get(sku, {})
-        contract_inputs = (
-            contract_subject.get("inputs", {})
-            if isinstance(contract_subject, Mapping)
-            else {}
+    subjects = _build_regulatory_subjects(
+        operation_fields=fields,
+        plant_line_references=line_refs,
+        product_intelligence_payload=product_intelligence_payload,
+        regulatory_input_contract=input_contract,
+    )
+    context = RegulatoryContext(subjects=subjects)
+    evaluated = evaluate_regulatory_rules(
+        context,
+        rules=(
+            HtsApplicabilityRule(),
+            DeMinimisRule(),
+            SpecialCompositeRule(),
+            SpecialRecycledRule(),
+        ),
+    )
+    assessments = [
+        _serialize_assessment(
+            item.assessment,
+            subject_ref=item.subject_ref,
         )
-        hts_input = (
-            contract_inputs.get("hts10", {})
-            if isinstance(contract_inputs, Mapping)
-            else {}
-        )
-        hts10 = (
-            str(hts_input.get("value"))
-            if isinstance(hts_input, Mapping)
-            and hts_input.get("status") == InputStatus.SUPPORTED.value
-            and hts_input.get("value")
-            else None
-        )
-        evidence_refs: tuple[EvidenceRef, ...] = ()
-        if hts10 and isinstance(hts_input, Mapping):
-            evidence = hts_input.get("evidence")
-            if isinstance(evidence, Mapping):
-                evidence_refs = (
-                    EvidenceRef(
-                        source_type="REVIEWED_HTS10",
-                        source_id=(
-                            None
-                            if evidence.get("source_assurance_document_id") is None
-                            else str(evidence.get("source_assurance_document_id"))
-                        ),
-                        locator=(
-                            None
-                            if evidence.get("source_locator") is None
-                            else str(evidence.get("source_locator"))
-                        ),
-                    ),
-                )
+        for item in evaluated
+    ]
 
-        de_minimis = evaluate_de_minimis(
-            DeMinimisInput(
-                subject_ref=sku,
-                hts10=hts10,
-                plant_mass_per_unit_kg=None,
-                total_unit_mass_kg=None,
-                entry_same_hts_plant_mass_kg=None,
-                protected_status=ProtectedPlantStatus.UNKNOWN,
-                evidence_refs=evidence_refs,
-            )
-        )
-        assessments.append(_serialize_assessment(de_minimis, subject_ref=sku))
-
-        for component in composition.get("components", ()):
-            if not isinstance(component, Mapping):
-                continue
-            material = component.get("material")
-            if not isinstance(material, Mapping):
-                continue
-            subject_ref = str(component.get("component_key") or f"{sku}:component").strip()
-            material_name = material.get("name_raw") or material.get("name_normalized") or ""
-            facts = classify_composite_material_name(material_name)
-            evidence = (_evidence_ref(material.get("source") or component.get("source")),)
-            special = evaluate_special_composite(
-                SpecialCompositeInput(
-                    subject_ref=subject_ref,
-                    small_fibers_more_than_one_plant_kind=facts.small_fibers_more_than_one_plant_kind,
-                    mechanically_processed_mixed_chemically_bonded=facts.mechanically_processed_mixed_chemically_bonded,
-                    thin_solid_plies_or_layers=facts.thin_solid_plies_or_layers,
-                    # Material names/taxonomy candidates do not prove the due-care step.
-                    species_determinable_after_due_care=TriState.UNKNOWN,
-                    evidence_refs=evidence,
-                )
-            )
-            assessments.append(_serialize_assessment(special, subject_ref=subject_ref))
-
-    indeterminate_count = sum(item["status"] == RuleStatus.INDETERMINATE.value for item in assessments)
+    indeterminate_count = sum(
+        item["status"] == RuleStatus.INDETERMINATE.value
+        for item in assessments
+    )
     return {
         "schema_version": SNAPSHOT_SCHEMA_VERSION,
         "ruleset_version": RULESET_VERSION,
@@ -243,9 +459,25 @@ def build_regulatory_assessment_payload(
             "fingerprint": source_set.get("fingerprint"),
         },
         "summary": {
+            "subject_count": len(subjects),
             "assessment_count": len(assessments),
             "indeterminate_count": int(indeterminate_count),
         },
+        "regulatory_subjects": [
+            {
+                "subject_ref": subject.subject_ref,
+                "line_reference": subject.line_reference,
+                "hts10": subject.hts10,
+                "article_component": subject.article_component,
+                "genus": subject.genus,
+                "species": subject.species,
+                "country_of_harvest": subject.country_of_harvest,
+                "quantity": subject.quantity,
+                "unit": subject.unit,
+                "has_product_enrichment": bool(subject.enrichment),
+            }
+            for subject in subjects
+        ],
         "regulatory_input_contract": dict(input_contract),
         "assessments": assessments,
     }
@@ -315,10 +547,13 @@ def build_regulatory_assessment_snapshot(
                 UsLaceyProductIntelligenceSnapshot.status != "STALE",
             )
         )
-        if product_snapshot is None:
-            return None
-
-        product_payload = enrich_product_intelligence_taxonomy(dict(product_snapshot.payload_json or {}))
+        product_payload = (
+            enrich_product_intelligence_taxonomy(
+                dict(product_snapshot.payload_json or {})
+            )
+            if product_snapshot is not None
+            else {}
+        )
         operation_fields = tuple(
             session.scalars(
                 select(UsLaceyOperationField).where(
@@ -327,9 +562,24 @@ def build_regulatory_assessment_snapshot(
                 )
             ).all()
         )
+        plant_line_references = tuple(
+            str(value)
+            for value in session.scalars(
+                select(UsLaceyPpqPlantLine.line_reference)
+                .where(
+                    UsLaceyPpqPlantLine.organization_id == organization_id,
+                    UsLaceyPpqPlantLine.operation_id == operation_id,
+                )
+                .order_by(
+                    UsLaceyPpqPlantLine.ordinal.asc(),
+                    UsLaceyPpqPlantLine.id.asc(),
+                )
+            ).all()
+        )
         regulatory_input_contract = build_regulatory_input_contract(
             product_intelligence_payload=product_payload,
             operation_fields=operation_fields,
+            plant_line_references=plant_line_references,
         )
         source_set = {
             "revision_id": revision_id,
@@ -339,11 +589,17 @@ def build_regulatory_assessment_snapshot(
         payload = build_regulatory_assessment_payload(
             product_intelligence_payload=product_payload,
             source_set=source_set,
+            operation_fields=operation_fields,
+            plant_line_references=plant_line_references,
             regulatory_input_contract=regulatory_input_contract,
         )
         exact_inputs = {
             "ruleset_version": RULESET_VERSION,
             "source_set": source_set,
+            "plant_line_references": list(plant_line_references),
+            "operation_fields": _operation_field_fingerprint_payload(
+                operation_fields
+            ),
             "product_intelligence": product_payload,
             "regulatory_input_contract": regulatory_input_contract,
         }

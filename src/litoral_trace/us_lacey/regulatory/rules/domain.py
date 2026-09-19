@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Mapping
 
 
-RULESET_VERSION = "us-lacey-regulatory-rules-v2"
+RULESET_VERSION = "us-lacey-regulatory-rules-v3"
 
 
 class RuleStatus(StrEnum):
@@ -68,6 +68,14 @@ class SpecialCompositeInput:
     small_fibers_more_than_one_plant_kind: TriState
     mechanically_processed_mixed_chemically_bonded: TriState
     thin_solid_plies_or_layers: TriState
+    species_determinable_after_due_care: TriState
+    evidence_refs: tuple[EvidenceRef, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SpecialRecycledInput:
+    subject_ref: str
+    highly_processed_recycled_material: TriState
     species_determinable_after_due_care: TriState
     evidence_refs: tuple[EvidenceRef, ...] = ()
 

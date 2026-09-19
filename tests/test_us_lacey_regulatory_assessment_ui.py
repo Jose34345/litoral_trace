@@ -45,33 +45,33 @@ def _view() -> RegulatoryAssessmentView:
         status="CURRENT",
         generation=2,
         source_set_fingerprint="f" * 64,
-        ruleset_version="us-lacey-regulatory-rules-v1",
+        ruleset_version="us-lacey-regulatory-rules-v3",
         input_fingerprint="a" * 64,
         assessment_count=2,
         indeterminate_count=1,
         payload={
-            "schema_version": "regulatory-assessment-snapshot-v1",
-            "summary": {"assessment_count": 2, "indeterminate_count": 1},
+            "schema_version": "regulatory-assessment-snapshot-v3",
+            "summary": {"subject_count": 1, "assessment_count": 2, "indeterminate_count": 1},
             "assessments": [
                 {
+                    "rule_id": "HTS_APPLICABILITY",
+                    "subject_ref": "LT-LINE-1",
+                    "status": "PASS",
+                    "reason_codes": ["HTS_ON_APHIS_SCHEDULE"],
+                    "explanation": "HTS is included in the APHIS Lacey declaration implementation schedule. Final applicability also depends on entry type, plant content and applicable exceptions.",
+                    "calculation_trace": {"matched_prefix": "4407"},
+                    "evidence_refs": [],
+                    "review_required": False,
+                },
+                {
                     "rule_id": "DE_MINIMIS",
-                    "subject_ref": "CHAIR-001",
+                    "subject_ref": "LT-LINE-1",
                     "status": "INDETERMINATE",
                     "reason_codes": ["MISSING_REQUIRED_INPUTS"],
                     "explanation": "Required de minimis inputs are missing or invalid; review is required.",
                     "calculation_trace": {},
                     "evidence_refs": [],
                     "review_required": True,
-                },
-                {
-                    "rule_id": "SPECIAL_COMPOSITE",
-                    "subject_ref": "CHAIR-001:row:2",
-                    "status": "FAIL",
-                    "reason_codes": ["THIN_SOLID_PLIES_DISQUALIFY"],
-                    "explanation": "Thin plies or layers of solid wood do not support SPECIAL / COMPOSITE.",
-                    "calculation_trace": {"thin_solid_plies_or_layers": "YES"},
-                    "evidence_refs": [{"source_type": "BOM_MATERIAL", "source_id": "doc-1", "locator": "BOM:row:2"}],
-                    "review_required": False,
                 },
             ],
         },
@@ -101,8 +101,9 @@ def test_terminal_workspace_hydrates_rule_scoped_regulatory_panel(monkeypatch):
     assert "Regulatory assessment" in html
     assert "DE_MINIMIS" in html
     assert "INDETERMINATE" in html
-    assert "SPECIAL_COMPOSITE" in html
-    assert "FAIL" in html
+    assert "HTS_APPLICABILITY" in html
+    assert "PASS" in html
+    assert "<strong>2</strong> assessments" in html
     assert "does not replace the final compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
 
@@ -125,6 +126,7 @@ def test_direct_operation_detail_renders_same_noncanonical_regulatory_panel(monk
 
     assert 'data-regulatory-assessment-status="CURRENT"' in html
     assert "DE_MINIMIS" in html
-    assert "SPECIAL_COMPOSITE" in html
+    assert "HTS_APPLICABILITY" in html
+    assert "<strong>2</strong> assessments" in html
     assert "does not replace the final compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()

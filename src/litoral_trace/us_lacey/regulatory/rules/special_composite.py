@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from litoral_trace.us_lacey.regulatory.engine import RegulatoryContext, RegulatorySubject
 
 from .domain import (
     RULESET_VERSION,
@@ -158,3 +163,107 @@ def evaluate_special_composite(inputs: SpecialCompositeInput) -> RuleAssessment:
         reasons=("UNSUPPORTED_COMPOSITE_STATE",),
         explanation="The composite assessment contains an unsupported state; review is required.",
     )
+
+
+def _tri_state(value: object) -> TriState:
+    if isinstance(value, TriState):
+        return value
+    if isinstance(value, bool):
+        return TriState.YES if value else TriState.NO
+    try:
+        return TriState(str(value).strip().upper())
+    except (ValueError, AttributeError):
+        return TriState.UNKNOWN
+
+
+def _subject_has_known_scientific_name(subject: "RegulatorySubject") -> bool:
+    genus = str(subject.genus or "").strip()
+    species = str(subject.species or "").strip()
+    if not genus or not species:
+        return False
+    if genus.casefold() == "special":
+        return False
+    return True
+
+
+class SpecialCompositeRule:
+    """Protocol adapter around the existing pure SPECIAL / COMPOSITE evaluator."""
+
+    rule_id = "SPECIAL_COMPOSITE"
+
+    def evaluate(
+        self,
+        *,
+        subject: "RegulatorySubject",
+        context: "RegulatoryContext",
+    ) -> RuleAssessment:
+        del context
+        configured = subject.rule_inputs.get(self.rule_id)
+
+        if isinstance(configured, SpecialCompositeInput):
+            due_care_state = configured.species_determinable_after_due_care
+            if _subject_has_known_scientific_name(subject):
+                due_care_state = TriState.YES
+            inputs = SpecialCompositeInput(
+                subject_ref=subject.subject_ref,
+                small_fibers_more_than_one_plant_kind=(
+                    configured.small_fibers_more_than_one_plant_kind
+                ),
+                mechanically_processed_mixed_chemically_bonded=(
+                    configured.mechanically_processed_mixed_chemically_bonded
+                ),
+                thin_solid_plies_or_layers=configured.thin_solid_plies_or_layers,
+                species_determinable_after_due_care=due_care_state,
+                evidence_refs=configured.evidence_refs or subject.evidence_refs,
+            )
+            return evaluate_special_composite(inputs)
+
+        values: Mapping[str, object]
+        if isinstance(configured, Mapping):
+            values = configured
+        else:
+            values = {}
+
+        material_value = (
+            values.get("material")
+            or subject.enrichment.get("material")
+            or subject.enrichment.get("material_description")
+            or subject.article_component
+        )
+        classified = classify_composite_material_name(material_value)
+
+        inputs = SpecialCompositeInput(
+            subject_ref=subject.subject_ref,
+            small_fibers_more_than_one_plant_kind=_tri_state(
+                values.get(
+                    "small_fibers_more_than_one_plant_kind",
+                    classified.small_fibers_more_than_one_plant_kind,
+                )
+            ),
+            mechanically_processed_mixed_chemically_bonded=_tri_state(
+                values.get(
+                    "mechanically_processed_mixed_chemically_bonded",
+                    classified.mechanically_processed_mixed_chemically_bonded,
+                )
+            ),
+            thin_solid_plies_or_layers=_tri_state(
+                values.get(
+                    "thin_solid_plies_or_layers",
+                    classified.thin_solid_plies_or_layers,
+                )
+            ),
+            species_determinable_after_due_care=(
+                TriState.YES
+                if _subject_has_known_scientific_name(subject)
+                else _tri_state(values.get("species_determinable_after_due_care"))
+            ),
+            evidence_refs=subject.evidence_refs,
+        )
+        return evaluate_special_composite(inputs)
+
+
+__all__ = [
+    "SpecialCompositeRule",
+    "classify_composite_material_name",
+    "evaluate_special_composite",
+]
