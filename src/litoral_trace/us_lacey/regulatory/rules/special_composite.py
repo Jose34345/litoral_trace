@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Mapping
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from litoral_trace.us_lacey.regulatory.engine import RegulatoryContext, RegulatorySubject
@@ -175,6 +176,16 @@ def _tri_state(value: object) -> TriState:
         return TriState.UNKNOWN
 
 
+def _subject_has_known_scientific_name(subject: "RegulatorySubject") -> bool:
+    genus = str(subject.genus or "").strip()
+    species = str(subject.species or "").strip()
+    if not genus or not species:
+        return False
+    if genus.casefold() == "special":
+        return False
+    return True
+
+
 class SpecialCompositeRule:
     """Protocol adapter around the existing pure SPECIAL / COMPOSITE evaluator."""
 
@@ -190,6 +201,9 @@ class SpecialCompositeRule:
         configured = subject.rule_inputs.get(self.rule_id)
 
         if isinstance(configured, SpecialCompositeInput):
+            due_care_state = configured.species_determinable_after_due_care
+            if _subject_has_known_scientific_name(subject):
+                due_care_state = TriState.YES
             inputs = SpecialCompositeInput(
                 subject_ref=subject.subject_ref,
                 small_fibers_more_than_one_plant_kind=(
@@ -199,9 +213,7 @@ class SpecialCompositeRule:
                     configured.mechanically_processed_mixed_chemically_bonded
                 ),
                 thin_solid_plies_or_layers=configured.thin_solid_plies_or_layers,
-                species_determinable_after_due_care=(
-                    configured.species_determinable_after_due_care
-                ),
+                species_determinable_after_due_care=due_care_state,
                 evidence_refs=configured.evidence_refs or subject.evidence_refs,
             )
             return evaluate_special_composite(inputs)
@@ -240,8 +252,10 @@ class SpecialCompositeRule:
                     classified.thin_solid_plies_or_layers,
                 )
             ),
-            species_determinable_after_due_care=_tri_state(
-                values.get("species_determinable_after_due_care")
+            species_determinable_after_due_care=(
+                TriState.YES
+                if _subject_has_known_scientific_name(subject)
+                else _tri_state(values.get("species_determinable_after_due_care"))
             ),
             evidence_refs=subject.evidence_refs,
         )
