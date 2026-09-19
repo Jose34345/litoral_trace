@@ -1,8 +1,8 @@
 """Auditable, fail-closed input contract for U.S. Lacey regulatory rules.
 
-This module classifies whether exact rule inputs are supported, review-only, missing,
-or semantically unsafe. It never converts Product Intelligence observations into
-regulatory facts when the source semantics do not prove the required quantity.
+Primary regulatory subjects are shipment botanical lines. Product Intelligence is
+optional enrichment only: a missing/unlinked BOM must never remove a plant line
+from the regulatory input inventory.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import re
 from typing import Any, Iterable, Mapping
 
 
-INPUT_CONTRACT_SCHEMA_VERSION = "regulatory-input-contract-v1"
+INPUT_CONTRACT_SCHEMA_VERSION = "regulatory-input-contract-v2"
 _HTS10 = re.compile(r"^\d{10}$")
 
 
@@ -38,6 +38,32 @@ def _missing(reason: str) -> dict[str, Any]:
     }
 
 
+def _plant_line_references(
+    operation_fields: tuple[object, ...],
+    explicit_references: Iterable[str] | None,
+) -> tuple[str, ...]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    for value in explicit_references or ():
+        reference = str(value or "").strip()
+        if reference and reference not in seen:
+            seen.add(reference)
+            ordered.append(reference)
+
+    for field in operation_fields:
+        if str(getattr(field, "field_scope", "") or "").upper() != "PLANT_LINE":
+            continue
+        reference = str(
+            getattr(field, "merchandise_line_reference", "") or ""
+        ).strip()
+        if reference and reference not in seen:
+            seen.add(reference)
+            ordered.append(reference)
+
+    return tuple(ordered)
+
+
 def _hts_input(
     *,
     line_reference: str | None,
@@ -49,7 +75,8 @@ def _hts_input(
     matches = tuple(
         field
         for field in operation_fields
-        if str(getattr(field, "merchandise_line_reference", "") or "").strip() == line_reference
+        if str(getattr(field, "merchandise_line_reference", "") or "").strip()
+        == line_reference
         and str(getattr(field, "field_name", "") or "") == "hts_code"
         and str(getattr(field, "field_scope", "") or "").upper() == "PLANT_LINE"
     )
@@ -121,42 +148,71 @@ def _observed_bom_component_mass(product: Mapping[str, Any]) -> dict[str, Any] |
     return {"observations": observations}
 
 
-def build_regulatory_input_contract(
-    *,
+def _linked_products_by_line(
     product_intelligence_payload: Mapping[str, Any],
-    operation_fields: Iterable[object],
-) -> dict[str, Any]:
-    """Build one rule-input inventory per Product Intelligence bridge subject."""
-    fields = tuple(operation_fields)
+) -> dict[str, tuple[Mapping[str, Any], ...]]:
     bridge = product_intelligence_payload.get("shipment_product_bridge")
     links = bridge.get("links", ()) if isinstance(bridge, Mapping) else ()
-
-    subjects: list[dict[str, Any]] = []
-    counts = {status.value: 0 for status in InputStatus}
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
 
     for raw_link in links:
         if not isinstance(raw_link, Mapping):
             continue
+        if str(raw_link.get("status") or "") != "LINKED":
+            continue
+        reference = str(raw_link.get("shipment_line_reference") or "").strip()
         product = raw_link.get("product")
-        if not isinstance(product, Mapping):
+        if not reference or not isinstance(product, Mapping):
             continue
-        sku = str(product.get("sku") or "").strip()
-        if not sku:
-            continue
+        grouped.setdefault(reference, []).append(raw_link)
 
-        link_status = str(raw_link.get("status") or "UNLINKED_REVIEW")
-        line_reference_raw = raw_link.get("shipment_line_reference")
-        line_reference = (
-            str(line_reference_raw).strip()
-            if line_reference_raw is not None and str(line_reference_raw).strip()
-            else None
-        )
+    return {
+        reference: tuple(items)
+        for reference, items in grouped.items()
+    }
+
+
+def build_regulatory_input_contract(
+    *,
+    product_intelligence_payload: Mapping[str, Any],
+    operation_fields: Iterable[object],
+    plant_line_references: Iterable[str] | None = None,
+) -> dict[str, Any]:
+    """Build one rule-input inventory for every primary botanical shipment line."""
+
+    fields = tuple(operation_fields)
+    line_references = _plant_line_references(fields, plant_line_references)
+    linked_by_line = _linked_products_by_line(product_intelligence_payload)
+
+    subjects: list[dict[str, Any]] = []
+    counts = {status.value: 0 for status in InputStatus}
+
+    for line_reference in line_references:
+        linked = linked_by_line.get(line_reference, ())
+        if len(linked) == 1:
+            link = linked[0]
+            product = link.get("product")
+            link_status = "LINKED"
+            line_item_key = link.get("line_item_key")
+        elif len(linked) > 1:
+            product = None
+            link_status = "AMBIGUOUS_REVIEW"
+            line_item_key = None
+        else:
+            product = None
+            link_status = "NO_BOM_LINK"
+            line_item_key = None
+
         hts = _hts_input(
-            line_reference=line_reference if link_status == "LINKED" else None,
+            line_reference=line_reference,
             operation_fields=fields,
         )
 
-        observed_mass = _observed_bom_component_mass(product)
+        observed_mass = (
+            _observed_bom_component_mass(product)
+            if isinstance(product, Mapping)
+            else None
+        )
         if observed_mass is None:
             plant_mass = _missing("PLANT_MASS_PER_UNIT_NOT_PROVIDED")
         else:
@@ -185,8 +241,8 @@ def build_regulatory_input_contract(
 
         subjects.append(
             {
-                "subject_ref": sku,
-                "line_item_key": raw_link.get("line_item_key"),
+                "subject_ref": line_reference,
+                "line_item_key": line_item_key,
                 "shipment_line_reference": line_reference,
                 "link_status": link_status,
                 "inputs": inputs,
