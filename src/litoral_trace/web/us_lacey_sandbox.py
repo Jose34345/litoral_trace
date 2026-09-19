@@ -82,7 +82,22 @@ def start_sandbox(
             client_ip=client_ip,
             user_agent=user_agent,
         )
-    except (UsLaceyPortalAuthError, UsLaceyPortalConfigurationError):
+    except UsLaceyPortalAuthError as exc:
+        rate_limited = exc.code == "sandbox_rate_limited"
+        response = PlainTextResponse(
+            (
+                "Sandbox trial limit reached. Try again later."
+                if rate_limited
+                else "The sandbox is temporarily unavailable."
+            ),
+            status_code=429 if rate_limited else 503,
+        )
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        if rate_limited:
+            response.headers["Retry-After"] = "3600"
+        return response
+    except UsLaceyPortalConfigurationError:
         response = PlainTextResponse(
             "The sandbox is temporarily unavailable.",
             status_code=503,
