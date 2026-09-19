@@ -1,7 +1,8 @@
 """Modelo Organization - Entidad raíz multi-tenant."""
 from __future__ import annotations
+from datetime import datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Text, Boolean
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from litoral_trace.db.base import Base, TimestampMixin
 
@@ -25,6 +26,18 @@ class Organization(Base, TimestampMixin):
     tier: Mapped[str] = mapped_column(String(50), nullable=False, default="pro")  # free, pro, enterprise
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_sandbox: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "NOT is_sandbox OR expires_at IS NOT NULL",
+            name="ck_organizations_sandbox_requires_expiry",
+        ),
+        Index("ix_organizations_sandbox_expires", "is_sandbox", "expires_at"),
+    )
 
     # Relaciones
     users: Mapped[list[User]] = relationship("User", back_populates="organization", cascade="all, delete-orphan")

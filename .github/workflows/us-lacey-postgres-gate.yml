@@ -20,6 +20,7 @@ on:
       - "alembic/versions/049_add_lacey_product_intelligence_snapshots.py"
       - "alembic/versions/050_add_lacey_regulatory_assessment_snapshots.py"
       - "alembic/versions/051_lacey_schema_readiness.py"
+      - "alembic/versions/052_lacey_zero_touch_sandbox.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
       - "src/litoral_trace/web/us_lacey_*"
@@ -157,6 +158,7 @@ jobs:
           python -m alembic upgrade 049_lacey_product_intelligence_snapshots
           python -m alembic upgrade 050_lacey_regulatory_assessment_snapshots
           python -m alembic upgrade 051_lacey_schema_readiness
+          python -m alembic upgrade 052_lacey_zero_touch_sandbox
       - name: Bind dedicated worker login to queue capability
         shell: bash
         run: |
@@ -181,7 +183,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "051_lacey_schema_readiness (head)" /tmp/alembic-current.txt
+          grep -Fx "052_lacey_zero_touch_sandbox (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -589,7 +591,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "051_lacey_schema_readiness (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "052_lacey_zero_touch_sandbox (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
@@ -953,6 +955,18 @@ jobs:
         run: >-
           python -m pytest -q -rs
           tests/test_us_lacey_portal_postgres_integration.py
+      - name: Prove zero-touch sandbox tenant isolation and expiry
+        env:
+          DATABASE_URL: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs             tests/test_us_lacey_sandbox_postgres_integration.py             | tee /tmp/sandbox-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/sandbox-postgres.txt; then
+            echo "Sandbox PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
       - name: Prove Signup Verify Login Billing HTTP E2E
         env:
           DATABASE_URL: ""

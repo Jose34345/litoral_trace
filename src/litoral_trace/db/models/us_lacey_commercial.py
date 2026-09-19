@@ -48,7 +48,7 @@ class UsLaceySubscription(Base):
         UniqueConstraint("organization_id", name="uq_us_lacey_subscriptions_org"),
         UniqueConstraint("id", "organization_id", name="uq_us_lacey_subscriptions_id_org"),
         CheckConstraint("currency = 'USD'", name="ck_us_lacey_subscriptions_currency_usd"),
-        CheckConstraint("price_cents > 0", name="ck_us_lacey_subscriptions_price_positive"),
+        CheckConstraint("price_cents >= 0", name="ck_us_lacey_subscriptions_price_nonnegative"),
         CheckConstraint(
             "monthly_operation_limit > 0", name="ck_us_lacey_subscriptions_limit_positive"
         ),
