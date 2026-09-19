@@ -11,12 +11,11 @@ import threading
 import time
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from litoral_trace.assurance.processing import AssuranceProcessingService
 from litoral_trace.db.models import (
     AssuranceDocument,
-    Organization,
     UsLaceyEngineDocumentRun,
     UsLaceyOperation,
     UsLaceyOperationDocument,
@@ -613,15 +612,18 @@ def _sandbox_tenant_expired(*, organization_id: int) -> bool:
     session = get_us_lacey_db_session()
     try:
         set_tenant_db_context(session, organization_id)
-        organization = session.scalar(
-            select(Organization).where(Organization.id == int(organization_id))
-        )
-        if organization is None:
+        tenant_state = session.execute(
+            text(
+                "SELECT * FROM public.us_lacey_tenant_runtime_state(:organization_id)"
+            ),
+            {"organization_id": int(organization_id)},
+        ).mappings().one_or_none()
+        if tenant_state is None:
             raise UsLaceyWorkerError("Queued tenant no longer exists.")
-        if not bool(getattr(organization, "is_sandbox", False)):
+        if not bool(tenant_state["is_sandbox"]):
             return False
 
-        expires_at = getattr(organization, "expires_at", None)
+        expires_at = tenant_state["expires_at"]
         if expires_at is None:
             return True
         normalized = (
