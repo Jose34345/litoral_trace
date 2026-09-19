@@ -74,7 +74,7 @@ def provision_us_lacey_sandbox(
 
     # The password is intentionally unknowable and never returned. Sandbox auth
     # is session-only; it cannot later be recovered through the normal login form.
-    password_hash = hash_password(secrets.token_urlsafe(64))
+    password_hash = hash_password(secrets.token_urlsafe(32))
 
     session = get_us_lacey_db_session()
     try:
