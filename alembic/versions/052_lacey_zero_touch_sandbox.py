@@ -542,13 +542,80 @@ def downgrade() -> None:
         """
     )
 
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public.us_lacey_portal_create_session(
+            requested_user_id integer,
+            requested_organization_id integer,
+            requested_token_hash text,
+            requested_family_id text,
+            requested_expires_at timestamptz,
+            requested_ip text,
+            requested_user_agent text
+        )
+        RETURNS TABLE (session_id integer)
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path = public, pg_temp
+        AS $$
+        DECLARE
+            new_session_id integer;
+        BEGIN
+            IF requested_user_id IS NULL OR requested_user_id <= 0
+               OR requested_organization_id IS NULL OR requested_organization_id <= 0 THEN
+                RAISE EXCEPTION 'invalid portal identity' USING ERRCODE = '22023';
+            END IF;
+            IF requested_token_hash IS NULL
+               OR requested_token_hash !~ '^[0-9a-f]{64}$' THEN
+                RAISE EXCEPTION 'invalid portal session token' USING ERRCODE = '22023';
+            END IF;
+            IF btrim(coalesce(requested_family_id, '')) = ''
+               OR char_length(requested_family_id) > 36 THEN
+                RAISE EXCEPTION 'invalid portal session family' USING ERRCODE = '22023';
+            END IF;
+            IF requested_expires_at IS NULL
+               OR requested_expires_at <= now()
+               OR requested_expires_at > now() + interval '31 days' THEN
+                RAISE EXCEPTION 'invalid portal session expiry' USING ERRCODE = '22023';
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM public.users AS users
+                JOIN public.organizations AS organizations
+                  ON organizations.id = users.organization_id
+                JOIN public.us_lacey_organization_profiles AS profiles
+                  ON profiles.organization_id = users.organization_id
+                WHERE users.id = requested_user_id
+                  AND users.organization_id = requested_organization_id
+                  AND users.is_active
+                  AND organizations.is_active
+                  AND profiles.account_status IN ('PAYMENT_PENDING','PILOT','ACTIVE')
+            ) THEN
+                RAISE EXCEPTION 'portal account unavailable' USING ERRCODE = '28000';
+            END IF;
+
+            INSERT INTO public.user_sessions (
+                user_id, organization_id, family_id, token_hash, issued_at,
+                expires_at, created_ip, user_agent
+            ) VALUES (
+                requested_user_id, requested_organization_id, requested_family_id,
+                requested_token_hash, now(), requested_expires_at,
+                NULLIF(left(btrim(coalesce(requested_ip, '')), 45), ''),
+                NULLIF(left(btrim(coalesce(requested_user_agent, '')), 512), '')
+            )
+            RETURNING id INTO new_session_id;
+
+            RETURN QUERY SELECT new_session_id;
+        END;
+        $$;
+        """
+    )
+
     op.execute("RESET ROLE")
     op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
     _revoke_platform_role()
 
-    # The create-session function is intentionally not downgraded here because
-    # removing the sandbox columns first would make its sandbox predicates invalid.
-    # Recreate the legacy version after dropping the columns.
     op.drop_constraint(
         "ck_us_lacey_subscriptions_price_nonnegative",
         "us_lacey_subscriptions",
