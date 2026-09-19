@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from sqlalchemy import text
 
-from litoral_trace.auth.passwords import verify_password
+from litoral_trace.auth.passwords import hash_password, verify_password
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
 
@@ -79,6 +79,25 @@ def get_us_lacey_session_ttl_hours() -> int:
     if value < 1 or value > 720:
         raise UsLaceyPortalAuthError(
             "U.S. portal session configuration is invalid.", code="configuration"
+        )
+    return value
+
+
+def get_us_lacey_sandbox_ttl_minutes() -> int:
+    """Return the hard-capped browser/data TTL for zero-touch sandboxes."""
+
+    raw = str(os.environ.get("US_LACEY_SANDBOX_TTL_MINUTES", "240")).strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise UsLaceyPortalAuthError(
+            "U.S. sandbox session configuration is invalid.",
+            code="configuration",
+        ) from exc
+    if value < 15 or value > 240:
+        raise UsLaceyPortalAuthError(
+            "U.S. sandbox session configuration is invalid.",
+            code="configuration",
         )
     return value
 
@@ -205,6 +224,81 @@ def login_us_lacey_user(
         session.rollback()
         raise UsLaceyPortalAuthError(
             "Unable to sign in right now.", code="auth_unavailable"
+        ) from exc
+    finally:
+        session.close()
+
+
+def start_us_lacey_sandbox_session(
+    *,
+    client_ip: str | None = None,
+    user_agent: str | None = None,
+) -> UsLaceyPortalLoginResult:
+    """Atomically provision one ephemeral tenant and its opaque browser session.
+
+    The raw token exists only in this process and the browser cookie. PostgreSQL
+    stores only its SHA-256 digest. The SECURITY DEFINER provisioning function is
+    the only cross-tenant bootstrap step; all subsequent reads/writes use the
+    ordinary tenant context and FORCE RLS policies.
+    """
+
+    raw_token = secrets.token_urlsafe(48)
+    token_hash = _session_token_hash(raw_token)
+    family_id = str(uuid4())
+    ttl_minutes = get_us_lacey_sandbox_ttl_minutes()
+
+    # Sandbox principals cannot use password login at the database auth boundary,
+    # but keep a valid one-way hash in the generic users table so existing user
+    # invariants and audit relationships remain unchanged.
+    non_login_password_hash = hash_password(secrets.token_urlsafe(64))
+
+    session = get_us_lacey_db_session()
+    try:
+        provisioned = session.execute(
+            text(
+                """
+                SELECT * FROM public.us_lacey_sandbox_provision(
+                    :password_hash,
+                    :token_hash,
+                    :family_id,
+                    :ttl_minutes,
+                    :client_ip,
+                    :user_agent
+                )
+                """
+            ),
+            {
+                "password_hash": non_login_password_hash,
+                "token_hash": token_hash,
+                "family_id": family_id,
+                "ttl_minutes": ttl_minutes,
+                "client_ip": str(client_ip or "").strip()[:45] or None,
+                "user_agent": str(user_agent or "").strip()[:512] or None,
+            },
+        ).mappings().one()
+
+        identity_row = _lookup_session_row(session, token_hash)
+        if identity_row is None:
+            raise UsLaceyPortalAuthError(
+                "Unable to establish the sandbox session.",
+                code="sandbox_unavailable",
+            )
+
+        expires_at = _ensure_utc(provisioned["expires_at"])
+        session.commit()
+        return UsLaceyPortalLoginResult(
+            session_token=raw_token,
+            expires_at=expires_at,
+            identity=_identity_from_row(identity_row),
+        )
+    except UsLaceyPortalAuthError:
+        session.rollback()
+        raise
+    except Exception as exc:
+        session.rollback()
+        raise UsLaceyPortalAuthError(
+            "Unable to start the sandbox right now.",
+            code="sandbox_unavailable",
         ) from exc
     finally:
         session.close()
