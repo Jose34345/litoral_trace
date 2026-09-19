@@ -57,8 +57,11 @@ ET.register_namespace("ns1", LAWGS_XML_NAMESPACE)
 _CURRENCY_DECORATION = re.compile(r"[,$\s]")
 
 
-def _qname(local_name: str) -> str:
-    return f"{{{LAWGS_XML_NAMESPACE}}}{local_name}"
+def _xml_name(local_name: str) -> str:
+    # xml.etree reserves prefixes matching ns\d+ for its own serializer.
+    # LAWGS' Excel XML Map emits the ns1 prefix, so construct that lexical
+    # prefix explicitly and declare it once on the document root.
+    return f"ns1:{local_name}"
 
 
 def _clean_text(value: object | None) -> str:
@@ -114,13 +117,13 @@ def _append_field(
     text = _clean_text(value)
     if omit_if_blank and not text:
         return
-    element = ET.SubElement(parent, _qname(tag))
+    element = ET.SubElement(parent, _xml_name(tag))
     if text:
         element.text = text
 
 
 def _serialize_merchandise_row(parent: ET.Element, line: object) -> None:
-    row = ET.SubElement(parent, _qname("merchandise"))
+    row = ET.SubElement(parent, _xml_name("merchandise"))
 
     values = {
         "lineNumber": _clean_text(getattr(line, "line_reference", "")),
@@ -163,7 +166,7 @@ def build_lawgs_xml(snapshot: LaceyExportSnapshot) -> bytes:
     will accept rows whose required business data is missing.
     """
 
-    root = ET.Element(_qname("merchandiseList"))
+    root = ET.Element(\n        _xml_name("merchandiseList"),\n        {"xmlns:ns1": LAWGS_XML_NAMESPACE},\n    )
     for line in tuple(snapshot.plant_lines or ()):
         _serialize_merchandise_row(root, line)
 
