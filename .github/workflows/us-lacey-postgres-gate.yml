@@ -688,6 +688,15 @@ jobs:
             echo "Platform-admin PostgreSQL acceptance must not skip in CI."
             exit 1
           fi
+      - name: Prove zero-trust read-only impersonation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs tests/test_us_lacey_readonly_impersonation_postgres.py | tee /tmp/readonly-impersonation-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/readonly-impersonation-postgres.txt; then
+            echo "Read-only impersonation PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
       - name: Prove Engine 2 shadow-worker contracts
         run: python -m pytest -q -rs tests/test_us_lacey_engine2_shadow_worker.py
       - name: Prove Engine 2 static schema contracts
