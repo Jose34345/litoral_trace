@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Mapping
 
 
-RULESET_VERSION = "us-lacey-regulatory-rules-v2"
+RULESET_VERSION = "us-lacey-regulatory-rules-v3"
 
 
 class RuleStatus(StrEnum):
