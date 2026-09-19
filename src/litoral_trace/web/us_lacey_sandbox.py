@@ -24,30 +24,20 @@ from litoral_trace.us_lacey.sandbox import (
 router = APIRouter(tags=["U.S. Lacey Sandbox"])
 
 
-_SANDBOX_START_HTML = """<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="robots" content="noindex,nofollow,noarchive">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Litoral Trace Sandbox</title>
-</head>
-<body>
-    <main>
-        <h1>Try Litoral Trace</h1>
-        <p>
-            This creates a temporary private workspace for testing
-            Litoral Trace with your shipment documents.
-        </p>
-        <p><strong>Files are automatically deleted after 4 hours</strong></p>
-        <form method="post" action="/sandbox/start">
-            <button type="submit" name="consent" value="accepted">
-                Start sandbox
-            </button>
-        </form>
-    </main>
-</body>
-</html>
+_SANDBOX_START_HTML = """
+<main>
+    <h1>Try Litoral Trace</h1>
+    <p>
+        This creates a temporary private workspace for testing
+        Litoral Trace with your shipment documents.
+    </p>
+    <p><strong>Files are automatically deleted after 4 hours</strong></p>
+    <form method="post" action="/sandbox/start">
+        <button type="submit" name="consent" value="accepted">
+            Start sandbox
+        </button>
+    </form>
+</main>
 """
 
 
