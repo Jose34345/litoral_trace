@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Mapping
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from litoral_trace.us_lacey.regulatory.engine import RegulatoryContext, RegulatorySubject
@@ -16,7 +17,7 @@ from .domain import (
 )
 
 
-_RECYLED_HIGHLY_PROCESSED = re.compile(
+_RECYCLED_HIGHLY_PROCESSED = re.compile(
     r"\brecycled\s+(?:paper|paperboard)\b",
     flags=re.IGNORECASE,
 )
@@ -149,14 +150,15 @@ class SpecialRecycledRule:
         configured = subject.rule_inputs.get(self.rule_id)
 
         if isinstance(configured, SpecialRecycledInput):
+            due_care_state = configured.species_determinable_after_due_care
+            if _subject_has_known_scientific_name(subject):
+                due_care_state = TriState.YES
             inputs = SpecialRecycledInput(
                 subject_ref=subject.subject_ref,
                 highly_processed_recycled_material=(
                     configured.highly_processed_recycled_material
                 ),
-                species_determinable_after_due_care=(
-                    configured.species_determinable_after_due_care
-                ),
+                species_determinable_after_due_care=due_care_state,
                 evidence_refs=configured.evidence_refs or subject.evidence_refs,
             )
             return evaluate_special_recycled(inputs)
@@ -176,7 +178,7 @@ class SpecialRecycledRule:
         due_care_state = _tri_state(
             values.get("species_determinable_after_due_care")
         )
-        if due_care_state is TriState.UNKNOWN and _subject_has_known_scientific_name(subject):
+        if _subject_has_known_scientific_name(subject):
             due_care_state = TriState.YES
 
         return evaluate_special_recycled(
