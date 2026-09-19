@@ -4,7 +4,7 @@ LAWGS' batch XML option imports merchandise rows into an already-created
 Plant and Plant Product Declaration. Shipment/header data belongs to the LAWGS
 declaration workflow itself and is intentionally not serialized here.
 
-The XML map used here is the observed LAWGS Merchandise map:
+The compatibility profile used here is:
     namespace: http://lawgs.aphis.usda.gov
     root:      merchandiseList
     row:       merchandise
@@ -24,7 +24,7 @@ from litoral_trace.us_lacey.exporters.export_snapshot import LaceyExportSnapshot
 LAWGS_XML_NAMESPACE = "http://lawgs.aphis.usda.gov"
 LAWGS_XML_PROFILE = "lawgs-merchandise-xml-v1"
 
-# XSD sequence order matters for XML produced from an Excel XML Map.
+# The Excel XML Map is sequence-sensitive.
 LAWGS_MERCHANDISE_FIELD_ORDER = (
     "lineNumber",
     "htsusNumber",
@@ -52,14 +52,12 @@ _REQUIRED_ROW_FIELDS = frozenset(
     }
 )
 
-ET.register_namespace("ns1", LAWGS_XML_NAMESPACE)
-
 _CURRENCY_DECORATION = re.compile(r"[,$\s]")
 
 
 def _xml_name(local_name: str) -> str:
-    # xml.etree reserves prefixes matching ns\d+ for its own serializer.
-    # LAWGS' Excel XML Map emits the ns1 prefix, so construct that lexical
+    # xml.etree reserves prefixes matching ns\d+ for its namespace registry.
+    # The observed LAWGS Excel XML Map uses ns1, so construct that lexical
     # prefix explicitly and declare it once on the document root.
     return f"ns1:{local_name}"
 
@@ -69,18 +67,17 @@ def _clean_text(value: object | None) -> str:
 
 
 def _plain_decimal(value: object | None, *, currency: bool = False) -> str:
-    """Return a non-scientific decimal representation without inventing a value.
-
-    Mechanical currency punctuation ($, commas and surrounding whitespace)
-    is removed before parsing. Invalid non-empty input is preserved verbatim so
-    upstream review can see/reject it; this serializer never substitutes a number.
-    """
+    """Return fixed-point decimal text without inventing a value."""
 
     raw = _clean_text(value)
     if not raw:
         return ""
 
-    candidate = _CURRENCY_DECORATION.sub("", raw) if currency else raw.replace(",", "").strip()
+    candidate = (
+        _CURRENCY_DECORATION.sub("", raw)
+        if currency
+        else raw.replace(",", "").strip()
+    )
     try:
         decimal_value = Decimal(candidate)
     except (InvalidOperation, ValueError):
@@ -89,13 +86,12 @@ def _plain_decimal(value: object | None, *, currency: bool = False) -> str:
     if not decimal_value.is_finite():
         return raw
 
-    # Decimal's fixed-point formatter removes scientific notation while
-    # preserving meaningful source scale (for example 2432.00 stays 2432.00).
+    # Removes exponent notation while preserving meaningful source scale.
     return format(decimal_value, "f")
 
 
 def _htsus(value: object | None) -> str:
-    """Remove presentation separators only when the value is otherwise numeric."""
+    """Remove presentation separators only when the result is numeric."""
 
     raw = _clean_text(value)
     if not raw:
@@ -117,6 +113,7 @@ def _append_field(
     text = _clean_text(value)
     if omit_if_blank and not text:
         return
+
     element = ET.SubElement(parent, _xml_name(tag))
     if text:
         element.text = text
@@ -124,7 +121,6 @@ def _append_field(
 
 def _serialize_merchandise_row(parent: ET.Element, line: object) -> None:
     row = ET.SubElement(parent, _xml_name("merchandise"))
-
     values = {
         "lineNumber": _clean_text(getattr(line, "line_reference", "")),
         "htsusNumber": _htsus(getattr(line, "hts_number", "")),
@@ -149,24 +145,24 @@ def _serialize_merchandise_row(parent: ET.Element, line: object) -> None:
             tag,
             values[tag],
             # Percent recycled is optional in LAWGS. Required merchandise
-            # fields stay present as empty elements when upstream data is
-            # incomplete so the XML remains structurally deterministic and
-            # LAWGS can report the missing field rather than receiving a
-            # malformed document.
+            # fields remain present as empty elements when upstream data is
+            # incomplete so the XML stays structurally deterministic.
             omit_if_blank=tag not in _REQUIRED_ROW_FIELDS,
         )
 
 
 def build_lawgs_xml(snapshot: LaceyExportSnapshot) -> bytes:
-    """Serialize an immutable export snapshot as LAWGS Merchandise XML.
+    """Serialize an immutable snapshot as a LAWGS Merchandise XML document.
 
-    This function is intentionally total for incomplete snapshots: missing values
-    produce empty required elements (or omission for optional percent recycled)
-    instead of raising. A well-formed XML document is not a guarantee that LAWGS
-    will accept rows whose required business data is missing.
+    Missing business values do not crash serialization. Required mapped elements
+    remain present but empty; optional percentRecycled is omitted when absent.
+    LAWGS can therefore report an incomplete row without receiving malformed XML.
     """
 
-    root = ET.Element(\n        _xml_name("merchandiseList"),\n        {"xmlns:ns1": LAWGS_XML_NAMESPACE},\n    )
+    root = ET.Element(
+        _xml_name("merchandiseList"),
+        {"xmlns:ns1": LAWGS_XML_NAMESPACE},
+    )
     for line in tuple(snapshot.plant_lines or ()):
         _serialize_merchandise_row(root, line)
 
