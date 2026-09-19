@@ -16,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -38,6 +39,24 @@ class UsLaceySubscription(Base):
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     renews_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    billing_provider: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="NONE"
+    )
+    provider_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    billing_sync_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, server_default="NEVER_SYNCED"
+    )
+    billing_last_sync_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    billing_last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    billing_last_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    provider_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -57,7 +76,27 @@ class UsLaceySubscription(Base):
             "status IN ('PENDING','ACTIVE','PAST_DUE','CANCELED')",
             name="ck_us_lacey_subscriptions_status",
         ),
+        CheckConstraint(
+            "billing_provider IN ('NONE','MANUAL','LEMON_SQUEEZY','STRIPE')",
+            name="ck_us_lacey_subscriptions_billing_provider",
+        ),
+        CheckConstraint(
+            "billing_sync_status IN ('NEVER_SYNCED','PENDING','IN_SYNC','ERROR')",
+            name="ck_us_lacey_subscriptions_billing_sync_status",
+        ),
         Index("ix_us_lacey_subscriptions_org_status", "organization_id", "status"),
+        Index(
+            "uq_us_lacey_subscriptions_provider_subscription",
+            "billing_provider",
+            "provider_subscription_id",
+            unique=True,
+            postgresql_where=text("provider_subscription_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_us_lacey_subscriptions_billing_sync",
+            "billing_sync_status",
+            "billing_last_sync_attempt_at",
+        ),
     )
 
 
