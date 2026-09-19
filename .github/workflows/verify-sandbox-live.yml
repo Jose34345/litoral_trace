@@ -1,0 +1,38 @@
+name: Verify Sandbox Live UI
+
+on:
+  push:
+    branches:
+      - feature/zero-touch-sandbox-p0
+    paths:
+      - .github/workflows/verify-sandbox-live.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify-sandbox-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify production sandbox UI and security headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          ORIGIN="https://lacey.litoraltrace.com"
+          code="$(curl -sS -D /tmp/headers -o /tmp/body -w '%{http_code}' --max-time 20 "$ORIGIN/sandbox/start")"
+          test "$code" = "200"
+          grep -Fq 'U.S. Lacey Act Sandbox' /tmp/body
+          grep -Fq 'Start Document Analysis' /tmp/body
+          grep -Fq 'Test the compliance engine with your own shipment documents.' /tmp/body
+          grep -Fq 'permanently destroyed after 4 hours' /tmp/body
+          grep -Fq '/static/dist/app.css' /tmp/body
+          grep -Fq 'name="consent"' /tmp/body
+          grep -Fq 'value="accepted"' /tmp/body
+          grep -Eiq "^content-security-policy: .*style-src 'self'" /tmp/headers
+          grep -Eiq '^cache-control: .*no-store' /tmp/headers
+          if grep -Eiq '^set-cookie:' /tmp/headers; then
+            echo 'GET /sandbox/start unexpectedly set a cookie'
+            exit 1
+          fi
+          echo 'sandbox_live_ui=PASS'
