@@ -169,7 +169,30 @@ def _sandbox_session() -> UsLaceySandboxSession:
     )
 
 
-def test_public_sandbox_start_sets_opaque_cookie_and_redirects_to_new_operation(monkeypatch):
+def test_public_sandbox_get_is_side_effect_free(monkeypatch):
+    client.cookies.clear()
+
+    def should_not_provision(**_kwargs):
+        raise AssertionError("GET must never provision a sandbox")
+
+    monkeypatch.setattr(
+        sandbox_web,
+        "provision_us_lacey_sandbox",
+        should_not_provision,
+    )
+
+    response = client.get("/sandbox/start", follow_redirects=False)
+
+    assert response.status_code == 200
+    assert "Files are automatically deleted after 4 hours" in response.text
+    assert 'method="post"' in response.text
+    assert 'action="/sandbox/start"' in response.text
+    assert "set-cookie" not in response.headers
+    assert response.headers["cache-control"] == "no-store, max-age=0"
+    assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
+
+
+def test_public_sandbox_post_sets_opaque_cookie_and_redirects_to_new_operation(monkeypatch):
     client.cookies.clear()
     monkeypatch.setattr(
         sandbox_web,
@@ -182,7 +205,11 @@ def test_public_sandbox_start_sets_opaque_cookie_and_redirects_to_new_operation(
         lambda **_kwargs: _sandbox_session(),
     )
 
-    response = client.get("/sandbox/start", follow_redirects=False)
+    response = client.post(
+        "/sandbox/start",
+        data={"consent": "accepted"},
+        follow_redirects=False,
+    )
 
     assert response.status_code == 303
     assert response.headers["location"] == "/operations/new"
@@ -192,6 +219,28 @@ def test_public_sandbox_start_sets_opaque_cookie_and_redirects_to_new_operation(
     assert "SameSite=lax" in cookie
     assert response.headers["cache-control"] == "no-store, max-age=0"
     assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
+
+
+def test_public_sandbox_post_requires_explicit_consent(monkeypatch):
+    client.cookies.clear()
+
+    def should_not_provision(**_kwargs):
+        raise AssertionError("missing consent must not provision")
+
+    monkeypatch.setattr(
+        sandbox_web,
+        "provision_us_lacey_sandbox",
+        should_not_provision,
+    )
+
+    response = client.post(
+        "/sandbox/start",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "Sandbox consent is required." in response.text
+    assert "set-cookie" not in response.headers
 
 
 def test_sandbox_start_preserves_existing_valid_tenant_session(monkeypatch):
@@ -213,7 +262,11 @@ def test_sandbox_start_preserves_existing_valid_tenant_session(monkeypatch):
 
     client.cookies.set(US_LACEY_SESSION_COOKIE, "existing-session")
     try:
-        response = client.get("/sandbox/start", follow_redirects=False)
+        response = client.post(
+            "/sandbox/start",
+            data={"consent": "accepted"},
+            follow_redirects=False,
+        )
     finally:
         client.cookies.clear()
 
@@ -242,7 +295,11 @@ def test_sandbox_start_returns_429_when_database_rate_limit_fires(monkeypatch):
         rate_limited,
     )
 
-    response = client.get("/sandbox/start", follow_redirects=False)
+    response = client.post(
+        "/sandbox/start",
+        data={"consent": "accepted"},
+        follow_redirects=False,
+    )
 
     assert response.status_code == 429
     assert response.headers["retry-after"] == "3600"
