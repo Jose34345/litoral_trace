@@ -14,7 +14,10 @@ from sqlalchemy import select
 
 from litoral_trace.db.models import UsLaceyOperation
 from litoral_trace.db.tenant import set_tenant_db_context
-from litoral_trace.us_lacey.access import require_us_lacey_operational_access
+from litoral_trace.us_lacey.access import (
+    UsLaceyOperationalEntitlement,
+    require_us_lacey_operational_access,
+)
 from litoral_trace.us_lacey.batch_hardening import ShipmentBatchRejected, enforce_shipment_document_budget
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.ingestion import UsLaceyIngestionResult, UsLaceyIngestionService
@@ -26,6 +29,50 @@ from litoral_trace.us_lacey.source_sets import seal_current_source_set
 
 class UsLaceyWorkflowError(RuntimeError):
     pass
+
+
+SANDBOX_MAX_DOCUMENTS_PER_OPERATION = 3
+
+
+def _enforce_sandbox_document_budget(
+    *,
+    organization_id: int,
+    operation_id: int,
+    incoming_documents: int,
+    entitlement: UsLaceyOperationalEntitlement,
+) -> None:
+    """Enforce the sandbox LLM budget while the operation advisory lock is held."""
+
+    if not entitlement.is_sandbox:
+        return
+    if incoming_documents <= 0:
+        raise UsLaceyWorkflowError(
+            "Choose at least one shipment or supplier document."
+        )
+
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, organization_id)
+        operation = session.scalar(
+            select(UsLaceyOperation).where(
+                UsLaceyOperation.organization_id == int(organization_id),
+                UsLaceyOperation.id == int(operation_id),
+            )
+        )
+        if operation is None:
+            raise UsLaceyWorkflowError("Operation not found.")
+
+        current_count = int(operation.document_count or 0)
+        if (
+            current_count + int(incoming_documents)
+            > SANDBOX_MAX_DOCUMENTS_PER_OPERATION
+        ):
+            raise UsLaceyWorkflowError(
+                "Sandbox workspaces can process at most "
+                f"{SANDBOX_MAX_DOCUMENTS_PER_OPERATION} documents per operation."
+            )
+    finally:
+        session.close()
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +155,7 @@ def upload_and_enqueue_us_lacey_document(
     """Persist one-shipment evidence, link it, then queue bounded processing."""
     # This operation has already consumed its plan slot. Customers must always be
     # able to finish uploads/review/exports for existing work, even at quota.
-    require_us_lacey_operational_access(
+    entitlement = require_us_lacey_operational_access(
         organization_id=organization_id,
         require_operation_slot=False,
     )
@@ -133,6 +180,12 @@ def upload_and_enqueue_us_lacey_document(
         organization_id=organization_id,
         operation_id=operation_id,
     ):
+        _enforce_sandbox_document_budget(
+            organization_id=organization_id,
+            operation_id=operation_id,
+            incoming_documents=1,
+            entitlement=entitlement,
+        )
         ingested = ingestion_service.ingest_document(
             organization_id=organization_id,
             user_id=user_id,
@@ -180,6 +233,11 @@ def upload_and_enqueue_us_lacey_document_batch(
     if not documents:
         raise UsLaceyWorkflowError("Choose at least one shipment or supplier document.")
 
+    entitlement = require_us_lacey_operational_access(
+        organization_id=organization_id,
+        require_operation_slot=False,
+    )
+
     # Validate the full HTTP batch before the first Vault write. A rejected
     # multi-shipment source must not leave a partially-attached source set behind.
     for filename, _content_type, content, _document_role in documents:
@@ -202,6 +260,12 @@ def upload_and_enqueue_us_lacey_document_batch(
         organization_id=organization_id,
         operation_id=operation_id,
     ):
+        _enforce_sandbox_document_budget(
+            organization_id=organization_id,
+            operation_id=operation_id,
+            incoming_documents=len(documents),
+            entitlement=entitlement,
+        )
         ingested = tuple(
             ingestion_service.ingest_document(
                 organization_id=organization_id, user_id=user_id,
