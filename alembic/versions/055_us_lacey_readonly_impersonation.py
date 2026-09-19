@@ -256,13 +256,6 @@ def _create_and_harden_reader_role() -> None:
         """
     )
     op.execute(
-        f"""
-        REVOKE ALL PRIVILEGES
-        ON ALL FUNCTIONS IN SCHEMA public
-        FROM {IMPERSONATION_ROLE}
-        """
-    )
-    op.execute(
         f"REVOKE ALL PRIVILEGES ON SCHEMA public FROM {IMPERSONATION_ROLE}"
     )
     op.execute(
@@ -1121,13 +1114,6 @@ def downgrade() -> None:
         f"""
         REVOKE ALL PRIVILEGES
         ON ALL SEQUENCES IN SCHEMA public
-        FROM {IMPERSONATION_ROLE}
-        """
-    )
-    op.execute(
-        f"""
-        REVOKE ALL PRIVILEGES
-        ON ALL FUNCTIONS IN SCHEMA public
         FROM {IMPERSONATION_ROLE}
         """
     )
