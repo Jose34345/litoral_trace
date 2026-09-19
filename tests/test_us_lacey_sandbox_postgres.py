@@ -166,53 +166,33 @@ def test_runtime_can_provision_sandbox_only_through_definer_and_rls_stays_tenant
 
 
 def test_non_sandbox_zero_price_subscription_remains_rejected():
-    owner = _engine(os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"])
-    suffix = uuid4().hex[:10]
+    reset_us_lacey_engine_state()
+    created = provision_us_lacey_sandbox(
+        client_ip=f"203.0.113.{secrets.randbelow(200) + 1}",
+        user_agent="sandbox-price-constraint-gate",
+    )
+    runtime = _engine(os.environ["US_LACEY_DATABASE_URL"])
     try:
-        with owner.begin() as connection:
-            org_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO public.organizations (
-                        name, slug, tier, is_active, is_sandbox
-                    ) VALUES (
-                        :name, :slug, 'private_beta', true, false
-                    )
-                    RETURNING id
-                    """
-                ),
-                {
-                    "name": f"Paid Constraint {suffix}",
-                    "slug": f"paid-constraint-{suffix}",
-                },
-            ).scalar_one()
-
-            with pytest.raises(Exception):
+        with pytest.raises(Exception):
+            with runtime.begin() as connection:
+                connection.execute(
+                    text(
+                        "SELECT set_config("
+                        "'app.current_organization_id', :org_id, true)"
+                    ),
+                    {"org_id": str(created.organization_id)},
+                )
+                # Converting a zero-price sandbox subscription into a commercial
+                # plan must fail the global paid-plan constraint.
                 connection.execute(
                     text(
                         """
-                        INSERT INTO public.us_lacey_subscriptions (
-                            public_id,
-                            organization_id,
-                            plan_code,
-                            currency,
-                            price_cents,
-                            monthly_operation_limit,
-                            used_operations,
-                            status
-                        ) VALUES (
-                            gen_random_uuid(),
-                            :org_id,
-                            'PRIVATE_BETA',
-                            'USD',
-                            0,
-                            1,
-                            0,
-                            'ACTIVE'
-                        )
+                        UPDATE public.us_lacey_subscriptions
+                        SET plan_code = 'PRIVATE_BETA'
+                        WHERE organization_id = :org_id
                         """
                     ),
-                    {"org_id": org_id},
+                    {"org_id": created.organization_id},
                 )
     finally:
-        owner.dispose()
+        runtime.dispose()
