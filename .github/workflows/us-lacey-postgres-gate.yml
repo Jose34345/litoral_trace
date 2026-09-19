@@ -955,6 +955,18 @@ jobs:
         run: >-
           python -m pytest -q -rs
           tests/test_us_lacey_portal_postgres_integration.py
+      - name: Prove zero-touch sandbox tenant isolation and expiry
+        env:
+          DATABASE_URL: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs             tests/test_us_lacey_sandbox_postgres_integration.py             | tee /tmp/sandbox-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/sandbox-postgres.txt; then
+            echo "Sandbox PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
       - name: Prove Signup Verify Login Billing HTTP E2E
         env:
           DATABASE_URL: ""
