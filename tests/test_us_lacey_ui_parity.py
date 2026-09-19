@@ -43,8 +43,20 @@ def test_us_lacey_templates_use_shared_design_system_with_isolated_english_shell
     assert "Debida diligencia" not in marketing_base
 
     for path in TEMPLATES.glob("*.html"):
-        if path.name not in {"base.html", "marketing_base.html"}:
-            assert '{% extends "us_lacey/base.html" %}' in path.read_text(encoding="utf-8")
+        if path.name in {"base.html", "marketing_base.html"}:
+            continue
+        source = path.read_text(encoding="utf-8")
+        if path.name == "sandbox_start.html":
+            # The public zero-touch entry intentionally uses an isolated,
+            # script-free shell while still consuming the canonical Tailwind
+            # build. This is the only U.S. Lacey template allowed to bypass the
+            # authenticated portal chrome.
+            assert "url_for('static'" in source
+            assert "path='/dist/app.css'" in source
+            assert "<style" not in source
+            assert "style=" not in source
+            continue
+        assert '{% extends "us_lacey/base.html" %}' in source
 
     # Public Lacey marketing/demo pages use the dedicated U.S. shell rather than
     # inheriting the Argentina/regional public navigation.

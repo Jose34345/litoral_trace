@@ -187,6 +187,10 @@ def test_public_sandbox_get_is_side_effect_free(monkeypatch):
     assert "U.S. Lacey Act Sandbox" in response.text
     assert "Start Document Analysis" in response.text
     assert "Test the compliance engine with your own shipment documents." in response.text
+    assert (
+        "For your privacy, this ephemeral workspace and all uploaded files are"
+        in response.text
+    )
     assert "permanently destroyed after 4 hours" in response.text
     assert 'method="post"' in response.text
     assert 'action="/sandbox/start"' in response.text
