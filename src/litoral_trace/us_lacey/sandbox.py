@@ -28,6 +28,10 @@ SANDBOX_MAX_DOCUMENTS_PER_OPERATION = 3
 class UsLaceySandboxError(RuntimeError):
     """Safe sandbox error suitable for a browser response."""
 
+    def __init__(self, message: str, *, code: str = "sandbox_error") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 @dataclass(frozen=True, slots=True)
 class UsLaceySandboxSession:
@@ -105,8 +109,14 @@ def provision_us_lacey_sandbox(
         )
     except Exception as exc:
         session.rollback()
+        if getattr(exc, "sqlstate", None) == "P4290":
+            raise UsLaceySandboxError(
+                "Too many sandbox sessions were started from this network. Try again later.",
+                code="rate_limited",
+            ) from exc
         raise UsLaceySandboxError(
-            "Unable to start a sandbox workspace right now."
+            "Unable to start a sandbox workspace right now.",
+            code="provision_failed",
         ) from exc
     finally:
         session.close()
