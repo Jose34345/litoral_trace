@@ -24,6 +24,7 @@ on:
       - "alembic/versions/053_sandbox_purge_queue.py"
       - "alembic/versions/054_us_lacey_control_plane_audit_billing.py"
       - "alembic/versions/055_us_lacey_readonly_impersonation.py"
+      - "alembic/versions/056_us_lacey_sandbox_growth_attribution.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
@@ -34,6 +35,7 @@ on:
       - "src/litoral_trace/api/admin.py"
       - "src/litoral_trace/templates/admin_organizations.html"
       - "src/litoral_trace/templates/admin_us_lacey_accounts.html"
+      - "src/litoral_trace/db/models/organization.py"
       - "src/litoral_trace/db/models/us_lacey.py"
       - "src/litoral_trace/db/models/us_lacey_evidence_snapshot.py"
       - "src/litoral_trace/db/models/us_lacey_product_intelligence.py"
@@ -65,7 +67,7 @@ jobs:
         image: postgis/postgis:17-3.5
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: us_lacey_root_password_2026
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: postgres
         ports:
           - 5432:5432
@@ -79,15 +81,15 @@ jobs:
       ENABLE_POSTGRES_TESTS: "1"
       JWT_SECRET_KEY: us-lacey-ci-only-jwt-secret-key-2026
       LITORAL_TRACE_BOOTSTRAP_SUPERADMIN_PASSWORD: UsLaceyCiBootstrapPassword2026
-      MIGRATION_DATABASE_URL: postgresql+psycopg://lt_us_lacey_migrator:us_lacey_migrator_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
-      TEST_POSTGRES_MIGRATION_DATABASE_URL: postgresql+psycopg://lt_us_lacey_migrator:us_lacey_migrator_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
-      DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
-      TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
-      US_LACEY_POSTGRES_TEST_DATABASE_URL: postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
-      US_LACEY_TEST_AUDIT_DATABASE_URL: postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      MIGRATION_DATABASE_URL: postgresql+psycopg://lt_us_lacey_migrator@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      TEST_POSTGRES_MIGRATION_DATABASE_URL: postgresql+psycopg://lt_us_lacey_migrator@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      DATABASE_URL: postgresql+psycopg://litoral_trace_app@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://litoral_trace_app@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      US_LACEY_POSTGRES_TEST_DATABASE_URL: postgresql+psycopg://postgres@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      US_LACEY_TEST_AUDIT_DATABASE_URL: postgresql+psycopg://postgres@127.0.0.1:5432/litoral_trace_us_lacey_ci
       US_LACEY_ENVIRONMENT: test
-      US_LACEY_DATABASE_URL: postgresql+psycopg://litoral_trace_app:us_lacey_runtime_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
-      US_LACEY_WORKER_DATABASE_URL: postgresql+psycopg://litoral_trace_us_lacey_worker:us_lacey_worker_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      US_LACEY_DATABASE_URL: postgresql+psycopg://litoral_trace_app@127.0.0.1:5432/litoral_trace_us_lacey_ci
+      US_LACEY_WORKER_DATABASE_URL: postgresql+psycopg://litoral_trace_us_lacey_worker@127.0.0.1:5432/litoral_trace_us_lacey_ci
       US_LACEY_STORAGE_BUCKET: us-lacey-ci-private
       US_LACEY_STORAGE_PREFIX: us-lacey/ci
       US_LACEY_APP_HOSTNAME: app.lacey.litoraltrace.com
@@ -112,7 +114,7 @@ jobs:
           from sqlalchemy import create_engine
 
           root = create_engine(
-              "postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/postgres",
+              "postgresql+psycopg://postgres@127.0.0.1:5432/postgres",
               isolation_level="AUTOCOMMIT",
               pool_pre_ping=True,
               hide_parameters=True,
@@ -120,17 +122,17 @@ jobs:
           statements = [
               """
               CREATE ROLE lt_us_lacey_migrator
-                LOGIN PASSWORD 'us_lacey_migrator_password_2026'
+                LOGIN
                 NOSUPERUSER NOCREATEDB CREATEROLE INHERIT NOBYPASSRLS
               """,
               """
               CREATE ROLE litoral_trace_app
-                LOGIN PASSWORD 'us_lacey_runtime_password_2026'
+                LOGIN
                 NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
               """,
               """
               CREATE ROLE litoral_trace_us_lacey_worker
-                LOGIN PASSWORD 'us_lacey_worker_password_2026'
+                LOGIN
                 NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS
               """,
               "CREATE DATABASE litoral_trace_us_lacey_ci OWNER lt_us_lacey_migrator",
@@ -141,7 +143,7 @@ jobs:
           root.dispose()
 
           target = create_engine(
-              "postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci",
+              "postgresql+psycopg://postgres@127.0.0.1:5432/litoral_trace_us_lacey_ci",
               isolation_level="AUTOCOMMIT",
               pool_pre_ping=True,
               hide_parameters=True,
@@ -162,7 +164,7 @@ jobs:
           python -m alembic upgrade 049_lacey_product_intelligence_snapshots
           python -m alembic upgrade 050_lacey_regulatory_assessment_snapshots
           python -m alembic upgrade 052_us_lacey_ephemeral_sandbox
-          python -m alembic upgrade 055_us_lacey_readonly_impersonation
+          python -m alembic upgrade 056_us_lacey_sandbox_growth_attribution
       - name: Bind dedicated worker login to queue capability
         shell: bash
         run: |
@@ -171,7 +173,7 @@ jobs:
           from sqlalchemy import create_engine
 
           root = create_engine(
-              "postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/postgres",
+              "postgresql+psycopg://postgres@127.0.0.1:5432/postgres",
               isolation_level="AUTOCOMMIT",
               pool_pre_ping=True,
               hide_parameters=True,
@@ -187,7 +189,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "055_us_lacey_readonly_impersonation (head)" /tmp/alembic-current.txt
+          grep -Fx "056_us_lacey_sandbox_growth_attribution (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -595,7 +597,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "055_us_lacey_readonly_impersonation (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "056_us_lacey_sandbox_growth_attribution (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
@@ -697,6 +699,17 @@ jobs:
             echo "Read-only impersonation PostgreSQL acceptance must not skip in CI."
             exit 1
           fi
+      - name: Prove sandbox growth attribution and purge cancellation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs \
+            tests/test_us_lacey_sandbox_growth_attribution_postgres.py \
+            | tee /tmp/sandbox-growth-attribution-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/sandbox-growth-attribution-postgres.txt; then
+            echo "Sandbox growth attribution PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
       - name: Prove Engine 2 shadow-worker contracts
         run: python -m pytest -q -rs tests/test_us_lacey_engine2_shadow_worker.py
       - name: Prove Engine 2 static schema contracts
@@ -754,7 +767,7 @@ jobs:
           runtime = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
           migrator = create_engine(os.environ["MIGRATION_DATABASE_URL"], pool_pre_ping=True)
           audit = create_engine(
-              "postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci",
+              "postgresql+psycopg://postgres@127.0.0.1:5432/litoral_trace_us_lacey_ci",
               pool_pre_ping=True,
               hide_parameters=True,
           )
@@ -874,7 +887,7 @@ jobs:
 
           runtime = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
           audit = create_engine(
-              "postgresql+psycopg://postgres:us_lacey_root_password_2026@127.0.0.1:5432/litoral_trace_us_lacey_ci",
+              "postgresql+psycopg://postgres@127.0.0.1:5432/litoral_trace_us_lacey_ci",
               pool_pre_ping=True,
               hide_parameters=True,
           )
