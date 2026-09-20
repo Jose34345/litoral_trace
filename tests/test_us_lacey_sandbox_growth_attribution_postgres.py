@@ -426,10 +426,16 @@ def test_056_provenance_conversion_cohort_and_worker_race() -> None:
                             p.oid,
                             'EXECUTE'
                         ) AS worker_execute,
-                        has_function_privilege(
-                            'public',
-                            p.oid,
-                            'EXECUTE'
+                        EXISTS (
+                            SELECT 1
+                            FROM aclexplode(
+                                coalesce(
+                                    p.proacl,
+                                    acldefault('f', p.proowner)
+                                )
+                            ) AS acl
+                            WHERE acl.grantee = 0
+                              AND acl.privilege_type = 'EXECUTE'
                         ) AS public_execute
                     FROM pg_proc AS p
                     JOIN pg_namespace AS n
