@@ -251,6 +251,14 @@ def test_public_auth_pages_preserve_get_forms_and_verification_error(monkeypatch
     assert 'method="post" action="/login"' in login.text
     assert 'name="email"' in login.text
     assert 'name="password"' in login.text
+    assert "max-w-md" in login.text
+    assert "Forgot password?" in login.text
+    assert 'id="password-toggle"' in login.text
+    assert "fa-eye" in login.text
+    assert "focus:ring-2 focus:ring-emerald-600" in login.text
+    assert "w-full justify-center" in login.text
+    assert "Don't have an account?" in login.text
+    assert '>Sign up</a>' in login.text
 
     invalid_verify = client.get("/verify-email")
     assert invalid_verify.status_code == 400
