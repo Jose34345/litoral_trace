@@ -19,10 +19,15 @@ import threading
 import time
 from uuid import uuid4
 
+from alembic import command
+from alembic.config import Config
 from fastapi import Request, Response, status
 from fastapi.responses import HTMLResponse
+from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 
-from litoral_trace.us_lacey.jobs import recover_stale_us_lacey_jobs
+from litoral_trace.config.settings import normalize_database_url
+from litoral_trace.us_lacey.jobs import UsLaceyJobError, recover_stale_us_lacey_jobs
 from litoral_trace.us_lacey.live_readiness import (
     live_runtime_status,
     probe_ocr_runtime,
@@ -64,6 +69,78 @@ def _int_env(name: str, default: int, *, minimum: int, maximum: int) -> int:
     return value
 
 
+def _bootstrap_schema_if_requested() -> None:
+    """Run the canonical Alembic chain once when explicitly enabled.
+
+    This is a contingency-only bootstrap for a fresh isolated database. Normal
+    releases keep the flag disabled and continue to rely on the migration gate.
+    """
+    if not _bool_env("US_LACEY_BOOTSTRAP_SCHEMA_ON_STARTUP", default=False):
+        return
+
+    migration_url = str(os.environ.get("MIGRATION_DATABASE_URL", "")).strip()
+    if not migration_url:
+        raise RuntimeError(
+            "MIGRATION_DATABASE_URL is required when "
+            "US_LACEY_BOOTSTRAP_SCHEMA_ON_STARTUP is enabled."
+        )
+
+    _LOG.warning("us_lacey_schema_bootstrap_started")
+    alembic_config = Config("alembic.ini")
+    command.upgrade(alembic_config, "head")
+
+    # The capability roles are created by migrations. Bind only the dedicated
+    # login roles after the full chain succeeds; never run the worker as owner.
+    engine = create_engine(
+        normalize_database_url(migration_url),
+        isolation_level="AUTOCOMMIT",
+        pool_pre_ping=True,
+        hide_parameters=True,
+    )
+    try:
+        with engine.connect() as connection:
+            connection.exec_driver_sql(
+                "GRANT litoral_trace_worker_executor "
+                "TO litoral_trace_us_lacey_worker "
+                "WITH ADMIN FALSE, INHERIT TRUE, SET TRUE"
+            )
+            connection.exec_driver_sql(
+                "GRANT litoral_trace_impersonation_reader "
+                "TO litoral_trace_impersonation_login "
+                "WITH ADMIN FALSE, INHERIT FALSE, SET TRUE"
+            )
+    finally:
+        engine.dispose()
+
+    _LOG.info("us_lacey_schema_bootstrap_complete")
+
+
+def _worker_max_backoff_seconds() -> float:
+    return _float_env(
+        "US_LACEY_WORKER_MAX_BACKOFF_SECONDS",
+        360.0,
+        minimum=5.0,
+        maximum=360.0,
+    )
+
+
+def _next_worker_backoff_seconds(
+    current: float,
+    *,
+    base: float,
+    cap: float,
+) -> float:
+    return min(cap, max(base, current * 2.0))
+
+
+def _wait_for_next_worker_attempt(
+    stop_event: threading.Event,
+    wait_seconds: float,
+) -> bool:
+    app.state.us_lacey_inline_worker_current_wait_seconds = wait_seconds
+    return stop_event.wait(wait_seconds)
+
+
 def _record_worker_success() -> None:
     app.state.us_lacey_inline_worker_last_success_monotonic = time.monotonic()
 
@@ -72,6 +149,7 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
     poll_seconds = _float_env(
         "US_LACEY_WORKER_POLL_SECONDS", 2.0, minimum=0.25, maximum=30.0
     )
+    max_backoff_seconds = _worker_max_backoff_seconds()
     recovery_every = _int_env(
         "US_LACEY_WORKER_RECOVERY_EVERY_SECONDS", 60, minimum=30, maximum=3600
     )
@@ -80,8 +158,14 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
     )
     worker_id = f"inline-{socket.gethostname()}-{uuid4().hex[:12]}"
     next_recovery = 0.0
+    backoff_seconds = poll_seconds
+    app.state.us_lacey_inline_worker_current_wait_seconds = poll_seconds
 
-    _LOG.info("us_lacey_inline_worker_started worker_id=%s", worker_id)
+    _LOG.info(
+        "us_lacey_inline_worker_started worker_id=%s max_backoff_seconds=%s",
+        worker_id,
+        max_backoff_seconds,
+    )
     while not stop_event.is_set():
         now = time.monotonic()
         if now >= next_recovery:
@@ -96,6 +180,16 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
                         retried,
                         failed,
                     )
+            except (OperationalError, UsLaceyJobError):
+                _LOG.exception("stale_job_recovery_database_failed")
+                if _wait_for_next_worker_attempt(stop_event, backoff_seconds):
+                    break
+                backoff_seconds = _next_worker_backoff_seconds(
+                    backoff_seconds,
+                    base=poll_seconds,
+                    cap=max_backoff_seconds,
+                )
+                continue
             except Exception:
                 _LOG.exception("stale_job_recovery_failed")
             next_recovery = now + recovery_every
@@ -104,6 +198,8 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
             result = process_one_us_lacey_job(worker_id=worker_id)
             _record_worker_success()
             if result.claimed:
+                backoff_seconds = poll_seconds
+                app.state.us_lacey_inline_worker_current_wait_seconds = poll_seconds
                 _LOG.info(
                     "job_processed job_id=%s job_status=%s document_status=%s "
                     "operation_status=%s projected=%s conflicts=%s",
@@ -115,16 +211,34 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
                     result.conflict_count,
                 )
                 continue
+        except (OperationalError, UsLaceyJobError):
+            _LOG.exception("inline_worker_database_iteration_failed")
+            if _wait_for_next_worker_attempt(stop_event, backoff_seconds):
+                break
+            backoff_seconds = _next_worker_backoff_seconds(
+                backoff_seconds,
+                base=poll_seconds,
+                cap=max_backoff_seconds,
+            )
+            continue
         except Exception:
             _LOG.exception("inline_worker_iteration_failed")
-            if stop_event.wait(min(5.0, max(1.0, poll_seconds * 2.0))):
+            short_wait = min(5.0, max(1.0, poll_seconds * 2.0))
+            app.state.us_lacey_inline_worker_current_wait_seconds = short_wait
+            if stop_event.wait(short_wait):
                 break
             continue
 
-        stop_event.wait(poll_seconds)
+        if _wait_for_next_worker_attempt(stop_event, backoff_seconds):
+            break
+        backoff_seconds = _next_worker_backoff_seconds(
+            backoff_seconds,
+            base=poll_seconds,
+            cap=max_backoff_seconds,
+        )
 
+    app.state.us_lacey_inline_worker_current_wait_seconds = poll_seconds
     _LOG.info("us_lacey_inline_worker_stopped worker_id=%s", worker_id)
-
 
 def _start_inline_worker() -> None:
     if not _bool_env("US_LACEY_INLINE_WORKER_ENABLED", default=False):
@@ -149,6 +263,9 @@ def _start_inline_worker() -> None:
     app.state.us_lacey_inline_worker_stop = stop_event
     app.state.us_lacey_inline_worker_thread = thread
     app.state.us_lacey_inline_worker_last_success_monotonic = 0.0
+    app.state.us_lacey_inline_worker_current_wait_seconds = _float_env(
+        "US_LACEY_WORKER_POLL_SECONDS", 2.0, minimum=0.25, maximum=30.0
+    )
     thread.start()
 
 
@@ -164,9 +281,22 @@ def _inline_worker_ready() -> bool:
     poll_seconds = _float_env(
         "US_LACEY_WORKER_POLL_SECONDS", 2.0, minimum=0.25, maximum=30.0
     )
-    maximum_heartbeat_age = max(15.0, poll_seconds * 4.0)
+    current_wait = float(
+        getattr(
+            app.state,
+            "us_lacey_inline_worker_current_wait_seconds",
+            poll_seconds,
+        )
+    )
+    # An idle queue is healthy even while deliberately sleeping. Database
+    # failures do not refresh last_success, so a sustained outage still turns
+    # readiness false once it exceeds the active backoff window.
+    maximum_heartbeat_age = max(
+        15.0,
+        poll_seconds * 4.0,
+        current_wait + max(5.0, poll_seconds * 2.0),
+    )
     return (time.monotonic() - last_success) <= maximum_heartbeat_age
-
 
 def _stop_inline_worker() -> None:
     stop_event = getattr(app.state, "us_lacey_inline_worker_stop", None)
@@ -185,6 +315,7 @@ _original_lifespan_context = app.router.lifespan_context
 
 @asynccontextmanager
 async def _free_lifespan(application):
+    _bootstrap_schema_if_requested()
     async with _original_lifespan_context(application) as state:
         _start_inline_worker()
         application.state.us_lacey_storage_roundtrip = probe_storage_roundtrip()
