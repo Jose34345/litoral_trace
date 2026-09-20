@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -214,6 +215,69 @@ def test_admin_reset_uses_reviewed_control_plane_with_same_session(monkeypatch):
 
     assert response.status_code == 303
     assert calls == [(SESSION, 14)]
+
+
+def test_sandbox_conversion_analytics_uses_inclusive_utc_day_bounds(monkeypatch):
+    monkeypatch.setattr(
+        admin_surface,
+        "resolve_us_lacey_session",
+        lambda token: _identity(),
+    )
+    monkeypatch.setattr(
+        admin_surface,
+        "_platform_admin_refresh_token",
+        lambda token: token,
+    )
+    calls = []
+
+    def list_cohorts(*, refresh_token, from_ts=None, to_ts=None):
+        calls.append((refresh_token, from_ts, to_ts))
+        return [
+            {
+                "cohort_day": datetime(2026, 9, 1, tzinfo=timezone.utc),
+                "sandboxes_created": 10,
+                "converted_to_commercial": 2,
+                "conversion_rate_pct": 20,
+            }
+        ]
+
+    monkeypatch.setattr(
+        admin_surface,
+        "list_sandbox_conversion_cohorts_superadmin",
+        list_cohorts,
+    )
+
+    client.cookies.set(US_LACEY_SESSION_COOKIE, SESSION)
+    try:
+        response = client.get(
+            "/admin/api/us-lacey/analytics/sandbox-conversion"
+            "?from_day=2026-09-01&to_day=2026-09-03"
+        )
+    finally:
+        client.cookies.delete(US_LACEY_SESSION_COOKIE)
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, max-age=0"
+    assert response.json()["cohorts"][0]["sandboxes_created"] == 10
+    assert calls == [
+        (
+            SESSION,
+            datetime(2026, 9, 1, tzinfo=timezone.utc),
+            datetime(2026, 9, 4, tzinfo=timezone.utc),
+        )
+    ]
+
+
+def test_sandbox_conversion_analytics_rejects_reverse_date_window():
+    response = client.get(
+        "/admin/api/us-lacey/analytics/sandbox-conversion"
+        "?from_day=2026-09-04&to_day=2026-09-03"
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "to_day must be greater than or equal to from_day"
+    )
 
 
 def test_admin_surface_does_not_create_synthetic_generic_sessions():
