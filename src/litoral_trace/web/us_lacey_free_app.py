@@ -237,6 +237,7 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
             cap=max_backoff_seconds,
         )
 
+    app.state.us_lacey_inline_worker_current_wait_seconds = poll_seconds
     _LOG.info("us_lacey_inline_worker_stopped worker_id=%s", worker_id)
 
 def _start_inline_worker() -> None:
