@@ -47,6 +47,14 @@
                 <button name="account_status" value="SUSPENDED" class="rounded bg-rose-100 px-2 py-1 font-bold text-rose-800">Suspend</button>
                 <button name="account_status" value="ACTIVE" class="rounded bg-emerald-100 px-2 py-1 font-bold text-emerald-800">Activate</button>
               </form>
+              <form method="post" action="/admin/accounts/{{ account.organization_id }}/impersonate" class="mt-2">
+                <input type="hidden" name="csrf_token" value="{{ impersonate_csrf[account.organization_id] }}">
+                <input type="hidden" name="reason" value="Routine support check">
+                <button type="submit" class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[11px] font-bold text-indigo-800 transition hover:bg-indigo-100" title="Open a 15-minute read-only support session">
+                  <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                  View Data
+                </button>
+              </form>
               {% if account.account_status == 'PILOT' %}
               <form method="post" action="/admin/us-lacey/accounts/{{ account.organization_id }}/reset-pilot" class="mt-2" onsubmit="return confirm('Reset only this PILOT account test data?');">
                 <input type="hidden" name="csrf_token" value="{{ reset_csrf[account.organization_id] }}">

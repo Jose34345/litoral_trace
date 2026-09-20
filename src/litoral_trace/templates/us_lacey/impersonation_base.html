@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "components/ui.html" import status_badge, empty_state %}
+
+{% block html_open %}<html lang="en" class="h-full bg-amber-50">{% endblock %}
+{% block title %}{% block impersonation_title %}Read-only Support View{% endblock %} | Litoral Trace{% endblock %}
+
+{% block shell %}
+<a href="#impersonation-main" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-20 focus:z-[90] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2">
+  Skip to support data
+</a>
+
+<div class="min-h-screen bg-amber-50/40 text-slate-900">
+  <header class="sticky top-0 z-[80] border-b border-amber-700 bg-amber-950 text-white shadow-lg" role="banner">
+    <div class="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+      <div class="flex items-start gap-3">
+        <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-amber-950" aria-hidden="true">
+          <i class="fa-solid fa-eye"></i>
+        </span>
+        <div>
+          <p class="font-extrabold tracking-wide">READ-ONLY SUPPORT VIEW</p>
+          <p class="mt-0.5 text-xs font-semibold text-amber-100">Modifying data is disabled by database policies.</p>
+          <p class="mt-1 text-[11px] text-amber-300">Tenant {{ target_organization_id }} · Session {{ impersonation_session_id }} · Maximum lifetime 15 minutes</p>
+        </div>
+      </div>
+
+      <form method="post" action="/admin/impersonation/end" class="shrink-0">
+        <input type="hidden" name="csrf_token" value="{{ impersonation_end_csrf }}">
+        <button type="submit" class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-extrabold text-amber-950 shadow-sm hover:bg-amber-50 md:w-auto">
+          <i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i>
+          End Session
+        </button>
+      </form>
+    </div>
+  </header>
+
+  <div class="border-b border-amber-200 bg-amber-100/70">
+    <nav class="mx-auto flex max-w-7xl items-center gap-4 px-4 py-2 text-xs font-bold text-amber-950 sm:px-6 lg:px-8" aria-label="Read-only support navigation">
+      <a href="/admin/impersonation/operations" class="hover:underline">
+        <i class="fa-solid fa-briefcase mr-1" aria-hidden="true"></i>
+        Operations
+      </a>
+      <span class="text-amber-400">•</span>
+      <span>Inspection-only tenant view</span>
+    </nav>
+  </div>
+
+  <main id="impersonation-main" class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8" tabindex="-1">
+    {% block impersonation_content %}{% endblock %}
+  </main>
+
+  <footer class="border-t border-amber-200 bg-white px-4 py-5 text-center text-xs text-slate-500">
+    Support access is tenant-scoped, audited, time-limited and database-enforced read-only.
+  </footer>
+</div>
+{% endblock %}
