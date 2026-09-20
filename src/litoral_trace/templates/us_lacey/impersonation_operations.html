@@ -18,15 +18,15 @@
 
     {% if operations %}
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[48rem] text-left text-sm">
+      <table class="w-full min-w-[42rem] text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           <tr><th class="p-3">Reference</th><th class="p-3">Status</th><th class="p-3">Documents</th><th class="p-3">Lines</th><th class="p-3">Review</th><th class="p-3">Created</th></tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
           {% for item in operations %}
-          <tr class="hover:bg-amber-50/50">
+          <tr class="hover:bg-slate-50">
             <td class="p-3">
-              <a href="/admin/impersonation/operations/{{ item.public_id }}" class="font-bold text-amber-800 hover:underline">{{ item.client_reference }}</a>
+              <a href="/admin/impersonation/operations/{{ item.public_id }}" class="font-bold text-amber-800 ">{{ item.client_reference }}</a>
               <div class="mt-1 font-mono text-[10px] text-slate-400">{{ item.public_id }}</div>
             </td>
             <td class="p-3">{{ status_badge(item.status|replace("_", " ")) }}</td>

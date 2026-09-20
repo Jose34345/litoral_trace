@@ -50,7 +50,7 @@
               <form method="post" action="/admin/accounts/{{ account.organization_id }}/impersonate" class="mt-2">
                 <input type="hidden" name="csrf_token" value="{{ impersonate_csrf[account.organization_id] }}">
                 <input type="hidden" name="reason" value="Routine support check">
-                <button type="submit" class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[11px] font-bold text-indigo-800 transition hover:bg-indigo-100" title="Open a 15-minute read-only support session">
+                <button type="submit" class="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-100 px-2.5 py-1.5 text-[11px] font-bold text-amber-800 transition hover:bg-slate-50" title="Open a 15-minute read-only support session">
                   <i class="fa-solid fa-eye" aria-hidden="true"></i>
                   View Data
                 </button>
