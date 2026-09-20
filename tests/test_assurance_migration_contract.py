@@ -17,6 +17,9 @@ US_LACEY_CONTROL_PLANE_AUDIT_BILLING_MIGRATION = Path(
 US_LACEY_READONLY_IMPERSONATION_MIGRATION = Path(
     "alembic/versions/055_us_lacey_readonly_impersonation.py"
 )
+US_LACEY_SANDBOX_GROWTH_MIGRATION = Path(
+    "alembic/versions/056_us_lacey_sandbox_growth_attribution.py"
+)
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -163,9 +166,33 @@ def test_us_lacey_readonly_impersonation_follows_control_plane_audit():
     assert "sa.ForeignKey" not in text
 
 
+def test_us_lacey_sandbox_growth_follows_readonly_impersonation():
+    text = US_LACEY_SANDBOX_GROWTH_MIGRATION.read_text(encoding="utf-8")
+
+    assert 'revision: str = "056_us_lacey_sandbox_growth_attribution"' in text
+    assert '"055_us_lacey_readonly_impersonation"' in text
+    for column in (
+        "created_as_sandbox",
+        "sandbox_started_at",
+        "sandbox_converted_at",
+    ):
+        assert column in text
+    assert "_us_lacey_apply_sandbox_provenance" in text
+    assert "ck_us_lacey_sandbox_purge_jobs_state" in text
+    assert "'CANCELED'" in text
+    assert "platform_admin_convert_sandbox_to_commercial" in text
+    assert "platform_admin_sandbox_conversion_cohorts" in text
+    assert "SANDBOX_CONVERTED" in text
+    assert "sandbox purge has already started" in text
+    assert "FOR UPDATE" in text
+    assert "DELETE FROM public.us_lacey_sandbox_purge_jobs" in text
+    assert "WHERE state = 'CANCELED'" in text
+    assert "sa.ForeignKey" not in text
+
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "055_us_lacey_readonly_impersonation (head)" in text
+    assert "056_us_lacey_sandbox_growth_attribution (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():
