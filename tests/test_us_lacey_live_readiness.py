@@ -155,6 +155,7 @@ def test_free_tier_worker_readiness_requires_fresh_successful_db_heartbeat(monke
     monkeypatch.setenv("US_LACEY_WORKER_POLL_SECONDS", "2")
     monkeypatch.setattr(us_lacey_free_app.time, "monotonic", lambda: 100.0)
     us_lacey_free_app.app.state.us_lacey_inline_worker_thread = _Thread()
+    us_lacey_free_app.app.state.us_lacey_inline_worker_current_wait_seconds = 2.0
 
     us_lacey_free_app.app.state.us_lacey_inline_worker_last_success_monotonic = 99.0
     assert us_lacey_free_app._inline_worker_ready() is True
