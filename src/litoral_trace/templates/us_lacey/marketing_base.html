@@ -12,9 +12,7 @@
     <header class="sticky top-0 z-50 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl">
         <div class="mx-auto flex min-h-[4.5rem] max-w-7xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
             <a href="/" class="flex shrink-0 items-center gap-3" aria-label="Litoral Trace U.S. Lacey home">
-                <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm shadow-emerald-900/20" aria-hidden="true">
-                    <i class="fa-solid fa-tree"></i>
-                </span>
+                <img src="{{ url_for('static', path='/img/logo.svg') }}" alt="" class="h-8 w-8 shrink-0" width="32" height="32">
                 <span class="min-w-0">
                     <span class="block text-base font-bold tracking-tight text-slate-950">Litoral Trace</span>
                     <span class="block text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">U.S. Lacey Act document preparation</span>
@@ -40,7 +38,7 @@
         <div class="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-2 lg:px-8">
             <div>
                 <div class="flex items-center gap-3">
-                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white" aria-hidden="true"><i class="fa-solid fa-tree"></i></span>
+                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm" aria-hidden="true"><img src="{{ url_for('static', path='/img/logo.svg') }}" alt="" class="h-8 w-8 shrink-0" width="32" height="32"></span>
                     <div>
                         <p class="font-bold text-white">Litoral Trace</p>
                         <p class="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-400">U.S. Lacey Act workspace</p>
