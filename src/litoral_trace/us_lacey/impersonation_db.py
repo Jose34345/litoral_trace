@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.engine import Connection
 
+from litoral_trace.config.settings import normalize_database_url
 from litoral_trace.services.admin import (
     _map_platform_db_error,
     _require_platform_refresh_token_hash,
@@ -45,12 +46,25 @@ def reset_impersonation_engine_state() -> None:
 
 
 def get_impersonation_database_url() -> str:
-    value = str(os.environ.get("US_LACEY_IMPERSONATION_DATABASE_URL", "")).strip()
-    if not value:
+    raw_value = str(
+        os.environ.get("US_LACEY_IMPERSONATION_DATABASE_URL", "")
+    ).strip()
+
+    if not raw_value:
         raise RuntimeError(
-            "US_LACEY_IMPERSONATION_DATABASE_URL is required for read-only impersonation."
+            "US_LACEY_IMPERSONATION_DATABASE_URL is required for "
+            "read-only impersonation."
         )
-    return value
+
+    database_url = normalize_database_url(raw_value)
+
+    if not database_url.startswith("postgresql+psycopg://"):
+        raise RuntimeError(
+            "US_LACEY_IMPERSONATION_DATABASE_URL must be an explicit "
+            "PostgreSQL URL using the psycopg driver."
+        )
+
+    return database_url
 
 
 def get_impersonation_engine() -> Any:
