@@ -82,6 +82,59 @@ def test_impersonation_engine_has_no_primary_database_fallback(monkeypatch) -> N
         impersonation_db.get_impersonation_engine()
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (
+            "postgresql://reader:secret@db.example/neondb",
+            "postgresql+psycopg://reader:secret@db.example/neondb",
+        ),
+        (
+            "postgres://reader:secret@db.example/neondb",
+            "postgresql+psycopg://reader:secret@db.example/neondb",
+        ),
+        (
+            "postgresql+psycopg://reader:secret@db.example/neondb",
+            "postgresql+psycopg://reader:secret@db.example/neondb",
+        ),
+    ],
+)
+def test_impersonation_database_url_uses_psycopg_v3(
+    monkeypatch,
+    raw: str,
+    expected: str,
+) -> None:
+    monkeypatch.setenv("US_LACEY_IMPERSONATION_DATABASE_URL", raw)
+
+    assert impersonation_db.get_impersonation_database_url() == expected
+
+
+def test_impersonation_engine_uses_psycopg_v3(monkeypatch) -> None:
+    impersonation_db.reset_impersonation_engine_state()
+    monkeypatch.setenv(
+        "US_LACEY_IMPERSONATION_DATABASE_URL",
+        "postgresql://reader:secret@db.example/neondb",
+    )
+
+    engine = impersonation_db.get_impersonation_engine()
+    try:
+        assert engine.url.drivername == "postgresql+psycopg"
+    finally:
+        impersonation_db.reset_impersonation_engine_state()
+
+
+def test_impersonation_database_url_rejects_non_postgresql_dialect(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        "US_LACEY_IMPERSONATION_DATABASE_URL",
+        "sqlite:///unsafe.db",
+    )
+
+    with pytest.raises(RuntimeError, match="must be an explicit PostgreSQL URL"):
+        impersonation_db.get_impersonation_database_url()
+
+
 def test_context_rejects_mutating_http_method_before_database_access() -> None:
     with pytest.raises(HTTPException) as exc:
         impersonation_db.resolve_readonly_impersonation_context(
