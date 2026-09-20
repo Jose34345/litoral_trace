@@ -204,6 +204,11 @@ def upgrade() -> None:
         "FROM litoral_trace_worker_executor"
     )
     op.execute(
+        "GRANT EXECUTE ON FUNCTION "
+        "public._us_lacey_apply_sandbox_provenance() "
+        "TO litoral_trace_platform_definer"
+    )
+    op.execute(
         """
         CREATE TRIGGER trg_us_lacey_sandbox_provenance
         BEFORE INSERT OR UPDATE OF
