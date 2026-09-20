@@ -108,7 +108,7 @@ def test_056_provenance_conversion_cohort_and_worker_race() -> None:
     )
 
     suffix = uuid4().hex[:10]
-    actor_token_hash = "d" * 64
+    actor_token_hash = uuid4().hex + uuid4().hex
 
     try:
         with audit.begin() as connection:
