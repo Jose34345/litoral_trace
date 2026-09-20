@@ -45,6 +45,35 @@ def test_runtime_can_provision_sandbox_only_through_definer_and_rls_stays_tenant
     assert resolved.organization_id == created.organization_id
     assert resolved.account_status == "PILOT"
 
+    migrator = _engine(os.environ["TEST_POSTGRES_MIGRATION_DATABASE_URL"])
+    try:
+        with migrator.begin() as connection:
+            connection.execute(
+                text(
+                    "SELECT set_config("
+                    "'app.current_organization_id', :org_id, true)"
+                ),
+                {"org_id": str(created.organization_id)},
+            )
+            provenance = connection.execute(
+                text(
+                    """
+                    SELECT
+                        created_as_sandbox,
+                        sandbox_started_at,
+                        sandbox_converted_at
+                    FROM public.organizations
+                    WHERE id = :organization_id
+                    """
+                ),
+                {"organization_id": created.organization_id},
+            ).mappings().one()
+        assert provenance["created_as_sandbox"] is True
+        assert provenance["sandbox_started_at"] is not None
+        assert provenance["sandbox_converted_at"] is None
+    finally:
+        migrator.dispose()
+
     runtime = _engine(os.environ["US_LACEY_DATABASE_URL"])
     try:
         # The runtime principal deliberately cannot inspect organizations

@@ -31,6 +31,19 @@ class Organization(Base, TimestampMixin):
         DateTime(timezone=True),
         nullable=True,
     )
+    created_as_sandbox: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    sandbox_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    sandbox_converted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     # Relaciones
     users: Mapped[list[User]] = relationship("User", back_populates="organization", cascade="all, delete-orphan")
