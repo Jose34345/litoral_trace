@@ -13,6 +13,8 @@ def test_admin_runtime_authorization_stays_inside_security_definer_capabilities(
     assert "platform_us_lacey_account_overview" in source
     assert "platform_admin_users" in source
     assert "platform_admin_failed_jobs" in source
+    assert "platform_admin_sandbox_conversion_cohorts" in source
+    assert "platform_admin_convert_sandbox_to_commercial" in source
 
     # The production U.S. runtime role intentionally has no direct SELECT on
     # protected identity tables. Authorization must therefore be enforced by
