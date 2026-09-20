@@ -14,9 +14,10 @@ is introduced.
 from __future__ import annotations
 
 import secrets
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Cookie, Form, HTTPException, Request, status
+from fastapi import APIRouter, Cookie, Form, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
@@ -268,6 +269,43 @@ def end_readonly_impersonation_superadmin(
     )
 
 
+def list_sandbox_conversion_cohorts_superadmin(
+    *,
+    refresh_token: str,
+    from_ts: datetime | None = None,
+    to_ts: datetime | None = None,
+) -> list[dict[str, Any]]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM "
+            "public.platform_admin_sandbox_conversion_cohorts("
+            ":actor_refresh_token_hash, :from_ts, :to_ts)"
+        ),
+        values={
+            "from_ts": from_ts,
+            "to_ts": to_ts,
+        },
+    )
+
+
+def convert_sandbox_to_commercial_superadmin(
+    *,
+    refresh_token: str,
+    organization_id: int,
+) -> dict[str, Any]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM "
+            "public.platform_admin_convert_sandbox_to_commercial("
+            ":actor_refresh_token_hash, :organization_id)"
+        ),
+        values={"organization_id": organization_id},
+        commit=True,
+    )[0]
+
+
 def _require_us_session(us_session: str | None) -> str:
     if not us_session:
         raise UsLaceyPortalAuthError("Sign in to continue.", code="session_invalid")
@@ -345,6 +383,59 @@ def _admin_context(*, request: Request, us_session: str, notice: str | None = No
             purpose="platform-admin-impersonation-end",
         ),
     }
+
+
+@router.get("/admin/api/us-lacey/analytics/sandbox-conversion")
+def platform_admin_sandbox_conversion_analytics(
+    response: Response,
+    from_day: date | None = Query(default=None),
+    to_day: date | None = Query(default=None),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    if from_day is not None and to_day is not None and to_day < from_day:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="to_day must be greater than or equal to from_day",
+        )
+
+    if to_day == date.max:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="to_day is outside the supported range",
+        )
+
+    try:
+        session_token = _require_us_session(us_session)
+        refresh_token = _platform_admin_refresh_token(session_token)
+    except UsLaceyPortalAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+        ) from exc
+
+    from_ts = (
+        datetime.combine(from_day, time.min, tzinfo=timezone.utc)
+        if from_day is not None
+        else None
+    )
+    to_ts = (
+        datetime.combine(
+            to_day + timedelta(days=1),
+            time.min,
+            tzinfo=timezone.utc,
+        )
+        if to_day is not None
+        else None
+    )
+
+    cohorts = list_sandbox_conversion_cohorts_superadmin(
+        refresh_token=refresh_token,
+        from_ts=from_ts,
+        to_ts=to_ts,
+    )
+
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return {"cohorts": cohorts}
 
 
 @router.get("/admin", response_class=HTMLResponse)
