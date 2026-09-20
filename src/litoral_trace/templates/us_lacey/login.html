@@ -2,5 +2,51 @@
 {% block lacey_content %}
 {{ page_header("Sign in to your U.S. Lacey workspace", "Private beta", "Verified accounts can access their company billing status.", icon="fa-lock") }}
 {% if verified %}{{ alert("Email verified", "Sign in to continue to billing.", "positive") }}{% elif error %}{{ alert("Sign in unavailable", error, "danger") }}{% endif %}
-<section class="lt-card mx-auto w-full max-w-xl p-6 sm:p-8"><form method="post" action="/login" class="lt-form space-y-5"><label class="lt-field"><span class="lt-field__label">Business email</span><input id="email" class="lt-control" name="email" type="email" required maxlength="255" autocomplete="username"></label><label class="lt-field"><span class="lt-field__label">Password</span><input id="password" class="lt-control" name="password" type="password" required autocomplete="current-password"></label><div class="lt-form__actions">{{ button("Sign in", variant="primary", icon="fa-right-to-bracket", button_type="submit") }}{{ button("Create an account", "/signup", "secondary") }}</div></form></section>
+<section class="lt-card mx-auto w-full max-w-md p-6 sm:p-8">
+  <form method="post" action="/login" class="lt-form space-y-5">
+    <label class="lt-field">
+      <span class="lt-field__label">Business email</span>
+      <input id="email" class="lt-control focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:ring-offset-1" name="email" type="email" required maxlength="255" autocomplete="username">
+    </label>
+
+    <div class="lt-field">
+      <div class="flex items-center justify-between gap-3">
+        <label for="password" class="lt-field__label">Password</label>
+        <a href="#" class="text-xs font-semibold text-emerald-700 transition hover:text-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:ring-offset-2">Forgot password?</a>
+      </div>
+      <div class="relative">
+        <input id="password" class="lt-control pr-12 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:ring-offset-1" name="password" type="password" required autocomplete="current-password">
+        <button id="password-toggle" type="button" class="absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-lg text-slate-500 transition hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-emerald-600" aria-label="Show password" aria-pressed="false">
+          <i id="password-toggle-icon" class="fa-solid fa-eye" aria-hidden="true"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="space-y-4">
+      {{ button("Sign in", variant="primary", icon="fa-right-to-bracket", button_type="submit", extra_classes="w-full justify-center") }}
+      <p class="text-center text-sm text-slate-600">Don't have an account? <a href="/signup" class="font-semibold text-emerald-700 transition hover:text-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:ring-offset-2">Sign up</a></p>
+    </div>
+  </form>
+</section>
+{% endblock %}
+
+{% block body_scripts %}
+<script>
+(() => {
+  const password = document.getElementById("password");
+  const toggle = document.getElementById("password-toggle");
+  const icon = document.getElementById("password-toggle-icon");
+  if (!password || !toggle || !icon) return;
+
+  toggle.addEventListener("click", () => {
+    const showing = password.type === "text";
+    password.type = showing ? "password" : "text";
+    toggle.setAttribute("aria-pressed", String(!showing));
+    toggle.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    icon.classList.toggle("fa-eye", showing);
+    icon.classList.toggle("fa-eye-slash", !showing);
+    password.focus();
+  });
+})();
+</script>
 {% endblock %}
