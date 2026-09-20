@@ -1,0 +1,112 @@
+{% extends "us_lacey/impersonation_base.html" %}
+
+{% block impersonation_title %}Support Operation Detail{% endblock %}
+
+{% block impersonation_content %}
+<section class="space-y-6">
+  <div>
+    <a href="/admin/impersonation/operations" class="text-sm font-bold text-amber-800 ">← Back to operations</a>
+    <h1 class="mt-3 text-2xl font-bold tracking-tight text-slate-950">{{ operation.client_reference }}</h1>
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+      {{ status_badge(operation.status|replace("_", " ")) }}
+      <span class="text-xs text-slate-500">{{ operation.public_id }}</span>
+    </div>
+  </div>
+
+  <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-lg font-bold text-slate-950">Shipment</h2>
+    <dl class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {% for label, value in [
+        ("Importer", operation.importer_name),
+        ("Consignee", operation.consignee_name),
+        ("Broker", operation.broker_name),
+        ("Supplier", operation.supplier_name),
+        ("Operation date", operation.operation_date),
+        ("Review result", operation.review_result)
+      ] %}
+      <div>
+        <dt class="text-xs font-bold uppercase tracking-wide text-slate-500">{{ label }}</dt>
+        <dd class="mt-1 text-sm font-semibold text-slate-900">{{ value or "—" }}</dd>
+      </div>
+      {% endfor %}
+    </dl>
+  </article>
+
+  <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="text-lg font-bold text-slate-950">Documents</h2>
+        <p class="mt-1 text-xs text-slate-500">Safe document metadata only. Private storage credentials and object locations are outside this support boundary.</p>
+      </div>
+      <span class="text-sm font-bold text-slate-600">{{ documents|length }}</span>
+    </div>
+
+    <div class="mt-4 divide-y divide-slate-100">
+      {% for doc in documents %}
+      <div class="py-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="font-bold text-slate-900">{{ doc.original_filename }}</p>
+          <span class="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-700">{{ doc.document_role|replace("_", " ") }}</span>
+        </div>
+        <p class="mt-1 text-xs text-slate-500">{{ doc.content_type or "unknown type" }} · {{ doc.size_bytes or 0 }} bytes · v{{ doc.version_number }} · {{ doc.processing_status or doc.vault_status }}</p>
+        {% if doc.sha256 %}<p class="mt-1 break-all font-mono text-[10px] text-slate-400">SHA-256 {{ doc.sha256 }}</p>{% endif %}
+      </div>
+      {% else %}
+      <p class="py-4 text-sm text-slate-500">No documents attached.</p>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-lg font-bold text-slate-950">Plant declarations</h2>
+    {% if declarations %}
+    <div class="mt-4 overflow-x-auto">
+      <table class="w-full min-w-[42rem] text-left text-sm">
+        <thead class="border-b border-slate-200 text-xs uppercase text-slate-500">
+          <tr><th class="p-3">Line</th><th class="p-3">Genus</th><th class="p-3">Species</th><th class="p-3">Harvest country</th><th class="p-3">Quantity</th><th class="p-3">Confidence</th></tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for line in declarations %}
+          <tr>
+            <td class="p-3 font-bold">{{ line.line_reference }}</td>
+            <td class="p-3">{{ line.genus or "—" }}</td>
+            <td class="p-3">{{ line.species or "—" }}</td>
+            <td class="p-3">{{ line.country_of_harvest or "—" }}</td>
+            <td class="p-3">{{ line.quantity or "—" }} {{ line.unit or "" }}</td>
+            <td class="p-3">{{ "%.0f"|format((line.confidence or 0) * 100) }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="mt-4 text-sm text-slate-500">No plant declarations available.</p>
+    {% endif %}
+  </article>
+
+  <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-lg font-bold text-slate-950">Declaration fields</h2>
+    <div class="mt-4 overflow-x-auto">
+      <table class="w-full min-w-[53rem] text-left text-sm">
+        <thead class="border-b border-slate-200 text-xs uppercase text-slate-500">
+          <tr><th class="p-3">Line</th><th class="p-3">Field</th><th class="p-3">Value</th><th class="p-3">State</th><th class="p-3">Validation</th><th class="p-3">Confidence</th></tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for field in fields %}
+          <tr>
+            <td class="p-3 font-semibold">{{ field.merchandise_line_reference }}</td>
+            <td class="p-3">{{ field.field_name|replace("_", " ")|title }}</td>
+            <td class="p-3">{{ field.human_value or field.normalized_value or field.original_value or "—" }}</td>
+            <td class="p-3 font-semibold">{{ field.field_status }}</td>
+            <td class="p-3">{{ field.validation_status or "—" }}</td>
+            <td class="p-3">{{ "%.0f"|format((field.confidence or 0) * 100) }}%</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="p-6 text-center text-slate-500">No declaration fields available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+{% endblock %}

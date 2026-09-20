@@ -42,15 +42,39 @@ def test_us_lacey_templates_use_shared_design_system_with_isolated_english_shell
     assert "Trazabilidad de origen" not in marketing_base
     assert "Debida diligencia" not in marketing_base
 
+    impersonation_base = (TEMPLATES / "impersonation_base.html").read_text(
+        encoding="utf-8"
+    )
+    assert '{% extends "base.html" %}' in impersonation_base
+    assert '{% from "components/ui.html" import' in impersonation_base
+    assert 'lang="en"' in impersonation_base
+    assert "READ-ONLY SUPPORT VIEW" in impersonation_base
+    assert "Modifying data is disabled by database policies." in impersonation_base
+    assert "<style" not in impersonation_base
+    assert "style=" not in impersonation_base
+
+    for name in (
+        "impersonation_operations.html",
+        "impersonation_operation_detail.html",
+    ):
+        support_source = (TEMPLATES / name).read_text(encoding="utf-8")
+        assert '{% extends "us_lacey/impersonation_base.html" %}' in support_source
+
     for path in TEMPLATES.glob("*.html"):
-        if path.name in {"base.html", "marketing_base.html"}:
+        if path.name in {
+            "base.html",
+            "marketing_base.html",
+            "impersonation_base.html",
+            "impersonation_operations.html",
+            "impersonation_operation_detail.html",
+        }:
             continue
         source = path.read_text(encoding="utf-8")
         if path.name == "sandbox_start.html":
             # The public zero-touch entry intentionally uses an isolated,
             # script-free shell while still consuming the canonical Tailwind
-            # build. This is the only U.S. Lacey template allowed to bypass the
-            # authenticated portal chrome.
+            # build. The support shell above is the only authenticated visual
+            # exception, and it still inherits the shared root design system.
             assert "url_for('static'" in source
             assert "path='/dist/app.css'" in source
             assert "<style" not in source

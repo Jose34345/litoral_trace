@@ -637,7 +637,7 @@ def platform_admin_start_impersonation(
         )
 
         response = RedirectResponse(
-            "/admin?notice=Read-only%20impersonation%20started",
+            "/admin/impersonation/operations",
             status_code=status.HTTP_303_SEE_OTHER,
         )
         response.set_cookie(
