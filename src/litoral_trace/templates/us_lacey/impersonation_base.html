@@ -3,6 +3,7 @@
 
 {% block html_open %}<html lang="en" class="h-full bg-amber-50">{% endblock %}
 {% block title %}{% block impersonation_title %}Read-only Support View{% endblock %} | Litoral Trace{% endblock %}
+{% block brand_meta %}{{ super() }}{% endblock %}
 
 {% block shell %}
 <a href="#impersonation-main" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2">
