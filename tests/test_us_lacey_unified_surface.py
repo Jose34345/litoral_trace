@@ -24,9 +24,11 @@ def test_anonymous_root_is_professional_us_lacey_landing():
     assert "Stop manually preparing Lacey spreadsheets." in html
     assert 'href="/signup"' in html
     assert 'href="/login"' in html
-    assert 'href="/demo"' in html
-    assert "USD 199 Early Access" in html
-    assert "Up to 25 operations" in html
+    assert 'href="/sandbox/start"' in html
+    assert "Launch Zero-Touch Sandbox" in html
+    assert "USD 99/month for up to 100 operations" in html
+    assert "USD 199" not in html
+    assert "25 operations" not in html
     assert "Human review required" in html
     assert "Phase VII" not in html
 
