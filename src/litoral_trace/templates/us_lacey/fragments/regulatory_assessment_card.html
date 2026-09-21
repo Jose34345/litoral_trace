@@ -1,3 +1,15 @@
+{% if regulatory_review_pending | default(false) %}
+<section class="lt-card mt-6 p-6" data-regulatory-assessment-pending aria-labelledby="regulatory-assessment-title">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h2 id="regulatory-assessment-title" class="text-lg font-bold text-slate-950">Regulatory checks</h2>
+      <p class="mt-1 text-sm text-slate-600">Litoral Trace has prepared the rule engine, but rule-level results are hidden until the extracted declaration facts are confirmed. This avoids showing technical FAIL or INDETERMINATE states caused only by unreviewed inputs.</p>
+    </div>
+    <span class="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">Pending reviewed inputs</span>
+  </div>
+  <p class="mt-4 text-sm font-semibold text-slate-800">First confirm the supported suggestions and resolve the small exception list below. Regulatory checks will then be shown against the reviewed shipment facts.</p>
+</section>
+{% else %}
 <section class="lt-card mt-6 p-6" data-regulatory-assessment-status="{{ regulatory_assessment.status }}" aria-labelledby="regulatory-assessment-title">
   {% set assessments = regulatory_assessment.payload.get('assessments', []) %}
   {% set failed = assessments|selectattr('status', 'equalto', 'FAIL')|list %}
@@ -58,3 +70,4 @@
   {% if not assessments %}<p class="mt-5 text-sm text-slate-700">No regulatory alerts triggered for this shipment based on the provided documents.</p>{% endif %}
   <p class="mt-4 text-xs text-slate-500">PASS, FAIL and INDETERMINATE apply only to the individual rule shown. They do not represent an overall shipment status.</p>
 </section>
+{% endif %}
