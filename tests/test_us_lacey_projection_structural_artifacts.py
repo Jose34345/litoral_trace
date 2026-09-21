@@ -6,6 +6,7 @@ from litoral_trace.us_lacey.projection import (
     _fold,
     _is_candidate_admissible,
     _is_structural_artifact,
+    _is_supported_explicit_suggestion,
     _line_reference,
     _target_field,
 )
@@ -180,3 +181,56 @@ def test_bom_component_header_is_not_a_ppq_article_component():
     )
 
     assert _target_field(row, table_headers=bom_headers) == (None, 0)
+
+
+def test_generic_pdf_line_item_description_is_not_shipment_description_when_table_is_allocated():
+    row = SimpleNamespace(
+        field_name="product",
+        original_value="Sawn eucalyptus boards, kiln-dried",
+        normalized_value=None,
+        source_locator="pdf:page:1;table:2;header_row:1;data_row:1;column:3;header:Description of Merchandise",
+    )
+    headers = {
+        2: frozenset({"line", "hts number", "description", "entered value"}),
+    }
+
+    assert _target_field(row, table_headers=headers) == (None, 0)
+
+
+def test_generic_bom_material_cannot_become_shipment_merchandise_description():
+    row = SimpleNamespace(
+        field_name="product",
+        original_value="Eucalyptus grandis",
+        normalized_value=None,
+        source_locator="sheet:BOM;header_row:1;data_row:1;column:4;header:Material",
+    )
+
+    assert _target_field(row, table_headers={}) == (None, 0)
+
+
+def test_exact_high_confidence_ppq_raw_cell_is_supported_even_with_parser_review_flag():
+    source = SimpleNamespace(
+        field_name="raw.table.2.HTS Number",
+        confidence=0.98,
+        needs_review=True,
+    )
+
+    assert _is_supported_explicit_suggestion(
+        source=source,
+        source_priority=3,
+        validation_status="VALID",
+    ) is True
+
+
+def test_generic_or_low_confidence_review_evidence_stays_out_of_supported_bucket():
+    generic = SimpleNamespace(field_name="product", confidence=0.98, needs_review=True)
+    low = SimpleNamespace(
+        field_name="raw.table.1.HTS Number", confidence=0.89, needs_review=True
+    )
+
+    assert _is_supported_explicit_suggestion(
+        source=generic, source_priority=2, validation_status="VALID"
+    ) is False
+    assert _is_supported_explicit_suggestion(
+        source=low, source_priority=3, validation_status="VALID"
+    ) is False
