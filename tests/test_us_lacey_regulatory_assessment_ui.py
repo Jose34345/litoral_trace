@@ -130,3 +130,36 @@ def test_direct_operation_detail_renders_same_noncanonical_regulatory_panel(monk
     assert "<strong>2</strong> assessments" in html
     assert "does not replace the final compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
+
+
+def test_regulatory_details_are_hidden_while_review_inputs_are_unconfirmed(monkeypatch):
+    pending_field = SimpleNamespace(
+        id=1,
+        line_reference="1",
+        field_name="hts_code",
+        status="FOUND",
+        validation_status="VALID",
+        proposed_value="4407990190",
+        effective_value="4407990190",
+        candidates=(),
+    )
+    detail = _detail()
+    detail.fields = (pending_field,)
+    monkeypatch.setattr(operational_views, "_semantic_evidence_for_detail", lambda *_: {})
+    monkeypatch.setattr(operational_views, "_product_intelligence_for_detail", lambda *_args, **_kwargs: None)
+
+    html = operational_views.render_operation_detail(
+        request=_request(query_string=b""),
+        identity=SimpleNamespace(organization_id=7),
+        detail=detail,
+        engine2_dossier=_engine2(),
+        product_intelligence=None,
+        regulatory_assessment=_view(),
+        upload_csrf="upload",
+        complete_csrf="complete",
+        review_csrf={},
+    )
+
+    assert "Pending reviewed inputs" in html
+    assert "rule-level results are hidden" in html
+    assert "MISSING_REQUIRED_INPUTS" not in html
