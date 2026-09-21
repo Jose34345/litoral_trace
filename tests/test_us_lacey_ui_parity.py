@@ -90,12 +90,21 @@ def test_us_lacey_templates_use_shared_design_system_with_isolated_english_shell
         assert '{% extends "public/base_public.html" %}' not in source
 
 
-def test_us_lacey_operation_date_keeps_native_iso_control_with_us_guidance() -> None:
+def test_us_lacey_new_operation_is_document_first_zero_data_entry() -> None:
     source = (TEMPLATES / "new_operation.html").read_text(encoding="utf-8")
-    assert 'name="operation_date" type="date"' in source
-    assert 'lang="en-US"' in source
-    assert "U.S. reference format: MM/DD/YYYY" in source
-    assert "Your browser may display the date using your device locale." in source
+    assert 'name="client_reference"' in source
+    assert "Create workspace & upload documents" in source
+    assert "Founding Broker" in source
+    assert "Leave this blank and Litoral Trace will create an internal reference automatically." in source
+    for removed_field in (
+        "importer_name",
+        "supplier_name",
+        "consignee_name",
+        "broker_name",
+        "operation_date",
+        "line_references",
+    ):
+        assert f'name="{removed_field}"' not in source
 
 
 def test_us_lacey_has_no_parallel_stylesheet_or_hardcoded_palette() -> None:
