@@ -183,85 +183,7 @@ def upgrade() -> None:
             resolved_organization_id integer;
         BEGIN
             IF requested_token_hash IS NULL
-               OR requested_token_hash !~ '^[0-9a-f]{64}
-            SET learning_opt_in = coalesce(requested_learning_opt_in, false),
-                updated_at = now()
-            WHERE job.organization_id = requested_organization_id
-              AND job.state = 'PENDING';
-            GET DIAGNOSTICS updated_jobs = ROW_COUNT;
-            IF updated_jobs <> 1 THEN
-                RAISE EXCEPTION 'sandbox purge job is unavailable'
-                    USING ERRCODE = '55000';
-            END IF;
-            RETURN true;
-        END;
-        $$;
-        """
-    )
-    op.execute(f"REVOKE ALL ON FUNCTION {CONSENT_FUNCTION} FROM PUBLIC")
-    op.execute(f"REVOKE ALL ON FUNCTION {CONSENT_FUNCTION} FROM {WORKER_ROLE}")
-    op.execute(f"GRANT EXECUTE ON FUNCTION {CONSENT_FUNCTION} TO {RUNTIME_ROLE}")
-
-    op.execute(
-        """
-        CREATE FUNCTION public.platform_admin_learning_plane_metrics(actor_refresh_token_hash text)
-        RETURNS TABLE(
-            telemetry_run_count bigint,
-            sandbox_run_count bigint,
-            global_hcr numeric,
-            sandbox_avg_processing_ms numeric
-        )
-        LANGUAGE plpgsql
-        SECURITY DEFINER
-        SET search_path = public, pg_temp
-        AS $$
-        BEGIN
-            PERFORM 1 FROM public._platform_superadmin_session_actor(actor_refresh_token_hash);
-            RETURN QUERY
-            SELECT
-                count(*)::bigint,
-                count(*) FILTER (WHERE telemetry.origin = 'SANDBOX')::bigint,
-                round(
-                    sum(telemetry.corrected_field_count)::numeric
-                    / NULLIF(sum(telemetry.reviewed_field_count), 0),
-                    5
-                ),
-                round(
-                    avg(telemetry.processing_total_ms::numeric)
-                    FILTER (
-                        WHERE telemetry.origin = 'SANDBOX'
-                          AND telemetry.processing_total_ms IS NOT NULL
-                    ),
-                    2
-                )
-            FROM public.us_lacey_telemetry_runs AS telemetry;
-        END;
-        $$;
-        """
-    )
-    op.execute(f"REVOKE ALL ON FUNCTION {ADMIN_METRICS_FUNCTION} FROM PUBLIC")
-    op.execute(f"REVOKE ALL ON FUNCTION {ADMIN_METRICS_FUNCTION} FROM {WORKER_ROLE}")
-    op.execute(f"GRANT EXECUTE ON FUNCTION {ADMIN_METRICS_FUNCTION} TO {RUNTIME_ROLE}")
-
-
-def downgrade() -> None:
-    op.execute(f"REVOKE EXECUTE ON FUNCTION {ADMIN_METRICS_FUNCTION} FROM {RUNTIME_ROLE}")
-    op.execute(f"DROP FUNCTION IF EXISTS {ADMIN_METRICS_FUNCTION}")
-    op.execute(f"REVOKE EXECUTE ON FUNCTION {CONSENT_FUNCTION} FROM {RUNTIME_ROLE}")
-    op.execute(f"DROP FUNCTION IF EXISTS {CONSENT_FUNCTION}")
-    op.execute(
-        "DROP TRIGGER IF EXISTS trg_enforce_privacy_opt_in "
-        "ON public.us_lacey_telemetry_field_actions"
-    )
-    op.execute(f"DROP FUNCTION IF EXISTS {PRIVACY_TRIGGER_FUNCTION}")
-    op.drop_index("ix_us_lacey_telemetry_field_name_action", table_name="us_lacey_telemetry_field_actions")
-    op.drop_index("ix_us_lacey_telemetry_field_document_action", table_name="us_lacey_telemetry_field_actions")
-    op.drop_index("ix_us_lacey_telemetry_field_run", table_name="us_lacey_telemetry_field_actions")
-    op.drop_table("us_lacey_telemetry_field_actions")
-    op.drop_index("ix_us_lacey_telemetry_runs_origin_created", table_name="us_lacey_telemetry_runs")
-    op.drop_table("us_lacey_telemetry_runs")
-    op.drop_column("us_lacey_sandbox_purge_jobs", "learning_opt_in")
-
+               OR requested_token_hash !~ '^[0-9a-f]{64}$'
                OR requested_organization_id IS NULL
                OR requested_organization_id <= 0 THEN
                 RAISE EXCEPTION 'invalid sandbox learning consent request'
@@ -281,15 +203,21 @@ def downgrade() -> None:
             END IF;
 
             UPDATE public.us_lacey_sandbox_purge_jobs AS job
-            SET learning_opt_in = coalesce(requested_learning_opt_in, false),
+            SET
+                learning_opt_in = coalesce(
+                    requested_learning_opt_in,
+                    false
+                ),
                 updated_at = now()
             WHERE job.organization_id = requested_organization_id
               AND job.state = 'PENDING';
+
             GET DIAGNOSTICS updated_jobs = ROW_COUNT;
             IF updated_jobs <> 1 THEN
                 RAISE EXCEPTION 'sandbox purge job is unavailable'
                     USING ERRCODE = '55000';
             END IF;
+
             RETURN true;
         END;
         $$;
