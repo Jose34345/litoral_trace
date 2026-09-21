@@ -67,19 +67,19 @@ def _plant_headers() -> dict[int, frozenset[str]]:
     }
 
 
-def test_explicit_plant_rows_require_botanical_table_signature():
+def test_explicit_plant_rows_keep_non_bom_supplier_line_identity():
     sources = [
         _source(header="Entered Value", value="18600", row=2),
         _source(header="Article Component", value="Solid rubberwood coasters", row=1),
     ]
 
-    non_botanical_headers = {
+    supplier_headers = {
         1: frozenset({"entered value", "article component"})
     }
     assert _explicit_plant_data_rows(
         sources,
-        table_headers=non_botanical_headers,
-    ) == ()
+        table_headers=supplier_headers,
+    ) == (1,)
 
 
 def test_projection_materializes_second_explicit_plant_component_before_mapping():
