@@ -795,9 +795,11 @@ def process_one_us_lacey_job(
                     )
 
                 canonical_ready = bool(
-                    engine2_result is not None
-                    and engine2_result.status == "SUCCEEDED"
-                    and engine2_result.shipment_run_id is not None
+                    engine2_result is None
+                    or (
+                        engine2_result.status == "SUCCEEDED"
+                        and engine2_result.shipment_run_id is not None
+                    )
                 )
                 if canonical_ready:
                     with _timed_worker_stage(
