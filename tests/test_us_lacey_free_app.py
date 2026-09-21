@@ -85,7 +85,7 @@ def test_schema_bootstrap_migrates_and_binds_dedicated_logins(monkeypatch) -> No
     assert any("litoral_trace_impersonation_reader" in item for item in statements)
 
 
-def test_worker_backoff_doubles_when_queue_is_idle(monkeypatch) -> None:
+def test_worker_keeps_interactive_poll_cadence_when_queue_is_idle(monkeypatch) -> None:
     waits: list[float] = []
 
     class _StopEvent:
@@ -112,7 +112,7 @@ def test_worker_backoff_doubles_when_queue_is_idle(monkeypatch) -> None:
 
     free_app._inline_worker_loop(_StopEvent())
 
-    assert waits == [2.0, 4.0, 8.0, 16.0]
+    assert waits == [2.0, 2.0, 2.0, 2.0]
 
 
 def test_worker_database_errors_use_exponential_backoff(monkeypatch) -> None:
