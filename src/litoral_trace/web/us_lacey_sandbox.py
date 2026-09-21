@@ -59,6 +59,7 @@ def sandbox_start_view(request: Request):
 def sandbox_start_provision(
     request: Request,
     consent: str | None = Form(default=None),
+    learning_consent: str | None = Form(default=None),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     """Provision one isolated four-hour tenant after explicit browser consent."""
@@ -103,6 +104,7 @@ def sandbox_start_provision(
         sandbox = provision_us_lacey_sandbox(
             client_ip=client_ip,
             user_agent=user_agent,
+            learning_opt_in=learning_consent == "accepted",
         )
     except UsLaceySandboxError as exc:
         response_status = (

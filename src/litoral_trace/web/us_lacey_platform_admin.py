@@ -289,6 +289,25 @@ def list_sandbox_conversion_cohorts_superadmin(
     )
 
 
+def learning_plane_metrics_superadmin(
+    *,
+    refresh_token: str,
+) -> dict[str, Any]:
+    rows = _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM public.platform_admin_learning_plane_metrics("
+            ":actor_refresh_token_hash)"
+        ),
+    )
+    return rows[0] if rows else {
+        "telemetry_run_count": 0,
+        "sandbox_run_count": 0,
+        "global_hcr": None,
+        "sandbox_avg_processing_ms": None,
+    }
+
+
 def convert_sandbox_to_commercial_superadmin(
     *,
     refresh_token: str,
@@ -318,6 +337,9 @@ def _admin_context(*, request: Request, us_session: str, notice: str | None = No
     accounts = list_us_lacey_accounts_superadmin(refresh_token=refresh_token)
     users = list_platform_users_superadmin(refresh_token=refresh_token)
     failed_jobs = list_failed_jobs_superadmin(refresh_token=refresh_token)
+    telemetry_metrics = learning_plane_metrics_superadmin(
+        refresh_token=refresh_token,
+    )
 
     active_count = sum(1 for account in accounts if account.get("account_status") == "ACTIVE")
     pilot_count = sum(1 for account in accounts if account.get("account_status") == "PILOT")
@@ -339,6 +361,7 @@ def _admin_context(*, request: Request, us_session: str, notice: str | None = No
         "failed_job_count": failed_job_count,
         "users": users,
         "failed_jobs": failed_jobs,
+        "telemetry_metrics": telemetry_metrics,
         "notice": notice,
         "status_csrf": {
             int(account["organization_id"]): us_lacey_csrf_token(

@@ -78,6 +78,23 @@
             <form method="post" action="/sandbox/start" class="mt-8">
                 <input type="hidden" name="consent" value="accepted">
 
+                <label
+                    class="mb-5 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-left"
+                >
+                    <input
+                        type="checkbox"
+                        name="learning_consent"
+                        value="accepted"
+                        class="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-600"
+                    >
+                    <span>
+                        <span class="block text-sm font-semibold text-slate-900">Help improve Litoral Trace</span>
+                        <span class="mt-1 block text-xs leading-5 text-slate-600">
+                            Allow Litoral Trace to retain de-identified excerpts from corrected fields for product improvement.
+                        </span>
+                    </span>
+                </label>
+
                 <button
                     type="submit"
                     class="flex w-full items-center justify-center rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-800"

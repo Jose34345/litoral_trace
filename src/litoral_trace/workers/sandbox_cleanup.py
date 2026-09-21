@@ -13,13 +13,18 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 import json
+import logging
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from litoral_trace.storage.s3 import ObjectStorageClient, ObjectStorageError
 from litoral_trace.us_lacey.storage import get_us_lacey_storage_client
+from litoral_trace.us_lacey.telemetry import TelemetryService
 from litoral_trace.us_lacey.worker_db import get_us_lacey_worker_db_session
+
+
+logger = logging.getLogger(__name__)
 
 
 class SandboxCleanupError(RuntimeError):
@@ -46,6 +51,7 @@ class SandboxPurgeJob:
     state: str
     attempt_count: int
     locked_by: str
+    learning_opt_in: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +79,7 @@ def _job_from_row(row) -> SandboxPurgeJob:
         state=str(row["state"]),
         attempt_count=int(row["attempt_count"]),
         locked_by=str(row["locked_by"]),
+        learning_opt_in=bool(row.get("learning_opt_in", False)),
     )
 
 
@@ -184,7 +191,8 @@ def claim_next_sandbox_purge_job(
                     job.expires_at,
                     job.state,
                     job.attempt_count,
-                    job.locked_by
+                    job.locked_by,
+                    job.learning_opt_in
                 """
             ),
             {"worker_id": normalized_worker_id},
@@ -659,6 +667,20 @@ def process_sandbox_purge_job(
             error_message=str(exc),
         )
         return
+
+    try:
+        TelemetryService.capture_sandbox_before_purge(
+            organization_id=job.organization_id,
+            purge_job_id=job.id,
+            learning_opt_in=job.learning_opt_in,
+            sandbox_expires_at=job.expires_at,
+        )
+    except Exception:
+        logger.error(
+            "Sandbox Learning Plane capture failed; continuing physical tenant purge.",
+            extra={"sandbox_purge_job_id": job.id},
+            exc_info=True,
+        )
 
     try:
         _delete_database_metadata(
