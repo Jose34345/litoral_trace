@@ -8,6 +8,7 @@ from litoral_trace.us_lacey.projection import (
     _is_structural_artifact,
     _is_supported_explicit_suggestion,
     _line_reference,
+    _prefer_scalar_merchandise_description_sources,
     _target_field,
 )
 
@@ -194,7 +195,7 @@ def test_generic_pdf_line_item_description_is_not_shipment_description_when_tabl
         2: frozenset({"line", "hts number", "description", "entered value"}),
     }
 
-    assert _target_field(row, table_headers=headers) == (None, 0)
+    assert _target_field(row, table_headers=headers) == ("merchandise_description", 2)
 
 
 def test_generic_bom_material_cannot_become_shipment_merchandise_description():
@@ -265,3 +266,41 @@ def test_combined_party_and_address_cell_does_not_conflict_with_explicit_name():
 
     assert _target_field(combined) == (None, 0)
     assert _target_field(exact) == ("consignee_name", 3)
+
+def test_scalar_shipment_description_suppresses_sibling_line_descriptions_when_present():
+    line = SimpleNamespace(
+        field_name="product",
+        original_value="Sawn eucalyptus boards, kiln-dried",
+        normalized_value=None,
+        source_locator="pdf:page:1;table:2;header_row:1;data_row:1;column:3;header:Description of Merchandise",
+    )
+    scalar = SimpleNamespace(
+        field_name="product",
+        original_value="Sawn wood boards, wooden shipping crates, and solid-wood dining chairs.",
+        normalized_value=None,
+        source_locator="pdf:page:2;table:3;header_row:1;data_row:10;column:10;header:Description of Merchandise",
+    )
+    headers = {
+        2: frozenset({"line", "hts number", "description", "entered value"}),
+        3: frozenset({"estimated date of arrival", "description of merchandise"}),
+    }
+
+    preferred = _prefer_scalar_merchandise_description_sources(
+        [(2, line), (2, scalar)], table_headers=headers
+    )
+    assert preferred == [(2, scalar)]
+
+
+def test_single_line_commercial_description_is_retained_when_no_scalar_alternative_exists():
+    line = SimpleNamespace(
+        field_name="product",
+        original_value="Retail set: four solid rubberwood coasters with one MDF holder",
+        normalized_value=None,
+        source_locator="pdf:page:1;table:2;header_row:1;data_row:1;column:3;header:Description of Merchandise",
+    )
+    headers = {
+        2: frozenset({"line", "hts number", "description", "entered value"}),
+    }
+    assert _prefer_scalar_merchandise_description_sources(
+        [(2, line)], table_headers=headers
+    ) == [(2, line)]
