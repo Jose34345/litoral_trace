@@ -43,7 +43,16 @@ def _stub_success_path(monkeypatch, calls: list[str]) -> None:
         "_reconcile_candidate_equivalence",
         lambda **_: (calls.append("candidate_equivalence"), 0)[1],
     )
-    monkeypatch.setattr(worker, "_shadow_engine2", lambda **_: calls.append("engine2"))
+    def shadow_engine2(**_: object) -> SimpleNamespace:
+        calls.append("engine2")
+        return SimpleNamespace(
+            status="SUCCEEDED",
+            shipment_run_id=91,
+            succeeded_document_count=3,
+            failed_document_count=0,
+        )
+
+    monkeypatch.setattr(worker, "_shadow_engine2", shadow_engine2)
 
     def engine2_suggestions(**_: object) -> int:
         calls.append("engine2_suggestions")
@@ -167,3 +176,53 @@ def test_worker_defers_operation_ai_until_every_current_source_is_terminal(monke
 
     assert calls == ["process", "project", "complete", "refresh"]
     assert result.operation_status == "PROCESSING"
+
+
+def test_partial_engine2_shadow_does_not_fail_authoritative_worker_job(monkeypatch) -> None:
+    calls: list[str] = []
+    _stub_success_path(monkeypatch, calls)
+
+    def partial_shadow(**_: object) -> SimpleNamespace:
+        calls.append("engine2_partial")
+        return SimpleNamespace(
+            status="BLOCKED_PARTIAL",
+            shipment_run_id=None,
+            succeeded_document_count=2,
+            failed_document_count=1,
+        )
+
+    def forbidden_canonical(**_: object) -> int:
+        raise AssertionError("canonical publication must be skipped without a shipment run")
+
+    monkeypatch.setattr(worker, "_shadow_engine2", partial_shadow)
+    monkeypatch.setattr(worker, "_project_engine2_suggestions", forbidden_canonical)
+    monkeypatch.setattr(worker, "complete_us_lacey_job", lambda **_: calls.append("complete") or True)
+    monkeypatch.setattr(
+        worker,
+        "_refresh_operation",
+        lambda **_: calls.append("refresh") or "REVIEW_REQUIRED",
+    )
+    monkeypatch.setattr(
+        worker,
+        "fail_us_lacey_job",
+        lambda **_: (_ for _ in ()).throw(
+            AssertionError("partial Engine 2 shadow must not fail the owned job")
+        ),
+    )
+
+    result = worker.process_one_us_lacey_job(worker_id="worker-test")
+
+    assert calls == [
+        "process",
+        "project",
+        "candidate_equivalence",
+        "engine2_partial",
+        "ai_suggestions",
+        "complete",
+        "refresh",
+        "ai_review",
+    ]
+    assert result.claimed is True
+    assert result.job_status == "COMPLETED"
+    assert result.operation_status == "REVIEW_REQUIRED"
+    assert result.document_status == "PROCESSED"
