@@ -432,6 +432,7 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
         engine2_dossier=engine2_dossier,
         product_intelligence=product_intelligence,
         regulatory_assessment=regulatory_assessment,
+        regulatory_review_pending=bool(attention_fields or auto_supported_fields),
         upload_csrf=upload_csrf,
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
@@ -488,5 +489,8 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
             request,
             "fragments/regulatory_assessment_card",
             regulatory_assessment=regulatory_assessment,
+            regulatory_review_pending=bool(
+                attention_fields or auto_supported_fields
+            ),
         )
     return prefix + workspace
