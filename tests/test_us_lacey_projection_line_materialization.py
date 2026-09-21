@@ -74,7 +74,7 @@ def test_explicit_plant_rows_keep_non_bom_supplier_line_identity():
     ]
 
     supplier_headers = {
-        1: frozenset({"entered value", "article component"})
+        1: frozenset({"article component"})
     }
     assert _explicit_plant_data_rows(
         sources,
