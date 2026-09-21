@@ -473,15 +473,8 @@ def _target_field(
     generic = _SAFE_GENERIC_MAP.get(str(row.field_name or "").lower())
     if generic:
         value = row.normalized_value or row.original_value
-        if generic == "merchandise_description":
-            if _description_candidate_role(row, value):
-                return None, 0
-            if context_headers and (
-                _is_plant_declaration_table(context_headers)
-                or _is_line_allocation_table(context_headers)
-                or _is_merchandise_line_item_table(context_headers)
-            ) and _DATA_ROW.search(str(row.source_locator or "")):
-                return None, 0
+        if generic == "merchandise_description" and _description_candidate_role(row, value):
+            return None, 0
         if _is_candidate_admissible(generic, value, table_headers=context_headers):
             return generic, 2
         return None, 0
@@ -516,19 +509,33 @@ def _target_field(
             # A commercial invoice/shipment total is reconciliation evidence, not a
             # PPQ plant-line allocation. It is persisted separately by the projector.
             return None, 0
-        if target == "merchandise_description":
-            if _description_candidate_role(row, value):
-                return None, 0
-            if context_headers and (
-                _is_plant_declaration_table(context_headers)
-                or _is_line_allocation_table(context_headers)
-                or _is_merchandise_line_item_table(context_headers)
-            ) and _DATA_ROW.search(str(row.source_locator or "")):
-                return None, 0
+        if target == "merchandise_description" and _description_candidate_role(row, value):
+            return None, 0
         if target and _is_candidate_admissible(target, value, table_headers=context_headers):
             return target, 3
     return None, 0
 
+
+def _prefer_scalar_merchandise_description_sources(
+    sources: list[tuple[int, ExtractedDocumentField]],
+    *,
+    table_headers,
+) -> list[tuple[int, ExtractedDocumentField]]:
+    """Prefer a shipment-level description over sibling merchandise row text.
+
+    Multi-line invoices legitimately contain several product descriptions. Those
+    rows are evidence, not competing scalar shipment descriptions when the same
+    document also supplies a non-line shipment description. If no scalar source
+    exists, retain the line description so single-line documents still work.
+    """
+    scalar = [
+        item
+        for item in sources
+        if not _is_merchandise_line_item_table(
+            _table_header_context(item[1], table_headers)
+        )
+    ]
+    return scalar or sources
 
 def _is_supported_explicit_suggestion(
     *,
@@ -1094,6 +1101,13 @@ def project_assurance_document_to_us_lacey(
                 continue
             key = (line, target)
             candidates.setdefault(key, []).append((priority, row))
+
+        description_key = (PPQ505_SHIPMENT_REFERENCE, "merchandise_description")
+        if description_key in candidates:
+            candidates[description_key] = _prefer_scalar_merchandise_description_sources(
+                candidates[description_key],
+                table_headers=table_headers,
+            )
 
         projected = matched = review = conflicts = 0
         species_for_genus: list[tuple[str, ExtractedDocumentField]] = []
