@@ -346,6 +346,14 @@ def _is_explicit_bom_table(headers: frozenset[str]) -> bool:
     )
 
 
+def _is_merchandise_line_item_table(headers: frozenset[str]) -> bool:
+    """Identify row-oriented commercial/customs merchandise tables."""
+    return (
+        bool(headers & _LINE_NUMBER_HEADERS)
+        and bool(headers & _CUSTOMS_HTS_HEADERS)
+        and bool(headers & _CUSTOMS_DESCRIPTION_HEADERS)
+    )
+
 def _is_line_allocation_table(headers: frozenset[str]) -> bool:
     if "entered value" not in headers:
         return False
@@ -386,6 +394,8 @@ def _description_candidate_role(row: ExtractedDocumentField, value: object) -> s
         )
         or re.search(r"\bheader\s+material\b", semantic_context)
         or "sheet bom" in semantic_context
+        or "sheet packing list" in semantic_context
+        or "sheet plant lines" in semantic_context
         or value_folded.startswith("plant component description ")
         or value_folded.startswith("article component description ")
         or value_folded.startswith("component description ")
@@ -469,6 +479,7 @@ def _target_field(
             if context_headers and (
                 _is_plant_declaration_table(context_headers)
                 or _is_line_allocation_table(context_headers)
+                or _is_merchandise_line_item_table(context_headers)
             ) and _DATA_ROW.search(str(row.source_locator or "")):
                 return None, 0
         if _is_candidate_admissible(generic, value, table_headers=context_headers):
@@ -511,6 +522,7 @@ def _target_field(
             if context_headers and (
                 _is_plant_declaration_table(context_headers)
                 or _is_line_allocation_table(context_headers)
+                or _is_merchandise_line_item_table(context_headers)
             ) and _DATA_ROW.search(str(row.source_locator or "")):
                 return None, 0
         if target and _is_candidate_admissible(target, value, table_headers=context_headers):
