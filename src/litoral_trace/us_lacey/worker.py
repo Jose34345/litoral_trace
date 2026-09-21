@@ -285,6 +285,39 @@ def _processing_service() -> AssuranceProcessingService:
     )
 
 
+def _engine2_unsupported_current_source_count(
+    *, organization_id: int, operation_id: int
+) -> int:
+    """Count current source files that the PDF-only Engine 2 gate cannot read."""
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, organization_id)
+        filenames = session.scalars(
+            select(VaultDocument.original_filename)
+            .join(
+                AssuranceDocument,
+                (AssuranceDocument.vault_document_id == VaultDocument.id)
+                & (AssuranceDocument.organization_id == VaultDocument.organization_id),
+            )
+            .join(
+                UsLaceyOperationDocument,
+                (UsLaceyOperationDocument.assurance_document_id == AssuranceDocument.id)
+                & (UsLaceyOperationDocument.organization_id == AssuranceDocument.organization_id),
+            )
+            .where(
+                UsLaceyOperationDocument.organization_id == organization_id,
+                UsLaceyOperationDocument.operation_id == operation_id,
+                UsLaceyOperationDocument.is_current.is_(True),
+            )
+        ).all()
+        return sum(
+            1
+            for filename in filenames
+            if PurePath(str(filename or "")).suffix.lower() != ".pdf"
+        )
+    finally:
+        session.close()
+
 def _shadow_engine2(
     *, organization_id: int, operation_id: int
 ) -> ShadowAggregationResult | None:
@@ -296,6 +329,30 @@ def _shadow_engine2(
     """
     if engine2_mode() != ENGINE2_SHADOW:
         return None
+
+    unsupported_count = _engine2_unsupported_current_source_count(
+        organization_id=organization_id,
+        operation_id=operation_id,
+    )
+    if unsupported_count:
+        # Engine 2 Gate 1 is PDF-only today. Processing the PDF siblings cannot
+        # produce a canonical shipment snapshot when one source is XLSX/CSV/XLS,
+        # so doing the expensive shadow pass only delays the customer's review.
+        LOGGER.info(
+            "Lacey Engine 2 shadow skipped for mixed unsupported source set",
+            extra={
+                "organization_id": organization_id,
+                "operation_id": operation_id,
+                "unsupported_document_count": unsupported_count,
+            },
+        )
+        return ShadowAggregationResult(
+            status="BLOCKED_PARTIAL",
+            shipment_run_id=None,
+            succeeded_document_count=0,
+            failed_document_count=unsupported_count,
+        )
+
     settings = build_us_lacey_storage_settings()
     vault = VaultService(
         storage_settings=settings,
@@ -875,15 +932,6 @@ def process_one_us_lacey_job(
                 )
 
         if isinstance(assurance_public_id, UUID) and finalize_source_set:
-            with _timed_worker_stage(
-                job=job,
-                stage="multilingual_snapshot",
-                source_set_fingerprint=source_set_fingerprint,
-            ):
-                _shadow_multilingual_evidence_snapshot(
-                    organization_id=job.organization_id,
-                    operation_id=job.operation_id,
-                )
             with us_lacey_operation_projection_lock(
                 organization_id=job.organization_id,
                 operation_id=job.operation_id,
@@ -915,6 +963,20 @@ def process_one_us_lacey_job(
             )
 
         heartbeat.stop()
+
+        if isinstance(assurance_public_id, UUID) and finalize_source_set:
+            # Multilingual semantic evidence is additive shadow enrichment. Run it
+            # only after the durable job is customer-visible COMPLETED so translation
+            # provider latency/rate limits never hold the review screen hostage.
+            with _timed_worker_stage(
+                job=job,
+                stage="multilingual_snapshot",
+                source_set_fingerprint=source_set_fingerprint,
+            ):
+                _shadow_multilingual_evidence_snapshot(
+                    organization_id=job.organization_id,
+                    operation_id=job.operation_id,
+                )
 
         if finalize_source_set:
             try:
