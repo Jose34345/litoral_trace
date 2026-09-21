@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import inspect
+from types import SimpleNamespace
 from pathlib import Path
 
 from litoral_trace.us_lacey.candidate_normalization import (
@@ -13,6 +14,7 @@ from litoral_trace.us_lacey.ppq505 import (
 )
 from litoral_trace.web.us_lacey_operational_views import (
     _present_review_field,
+    _review_field_groups,
     render_operation_workspace,
 )
 
@@ -35,6 +37,12 @@ class _Candidate:
 class _Field:
     field_name: str
     candidates: tuple[_Candidate, ...]
+    id: int = 1
+    line_reference: str = "1"
+    status: str = "FOUND"
+    validation_status: str = "VALID"
+    proposed_value: str | None = None
+    effective_value: str | None = None
 
 
 def test_formatted_entered_value_is_sanitized_before_decimal_validation():
@@ -200,3 +208,36 @@ def test_disabled_complete_preparation_has_entered_value_reconciliation_tooltip(
         "Cannot complete preparation: Please resolve the Entered Value reconciliation inconsistency first."
         in ui
     )
+
+
+def test_review_groups_collapse_epithet_and_binomial_before_supported_bucket():
+    genus_candidate = _Candidate(
+        1, "Eucalyptus", "Eucalyptus", confidence=0.98, source_page=1
+    )
+    species_short = _Candidate(
+        2, "grandis", "grandis", confidence=0.98, source_page=1
+    )
+    species_full = _Candidate(
+        3, "Eucalyptus grandis", "Eucalyptus grandis", confidence=0.98, source_page=2
+    )
+    genus = _Field(
+        field_name="genus",
+        candidates=(genus_candidate,),
+        proposed_value="Eucalyptus",
+        effective_value="Eucalyptus",
+    )
+    species = _Field(
+        field_name="species",
+        candidates=(species_short, species_full),
+        proposed_value="grandis",
+        effective_value="grandis",
+    )
+    detail = SimpleNamespace(fields=(genus, species))
+
+    attention, supported, settled = _review_field_groups(detail)
+
+    assert attention == ()
+    assert settled == ()
+    assert {field.field_name for field in supported} == {"genus", "species"}
+    presented_species = next(field for field in supported if field.field_name == "species")
+    assert len(presented_species.candidates) == 1

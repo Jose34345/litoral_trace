@@ -26,7 +26,10 @@ from litoral_trace.services.audit import (
     AuditOutcome,
     record_audit_event,
 )
-from litoral_trace.us_lacey.candidate_normalization import group_candidate_evidence
+from litoral_trace.us_lacey.candidate_normalization import (
+    derive_taxonomic_comparison_context,
+    group_candidate_evidence,
+)
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.operations import UsLaceyOperationNotFound
 from litoral_trace.us_lacey.ppq505 import validate_ppq_value
@@ -97,12 +100,26 @@ def accept_supported_us_lacey_fields(
 
         if found_fields:
             field_ids = [field.id for field in found_fields]
+            genus_fields = session.scalars(
+                select(UsLaceyOperationField).where(
+                    UsLaceyOperationField.organization_id == org_id,
+                    UsLaceyOperationField.operation_id == operation.id,
+                    UsLaceyOperationField.field_name == "genus",
+                )
+            ).all()
+            genus_by_line = {
+                str(field.merchandise_line_reference): field
+                for field in genus_fields
+            }
+            candidate_field_ids = sorted(
+                set(field_ids) | {int(field.id) for field in genus_fields}
+            )
             candidate_rows = session.scalars(
                 select(UsLaceyFieldCandidate)
                 .where(
                     UsLaceyFieldCandidate.organization_id == org_id,
                     UsLaceyFieldCandidate.operation_id == operation.id,
-                    UsLaceyFieldCandidate.operation_field_id.in_(field_ids),
+                    UsLaceyFieldCandidate.operation_field_id.in_(candidate_field_ids),
                 )
                 .order_by(UsLaceyFieldCandidate.id.asc())
             ).all()
@@ -122,6 +139,7 @@ def accept_supported_us_lacey_fields(
             )
         else:
             candidates_by_field = {}
+            genus_by_line = {}
             conflicted_field_ids = set()
 
         actor = AuditActor(
@@ -132,9 +150,19 @@ def accept_supported_us_lacey_fields(
         )
         accepted = 0
         for field in found_fields:
+            comparison_context = None
+            if field.field_name == "species":
+                genus_field = genus_by_line.get(str(field.merchandise_line_reference))
+                if genus_field is not None:
+                    confirmed_genus = str(genus_field.human_value or "").strip() or None
+                    comparison_context = derive_taxonomic_comparison_context(
+                        candidates_by_field.get(int(genus_field.id), ()),
+                        confirmed_genus=confirmed_genus,
+                    )
             groups = group_candidate_evidence(
                 field.field_name,
                 candidates_by_field.get(int(field.id), ()),
+                comparison_context=comparison_context,
             )
             if len(groups) > 1:
                 continue

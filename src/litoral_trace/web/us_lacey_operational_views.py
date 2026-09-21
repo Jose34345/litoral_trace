@@ -8,7 +8,10 @@ from urllib.parse import parse_qs
 
 from markupsafe import Markup, escape
 
-from litoral_trace.us_lacey.candidate_normalization import group_candidate_evidence
+from litoral_trace.us_lacey.candidate_normalization import (
+    derive_taxonomic_comparison_context,
+    group_candidate_evidence,
+)
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
     canonical_ppq_value_key,
@@ -95,7 +98,7 @@ def _field_has_displayable_resolution(field) -> bool:
     return value is not None and bool(str(value).strip())
 
 
-def _present_review_field(field):
+def _present_review_field(field, *, comparison_context=None):
     """Collapse same-value candidate metadata for the customer review card.
 
     Database candidate rows remain intact. The view exposes one representative per
@@ -111,7 +114,11 @@ def _present_review_field(field):
     candidates = getattr(field, "candidates", ())
     if not field_name or not candidates:
         return field
-    groups = group_candidate_evidence(field_name, candidates)
+    groups = group_candidate_evidence(
+        field_name,
+        candidates,
+        comparison_context=comparison_context,
+    )
     if not groups:
         return replace(field, candidates=())
     presented = []
@@ -147,6 +154,27 @@ def _review_field_sets(detail):
         for field in customer_fields
         if getattr(field, "field_name", None) == "article_component"
     }
+    genus_by_line = {
+        str(getattr(field, "line_reference", "")): field
+        for field in customer_fields
+        if getattr(field, "field_name", None) == "genus"
+    }
+
+    def comparison_context_for(field):
+        if getattr(field, "field_name", None) != "species":
+            return None
+        genus_field = genus_by_line.get(str(getattr(field, "line_reference", "")))
+        if genus_field is None:
+            return None
+        confirmed = (
+            getattr(genus_field, "effective_value", None)
+            if getattr(genus_field, "status", None) == "MATCHED"
+            else None
+        )
+        return derive_taxonomic_comparison_context(
+            getattr(genus_field, "candidates", ()),
+            confirmed_genus=confirmed,
+        )
 
     def is_open_review_field(field) -> bool:
         if getattr(field, "status", None) not in _OPEN_REVIEW_STATUSES:
@@ -157,7 +185,10 @@ def _review_field_sets(detail):
         return article is None or getattr(article, "status", None) not in _OPEN_REVIEW_STATUSES
 
     exception_fields = [
-        _present_review_field(field)
+        _present_review_field(
+            field,
+            comparison_context=comparison_context_for(field),
+        )
         for field in customer_fields
         if is_open_review_field(field)
     ]
@@ -401,6 +432,7 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
         engine2_dossier=engine2_dossier,
         product_intelligence=product_intelligence,
         regulatory_assessment=regulatory_assessment,
+        regulatory_review_pending=bool(attention_fields or auto_supported_fields),
         upload_csrf=upload_csrf,
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
@@ -457,5 +489,8 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
             request,
             "fragments/regulatory_assessment_card",
             regulatory_assessment=regulatory_assessment,
+            regulatory_review_pending=bool(
+                attention_fields or auto_supported_fields
+            ),
         )
     return prefix + workspace

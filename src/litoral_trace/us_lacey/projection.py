@@ -73,15 +73,21 @@ _EXPLICIT_HEADER_ALIASES = {
     "eta": "estimated_arrival_date",
     "filing entry reference": "filing_entry_reference",
     "entry reference": "filing_entry_reference",
+    "entry filing reference": "filing_entry_reference",
+    "entry number": "filing_entry_reference",
     "entry type": "entry_type",
     "importer name": "importer_name",
+    "importer s name": "importer_name",
     "importer identification": "importer_identifier",
     "importer identifier": "importer_identifier",
     "importer id": "importer_identifier",
     "importer address": "importer_address",
+    "importer s address": "importer_address",
     "consignee": "consignee_name",
     "consignee name": "consignee_name",
+    "consignee s name": "consignee_name",
     "consignee address": "consignee_address",
+    "consignee s address": "consignee_address",
     "broker": "filer_name",
     "customs broker": "filer_name",
     "filer": "filer_name",
@@ -93,8 +99,10 @@ _EXPLICIT_HEADER_ALIASES = {
     "master bill of lading": "bill_of_lading",
     "container": "container_number",
     "container number": "container_number",
+    "container number s": "container_number",
     "manufacturer id": "manufacturer_id",
     "manufacturer identification": "manufacturer_id",
+    "manufacturer identification code mid": "manufacturer_id",
     "shipment description": "merchandise_description",
     "commodity description": "merchandise_description",
     "cargo description": "merchandise_description",
@@ -121,6 +129,7 @@ _EXPLICIT_HEADER_ALIASES = {
 }
 
 _RAW_TABLE_FIELD = re.compile(r"^raw\.table\.(?P<table>\d+)\.(?P<header>.+)$")
+_LOCATOR_TABLE = re.compile(r"(?:^|;)table:(?P<table>\d+)(?:;|$)")
 _DATA_ROW = re.compile(r"(?:^|;)data_row:(?P<row>\d+)(?:;|$)")
 _CONTAINER_TOKEN = re.compile(
     r"(?<![A-Z0-9])[A-Z]{4}(?:[ -]?\d){7}(?![A-Z0-9])",
@@ -308,6 +317,11 @@ def _table_header_context(row: ExtractedDocumentField, table_headers) -> frozens
         match = _RAW_TABLE_FIELD.match(str(row.field_name or ""))
         if match is not None:
             return frozenset(table_headers.get(int(match.group("table")), frozenset()))
+        locator_match = _LOCATOR_TABLE.search(str(row.source_locator or ""))
+        if locator_match is not None:
+            return frozenset(
+                table_headers.get(int(locator_match.group("table")), frozenset())
+            )
         merged: set[str] = set()
         for headers in table_headers.values():
             merged.update(headers)
@@ -331,6 +345,14 @@ def _is_explicit_bom_table(headers: frozenset[str]) -> bool:
         and bool(headers & _BOM_MATERIAL_HEADERS)
     )
 
+
+def _is_merchandise_line_item_table(headers: frozenset[str]) -> bool:
+    """Identify row-oriented commercial/customs merchandise tables."""
+    return (
+        bool(headers & _LINE_NUMBER_HEADERS)
+        and bool(headers & _CUSTOMS_HTS_HEADERS)
+        and bool(headers & _CUSTOMS_DESCRIPTION_HEADERS)
+    )
 
 def _is_line_allocation_table(headers: frozenset[str]) -> bool:
     if "entered value" not in headers:
@@ -366,7 +388,14 @@ def _description_candidate_role(row: ExtractedDocumentField, value: object) -> s
     if _WEIGHT_DESCRIPTION.fullmatch(raw) or re.search(r"\b(?:gross|net)?\s*weight\b", semantic_context):
         return "WEIGHT"
     if (
-        re.search(r"\b(?:plant|article) component(?: description)?\b", semantic_context)
+        re.search(
+            r"\b(?:plant|article|material)\s*(?:/\s*)?component(?: description)?\b",
+            semantic_context,
+        )
+        or re.search(r"\bheader\s+material\b", semantic_context)
+        or "sheet bom" in semantic_context
+        or "sheet packing list" in semantic_context
+        or "sheet plant lines" in semantic_context
         or value_folded.startswith("plant component description ")
         or value_folded.startswith("article component description ")
         or value_folded.startswith("component description ")
@@ -422,6 +451,11 @@ def _is_candidate_admissible(
         )
     if target in {"importer_name", "consignee_name"}:
         if folded in _PARTY_NON_NAMES:
+            return False
+        # A combined "party | address" cell is not a clean party-name value.
+        # Prefer an explicit Name field when available rather than creating a
+        # false conflict against the same party later in the document.
+        if "|" in raw:
             return False
         if _URLISH.search(raw) or _EMAIL.fullmatch(raw) or _PHONE_ONLY.fullmatch(raw):
             return False
@@ -481,6 +515,51 @@ def _target_field(
             return target, 3
     return None, 0
 
+
+def _prefer_scalar_merchandise_description_sources(
+    sources: list[tuple[int, ExtractedDocumentField]],
+    *,
+    table_headers,
+) -> list[tuple[int, ExtractedDocumentField]]:
+    """Prefer a shipment-level description over sibling merchandise row text.
+
+    Multi-line invoices legitimately contain several product descriptions. Those
+    rows are evidence, not competing scalar shipment descriptions when the same
+    document also supplies a non-line shipment description. If no scalar source
+    exists, retain the line description so single-line documents still work.
+    """
+    scalar = [
+        item
+        for item in sources
+        if not _is_merchandise_line_item_table(
+            _table_header_context(item[1], table_headers)
+        )
+    ]
+    return scalar or sources
+
+def _is_supported_explicit_suggestion(
+    *,
+    source: ExtractedDocumentField,
+    source_priority: int,
+    validation_status: str,
+) -> bool:
+    """Return whether evidence is safe to present as one-click supported data.
+
+    FOUND is not a final declaration state. It remains explicitly customer-confirmed
+    later. This only distinguishes a valid exact PPQ observation from a real
+    exception so parser-level review flags on raw cells do not flood the UI.
+    """
+    if str(validation_status or "").upper() != "VALID":
+        return False
+    if float(getattr(source, "confidence", 0.0) or 0.0) < 0.90:
+        return False
+    if not bool(getattr(source, "needs_review", False)):
+        return True
+    return bool(
+        int(source_priority) >= 3
+        and _RAW_TABLE_FIELD.match(str(getattr(source, "field_name", "") or ""))
+        is not None
+    )
 
 def _line_reference(
     *, target: str, source_locator: str | None, line_references: tuple[str, ...]
@@ -1023,6 +1102,13 @@ def project_assurance_document_to_us_lacey(
             key = (line, target)
             candidates.setdefault(key, []).append((priority, row))
 
+        description_key = (PPQ505_SHIPMENT_REFERENCE, "merchandise_description")
+        if description_key in candidates:
+            candidates[description_key] = _prefer_scalar_merchandise_description_sources(
+                candidates[description_key],
+                table_headers=table_headers,
+            )
+
         projected = matched = review = conflicts = 0
         species_for_genus: list[tuple[str, ExtractedDocumentField]] = []
         for (line, target), sources in candidates.items():
@@ -1038,8 +1124,8 @@ def project_assurance_document_to_us_lacey(
                 if target == "species"
                 else None
             )
-            distinct: dict[str, tuple[str, ExtractedDocumentField]] = {}
-            for _priority, source in sources:
+            distinct: dict[str, tuple[str, ExtractedDocumentField, int]] = {}
+            for source_priority, source in sources:
                 raw = str(source.original_value or source.normalized_value or "").strip()
                 validation = validate_ppq_value(target, raw)
                 fingerprint = _fingerprint(
@@ -1076,20 +1162,33 @@ def project_assurance_document_to_us_lacey(
                     comparison_context=comparison_context,
                 )
                 if comparison_key:
-                    distinct.setdefault(
-                        comparison_key,
-                        (candidate_value, source),
+                    current = distinct.get(comparison_key)
+                    candidate_rank = (
+                        int(source_priority),
+                        float(source.confidence),
+                        int(getattr(source, "id", 0) or 0) * -1,
                     )
+                    current_rank = (
+                        int(current[2]),
+                        float(current[1].confidence),
+                        int(getattr(current[1], "id", 0) or 0) * -1,
+                    ) if current is not None else None
+                    if current_rank is None or candidate_rank > current_rank:
+                        distinct[comparison_key] = (
+                            candidate_value,
+                            source,
+                            int(source_priority),
+                        )
 
             if len(distinct) > 1:
                 alternatives = list(distinct.values())
-                left_value, left_source = alternatives[0]
+                left_value, left_source, _left_priority = alternatives[0]
                 field.original_value = str(left_source.original_value or left_value)
                 field.normalized_value = None
                 field.field_status = "REVIEW"
                 field.validation_status = "REVIEW_REQUIRED"
                 field.validation_error = "Multiple supported source candidates require a human decision."
-                for new_value, new_source in alternatives[1:]:
+                for new_value, new_source, _new_priority in alternatives[1:]:
                     _upsert_conflict(
                         session,
                         organization_id=org_id,
@@ -1106,7 +1205,9 @@ def project_assurance_document_to_us_lacey(
 
             if not distinct:
                 continue
-            new_comparison_key, (candidate_value, source) = next(iter(distinct.items()))
+            new_comparison_key, (candidate_value, source, source_priority) = next(
+                iter(distinct.items())
+            )
             raw_value = str(source.original_value or source.normalized_value).strip()
             validation = validate_ppq_value(target, raw_value)
             new_value = validation.normalized_value or candidate_value
@@ -1160,7 +1261,15 @@ def project_assurance_document_to_us_lacey(
             elif human_confirmed:
                 field.field_status = "MATCHED"
                 matched += 1
-            elif float(source.confidence) >= 0.90 and not bool(source.needs_review):
+            elif _is_supported_explicit_suggestion(
+                source=source,
+                source_priority=source_priority,
+                validation_status=validation.status.value,
+            ):
+                # FOUND is still an unconfirmed customer suggestion. Exact,
+                # high-confidence PPQ headers should not be demoted merely because
+                # Assurance conservatively marks every raw table cell needs_review.
+                # Completion remains blocked until the customer confirms FOUND.
                 field.field_status = "FOUND"
             else:
                 field.field_status = "REVIEW"

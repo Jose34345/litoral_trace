@@ -6,7 +6,9 @@ from litoral_trace.us_lacey.projection import (
     _fold,
     _is_candidate_admissible,
     _is_structural_artifact,
+    _is_supported_explicit_suggestion,
     _line_reference,
+    _prefer_scalar_merchandise_description_sources,
     _target_field,
 )
 
@@ -180,3 +182,125 @@ def test_bom_component_header_is_not_a_ppq_article_component():
     )
 
     assert _target_field(row, table_headers=bom_headers) == (None, 0)
+
+
+def test_generic_pdf_line_item_description_is_not_shipment_description_when_table_is_allocated():
+    row = SimpleNamespace(
+        field_name="product",
+        original_value="Sawn eucalyptus boards, kiln-dried",
+        normalized_value=None,
+        source_locator="pdf:page:1;table:2;header_row:1;data_row:1;column:3;header:Description of Merchandise",
+    )
+    headers = {
+        2: frozenset({"line", "hts number", "description", "entered value"}),
+    }
+
+    assert _target_field(row, table_headers=headers) == ("merchandise_description", 2)
+
+
+def test_generic_bom_material_cannot_become_shipment_merchandise_description():
+    row = SimpleNamespace(
+        field_name="product",
+        original_value="Eucalyptus grandis",
+        normalized_value=None,
+        source_locator="sheet:BOM;header_row:1;data_row:1;column:4;header:Material",
+    )
+
+    assert _target_field(row, table_headers={}) == (None, 0)
+
+
+def test_exact_high_confidence_ppq_raw_cell_is_supported_even_with_parser_review_flag():
+    source = SimpleNamespace(
+        field_name="raw.table.2.HTS Number",
+        confidence=0.98,
+        needs_review=True,
+    )
+
+    assert _is_supported_explicit_suggestion(
+        source=source,
+        source_priority=3,
+        validation_status="VALID",
+    ) is True
+
+
+def test_generic_or_low_confidence_review_evidence_stays_out_of_supported_bucket():
+    generic = SimpleNamespace(field_name="product", confidence=0.98, needs_review=True)
+    low = SimpleNamespace(
+        field_name="raw.table.1.HTS Number", confidence=0.89, needs_review=True
+    )
+
+    assert _is_supported_explicit_suggestion(
+        source=generic, source_priority=2, validation_status="VALID"
+    ) is False
+    assert _is_supported_explicit_suggestion(
+        source=low, source_priority=3, validation_status="VALID"
+    ) is False
+
+@pytest.mark.parametrize(
+    ("header", "value", "target"),
+    [
+        ("Entry Number", "123-4567890-1", "filing_entry_reference"),
+        ("Entry / Filing Reference", "123-4567890-1", "filing_entry_reference"),
+        ("Importer's Name", "Northstar Furnishings Imports LLC", "importer_name"),
+        ("Consignee's Name", "Atlantic Home Goods Distribution Inc.", "consignee_name"),
+        ("Importer's Address", "104 Harbor Commerce Blvd., Savannah, GA 31401, United States", "importer_address"),
+        ("Consignee's Address", "825 Portside Logistics Pkwy., Pooler, GA 31322, United States", "consignee_address"),
+        ("Container Number(s)", "MSCU7654321", "container_number"),
+        ("Manufacturer Identification Code (MID)", "VNMFACT123HCM", "manufacturer_id"),
+    ],
+)
+def test_entry_worksheet_aliases_map_to_ppq_shipment_fields(header: str, value: str, target: str):
+    row = _row(field_name=f"raw.table.3.{header}", original_value=value)
+    assert _target_field(row)[0] == target
+
+
+def test_combined_party_and_address_cell_does_not_conflict_with_explicit_name():
+    combined = _row(
+        field_name="raw.table.1.Consignee",
+        original_value="Atlantic Home Goods Distribution Inc. | 825 Portside Logistics Pkwy., Pooler, GA 31322, United States",
+    )
+    exact = _row(
+        field_name="raw.table.3.Consignee's Name",
+        original_value="Atlantic Home Goods Distribution Inc.",
+    )
+
+    assert _target_field(combined) == (None, 0)
+    assert _target_field(exact) == ("consignee_name", 3)
+
+def test_scalar_shipment_description_suppresses_sibling_line_descriptions_when_present():
+    line = SimpleNamespace(
+        field_name="product",
+        original_value="Sawn eucalyptus boards, kiln-dried",
+        normalized_value=None,
+        source_locator="pdf:page:1;table:2;header_row:1;data_row:1;column:3;header:Description of Merchandise",
+    )
+    scalar = SimpleNamespace(
+        field_name="product",
+        original_value="Sawn wood boards, wooden shipping crates, and solid-wood dining chairs.",
+        normalized_value=None,
+        source_locator="pdf:page:2;table:3;header_row:1;data_row:10;column:10;header:Description of Merchandise",
+    )
+    headers = {
+        2: frozenset({"line", "hts number", "description", "entered value"}),
+        3: frozenset({"estimated date of arrival", "description of merchandise"}),
+    }
+
+    preferred = _prefer_scalar_merchandise_description_sources(
+        [(2, line), (2, scalar)], table_headers=headers
+    )
+    assert preferred == [(2, scalar)]
+
+
+def test_single_line_commercial_description_is_retained_when_no_scalar_alternative_exists():
+    line = SimpleNamespace(
+        field_name="product",
+        original_value="Retail set: four solid rubberwood coasters with one MDF holder",
+        normalized_value=None,
+        source_locator="pdf:page:1;table:2;header_row:1;data_row:1;column:3;header:Description of Merchandise",
+    )
+    headers = {
+        2: frozenset({"line", "hts number", "description", "entered value"}),
+    }
+    assert _prefer_scalar_merchandise_description_sources(
+        [(2, line)], table_headers=headers
+    ) == [(2, line)]
