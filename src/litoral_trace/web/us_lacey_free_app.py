@@ -229,13 +229,12 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
                 break
             continue
 
-        if _wait_for_next_worker_attempt(stop_event, backoff_seconds):
+        # A healthy empty queue is not a failure condition. Poll at the normal
+        # interactive cadence so a newly uploaded shipment is claimed quickly.
+        # Exponential backoff is reserved for database/queue failures above.
+        backoff_seconds = poll_seconds
+        if _wait_for_next_worker_attempt(stop_event, poll_seconds):
             break
-        backoff_seconds = _next_worker_backoff_seconds(
-            backoff_seconds,
-            base=poll_seconds,
-            cap=max_backoff_seconds,
-        )
 
     app.state.us_lacey_inline_worker_current_wait_seconds = poll_seconds
     _LOG.info("us_lacey_inline_worker_stopped worker_id=%s", worker_id)
