@@ -201,3 +201,74 @@ def test_materialization_refuses_nonconsecutive_row_jump():
     assert line_references == ("1",)
     assert operation.merchandise_line_count == 1
     assert not session.added
+
+
+def test_generic_bom_product_rows_cannot_manufacture_ppq_lines_from_merged_workbook_headers():
+    """Generic aliases lose table identity and must not create regulatory rows."""
+    existing = SimpleNamespace(id=1, line_reference="1", ordinal=1)
+    session = _FakeSession([existing])
+    operation = SimpleNamespace(id=77, merchandise_line_count=1)
+
+    # Mirrors the production XLSX failure: Assurance emitted generic product
+    # values for BOM rows 4-8. Merged workbook headers can otherwise make those
+    # rows look like a customs allocation table.
+    sources = [
+        SimpleNamespace(
+            field_name="product",
+            original_value="Solid-wood dining chairs",
+            normalized_value=None,
+            source_locator="sheet:BOM;header_row:1;data_row:5;column:2;header:Product",
+        ),
+        SimpleNamespace(
+            field_name="product",
+            original_value="Solid-wood dining chairs",
+            normalized_value=None,
+            source_locator="sheet:BOM;header_row:1;data_row:6;column:2;header:Product",
+        ),
+        SimpleNamespace(
+            field_name="product",
+            original_value="Solid-wood dining chairs",
+            normalized_value=None,
+            source_locator="sheet:BOM;header_row:1;data_row:7;column:2;header:Product",
+        ),
+        SimpleNamespace(
+            field_name="product",
+            original_value="Solid-wood dining chairs",
+            normalized_value=None,
+            source_locator="sheet:BOM;header_row:1;data_row:8;column:2;header:Product",
+        ),
+    ]
+    merged_workbook_headers = {
+        2: frozenset(
+            {
+                "line",
+                "hts number",
+                "description",
+                "entered value",
+                "genus",
+                "species",
+                "country of harvest",
+                "plant quantity",
+            }
+        ),
+        3: frozenset(
+            {"sku", "product", "component", "material", "qty", "weight", "uom"}
+        ),
+    }
+
+    assert _explicit_plant_data_rows(
+        sources,
+        table_headers=merged_workbook_headers,
+    ) == ()
+
+    line_references = _materialize_explicit_plant_lines(
+        session,
+        organization_id=5,
+        operation=operation,
+        extracted=sources,
+        table_headers=merged_workbook_headers,
+    )
+
+    assert line_references == ("1",)
+    assert operation.merchandise_line_count == 1
+    assert session.added == []
