@@ -914,7 +914,7 @@ def process_one_us_lacey_job(
                 "operation_id": job.operation_id,
                 "job_id": job.id,
                 "assurance_document_id": job.assurance_document_id,
-                "attempt_count": job.attempt_count,
+                "attempt_count": getattr(job, "attempt_count", None),
             },
         )
         queue_status = fail_us_lacey_job(
