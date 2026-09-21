@@ -13,6 +13,7 @@ is introduced.
 """
 from __future__ import annotations
 
+import logging
 import secrets
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
@@ -45,6 +46,7 @@ from litoral_trace.web.templates import templates
 
 
 router = APIRouter(tags=["Platform Admin"])
+logger = logging.getLogger(__name__)
 
 
 def _login_redirect(*, clear_cookie: bool = False) -> RedirectResponse:
@@ -337,9 +339,20 @@ def _admin_context(*, request: Request, us_session: str, notice: str | None = No
     accounts = list_us_lacey_accounts_superadmin(refresh_token=refresh_token)
     users = list_platform_users_superadmin(refresh_token=refresh_token)
     failed_jobs = list_failed_jobs_superadmin(refresh_token=refresh_token)
-    telemetry_metrics = learning_plane_metrics_superadmin(
-        refresh_token=refresh_token,
-    )
+    try:
+        telemetry_metrics = learning_plane_metrics_superadmin(
+            refresh_token=refresh_token,
+        )
+    except Exception:
+        logger.exception(
+            "Learning Plane metrics are unavailable; rendering admin without them."
+        )
+        telemetry_metrics = {
+            "telemetry_run_count": 0,
+            "sandbox_run_count": 0,
+            "global_hcr": None,
+            "sandbox_avg_processing_ms": None,
+        }
 
     active_count = sum(1 for account in accounts if account.get("account_status") == "ACTIVE")
     pilot_count = sum(1 for account in accounts if account.get("account_status") == "PILOT")

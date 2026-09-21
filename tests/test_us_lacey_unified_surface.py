@@ -26,7 +26,8 @@ def test_anonymous_root_is_professional_us_lacey_landing():
     assert 'href="/login"' in html
     assert 'href="/sandbox/start"' in html
     assert "Launch Zero-Touch Sandbox" in html
-    assert "USD 99/month for up to 100 operations" in html
+    assert "Founding Broker — USD 99/month" in html
+    assert "Up to 100 Lacey operations/month. Early-access pricing locked for 12 months." in html
     assert "USD 199" not in html
     assert "25 operations" not in html
     assert "Human review required" in html

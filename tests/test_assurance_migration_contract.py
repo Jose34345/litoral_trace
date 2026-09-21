@@ -20,6 +20,9 @@ US_LACEY_READONLY_IMPERSONATION_MIGRATION = Path(
 US_LACEY_SANDBOX_GROWTH_MIGRATION = Path(
     "alembic/versions/056_us_lacey_sandbox_growth_attribution.py"
 )
+US_LACEY_LEARNING_PLANE_MIGRATION = Path(
+    "alembic/versions/057_us_lacey_learning_plane.py"
+)
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -190,9 +193,21 @@ def test_us_lacey_sandbox_growth_follows_readonly_impersonation():
     assert "sa.ForeignKey" not in text
 
 
+def test_us_lacey_learning_plane_follows_sandbox_growth():
+    text = US_LACEY_LEARNING_PLANE_MIGRATION.read_text(encoding="utf-8")
+
+    assert 'revision = "057_us_lacey_learning_plane"' in text
+    assert '"056_us_lacey_sandbox_growth_attribution"' in text
+    assert "us_lacey_telemetry_runs" in text
+    assert "us_lacey_telemetry_field_actions" in text
+    assert "_us_lacey_enforce_telemetry_privacy_opt_in" in text
+    assert "SECURITY DEFINER" in text
+    assert "REVOKE ALL ON TABLE" in text
+
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "056_us_lacey_sandbox_growth_attribution (head)" in text
+    assert "057_us_lacey_learning_plane (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():

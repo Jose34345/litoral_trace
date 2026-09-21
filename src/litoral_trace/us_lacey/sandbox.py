@@ -116,7 +116,7 @@ def provision_us_lacey_sandbox(
                 "organization_id": int(row["organization_id"]),
                 "learning_opt_in": bool(learning_opt_in),
             },
-        ).scalar_one()
+        )
 
         session.commit()
         return UsLaceySandboxSession(
