@@ -330,10 +330,22 @@ def _shadow_engine2(
     if engine2_mode() != ENGINE2_SHADOW:
         return None
 
-    unsupported_count = _engine2_unsupported_current_source_count(
-        organization_id=organization_id,
-        operation_id=operation_id,
-    )
+    try:
+        unsupported_count = _engine2_unsupported_current_source_count(
+            organization_id=organization_id,
+            operation_id=operation_id,
+        )
+    except Exception:
+        # The optimization must never become a new failure boundary. If the source
+        # inventory cannot be inspected, fall back to the established shadow path.
+        LOGGER.exception(
+            "Unable to preflight Engine 2 source formats; using normal shadow path",
+            extra={
+                "organization_id": organization_id,
+                "operation_id": operation_id,
+            },
+        )
+        unsupported_count = 0
     if unsupported_count:
         # Engine 2 Gate 1 is PDF-only today. Processing the PDF siblings cannot
         # produce a canonical shipment snapshot when one source is XLSX/CSV/XLS,
