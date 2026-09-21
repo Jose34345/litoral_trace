@@ -430,6 +430,28 @@ def _target_field(
         else:
             target = _explicit_header_target(raw_match.group("header"))
         value = row.normalized_value or row.original_value
+
+        # Some recognized logistics headers are useful as evidence metadata but do
+        # not belong to the canonical PPQ 505 preparation contract. Never route
+        # those aliases (for example Customs Broker -> filer_name) into the PPQ
+        # projector, because _line_reference and operation-field indexing are
+        # intentionally defined only for PPQ contract keys.
+        if target and target not in PPQ505_FIELDS_BY_KEY:
+            return None, 0
+
+        # Component/BOM tables are product-composition evidence, not declaration
+        # line tables. Only plant-declaration tables or explicit customs allocation
+        # tables may project plant-line fields into the canonical PPQ workspace.
+        if (
+            target in _PLANT_ROW_IDENTITY_TARGETS
+            and context_headers
+            and not (
+                _is_plant_declaration_table(context_headers)
+                or _is_line_allocation_table(context_headers)
+            )
+        ):
+            return None, 0
+
         if target == "entered_value" and context_headers and not _is_line_allocation_table(context_headers):
             # A commercial invoice/shipment total is reconciliation evidence, not a
             # PPQ plant-line allocation. It is persisted separately by the projector.
@@ -444,7 +466,10 @@ def _target_field(
 def _line_reference(
     *, target: str, source_locator: str | None, line_references: tuple[str, ...]
 ) -> str:
-    contract = PPQ505_FIELDS_BY_KEY[target]
+    contract = PPQ505_FIELDS_BY_KEY.get(target)
+    if contract is None:
+        # Fail closed for evidence-only aliases or future non-PPQ fields.
+        return ""
     if contract.scope is PpqScope.SHIPMENT:
         return PPQ505_SHIPMENT_REFERENCE
     if not line_references:
@@ -509,7 +534,10 @@ def _explicit_plant_data_rows(
     for source in extracted:
         target, _priority = _target_field(source, table_headers=table_headers)
         context_headers = _table_header_context(source, table_headers)
-        is_plant_identity = target in _PLANT_ROW_IDENTITY_TARGETS
+        is_plant_identity = (
+            target in _PLANT_ROW_IDENTITY_TARGETS
+            and _is_plant_declaration_table(context_headers)
+        )
         is_customs_line_identity = (
             target in _CUSTOMS_LINE_ROW_TARGETS
             and _is_line_allocation_table(context_headers)
