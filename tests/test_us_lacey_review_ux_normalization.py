@@ -37,6 +37,11 @@ class _Candidate:
 class _Field:
     field_name: str
     candidates: tuple[_Candidate, ...]
+    line_reference: str = "1"
+    status: str = "FOUND"
+    validation_status: str = "VALID"
+    proposed_value: str | None = None
+    effective_value: str | None = None
 
 
 def test_formatted_entered_value_is_sanitized_before_decimal_validation():
@@ -214,25 +219,17 @@ def test_review_groups_collapse_epithet_and_binomial_before_supported_bucket():
     species_full = _Candidate(
         3, "Eucalyptus grandis", "Eucalyptus grandis", confidence=0.98, source_page=2
     )
-    genus = SimpleNamespace(
-        id=11,
-        line_reference="1",
+    genus = _Field(
         field_name="genus",
-        status="FOUND",
-        validation_status="VALID",
+        candidates=(genus_candidate,),
         proposed_value="Eucalyptus",
         effective_value="Eucalyptus",
-        candidates=(genus_candidate,),
     )
-    species = SimpleNamespace(
-        id=12,
-        line_reference="1",
+    species = _Field(
         field_name="species",
-        status="FOUND",
-        validation_status="VALID",
+        candidates=(species_short, species_full),
         proposed_value="grandis",
         effective_value="grandis",
-        candidates=(species_short, species_full),
     )
     detail = SimpleNamespace(fields=(genus, species))
 
