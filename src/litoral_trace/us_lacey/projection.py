@@ -166,6 +166,15 @@ _COMMERCIAL_PRODUCT_ID_HEADERS = frozenset(
 _COMMERCIAL_UNIT_PRICE_HEADERS = frozenset(
     {"unit price", "unit cost", "price per unit", "unit value"}
 )
+_BOM_SKU_HEADERS = frozenset(
+    {"sku", "item number", "item no", "item", "product sku"}
+)
+_BOM_COMPONENT_HEADERS = frozenset(
+    {"component", "part", "part name", "component description"}
+)
+_BOM_MATERIAL_HEADERS = frozenset(
+    {"material", "material description", "material name"}
+)
 
 _STRUCTURAL_ARTIFACTS_BY_TARGET = {
     "container_number": frozenset(
@@ -310,6 +319,19 @@ def _is_plant_declaration_table(headers: frozenset[str]) -> bool:
     return _PLANT_DECLARATION_SIGNATURE.issubset(headers)
 
 
+def _is_explicit_bom_table(headers: frozenset[str]) -> bool:
+    """Identify explicit product-composition tables before PPQ projection.
+
+    BOM rows belong to Product Intelligence. Their component row ordinals are not
+    shipment botanical-line ordinals and must never manufacture PPQ plant lines.
+    """
+    return (
+        bool(headers & _BOM_SKU_HEADERS)
+        and bool(headers & _BOM_COMPONENT_HEADERS)
+        and bool(headers & _BOM_MATERIAL_HEADERS)
+    )
+
+
 def _is_line_allocation_table(headers: frozenset[str]) -> bool:
     if "entered value" not in headers:
         return False
@@ -439,16 +461,13 @@ def _target_field(
         if target and target not in PPQ505_FIELDS_BY_KEY:
             return None, 0
 
-        # Component/BOM tables are product-composition evidence, not declaration
-        # line tables. Only plant-declaration tables or explicit customs allocation
-        # tables may project plant-line fields into the canonical PPQ workspace.
+        # Explicit BOM component rows are Product Intelligence evidence, not PPQ
+        # botanical lines. Keep normal supplier/botanical tables supported while
+        # preventing BOM row ordinals from manufacturing declaration lines.
         if (
             target in _PLANT_ROW_IDENTITY_TARGETS
             and context_headers
-            and not (
-                _is_plant_declaration_table(context_headers)
-                or _is_line_allocation_table(context_headers)
-            )
+            and _is_explicit_bom_table(context_headers)
         ):
             return None, 0
 
@@ -536,7 +555,7 @@ def _explicit_plant_data_rows(
         context_headers = _table_header_context(source, table_headers)
         is_plant_identity = (
             target in _PLANT_ROW_IDENTITY_TARGETS
-            and _is_plant_declaration_table(context_headers)
+            and not _is_explicit_bom_table(context_headers)
         )
         is_customs_line_identity = (
             target in _CUSTOMS_LINE_ROW_TARGETS
