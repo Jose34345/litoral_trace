@@ -37,6 +37,7 @@ def test_lacey_landing_leads_with_document_to_data_differentiation():
     assert "Early Access · U.S. Lacey Act" in html
     assert "Founding Early Access — USD 149/month" in html
     assert "Up to 100 Lacey operations/month. Early-access pricing locked for 12 months." in html
+    assert "USD 99/month" not in html
     assert "USD 199" not in html
     assert "25 operations" not in html
     assert "Phase VII" not in html
