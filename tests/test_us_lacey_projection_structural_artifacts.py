@@ -234,3 +234,34 @@ def test_generic_or_low_confidence_review_evidence_stays_out_of_supported_bucket
     assert _is_supported_explicit_suggestion(
         source=low, source_priority=3, validation_status="VALID"
     ) is False
+
+@pytest.mark.parametrize(
+    ("header", "value", "target"),
+    [
+        ("Entry Number", "123-4567890-1", "filing_entry_reference"),
+        ("Entry / Filing Reference", "123-4567890-1", "filing_entry_reference"),
+        ("Importer's Name", "Northstar Furnishings Imports LLC", "importer_name"),
+        ("Consignee's Name", "Atlantic Home Goods Distribution Inc.", "consignee_name"),
+        ("Importer's Address", "104 Harbor Commerce Blvd., Savannah, GA 31401, United States", "importer_address"),
+        ("Consignee's Address", "825 Portside Logistics Pkwy., Pooler, GA 31322, United States", "consignee_address"),
+        ("Container Number(s)", "MSCU7654321", "container_number"),
+        ("Manufacturer Identification Code (MID)", "VNMFACT123HCM", "manufacturer_id"),
+    ],
+)
+def test_entry_worksheet_aliases_map_to_ppq_shipment_fields(header: str, value: str, target: str):
+    row = _row(field_name=f"raw.table.3.{header}", original_value=value)
+    assert _target_field(row)[0] == target
+
+
+def test_combined_party_and_address_cell_does_not_conflict_with_explicit_name():
+    combined = _row(
+        field_name="raw.table.1.Consignee",
+        original_value="Atlantic Home Goods Distribution Inc. | 825 Portside Logistics Pkwy., Pooler, GA 31322, United States",
+    )
+    exact = _row(
+        field_name="raw.table.3.Consignee's Name",
+        original_value="Atlantic Home Goods Distribution Inc.",
+    )
+
+    assert _target_field(combined) == (None, 0)
+    assert _target_field(exact) == ("consignee_name", 3)
