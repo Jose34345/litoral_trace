@@ -54,6 +54,7 @@ from litoral_trace.us_lacey.projection import (
 )
 from litoral_trace.us_lacey.lacey_engine_service import (
     ENGINE2_SHADOW,
+    ShadowAggregationResult,
     UsLaceyEngine2Service as _BaseUsLaceyEngine2Service,
     engine2_mode,
 )
@@ -284,10 +285,17 @@ def _processing_service() -> AssuranceProcessingService:
     )
 
 
-def _shadow_engine2(*, organization_id: int, operation_id: int) -> None:
-    """Best-effort only: never changes authoritative job/projection semantics."""
+def _shadow_engine2(
+    *, organization_id: int, operation_id: int
+) -> ShadowAggregationResult | None:
+    """Run Engine 2 as best-effort shadow and report whether canonical truth exists.
+
+    A partial/failed shadow source set must never poison the authoritative
+    deterministic extraction path. Canonical publication is allowed only when the
+    shadow produced a complete shipment snapshot.
+    """
     if engine2_mode() != ENGINE2_SHADOW:
-        return
+        return None
     settings = build_us_lacey_storage_settings()
     vault = VaultService(
         storage_settings=settings,
@@ -295,7 +303,7 @@ def _shadow_engine2(*, organization_id: int, operation_id: int) -> None:
         session_factory=get_us_lacey_db_session,
     )
     try:
-        UsLaceyEngine2Service(vault_service=vault).resolve_operation_with_engine2(
+        return UsLaceyEngine2Service(vault_service=vault).resolve_operation_with_engine2(
             organization_id=organization_id,
             operation_id=operation_id,
         )
@@ -304,7 +312,12 @@ def _shadow_engine2(*, organization_id: int, operation_id: int) -> None:
             "Lacey Engine 2 shadow resolution failed",
             extra={"organization_id": organization_id, "operation_id": operation_id},
         )
-        return
+        return ShadowAggregationResult(
+            status="FAILED",
+            shipment_run_id=None,
+            succeeded_document_count=0,
+            failed_document_count=0,
+        )
 
 
 def _operation_source_set_ready_for_finalization(
@@ -772,7 +785,7 @@ def process_one_us_lacey_job(
                     stage="engine2_shadow",
                     source_set_fingerprint=source_set_fingerprint,
                 ):
-                    _shadow_engine2(
+                    engine2_result = _shadow_engine2(
                         organization_id=job.organization_id,
                         operation_id=job.operation_id,
                     )
@@ -785,14 +798,49 @@ def process_one_us_lacey_job(
                         organization_id=job.organization_id,
                         operation_id=job.operation_id,
                     )
-                with _timed_worker_stage(
-                    job=job,
-                    stage="canonical_publication",
-                    source_set_fingerprint=source_set_fingerprint,
-                ):
-                    _project_engine2_suggestions(
-                        organization_id=job.organization_id,
-                        operation_id=job.operation_id,
+
+                canonical_ready = bool(
+                    engine2_result is None
+                    or (
+                        engine2_result.status == "SUCCEEDED"
+                        and engine2_result.shipment_run_id is not None
+                    )
+                )
+                if canonical_ready:
+                    with _timed_worker_stage(
+                        job=job,
+                        stage="canonical_publication",
+                        source_set_fingerprint=source_set_fingerprint,
+                    ):
+                        _project_engine2_suggestions(
+                            organization_id=job.organization_id,
+                            operation_id=job.operation_id,
+                        )
+                else:
+                    LOGGER.warning(
+                        "Lacey canonical publication skipped; Engine 2 shadow did not "
+                        "produce a complete shipment snapshot",
+                        extra={
+                            "organization_id": job.organization_id,
+                            "operation_id": job.operation_id,
+                            "job_id": job.id,
+                            "engine2_status": (
+                                engine2_result.status
+                                if engine2_result is not None
+                                else "UNAVAILABLE"
+                            ),
+                            "engine2_succeeded_document_count": (
+                                engine2_result.succeeded_document_count
+                                if engine2_result is not None
+                                else 0
+                            ),
+                            "engine2_failed_document_count": (
+                                engine2_result.failed_document_count
+                                if engine2_result is not None
+                                else 0
+                            ),
+                            "source_set_fingerprint": source_set_fingerprint,
+                        },
                     )
                 if isinstance(assurance_public_id, UUID):
                     with _timed_worker_stage(
