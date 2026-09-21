@@ -121,6 +121,7 @@ _EXPLICIT_HEADER_ALIASES = {
 }
 
 _RAW_TABLE_FIELD = re.compile(r"^raw\.table\.(?P<table>\d+)\.(?P<header>.+)$")
+_LOCATOR_TABLE = re.compile(r"(?:^|;)table:(?P<table>\d+)(?:;|$)")
 _DATA_ROW = re.compile(r"(?:^|;)data_row:(?P<row>\d+)(?:;|$)")
 _CONTAINER_TOKEN = re.compile(
     r"(?<![A-Z0-9])[A-Z]{4}(?:[ -]?\d){7}(?![A-Z0-9])",
@@ -308,6 +309,11 @@ def _table_header_context(row: ExtractedDocumentField, table_headers) -> frozens
         match = _RAW_TABLE_FIELD.match(str(row.field_name or ""))
         if match is not None:
             return frozenset(table_headers.get(int(match.group("table")), frozenset()))
+        locator_match = _LOCATOR_TABLE.search(str(row.source_locator or ""))
+        if locator_match is not None:
+            return frozenset(
+                table_headers.get(int(locator_match.group("table")), frozenset())
+            )
         merged: set[str] = set()
         for headers in table_headers.values():
             merged.update(headers)
@@ -366,7 +372,12 @@ def _description_candidate_role(row: ExtractedDocumentField, value: object) -> s
     if _WEIGHT_DESCRIPTION.fullmatch(raw) or re.search(r"\b(?:gross|net)?\s*weight\b", semantic_context):
         return "WEIGHT"
     if (
-        re.search(r"\b(?:plant|article) component(?: description)?\b", semantic_context)
+        re.search(
+            r"\b(?:plant|article|material)\s*(?:/\s*)?component(?: description)?\b",
+            semantic_context,
+        )
+        or re.search(r"\bheader\s+material\b", semantic_context)
+        or "sheet bom" in semantic_context
         or value_folded.startswith("plant component description ")
         or value_folded.startswith("article component description ")
         or value_folded.startswith("component description ")
@@ -439,8 +450,14 @@ def _target_field(
     generic = _SAFE_GENERIC_MAP.get(str(row.field_name or "").lower())
     if generic:
         value = row.normalized_value or row.original_value
-        if generic == "merchandise_description" and _description_candidate_role(row, value):
-            return None, 0
+        if generic == "merchandise_description":
+            if _description_candidate_role(row, value):
+                return None, 0
+            if context_headers and (
+                _is_plant_declaration_table(context_headers)
+                or _is_line_allocation_table(context_headers)
+            ) and _DATA_ROW.search(str(row.source_locator or "")):
+                return None, 0
         if _is_candidate_admissible(generic, value, table_headers=context_headers):
             return generic, 2
         return None, 0
@@ -475,8 +492,14 @@ def _target_field(
             # A commercial invoice/shipment total is reconciliation evidence, not a
             # PPQ plant-line allocation. It is persisted separately by the projector.
             return None, 0
-        if target == "merchandise_description" and _description_candidate_role(row, value):
-            return None, 0
+        if target == "merchandise_description":
+            if _description_candidate_role(row, value):
+                return None, 0
+            if context_headers and (
+                _is_plant_declaration_table(context_headers)
+                or _is_line_allocation_table(context_headers)
+            ) and _DATA_ROW.search(str(row.source_locator or "")):
+                return None, 0
         if target and _is_candidate_admissible(target, value, table_headers=context_headers):
             return target, 3
     return None, 0
@@ -1038,8 +1061,8 @@ def project_assurance_document_to_us_lacey(
                 if target == "species"
                 else None
             )
-            distinct: dict[str, tuple[str, ExtractedDocumentField]] = {}
-            for _priority, source in sources:
+            distinct: dict[str, tuple[str, ExtractedDocumentField, int]] = {}
+            for source_priority, source in sources:
                 raw = str(source.original_value or source.normalized_value or "").strip()
                 validation = validate_ppq_value(target, raw)
                 fingerprint = _fingerprint(
@@ -1076,20 +1099,33 @@ def project_assurance_document_to_us_lacey(
                     comparison_context=comparison_context,
                 )
                 if comparison_key:
-                    distinct.setdefault(
-                        comparison_key,
-                        (candidate_value, source),
+                    current = distinct.get(comparison_key)
+                    candidate_rank = (
+                        int(source_priority),
+                        float(source.confidence),
+                        int(getattr(source, "id", 0) or 0) * -1,
                     )
+                    current_rank = (
+                        int(current[2]),
+                        float(current[1].confidence),
+                        int(getattr(current[1], "id", 0) or 0) * -1,
+                    ) if current is not None else None
+                    if current_rank is None or candidate_rank > current_rank:
+                        distinct[comparison_key] = (
+                            candidate_value,
+                            source,
+                            int(source_priority),
+                        )
 
             if len(distinct) > 1:
                 alternatives = list(distinct.values())
-                left_value, left_source = alternatives[0]
+                left_value, left_source, _left_priority = alternatives[0]
                 field.original_value = str(left_source.original_value or left_value)
                 field.normalized_value = None
                 field.field_status = "REVIEW"
                 field.validation_status = "REVIEW_REQUIRED"
                 field.validation_error = "Multiple supported source candidates require a human decision."
-                for new_value, new_source in alternatives[1:]:
+                for new_value, new_source, _new_priority in alternatives[1:]:
                     _upsert_conflict(
                         session,
                         organization_id=org_id,
@@ -1106,7 +1142,9 @@ def project_assurance_document_to_us_lacey(
 
             if not distinct:
                 continue
-            new_comparison_key, (candidate_value, source) = next(iter(distinct.items()))
+            new_comparison_key, (candidate_value, source, source_priority) = next(
+                iter(distinct.items())
+            )
             raw_value = str(source.original_value or source.normalized_value).strip()
             validation = validate_ppq_value(target, raw_value)
             new_value = validation.normalized_value or candidate_value
@@ -1160,7 +1198,21 @@ def project_assurance_document_to_us_lacey(
             elif human_confirmed:
                 field.field_status = "MATCHED"
                 matched += 1
-            elif float(source.confidence) >= 0.90 and not bool(source.needs_review):
+            elif (
+                float(source.confidence) >= 0.90
+                and (
+                    not bool(source.needs_review)
+                    or (
+                        int(source_priority) >= 3
+                        and _RAW_TABLE_FIELD.match(str(source.field_name or ""))
+                        is not None
+                    )
+                )
+            ):
+                # FOUND is still an unconfirmed customer suggestion. Exact,
+                # high-confidence PPQ headers should not be demoted merely because
+                # Assurance conservatively marks every raw table cell needs_review.
+                # Completion remains blocked until the customer confirms FOUND.
                 field.field_status = "FOUND"
             else:
                 field.field_status = "REVIEW"
