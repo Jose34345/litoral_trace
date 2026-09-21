@@ -166,6 +166,15 @@ _COMMERCIAL_PRODUCT_ID_HEADERS = frozenset(
 _COMMERCIAL_UNIT_PRICE_HEADERS = frozenset(
     {"unit price", "unit cost", "price per unit", "unit value"}
 )
+_BOM_SKU_HEADERS = frozenset(
+    {"sku", "item number", "item no", "item", "product sku"}
+)
+_BOM_COMPONENT_HEADERS = frozenset(
+    {"component", "part", "part name", "component description"}
+)
+_BOM_MATERIAL_HEADERS = frozenset(
+    {"material", "material description", "material name"}
+)
 
 _STRUCTURAL_ARTIFACTS_BY_TARGET = {
     "container_number": frozenset(
@@ -310,6 +319,19 @@ def _is_plant_declaration_table(headers: frozenset[str]) -> bool:
     return _PLANT_DECLARATION_SIGNATURE.issubset(headers)
 
 
+def _is_explicit_bom_table(headers: frozenset[str]) -> bool:
+    """Identify explicit product-composition tables before PPQ projection.
+
+    BOM rows belong to Product Intelligence. Their component row ordinals are not
+    shipment botanical-line ordinals and must never manufacture PPQ plant lines.
+    """
+    return (
+        bool(headers & _BOM_SKU_HEADERS)
+        and bool(headers & _BOM_COMPONENT_HEADERS)
+        and bool(headers & _BOM_MATERIAL_HEADERS)
+    )
+
+
 def _is_line_allocation_table(headers: frozenset[str]) -> bool:
     if "entered value" not in headers:
         return False
@@ -430,6 +452,25 @@ def _target_field(
         else:
             target = _explicit_header_target(raw_match.group("header"))
         value = row.normalized_value or row.original_value
+
+        # Some recognized logistics headers are useful as evidence metadata but do
+        # not belong to the canonical PPQ 505 preparation contract. Never route
+        # those aliases (for example Customs Broker -> filer_name) into the PPQ
+        # projector, because _line_reference and operation-field indexing are
+        # intentionally defined only for PPQ contract keys.
+        if target and target not in PPQ505_FIELDS_BY_KEY:
+            return None, 0
+
+        # Explicit BOM component rows are Product Intelligence evidence, not PPQ
+        # botanical lines. Keep normal supplier/botanical tables supported while
+        # preventing BOM row ordinals from manufacturing declaration lines.
+        if (
+            target in _PLANT_ROW_IDENTITY_TARGETS
+            and context_headers
+            and _is_explicit_bom_table(context_headers)
+        ):
+            return None, 0
+
         if target == "entered_value" and context_headers and not _is_line_allocation_table(context_headers):
             # A commercial invoice/shipment total is reconciliation evidence, not a
             # PPQ plant-line allocation. It is persisted separately by the projector.
@@ -444,7 +485,10 @@ def _target_field(
 def _line_reference(
     *, target: str, source_locator: str | None, line_references: tuple[str, ...]
 ) -> str:
-    contract = PPQ505_FIELDS_BY_KEY[target]
+    contract = PPQ505_FIELDS_BY_KEY.get(target)
+    if contract is None:
+        # Fail closed for evidence-only aliases or future non-PPQ fields.
+        return ""
     if contract.scope is PpqScope.SHIPMENT:
         return PPQ505_SHIPMENT_REFERENCE
     if not line_references:
@@ -509,7 +553,10 @@ def _explicit_plant_data_rows(
     for source in extracted:
         target, _priority = _target_field(source, table_headers=table_headers)
         context_headers = _table_header_context(source, table_headers)
-        is_plant_identity = target in _PLANT_ROW_IDENTITY_TARGETS
+        is_plant_identity = (
+            target in _PLANT_ROW_IDENTITY_TARGETS
+            and not _is_explicit_bom_table(context_headers)
+        )
         is_customs_line_identity = (
             target in _CUSTOMS_LINE_ROW_TARGETS
             and _is_line_allocation_table(context_headers)

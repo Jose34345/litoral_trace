@@ -40,25 +40,46 @@ class _FakeSession:
         return None
 
 
-def _source(*, header: str, value: str, row: int | None):
-    locator = "table:1"
+def _source(*, header: str, value: str, row: int | None, table: int = 1):
+    locator = f"table:{table}"
     if row is not None:
         locator += f";data_row:{row};column:1"
     return SimpleNamespace(
-        field_name=f"raw.table.1.{header}",
+        field_name=f"raw.table.{table}.{header}",
         original_value=value,
         normalized_value=None,
         source_locator=locator,
     )
 
 
-def test_explicit_plant_rows_ignore_entered_value_without_plant_identity():
+def _plant_headers() -> dict[int, frozenset[str]]:
+    return {
+        1: frozenset(
+            {
+                "article component",
+                "genus",
+                "species",
+                "country of harvest",
+                "plant quantity",
+                "metric unit",
+            }
+        )
+    }
+
+
+def test_explicit_plant_rows_keep_non_bom_supplier_line_identity():
     sources = [
         _source(header="Entered Value", value="18600", row=2),
         _source(header="Article Component", value="Solid rubberwood coasters", row=1),
     ]
 
-    assert _explicit_plant_data_rows(sources, table_headers=frozenset()) == (1,)
+    supplier_headers = {
+        1: frozenset({"article component"})
+    }
+    assert _explicit_plant_data_rows(
+        sources,
+        table_headers=supplier_headers,
+    ) == (1,)
 
 
 def test_projection_materializes_second_explicit_plant_component_before_mapping():
@@ -85,7 +106,7 @@ def test_projection_materializes_second_explicit_plant_component_before_mapping(
         organization_id=5,
         operation=operation,
         extracted=sources,
-        table_headers=frozenset(),
+        table_headers=_plant_headers(),
     )
 
     assert line_references == ("1", "2")
@@ -121,12 +142,52 @@ def test_projection_materializes_second_explicit_plant_component_before_mapping(
     ) == ""
 
 
+def test_explicit_bom_component_rows_do_not_create_ppq_plant_lines():
+    existing = SimpleNamespace(id=1, line_reference="1", ordinal=1)
+    session = _FakeSession([existing])
+    operation = SimpleNamespace(id=77, merchandise_line_count=1)
+    sources = [
+        _source(header="SKU", value="SKU-A", row=1),
+        _source(header="Component", value="Seat", row=1),
+        _source(header="Material", value="Tectona grandis", row=1),
+        _source(header="SKU", value="SKU-A", row=2),
+        _source(header="Component", value="Leg", row=2),
+        _source(header="Material", value="Tectona grandis", row=2),
+    ]
+    bom_headers = {
+        1: frozenset(
+            {"sku", "product", "component", "material", "qty", "weight", "uom"}
+        )
+    }
+
+    assert _explicit_plant_data_rows(
+        sources,
+        table_headers=bom_headers,
+    ) == ()
+
+    line_references = _materialize_explicit_plant_lines(
+        session,
+        organization_id=5,
+        operation=operation,
+        extracted=sources,
+        table_headers=bom_headers,
+    )
+
+    assert line_references == ("1",)
+    assert operation.merchandise_line_count == 1
+    assert session.added == []
+
+
 def test_materialization_refuses_nonconsecutive_row_jump():
     existing = SimpleNamespace(id=1, line_reference="1", ordinal=1)
     session = _FakeSession([existing])
     operation = SimpleNamespace(id=77, merchandise_line_count=1)
     sources = [
         _source(header="Article Component", value="Unexpected distant row", row=20),
+        _source(header="Genus", value="Hevea", row=20),
+        _source(header="Species", value="brasiliensis", row=20),
+        _source(header="Country of Harvest", value="Thailand", row=20),
+        _source(header="Plant Quantity", value="10", row=20),
     ]
 
     line_references = _materialize_explicit_plant_lines(
@@ -134,7 +195,7 @@ def test_materialization_refuses_nonconsecutive_row_jump():
         organization_id=5,
         operation=operation,
         extracted=sources,
-        table_headers=frozenset(),
+        table_headers=_plant_headers(),
     )
 
     assert line_references == ("1",)

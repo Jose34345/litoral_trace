@@ -6,6 +6,7 @@ from litoral_trace.us_lacey.projection import (
     _fold,
     _is_candidate_admissible,
     _is_structural_artifact,
+    _line_reference,
     _target_field,
 )
 
@@ -149,3 +150,33 @@ def test_valid_container_consignee_importer_and_description_controls_remain_admi
     assert _target_field(consignee) == ("consignee_name", 3)
     assert _target_field(importer) == ("importer_name", 3)
     assert _target_field(description) == ("merchandise_description", 3)
+
+
+
+def test_evidence_only_customs_broker_alias_is_not_routed_into_ppq_contract():
+    row = _row(
+        field_name="raw.table.1.Customs Broker",
+        original_value="Harbor Customs Brokerage LLC",
+    )
+
+    assert _target_field(row) == (None, 0)
+
+
+def test_unknown_non_ppq_target_fails_closed_in_line_reference():
+    assert _line_reference(
+        target="filer_name",
+        source_locator="table:1;data_row:1;column:1",
+        line_references=("1",),
+    ) == ""
+
+
+def test_bom_component_header_is_not_a_ppq_article_component():
+    row = _row(
+        field_name="raw.table.1.Component",
+        original_value="Chair leg",
+    )
+    bom_headers = frozenset(
+        {"sku", "product", "component", "material", "qty", "weight", "uom"}
+    )
+
+    assert _target_field(row, table_headers=bom_headers) == (None, 0)
