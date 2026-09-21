@@ -37,6 +37,7 @@ class _Candidate:
 class _Field:
     field_name: str
     candidates: tuple[_Candidate, ...]
+    id: int = 1
     line_reference: str = "1"
     status: str = "FOUND"
     validation_status: str = "VALID"
