@@ -25,6 +25,7 @@ on:
       - "alembic/versions/054_us_lacey_control_plane_audit_billing.py"
       - "alembic/versions/055_us_lacey_readonly_impersonation.py"
       - "alembic/versions/056_us_lacey_sandbox_growth_attribution.py"
+      - "alembic/versions/057_us_lacey_learning_plane.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
@@ -164,7 +165,7 @@ jobs:
           python -m alembic upgrade 049_lacey_product_intelligence_snapshots
           python -m alembic upgrade 050_lacey_regulatory_assessment_snapshots
           python -m alembic upgrade 052_us_lacey_ephemeral_sandbox
-          python -m alembic upgrade 056_us_lacey_sandbox_growth_attribution
+          python -m alembic upgrade 057_us_lacey_learning_plane
       - name: Bind dedicated worker login to queue capability
         shell: bash
         run: |
@@ -189,7 +190,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "056_us_lacey_sandbox_growth_attribution (head)" /tmp/alembic-current.txt
+          grep -Fx "057_us_lacey_learning_plane (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -597,7 +598,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "056_us_lacey_sandbox_growth_attribution (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "057_us_lacey_learning_plane (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
@@ -981,12 +982,13 @@ jobs:
         run: >-
           python -m pytest -q -rs
           tests/test_us_lacey_sandbox_postgres.py
-      - name: Prove sandbox physical purge tombstone and manifest-race rollback
+      - name: Prove sandbox physical purge and Learning Plane privacy
         env:
           DATABASE_URL: ""
         run: >-
           python -m pytest -q -rs
           tests/test_us_lacey_sandbox_cleanup_postgres.py
+          tests/test_us_lacey_learning_plane_postgres.py
       - name: Prove portal login, opaque session and logout
         env:
           DATABASE_URL: ""

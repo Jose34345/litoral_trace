@@ -44,11 +44,11 @@ class _Engine:
 
 
 def test_required_schema_revision_is_repository_canonical_head() -> None:
-    assert schema_compatibility.required_us_lacey_schema_revision() == "056_us_lacey_sandbox_growth_attribution"
+    assert schema_compatibility.required_us_lacey_schema_revision() == "057_us_lacey_learning_plane"
 
 
 def test_schema_probe_is_ready_only_on_exact_canonical_head(monkeypatch) -> None:
-    engine = _Engine("056_us_lacey_sandbox_growth_attribution")
+    engine = _Engine("057_us_lacey_learning_plane")
     monkeypatch.setattr(schema_compatibility, "get_us_lacey_engine", lambda: engine)
 
     assert schema_compatibility.probe_us_lacey_schema_compatibility() is True

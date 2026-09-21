@@ -65,6 +65,7 @@ def provision_us_lacey_sandbox(
     *,
     client_ip: str | None = None,
     user_agent: str | None = None,
+    learning_opt_in: bool = False,
 ) -> UsLaceySandboxSession:
     """Atomically create an ephemeral tenant, principal and opaque web session."""
 
@@ -99,6 +100,26 @@ def provision_us_lacey_sandbox(
                 "password_hash": password_hash,
             },
         ).mappings().one()
+
+        # False is already the fail-closed database default. Avoid a second
+        # privileged capability call unless the visitor explicitly opted in.
+        if learning_opt_in:
+            session.execute(
+                text(
+                    """
+                    SELECT public.us_lacey_sandbox_set_learning_consent(
+                        :token_hash,
+                        :organization_id,
+                        true
+                    )
+                    """
+                ),
+                {
+                    "token_hash": token_hash,
+                    "organization_id": int(row["organization_id"]),
+                },
+            )
+
         session.commit()
         return UsLaceySandboxSession(
             organization_id=int(row["organization_id"]),

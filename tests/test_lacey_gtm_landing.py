@@ -35,7 +35,8 @@ def test_lacey_landing_leads_with_document_to_data_differentiation():
     assert "Compare" in html
     assert "Preserve evidence" in html
     assert "Early Access · U.S. Lacey Act" in html
-    assert "USD 99/month for up to 100 operations" in html
+    assert "Founding Broker — USD 99/month" in html
+    assert "Up to 100 Lacey operations/month. Early-access pricing locked for 12 months." in html
     assert "USD 199" not in html
     assert "25 operations" not in html
     assert "Phase VII" not in html

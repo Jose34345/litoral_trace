@@ -195,6 +195,9 @@ def test_public_sandbox_get_is_side_effect_free(monkeypatch):
     assert 'method="post"' in response.text
     assert 'action="/sandbox/start"' in response.text
     assert 'name="consent"' in response.text
+    assert 'name="learning_consent"' in response.text
+    assert "Help improve Litoral Trace" in response.text
+    assert "de-identified excerpts from corrected fields" in response.text
     assert 'value="accepted"' in response.text
     assert "/static/dist/app.css" in response.text
     assert "set-cookie" not in response.headers
@@ -210,15 +213,21 @@ def test_public_sandbox_post_sets_opaque_cookie_and_redirects_to_new_operation(m
         "load_us_lacey_portal_config",
         lambda: SimpleNamespace(session_cookie_secure=False),
     )
+    provision_calls = []
+
+    def provision(**kwargs):
+        provision_calls.append(kwargs)
+        return _sandbox_session()
+
     monkeypatch.setattr(
         sandbox_web,
         "provision_us_lacey_sandbox",
-        lambda **_kwargs: _sandbox_session(),
+        provision,
     )
 
     response = client.post(
         "/sandbox/start",
-        data={"consent": "accepted"},
+        data={"consent": "accepted", "learning_consent": "accepted"},
         follow_redirects=False,
     )
 
@@ -230,6 +239,7 @@ def test_public_sandbox_post_sets_opaque_cookie_and_redirects_to_new_operation(m
     assert "SameSite=lax" in cookie
     assert response.headers["cache-control"] == "no-store, max-age=0"
     assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
+    assert provision_calls[0]["learning_opt_in"] is True
 
 
 def test_public_sandbox_post_requires_explicit_consent(monkeypatch):

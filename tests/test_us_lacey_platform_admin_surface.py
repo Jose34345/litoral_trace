@@ -78,6 +78,16 @@ def _patch_admin_reads(monkeypatch, seen_tokens: list[str]):
         "list_failed_jobs_superadmin",
         lambda *, refresh_token: [],
     )
+    monkeypatch.setattr(
+        admin_surface,
+        "learning_plane_metrics_superadmin",
+        lambda *, refresh_token: {
+            "telemetry_run_count": 7,
+            "sandbox_run_count": 5,
+            "global_hcr": 0.125,
+            "sandbox_avg_processing_ms": 4200,
+        },
+    )
 
 
 def test_admin_without_us_session_redirects_to_portal_login():
@@ -117,6 +127,9 @@ def test_superadmin_page_reuses_same_us_session_for_control_plane(monkeypatch):
     assert "Global Platform Admin" in response.text
     assert "Founder Test Organization" in response.text
     assert "Processing / errors" in response.text
+    assert "Global HCR" in response.text
+    assert "12.5%" in response.text
+    assert "4.2s" in response.text
     assert seen_tokens == [SESSION]
 
 
