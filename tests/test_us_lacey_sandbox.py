@@ -203,7 +203,6 @@ def test_public_sandbox_get_is_side_effect_free(monkeypatch):
     assert "set-cookie" not in response.headers
     assert response.headers["cache-control"] == "no-store, max-age=0"
     assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
-    assert provision_calls[0]["learning_opt_in"] is True
     assert "style-src 'self'" in response.headers["content-security-policy"]
 
 
@@ -240,6 +239,7 @@ def test_public_sandbox_post_sets_opaque_cookie_and_redirects_to_new_operation(m
     assert "SameSite=lax" in cookie
     assert response.headers["cache-control"] == "no-store, max-age=0"
     assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
+    assert provision_calls[0]["learning_opt_in"] is True
 
 
 def test_public_sandbox_post_requires_explicit_consent(monkeypatch):
