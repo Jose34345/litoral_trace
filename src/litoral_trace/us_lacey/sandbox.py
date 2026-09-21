@@ -101,22 +101,24 @@ def provision_us_lacey_sandbox(
             },
         ).mappings().one()
 
-        session.execute(
-            text(
-                """
-                SELECT public.us_lacey_sandbox_set_learning_consent(
-                    :token_hash,
-                    :organization_id,
-                    :learning_opt_in
-                )
-                """
-            ),
-            {
-                "token_hash": token_hash,
-                "organization_id": int(row["organization_id"]),
-                "learning_opt_in": bool(learning_opt_in),
-            },
-        )
+        # False is already the fail-closed database default. Avoid a second
+        # privileged capability call unless the visitor explicitly opted in.
+        if learning_opt_in:
+            session.execute(
+                text(
+                    """
+                    SELECT public.us_lacey_sandbox_set_learning_consent(
+                        :token_hash,
+                        :organization_id,
+                        true
+                    )
+                    """
+                ),
+                {
+                    "token_hash": token_hash,
+                    "organization_id": int(row["organization_id"]),
+                },
+            )
 
         session.commit()
         return UsLaceySandboxSession(

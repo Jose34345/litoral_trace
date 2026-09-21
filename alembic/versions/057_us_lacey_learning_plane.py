@@ -15,10 +15,24 @@ branch_labels = None
 depends_on = None
 
 RUNTIME_ROLE = "litoral_trace_app"
+PLATFORM_ROLE = "litoral_trace_platform_definer"
 WORKER_ROLE = "litoral_trace_worker_executor"
 PRIVACY_TRIGGER_FUNCTION = "public._us_lacey_enforce_telemetry_privacy_opt_in()"
 CONSENT_FUNCTION = "public.us_lacey_sandbox_set_learning_consent(text,integer,boolean)"
 ADMIN_METRICS_FUNCTION = "public.platform_admin_learning_plane_metrics(text)"
+
+
+def _grant_temp_platform_set() -> None:
+    op.execute(
+        f"GRANT {PLATFORM_ROLE} TO CURRENT_USER "
+        "WITH ADMIN FALSE, INHERIT FALSE, SET TRUE GRANTED BY CURRENT_USER"
+    )
+
+
+def _revoke_temp_platform_set() -> None:
+    op.execute(
+        f"REVOKE {PLATFORM_ROLE} FROM CURRENT_USER GRANTED BY CURRENT_USER"
+    )
 
 
 def upgrade() -> None:
@@ -268,17 +282,45 @@ def upgrade() -> None:
     op.execute(f"REVOKE ALL ON FUNCTION {ADMIN_METRICS_FUNCTION} FROM {WORKER_ROLE}")
     op.execute(f"GRANT EXECUTE ON FUNCTION {ADMIN_METRICS_FUNCTION} TO {RUNTIME_ROLE}")
 
+    # Own SECURITY DEFINER capabilities with the existing non-login platform
+    # definer. This role already owns the hardened portal/admin capability
+    # functions and has the purge-table privileges established by migration 053.
+    op.execute(
+        f"GRANT SELECT ON TABLE public.us_lacey_telemetry_runs "
+        f"TO {PLATFORM_ROLE}"
+    )
+    _grant_temp_platform_set()
+    op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")
+    for signature in (
+        PRIVACY_TRIGGER_FUNCTION,
+        CONSENT_FUNCTION,
+        ADMIN_METRICS_FUNCTION,
+    ):
+        op.execute(f"ALTER FUNCTION {signature} OWNER TO {PLATFORM_ROLE}")
+    op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
+    _revoke_temp_platform_set()
+
 
 def downgrade() -> None:
-    op.execute(f"REVOKE EXECUTE ON FUNCTION {ADMIN_METRICS_FUNCTION} FROM {RUNTIME_ROLE}")
-    op.execute(f"DROP FUNCTION IF EXISTS {ADMIN_METRICS_FUNCTION}")
-    op.execute(f"REVOKE EXECUTE ON FUNCTION {CONSENT_FUNCTION} FROM {RUNTIME_ROLE}")
-    op.execute(f"DROP FUNCTION IF EXISTS {CONSENT_FUNCTION}")
     op.execute(
         "DROP TRIGGER IF EXISTS trg_enforce_privacy_opt_in "
         "ON public.us_lacey_telemetry_field_actions"
     )
+
+    _grant_temp_platform_set()
+    op.execute(f"SET ROLE {PLATFORM_ROLE}")
+    op.execute(f"REVOKE EXECUTE ON FUNCTION {ADMIN_METRICS_FUNCTION} FROM {RUNTIME_ROLE}")
+    op.execute(f"DROP FUNCTION IF EXISTS {ADMIN_METRICS_FUNCTION}")
+    op.execute(f"REVOKE EXECUTE ON FUNCTION {CONSENT_FUNCTION} FROM {RUNTIME_ROLE}")
+    op.execute(f"DROP FUNCTION IF EXISTS {CONSENT_FUNCTION}")
     op.execute(f"DROP FUNCTION IF EXISTS {PRIVACY_TRIGGER_FUNCTION}")
+    op.execute("RESET ROLE")
+    _revoke_temp_platform_set()
+
+    op.execute(
+        f"REVOKE SELECT ON TABLE public.us_lacey_telemetry_runs "
+        f"FROM {PLATFORM_ROLE}"
+    )
     op.drop_index("ix_us_lacey_telemetry_field_name_action", table_name="us_lacey_telemetry_field_actions")
     op.drop_index("ix_us_lacey_telemetry_field_document_action", table_name="us_lacey_telemetry_field_actions")
     op.drop_index("ix_us_lacey_telemetry_field_run", table_name="us_lacey_telemetry_field_actions")
