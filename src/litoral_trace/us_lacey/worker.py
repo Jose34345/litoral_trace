@@ -907,6 +907,16 @@ def process_one_us_lacey_job(
             conflict_count=projection.conflict_count,
         )
     except Exception as exc:
+        LOGGER.exception(
+            "U.S. Lacey worker job failed; controlled retry will be applied",
+            extra={
+                "organization_id": job.organization_id,
+                "operation_id": job.operation_id,
+                "job_id": job.id,
+                "assurance_document_id": job.assurance_document_id,
+                "attempt_count": job.attempt_count,
+            },
+        )
         queue_status = fail_us_lacey_job(
             job_id=job.id,
             worker_id=worker_id,
