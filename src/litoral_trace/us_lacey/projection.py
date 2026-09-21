@@ -551,6 +551,14 @@ def _explicit_plant_data_rows(
     """
     rows: set[int] = set()
     for source in extracted:
+        # Only raw table cells have an unambiguous table identity. Generic
+        # structured aliases (for example product emitted from a BOM sheet)
+        # retain a row locator but lose the table id; merging headers across an XLSX
+        # can therefore make a BOM row look like a customs allocation row. Generic
+        # fields remain useful candidates after lines exist, but they are never
+        # allowed to manufacture new PPQ line skeletons.
+        if _RAW_TABLE_FIELD.match(str(source.field_name or "")) is None:
+            continue
         target, _priority = _target_field(source, table_headers=table_headers)
         context_headers = _table_header_context(source, table_headers)
         is_plant_identity = (
