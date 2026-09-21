@@ -343,8 +343,19 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
     new_operation = client.get("/operations/new")
     assert new_operation.status_code == 200
     assert 'method="post" action="/operations/new"' in new_operation.text
-    for field in ("csrf_token", "client_reference", "importer_name", "line_references"):
-        assert f'name="{field}"' in new_operation.text
+    assert 'name="csrf_token"' in new_operation.text
+    assert 'name="client_reference"' in new_operation.text
+    assert "Founding Broker" in new_operation.text
+    assert "Create workspace &amp; upload documents" in new_operation.text
+    for removed_field in (
+        "importer_name",
+        "supplier_name",
+        "consignee_name",
+        "broker_name",
+        "operation_date",
+        "line_references",
+    ):
+        assert f'name="{removed_field}"' not in new_operation.text
 
     operation = client.get("/operations/OP-DEMO")
     assert operation.status_code == 200
@@ -353,6 +364,122 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
     assert 'name="documents"' in operation.text
     assert 'multiple required' in operation.text
     assert 'action="/operations/OP-DEMO/complete"' not in operation.text
+
+
+def test_new_operation_submit_uses_zero_data_entry_defaults(monkeypatch):
+    _portal_env(monkeypatch)
+    identity = UsLaceyPortalIdentity(
+        user_id=7,
+        organization_id=41,
+        email="broker@example.com",
+        full_name="Broker User",
+        legal_name="Broker LLC",
+        business_type="CUSTOMS_BROKER",
+        account_status="PILOT",
+    )
+    entitlement = SimpleNamespace(
+        used_operations=0,
+        monthly_operation_limit=100,
+        remaining_operations=100,
+    )
+    observed: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.resolve_us_lacey_session",
+        lambda _token: identity,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.require_us_lacey_operational_access",
+        lambda **_kwargs: entitlement,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.verify_us_lacey_csrf",
+        lambda **_kwargs: None,
+    )
+
+    def fake_create(**kwargs):
+        observed.update(kwargs)
+        return SimpleNamespace(public_id="OP-ZERO-DATA")
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.create_us_lacey_customer_operation",
+        fake_create,
+    )
+
+    client = TestClient(app, follow_redirects=False)
+    client.cookies.set(US_LACEY_SESSION_COOKIE, "opaque-us-session-token")
+    response = client.post(
+        "/operations/new",
+        data={"client_reference": "", "csrf_token": "test-token"},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/operations/OP-ZERO-DATA"
+    assert observed["organization_id"] == 41
+    assert observed["user_id"] == 7
+    assert str(observed["client_reference"]).startswith("LACEY-")
+    assert observed["line_references"] == ("1",)
+    for legacy_field in (
+        "importer_name",
+        "supplier_name",
+        "consignee_name",
+        "broker_name",
+        "operation_date",
+    ):
+        assert legacy_field not in observed
+
+
+def test_new_operation_submit_preserves_optional_customer_reference(monkeypatch):
+    _portal_env(monkeypatch)
+    identity = UsLaceyPortalIdentity(
+        user_id=8,
+        organization_id=42,
+        email="broker2@example.com",
+        full_name="Broker Two",
+        legal_name="Broker Two LLC",
+        business_type="CUSTOMS_BROKER",
+        account_status="ACTIVE",
+    )
+    entitlement = SimpleNamespace(
+        used_operations=1,
+        monthly_operation_limit=100,
+        remaining_operations=99,
+    )
+    observed: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.resolve_us_lacey_session",
+        lambda _token: identity,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.require_us_lacey_operational_access",
+        lambda **_kwargs: entitlement,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.verify_us_lacey_csrf",
+        lambda **_kwargs: None,
+    )
+
+    def fake_create(**kwargs):
+        observed.update(kwargs)
+        return SimpleNamespace(public_id="OP-CUSTOM-REF")
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.create_us_lacey_customer_operation",
+        fake_create,
+    )
+
+    client = TestClient(app, follow_redirects=False)
+    client.cookies.set(US_LACEY_SESSION_COOKIE, "opaque-us-session-token")
+    response = client.post(
+        "/operations/new",
+        data={"client_reference": "  ENTRY-2026-0042  ", "csrf_token": "test-token"},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/operations/OP-CUSTOM-REF"
+    assert observed["client_reference"] == "ENTRY-2026-0042"
+    assert observed["line_references"] == ("1",)
 
 
 def test_logout_preserves_session_cookie_contract(monkeypatch):

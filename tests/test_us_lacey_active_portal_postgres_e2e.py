@@ -188,6 +188,8 @@ _REQUIRED_REVIEW_VALUES = {
     "estimated_arrival_date": "2026-09-15",
     "filing_entry_reference": "123-4567890-1",
     "manufacturer_id": "USWOOD12345",
+    "importer_name": "Active E2E Imports LLC",
+    "consignee_name": "E2E Consignee",
     "importer_address": "100 Test Ave, Miami FL 33101",
     "consignee_address": "200 Test Blvd, Savannah GA 31401",
     "entered_value": "12500",
@@ -255,12 +257,6 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(m
             data={
                 "csrf_token": create_csrf,
                 "client_reference": reference,
-                "importer_name": legal_name,
-                "supplier_name": "Brazil Pine Supplier SA",
-                "consignee_name": "E2E Consignee",
-                "broker_name": "E2E Customs Broker",
-                "operation_date": "2026-08-30",
-                "line_references": "1",
             },
         )
         assert created.status_code == 303

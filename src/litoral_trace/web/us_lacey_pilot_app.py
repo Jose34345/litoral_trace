@@ -5,10 +5,10 @@ uses U.S.-database opaque sessions rather than the generic Litoral Trace JWT.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 import logging
-import re
 import threading
+from uuid import uuid4
 
 from fastapi import BackgroundTasks, Cookie, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -167,6 +167,12 @@ def _operational_context(us_session: str | None):
 
 def _operation_error_page(request: Request, message: str, *, status_code: int = 400) -> HTMLResponse:
     return _html(render_message_page(request=request, title="Operation unavailable.", message=message, authenticated=True, action_href="/operations", action_label="Return to operations"), status_code=status_code)
+
+
+def _generated_customer_operation_reference() -> str:
+    """Create an opaque human-readable reference when the customer leaves it blank."""
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return f"LACEY-{stamp}-{uuid4().hex[:12].upper()}"
 
 
 def _detail_page(*, request: Request, identity, operation_public_id: str, us_session: str, error: str | None = None, notice: str | None = None, status_code: int = 200):
@@ -494,13 +500,7 @@ def new_operation_page(
 @app.post("/operations/new", response_class=HTMLResponse)
 def new_operation_submit(
     request: Request,
-    client_reference: str = Form(...),
-    importer_name: str = Form(""),
-    consignee_name: str = Form(""),
-    broker_name: str = Form(""),
-    supplier_name: str = Form(""),
-    operation_date: str = Form(""),
-    line_references: str = Form(""),
+    client_reference: str = Form(""),
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
@@ -511,22 +511,12 @@ def new_operation_submit(
             purpose="operation:create",
             submitted_token=csrf_token,
         )
-        parsed_date = date.fromisoformat(operation_date) if operation_date.strip() else None
-        parsed_lines = tuple(
-            value.strip()
-            for value in re.split(r"[,;\n]+", line_references)
-            if value.strip()
-        ) or None
+        reference = client_reference.strip() or _generated_customer_operation_reference()
         created = create_us_lacey_customer_operation(
             organization_id=identity.organization_id,
             user_id=identity.user_id,
-            client_reference=client_reference,
-            importer_name=importer_name or None,
-            consignee_name=consignee_name or None,
-            broker_name=broker_name or None,
-            supplier_name=supplier_name or None,
-            operation_date=parsed_date,
-            line_references=parsed_lines,
+            client_reference=reference,
+            line_references=("1",),
         )
         return RedirectResponse(f"/operations/{created.public_id}", status_code=303)
     except UsLaceyPortalAuthError:

@@ -1,1 +1,58 @@
-{% extends "us_lacey/base.html" %}{% set authenticated = true %}{% block lacey_title %}New operation{% endblock %}{% block lacey_content %}{{ page_header("New operation", "Workspace", "Create one preparation workspace. This consumes one operation slot only after the database transaction succeeds.", icon="fa-plus") }}{% if error %}{{ alert("Operation could not be created", error, "danger") }}{% endif %}<section class="lt-card p-6"><dl class="mb-6 grid gap-4 sm:grid-cols-2"><div class="rounded-xl border border-slate-200 p-4"><dt class="text-xs text-slate-500">Available slots</dt><dd class="text-xl font-bold">{{ entitlement.remaining_operations }}</dd></div><div class="rounded-xl border border-slate-200 p-4"><dt class="text-xs text-slate-500">Account</dt><dd class="text-xl font-bold">{{ identity.account_status }}</dd></div></dl><form method="post" action="/operations/new" class="lt-form space-y-5"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label class="lt-field"><span class="lt-field__label">Client / shipment reference</span><input id="client_reference" class="lt-control" name="client_reference" required maxlength="255" placeholder="PO-1048 / Shipment 2026-08-30"></label><div class="lt-form__grid">{% for name,label in [("importer_name","Importer"),("supplier_name","Supplier"),("consignee_name","Consignee"),("broker_name","Customs broker")] %}<label class="lt-field col-span-12 md:col-span-6"><span class="lt-field__label">{{ label }}</span><input id="{{ name }}" class="lt-control" name="{{ name }}" maxlength="255"></label>{% endfor %}<label class="lt-field col-span-12 md:col-span-6"><span class="lt-field__label">Operation date</span><input id="operation_date" class="lt-control" name="operation_date" type="date" lang="en-US" aria-describedby="operation_date_hint"><span id="operation_date_hint" class="text-xs text-slate-500">U.S. reference format: MM/DD/YYYY. Your browser may display the date using your device locale.</span></label><label class="lt-field col-span-12 md:col-span-6"><span class="lt-field__label">Merchandise line references</span><input id="line_references" class="lt-control" name="line_references" placeholder="1, 2, 3"></label></div><p class="text-sm text-slate-500">If line references are omitted, line 1 is created automatically.</p><div class="lt-form__actions">{{ button("Create operation", variant="primary", button_type="submit") }}{{ button("Cancel", "/operations", "secondary") }}</div></form></section>{% endblock %}
+{% extends "us_lacey/base.html" %}
+{% set authenticated = true %}
+
+{% block lacey_title %}New operation{% endblock %}
+
+{% block lacey_content %}
+{{ page_header(
+    "New operation",
+    "Workspace",
+    "Create a workspace for one shipment. Upload your documents and Litoral Trace will extract the information needed for Lacey review.",
+    icon="fa-plus"
+) }}
+
+{% if error %}
+    {{ alert("Operation could not be created", error, "danger") }}
+{% endif %}
+
+<section class="lt-card p-6">
+    <dl class="mb-6 grid gap-4 sm:grid-cols-2">
+        <div class="rounded-xl border border-slate-200 p-4">
+            <dt class="text-xs text-slate-500">Available operations</dt>
+            <dd class="text-xl font-bold">{{ entitlement.remaining_operations }}</dd>
+        </div>
+        <div class="rounded-xl border border-slate-200 p-4">
+            <dt class="text-xs text-slate-500">Plan</dt>
+            <dd class="text-xl font-bold">Founding Broker</dd>
+        </div>
+    </dl>
+
+    <form method="post" action="/operations/new" class="lt-form space-y-5">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <label class="lt-field">
+            <span class="lt-field__label">Shipment / client reference <span class="text-slate-500">(optional)</span></span>
+            <input
+                id="client_reference"
+                class="lt-control"
+                name="client_reference"
+                maxlength="255"
+                placeholder="Entry, job, PO or shipment number"
+                aria-describedby="client_reference_hint"
+            >
+            <span id="client_reference_hint" class="text-xs text-slate-500">
+                Leave this blank and Litoral Trace will create an internal reference automatically.
+            </span>
+        </label>
+
+        <p class="text-sm text-slate-500">
+            Importer, supplier, consignee, broker, shipment date and merchandise lines will be extracted from your uploaded documents whenever supported by the evidence.
+        </p>
+
+        <div class="lt-form__actions">
+            {{ button("Create workspace & upload documents", variant="primary", button_type="submit") }}
+            {{ button("Cancel", "/operations", "secondary") }}
+        </div>
+    </form>
+</section>
+{% endblock %}
