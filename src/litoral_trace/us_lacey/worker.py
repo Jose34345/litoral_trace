@@ -312,7 +312,12 @@ def _shadow_engine2(
             "Lacey Engine 2 shadow resolution failed",
             extra={"organization_id": organization_id, "operation_id": operation_id},
         )
-        return None
+        return ShadowAggregationResult(
+            status="FAILED",
+            shipment_run_id=None,
+            succeeded_document_count=0,
+            failed_document_count=0,
+        )
 
 
 def _operation_source_set_ready_for_finalization(
