@@ -505,6 +505,30 @@ def _target_field(
     return None, 0
 
 
+def _is_supported_explicit_suggestion(
+    *,
+    source: ExtractedDocumentField,
+    source_priority: int,
+    validation_status: str,
+) -> bool:
+    """Return whether evidence is safe to present as one-click supported data.
+
+    FOUND is not a final declaration state. It remains explicitly customer-confirmed
+    later. This only distinguishes a valid exact PPQ observation from a real
+    exception so parser-level review flags on raw cells do not flood the UI.
+    """
+    if str(validation_status or "").upper() != "VALID":
+        return False
+    if float(getattr(source, "confidence", 0.0) or 0.0) < 0.90:
+        return False
+    if not bool(getattr(source, "needs_review", False)):
+        return True
+    return bool(
+        int(source_priority) >= 3
+        and _RAW_TABLE_FIELD.match(str(getattr(source, "field_name", "") or ""))
+        is not None
+    )
+
 def _line_reference(
     *, target: str, source_locator: str | None, line_references: tuple[str, ...]
 ) -> str:
@@ -1198,16 +1222,10 @@ def project_assurance_document_to_us_lacey(
             elif human_confirmed:
                 field.field_status = "MATCHED"
                 matched += 1
-            elif (
-                float(source.confidence) >= 0.90
-                and (
-                    not bool(source.needs_review)
-                    or (
-                        int(source_priority) >= 3
-                        and _RAW_TABLE_FIELD.match(str(source.field_name or ""))
-                        is not None
-                    )
-                )
+            elif _is_supported_explicit_suggestion(
+                source=source,
+                source_priority=source_priority,
+                validation_status=validation.status.value,
             ):
                 # FOUND is still an unconfirmed customer suggestion. Exact,
                 # high-confidence PPQ headers should not be demoted merely because
