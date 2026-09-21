@@ -73,15 +73,21 @@ _EXPLICIT_HEADER_ALIASES = {
     "eta": "estimated_arrival_date",
     "filing entry reference": "filing_entry_reference",
     "entry reference": "filing_entry_reference",
+    "entry filing reference": "filing_entry_reference",
+    "entry number": "filing_entry_reference",
     "entry type": "entry_type",
     "importer name": "importer_name",
+    "importer s name": "importer_name",
     "importer identification": "importer_identifier",
     "importer identifier": "importer_identifier",
     "importer id": "importer_identifier",
     "importer address": "importer_address",
+    "importer s address": "importer_address",
     "consignee": "consignee_name",
     "consignee name": "consignee_name",
+    "consignee s name": "consignee_name",
     "consignee address": "consignee_address",
+    "consignee s address": "consignee_address",
     "broker": "filer_name",
     "customs broker": "filer_name",
     "filer": "filer_name",
@@ -93,8 +99,10 @@ _EXPLICIT_HEADER_ALIASES = {
     "master bill of lading": "bill_of_lading",
     "container": "container_number",
     "container number": "container_number",
+    "container number s": "container_number",
     "manufacturer id": "manufacturer_id",
     "manufacturer identification": "manufacturer_id",
+    "manufacturer identification code mid": "manufacturer_id",
     "shipment description": "merchandise_description",
     "commodity description": "merchandise_description",
     "cargo description": "merchandise_description",
@@ -433,6 +441,11 @@ def _is_candidate_admissible(
         )
     if target in {"importer_name", "consignee_name"}:
         if folded in _PARTY_NON_NAMES:
+            return False
+        # A combined "party | address" cell is not a clean party-name value.
+        # Prefer an explicit Name field when available rather than creating a
+        # false conflict against the same party later in the document.
+        if "|" in raw:
             return False
         if _URLISH.search(raw) or _EMAIL.fullmatch(raw) or _PHONE_ONLY.fullmatch(raw):
             return False
