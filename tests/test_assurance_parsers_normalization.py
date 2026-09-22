@@ -62,6 +62,16 @@ def _pdf_bytes(text: str | None) -> bytes:
     return bytes(output) if not isinstance(output, str) else output.encode("latin-1")
 
 
+def _multi_page_pdf_bytes(page_count: int) -> bytes:
+    pdf = FPDF()
+    for page_number in range(1, page_count + 1):
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=12)
+        pdf.cell(0, 10, text=f"Commercial shipment evidence page {page_number}")
+    output = pdf.output()
+    return bytes(output) if not isinstance(output, str) else output.encode("latin-1")
+
+
 def _scanned_pdf_bytes() -> bytes:
     """Build a PDF with image pixels only: no searchable text layer."""
     image = Image.new("RGB", (1800, 900), "white")
@@ -214,6 +224,19 @@ def test_pdf_parser_extracts_digital_text_without_ocr():
     assert parsed.metadata["ocr_attempted"] is False
     assert parsed.metadata["ocr_applied"] is False
     assert parsed.metadata["page_count"] == 1
+
+
+def test_large_pdf_bounds_expensive_table_extraction(monkeypatch):
+    monkeypatch.setenv("LT_ASSURANCE_PDF_TABLE_PAGE_LIMIT", "3")
+
+    parsed = parse_pdf(_multi_page_pdf_bytes(8))
+
+    assert parsed.ocr_required is False
+    assert parsed.metadata["page_count"] == 8
+    assert parsed.metadata["table_extraction_page_limit"] == 3
+    assert parsed.metadata["table_extraction_pages_scanned"] == 3
+    assert parsed.metadata["table_extraction_truncated"] is True
+    assert "evidence page 8" in parsed.text
 
 
 def test_scanned_pdf_executes_real_ocrmypdf_primary_layer():
