@@ -8,7 +8,10 @@ from urllib.parse import parse_qs
 
 from markupsafe import Markup, escape
 
-from litoral_trace.us_lacey.candidate_normalization import group_candidate_evidence
+from litoral_trace.us_lacey.candidate_normalization import (
+    TaxonomicComparisonContext,
+    group_candidate_evidence,
+)
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
     canonical_ppq_value_key,
@@ -132,7 +135,9 @@ def _present_review_field(field):
     return replace(field, candidates=tuple(presented))
 
 
-_OPEN_REVIEW_STATUSES = frozenset({"MISSING", "REVIEW", "FOUND"})
+_ACTION_REQUIRED_STATUSES = frozenset({"MISSING", "CONFLICT"})
+_AUTO_SUPPORTED_STATUSES = frozenset({"SUPPORTED"})
+_SETTLED_STATUSES = frozenset({"MATCHED", "NOT_REQUIRED"})
 
 
 def _is_customer_ppq_field(field) -> bool:
@@ -140,58 +145,107 @@ def _is_customer_ppq_field(field) -> bool:
     return field_name is None or field_name in PPQ505_FIELDS_BY_KEY
 
 
-def _review_field_sets(detail):
-    customer_fields = tuple(field for field in detail.fields if _is_customer_ppq_field(field))
-    article_components = {
-        str(getattr(field, "line_reference", "")): field
-        for field in customer_fields
-        if getattr(field, "field_name", None) == "article_component"
-    }
+def _taxonomic_context_for_presented_field(
+    field,
+    all_fields,
+) -> TaxonomicComparisonContext | None:
+    """Return same-line genus context when presenting species alternatives."""
+    if getattr(field, "field_name", None) != "species":
+        return None
 
-    def is_open_review_field(field) -> bool:
-        if getattr(field, "status", None) not in _OPEN_REVIEW_STATUSES:
-            return False
-        if getattr(field, "field_name", None) != "percent_recycled":
-            return True
-        article = article_components.get(str(getattr(field, "line_reference", "")))
-        return article is None or getattr(article, "status", None) not in _OPEN_REVIEW_STATUSES
+    line_reference = str(getattr(field, "line_reference", ""))
+    genus_field = next(
+        (
+            candidate
+            for candidate in all_fields
+            if (
+                str(getattr(candidate, "line_reference", "")) == line_reference
+                and getattr(candidate, "field_name", None) == "genus"
+            )
+        ),
+        None,
+    )
+    if genus_field is None:
+        return None
 
-    exception_fields = [
-        _present_review_field(field)
-        for field in customer_fields
-        if is_open_review_field(field)
-    ]
-    settled_fields = [
-        field
-        for field in customer_fields
-        if field.status not in _OPEN_REVIEW_STATUSES
-        and _field_has_displayable_resolution(field)
-    ]
-    return exception_fields, settled_fields
+    genus = (
+        getattr(genus_field, "human_value", None)
+        or getattr(genus_field, "normalized_value", None)
+        or getattr(genus_field, "original_value", None)
+    )
+    if genus is None or not str(genus).strip():
+        return None
+    return TaxonomicComparisonContext(genus=str(genus).strip())
+
+
+def _present_review_field(field, *, all_fields):
+    """Collapse semantically equivalent evidence for customer presentation."""
+    field_name = getattr(field, "field_name", None)
+    candidates = getattr(field, "candidates", ())
+    if not field_name or not candidates:
+        return field
+
+    groups = group_candidate_evidence(
+        field_name,
+        candidates,
+        comparison_context=_taxonomic_context_for_presented_field(
+            field,
+            all_fields,
+        ),
+    )
+    if not groups:
+        return replace(field, candidates=())
+
+    presented = []
+    for group in groups:
+        representative = group.representative
+        page_value = representative.source_page
+        if len(group.source_pages) > 1:
+            page_value = ", ".join(str(page) for page in group.source_pages)
+        elif len(group.source_pages) == 1:
+            page_value = group.source_pages[0]
+        presented.append(
+            replace(
+                representative,
+                confidence=float(group.confidence),
+                source_page=page_value,
+            )
+        )
+    return replace(field, candidates=tuple(presented))
 
 
 def _review_field_groups(detail):
-    """Split review presentation into attention, supported and settled buckets.
+    """Partition the customer workflow into exception-first presentation buckets."""
+    customer_fields = tuple(
+        field for field in detail.fields if _is_customer_ppq_field(field)
+    )
+    presented = tuple(
+        _present_review_field(field, all_fields=customer_fields)
+        for field in customer_fields
+    )
 
-    This is presentation-only grouping. FOUND remains an unconfirmed server-side
-    suggestion and is never promoted to a new authority state by the UI.
-    """
-    exception_fields, settled_fields = _review_field_sets(detail)
+    attention_fields = tuple(
+        field
+        for field in presented
+        if getattr(field, "status", None) in _ACTION_REQUIRED_STATUSES
+    )
     auto_supported_fields = tuple(
         field
-        for field in exception_fields
+        for field in presented
         if (
-            getattr(field, "status", None) == "FOUND"
-            and getattr(field, "validation_status", None) != "REVIEW_REQUIRED"
+            getattr(field, "status", None) in _AUTO_SUPPORTED_STATUSES
             and bool(getattr(field, "proposed_value", None))
-            and len(getattr(field, "candidates", ())) <= 1
         )
     )
-    auto_supported_ids = {field.id for field in auto_supported_fields}
-    attention_fields = tuple(
-        field for field in exception_fields if field.id not in auto_supported_ids
+    settled_fields = tuple(
+        field
+        for field in presented
+        if (
+            getattr(field, "status", None) in _SETTLED_STATUSES
+            and _field_has_displayable_resolution(field)
+        )
     )
-    return attention_fields, auto_supported_fields, tuple(settled_fields)
+    return attention_fields, auto_supported_fields, settled_fields
 
 
 def _semantic_evidence_for_detail(identity, detail) -> dict[str, tuple[EvidenceTextView, ...]]:
@@ -317,15 +371,6 @@ def _decorate_review_fields(fields, evidence_by_field: Mapping[str, tuple[Eviden
             presentation += _semantic_evidence_markup(evidence)
         decorated.append(replace(field, proposed_value=presentation))
     return decorated
-
-
-def _review_field_sets_with_semantic_evidence(identity, detail):
-    exception_fields, settled_fields = _review_field_sets(detail)
-    evidence_by_field = _semantic_evidence_for_detail(identity, detail)
-    return (
-        _decorate_review_fields(exception_fields, evidence_by_field),
-        _decorate_review_fields(settled_fields, evidence_by_field),
-    )
 
 
 def _review_field_groups_with_semantic_evidence(identity, detail):
