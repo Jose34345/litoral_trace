@@ -713,6 +713,17 @@ jobs:
             echo "Sandbox growth attribution PostgreSQL acceptance must not skip in CI."
             exit 1
           fi
+      - name: Prove first-party outreach attribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs \
+            tests/test_us_lacey_outreach_attribution_postgres.py \
+            | tee /tmp/outreach-attribution-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/outreach-attribution-postgres.txt; then
+            echo "Outreach attribution PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
       - name: Prove Engine 2 shadow-worker contracts
         run: python -m pytest -q -rs tests/test_us_lacey_engine2_shadow_worker.py
       - name: Prove Engine 2 static schema contracts
