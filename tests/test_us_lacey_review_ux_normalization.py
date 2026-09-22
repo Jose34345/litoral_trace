@@ -181,3 +181,26 @@ def test_disabled_complete_preparation_has_entered_value_reconciliation_tooltip(
         "Cannot complete preparation: Please resolve the Entered Value reconciliation inconsistency first."
         in ui
     )
+
+
+def test_exception_first_ui_polish_uses_quiet_enterprise_surfaces():
+    workspace = Path(
+        "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
+    ).read_text(encoding="utf-8")
+    regulatory = Path(
+        "src/litoral_trace/templates/us_lacey/fragments/regulatory_assessment_card.html"
+    ).read_text(encoding="utf-8")
+
+    assert "border border-slate-200 border-l-4" in workspace
+    assert "bg-emerald-50/40" not in workspace
+    assert "border-emerald-200 bg-emerald-50/40" not in workspace
+    assert "ring-emerald-600/20" in workspace
+    assert "ring-amber-600/20" in workspace
+    assert "focus:ring-2 focus:ring-emerald-600" in workspace
+    assert 'button("Save", variant="secondary"' in workspace
+
+    assert "U.S. Lacey ruleset" not in regulatory
+    assert "border border-slate-200 border-l-4" in regulatory
+    assert "bg-amber-50/80" not in regulatory
+    assert "bg-rose-50/80" not in regulatory
+    assert "ring-amber-600/20" in regulatory

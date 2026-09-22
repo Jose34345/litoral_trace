@@ -108,6 +108,9 @@ def test_terminal_workspace_hydrates_rule_scoped_regulatory_panel(monkeypatch):
     assert "shipment pass" not in html.lower()
     assert "Reason:" not in html
     assert "MISSING_REQUIRED_INPUTS" not in html
+    assert "U.S. Lacey ruleset" not in html
+    assert "border-l-amber-500" in html
+    assert "ring-amber-600/20" in html
     assert "provide the missing quantities or values in the Action Required tab" in html
 
 

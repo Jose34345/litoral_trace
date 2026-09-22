@@ -5,12 +5,9 @@
   {% set passed = assessments|selectattr('status', 'equalto', 'PASS')|list %}
   {% set not_applicable = assessments|selectattr('status', 'equalto', 'NOT_APPLICABLE')|list %}
 
-  <div class="flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <h3 id="regulatory-assessment-title" class="font-bold text-slate-950">Shipment compliance checks</h3>
-      <p class="mt-1 text-sm text-slate-600">Litoral Trace keeps only checks that need attention expanded, so your team can focus on the facts that still affect declaration preparation.</p>
-    </div>
-    <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">U.S. Lacey ruleset {{ regulatory_assessment.ruleset_version|replace('us-lacey-regulatory-rules-', '')|upper }}</span>
+  <div>
+    <h3 id="regulatory-assessment-title" class="font-bold text-slate-950">Shipment compliance checks</h3>
+    <p class="mt-1 text-sm text-slate-600">Litoral Trace keeps only checks that need attention expanded, so your team can focus on the facts that still affect declaration preparation.</p>
   </div>
 
   <div class="mt-4 flex flex-wrap gap-4 text-sm text-slate-700">
@@ -24,7 +21,7 @@
     {% for assessment in failed + indeterminate %}
     {% set is_failed = assessment.get('status') == 'FAIL' %}
     <article
-      class="rounded-lg border border-l-4 {% if is_failed %}border-rose-200 border-l-rose-500 bg-rose-50/80{% else %}border-amber-200 border-l-amber-500 bg-amber-50/80{% endif %} p-4 shadow-sm"
+      class="rounded-lg border border-slate-200 border-l-4 {% if is_failed %}border-l-rose-500{% else %}border-l-amber-500{% endif %} bg-white p-4 shadow-sm"
       data-regulatory-exception
       data-regulatory-rule="{{ assessment.get('rule_id', '') }}"
       data-regulatory-rule-status="{{ assessment.get('status', '') }}"
@@ -39,7 +36,7 @@
             <p class="mt-1 text-xs font-medium text-slate-500">{{ assessment.get('display_subject', 'Shipment') }}</p>
           </div>
         </div>
-        <span class="rounded-full bg-white px-3 py-1 text-xs font-bold {% if is_failed %}text-rose-700{% else %}text-amber-700{% endif %}">
+        <span class="rounded-md px-3 py-1 text-xs font-medium ring-1 ring-inset {% if is_failed %}bg-rose-50 text-rose-700 ring-rose-600/20{% else %}bg-amber-50 text-amber-700 ring-amber-600/20{% endif %}">
           {{ assessment.get('display_status', 'Review required') }}
         </span>
       </div>
@@ -54,21 +51,21 @@
     {% endfor %}
   </div>
   {% else %}
-  <div class="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+  <div class="mt-5 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
     <i class="fa-solid fa-circle-check mr-2" aria-hidden="true"></i>
     No compliance checks currently require additional information or review.
   </div>
   {% endif %}
 
   {% if passed %}
-  <details class="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4" data-regulatory-passed>
+  <details class="mt-5 rounded-lg border border-slate-200 bg-white p-4" data-regulatory-passed>
     <summary class="cursor-pointer text-sm font-semibold text-emerald-800"><i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i>{{ passed|length }} check{{ '' if passed|length == 1 else 's' }} completed</summary>
     <div class="mt-4 grid gap-2">
       {% for assessment in passed %}
       <article class="rounded-lg border border-slate-200 bg-white p-3" data-regulatory-rule="{{ assessment.get('rule_id', '') }}" data-regulatory-rule-status="PASS">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <strong class="text-sm text-slate-900">{{ assessment.get('display_title', 'Regulatory check') }}</strong>
-          <span class="text-xs font-bold text-emerald-700">{{ assessment.get('display_status', 'Check passed') }}</span>
+          <span class="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">{{ assessment.get('display_status', 'Check passed') }}</span>
         </div>
         {% if assessment.get('customer_message') %}<p class="mt-2 text-xs leading-5 text-slate-600">{{ assessment.get('customer_message') }}</p>{% endif %}
       </article>
@@ -78,14 +75,14 @@
   {% endif %}
 
   {% if not_applicable %}
-  <details class="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4" data-regulatory-not-applicable>
+  <details class="mt-5 rounded-lg border border-slate-200 bg-white p-4" data-regulatory-not-applicable>
     <summary class="cursor-pointer text-sm font-semibold text-slate-700">{{ not_applicable|length }} pathway{{ '' if not_applicable|length == 1 else 's' }} not applicable to this shipment</summary>
     <div class="mt-4 grid gap-2">
       {% for assessment in not_applicable %}
       <article class="rounded-lg border border-slate-200 bg-white p-3" data-regulatory-rule="{{ assessment.get('rule_id', '') }}" data-regulatory-rule-status="NOT_APPLICABLE">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <strong class="text-sm text-slate-900">{{ assessment.get('display_title', 'Regulatory check') }}</strong>
-          <span class="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">{{ assessment.get('display_status', 'Not applicable') }}</span>
+          <span class="rounded-md bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-300">{{ assessment.get('display_status', 'Not applicable') }}</span>
         </div>
         {% if assessment.get('customer_message') %}<p class="mt-2 text-xs leading-5 text-slate-600">{{ assessment.get('customer_message') }}</p>{% endif %}
       </article>
