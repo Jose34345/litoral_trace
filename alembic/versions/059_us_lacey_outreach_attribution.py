@@ -641,8 +641,9 @@ def upgrade() -> None:
         """
     )
 
-    op.execute("RESET ROLE")
-
+    # Functions are created while SET ROLE points at the non-login platform
+    # definer, so that role is already their owner. Apply function ACLs before
+    # RESET ROLE; the migrator never needs to impersonate ownership afterwards.
     for signature in (
         OPEN_FUNCTION,
         BIND_FUNCTION,
@@ -650,15 +651,11 @@ def upgrade() -> None:
         CREATE_LINK_FUNCTION,
         FUNNEL_FUNCTION,
     ):
-        op.execute(f"ALTER FUNCTION {signature} OWNER TO {PLATFORM_ROLE}")
         op.execute(f"REVOKE ALL ON FUNCTION {signature} FROM PUBLIC")
         op.execute(f"REVOKE ALL ON FUNCTION {signature} FROM {WORKER_ROLE}")
-
-    for signature in (OPEN_FUNCTION, BIND_FUNCTION, EVENT_FUNCTION):
-        op.execute(f"GRANT EXECUTE ON FUNCTION {signature} TO {RUNTIME_ROLE}")
-    for signature in (CREATE_LINK_FUNCTION, FUNNEL_FUNCTION):
         op.execute(f"GRANT EXECUTE ON FUNCTION {signature} TO {RUNTIME_ROLE}")
 
+    op.execute("RESET ROLE")
     op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
     _revoke_temp_platform_set()
 
