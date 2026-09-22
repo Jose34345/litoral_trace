@@ -149,7 +149,7 @@ def _workspace_fragment(
             purpose=f"review:{detail.public_id}:{field.id}",
         )
         for field in detail.fields
-        if field.status in {"MISSING", "REVIEW", "FOUND"}
+        if field.status in {"MISSING", "CONFLICT", "SUPPORTED"}
     }
     return _html(
         render_operation_workspace(
@@ -250,7 +250,7 @@ def review_supported_field(
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
-    """Confirm/edit a legacy high-confidence FOUND proposal explicitly."""
+    """Confirm/edit one high-confidence SUPPORTED proposal explicitly."""
     try:
         identity, _entitlement = _identity_and_entitlement(us_session)
         verify_us_lacey_csrf(
@@ -263,7 +263,7 @@ def review_supported_field(
             operation_public_id=operation_public_id,
         )
         field = _find_supported_field(detail, field_id)
-        if field is None or field.status != "FOUND":
+        if field is None or field.status != "SUPPORTED":
             raise UsLaceyReviewError("This suggestion is no longer awaiting confirmation.")
         normalized_action = str(action or "").strip().lower()
         if normalized_action not in {"accept", "edit"}:
@@ -370,7 +370,7 @@ def accept_all_supported_fields(
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
-    """Atomically confirm only unambiguous FOUND proposals."""
+    """Atomically confirm only unambiguous SUPPORTED proposals."""
     try:
         identity, _entitlement = _identity_and_entitlement(us_session)
         verify_us_lacey_csrf(
