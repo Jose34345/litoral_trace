@@ -14,7 +14,7 @@ def _context(subject: RegulatorySubject) -> RegulatoryContext:
     return RegulatoryContext(subjects=(subject,))
 
 
-def test_special_recycled_no_positive_recycled_evidence_fails():
+def test_special_recycled_no_positive_recycled_evidence_is_not_applicable():
     subject = RegulatorySubject(
         subject_ref="LINE-1",
         line_reference="LINE-1",
@@ -26,11 +26,11 @@ def test_special_recycled_no_positive_recycled_evidence_fails():
         context=_context(subject),
     )
 
-    assert result.status is RuleStatus.FAIL
+    assert result.status is RuleStatus.NOT_APPLICABLE
     assert result.reason_codes == ("NO_RECYCLED_MATERIAL_EVIDENCE",)
 
 
-def test_special_recycled_known_species_fails_even_with_recycled_material():
+def test_special_recycled_known_species_is_not_applicable_even_with_recycled_material():
     subject = RegulatorySubject(
         subject_ref="LINE-1",
         line_reference="LINE-1",
@@ -44,7 +44,7 @@ def test_special_recycled_known_species_fails_even_with_recycled_material():
         context=_context(subject),
     )
 
-    assert result.status is RuleStatus.FAIL
+    assert result.status is RuleStatus.NOT_APPLICABLE
     assert result.reason_codes == ("SPECIES_DETERMINABLE_AFTER_DUE_CARE",)
 
 
@@ -88,7 +88,7 @@ def test_special_recycled_pass_requires_positive_recycled_and_due_care_facts():
     assert result.review_required is False
 
 
-def test_special_recycled_pure_evaluator_is_fail_closed_on_unknown_recycled_status():
+def test_special_recycled_pure_evaluator_treats_unknown_recycled_status_as_not_applicable():
     result = evaluate_special_recycled(
         SpecialRecycledInput(
             subject_ref="LINE-1",
@@ -97,7 +97,7 @@ def test_special_recycled_pure_evaluator_is_fail_closed_on_unknown_recycled_stat
         )
     )
 
-    assert result.status is RuleStatus.FAIL
+    assert result.status is RuleStatus.NOT_APPLICABLE
     assert result.reason_codes == ("NO_RECYCLED_MATERIAL_EVIDENCE",)
 
 
@@ -121,5 +121,5 @@ def test_known_species_overrides_contradictory_due_care_rule_input():
         context=_context(subject),
     )
 
-    assert result.status is RuleStatus.FAIL
+    assert result.status is RuleStatus.NOT_APPLICABLE
     assert result.reason_codes == ("SPECIES_DETERMINABLE_AFTER_DUE_CARE",)
