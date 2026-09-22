@@ -11,9 +11,8 @@ from litoral_trace.us_lacey.ppq505 import (
     canonical_ppq_value_key,
     validate_ppq_value,
 )
-from litoral_trace.us_lacey.semantic_evidence_read import EvidenceTextView
 from litoral_trace.web.us_lacey_operational_views import (
-    _decorate_review_fields,
+    _auto_resolved_evidence_summary,
     _present_review_field,
     render_operation_workspace,
 )
@@ -222,6 +221,7 @@ class _PresentedField:
     source_page: int | str | None
     source_assurance_document_id: int | None
     source_locator: str | None
+    candidates: tuple[_Candidate, ...]
     scope: str = "SHIPMENT"
 
 
@@ -233,53 +233,14 @@ def test_auto_resolved_evidence_summary_deduplicates_pages_without_mutating_valu
         source_page=2,
         source_assurance_document_id=10,
         source_locator=None,
-    )
-    evidence = (
-        EvidenceTextView(
-            source_span_id=1,
-            target_field="species",
-            original_text="grandis",
-            original_language="en",
-            translated_text=None,
-            display_text="grandis",
-            is_translated=False,
-            original_language_label="English",
-            source_assurance_document_id=10,
-            source_page=2,
-            source_locator=None,
-            normalized_value="grandis",
-        ),
-        EvidenceTextView(
-            source_span_id=2,
-            target_field="species",
-            original_text="grandis",
-            original_language="en",
-            translated_text=None,
-            display_text="grandis",
-            is_translated=False,
-            original_language_label="English",
-            source_assurance_document_id=10,
-            source_page=2,
-            source_locator=None,
-            normalized_value="grandis",
-        ),
-        EvidenceTextView(
-            source_span_id=3,
-            target_field="species",
-            original_text="grandis",
-            original_language="en",
-            translated_text=None,
-            display_text="grandis",
-            is_translated=False,
-            original_language_label="English",
-            source_assurance_document_id=10,
-            source_page=3,
-            source_locator=None,
-            normalized_value="grandis",
+        candidates=(
+            _Candidate(1, "grandis", "grandis", source_page=2),
+            _Candidate(2, "grandis", "grandis", source_page=2),
+            _Candidate(3, "grandis", "grandis", source_page=3),
         ),
     )
 
-    [presented] = _decorate_review_fields((field,), {"species": evidence})
+    [presented] = _auto_resolved_evidence_summary((field,))
 
     assert presented.proposed_value == "grandis"
     assert presented.source_page == "2, 3"
