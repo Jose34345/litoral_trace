@@ -149,3 +149,5 @@ with sync_playwright() as p:
     encoding="utf-8",
 )
 print("SANITY_SUMMARY=" + json.dumps(summary, sort_keys=True))
+
+# workflow trigger
