@@ -88,6 +88,31 @@ def _patch_admin_reads(monkeypatch, seen_tokens: list[str]):
             "sandbox_avg_processing_ms": 4200,
         },
     )
+    monkeypatch.setattr(
+        admin_surface,
+        "list_outreach_funnel_superadmin",
+        lambda *, refresh_token, limit=50: [
+            {
+                "outreach_link_id": 91,
+                "slug": "concannon-sep26-a1b2c3",
+                "prospect_label": "Concannon Lumber",
+                "campaign_code": "concannon-sep26",
+                "source": "direct_outreach",
+                "active": True,
+                "created_at": None,
+                "click_count": 2,
+                "attributed_sessions": 2,
+                "sandbox_started": 1,
+                "operations_created": 1,
+                "document_uploads": 1,
+                "review_reached": 1,
+                "auto_resolved_confirmed": 0,
+                "review_completed": 0,
+                "exports_downloaded": 0,
+                "last_event_at": None,
+            }
+        ],
+    )
 
 
 def test_admin_without_us_session_redirects_to_portal_login():
@@ -130,7 +155,80 @@ def test_superadmin_page_reuses_same_us_session_for_control_plane(monkeypatch):
     assert "Global HCR" in response.text
     assert "12.5%" in response.text
     assert "4.2s" in response.text
+    assert "First-party outreach attribution" in response.text
+    assert "Concannon Lumber" in response.text
+    assert (
+        "https://lacey.litoraltrace.com/sandbox/ref/concannon-sep26-a1b2c3"
+        in response.text
+    )
     assert seen_tokens == [SESSION]
+
+
+def test_admin_can_create_attributed_prospect_link(monkeypatch):
+    monkeypatch.setattr(
+        admin_surface,
+        "resolve_us_lacey_session",
+        lambda token: _identity(),
+    )
+    monkeypatch.setattr(
+        admin_surface,
+        "_platform_admin_refresh_token",
+        lambda token: token,
+    )
+    monkeypatch.setattr(
+        admin_surface,
+        "_outreach_slug",
+        lambda _campaign: "concannon-sep26-a1b2c3",
+    )
+    calls = []
+
+    def create_link(**kwargs):
+        calls.append(kwargs)
+        return {
+            "outreach_link_id": 91,
+            "slug": kwargs["slug"],
+            "prospect_label": kwargs["prospect_label"],
+            "campaign_code": kwargs["campaign_code"],
+            "source": kwargs["source"],
+            "active": True,
+            "created_at": None,
+        }
+
+    monkeypatch.setattr(
+        admin_surface,
+        "create_outreach_link_superadmin",
+        create_link,
+    )
+
+    client.cookies.set(US_LACEY_SESSION_COOKIE, SESSION)
+    try:
+        response = client.post(
+            "/admin/outreach-links",
+            data={
+                "prospect_label": "Concannon Lumber",
+                "campaign_code": "concannon-sep26",
+                "source": "direct_outreach",
+                "csrf_token": us_lacey_csrf_token(
+                    session_token=SESSION,
+                    purpose="platform-admin-outreach-create",
+                ),
+            },
+            follow_redirects=False,
+        )
+    finally:
+        client.cookies.delete(US_LACEY_SESSION_COOKIE)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/admin?notice=")
+    assert calls == [
+        {
+            "refresh_token": SESSION,
+            "slug": "concannon-sep26-a1b2c3",
+            "prospect_label": "Concannon Lumber",
+            "campaign_code": "concannon-sep26",
+            "source": "direct_outreach",
+        }
+    ]
 
 
 def test_admin_status_mutation_requires_valid_session_bound_csrf(monkeypatch):
