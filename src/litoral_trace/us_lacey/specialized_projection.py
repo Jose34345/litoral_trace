@@ -485,7 +485,7 @@ def project_specialized_candidates(
 
         target.original_value = candidate.value
         target.normalized_value = validation.normalized_value
-        target.field_status = "FOUND"
+        target.field_status = "SUPPORTED"
         target.confidence = float(candidate.confidence)
         target.source_assurance_document_id = source_map.get(envelope.document_id)
         target.source_page = int(candidate.page)
