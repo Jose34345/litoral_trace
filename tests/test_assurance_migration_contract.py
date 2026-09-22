@@ -26,6 +26,9 @@ US_LACEY_LEARNING_PLANE_MIGRATION = Path(
 US_LACEY_EXCEPTION_FIRST_MIGRATION = Path(
     "alembic/versions/058_us_lacey_exception_first_states.py"
 )
+US_LACEY_OUTREACH_ATTRIBUTION_MIGRATION = Path(
+    "alembic/versions/059_us_lacey_outreach_attribution.py"
+)
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -216,9 +219,31 @@ def test_us_lacey_exception_first_follows_learning_plane():
     assert "'CONFLICT'" in text
 
 
+def test_us_lacey_outreach_attribution_follows_exception_first():
+    text = US_LACEY_OUTREACH_ATTRIBUTION_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "059_us_lacey_outreach_attribution"' in text
+    assert 'down_revision = "058_us_lacey_exception_first_states"' in text
+    for table in (
+        "us_lacey_outreach_links",
+        "us_lacey_outreach_sessions",
+        "us_lacey_outreach_events",
+    ):
+        assert table in text
+    assert "sandbox_attribution_session_id" in text
+    assert "us_lacey_outreach_open" in text
+    assert "us_lacey_outreach_bind_sandbox" in text
+    assert "us_lacey_outreach_record_event" in text
+    assert "platform_admin_create_outreach_link" in text
+    assert "platform_admin_outreach_funnel" in text
+    assert "SECURITY DEFINER" in text
+    assert "REVOKE ALL ON TABLE" in text
+    assert "document_content" not in text
+    assert "extracted_value" not in text
+
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "058_us_lacey_exception_first_states (head)" in text
+    assert "059_us_lacey_outreach_attribution (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():
