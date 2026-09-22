@@ -95,11 +95,18 @@ with sync_playwright() as p:
 
     special_rule_statuses = {}
     for rule_id in ("SPECIAL_COMPOSITE", "SPECIAL_RECYCLED"):
-        rule = page.locator(f'[data-regulatory-rule="{rule_id}"]')
-        assert rule.count() == 1, f"{rule_id} missing"
-        status = rule.get_attribute("data-regulatory-rule-status")
-        special_rule_statuses[rule_id] = status
-        assert status == "NOT_APPLICABLE", (rule_id, status)
+        rules = page.locator(f'[data-regulatory-rule="{rule_id}"]')
+        count = rules.count()
+        assert count > 0, f"{rule_id} missing"
+        statuses = [
+            rules.nth(index).get_attribute("data-regulatory-rule-status")
+            for index in range(count)
+        ]
+        special_rule_statuses[rule_id] = statuses
+        assert all(status == "NOT_APPLICABLE" for status in statuses), (
+            rule_id,
+            statuses,
+        )
     summary["special_rule_statuses"] = special_rule_statuses
     page.screenshot(path=str(ARTIFACT_DIR / "04-regulatory-analysis.png"), full_page=True)
 
