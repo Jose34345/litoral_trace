@@ -888,7 +888,12 @@ def _apply_percent_recycled_condition(
         validation = validate_ppq_value("percent_recycled", source_value)
         percent_field.validation_status = validation.status.value
         percent_field.validation_error = validation.error
-        percent_field.field_status = "REVIEW"
+        percent_field.field_status = (
+            "SUPPORTED"
+            if validation.status.value == "VALID"
+            and float(percent_field.confidence or 0.0) > AUTO_SUPPORT_MIN_CONFIDENCE
+            else "MISSING"
+        )
 
 
 def refresh_us_lacey_operation_status(
