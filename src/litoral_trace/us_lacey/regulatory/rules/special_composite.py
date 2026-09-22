@@ -107,16 +107,21 @@ def evaluate_special_composite(inputs: SpecialCompositeInput) -> RuleAssessment:
     if inputs.thin_solid_plies_or_layers is TriState.YES:
         return _assessment(
             inputs,
-            status=RuleStatus.FAIL,
-            reasons=("THIN_SOLID_PLIES_DISQUALIFY",),
-            explanation="Thin plies or layers of solid wood do not support SPECIAL / COMPOSITE.",
+            status=RuleStatus.NOT_APPLICABLE,
+            reasons=("THIN_SOLID_PLIES_NOT_SPECIAL_COMPOSITE",),
+            explanation=(
+                "The material does not use the SPECIAL / COMPOSITE declaration pathway."
+            ),
         )
     if inputs.species_determinable_after_due_care is TriState.YES:
         return _assessment(
             inputs,
-            status=RuleStatus.FAIL,
+            status=RuleStatus.NOT_APPLICABLE,
             reasons=("SPECIES_DETERMINABLE_AFTER_DUE_CARE",),
-            explanation="The scientific name is determinable after due care, so SPECIAL / COMPOSITE is not supported.",
+            explanation=(
+                "A scientific name is determinable from the supported evidence. "
+                "The SPECIAL / COMPOSITE alternative is not applicable."
+            ),
         )
     if (
         inputs.small_fibers_more_than_one_plant_kind is TriState.NO
@@ -124,9 +129,11 @@ def evaluate_special_composite(inputs: SpecialCompositeInput) -> RuleAssessment:
     ):
         return _assessment(
             inputs,
-            status=RuleStatus.FAIL,
+            status=RuleStatus.NOT_APPLICABLE,
             reasons=("COMPOSITE_CONSTRUCTION_NOT_SATISFIED",),
-            explanation="The supplied construction facts do not satisfy SPECIAL / COMPOSITE criteria.",
+            explanation=(
+                "The supplied construction facts do not use the SPECIAL / COMPOSITE pathway."
+            ),
         )
 
     required = (
