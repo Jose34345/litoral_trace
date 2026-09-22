@@ -41,7 +41,8 @@ def test_bulk_rejection_does_not_mix_request_feedback_with_stale_analysis_ui():
     # Engine 2 placeholder or a processing failure that belongs to a previously
     # stored document. The operation history remains untouched and is visible on
     # the normal operation GET after the customer leaves this request-local state.
-    assert source.count('{% if not bulk_upload_rejection %}') >= 2
+    assert '{% if not bulk_upload_rejection %}' in source
+    assert '{% if not bulk_upload_rejection and not processing.terminal %}' in source
     assert 'id="engine2-dossier"' in source
     assert 'id="processing-panel"' in source
 
