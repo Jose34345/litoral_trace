@@ -406,20 +406,39 @@ def _semantic_evidence_markup(evidence: EvidenceTextView) -> Markup:
 
 
 def _decorate_review_fields(fields, evidence_by_field: Mapping[str, tuple[EvidenceTextView, ...]]):
+    """Attach a compact, deduplicated source-page summary to review fields.
+
+    Customer-facing values stay as plain values. Raw semantic-evidence spans are
+    intentionally not concatenated into the value because repeated extractor
+    observations create a noisy data-dump presentation.
+    """
     decorated = []
     for field in fields:
         proposed_value = getattr(field, "proposed_value", None)
         if not proposed_value:
             decorated.append(field)
             continue
+
         evidence_items = _evidence_for_field(field, evidence_by_field)
         if not evidence_items:
             decorated.append(field)
             continue
-        presentation = Markup("{}").format(escape(str(proposed_value)))
-        for evidence in evidence_items:
-            presentation += _semantic_evidence_markup(evidence)
-        decorated.append(replace(field, proposed_value=presentation))
+
+        unique_pages = tuple(
+            sorted(
+                {
+                    int(evidence.source_page)
+                    for evidence in evidence_items
+                    if getattr(evidence, "source_page", None) is not None
+                }
+            )
+        )
+        if not unique_pages:
+            decorated.append(field)
+            continue
+
+        page_summary = ", ".join(str(page) for page in unique_pages)
+        decorated.append(replace(field, source_page=page_summary))
     return decorated
 
 

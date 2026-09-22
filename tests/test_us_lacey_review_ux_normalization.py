@@ -11,7 +11,9 @@ from litoral_trace.us_lacey.ppq505 import (
     canonical_ppq_value_key,
     validate_ppq_value,
 )
+from litoral_trace.us_lacey.semantic_evidence_read import EvidenceTextView
 from litoral_trace.web.us_lacey_operational_views import (
+    _decorate_review_fields,
     _present_review_field,
     render_operation_workspace,
 )
@@ -198,6 +200,10 @@ def test_exception_first_ui_polish_uses_quiet_enterprise_surfaces():
     assert "ring-amber-600/20" in workspace
     assert "focus:ring-2 focus:ring-emerald-600" in workspace
     assert 'button("Save", variant="secondary"' in workspace
+    assert 'border border-slate-200 bg-white p-4 shadow-sm' in workspace
+    assert "Source: Document evidence" in workspace
+    assert "border-t border-slate-100 bg-slate-50 px-3 py-3" in workspace
+    assert "semantically equivalent source observations were reconciled" not in workspace
 
     assert "U.S. Lacey ruleset" not in regulatory
     assert "border border-slate-200 border-l-4" in regulatory
@@ -205,3 +211,76 @@ def test_exception_first_ui_polish_uses_quiet_enterprise_surfaces():
     assert "bg-rose-50/80" not in regulatory
     assert "ring-amber-600/20" in regulatory
     assert "bg-emerald-50/40" not in regulatory
+
+
+
+@dataclass(frozen=True)
+class _PresentedField:
+    field_name: str
+    proposed_value: str
+    effective_value: str
+    source_page: int | str | None
+    source_assurance_document_id: int | None
+    source_locator: str | None
+    scope: str = "SHIPMENT"
+
+
+def test_auto_resolved_evidence_summary_deduplicates_pages_without_mutating_value():
+    field = _PresentedField(
+        field_name="species",
+        proposed_value="grandis",
+        effective_value="grandis",
+        source_page=2,
+        source_assurance_document_id=10,
+        source_locator=None,
+    )
+    evidence = (
+        EvidenceTextView(
+            source_span_id=1,
+            target_field="species",
+            original_text="grandis",
+            original_language="en",
+            translated_text=None,
+            display_text="grandis",
+            is_translated=False,
+            original_language_label="English",
+            source_assurance_document_id=10,
+            source_page=2,
+            source_locator=None,
+            normalized_value="grandis",
+        ),
+        EvidenceTextView(
+            source_span_id=2,
+            target_field="species",
+            original_text="grandis",
+            original_language="en",
+            translated_text=None,
+            display_text="grandis",
+            is_translated=False,
+            original_language_label="English",
+            source_assurance_document_id=10,
+            source_page=2,
+            source_locator=None,
+            normalized_value="grandis",
+        ),
+        EvidenceTextView(
+            source_span_id=3,
+            target_field="species",
+            original_text="grandis",
+            original_language="en",
+            translated_text=None,
+            display_text="grandis",
+            is_translated=False,
+            original_language_label="English",
+            source_assurance_document_id=10,
+            source_page=3,
+            source_locator=None,
+            normalized_value="grandis",
+        ),
+    )
+
+    [presented] = _decorate_review_fields((field,), {"species": evidence})
+
+    assert presented.proposed_value == "grandis"
+    assert presented.source_page == "2, 3"
+    assert "Evidence:" not in presented.proposed_value
