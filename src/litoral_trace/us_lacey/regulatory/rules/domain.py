@@ -14,6 +14,7 @@ class RuleStatus(StrEnum):
     PASS = "PASS"
     FAIL = "FAIL"
     INDETERMINATE = "INDETERMINATE"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
 class ProtectedPlantStatus(StrEnum):
