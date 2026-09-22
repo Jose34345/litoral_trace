@@ -59,6 +59,8 @@ PARSER_ENGINE = "assurance-deterministic-parser"
 # remains independent: only the derived extraction cache is invalidated.
 PARSER_ENGINE_VERSION = "1.4.0"
 _DEFAULT_RAW_CELL_PERSIST_LIMIT = 2000
+_EXTRACTED_FIELD_NAME_MAX_CHARS = 255
+_RAW_FIELD_NAME_HASH_CHARS = 16
 
 
 class AssuranceProcessingError(RuntimeError):
@@ -148,6 +150,32 @@ def _has_compatible_terminal_run(
     )
 
 
+def _raw_table_field_name(table_index: int, header: object) -> str:
+    """Build a deterministic DB-safe raw-table field identifier.
+
+    PDF table detectors can occasionally promote an entire legal paragraph or
+    OCR-noisy line to a header. The extracted_document_fields.field_name column
+    is an indexed varchar(255), so ordinary headers remain verbatim while
+    pathological ones receive a stable hash suffix instead of aborting the
+    extraction transaction.
+    """
+    prefix = f"raw.table.{int(table_index)}."
+    header_text = str(header or "").strip() or "column"
+    candidate = f"{prefix}{header_text}"
+    if len(candidate) <= _EXTRACTED_FIELD_NAME_MAX_CHARS:
+        return candidate
+
+    digest = hashlib.sha256(header_text.encode("utf-8")).hexdigest()[
+        :_RAW_FIELD_NAME_HASH_CHARS
+    ]
+    suffix = f"~{digest}"
+    visible_chars = max(
+        0,
+        _EXTRACTED_FIELD_NAME_MAX_CHARS - len(prefix) - len(suffix),
+    )
+    return f"{prefix}{header_text[:visible_chars]}{suffix}"
+
+
 def _persist_raw_parsed_fields(
     session: Session,
     *,
@@ -233,7 +261,7 @@ def _persist_raw_parsed_fields(
                         organization_id=organization_id,
                         assurance_document_id=assurance_document.id,
                         extraction_run_id=extraction_run.id,
-                        field_name=f"raw.table.{table_index}.{header}",
+                        field_name=_raw_table_field_name(table_index, header),
                         original_value=_serialize_value(value),
                         normalized_value=_serialize_value(value),
                         value_type="cell",
