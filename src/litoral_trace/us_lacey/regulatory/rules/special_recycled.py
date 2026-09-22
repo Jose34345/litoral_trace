@@ -87,22 +87,23 @@ def _assessment(
 def evaluate_special_recycled(inputs: SpecialRecycledInput) -> RuleAssessment:
     """Evaluate SPECIAL / RECYCLED only from explicit, evidence-backed facts."""
 
-    if inputs.highly_processed_recycled_material is not TriState.YES:
-        return _assessment(
-            inputs,
-            status=RuleStatus.FAIL,
-            reasons=("NO_RECYCLED_MATERIAL_EVIDENCE",),
-            explanation="No evidence of highly processed recycled material was found.",
-        )
-
     if inputs.species_determinable_after_due_care is TriState.YES:
         return _assessment(
             inputs,
-            status=RuleStatus.FAIL,
+            status=RuleStatus.NOT_APPLICABLE,
             reasons=("SPECIES_DETERMINABLE_AFTER_DUE_CARE",),
             explanation=(
-                "The scientific species is determinable. SPECIAL / RECYCLED is not applicable."
+                "A scientific name is determinable from the supported evidence. "
+                "The SPECIAL / RECYCLED alternative is not applicable."
             ),
+        )
+
+    if inputs.highly_processed_recycled_material in {TriState.NO, TriState.UNKNOWN}:
+        return _assessment(
+            inputs,
+            status=RuleStatus.NOT_APPLICABLE,
+            reasons=("NO_RECYCLED_MATERIAL_EVIDENCE",),
+            explanation="The evidence does not identify this subject as highly processed recycled plant material.",
         )
 
     if inputs.species_determinable_after_due_care is TriState.UNKNOWN:
