@@ -1207,10 +1207,12 @@ def project_assurance_document_to_us_lacey(
             elif human_confirmed:
                 field.field_status = "MATCHED"
                 matched += 1
-            elif (
-                float(source.confidence) > AUTO_SUPPORT_MIN_CONFIDENCE
-                and not bool(source.needs_review)
-            ):
+            elif float(source.confidence) > AUTO_SUPPORT_MIN_CONFIDENCE:
+                # Assurance's raw-table rows are intentionally marked needs_review
+                # because its generic document schema is conservative. At the Lacey
+                # projection boundary we have field-specific validation and conflict
+                # reconciliation, so a >90% valid, non-conflicting observation is
+                # explicitly supported rather than creating redundant human work.
                 field.field_status = "SUPPORTED"
             else:
                 field.field_status = "MISSING"
@@ -1259,7 +1261,6 @@ def project_assurance_document_to_us_lacey(
                 genus_field.field_status = (
                     "SUPPORTED"
                     if float(source.confidence) > AUTO_SUPPORT_MIN_CONFIDENCE
-                    and not bool(source.needs_review)
                     else "MISSING"
                 )
                 projected += 1
