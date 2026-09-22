@@ -103,7 +103,7 @@ def test_terminal_workspace_hydrates_rule_scoped_regulatory_panel(monkeypatch):
     assert "Needs information" in html
     assert "HTS Schedule Coverage" in html
     assert "Check passed" in html
-    assert "<strong>2</strong> assessments" in html
+    assert "<strong>2</strong> compliance checks" in html
     assert "does not represent an overall legal compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
     assert "Reason:" not in html
@@ -133,6 +133,6 @@ def test_direct_workspace_renders_same_noncanonical_regulatory_panel(monkeypatch
     assert 'data-regulatory-assessment-status="CURRENT"' in html
     assert "De Minimis Exemption Assessment" in html
     assert "HTS Schedule Coverage" in html
-    assert "<strong>2</strong> assessments" in html
+    assert "<strong>2</strong> compliance checks" in html
     assert "does not represent an overall legal compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()

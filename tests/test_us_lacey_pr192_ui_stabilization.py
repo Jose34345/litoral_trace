@@ -14,7 +14,7 @@ def test_exception_first_workspace_uses_one_authoritative_outer_html_swap():
     assert 'data-action-required-list' in template
     assert 'data-review-tab-panel="resolved"' in template
     assert 'data-review-tab-panel="regulatory"' in template
-    assert 'id="final-confirmation"' in template
+    assert '{% include "us_lacey/fragments/export_declaration_package.html" %}' in template
 
 
 def test_pr192_individual_actions_do_not_autoscroll():

@@ -128,7 +128,7 @@ def test_exception_first_workspace_exposes_tabs_and_bulk_confirmation():
     assert "data-review-tab-panel" in template
     assert "data-review-line=" in template
     assert "Confirm All Auto-Resolved Data" in template
-    assert "attention_fields|length == 0 and auto_supported_fields|length == 0" in template
+    assert '{% include "us_lacey/fragments/export_declaration_package.html" %}' in template
 
 
 def test_regulatory_fail_and_indeterminate_are_expanded_while_neutral_states_collapse():
@@ -138,7 +138,7 @@ def test_regulatory_fail_and_indeterminate_are_expanded_while_neutral_states_col
     assert "failed + indeterminate" in template
     assert "data-regulatory-passed" in template
     assert "data-regulatory-not-applicable" in template
-    assert "NOT APPLICABLE" in template
+    assert "Not applicable" in template
     assert "<details" in template
     assert "They are not an overall legal compliance determination." in template
 
