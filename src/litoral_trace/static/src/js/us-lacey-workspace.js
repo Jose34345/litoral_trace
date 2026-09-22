@@ -80,7 +80,7 @@ document.addEventListener("htmx:beforeRequest", (event) => {
 
 document.addEventListener("htmx:afterSwap", (event) => {
   if (!pendingBulkReviewTransition) return;
-  if (event.detail?.target?.id !== "review-field-list") return;
+  if (event.detail?.target?.id !== "operation-workspace") return;
 
   pendingBulkReviewTransition = false;
   const next = pendingReviewCards()[0];
@@ -96,6 +96,85 @@ document.addEventListener("htmx:afterSwap", (event) => {
     next.scrollIntoView({ behavior: "smooth", block: "nearest" });
     input?.focus?.({ preventScroll: true });
   });
+});
+
+
+let activeReviewTab = "action";
+
+const activateReviewTab = (root, name) => {
+  if (!(root instanceof Element)) return;
+  activeReviewTab = name;
+
+  root.querySelectorAll("[data-review-tab-button]").forEach((button) => {
+    const active = button.dataset.reviewTabButton === name;
+    button.setAttribute("aria-selected", active ? "true" : "false");
+    button.classList.toggle("border-emerald-600", active);
+    button.classList.toggle("text-emerald-700", active);
+    button.classList.toggle("font-bold", active);
+    button.classList.toggle("border-transparent", !active);
+    button.classList.toggle("text-slate-500", !active);
+    button.classList.toggle("font-semibold", !active);
+  });
+
+  root.querySelectorAll("[data-review-tab-panel]").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.reviewTabPanel !== name);
+  });
+};
+
+const refreshActionCount = (root) => {
+  if (!(root instanceof Element)) return;
+  const list = root.querySelector("[data-action-required-list]");
+  if (!list) return;
+
+  const unresolved = list.querySelectorAll(
+    '[data-review-field][data-review-required="true"]'
+  ).length;
+
+  root.querySelectorAll("[data-action-required-count]").forEach((element) => {
+    element.textContent = unresolved === 1 ? "1 need attention" : `${unresolved} need attention`;
+  });
+  root.querySelectorAll("[data-action-tab-count]").forEach((element) => {
+    element.textContent = String(unresolved);
+  });
+
+  if (unresolved === 0 && !list.querySelector("[data-no-action-required]")) {
+    list.innerHTML = `
+      <div class="col-span-full rounded-xl border border-emerald-200 bg-emerald-50 p-8 text-center" data-no-action-required>
+        <i class="fa-solid fa-circle-check text-2xl text-emerald-600" aria-hidden="true"></i>
+        <h3 class="mt-3 font-bold text-slate-950">No action required</h3>
+        <p class="mt-1 text-sm text-slate-600">All available shipment evidence has been reconciled.</p>
+      </div>
+    `;
+  }
+};
+
+const initializeReviewTabs = (scope = document) => {
+  scope.querySelectorAll?.("[data-review-tabs]").forEach((root) => {
+    if (root.dataset.reviewTabsInitialized !== "true") {
+      root.addEventListener("click", (event) => {
+        const button = event.target.closest?.("[data-review-tab-button]");
+        if (!button || !root.contains(button)) return;
+        activateReviewTab(root, button.dataset.reviewTabButton || "action");
+      });
+      root.dataset.reviewTabsInitialized = "true";
+    }
+    activateReviewTab(root, activeReviewTab);
+    refreshActionCount(root);
+  });
+};
+
+document.addEventListener("htmx:afterSettle", () => {
+  document.querySelectorAll('[data-review-resolved="true"]').forEach((node) => node.remove());
+  document.querySelectorAll("[data-review-tabs]").forEach(refreshActionCount);
+});
+
+document.addEventListener("htmx:afterSwap", (event) => {
+  const target = event.detail?.target;
+  if (target instanceof Element && target.matches("[data-review-tabs]")) {
+    initializeReviewTabs(target.parentElement || document);
+    return;
+  }
+  initializeReviewTabs(document);
 });
 
 let reviewTelemetry = null;
@@ -227,10 +306,18 @@ document.addEventListener("input", (event) => {
   persistReviewTelemetry();
 });
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initializeReviewTelemetry);
-} else {
+const initializeWorkspaceUx = () => {
+  initializeReviewTabs(document);
   initializeReviewTelemetry();
+};
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializeWorkspaceUx);
+} else {
+  initializeWorkspaceUx();
 }
 
-document.addEventListener("htmx:load", initializeReviewTelemetry);
+document.addEventListener("htmx:load", () => {
+  initializeReviewTabs(document);
+  initializeReviewTelemetry();
+});

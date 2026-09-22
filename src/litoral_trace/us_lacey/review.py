@@ -93,7 +93,7 @@ def _counts(session, *, organization_id: int, operation: UsLaceyOperation) -> tu
         select(func.count(UsLaceyOperationField.id)).where(
             UsLaceyOperationField.organization_id == organization_id,
             UsLaceyOperationField.operation_id == operation.id,
-            UsLaceyOperationField.field_status == "REVIEW",
+            UsLaceyOperationField.field_status == "CONFLICT",
         )
     ) or 0
     missing = session.scalar(

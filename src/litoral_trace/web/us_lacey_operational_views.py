@@ -4,11 +4,13 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 import logging
-from urllib.parse import parse_qs
 
 from markupsafe import Markup, escape
 
-from litoral_trace.us_lacey.candidate_normalization import group_candidate_evidence
+from litoral_trace.us_lacey.candidate_normalization import (
+    TaxonomicComparisonContext,
+    group_candidate_evidence,
+)
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
     canonical_ppq_value_key,
@@ -95,7 +97,37 @@ def _field_has_displayable_resolution(field) -> bool:
     return value is not None and bool(str(value).strip())
 
 
-def _present_review_field(field):
+def _taxonomic_context_for_presented_field(
+    field,
+    all_fields,
+) -> TaxonomicComparisonContext | None:
+    """Return line-local genus context so equivalent species labels collapse."""
+    if getattr(field, "field_name", None) != "species":
+        return None
+    line_reference = str(getattr(field, "line_reference", ""))
+    genus_field = next(
+        (
+            candidate
+            for candidate in all_fields
+            if str(getattr(candidate, "line_reference", "")) == line_reference
+            and getattr(candidate, "field_name", None) == "genus"
+        ),
+        None,
+    )
+    if genus_field is None:
+        return None
+    genus = (
+        getattr(genus_field, "human_value", None)
+        or getattr(genus_field, "normalized_value", None)
+        or getattr(genus_field, "original_value", None)
+        or getattr(genus_field, "proposed_value", None)
+    )
+    if genus is None or not str(genus).strip():
+        return None
+    return TaxonomicComparisonContext(genus=str(genus).strip())
+
+
+def _present_review_field(field, *, all_fields=()):
     """Collapse same-value candidate metadata for the customer review card.
 
     Database candidate rows remain intact. The view exposes one representative per
@@ -111,7 +143,11 @@ def _present_review_field(field):
     candidates = getattr(field, "candidates", ())
     if not field_name or not candidates:
         return field
-    groups = group_candidate_evidence(field_name, candidates)
+    groups = group_candidate_evidence(
+        field_name,
+        candidates,
+        comparison_context=_taxonomic_context_for_presented_field(field, all_fields),
+    )
     if not groups:
         return replace(field, candidates=())
     presented = []
@@ -132,7 +168,9 @@ def _present_review_field(field):
     return replace(field, candidates=tuple(presented))
 
 
-_OPEN_REVIEW_STATUSES = frozenset({"MISSING", "REVIEW", "FOUND"})
+_ACTION_REQUIRED_STATUSES = frozenset({"MISSING", "CONFLICT"})
+_AUTO_SUPPORTED_STATUSES = frozenset({"SUPPORTED"})
+_SETTLED_STATUSES = frozenset({"MATCHED", "NOT_REQUIRED"})
 
 
 def _is_customer_ppq_field(field) -> bool:
@@ -148,26 +186,18 @@ def _review_field_sets(detail):
         if getattr(field, "field_name", None) == "article_component"
     }
 
-    def is_open_review_field(field) -> bool:
-        if getattr(field, "status", None) not in _OPEN_REVIEW_STATUSES:
-            return False
+    def is_customer_visible_field(field) -> bool:
         if getattr(field, "field_name", None) != "percent_recycled":
             return True
         article = article_components.get(str(getattr(field, "line_reference", "")))
-        return article is None or getattr(article, "status", None) not in _OPEN_REVIEW_STATUSES
+        return article is None or getattr(article, "status", None) in _SETTLED_STATUSES
 
-    exception_fields = [
-        _present_review_field(field)
+    presented_fields = tuple(
+        _present_review_field(field, all_fields=customer_fields)
         for field in customer_fields
-        if is_open_review_field(field)
-    ]
-    settled_fields = [
-        field
-        for field in customer_fields
-        if field.status not in _OPEN_REVIEW_STATUSES
-        and _field_has_displayable_resolution(field)
-    ]
-    return exception_fields, settled_fields
+        if is_customer_visible_field(field)
+    )
+    return presented_fields
 
 
 def _review_field_groups(detail):
@@ -176,22 +206,29 @@ def _review_field_groups(detail):
     This is presentation-only grouping. FOUND remains an unconfirmed server-side
     suggestion and is never promoted to a new authority state by the UI.
     """
-    exception_fields, settled_fields = _review_field_sets(detail)
+    presented_fields = _review_field_sets(detail)
+    attention_fields = tuple(
+        field
+        for field in presented_fields
+        if getattr(field, "status", None) in _ACTION_REQUIRED_STATUSES
+    )
     auto_supported_fields = tuple(
         field
-        for field in exception_fields
+        for field in presented_fields
         if (
-            getattr(field, "status", None) == "FOUND"
-            and getattr(field, "validation_status", None) != "REVIEW_REQUIRED"
+            getattr(field, "status", None) in _AUTO_SUPPORTED_STATUSES
             and bool(getattr(field, "proposed_value", None))
-            and len(getattr(field, "candidates", ())) <= 1
         )
     )
-    auto_supported_ids = {field.id for field in auto_supported_fields}
-    attention_fields = tuple(
-        field for field in exception_fields if field.id not in auto_supported_ids
+    settled_fields = tuple(
+        field
+        for field in presented_fields
+        if (
+            getattr(field, "status", None) in _SETTLED_STATUSES
+            and _field_has_displayable_resolution(field)
+        )
     )
-    return attention_fields, auto_supported_fields, tuple(settled_fields)
+    return attention_fields, auto_supported_fields, settled_fields
 
 
 def _semantic_evidence_for_detail(identity, detail) -> dict[str, tuple[EvidenceTextView, ...]]:
@@ -320,12 +357,19 @@ def _decorate_review_fields(fields, evidence_by_field: Mapping[str, tuple[Eviden
 
 
 def _review_field_sets_with_semantic_evidence(identity, detail):
-    exception_fields, settled_fields = _review_field_sets(detail)
+    presented_fields = _review_field_sets(detail)
     evidence_by_field = _semantic_evidence_for_detail(identity, detail)
-    return (
-        _decorate_review_fields(exception_fields, evidence_by_field),
-        _decorate_review_fields(settled_fields, evidence_by_field),
+    decorated = _decorate_review_fields(presented_fields, evidence_by_field)
+    settled = tuple(
+        field for field in decorated
+        if getattr(field, "status", None) in _SETTLED_STATUSES
+        and _field_has_displayable_resolution(field)
     )
+    exceptions = tuple(
+        field for field in decorated
+        if getattr(field, "status", None) in _ACTION_REQUIRED_STATUSES
+    )
+    return exceptions, settled
 
 
 def _review_field_groups_with_semantic_evidence(identity, detail):
@@ -421,12 +465,14 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
     attention_fields, auto_supported_fields, settled_fields = _review_field_groups_with_semantic_evidence(identity, detail)
     if is_oob_update is None:
         is_oob_update = str(getattr(request, "method", "GET")).upper() == "POST"
-    workspace = _render(
+    return _render(
         request,
         "fragments/operation_workspace",
         identity=identity,
         detail=detail,
         engine2_dossier=engine2_dossier,
+        product_intelligence=_product_intelligence_for_detail(identity, detail),
+        regulatory_assessment=_regulatory_assessment_for_detail(identity, detail),
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
         attention_fields=attention_fields,
@@ -435,27 +481,3 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         error=error,
         is_oob_update=is_oob_update,
     )
-    scope = getattr(request, "scope", {}) or {}
-    raw_query = scope.get("query_string", b"")
-    if isinstance(raw_query, bytes):
-        raw_query = raw_query.decode("latin-1")
-    include_product_intelligence = parse_qs(str(raw_query)).get("include_product_intelligence") == ["1"]
-    if not include_product_intelligence:
-        return workspace
-
-    prefix = ""
-    product_intelligence = _product_intelligence_for_detail(identity, detail)
-    if product_intelligence is not None:
-        prefix += _render(
-            request,
-            "fragments/product_intelligence_card",
-            product_intelligence=product_intelligence,
-        )
-    regulatory_assessment = _regulatory_assessment_for_detail(identity, detail)
-    if regulatory_assessment is not None:
-        prefix += _render(
-            request,
-            "fragments/regulatory_assessment_card",
-            regulatory_assessment=regulatory_assessment,
-        )
-    return prefix + workspace
