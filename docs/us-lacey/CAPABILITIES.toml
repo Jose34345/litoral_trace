@@ -368,3 +368,27 @@ tests = [
   "tests/test_us_lacey_regulatory_assessment_ui.py"
 ]
 notes = "Customer review expands unresolved, conflicting and missing-evidence items first; unambiguous FOUND suggestions remain unconfirmed authority and are collapsed behind an explicit bulk-confirmation surface. Rule-level FAIL/INDETERMINATE results remain visible. Lightweight UX telemetry is non-authoritative and audit-attached."
+
+[capabilities.outreach_attribution]
+status = "ACTIVE"
+owner = "us_lacey growth attribution + platform admin"
+authority = "observation"
+implementation = [
+  "src/litoral_trace/us_lacey/growth_attribution.py",
+  "src/litoral_trace/web/us_lacey_sandbox.py",
+  "src/litoral_trace/web/us_lacey_pilot_app.py",
+  "src/litoral_trace/web/us_lacey_platform_admin.py",
+  "src/litoral_trace/templates/us_lacey/admin.html"
+]
+migrations = ["alembic/versions/059_us_lacey_outreach_attribution.py"]
+tests = [
+  "tests/test_us_lacey_outreach_attribution.py",
+  "tests/test_us_lacey_outreach_attribution_postgres.py",
+  "tests/test_us_lacey_platform_admin_surface.py"
+]
+workflows = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/us-lacey-postgres-gate.yml"
+]
+notes = "First-party commercial attribution for opt-in outreach links. It records anonymous funnel events and binds a referral session to an ephemeral sandbox tenant without copying document bytes, extracted field values, email addresses or IP addresses into the growth plane. Attribution is non-canonical, fail-open for customer workflows, and has no regulatory or filing authority. Runtime table access remains capability-mediated through SECURITY DEFINER functions; cross-tenant reporting remains platform-admin only."
+
