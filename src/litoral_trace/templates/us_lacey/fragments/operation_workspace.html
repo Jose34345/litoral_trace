@@ -277,24 +277,6 @@
     {% for field in settled_fields %}<div id="review-field-{{ field.id }}" hidden data-review-resolved="true"></div>{% endfor %}
   </section>
 
-  <section id="final-confirmation" class="lt-card p-6">
-    <h2 class="text-lg font-bold text-slate-950">Final confirmation</h2>
-    {% if detail.status == "COMPLETED" %}
-      <p class="mt-2 text-sm text-emerald-800">Preparation is complete.</p>
-    {% elif attention_fields|length == 0 and auto_supported_fields|length == 0 %}
-      <p class="mt-2 text-sm text-slate-600">All required fields are resolved and explicitly confirmed. You can complete preparation now.</p>
-      <form class="mt-4" method="post" action="/operations/{{ detail.public_id }}/complete" data-review-completion-form>
-        <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
-        {{ review_telemetry_inputs() }}
-        {{ button("Complete preparation", variant="primary", button_type="submit") }}
-      </form>
-    {% elif attention_fields|length > 0 %}
-      <p class="mt-2 text-sm text-slate-600">Resolve the items in Action Required before completing preparation.</p>
-    {% else %}
-      <p class="mt-2 text-sm text-slate-600">Confirm the auto-resolved data in one step, then complete preparation.</p>
-    {% endif %}
-  </section>
-
   {% include "us_lacey/fragments/export_declaration_package.html" %}
 
   <details id="engine2-dossier" class="lt-card p-6" data-engine2-dossier data-engine2-availability="{{ engine2_dossier.availability }}">

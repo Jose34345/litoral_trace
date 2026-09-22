@@ -12,7 +12,7 @@ STATIC_ROOT = ROOT / "src" / "litoral_trace" / "static" / "src"
 OPERATION_ID = "11111111-2222-3333-4444-555555555555"
 
 
-def _render_export_card(*, status: str, arithmetic_blocked: bool = False, open_items: int = 0) -> str:
+def _render_export_card(*, status: str, arithmetic_blocked: bool = False, open_items: int = 0, auto_items: int = 0) -> str:
     environment = Environment(
         loader=FileSystemLoader(str(TEMPLATE_ROOT)),
         autoescape=select_autoescape(("html", "xml")),
@@ -22,13 +22,18 @@ def _render_export_card(*, status: str, arithmetic_blocked: bool = False, open_i
         detail=SimpleNamespace(public_id=OPERATION_ID, status=status),
         arithmetic_blocked=arithmetic_blocked,
         exception_fields=tuple(object() for _ in range(open_items)),
+        attention_fields=tuple(object() for _ in range(open_items)),
+        auto_supported_fields=tuple(object() for _ in range(auto_items)),
+        complete_csrf="complete-token",
+        review_telemetry_inputs=lambda: "",
+        button=lambda label, **_kwargs: label,
     )
 
 
 def test_completed_operation_renders_native_phase_e_download_links():
     html = _render_export_card(status="COMPLETED")
 
-    assert "Export Declaration Package" in html
+    assert "Generate Declaration Package" in html
     assert f'href="/operations/{OPERATION_ID}/export/lawgs-xml"' in html
     assert f'href="/operations/{OPERATION_ID}/export/excel"' in html
     assert html.count("data-export-download") == 2
@@ -50,7 +55,9 @@ def test_incomplete_operation_keeps_exports_visible_but_safely_disabled():
     assert "cursor" not in html  # styling belongs to the design-system extension, not inline CSS
     assert f'/operations/{OPERATION_ID}/export/lawgs-xml' not in html
     assert f'/operations/{OPERATION_ID}/export/excel' not in html
-    assert "Resolve all missing or conflicting review items" in html
+    assert "Unlock your declaration package" in html
+    assert "Resolve the <strong>2</strong> items in the Action Required tab" in html
+    assert "opacity-50" in html
 
 
 def test_reconciliation_block_explains_specific_unlock_requirement():
@@ -61,6 +68,7 @@ def test_reconciliation_block_explains_specific_unlock_requirement():
     )
 
     assert "Entered Value reconciliation inconsistency" in html
+    assert "Generate Declaration Package" in html
     assert html.count("lt-export-tooltip") == 2
     assert html.count('tabindex="0"') == 2
 
@@ -108,3 +116,17 @@ def test_workspace_replaces_legacy_exports_with_phase_f_component():
     assert "/export.xlsx" not in workspace
     assert "/export.csv" not in workspace
     assert "/src/us-lacey-export.css" in base
+
+
+def test_export_unlock_banner_quantifies_product_progress():
+    html = _render_export_card(
+        status="READY_FOR_REVIEW",
+        open_items=9,
+        auto_items=25,
+    )
+
+    assert "Unlock your declaration package" in html
+    assert "Resolve the <strong>9</strong> items in the Action Required tab" in html
+    assert "already auto-resolved <strong>25</strong> fields" in html
+    assert "Final confirmation" not in html
+    assert "Declaration outputs" not in html.lower()

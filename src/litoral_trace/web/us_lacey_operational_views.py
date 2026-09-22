@@ -102,6 +102,89 @@ _ACTION_REQUIRED_STATUSES = frozenset({"MISSING", "CONFLICT"})
 _AUTO_SUPPORTED_STATUSES = frozenset({"SUPPORTED"})
 _SETTLED_STATUSES = frozenset({"MATCHED", "NOT_REQUIRED"})
 
+_REGULATORY_RULE_TITLES = {
+    "HTS_APPLICABILITY": "HTS Schedule Coverage",
+    "DE_MINIMIS": "De Minimis Exemption Assessment",
+    "SPECIAL_COMPOSITE": "Special Composite Wood Pathway",
+    "SPECIAL_RECYCLED": "Recycled Material Exception",
+}
+
+_REGULATORY_STATUS_LABELS = {
+    "PASS": "Check passed",
+    "FAIL": "Needs review",
+    "INDETERMINATE": "Needs information",
+    "NOT_APPLICABLE": "Not applicable",
+}
+
+_REGULATORY_ACTION_GUIDANCE = {
+    "HTS_APPLICABILITY": (
+        "To evaluate APHIS Lacey schedule coverage, add or correct the 10-digit "
+        "HTS code in the Action Required tab."
+    ),
+    "DE_MINIMIS": (
+        "To evaluate the De Minimis exemption, provide the missing quantities "
+        "or values in the Action Required tab."
+    ),
+    "SPECIAL_COMPOSITE": (
+        "To evaluate the special composite wood pathway, provide the missing "
+        "product-composition or component evidence in the Action Required tab."
+    ),
+    "SPECIAL_RECYCLED": (
+        "To evaluate the recycled-material exception, provide the missing "
+        "recycled-content or material evidence in the Action Required tab."
+    ),
+}
+
+
+def _regulatory_customer_message(assessment: Mapping[str, object]) -> str:
+    """Translate deterministic rule output into customer-facing review guidance."""
+    rule_id = str(assessment.get("rule_id") or "").upper()
+    status = str(assessment.get("status") or "").upper()
+    explanation = str(assessment.get("explanation") or "").strip()
+
+    if status == "INDETERMINATE":
+        return _REGULATORY_ACTION_GUIDANCE.get(
+            rule_id,
+            "Additional supported information is required. Review the missing "
+            "items in the Action Required tab.",
+        )
+    if status == "FAIL":
+        return explanation or (
+            "This rule needs human review before the declaration package can be finalized."
+        )
+    return explanation or "No additional action is required for this rule."
+
+
+def _present_regulatory_assessment(view):
+    """Add stable presentation labels without mutating deterministic rule output."""
+    if view is None:
+        return None
+    payload = dict(getattr(view, "payload", {}) or {})
+    presented_assessments: list[dict[str, object]] = []
+    for raw in payload.get("assessments", ()):
+        if not isinstance(raw, Mapping):
+            continue
+        item = dict(raw)
+        rule_id = str(item.get("rule_id") or "")
+        status = str(item.get("status") or "")
+        subject_ref = str(item.get("subject_ref") or "").strip()
+        item["display_title"] = _REGULATORY_RULE_TITLES.get(
+            rule_id,
+            rule_id.replace("_", " ").title() or "Regulatory check",
+        )
+        item["display_status"] = _REGULATORY_STATUS_LABELS.get(
+            status,
+            status.replace("_", " ").title() or "Review",
+        )
+        item["display_subject"] = (
+            f"Plant line {subject_ref}" if subject_ref else "Shipment"
+        )
+        item["customer_message"] = _regulatory_customer_message(item)
+        presented_assessments.append(item)
+    payload["assessments"] = presented_assessments
+    return replace(view, payload=payload)
+
+
 
 def _is_customer_ppq_field(field) -> bool:
     field_name = getattr(field, "field_name", None)
@@ -404,7 +487,9 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
     attention_fields, auto_supported_fields, settled_fields = _review_field_groups_with_semantic_evidence(identity, detail)
     progress = processing_view(detail)
     product_intelligence = _product_intelligence_for_detail(identity, detail, product_intelligence)
-    regulatory_assessment = _regulatory_assessment_for_detail(identity, detail, regulatory_assessment)
+    regulatory_assessment = _present_regulatory_assessment(
+        _regulatory_assessment_for_detail(identity, detail, regulatory_assessment)
+    )
     return _render(
         request,
         "operation_detail",
@@ -441,7 +526,9 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         detail=detail,
         engine2_dossier=engine2_dossier,
         product_intelligence=_product_intelligence_for_detail(identity, detail),
-        regulatory_assessment=_regulatory_assessment_for_detail(identity, detail),
+        regulatory_assessment=_present_regulatory_assessment(
+            _regulatory_assessment_for_detail(identity, detail)
+        ),
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
         attention_fields=attention_fields,
