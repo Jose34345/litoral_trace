@@ -123,23 +123,29 @@ def _product_intelligence() -> ProductIntelligenceView:
     )
 
 
-def test_operation_detail_renders_product_composition_with_source_provenance(monkeypatch):
+def test_workspace_renders_product_composition_with_source_provenance(monkeypatch):
     monkeypatch.setattr(operational_views, "_semantic_evidence_for_detail", lambda *_: {})
-    html = render_operation_detail(
+    monkeypatch.setattr(
+        operational_views,
+        "_product_intelligence_for_detail",
+        lambda *_args, **_kwargs: _product_intelligence(),
+    )
+    monkeypatch.setattr(
+        operational_views,
+        "_regulatory_assessment_for_detail",
+        lambda *_args, **_kwargs: None,
+    )
+    html = render_operation_workspace(
         request=_request(),
         identity=SimpleNamespace(organization_id=7),
         detail=_detail(),
         engine2_dossier=_engine2(),
-        product_intelligence=_product_intelligence(),
-        upload_csrf="upload",
         complete_csrf="complete",
         review_csrf={},
     )
 
     assert 'data-product-intelligence-status="READY"' in html
-    assert "Product composition" in html
-    assert "product-composition evidence" in html
-    assert "not final Lacey declaration data" in html
+    assert "Product composition evidence" in html
     assert "CHAIR-001" in html
     assert "Front leg" in html
     assert "Rubberwood" in html
@@ -147,8 +153,7 @@ def test_operation_detail_renders_product_composition_with_source_provenance(mon
     assert "BOM.xlsx" in html
     assert "row 2" in html
 
-
-def test_operation_detail_renders_non_applicable_product_intelligence_compactly(monkeypatch):
+def test_workspace_renders_non_applicable_product_intelligence_compactly(monkeypatch):
     monkeypatch.setattr(operational_views, "_semantic_evidence_for_detail", lambda *_: {})
     view = ProductIntelligenceView(
         status="NOT_APPLICABLE",
@@ -163,20 +168,27 @@ def test_operation_detail_renders_non_applicable_product_intelligence_compactly(
         issue_count=0,
         payload={"schema_version": "product-intelligence-snapshot-v1", "sources": [], "issues": []},
     )
-    html = render_operation_detail(
+    monkeypatch.setattr(
+        operational_views,
+        "_product_intelligence_for_detail",
+        lambda *_args, **_kwargs: view,
+    )
+    monkeypatch.setattr(
+        operational_views,
+        "_regulatory_assessment_for_detail",
+        lambda *_args, **_kwargs: None,
+    )
+    html = render_operation_workspace(
         request=_request(),
         identity=SimpleNamespace(organization_id=7),
         detail=_detail(),
         engine2_dossier=_engine2(),
-        product_intelligence=view,
-        upload_csrf="upload",
         complete_csrf="complete",
         review_csrf={},
     )
 
     assert 'data-product-intelligence-status="NOT_APPLICABLE"' in html
     assert "No explicit BOM was detected" in html
-
 
 def test_processing_poll_requests_product_intelligence_with_terminal_workspace():
     html = render_processing_fragment(
@@ -212,7 +224,7 @@ def test_operation_workspace_hydration_renders_product_composition_without_manua
     assert "row 2" in html
 
 
-def test_direct_terminal_workspace_does_not_duplicate_product_intelligence(monkeypatch):
+def test_direct_terminal_workspace_renders_product_intelligence_once(monkeypatch):
     monkeypatch.setattr(operational_views, "_semantic_evidence_for_detail", lambda *_: {})
     monkeypatch.setattr(
         operational_views,
@@ -229,4 +241,4 @@ def test_direct_terminal_workspace_does_not_duplicate_product_intelligence(monke
         review_csrf={},
     )
 
-    assert 'data-product-intelligence-status="READY"' not in html
+    assert html.count('data-product-intelligence-status="READY"') == 1
