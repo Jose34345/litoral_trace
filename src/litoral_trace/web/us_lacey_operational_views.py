@@ -406,40 +406,54 @@ def _semantic_evidence_markup(evidence: EvidenceTextView) -> Markup:
 
 
 def _decorate_review_fields(fields, evidence_by_field: Mapping[str, tuple[EvidenceTextView, ...]]):
-    """Attach a compact, deduplicated source-page summary to review fields.
-
-    Customer-facing values stay as plain values. Raw semantic-evidence spans are
-    intentionally not concatenated into the value because repeated extractor
-    observations create a noisy data-dump presentation.
-    """
+    """Preserve rich semantic evidence where detailed human review needs it."""
     decorated = []
     for field in fields:
         proposed_value = getattr(field, "proposed_value", None)
         if not proposed_value:
             decorated.append(field)
             continue
-
         evidence_items = _evidence_for_field(field, evidence_by_field)
         if not evidence_items:
             decorated.append(field)
             continue
+        presentation = Markup("{}").format(escape(str(proposed_value)))
+        for evidence in evidence_items:
+            presentation += _semantic_evidence_markup(evidence)
+        decorated.append(replace(field, proposed_value=presentation))
+    return decorated
 
-        unique_pages = tuple(
-            sorted(
-                {
-                    int(evidence.source_page)
-                    for evidence in evidence_items
-                    if getattr(evidence, "source_page", None) is not None
-                }
-            )
-        )
-        if not unique_pages:
-            decorated.append(field)
+
+def _auto_resolved_evidence_summary(fields):
+    """Collapse repeated Auto-Resolved evidence into unique source-page references."""
+    summarized = []
+    for field in fields:
+        pages: set[int] = set()
+        for candidate in tuple(getattr(field, "candidates", ()) or ()):
+            raw_page = getattr(candidate, "source_page", None)
+            if raw_page is None:
+                continue
+            for part in str(raw_page).split(","):
+                token = part.strip()
+                if token.isdigit():
+                    pages.add(int(token))
+
+        if not pages:
+            raw_page = getattr(field, "source_page", None)
+            if raw_page is not None:
+                for part in str(raw_page).split(","):
+                    token = part.strip()
+                    if token.isdigit():
+                        pages.add(int(token))
+
+        if not pages:
+            summarized.append(field)
             continue
 
-        page_summary = ", ".join(str(page) for page in unique_pages)
-        decorated.append(replace(field, source_page=page_summary))
-    return decorated
+        summarized.append(
+            replace(field, source_page=", ".join(str(page) for page in sorted(pages)))
+        )
+    return summarized
 
 
 def _review_field_groups_with_semantic_evidence(identity, detail):
@@ -447,7 +461,7 @@ def _review_field_groups_with_semantic_evidence(identity, detail):
     evidence_by_field = _semantic_evidence_for_detail(identity, detail)
     return (
         _decorate_review_fields(attention_fields, evidence_by_field),
-        _decorate_review_fields(auto_supported_fields, evidence_by_field),
+        _auto_resolved_evidence_summary(auto_supported_fields),
         _decorate_review_fields(settled_fields, evidence_by_field),
     )
 
