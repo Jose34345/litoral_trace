@@ -164,6 +164,7 @@ _CUSTOMS_DESCRIPTION_HEADERS = frozenset(
 _SHIPMENT_DESCRIPTION_HEADERS = frozenset(
     {
         "shipment description",
+        "merchandise description",
         "description of merchandise",
         "commodity description",
         "cargo description",
