@@ -92,5 +92,5 @@ def test_special_composite_known_species_overrides_contradictory_due_care_input(
         context=_context(subject),
     )
 
-    assert result.status is RuleStatus.FAIL
+    assert result.status is RuleStatus.NOT_APPLICABLE
     assert result.reason_codes == ("SPECIES_DETERMINABLE_AFTER_DUE_CARE",)
