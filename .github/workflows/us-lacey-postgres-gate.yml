@@ -27,6 +27,7 @@ on:
       - "alembic/versions/056_us_lacey_sandbox_growth_attribution.py"
       - "alembic/versions/057_us_lacey_learning_plane.py"
       - "alembic/versions/058_us_lacey_exception_first_states.py"
+      - "alembic/versions/059_us_lacey_outreach_attribution.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
@@ -166,7 +167,7 @@ jobs:
           python -m alembic upgrade 049_lacey_product_intelligence_snapshots
           python -m alembic upgrade 050_lacey_regulatory_assessment_snapshots
           python -m alembic upgrade 052_us_lacey_ephemeral_sandbox
-          python -m alembic upgrade 058_us_lacey_exception_first_states
+          python -m alembic upgrade 059_us_lacey_outreach_attribution
       - name: Bind dedicated worker login to queue capability
         shell: bash
         run: |
@@ -191,7 +192,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "058_us_lacey_exception_first_states (head)" /tmp/alembic-current.txt
+          grep -Fx "059_us_lacey_outreach_attribution (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -599,7 +600,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "058_us_lacey_exception_first_states (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "059_us_lacey_outreach_attribution (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
@@ -710,6 +711,17 @@ jobs:
             | tee /tmp/sandbox-growth-attribution-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/sandbox-growth-attribution-postgres.txt; then
             echo "Sandbox growth attribution PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
+      - name: Prove first-party outreach attribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs \
+            tests/test_us_lacey_outreach_attribution_postgres.py \
+            | tee /tmp/outreach-attribution-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/outreach-attribution-postgres.txt; then
+            echo "Outreach attribution PostgreSQL acceptance must not skip in CI."
             exit 1
           fi
       - name: Prove Engine 2 shadow-worker contracts

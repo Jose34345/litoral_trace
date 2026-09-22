@@ -1,8 +1,9 @@
 """Modelo Organization - Entidad raíz multi-tenant."""
 from __future__ import annotations
 from datetime import datetime
+from uuid import UUID
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Text, Boolean, DateTime
+from sqlalchemy import String, Text, Boolean, DateTime, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from litoral_trace.db.base import Base, TimestampMixin
 
@@ -42,6 +43,10 @@ class Organization(Base, TimestampMixin):
     )
     sandbox_converted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
+        nullable=True,
+    )
+    sandbox_attribution_session_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
         nullable=True,
     )
 

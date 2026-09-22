@@ -14,6 +14,7 @@ is introduced.
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
@@ -310,6 +311,56 @@ def learning_plane_metrics_superadmin(
     }
 
 
+def list_outreach_funnel_superadmin(
+    *,
+    refresh_token: str,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM public.platform_admin_outreach_funnel("
+            ":actor_refresh_token_hash, :requested_limit)"
+        ),
+        values={"requested_limit": int(limit)},
+    )
+
+
+def create_outreach_link_superadmin(
+    *,
+    refresh_token: str,
+    slug: str,
+    prospect_label: str,
+    campaign_code: str,
+    source: str,
+) -> dict[str, Any]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM public.platform_admin_create_outreach_link("
+            ":actor_refresh_token_hash, :slug, :prospect_label, "
+            ":campaign_code, :source)"
+        ),
+        values={
+            "slug": slug,
+            "prospect_label": prospect_label,
+            "campaign_code": campaign_code,
+            "source": source,
+        },
+        commit=True,
+    )[0]
+
+
+def _outreach_slug(campaign_code: str) -> str:
+    base = re.sub(
+        r"[^a-z0-9]+",
+        "-",
+        str(campaign_code or "").strip().lower(),
+    ).strip("-")
+    base = (base or "outreach")[:60].rstrip("-")
+    return f"{base}-{secrets.token_hex(3)}"
+
+
 def convert_sandbox_to_commercial_superadmin(
     *,
     refresh_token: str,
@@ -354,6 +405,17 @@ def _admin_context(*, request: Request, us_session: str, notice: str | None = No
             "sandbox_avg_processing_ms": None,
         }
 
+    try:
+        outreach_links = list_outreach_funnel_superadmin(
+            refresh_token=refresh_token,
+            limit=50,
+        )
+    except Exception:
+        logger.exception(
+            "Outreach funnel is unavailable; rendering admin without it."
+        )
+        outreach_links = []
+
     active_count = sum(1 for account in accounts if account.get("account_status") == "ACTIVE")
     pilot_count = sum(1 for account in accounts if account.get("account_status") == "PILOT")
     pending_count = sum(
@@ -375,6 +437,11 @@ def _admin_context(*, request: Request, us_session: str, notice: str | None = No
         "users": users,
         "failed_jobs": failed_jobs,
         "telemetry_metrics": telemetry_metrics,
+        "outreach_links": outreach_links,
+        "outreach_create_csrf": us_lacey_csrf_token(
+            session_token=us_session,
+            purpose="platform-admin-outreach-create",
+        ),
         "notice": notice,
         "status_csrf": {
             int(account["organization_id"]): us_lacey_csrf_token(
@@ -498,6 +565,58 @@ def platform_admin_page(
         if exc.status_code == status.HTTP_403_FORBIDDEN:
             return _access_denied(request)
         raise
+
+
+@router.post("/admin/outreach-links")
+def platform_admin_create_outreach_link(
+    request: Request,
+    prospect_label: str = Form(...),
+    campaign_code: str = Form(...),
+    source: str = Form("direct_outreach"),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        session_token = _require_us_session(us_session)
+        verify_us_lacey_csrf(
+            session_token=session_token,
+            purpose="platform-admin-outreach-create",
+            submitted_token=csrf_token,
+        )
+        if not prospect_label.strip() or not campaign_code.strip():
+            return _safe_error(
+                request,
+                "Prospect and campaign are required.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        refresh_token = _platform_admin_refresh_token(session_token)
+        create_outreach_link_superadmin(
+            refresh_token=refresh_token,
+            slug=_outreach_slug(campaign_code),
+            prospect_label=prospect_label,
+            campaign_code=campaign_code,
+            source=source or "direct_outreach",
+        )
+        return RedirectResponse(
+            "/admin?notice=Outreach%20link%20created",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyCsrfError:
+        return _safe_error(
+            request,
+            "The admin form expired. Refresh and try again.",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            return _access_denied(request)
+        return _safe_error(
+            request,
+            "The outreach link could not be created.",
+            status_code=exc.status_code,
+        )
 
 
 @router.post("/admin/us-lacey/accounts/{organization_id}/status")

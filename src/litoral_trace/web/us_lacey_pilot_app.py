@@ -31,6 +31,7 @@ from litoral_trace.us_lacey.csrf import (
     us_lacey_csrf_token,
     verify_us_lacey_csrf,
 )
+from litoral_trace.us_lacey.growth_attribution import safe_record_outreach_event
 from litoral_trace.us_lacey.email_delivery import (
     UsLaceyEmailConfigurationError,
     load_us_lacey_email_config,
@@ -203,6 +204,12 @@ def _workspace_fragment(
     detail = service.get_detail(
         organization_id=identity.organization_id,
         operation_public_id=operation_public_id,
+    )
+    safe_record_outreach_event(
+        session_token=us_session,
+        organization_id=identity.organization_id,
+        event_name="REVIEW_REACHED",
+        event_key=str(detail.public_id),
     )
     try:
         engine2_dossier = UsLaceyEngineDossierService().get_dossier(
@@ -527,6 +534,12 @@ def new_operation_submit(
             client_reference=reference,
             line_references=("1",),
         )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="OPERATION_CREATED",
+            event_key=str(created.public_id),
+        )
         return RedirectResponse(f"/operations/{created.public_id}", status_code=303)
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
@@ -651,6 +664,13 @@ async def operation_upload_submit(
             user_id=identity.user_id,
             operation_public_id=operation_public_id,
             documents=tuple(payloads),
+        )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="DOCUMENTS_UPLOADED",
+            event_key=operation_public_id,
+            metadata={"document_count": len(payloads)},
         )
         return RedirectResponse(
             f"/operations/{operation_public_id}?uploaded=1",
@@ -807,6 +827,12 @@ def operation_review_accept_supported(
             user_id=identity.user_id,
             user_email=identity.email,
         )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="AUTO_RESOLVED_CONFIRMED",
+            event_key=operation_public_id,
+        )
         return RedirectResponse(f"/operations/{operation_public_id}", status_code=303)
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
@@ -849,6 +875,12 @@ def operation_review_accept_supported_fragment(
             operation_public_id=operation_public_id,
             user_id=identity.user_id,
             user_email=identity.email,
+        )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="AUTO_RESOLVED_CONFIRMED",
+            event_key=operation_public_id,
         )
         return _workspace_fragment(
             request=request,
@@ -905,6 +937,12 @@ def operation_complete_submit(
             user_email=identity.email,
             telemetry=telemetry,
         )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="REVIEW_COMPLETED",
+            event_key=operation_public_id,
+        )
         return RedirectResponse(f"/operations/{operation_public_id}?completed=1", status_code=303)
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
@@ -949,6 +987,13 @@ def _export_response(*, request: Request, operation_public_id: str, us_session: 
                 operation_public_id=operation_public_id,
             )
             media_type = "text/csv; charset=utf-8"
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="EXPORT_DOWNLOADED",
+            event_key=f"{operation_public_id}:{kind}",
+            metadata={"kind": kind},
+        )
         response = Response(content=payload, media_type=media_type)
         response.headers["Content-Disposition"] = f'attachment; filename="lacey-preparation-{detail.public_id}.{kind}"'
         response.headers["Cache-Control"] = "no-store, max-age=0"
