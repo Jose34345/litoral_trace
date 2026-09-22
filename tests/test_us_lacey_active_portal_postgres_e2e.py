@@ -294,9 +294,10 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(m
         shell = client.get(operation_path)
         assert shell.status_code == 200
         assert "shipment.csv" in shell.text
-        assert "100%" in shell.text
+        assert "100%" not in shell.text
+        assert "Extracting and cross-checking evidence..." not in shell.text
         assert 'hx-trigger="every 2s"' not in shell.text
-        assert shell.text.count(f'hx-get="{workspace_path}"') == 1
+        assert shell.text.count(f'hx-get="{workspace_path}?include_product_intelligence=1"') == 1
 
         workspace = client.get(workspace_path)
         assert workspace.status_code == 200
@@ -307,7 +308,7 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(m
         operation_detail = operation_service.get_detail(
             organization_id=organization_id, operation_public_id=operation_public_id
         )
-        exceptions = [field for field in operation_detail.fields if field.status in {"MISSING", "REVIEW"}]
+        exceptions = [field for field in operation_detail.fields if field.status in {"MISSING", "CONFLICT"}]
         assert exceptions
 
         legacy_action = f"{operation_path}/review/{exceptions[0].id}"
@@ -321,7 +322,7 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(m
             exceptions = [
                 field
                 for field in operation_detail.fields
-                if field.status in {"MISSING", "REVIEW"}
+                if field.status in {"MISSING", "CONFLICT"}
             ]
             if not exceptions:
                 break
@@ -354,10 +355,33 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(m
             workspace = client.get(workspace_path)
             assert workspace.status_code == 200
 
+        workspace = client.get(workspace_path)
+        assert workspace.status_code == 200
+
+        supported_detail = operation_service.get_detail(
+            organization_id=organization_id,
+            operation_public_id=operation_public_id,
+        )
+        supported = [
+            field for field in supported_detail.fields if field.status == "SUPPORTED"
+        ]
+        if supported:
+            bulk_action = f"{operation_path}/review/actions/accept-supported"
+            bulk = client.post(
+                bulk_action,
+                data={"csrf_token": _csrf_for(workspace.text, bulk_action)},
+            )
+            assert bulk.status_code == 200
+            workspace = bulk
+
         ready_detail = operation_service.get_detail(
             organization_id=organization_id, operation_public_id=operation_public_id
         )
-        assert [field for field in ready_detail.fields if field.status in {"MISSING", "REVIEW"}] == []
+        assert [
+            field
+            for field in ready_detail.fields
+            if field.status in {"MISSING", "CONFLICT", "SUPPORTED"}
+        ] == []
         assert ready_detail.status == "READY_FOR_REVIEW"
 
         workspace = client.get(workspace_path)
