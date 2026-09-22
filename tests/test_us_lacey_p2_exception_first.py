@@ -41,13 +41,13 @@ def _field(
     )
 
 
-def test_review_projection_separates_attention_supported_and_settled_without_new_authority_state():
+def test_review_projection_separates_action_supported_and_settled_states():
     detail = SimpleNamespace(fields=(
-        _field(1, "FOUND", value="brasiliensis"),
-        _field(2, "REVIEW", value="brasiliensis", validation_status="REVIEW_REQUIRED"),
+        _field(1, "SUPPORTED", value="brasiliensis"),
+        _field(2, "CONFLICT", value="brasiliensis", validation_status="REVIEW_REQUIRED"),
         _field(3, "MISSING", value=None, validation_status="MISSING"),
         _field(4, "MATCHED", value="brasiliensis"),
-        _field(5, "FOUND", value="brasiliensis", validation_status="REVIEW_REQUIRED"),
+        _field(5, "CONFLICT", value="brasiliensis", validation_status="REVIEW_REQUIRED"),
     ))
 
     attention, supported, settled = _review_field_groups(detail)
@@ -55,7 +55,7 @@ def test_review_projection_separates_attention_supported_and_settled_without_new
     assert [field.id for field in supported] == [1]
     assert [field.id for field in attention] == [2, 3, 5]
     assert [field.id for field in settled] == [4]
-    assert supported[0].status == "FOUND"
+    assert supported[0].status == "SUPPORTED"
 
 
 def test_operations_intake_defends_against_cached_legacy_file_enhancer():
@@ -118,27 +118,29 @@ def test_batch_rejection_is_detected_before_any_persistent_ingestion(monkeypatch
     assert [item[0] for item in checked] == ["invoice.pdf", "bulk.csv"]
 
 
-def test_exception_first_workspace_keeps_supported_values_collapsed_but_editable():
+def test_exception_first_workspace_exposes_tabs_and_bulk_confirmation():
     template = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
 
-    assert "Review exceptions" in template
+    assert "Action Required" in template
+    assert "Auto-Resolved Data" in template
+    assert "Regulatory Analysis" in template
+    assert "data-review-tab-button" in template
+    assert "data-review-tab-panel" in template
     assert "data-review-line=" in template
-    assert "fields extracted and automatically supported" in template
-    assert "data-auto-supported-fields" in template
-    assert "Confirm all supported fields" in template
-    assert "{{ review_field(field, loop.index) }}" in template
+    assert "Confirm All Auto-Resolved Data" in template
     assert "attention_fields|length == 0 and auto_supported_fields|length == 0" in template
 
 
-def test_regulatory_fail_and_indeterminate_are_expanded_while_pass_is_collapsed():
+def test_regulatory_fail_and_indeterminate_are_expanded_while_neutral_states_collapse():
     template = REGULATORY_TEMPLATE.read_text(encoding="utf-8")
 
     assert "data-regulatory-exceptions" in template
     assert "failed + indeterminate" in template
     assert "data-regulatory-passed" in template
+    assert "data-regulatory-not-applicable" in template
+    assert "NOT APPLICABLE" in template
     assert "<details" in template
-    assert "without exceptions" in template
-    assert "They do not represent an overall shipment status." in template
+    assert "They are not an overall legal compliance determination." in template
 
 
 def test_review_telemetry_parser_is_bounded_deduplicated_and_fail_open():
@@ -165,7 +167,7 @@ def test_review_telemetry_tracks_only_explicit_review_required_edit_inputs():
     template = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
     javascript = WORKSPACE_JS.read_text(encoding="utf-8")
 
-    assert 'data-review-required="{{ \'true\' if field.status == \'REVIEW\'' in template
+    assert 'data-review-required="true"' in template
     assert "data-review-started-at" in template
     assert "data-review-elapsed-seconds" in template
     assert "data-review-modified-field-ids" in template
