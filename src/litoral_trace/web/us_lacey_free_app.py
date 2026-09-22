@@ -35,6 +35,7 @@ from litoral_trace.us_lacey.live_readiness import (
 )
 from litoral_trace.us_lacey.worker import process_one_us_lacey_job
 from litoral_trace.us_lacey.worker_db import get_us_lacey_worker_database_url
+from litoral_trace.us_lacey.worker_wakeup import wait_for_us_lacey_worker_wakeup
 from litoral_trace.web.us_lacey_pilot_app import app
 from litoral_trace.web.templates import templates
 
@@ -124,6 +125,15 @@ def _worker_max_backoff_seconds() -> float:
     )
 
 
+def _worker_idle_max_backoff_seconds() -> float:
+    return _float_env(
+        "US_LACEY_WORKER_IDLE_MAX_BACKOFF_SECONDS",
+        900.0,
+        minimum=30.0,
+        maximum=3600.0,
+    )
+
+
 def _next_worker_backoff_seconds(
     current: float,
     *,
@@ -138,7 +148,10 @@ def _wait_for_next_worker_attempt(
     wait_seconds: float,
 ) -> bool:
     app.state.us_lacey_inline_worker_current_wait_seconds = wait_seconds
-    return stop_event.wait(wait_seconds)
+    return wait_for_us_lacey_worker_wakeup(
+        stop_event=stop_event,
+        timeout_seconds=wait_seconds,
+    )
 
 
 def _record_worker_success() -> None:
@@ -150,6 +163,7 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
         "US_LACEY_WORKER_POLL_SECONDS", 2.0, minimum=0.25, maximum=30.0
     )
     max_backoff_seconds = _worker_max_backoff_seconds()
+    idle_max_backoff_seconds = _worker_idle_max_backoff_seconds()
     recovery_every = _int_env(
         "US_LACEY_WORKER_RECOVERY_EVERY_SECONDS", 60, minimum=30, maximum=3600
     )
@@ -158,13 +172,16 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
     )
     worker_id = f"inline-{socket.gethostname()}-{uuid4().hex[:12]}"
     next_recovery = 0.0
-    backoff_seconds = poll_seconds
+    error_backoff_seconds = poll_seconds
+    idle_backoff_seconds = poll_seconds
     app.state.us_lacey_inline_worker_current_wait_seconds = poll_seconds
 
     _LOG.info(
-        "us_lacey_inline_worker_started worker_id=%s max_backoff_seconds=%s",
+        "us_lacey_inline_worker_started worker_id=%s max_backoff_seconds=%s "
+        "idle_max_backoff_seconds=%s",
         worker_id,
         max_backoff_seconds,
+        idle_max_backoff_seconds,
     )
     while not stop_event.is_set():
         now = time.monotonic()
@@ -182,10 +199,10 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
                     )
             except (OperationalError, UsLaceyJobError):
                 _LOG.exception("stale_job_recovery_database_failed")
-                if _wait_for_next_worker_attempt(stop_event, backoff_seconds):
+                if _wait_for_next_worker_attempt(stop_event, error_backoff_seconds):
                     break
-                backoff_seconds = _next_worker_backoff_seconds(
-                    backoff_seconds,
+                error_backoff_seconds = _next_worker_backoff_seconds(
+                    error_backoff_seconds,
                     base=poll_seconds,
                     cap=max_backoff_seconds,
                 )
@@ -198,7 +215,8 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
             result = process_one_us_lacey_job(worker_id=worker_id)
             _record_worker_success()
             if result.claimed:
-                backoff_seconds = poll_seconds
+                error_backoff_seconds = poll_seconds
+                idle_backoff_seconds = poll_seconds
                 app.state.us_lacey_inline_worker_current_wait_seconds = poll_seconds
                 _LOG.info(
                     "job_processed job_id=%s job_status=%s document_status=%s "
@@ -213,10 +231,10 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
                 continue
         except (OperationalError, UsLaceyJobError):
             _LOG.exception("inline_worker_database_iteration_failed")
-            if _wait_for_next_worker_attempt(stop_event, backoff_seconds):
+            if _wait_for_next_worker_attempt(stop_event, error_backoff_seconds):
                 break
-            backoff_seconds = _next_worker_backoff_seconds(
-                backoff_seconds,
+            error_backoff_seconds = _next_worker_backoff_seconds(
+                error_backoff_seconds,
                 base=poll_seconds,
                 cap=max_backoff_seconds,
             )
@@ -229,11 +247,16 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
                 break
             continue
 
-        # A healthy empty queue is not a failure condition. Poll at the normal
-        # interactive cadence so a newly uploaded shipment is claimed quickly.
-        # Exponential backoff is reserved for database/queue failures above.
-        backoff_seconds = poll_seconds
-        if _wait_for_next_worker_attempt(stop_event, poll_seconds):
+        # A healthy empty queue backs off so Neon can become truly idle and
+        # scale to zero. New uploads set an in-process wake event, so interactive
+        # queue latency remains near-zero without a database query every 2 seconds.
+        error_backoff_seconds = poll_seconds
+        idle_backoff_seconds = _next_worker_backoff_seconds(
+            idle_backoff_seconds,
+            base=poll_seconds,
+            cap=idle_max_backoff_seconds,
+        )
+        if _wait_for_next_worker_attempt(stop_event, idle_backoff_seconds):
             break
 
     app.state.us_lacey_inline_worker_current_wait_seconds = poll_seconds

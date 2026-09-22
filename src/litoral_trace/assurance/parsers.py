@@ -62,6 +62,10 @@ _OCR_TIMEOUT_SECONDS = 20
 _OCR_TIMEOUT_ENV = "LT_ASSURANCE_OCR_TIMEOUT_SECONDS"
 _OCR_TIMEOUT_MIN_SECONDS = 5
 _OCR_TIMEOUT_MAX_SECONDS = 120
+_PDF_TABLE_PAGE_LIMIT = 15
+_PDF_TABLE_PAGE_LIMIT_ENV = "LT_ASSURANCE_PDF_TABLE_PAGE_LIMIT"
+_PDF_TABLE_PAGE_LIMIT_MIN = 1
+_PDF_TABLE_PAGE_LIMIT_MAX = 50
 _OCR_LANGUAGES = ("spa", "eng")
 _OCR_LANGUAGE = "+".join(_OCR_LANGUAGES)
 _TOTAL_MARKERS = frozenset(
@@ -86,6 +90,21 @@ def _ocr_timeout_seconds() -> int:
     except ValueError:
         return _OCR_TIMEOUT_SECONDS
     return max(_OCR_TIMEOUT_MIN_SECONDS, min(_OCR_TIMEOUT_MAX_SECONDS, value))
+
+
+def _pdf_table_page_limit() -> int:
+    """Bound expensive pdfplumber table extraction for large mixed-document PDFs."""
+    raw = str(os.getenv(_PDF_TABLE_PAGE_LIMIT_ENV, "")).strip()
+    if not raw:
+        return _PDF_TABLE_PAGE_LIMIT
+    try:
+        value = int(raw)
+    except ValueError:
+        return _PDF_TABLE_PAGE_LIMIT
+    return max(
+        _PDF_TABLE_PAGE_LIMIT_MIN,
+        min(_PDF_TABLE_PAGE_LIMIT_MAX, value),
+    )
 
 
 def _clean_cell(value: Any) -> Any:
@@ -638,43 +657,66 @@ def parse_pdf(content: bytes) -> ParsedDocument:
             ocr_required = False
 
     tables: list[ParsedTable] = []
+    table_page_limit = _pdf_table_page_limit()
+    table_pages_scanned = 0
+    table_extraction_error_type: str | None = None
     if not ocr_required:
         try:
             import pdfplumber
 
             with pdfplumber.open(BytesIO(content)) as pdf:
-                for page_number, page in enumerate(pdf.pages, start=1):
-                    for table_index, raw_table in enumerate(page.extract_tables() or [], start=1):
-                        rows = [list(row or []) for row in raw_table if row]
-                        header_index = detect_header_row(rows, scan_limit=10)
-                        if header_index is None:
-                            continue
-                        headers, records = _records_from_rows(rows, header_index=header_index, allow_key_value_matrix=True)
-                        if not records:
-                            continue
-                        tables.append(
-                            ParsedTable(
-                                name=f"page_{page_number}_table_{table_index}",
-                                headers=headers,
-                                rows=records,
-                                source=SourceLocation(
-                                    page=page_number,
-                                    row=header_index + 1,
-                                    locator=(
-                                        f"pdf:page:{page_number};table:{table_index};"
-                                        f"header_row:{header_index + 1}"
-                                    ),
-                                ),
+                for page_number, page in enumerate(
+                    pdf.pages[:table_page_limit],
+                    start=1,
+                ):
+                    table_pages_scanned += 1
+                    try:
+                        raw_tables = page.extract_tables() or []
+                        for table_index, raw_table in enumerate(raw_tables, start=1):
+                            rows = [list(row or []) for row in raw_table if row]
+                            header_index = detect_header_row(rows, scan_limit=10)
+                            if header_index is None:
+                                continue
+                            headers, records = _records_from_rows(
+                                rows,
+                                header_index=header_index,
+                                allow_key_value_matrix=True,
                             )
-                        )
-        except Exception:
+                            if not records:
+                                continue
+                            tables.append(
+                                ParsedTable(
+                                    name=f"page_{page_number}_table_{table_index}",
+                                    headers=headers,
+                                    rows=records,
+                                    source=SourceLocation(
+                                        page=page_number,
+                                        row=header_index + 1,
+                                        locator=(
+                                            f"pdf:page:{page_number};table:{table_index};"
+                                            f"header_row:{header_index + 1}"
+                                        ),
+                                    ),
+                                )
+                            )
+                    finally:
+                        close_page = getattr(page, "close", None)
+                        if callable(close_page):
+                            close_page()
+        except Exception as exc:
             # Table extraction is best-effort; extracted/OCR text remains authoritative.
             tables = []
+            table_extraction_error_type = type(exc).__name__
 
     metadata = {
         "page_count": page_count,
         "pages_with_text": pages_with_text,
+        "table_extraction_page_limit": table_page_limit,
+        "table_extraction_pages_scanned": table_pages_scanned,
+        "table_extraction_truncated": page_count > table_page_limit,
     }
+    if table_extraction_error_type is not None:
+        metadata["table_extraction_error_type"] = table_extraction_error_type
     metadata.update(text_extraction_metadata)
     metadata.update(ocr_metadata)
     return ParsedDocument(

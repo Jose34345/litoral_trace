@@ -23,6 +23,7 @@ from litoral_trace.us_lacey.jobs import UsLaceyJob, enqueue_us_lacey_document_jo
 from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_lock
 from litoral_trace.us_lacey.operations import OperationSnapshot, UsLaceyOperationService
 from litoral_trace.us_lacey.source_sets import seal_current_source_set
+from litoral_trace.us_lacey.worker_wakeup import wake_us_lacey_worker
 from litoral_trace.us_lacey.sandbox import (
     UsLaceySandboxError,
     enforce_sandbox_document_capacity,
@@ -171,6 +172,7 @@ def upload_and_enqueue_us_lacey_document(
                 organization_id=organization_id,
                 operation_id=operation_id,
             )
+            wake_us_lacey_worker()
             return UsLaceyQueuedUpload(ingestion=ingested, job=job)
         except Exception as exc:
             # The original remains intentionally preserved in private Vault even when
@@ -250,6 +252,7 @@ def upload_and_enqueue_us_lacey_document_batch(
                 for item in ingested
             )
             _mark_operation_processing(organization_id=organization_id, operation_id=operation_id)
+            wake_us_lacey_worker()
             return queued
         except Exception as exc:
             raise UsLaceyWorkflowError(
