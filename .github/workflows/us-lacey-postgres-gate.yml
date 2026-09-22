@@ -191,7 +191,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "058_us_lacey_exception_first_states (head)" /tmp/alembic-current.txt
+          grep -Fx "059_us_lacey_outreach_attribution (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -599,7 +599,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "058_us_lacey_exception_first_states (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "059_us_lacey_outreach_attribution (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
