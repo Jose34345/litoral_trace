@@ -1,1 +1,27 @@
-<div id="processing-panel" {% if not processing.terminal %}hx-get="/operations/{{ detail.public_id }}/processing-fragment" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>{% include "us_lacey/fragments/processing_fragment_body.html" %}</div>
+{% if processing.terminal and not processing.failed and processing.state != "WAITING_FOR_DOCUMENT" %}
+<div id="operation-workspace"
+     hx-get="/operations/{{ detail.public_id }}/workspace-fragment?include_product_intelligence=1"
+     hx-trigger="load"
+     hx-swap="outerHTML">
+  <div class="lt-card p-6" aria-live="polite">
+    <div class="animate-pulse space-y-4">
+      <div class="h-5 w-56 rounded bg-slate-200"></div>
+      <div class="h-4 w-96 max-w-full rounded bg-slate-100"></div>
+      <div class="grid gap-3 md:grid-cols-3">
+        <div class="h-20 rounded-xl bg-slate-100"></div>
+        <div class="h-20 rounded-xl bg-slate-100"></div>
+        <div class="h-20 rounded-xl bg-slate-100"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+<div id="processing-panel"
+     {% if not processing.terminal %}
+     hx-get="/operations/{{ detail.public_id }}/processing-fragment"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML"
+     {% endif %}>
+  {% include "us_lacey/fragments/processing_fragment_body.html" %}
+</div>
+{% endif %}
