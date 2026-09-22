@@ -254,7 +254,7 @@ def test_runtime_enforce_projection_persists_unconfirmed_pending_candidate(
         status="SUCCEEDED",
     ).one()
 
-    assert field.field_status == "FOUND"
+    assert field.field_status == "SUPPORTED"
     assert field.normalized_value == BOL
     assert field.human_value is None
     assert field.reviewed_at is None
@@ -297,7 +297,7 @@ def test_runtime_enforce_materializes_stable_line_before_projecting_value(
         field_name="genus",
     ).one()
     persisted_operation = session.get(UsLaceyOperation, operation)
-    assert genus.field_status == "FOUND"
+    assert genus.field_status == "SUPPORTED"
     assert genus.normalized_value == "Pinus"
     assert genus.human_value is None
     assert persisted_operation.merchandise_line_count == 1
