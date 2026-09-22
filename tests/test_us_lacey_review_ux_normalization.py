@@ -204,3 +204,4 @@ def test_exception_first_ui_polish_uses_quiet_enterprise_surfaces():
     assert "bg-amber-50/80" not in regulatory
     assert "bg-rose-50/80" not in regulatory
     assert "ring-amber-600/20" in regulatory
+    assert "bg-emerald-50/40" not in regulatory
