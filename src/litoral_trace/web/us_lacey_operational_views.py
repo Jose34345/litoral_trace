@@ -4,7 +4,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 import logging
-from urllib.parse import parse_qs
 
 from markupsafe import Markup, escape
 
@@ -430,12 +429,15 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
     attention_fields, auto_supported_fields, settled_fields = _review_field_groups_with_semantic_evidence(identity, detail)
     if is_oob_update is None:
         is_oob_update = str(getattr(request, "method", "GET")).upper() == "POST"
-    workspace = _render(
+
+    return _render(
         request,
         "fragments/operation_workspace",
         identity=identity,
         detail=detail,
         engine2_dossier=engine2_dossier,
+        product_intelligence=_product_intelligence_for_detail(identity, detail),
+        regulatory_assessment=_regulatory_assessment_for_detail(identity, detail),
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
         attention_fields=attention_fields,
@@ -444,27 +446,3 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         error=error,
         is_oob_update=is_oob_update,
     )
-    scope = getattr(request, "scope", {}) or {}
-    raw_query = scope.get("query_string", b"")
-    if isinstance(raw_query, bytes):
-        raw_query = raw_query.decode("latin-1")
-    include_product_intelligence = parse_qs(str(raw_query)).get("include_product_intelligence") == ["1"]
-    if not include_product_intelligence:
-        return workspace
-
-    prefix = ""
-    product_intelligence = _product_intelligence_for_detail(identity, detail)
-    if product_intelligence is not None:
-        prefix += _render(
-            request,
-            "fragments/product_intelligence_card",
-            product_intelligence=product_intelligence,
-        )
-    regulatory_assessment = _regulatory_assessment_for_detail(identity, detail)
-    if regulatory_assessment is not None:
-        prefix += _render(
-            request,
-            "fragments/regulatory_assessment_card",
-            regulatory_assessment=regulatory_assessment,
-        )
-    return prefix + workspace
