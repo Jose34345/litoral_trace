@@ -19,10 +19,12 @@ class UsLaceyOperationStatus(StrEnum):
 
 
 class UsLaceyFieldStatus(StrEnum):
-    FOUND = "FOUND"
-    MATCHED = "MATCHED"
+    FOUND = "FOUND"  # legacy compatibility
+    REVIEW = "REVIEW"  # legacy compatibility
     MISSING = "MISSING"
-    REVIEW = "REVIEW"
+    CONFLICT = "CONFLICT"
+    SUPPORTED = "SUPPORTED"
+    MATCHED = "MATCHED"
     NOT_REQUIRED = "NOT_REQUIRED"
 
 
