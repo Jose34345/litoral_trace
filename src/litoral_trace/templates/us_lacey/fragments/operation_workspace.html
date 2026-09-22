@@ -23,7 +23,8 @@
 } %}{{ guidance.get(field_name, "Add a supporting document or enter this value only if you can verify it.") }}{% endmacro %}
 
 {% macro action_field(field, review_order) %}
-{% set action_url = "/operations/" ~ detail.public_id ~ "/review/actions/fields/" ~ field.id %}
+{% set action_url = "/operations/" ~ detail.public_id ~ "/review/fields/" ~ field.id %}
+{% set htmx_action_url = "/operations/" ~ detail.public_id ~ "/review/actions/fields/" ~ field.id %}
 {% set field_csrf = review_csrf.get(field.id, "") %}
 <article
   id="review-field-{{ field.id }}"
@@ -50,7 +51,7 @@
     <form
       method="post"
       action="{{ action_url }}"
-      hx-post="{{ action_url }}"
+      hx-post="{{ htmx_action_url }}"
       hx-target="#operation-workspace"
       hx-swap="outerHTML"
       data-review-action
@@ -76,7 +77,7 @@
     class="mt-4 flex flex-col gap-2 sm:flex-row"
     method="post"
     action="{{ action_url }}"
-    hx-post="{{ action_url }}"
+    hx-post="{{ htmx_action_url }}"
     hx-target="#operation-workspace"
     hx-swap="outerHTML"
     data-review-action
@@ -93,7 +94,7 @@
     class="mt-3"
     method="post"
     action="{{ action_url }}"
-    hx-post="{{ action_url }}"
+    hx-post="{{ htmx_action_url }}"
     hx-target="#operation-workspace"
     hx-swap="outerHTML"
     data-review-action
@@ -122,7 +123,7 @@
   </section>
   {% endif %}
 
-  <section class="lt-card p-6" aria-labelledby="quality-output-title">
+  <section id="review-summary" class="lt-card p-6" aria-labelledby="quality-output-title">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <p class="text-xs font-bold uppercase tracking-wider text-emerald-700">Shipment prepared</p>
@@ -193,7 +194,7 @@
         {% if auto_supported_fields %}
         <form
           method="post"
-          action="/operations/{{ detail.public_id }}/review/actions/accept-supported"
+          action="/operations/{{ detail.public_id }}/review/accept-supported"
           hx-post="/operations/{{ detail.public_id }}/review/actions/accept-supported"
           hx-target="#operation-workspace"
           hx-swap="outerHTML"
