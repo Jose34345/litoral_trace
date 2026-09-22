@@ -62,6 +62,7 @@ def test_outreach_referral_sets_http_only_first_party_cookie(monkeypatch):
     assert "SameSite=lax" in cookie
     assert "Max-Age=604800" in cookie
     assert response.headers["cache-control"] == "no-store, max-age=0"
+    assert response.headers["referrer-policy"] == "no-referrer"
 
 
 def test_outreach_referral_invalid_or_inactive_link_is_404(monkeypatch):
