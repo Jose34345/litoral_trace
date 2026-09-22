@@ -140,7 +140,7 @@ def test_regulatory_fail_and_indeterminate_are_expanded_while_neutral_states_col
     assert "data-regulatory-not-applicable" in template
     assert "Not applicable" in template
     assert "<details" in template
-    assert "They are not an overall legal compliance determination." in template
+    assert "not an overall legal compliance determination" in template
 
 
 def test_review_telemetry_parser_is_bounded_deduplicated_and_fail_open():
