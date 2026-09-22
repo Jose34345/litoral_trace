@@ -98,13 +98,13 @@ def test_terminal_workspace_hydrates_rule_scoped_regulatory_panel(monkeypatch):
     )
 
     assert 'data-regulatory-assessment-status="CURRENT"' in html
-    assert "Regulatory assessment" in html
+    assert "Regulatory Analysis" in html
     assert "DE_MINIMIS" in html
     assert "INDETERMINATE" in html
     assert "HTS_APPLICABILITY" in html
     assert "PASS" in html
     assert "<strong>2</strong> assessments" in html
-    assert "does not replace the final compliance determination" in html.lower()
+    assert "does not represent an overall legal compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
 
 
@@ -128,5 +128,5 @@ def test_direct_operation_detail_renders_same_noncanonical_regulatory_panel(monk
     assert "DE_MINIMIS" in html
     assert "HTS_APPLICABILITY" in html
     assert "<strong>2</strong> assessments" in html
-    assert "does not replace the final compliance determination" in html.lower()
+    assert "does not represent an overall legal compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
