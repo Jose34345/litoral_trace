@@ -50,7 +50,7 @@
 {# A rejected upload is request-local feedback. Do not mix it with stale analysis
    or a previous processing failure from documents already stored on the operation. #}
 {% if not bulk_upload_rejection %}
-<div class="mt-6" id="processing-panel" {% if not processing.terminal %}hx-get="/operations/{{ detail.public_id }}/processing-fragment" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>{% include "us_lacey/fragments/processing_fragment_body.html" %}</div>
+<div class="mt-6">{% include "us_lacey/fragments/processing_fragment.html" %}</div>
 {% endif %}
 
 {% if not bulk_upload_rejection and not processing.terminal %}
