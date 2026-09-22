@@ -185,7 +185,7 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
         dossier = UsLaceyEngineDossierService().get_dossier(organization_id=identity.organization_id, operation_public_id=detail.public_id)
     except Exception:
         dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
-    tokens = {field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}") for field in detail.fields if field.status in {"MISSING", "REVIEW", "FOUND"}}
+    tokens = {field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}") for field in detail.fields if field.status in {"MISSING", "CONFLICT", "SUPPORTED", "REVIEW", "FOUND"}}
     return _html(render_operation_detail(request=request, identity=identity, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, error=error, notice=notice), status_code=status_code)
 
 
@@ -209,7 +209,7 @@ def _workspace_fragment(*, request: Request, identity, operation_public_id: str,
             purpose=f"review:{detail.public_id}:{field.id}",
         )
         for field in detail.fields
-        if field.status in {"MISSING", "REVIEW", "FOUND"}
+        if field.status in {"MISSING", "CONFLICT", "SUPPORTED", "REVIEW", "FOUND"}
     }
     return _html(
         render_operation_workspace(
@@ -715,6 +715,133 @@ def operation_review_submit(
             )
         except UsLaceyOperationNotFound:
             return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+
+@app.post(
+    "/operations/{operation_public_id}/review/actions/fields/{field_id:int}",
+    response_class=HTMLResponse,
+)
+def operation_review_action_fragment(
+    operation_public_id: str,
+    field_id: int,
+    request: Request,
+    action: str = Form(...),
+    value: str = Form(""),
+    candidate_id: int | None = Form(None),
+    reason_code: str = Form(""),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Save one review action and return the complete exception-first workspace."""
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"review:{operation_public_id}:{field_id}",
+            submitted_token=csrf_token,
+        )
+        review_us_lacey_field(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            field_id=field_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+            action=action,
+            value=value or None,
+            candidate_id=candidate_id,
+            reason_code=reason_code or None,
+        )
+        return _workspace_fragment(
+            request=request,
+            identity=identity,
+            operation_public_id=operation_public_id,
+            us_session=us_session or "",
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        try:
+            identity, _entitlement = _operational_context(us_session)
+            return _html(
+                render_operation_workspace(
+                    request=request,
+                    identity=identity,
+                    detail=UsLaceyOperationService().get_detail(
+                        organization_id=identity.organization_id,
+                        operation_public_id=operation_public_id,
+                    ),
+                    engine2_dossier=UsLaceyEngineDossierService().get_dossier(
+                        organization_id=identity.organization_id,
+                        operation_public_id=operation_public_id,
+                    ),
+                    complete_csrf=us_lacey_csrf_token(
+                        session_token=us_session or "",
+                        purpose=f"complete:{operation_public_id}",
+                    ),
+                    review_csrf={},
+                    error=str(exc),
+                ),
+                status_code=400,
+            )
+        except Exception:
+            return _operation_error_page(
+                request,
+                "Unable to refresh the review workspace.",
+                status_code=400,
+            )
+
+
+@app.post(
+    "/operations/{operation_public_id}/review/actions/accept-supported",
+    response_class=HTMLResponse,
+)
+def operation_accept_supported_fragment(
+    operation_public_id: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Confirm every current SUPPORTED field in one explicit customer action."""
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"complete:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        detail = UsLaceyOperationService().get_detail(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+        )
+        supported_ids = tuple(
+            int(field.id)
+            for field in detail.fields
+            if field.status == "SUPPORTED"
+        )
+        for field_id in supported_ids:
+            review_us_lacey_field(
+                organization_id=identity.organization_id,
+                operation_public_id=operation_public_id,
+                field_id=field_id,
+                user_id=identity.user_id,
+                user_email=identity.email,
+                action="accept",
+            )
+        return _workspace_fragment(
+            request=request,
+            identity=identity,
+            operation_public_id=operation_public_id,
+            us_session=us_session or "",
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        return _operation_error_page(request, str(exc), status_code=400)
 
 
 @app.post("/operations/{operation_public_id}/complete", response_class=HTMLResponse)
