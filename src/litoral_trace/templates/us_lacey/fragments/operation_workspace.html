@@ -1,5 +1,7 @@
 {% from "components/ui.html" import button, empty_state %}
 {% macro friendly_status(value) %}{% set labels = {"MISSING":"Missing information", "CONFLICT":"Conflicting information", "SUPPORTED":"Auto-resolved", "MATCHED":"Confirmed", "NOT_REQUIRED":"Not required", "REVIEW":"Needs review", "FOUND":"Suggested"} %}{{ labels.get(value, value|replace("_", " ")|title) }}{% endmacro %}
+{% macro review_telemetry_inputs() %}<input type="hidden" name="review_started_at" data-review-started-at><input type="hidden" name="review_elapsed_seconds" data-review-elapsed-seconds><input type="hidden" name="review_modified_field_ids" data-review-modified-field-ids>{% endmacro %}
+
 {% macro missing_guidance(field_name) %}{% set guidance = {
   "estimated_arrival_date":"Likely source: carrier arrival notice, bill of lading, or customs broker.",
   "filing_entry_reference":"Likely source: importer or customs broker after the entry is created.",
@@ -31,6 +33,7 @@
   data-review-field-name="{{ field.field_name }}"
   data-review-order="{{ review_order }}"
   data-review-status="{{ field.status }}"
+  data-review-required="true"
 >
   <div class="flex flex-wrap items-center justify-between gap-2">
     <div>
@@ -225,7 +228,7 @@
       </div>
 
       {% if product_intelligence %}
-      <details class="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4" data-product-composition>
+      <details class="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4" data-product-composition data-product-intelligence-status="{{ product_intelligence.status }}">
         <summary class="cursor-pointer text-sm font-semibold text-slate-800">Product composition evidence{% if product_intelligence.component_count is defined %} · {{ product_intelligence.component_count }} components{% endif %}</summary>
         <div class="mt-4 text-sm text-slate-700">
           {% if product_intelligence.status == "NOT_APPLICABLE" %}
@@ -244,7 +247,9 @@
                   <h4 class="font-bold text-slate-950">{{ composition.get('sku', 'Unidentified SKU') }}{% if composition.get('product_name') %} — {{ composition.get('product_name') }}{% endif %}</h4>
                   {% for component in composition.get('components', []) %}
                   {% set material = component.get('material') or {} %}
+                  {% set component_source = component.get('source') or material.get('source') or {} %}
                   <p class="mt-2 text-xs text-slate-600">{{ component.get('description_raw') or 'Component' }} · {{ material.get('name_raw') or material.get('name_normalized') or 'Material not stated' }}</p>
+                  <p class="mt-1 text-xs text-slate-500">Source: {{ source.get('filename', 'source document') }}{% if component_source.get('sheet') %} · {{ component_source.get('sheet') }}{% endif %}{% if component_source.get('row') %} · row {{ component_source.get('row') }}{% endif %}</p>
                   {% endfor %}
                 </article>
                 {% endfor %}
@@ -268,6 +273,7 @@
         {{ empty_state("Regulatory analysis is not available yet", icon="fa-scale-balanced") }}
       {% endif %}
     </div>
+    {% for field in settled_fields %}<div id="review-field-{{ field.id }}" hidden data-review-resolved="true"></div>{% endfor %}
   </section>
 
   <section id="final-confirmation" class="lt-card p-6">
@@ -276,8 +282,9 @@
       <p class="mt-2 text-sm text-emerald-800">Preparation is complete.</p>
     {% elif attention_fields|length == 0 and auto_supported_fields|length == 0 %}
       <p class="mt-2 text-sm text-slate-600">All required fields are resolved and explicitly confirmed. You can complete preparation now.</p>
-      <form class="mt-4" method="post" action="/operations/{{ detail.public_id }}/complete">
+      <form class="mt-4" method="post" action="/operations/{{ detail.public_id }}/complete" data-review-completion-form>
         <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
+        {{ review_telemetry_inputs() }}
         {{ button("Complete preparation", variant="primary", button_type="submit") }}
       </form>
     {% elif attention_fields|length > 0 %}
