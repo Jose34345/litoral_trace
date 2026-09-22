@@ -35,6 +35,7 @@ from litoral_trace.us_lacey.live_readiness import (
 )
 from litoral_trace.us_lacey.worker import process_one_us_lacey_job
 from litoral_trace.us_lacey.worker_db import get_us_lacey_worker_database_url
+from litoral_trace.us_lacey.worker_wakeup import wait_for_us_lacey_worker_wakeup
 from litoral_trace.web.us_lacey_pilot_app import app
 from litoral_trace.web.templates import templates
 
@@ -118,9 +119,9 @@ def _bootstrap_schema_if_requested() -> None:
 def _worker_max_backoff_seconds() -> float:
     return _float_env(
         "US_LACEY_WORKER_MAX_BACKOFF_SECONDS",
-        360.0,
+        900.0,
         minimum=5.0,
-        maximum=360.0,
+        maximum=3600.0,
     )
 
 
@@ -138,7 +139,10 @@ def _wait_for_next_worker_attempt(
     wait_seconds: float,
 ) -> bool:
     app.state.us_lacey_inline_worker_current_wait_seconds = wait_seconds
-    return stop_event.wait(wait_seconds)
+    return wait_for_us_lacey_worker_wakeup(
+        stop_event=stop_event,
+        timeout_seconds=wait_seconds,
+    )
 
 
 def _record_worker_success() -> None:
@@ -229,11 +233,15 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
                 break
             continue
 
-        # A healthy empty queue is not a failure condition. Poll at the normal
-        # interactive cadence so a newly uploaded shipment is claimed quickly.
-        # Exponential backoff is reserved for database/queue failures above.
-        backoff_seconds = poll_seconds
-        if _wait_for_next_worker_attempt(stop_event, poll_seconds):
+        # A healthy empty queue backs off so Neon can become truly idle and
+        # scale to zero. New uploads set an in-process wake event, so interactive
+        # queue latency remains near-zero without a database query every 2 seconds.
+        backoff_seconds = _next_worker_backoff_seconds(
+            backoff_seconds,
+            base=poll_seconds,
+            cap=max_backoff_seconds,
+        )
+        if _wait_for_next_worker_attempt(stop_event, backoff_seconds):
             break
 
     app.state.us_lacey_inline_worker_current_wait_seconds = poll_seconds
