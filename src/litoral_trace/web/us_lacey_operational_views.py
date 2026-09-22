@@ -141,19 +141,20 @@ def _taxonomic_context_for_presented_field(
     return TaxonomicComparisonContext(genus=str(genus).strip())
 
 
-def _present_review_field(field, *, all_fields):
+def _present_review_field(field, *, all_fields=()):
     """Collapse semantically equivalent evidence for customer presentation."""
     field_name = getattr(field, "field_name", None)
     candidates = getattr(field, "candidates", ())
     if not field_name or not candidates:
         return field
 
+    comparison_fields = tuple(all_fields) or (field,)
     groups = group_candidate_evidence(
         field_name,
         candidates,
         comparison_context=_taxonomic_context_for_presented_field(
             field,
-            all_fields,
+            comparison_fields,
         ),
     )
     if not groups:
@@ -197,7 +198,10 @@ def _review_field_groups(detail):
         for field in presented
         if (
             getattr(field, "status", None) in _AUTO_SUPPORTED_STATUSES
-            and bool(getattr(field, "proposed_value", None))
+            and bool(
+                getattr(field, "proposed_value", None)
+                or getattr(field, "effective_value", None)
+            )
         )
     )
     settled_fields = tuple(
