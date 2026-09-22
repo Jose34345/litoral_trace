@@ -313,7 +313,7 @@ class UsLaceyOperationService:
                         original_value=operator_value,
                         normalized_value=validation.normalized_value,
                         field_status=(
-                            "REVIEW" if operator_value
+                            "SUPPORTED" if operator_value
                             else ("MATCHED" if field.requirement.value == "OPTIONAL" else "MISSING")
                         ),
                         validation_status=validation.status.value,
@@ -565,7 +565,7 @@ class UsLaceyOperationService:
                 select(func.count(UsLaceyOperationField.id)).where(
                     UsLaceyOperationField.organization_id == org_id,
                     UsLaceyOperationField.operation_id == operation.id,
-                    UsLaceyOperationField.field_status == UsLaceyFieldStatus.REVIEW.value,
+                    UsLaceyOperationField.field_status == UsLaceyFieldStatus.CONFLICT.value,
                 )
             ) or 0
             return OperationSnapshot(
