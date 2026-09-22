@@ -405,15 +405,25 @@ def _is_shipment_description_source(
     row: ExtractedDocumentField,
     *,
     header: object,
+    table_headers: frozenset[str] = frozenset(),
 ) -> bool:
-    """Allow only explicit shipment-level description evidence.
+    """Allow explicit shipment descriptions while excluding line/component tables.
 
-    Component/BOM/product rows are line-scoped evidence and must not compete for the
-    PPQ shipment-level Description of Merchandise field.
+    A data-row locator alone is not enough to reject a value because PDF key/value
+    forms may also be represented as one-row tables. We reject row-scoped evidence
+    only when its enclosing table is clearly botanical, BOM, or customs-line data.
     """
     if _fold(header) not in _SHIPMENT_DESCRIPTION_HEADERS:
         return False
-    if _DATA_ROW.search(str(row.source_locator or "")):
+    if not _DATA_ROW.search(str(row.source_locator or "")):
+        return True
+    if _is_plant_declaration_table(table_headers):
+        return False
+    if _is_explicit_bom_table(table_headers):
+        return False
+    if _is_line_allocation_table(table_headers):
+        return False
+    if table_headers & (_BOM_COMPONENT_HEADERS | _BOM_MATERIAL_HEADERS):
         return False
     return True
 
@@ -507,6 +517,7 @@ def _target_field(
             if not _is_shipment_description_source(
                 row,
                 header=raw_match.group("header"),
+                table_headers=context_headers,
             ):
                 return None, 0
             if _description_candidate_role(row, value):
