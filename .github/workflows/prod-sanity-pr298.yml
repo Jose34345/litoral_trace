@@ -1,12 +1,6 @@
 name: PR298 Production Sanity
 
 on:
-  push:
-    branches:
-      - ops/prod-sanity-pr298
-    paths:
-      - scripts/prod_sanity_pr298.py
-      - .github/workflows/prod-sanity-pr298.yml
   pull_request:
     branches:
       - feature/us-lacey-pilot-platform
