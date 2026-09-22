@@ -85,19 +85,23 @@ def test_schema_bootstrap_migrates_and_binds_dedicated_logins(monkeypatch) -> No
     assert any("litoral_trace_impersonation_reader" in item for item in statements)
 
 
-def test_worker_keeps_interactive_poll_cadence_when_queue_is_idle(monkeypatch) -> None:
+def test_worker_backs_off_idle_queue_long_enough_for_neon_scale_to_zero(monkeypatch) -> None:
     waits: list[float] = []
 
     class _StopEvent:
         def is_set(self) -> bool:
             return False
 
-        def wait(self, seconds: float) -> bool:
-            waits.append(seconds)
-            return len(waits) >= 4
+        def wait(self, _seconds: float) -> bool:
+            return False
+
+    def fake_wait(*, stop_event, timeout_seconds: float) -> bool:
+        del stop_event
+        waits.append(timeout_seconds)
+        return len(waits) >= 4
 
     monkeypatch.setenv("US_LACEY_WORKER_POLL_SECONDS", "2")
-    monkeypatch.setenv("US_LACEY_WORKER_MAX_BACKOFF_SECONDS", "360")
+    monkeypatch.setenv("US_LACEY_WORKER_IDLE_MAX_BACKOFF_SECONDS", "900")
     monkeypatch.setenv("US_LACEY_WORKER_RECOVERY_EVERY_SECONDS", "3600")
     monkeypatch.setattr(
         free_app,
@@ -109,10 +113,15 @@ def test_worker_keeps_interactive_poll_cadence_when_queue_is_idle(monkeypatch) -
         "process_one_us_lacey_job",
         lambda **_: SimpleNamespace(claimed=False),
     )
+    monkeypatch.setattr(
+        free_app,
+        "wait_for_us_lacey_worker_wakeup",
+        fake_wait,
+    )
 
     free_app._inline_worker_loop(_StopEvent())
 
-    assert waits == [2.0, 2.0, 2.0, 2.0]
+    assert waits == [4.0, 8.0, 16.0, 32.0]
 
 
 def test_worker_database_errors_use_exponential_backoff(monkeypatch) -> None:
@@ -122,9 +131,13 @@ def test_worker_database_errors_use_exponential_backoff(monkeypatch) -> None:
         def is_set(self) -> bool:
             return False
 
-        def wait(self, seconds: float) -> bool:
-            waits.append(seconds)
-            return len(waits) >= 3
+        def wait(self, _seconds: float) -> bool:
+            return False
+
+    def fake_wait(*, stop_event, timeout_seconds: float) -> bool:
+        del stop_event
+        waits.append(timeout_seconds)
+        return len(waits) >= 3
 
     monkeypatch.setenv("US_LACEY_WORKER_POLL_SECONDS", "2")
     monkeypatch.setenv("US_LACEY_WORKER_MAX_BACKOFF_SECONDS", "360")
@@ -133,6 +146,11 @@ def test_worker_database_errors_use_exponential_backoff(monkeypatch) -> None:
         free_app,
         "recover_stale_us_lacey_jobs",
         lambda **_: (0, 0),
+    )
+    monkeypatch.setattr(
+        free_app,
+        "wait_for_us_lacey_worker_wakeup",
+        fake_wait,
     )
 
     def fail_claim(**_: object):
@@ -145,21 +163,25 @@ def test_worker_database_errors_use_exponential_backoff(monkeypatch) -> None:
     assert waits == [2.0, 4.0, 8.0]
 
 
-def test_worker_backoff_caps_at_six_minutes() -> None:
-    current = 256.0
+def test_worker_idle_backoff_caps_at_fifteen_minutes(monkeypatch) -> None:
+    monkeypatch.delenv("US_LACEY_WORKER_IDLE_MAX_BACKOFF_SECONDS", raising=False)
+    cap = free_app._worker_idle_max_backoff_seconds()
+    assert cap == 900.0
+
+    current = 512.0
     next_wait = free_app._next_worker_backoff_seconds(
         current,
         base=2.0,
-        cap=360.0,
+        cap=cap,
     )
-    assert next_wait == 360.0
+    assert next_wait == 900.0
     assert (
         free_app._next_worker_backoff_seconds(
             next_wait,
             base=2.0,
-            cap=360.0,
+            cap=cap,
         )
-        == 360.0
+        == 900.0
     )
 
 
@@ -199,11 +221,11 @@ def test_free_tier_worker_readiness_allows_healthy_idle_backoff(monkeypatch) -> 
     monkeypatch.setenv("US_LACEY_WORKER_POLL_SECONDS", "2")
     us_lacey_free_app = free_app
     us_lacey_free_app.app.state.us_lacey_inline_worker_thread = _Thread()
-    us_lacey_free_app.app.state.us_lacey_inline_worker_current_wait_seconds = 360.0
+    us_lacey_free_app.app.state.us_lacey_inline_worker_current_wait_seconds = 900.0
     us_lacey_free_app.app.state.us_lacey_inline_worker_last_success_monotonic = 100.0
 
-    monkeypatch.setattr(us_lacey_free_app.time, "monotonic", lambda: 459.0)
+    monkeypatch.setattr(us_lacey_free_app.time, "monotonic", lambda: 999.0)
     assert us_lacey_free_app._inline_worker_ready() is True
 
-    monkeypatch.setattr(us_lacey_free_app.time, "monotonic", lambda: 466.0)
+    monkeypatch.setattr(us_lacey_free_app.time, "monotonic", lambda: 1006.0)
     assert us_lacey_free_app._inline_worker_ready() is False
