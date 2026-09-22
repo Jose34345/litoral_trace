@@ -53,10 +53,10 @@ _COMPLETE_PATH = re.compile(r"^/operations/(?P<operation_id>[0-9a-fA-F-]{36})/co
 
 @app.middleware("http")
 async def _require_explicit_confirmation_before_completion(request: Request, call_next):
-    """Fail closed if the legacy completion endpoint sees unconfirmed FOUND values.
+    """Fail closed if the legacy completion endpoint sees unconfirmed SUPPORTED values.
 
-    The canonical review service historically treated FOUND as extracted/resolved. The
-    upload-first UX changes the authority boundary: FOUND is now a suggestion awaiting
+    The canonical review service historically treated SUPPORTED as extracted/resolved. The
+    upload-first UX changes the authority boundary: SUPPORTED is a suggestion awaiting
     explicit customer confirmation. This customer-facing guard prevents a direct POST
     from bypassing that boundary while the underlying review-state contract is migrated.
     """
@@ -73,7 +73,7 @@ async def _require_explicit_confirmation_before_completion(request: Request, cal
             except (UsLaceyPortalAuthError, UsLaceyOperationNotFound, UsLaceyOperationError):
                 # Let the certified endpoint produce its normal auth/not-found behavior.
                 detail = None
-            if detail is not None and any(field.status == "FOUND" for field in detail.fields):
+            if detail is not None and any(field.status == "SUPPORTED" for field in detail.fields):
                 return Response(
                     "Confirm all supported suggestions before completing preparation.",
                     status_code=409,
