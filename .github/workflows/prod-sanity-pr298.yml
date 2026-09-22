@@ -7,6 +7,12 @@ on:
     paths:
       - scripts/prod_sanity_pr298.py
       - .github/workflows/prod-sanity-pr298.yml
+  pull_request:
+    branches:
+      - feature/us-lacey-pilot-platform
+    paths:
+      - scripts/prod_sanity_pr298.py
+      - .github/workflows/prod-sanity-pr298.yml
 
 permissions:
   contents: read
