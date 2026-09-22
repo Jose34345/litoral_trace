@@ -1,13 +1,15 @@
 from pathlib import Path
 
 
-def test_pr192_initial_workspace_regions_are_not_unconditionally_oob():
+def test_exception_first_workspace_uses_one_authoritative_outer_html_swap():
     template = Path(
         "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
     ).read_text(encoding="utf-8")
 
-    conditional = '{% if is_oob_update %} hx-swap-oob="true"{% endif %}'
-    assert template.count(conditional) >= 4
+    assert 'id="operation-workspace"' in template
+    assert 'hx-target="#operation-workspace"' in template
+    assert 'hx-swap="outerHTML"' in template
+    assert 'hx-swap-oob="true"' not in template
     assert 'id="review-summary"' in template
     assert 'id="entered-value-reconciliation-region"' in template
     assert 'id="final-confirmation"' in template
