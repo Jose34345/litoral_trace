@@ -2,7 +2,7 @@ import ast
 from pathlib import Path
 from types import SimpleNamespace
 
-from litoral_trace.web.us_lacey_operational_views import _review_field_sets
+from litoral_trace.web.us_lacey_operational_views import _review_field_groups
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,33 +48,32 @@ def test_operations_hides_locale_dependent_native_file_picker_chrome():
     assert 'style=' not in source
 
 
-def test_found_values_are_suggestions_not_confirmed_data():
+def test_supported_values_are_separate_from_action_required_and_confirmed_data():
     detail = SimpleNamespace(
         fields=(
-            _field("FOUND", "MSKU9228574"),
+            _field("SUPPORTED", "MSKU9228574"),
             _field("MATCHED", "123-4567890-1"),
             _field("MISSING", None),
         )
     )
-    exceptions, settled = _review_field_sets(detail)
-    assert [field.status for field in exceptions] == ["FOUND", "MISSING"]
+    attention, supported, settled = _review_field_groups(detail)
+    assert [field.status for field in attention] == ["MISSING"]
+    assert [field.status for field in supported] == ["SUPPORTED"]
     assert [field.status for field in settled] == ["MATCHED"]
+
 
 
 def test_workspace_offers_safe_bulk_confirmation_but_keeps_conflicts_explicit():
     source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
     assert "/review/actions/accept-supported" in source
-    assert "/review/fields/" in source
-    assert "/review/accept-supported" not in source
-    assert "/review-supported/" not in source
-    assert "Confirm all supported fields" in source
-    assert "Review exceptions" in source
-    assert "fields extracted and automatically supported" in source
-    assert "Conflicting values found." in source
-    assert "The prefilled value may be wrong." in source
-    assert 'field.status == "FOUND"' in source
-    assert "Country of origin alone is not treated as proof." in source
-    assert "Shipment gross weight is not substituted automatically." in source
+    assert "/review/actions/fields/" in source
+    assert "Confirm All Auto-Resolved Data" in source
+    assert "Action Required" in source
+    assert "Auto-Resolved Data" in source
+    assert "genuinely different supported values" in source.lower()
+    assert 'field.status == "CONFLICT"' in source
+    assert "Regulatory Analysis" in source
+
 
 
 def test_operation_detail_keeps_document_type_override_advanced_and_evidence_collapsed():
@@ -113,9 +112,9 @@ def test_zero_entry_intake_is_mounted_and_creates_default_line_without_regulator
     assert "app.include_router(intelligent_workflow_router)" in unified
 
 
-def test_direct_completion_is_blocked_while_supported_suggestions_are_unconfirmed():
+def test_direct_completion_is_blocked_while_auto_resolved_data_is_unconfirmed():
     unified = UNIFIED_APP.read_text(encoding="utf-8")
     assert "_require_explicit_confirmation_before_completion" in unified
-    assert 'any(field.status == "FOUND" for field in detail.fields)' in unified
+    assert 'any(field.status == "SUPPORTED" for field in detail.fields)' in unified
     assert "Confirm all supported suggestions before completing preparation." in unified
     assert "status_code=409" in unified

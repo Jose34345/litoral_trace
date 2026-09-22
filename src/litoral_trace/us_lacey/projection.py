@@ -61,9 +61,10 @@ class UsLaceyProjectionResult:
     operation_status: str
 
 
+AUTO_SUPPORT_MIN_CONFIDENCE = 0.90
+
 _SAFE_GENERIC_MAP = {
     "hs_code": "hts_code",
-    "product": "merchandise_description",
     "species": "species",
 }
 
@@ -159,6 +160,17 @@ _CUSTOMS_HTS_HEADERS = frozenset(
 )
 _CUSTOMS_DESCRIPTION_HEADERS = frozenset(
     {"description", "commodity description", "description of goods", "goods description"}
+)
+_SHIPMENT_DESCRIPTION_HEADERS = frozenset(
+    {
+        "shipment description",
+        "merchandise description",
+        "description of merchandise",
+        "commodity description",
+        "cargo description",
+        "description of goods",
+        "goods description",
+    }
 )
 _COMMERCIAL_PRODUCT_ID_HEADERS = frozenset(
     {"sku", "item code", "product code", "part number", "part no"}
@@ -390,6 +402,37 @@ def _description_candidate_role(row: ExtractedDocumentField, value: object) -> s
     return None
 
 
+def _is_shipment_description_source(
+    row: ExtractedDocumentField,
+    *,
+    header: object,
+    table_headers: frozenset[str] = frozenset(),
+) -> bool:
+    """Allow explicit shipment descriptions while excluding line/component tables.
+
+    A data-row locator alone is not enough to reject a value because PDF key/value
+    forms may also be represented as one-row tables. We reject row-scoped evidence
+    only when its enclosing table is clearly botanical, BOM, or customs-line data.
+    """
+    folded_header = _fold(header)
+    if (
+        folded_header not in _SHIPMENT_DESCRIPTION_HEADERS
+        and _NUMBERED_DESCRIPTION_HEADER.fullmatch(folded_header) is None
+    ):
+        return False
+    if not _DATA_ROW.search(str(row.source_locator or "")):
+        return True
+    if _is_plant_declaration_table(table_headers):
+        return False
+    if _is_explicit_bom_table(table_headers):
+        return False
+    if _is_line_allocation_table(table_headers):
+        return False
+    if table_headers & (_BOM_COMPONENT_HEADERS | _BOM_MATERIAL_HEADERS):
+        return False
+    return True
+
+
 def _is_candidate_admissible(
     target: str,
     value: object,
@@ -475,8 +518,15 @@ def _target_field(
             # A commercial invoice/shipment total is reconciliation evidence, not a
             # PPQ plant-line allocation. It is persisted separately by the projector.
             return None, 0
-        if target == "merchandise_description" and _description_candidate_role(row, value):
-            return None, 0
+        if target == "merchandise_description":
+            if not _is_shipment_description_source(
+                row,
+                header=raw_match.group("header"),
+                table_headers=context_headers,
+            ):
+                return None, 0
+            if _description_candidate_role(row, value):
+                return None, 0
         if target and _is_candidate_admissible(target, value, table_headers=context_headers):
             return target, 3
     return None, 0
@@ -839,7 +889,12 @@ def _apply_percent_recycled_condition(
         validation = validate_ppq_value("percent_recycled", source_value)
         percent_field.validation_status = validation.status.value
         percent_field.validation_error = validation.error
-        percent_field.field_status = "REVIEW"
+        percent_field.field_status = (
+            "SUPPORTED"
+            if validation.status.value == "VALID"
+            and float(percent_field.confidence or 0.0) > AUTO_SUPPORT_MIN_CONFIDENCE
+            else "MISSING"
+        )
 
 
 def refresh_us_lacey_operation_status(
@@ -877,7 +932,7 @@ def refresh_us_lacey_operation_status(
         select(func.count(UsLaceyOperationField.id)).where(
             UsLaceyOperationField.organization_id == organization_id,
             UsLaceyOperationField.operation_id == operation.id,
-            UsLaceyOperationField.field_status.in_(("MISSING", "REVIEW")),
+            UsLaceyOperationField.field_status.in_(("MISSING", "CONFLICT", "REVIEW")),
         )
     ) or 0
     open_conflicts = session.scalar(
@@ -1086,9 +1141,9 @@ def project_assurance_document_to_us_lacey(
                 left_value, left_source = alternatives[0]
                 field.original_value = str(left_source.original_value or left_value)
                 field.normalized_value = None
-                field.field_status = "REVIEW"
+                field.field_status = "CONFLICT"
                 field.validation_status = "REVIEW_REQUIRED"
-                field.validation_error = "Multiple supported source candidates require a human decision."
+                field.validation_error = "Multiple semantically different supported values require a human decision."
                 for new_value, new_source in alternatives[1:]:
                     _upsert_conflict(
                         session,
@@ -1139,7 +1194,9 @@ def project_assurance_document_to_us_lacey(
                     new_locator=source.source_locator,
                     new_confidence=float(source.confidence),
                 )
-                field.field_status = "REVIEW"
+                field.field_status = "CONFLICT"
+                field.validation_status = "REVIEW_REQUIRED"
+                field.validation_error = "A new supported source conflicts with the current field value."
                 conflicts += 1
                 review += 1
                 continue
@@ -1155,15 +1212,20 @@ def project_assurance_document_to_us_lacey(
             field.extractor = latest_run.engine
             field.extractor_version = latest_run.engine_version
             if validation.status.value in {"INVALID", "REVIEW_REQUIRED"}:
-                field.field_status = "REVIEW"
+                field.field_status = "CONFLICT"
                 review += 1
             elif human_confirmed:
                 field.field_status = "MATCHED"
                 matched += 1
-            elif float(source.confidence) >= 0.90 and not bool(source.needs_review):
-                field.field_status = "FOUND"
+            elif float(source.confidence) > AUTO_SUPPORT_MIN_CONFIDENCE:
+                # Assurance's raw-table rows are intentionally marked needs_review
+                # because its generic document schema is conservative. At the Lacey
+                # projection boundary we have field-specific validation and conflict
+                # reconciliation, so a >90% valid, non-conflicting observation is
+                # explicitly supported rather than creating redundant human work.
+                field.field_status = "SUPPORTED"
             else:
-                field.field_status = "REVIEW"
+                field.field_status = "MISSING"
                 review += 1
             projected += 1
             if target == "species":
@@ -1190,7 +1252,9 @@ def project_assurance_document_to_us_lacey(
                     new_locator=source.source_locator,
                     new_confidence=float(source.confidence),
                 )
-                genus_field.field_status = "REVIEW"
+                genus_field.field_status = "CONFLICT"
+                genus_field.validation_status = "REVIEW_REQUIRED"
+                genus_field.validation_error = "Derived genus conflicts with existing genus evidence."
                 conflicts += 1
                 continue
             if not current_genus:
@@ -1204,9 +1268,14 @@ def project_assurance_document_to_us_lacey(
                 )
                 genus_field.extractor = "us-lacey-deterministic-projector"
                 genus_field.extractor_version = "1.0.0"
-                genus_field.field_status = "REVIEW"
+                genus_field.field_status = (
+                    "SUPPORTED"
+                    if float(source.confidence) > AUTO_SUPPORT_MIN_CONFIDENCE
+                    else "MISSING"
+                )
                 projected += 1
-                review += 1
+                if genus_field.field_status == "MISSING":
+                    review += 1
 
         reconcile_entered_value_invariant(
             session,

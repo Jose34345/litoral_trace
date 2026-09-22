@@ -270,7 +270,7 @@ def test_active_customer_operation_projection_review_export_and_conflict():
     assert by_name["species"].proposed_value == "Quercus alba"
     assert by_name["genus"].proposed_value == "Quercus"
     assert by_name["country_of_harvest"].proposed_value != "Canada"
-    assert by_name["hts_code"].status == "REVIEW"
+    assert by_name["hts_code"].status == "SUPPORTED"
 
     reviewed = review_us_lacey_field(
         organization_id=registered.organization_id,
@@ -334,7 +334,7 @@ def test_active_customer_operation_projection_review_export_and_conflict():
                 UsLaceyOperationField.field_name == "hts_code",
             )
         )
-        assert field.field_status == "REVIEW"
+        assert field.field_status == "CONFLICT"
         hts_field_id = field.id
     finally:
         session.rollback()

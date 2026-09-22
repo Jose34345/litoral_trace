@@ -96,7 +96,7 @@ def test_payload_evaluates_plant_line_without_bom_and_never_returns_zero_assessm
     assert by_rule["HTS_APPLICABILITY"]["status"] == "PASS"
     assert by_rule["DE_MINIMIS"]["status"] == "INDETERMINATE"
     assert by_rule["SPECIAL_COMPOSITE"]["status"] == "INDETERMINATE"
-    assert by_rule["SPECIAL_RECYCLED"]["status"] == "FAIL"
+    assert by_rule["SPECIAL_RECYCLED"]["status"] == "NOT_APPLICABLE"
     assert all(item["subject_ref"] == "LT-LINE-1" for item in payload["assessments"])
     assert payload["regulatory_subjects"][0]["has_product_enrichment"] is False
 
@@ -117,8 +117,8 @@ def test_payload_can_use_exact_linked_bom_enrichment_to_reject_plywood_composite
         for item in payload["assessments"]
         if item["rule_id"] == "SPECIAL_COMPOSITE"
     )
-    assert special["status"] == "FAIL"
-    assert special["reason_codes"] == ["THIN_SOLID_PLIES_DISQUALIFY"]
+    assert special["status"] == "NOT_APPLICABLE"
+    assert special["reason_codes"] == ["THIN_SOLID_PLIES_NOT_SPECIAL_COMPOSITE"]
     assert special["subject_ref"] == "LT-LINE-1"
     assert payload["regulatory_subjects"][0]["has_product_enrichment"] is True
 

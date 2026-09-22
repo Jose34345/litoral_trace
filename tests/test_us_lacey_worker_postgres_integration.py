@@ -221,7 +221,7 @@ def _assert_processed_fields(*, organization_id: int, operation_public_id, expec
     for field_name, value in expected.items():
         field = by_name[field_name]
         assert field.proposed_value == value
-        assert field.status == "REVIEW"
+        assert field.status == "SUPPORTED"
         assert field.confidence >= 0.89
         assert field.source_assurance_document_id is not None
         assert field.source_locator
@@ -282,7 +282,7 @@ def test_worker_processes_csv_and_xlsx_with_real_postgres_and_simulated_storage(
     )
     assert csv_fields["country_of_harvest"].proposed_value != "Canada"
     assert csv_fields["genus"].proposed_value == "Pinus"
-    assert csv_fields["genus"].status == "REVIEW"
+    assert csv_fields["genus"].status == "SUPPORTED"
 
     xlsx_operation = create_us_lacey_customer_operation(
         organization_id=registered.organization_id,
@@ -308,13 +308,12 @@ def test_worker_processes_csv_and_xlsx_with_real_postgres_and_simulated_storage(
     assert xlsx_result.job_status == "COMPLETED"
     assert xlsx_result.document_status in {"EXTRACTED", "NEEDS_REVIEW"}
     assert xlsx_result.operation_status == "REVIEW_REQUIRED"
-    assert xlsx_result.projected_count >= 8
-    _assert_processed_fields(
+    assert xlsx_result.projected_count >= 7
+    xlsx_fields = _assert_processed_fields(
         organization_id=registered.organization_id,
         operation_public_id=xlsx_operation.public_id,
         expected={
             "hts_code": "441231",
-            "merchandise_description": "Plywood panels",
             "genus": "Eucalyptus",
             "species": "Eucalyptus grandis",
             "country_of_harvest": "Uruguay",
@@ -323,6 +322,7 @@ def test_worker_processes_csv_and_xlsx_with_real_postgres_and_simulated_storage(
             "bill_of_lading": "BOL-TEST-9001",
         },
     )
+    assert xlsx_fields["merchandise_description"].status == "MISSING"
 
     assert storage.put_calls == 2
     assert len(storage.objects) == 2

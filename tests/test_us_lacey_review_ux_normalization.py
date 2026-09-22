@@ -88,7 +88,7 @@ def test_same_component_across_pages_merges_references_for_review_display():
         ),
     )
 
-    presented = _present_review_field(field)
+    presented = _present_review_field(field, all_fields=(field,))
 
     assert len(presented.candidates) == 1
     assert presented.candidates[0].id == 2
@@ -137,59 +137,40 @@ def test_merchandise_description_pool_rejects_golden_packet_structural_noise():
     assert groups[0].representative.id == 99
 
 
-def test_workspace_oob_regions_are_conditional_after_initial_hydration():
-    template = Path(
-        "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
-    ).read_text(encoding="utf-8")
-    render_source = inspect.getsource(render_operation_workspace)
-
-    conditional = '{% if is_oob_update %} hx-swap-oob="true"{% endif %}'
-    assert template.count(conditional) >= 4
-    assert 'id="review-summary"' in template
-    assert 'id="review-action-error-region"' in template
-    assert 'id="entered-value-reconciliation-region"' in template
-    assert 'id="final-confirmation"' in template
-    assert 'id="review-summary" class="lt-card p-6" aria-labelledby="analysis-complete" hx-swap-oob="true"' not in template
-    assert 'id="final-confirmation" class="lt-card p-6" hx-swap-oob="true"' not in template
-
-    assert "is_oob_update: bool | None = None" in render_source
-    assert 'getattr(request, "method", "GET")' in render_source
-    assert '== "POST"' in render_source
-    assert "is_oob_update=is_oob_update" in render_source
-
-
-def test_review_workspace_js_uses_granular_htmx_and_scrolls_only_for_bulk_action():
-    source = Path("src/litoral_trace/static/src/js/us-lacey-workspace.js").read_text(encoding="utf-8")
+def test_exception_first_workspace_has_three_tabs_and_htmx_actions():
     template = Path(
         "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
     ).read_text(encoding="utf-8")
 
-    assert 'document.addEventListener("submit"' not in source
-    assert "fetch(form.action" not in source
-    assert 'document.addEventListener("htmx:beforeRequest"' in source
-    assert 'document.addEventListener("htmx:afterSwap"' in source
-    assert "getBoundingClientRect()" in source
-    assert "pendingBulkReviewTransition" in source
-    assert 'form.hasAttribute("data-review-bulk")' in source
-    assert 'if (!pendingBulkReviewTransition) return;' in source
-    assert 'event.detail?.target?.id !== "review-field-list"' in source
-    assert 'scrollIntoView({ behavior: "smooth", block: "nearest" })' in source
-    assert source.index('if (!pendingBulkReviewTransition) return;') < source.index('scrollIntoView({ behavior: "smooth", block: "nearest" })')
-    assert 'block: "center"' not in source
-    assert "restoreViewport" not in source
-    assert "window.scrollTo" not in source
-    assert "pendingReviewTransition" not in source
-
-    assert 'hx-target="closest [data-review-field]"' in template
-    assert 'hx-select="#review-field-{{ field.id }}"' in template
-    assert 'hx-target="#operation-workspace"' not in template
-    assert 'id="review-field-list"' in template
-    assert 'hx-target="#review-field-list"' in template
-    assert 'data-review-bulk' in template
+    assert 'data-review-tab-button="action"' in template
+    assert 'data-review-tab-button="resolved"' in template
+    assert 'data-review-tab-button="regulatory"' in template
+    assert 'data-review-tab-panel="action"' in template
+    assert 'data-review-tab-panel="resolved"' in template
+    assert 'data-review-tab-panel="regulatory"' in template
+    assert "Action Required" in template
+    assert "Auto-Resolved Data" in template
+    assert "Regulatory Analysis" in template
+    assert "Confirm All Auto-Resolved Data" in template
+    assert 'hx-target="#operation-workspace"' in template
     assert '/review/actions/fields/' in template
-    assert 'data-reconciliation-invariant="entered-value"' in template
-    assert 'aria-invalid="true"' in template
-    assert 'button_type="submit", disabled=True' in template
+    assert '/review/actions/accept-supported' in template
+
+
+def test_review_workspace_vanilla_js_updates_tabs_and_action_counts_after_htmx():
+    template = Path(
+        "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
+    ).read_text(encoding="utf-8")
+
+    assert 'data-review-tabs' in template
+    assert 'htmx:afterSettle' in template
+    assert 'htmx:afterSwap' in template
+    assert 'data-action-required-count' in template
+    assert 'data-action-tab-count' in template
+    assert 'refreshActionCount(root)' in template
+    assert 'activateTab(root, "action")' in template
+    assert 'data-review-resolved="true"' in template
+
 
 
 def test_disabled_complete_preparation_has_entered_value_reconciliation_tooltip():

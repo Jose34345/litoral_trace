@@ -127,7 +127,7 @@ def test_special_composite_pass_requires_all_construction_facts_and_due_care():
     assert result.reason_codes == ("SPECIAL_COMPOSITE_CRITERIA_SATISFIED",)
 
 
-def test_special_composite_known_species_fails():
+def test_special_composite_known_species_is_not_applicable():
     rules = _rules()
     result = rules.evaluate_special_composite(
         rules.SpecialCompositeInput(
@@ -139,11 +139,11 @@ def test_special_composite_known_species_fails():
         )
     )
 
-    assert result.status is rules.RuleStatus.FAIL
+    assert result.status is rules.RuleStatus.NOT_APPLICABLE
     assert result.reason_codes == ("SPECIES_DETERMINABLE_AFTER_DUE_CARE",)
 
 
-def test_special_composite_thin_solid_plies_fail():
+def test_special_composite_thin_solid_plies_are_not_applicable():
     rules = _rules()
     result = rules.evaluate_special_composite(
         rules.SpecialCompositeInput(
@@ -155,8 +155,8 @@ def test_special_composite_thin_solid_plies_fail():
         )
     )
 
-    assert result.status is rules.RuleStatus.FAIL
-    assert result.reason_codes == ("THIN_SOLID_PLIES_DISQUALIFY",)
+    assert result.status is rules.RuleStatus.NOT_APPLICABLE
+    assert result.reason_codes == ("THIN_SOLID_PLIES_NOT_SPECIAL_COMPOSITE",)
 
 
 def test_special_composite_unknown_fact_is_indeterminate():

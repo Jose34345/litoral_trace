@@ -297,7 +297,7 @@ def test_projection_shadow_computes_safe_decision_without_mutating_target() -> N
     assert target.normalized_value is None
 
 
-def test_projection_enforce_creates_only_unconfirmed_found_suggestion() -> None:
+def test_projection_enforce_creates_only_unconfirmed_supported_suggestion() -> None:
     candidate = _candidate(
         field_key="hts_code",
         line_item_key="SKU:DESK-001",
@@ -321,7 +321,7 @@ def test_projection_enforce_creates_only_unconfirmed_found_suggestion() -> None:
 
     assert result.eligible_count == 1
     assert result.projected_count == 1
-    assert target.field_status == "FOUND"
+    assert target.field_status == "SUPPORTED"
     assert target.original_value == "9403.60.8081"
     assert target.normalized_value == "9403608081"
     assert target.source_assurance_document_id == 321
@@ -585,5 +585,5 @@ def test_scoped_projection_conflict_for_local_line_does_not_block_other_document
     assert result.review_count == 1
     assert result.projected_count == 1
     assert first_target.field_status == "MISSING"
-    assert second_target.field_status == "FOUND"
+    assert second_target.field_status == "SUPPORTED"
     assert second_target.normalized_value == "4418999090"

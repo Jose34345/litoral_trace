@@ -3,7 +3,7 @@
 This module is deliberately fail-closed.  It can materialize deterministic plant-line
 skeletons and expose evidence-backed specialized values only when the separate
 projection mode is explicitly set to ``enforce``.  Projected values remain unconfirmed
-``FOUND`` suggestions and their audit candidates remain ``PENDING``.
+``SUPPORTED`` suggestions and their audit candidates remain ``PENDING``.
 """
 from __future__ import annotations
 
@@ -187,7 +187,7 @@ def apply_specialized_projection_runtime(
             target
             for target in targets
             if int(target.id) in initially_empty
-            and target.field_status == "FOUND"
+            and target.field_status == "SUPPORTED"
             and target.extractor == "specialized-field-judge"
             and target.extractor_version
             == specialized_projection.SPECIALIZED_PROJECTION_VERSION

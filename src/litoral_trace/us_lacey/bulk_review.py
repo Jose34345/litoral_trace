@@ -1,7 +1,7 @@
 """Atomic customer confirmation for safe U.S. Lacey suggestions.
 
 Bulk confirmation is an explicit human review action. It may promote only current
-``FOUND`` proposals that are unambiguous and have no open reconciliation issue.
+``SUPPORTED`` proposals that are unambiguous and have no open reconciliation issue.
 The whole click is committed as one transaction so a validation failure cannot
 leave a partially-confirmed operation.
 """
@@ -26,7 +26,10 @@ from litoral_trace.services.audit import (
     AuditOutcome,
     record_audit_event,
 )
-from litoral_trace.us_lacey.candidate_normalization import group_candidate_evidence
+from litoral_trace.us_lacey.candidate_normalization import (
+    TaxonomicComparisonContext,
+    group_candidate_evidence,
+)
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.operations import UsLaceyOperationNotFound
 from litoral_trace.us_lacey.ppq505 import validate_ppq_value
@@ -51,12 +54,12 @@ def accept_supported_us_lacey_fields(
     user_id: int,
     user_email: str,
 ) -> UsLaceyBulkAcceptResult:
-    """Confirm every currently safe ``FOUND`` field in one locked transaction.
+    """Confirm every currently safe ``SUPPORTED`` field in one locked transaction.
 
     Idempotency follows from the state transition itself: after a successful click
     each eligible field is ``MATCHED``. A repeated request therefore sees no
-    eligible ``FOUND`` rows and writes no duplicate field-review audit events.
-    ``REVIEW``/``MISSING`` fields and fields with genuinely different open conflicts
+    eligible ``SUPPORTED`` rows and writes no duplicate field-review audit events.
+    ``CONFLICT``/``MISSING`` fields and fields with genuinely different open conflicts
     are never touched. Multiple provenance rows supporting the same canonical value
     count as one safe candidate group rather than a conflict.
     """
@@ -84,19 +87,19 @@ def accept_supported_us_lacey_fields(
         if operation is None:
             raise UsLaceyOperationNotFound("Operation not found.")
 
-        found_fields = session.scalars(
+        supported_fields = session.scalars(
             select(UsLaceyOperationField)
             .where(
                 UsLaceyOperationField.organization_id == org_id,
                 UsLaceyOperationField.operation_id == operation.id,
-                UsLaceyOperationField.field_status == "FOUND",
+                UsLaceyOperationField.field_status == "SUPPORTED",
             )
             .order_by(UsLaceyOperationField.id.asc())
             .with_for_update()
         ).all()
 
-        if found_fields:
-            field_ids = [field.id for field in found_fields]
+        if supported_fields:
+            field_ids = [field.id for field in supported_fields]
             candidate_rows = session.scalars(
                 select(UsLaceyFieldCandidate)
                 .where(
@@ -124,6 +127,20 @@ def accept_supported_us_lacey_fields(
             candidates_by_field = {}
             conflicted_field_ids = set()
 
+        genus_by_line = {
+            str(field.merchandise_line_reference): (
+                field.human_value or field.normalized_value or field.original_value
+            )
+            for field in session.scalars(
+                select(UsLaceyOperationField).where(
+                    UsLaceyOperationField.organization_id == org_id,
+                    UsLaceyOperationField.operation_id == operation.id,
+                    UsLaceyOperationField.field_name == "genus",
+                )
+            ).all()
+            if (field.human_value or field.normalized_value or field.original_value)
+        }
+
         actor = AuditActor(
             organization_id=org_id,
             user_id=int(user_id),
@@ -131,10 +148,17 @@ def accept_supported_us_lacey_fields(
             role="us_lacey_customer",
         )
         accepted = 0
-        for field in found_fields:
+        for field in supported_fields:
+            genus = genus_by_line.get(str(field.merchandise_line_reference))
+            comparison_context = (
+                TaxonomicComparisonContext(genus=str(genus))
+                if field.field_name == "species" and genus
+                else None
+            )
             groups = group_candidate_evidence(
                 field.field_name,
                 candidates_by_field.get(int(field.id), ()),
+                comparison_context=comparison_context,
             )
             if len(groups) > 1:
                 continue
@@ -146,7 +170,7 @@ def accept_supported_us_lacey_fields(
                 continue
             validation = validate_ppq_value(field.field_name, proposed)
             if validation.status.value in {"INVALID", "MISSING", "REVIEW_REQUIRED"}:
-                # FOUND is an invariant asserting a safe, valid proposal. If that
+                # SUPPORTED is an invariant asserting a safe, valid proposal. If that
                 # invariant is broken, fail the entire click rather than partially
                 # accepting neighboring fields.
                 raise UsLaceyReviewError(

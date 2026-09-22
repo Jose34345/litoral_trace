@@ -114,14 +114,14 @@ def test_non_merchandise_semantic_roles_do_not_enter_description_candidate_pool(
     assert priority == 0
 
 
-def test_legitimate_product_description_still_enters_candidate_pool():
+def test_generic_product_alias_cannot_fill_shipment_merchandise_description():
     target, priority = _target_field(
         _extracted_row("Solid wood dining chair"),
         table_headers=frozenset(),
     )
 
-    assert target == "merchandise_description"
-    assert priority == 2
+    assert target is None
+    assert priority == 0
 
 
 def test_file_input_native_chrome_is_hidden_and_controlled_in_english_for_print():

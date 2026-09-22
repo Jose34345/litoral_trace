@@ -65,6 +65,15 @@ class UsLaceyFinalizeResult:
     review_result: str
 
 
+@dataclass(frozen=True, slots=True)
+class UsLaceyBulkReviewResult:
+    accepted_count: int
+    operation_status: str
+    remaining_review_count: int
+    remaining_missing_count: int
+    open_conflict_count: int
+
+
 _LABELS = dict(US_LACEY_REVIEW_FIELDS)
 
 
@@ -93,7 +102,7 @@ def _counts(session, *, organization_id: int, operation: UsLaceyOperation) -> tu
         select(func.count(UsLaceyOperationField.id)).where(
             UsLaceyOperationField.organization_id == organization_id,
             UsLaceyOperationField.operation_id == operation.id,
-            UsLaceyOperationField.field_status == "REVIEW",
+            UsLaceyOperationField.field_status.in_(("CONFLICT", "REVIEW")),
         )
     ) or 0
     missing = session.scalar(
@@ -332,6 +341,123 @@ def review_us_lacey_field(
     except Exception as exc:
         session.rollback()
         raise UsLaceyReviewError("Unable to save this review decision.") from exc
+    finally:
+        session.close()
+
+
+def accept_supported_us_lacey_fields(
+    *,
+    organization_id: int,
+    operation_public_id: UUID | str,
+    user_id: int,
+    user_email: str,
+) -> UsLaceyBulkReviewResult:
+    """Confirm all server-supported fields in one atomic customer review action."""
+    org_id = int(organization_id)
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, org_id)
+        operation = _operation(
+            session,
+            organization_id=org_id,
+            operation_public_id=operation_public_id,
+        )
+        fields = session.scalars(
+            select(UsLaceyOperationField)
+            .where(
+                UsLaceyOperationField.organization_id == org_id,
+                UsLaceyOperationField.operation_id == operation.id,
+                UsLaceyOperationField.field_status == "SUPPORTED",
+            )
+            .order_by(
+                UsLaceyOperationField.merchandise_line_reference,
+                UsLaceyOperationField.id,
+            )
+        ).all()
+
+        reviewed_at = _utc_now()
+        accepted_ids: list[int] = []
+        for field in fields:
+            proposed = field.normalized_value or field.original_value
+            if proposed is None or not str(proposed).strip():
+                raise UsLaceyReviewError(
+                    "An auto-resolved field no longer has a supported value."
+                )
+            validation = validate_ppq_value(field.field_name, proposed)
+            if validation.status.value in {"INVALID", "MISSING", "REVIEW_REQUIRED"}:
+                raise UsLaceyReviewError(
+                    validation.error
+                    or "An auto-resolved field requires further review."
+                )
+            field.human_value = validation.normalized_value
+            field.field_status = "MATCHED"
+            field.validation_status = "VALID"
+            field.validation_error = None
+            field.not_required_reason_code = None
+            field.reviewed_by_user_id = int(user_id)
+            field.reviewed_at = reviewed_at
+            accepted_ids.append(int(field.id))
+
+        reconcile_entered_value_invariant(
+            session,
+            organization_id=org_id,
+            operation=operation,
+        )
+        operation_status = refresh_us_lacey_operation_status(
+            session,
+            organization_id=org_id,
+            operation=operation,
+        )
+        review_count, missing_count, conflict_count = _counts(
+            session,
+            organization_id=org_id,
+            operation=operation,
+        )
+
+        if accepted_ids:
+            actor = AuditActor(
+                organization_id=org_id,
+                user_id=int(user_id),
+                username=str(user_email or "").strip() or None,
+                role="us_lacey_customer",
+            )
+            record_audit_event(
+                session,
+                actor=actor,
+                action=AuditAction.ASSURANCE_REVIEW_APPROVE,
+                entity_type="us_lacey_operation",
+                entity_id=operation.id,
+                outcome=AuditOutcome.SUCCESS,
+                metadata={
+                    "operation_public_id": str(operation.public_id),
+                    "review_action": "accept_supported",
+                    "accepted_field_count": len(accepted_ids),
+                    "accepted_field_ids": accepted_ids,
+                },
+                before_data={"supported_field_count": len(accepted_ids)},
+                after_data={
+                    "accepted_field_count": len(accepted_ids),
+                    "operation_status": operation_status,
+                },
+                detail="Auto-resolved U.S. preparation fields confirmed in bulk.",
+            )
+
+        session.commit()
+        return UsLaceyBulkReviewResult(
+            accepted_count=len(accepted_ids),
+            operation_status=operation_status,
+            remaining_review_count=review_count,
+            remaining_missing_count=missing_count,
+            open_conflict_count=conflict_count,
+        )
+    except (UsLaceyReviewError, UsLaceyOperationNotFound):
+        session.rollback()
+        raise
+    except Exception as exc:
+        session.rollback()
+        raise UsLaceyReviewError(
+            "Unable to confirm the auto-resolved fields."
+        ) from exc
     finally:
         session.close()
 

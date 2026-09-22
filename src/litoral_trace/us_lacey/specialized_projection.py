@@ -1,7 +1,7 @@
 """Fail-safe planning and projection gates for specialized U.S. Lacey output.
 
 Specialized output is non-authoritative.  This module may expose an evidence-backed
-value as an unconfirmed ``FOUND`` suggestion only when every deterministic safety gate
+value as an unconfirmed ``SUPPORTED`` suggestion only when every deterministic safety gate
 passes.  It never marks a value human-reviewed or accepted and defaults to ``off``.
 """
 from __future__ import annotations
@@ -378,7 +378,7 @@ def project_specialized_candidates(
     ] = frozenset(),
     judge_evaluation: FieldJudgeEvaluation | None = None,
 ) -> SpecializedProjectionResult:
-    """Apply the pure safety gate and optionally expose unconfirmed ``FOUND`` values.
+    """Apply the pure safety gate and optionally expose unconfirmed ``SUPPORTED`` values.
 
     ``shadow`` executes the complete eligibility logic but leaves targets untouched.
     ``enforce`` may fill only an empty, unreviewed target with a PPQ-valid value. Human
@@ -485,7 +485,7 @@ def project_specialized_candidates(
 
         target.original_value = candidate.value
         target.normalized_value = validation.normalized_value
-        target.field_status = "FOUND"
+        target.field_status = "SUPPORTED"
         target.confidence = float(candidate.confidence)
         target.source_assurance_document_id = source_map.get(envelope.document_id)
         target.source_page = int(candidate.page)

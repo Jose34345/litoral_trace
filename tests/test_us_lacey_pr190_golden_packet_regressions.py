@@ -200,7 +200,11 @@ def test_exact_golden_packet_supplier_statement_cannot_be_merchandise_descriptio
         if "retail set: four solid rubberwood coasters with one mdf holder" in str(row.original_value).casefold()
     ]
     assert commercial_sources, "The real commercial description must remain present."
-    assert any(
-        _target_field(row, table_headers=headers_by_table)[0] == "merchandise_description"
+    # Generic structured product aliases are intentionally excluded from the
+    # shipment-scoped legal description. Explicit Cargo/Commodity/Description of
+    # Merchandise headers are covered by the structural projection tests.
+    assert all(
+        _target_field(row, table_headers=headers_by_table)[0] != "merchandise_description"
         for row in commercial_sources
+        if str(row.field_name).casefold() == "product"
     )

@@ -17,7 +17,7 @@ const isVisibleInViewport = (element) => {
 };
 
 const pendingReviewCards = () => [
-  ...document.querySelectorAll("#review-field-list [data-review-field]"),
+  ...document.querySelectorAll("#action-required-fields [data-review-field]"),
 ];
 
 const resetExportDownload = (link) => {
@@ -80,7 +80,7 @@ document.addEventListener("htmx:beforeRequest", (event) => {
 
 document.addEventListener("htmx:afterSwap", (event) => {
   if (!pendingBulkReviewTransition) return;
-  if (event.detail?.target?.id !== "review-field-list") return;
+  if (event.detail?.target?.id !== "operation-workspace") return;
 
   pendingBulkReviewTransition = false;
   const next = pendingReviewCards()[0];

@@ -73,8 +73,8 @@ def test_broken_reconciliation_returns_human_entered_values_to_editable_review_s
 
     _mark_line_fields_reconciliation_state([first, second], reconciled=False)
 
-    assert first.field_status == "REVIEW"
-    assert second.field_status == "REVIEW"
+    assert first.field_status == "CONFLICT"
+    assert second.field_status == "CONFLICT"
 
     first.human_value = "14880"
     _mark_line_fields_reconciliation_state([first, second], reconciled=True)
@@ -89,12 +89,12 @@ def test_reconciled_unreviewed_extracted_value_is_not_silently_confirmed():
         normalized_value="3720",
         original_value="$3,720.00",
         reviewed_at=None,
-        field_status="REVIEW",
+        field_status="SUPPORTED",
     )
 
     _mark_line_fields_reconciliation_state([field], reconciled=True)
 
-    assert field.field_status == "REVIEW"
+    assert field.field_status == "SUPPORTED"
 
 
 def test_structural_description_values_are_invalid_at_ppq_domain_boundary():
