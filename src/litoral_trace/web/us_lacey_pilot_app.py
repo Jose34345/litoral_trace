@@ -58,6 +58,7 @@ from litoral_trace.us_lacey.schema_compatibility import (
 )
 from litoral_trace.us_lacey.review import (
     UsLaceyReviewError,
+    accept_supported_us_lacey_fields,
     export_us_lacey_csv,
     export_us_lacey_xlsx,
     finalize_us_lacey_review,
@@ -189,7 +190,14 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
     return _html(render_operation_detail(request=request, identity=identity, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, error=error, notice=notice), status_code=status_code)
 
 
-def _workspace_fragment(*, request: Request, identity, operation_public_id: str, us_session: str) -> HTMLResponse:
+def _workspace_fragment(
+    *,
+    request: Request,
+    identity,
+    operation_public_id: str,
+    us_session: str,
+    error: str | None = None,
+) -> HTMLResponse:
     """Render the heavier review UI only after the progress poll is terminal."""
     service = UsLaceyOperationService()
     detail = service.get_detail(
@@ -222,6 +230,7 @@ def _workspace_fragment(*, request: Request, identity, operation_public_id: str,
                 purpose=f"complete:{detail.public_id}",
             ),
             review_csrf=review_tokens,
+            error=error,
         )
     )
 
@@ -715,6 +724,155 @@ def operation_review_submit(
             )
         except UsLaceyOperationNotFound:
             return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.post(
+    "/operations/{operation_public_id}/review/actions/fields/{field_id:int}",
+    response_class=HTMLResponse,
+)
+def operation_review_action_fragment(
+    operation_public_id: str,
+    field_id: int,
+    request: Request,
+    action: str = Form(...),
+    value: str = Form(""),
+    candidate_id: int | None = Form(None),
+    reason_code: str = Form(""),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """HTMX mutation endpoint that returns only the authoritative workspace."""
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"review:{operation_public_id}:{field_id}",
+            submitted_token=csrf_token,
+        )
+        review_us_lacey_field(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            field_id=field_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+            action=action,
+            value=value or None,
+            candidate_id=candidate_id,
+            reason_code=reason_code or None,
+        )
+        return _workspace_fragment(
+            request=request,
+            identity=identity,
+            operation_public_id=operation_public_id,
+            us_session=us_session or "",
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        try:
+            return _workspace_fragment(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                error=str(exc),
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.post(
+    "/operations/{operation_public_id}/review/accept-supported",
+    response_class=HTMLResponse,
+)
+def operation_review_accept_supported(
+    operation_public_id: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Non-HTMX fallback for one-click confirmation of supported evidence."""
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"complete:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        accept_supported_us_lacey_fields(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+        )
+        return RedirectResponse(f"/operations/{operation_public_id}", status_code=303)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        try:
+            return _detail_page(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                error=str(exc),
+                status_code=400,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.post(
+    "/operations/{operation_public_id}/review/actions/accept-supported",
+    response_class=HTMLResponse,
+)
+def operation_review_accept_supported_fragment(
+    operation_public_id: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """HTMX bulk mutation endpoint; returns one complete workspace replacement."""
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"complete:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        accept_supported_us_lacey_fields(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+        )
+        return _workspace_fragment(
+            request=request,
+            identity=identity,
+            operation_public_id=operation_public_id,
+            us_session=us_session or "",
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        try:
+            return _workspace_fragment(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                error=str(exc),
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
 
 
 
