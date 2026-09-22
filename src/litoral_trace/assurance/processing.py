@@ -148,6 +148,25 @@ def _has_compatible_terminal_run(
     )
 
 
+_RAW_FIELD_NAME_MAX_LENGTH = 255
+
+
+def _raw_table_field_name(*, table_index: int, header: object) -> str:
+    """Build a deterministic DB-safe raw field identifier from arbitrary PDF headers."""
+    prefix = f"raw.table.{int(table_index)}."
+    header_text = str(header or "").strip()
+    candidate = prefix + header_text
+    if len(candidate) <= _RAW_FIELD_NAME_MAX_LENGTH:
+        return candidate
+
+    digest = hashlib.sha256(header_text.encode("utf-8", errors="replace")).hexdigest()[:12]
+    suffix = f"~{digest}"
+    budget = _RAW_FIELD_NAME_MAX_LENGTH - len(prefix) - len(suffix)
+    if budget <= 0:
+        return (prefix + digest)[:_RAW_FIELD_NAME_MAX_LENGTH]
+    return prefix + header_text[:budget] + suffix
+
+
 def _persist_raw_parsed_fields(
     session: Session,
     *,
@@ -233,7 +252,10 @@ def _persist_raw_parsed_fields(
                         organization_id=organization_id,
                         assurance_document_id=assurance_document.id,
                         extraction_run_id=extraction_run.id,
-                        field_name=f"raw.table.{table_index}.{header}",
+                        field_name=_raw_table_field_name(
+                            table_index=table_index,
+                            header=header,
+                        ),
                         original_value=_serialize_value(value),
                         normalized_value=_serialize_value(value),
                         value_type="cell",
