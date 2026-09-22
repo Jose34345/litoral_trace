@@ -1,0 +1,37 @@
+name: Branch CSS Refresh
+
+on:
+  push:
+    branches:
+      - feature/sandbox-first-party-attribution
+    paths:
+      - "src/litoral_trace/templates/us_lacey/admin.html"
+      - ".github/workflows/branch-css-refresh.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-css:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/sandbox-first-party-attribution
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:css
+      - name: Commit generated CSS and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/litoral_trace/static/dist/app.css
+          git rm .github/workflows/branch-css-refresh.yml
+          git commit -m "build(css): refresh outreach admin Tailwind bundle"
+          git push origin HEAD:feature/sandbox-first-party-attribution
