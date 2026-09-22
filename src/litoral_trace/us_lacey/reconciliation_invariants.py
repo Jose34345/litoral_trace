@@ -162,13 +162,12 @@ def _mark_line_fields_reconciliation_state(
     *,
     reconciled: bool,
 ) -> None:
-    """Keep arithmetic-invalid allocations in the editable review state.
+    """Represent arithmetic inconsistency as an explicit customer-facing conflict.
 
-    A human value remains preserved as evidence of the decision. The status moves
-    back to REVIEW while the invariant is broken so the red inline editor remains
-    available. Once the invariant reconciles, only fields that were actually human
-    reviewed are restored to MATCHED; untouched extracted proposals retain their
-    original review state and still require confirmation.
+    Human values remain preserved as evidence. While allocations do not reconcile,
+    the affected values are CONFLICT rather than a generic REVIEW state. Once the
+    invariant reconciles, human-reviewed fields return to MATCHED and unreviewed
+    evidence-backed values return to SUPPORTED.
     """
     for field in line_fields:
         effective = field.human_value or field.normalized_value or field.original_value
@@ -177,9 +176,15 @@ def _mark_line_fields_reconciliation_state(
         if reconciled:
             if field.human_value is not None and field.reviewed_at is not None:
                 field.field_status = "MATCHED"
+            elif field.field_status == "CONFLICT":
+                field.field_status = "SUPPORTED"
         else:
-            if field.human_value is not None or field.field_status in {"MATCHED", "FOUND"}:
-                field.field_status = "REVIEW"
+            if field.human_value is not None or field.field_status in {
+                "MATCHED",
+                "FOUND",
+                "SUPPORTED",
+            }:
+                field.field_status = "CONFLICT"
 
 
 def reconcile_entered_value_invariant(
