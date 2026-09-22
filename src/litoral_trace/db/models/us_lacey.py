@@ -412,7 +412,7 @@ class UsLaceyOperationField(Base):
         ),
         CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_us_lacey_fields_confidence"),
         CheckConstraint(
-            "field_status IN ('FOUND','MATCHED','MISSING','REVIEW','NOT_REQUIRED')",
+            "field_status IN ('MISSING','CONFLICT','SUPPORTED','MATCHED','NOT_REQUIRED')",
             name="ck_us_lacey_fields_status",
         ),
         CheckConstraint("field_scope IN ('SHIPMENT','PLANT_LINE')", name="ck_us_lacey_fields_scope"),
