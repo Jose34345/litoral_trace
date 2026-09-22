@@ -202,6 +202,12 @@ P2-02 adds typed adversarial seeds for positional orphan quantities, contradicto
 ### Exception-first review (active)
 The existing human-review workflow now projects unresolved/blocked/review-required fields as the primary workspace. Unambiguous FOUND suggestions remain unconfirmed domain state but are grouped behind a collapsed confirmation surface, while confirmed fields stay secondary. Rule-level FAIL/INDETERMINATE results remain visible and PASS results are collapsed. Review timing/edit telemetry is non-authoritative and attaches to the existing completion audit trail rather than creating a parallel decision system.
 
+
+### Outreach attribution (active)
+First-party B2B outreach attribution lives in `src/litoral_trace/us_lacey/growth_attribution.py` with public referral binding in `web/us_lacey_sandbox.py` and platform-admin reporting/creation in `web/us_lacey_platform_admin.py`. A referral URL creates an anonymous attribution session, then the existing sandbox start flow may bind that session to the ephemeral tenant after sandbox provisioning.
+
+The growth plane is observation-only and deliberately separate from regulatory/customer truth. It may persist prospect/campaign labels and coarse funnel events, but it must not copy uploaded document bytes, extracted field values, customer email addresses or IP addresses into outreach tables. Event capture is idempotent and fail-open so attribution outages never block sandbox provisioning, review, or export. Runtime roles do not receive direct table reads; public/runtime mutations use narrow SECURITY DEFINER capabilities and aggregate/cross-tenant reads remain platform-admin only. Sandbox purge may destroy tenant documents while durable attribution events remain for commercial funnel analysis.
+
 ## Design rule for agents
 Before implementing a new feature, answer:
 1. Which bounded context owns it?
