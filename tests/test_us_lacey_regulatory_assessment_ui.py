@@ -108,18 +108,21 @@ def test_terminal_workspace_hydrates_rule_scoped_regulatory_panel(monkeypatch):
     assert "shipment pass" not in html.lower()
 
 
-def test_direct_operation_detail_renders_same_noncanonical_regulatory_panel(monkeypatch):
+def test_direct_workspace_renders_same_noncanonical_regulatory_panel(monkeypatch):
     monkeypatch.setattr(operational_views, "_semantic_evidence_for_detail", lambda *_: {})
     monkeypatch.setattr(operational_views, "_product_intelligence_for_detail", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        operational_views,
+        "_regulatory_assessment_for_detail",
+        lambda *_args, **_kwargs: _view(),
+        raising=False,
+    )
 
-    html = operational_views.render_operation_detail(
+    html = operational_views.render_operation_workspace(
         request=_request(query_string=b""),
         identity=SimpleNamespace(organization_id=7),
         detail=_detail(),
         engine2_dossier=_engine2(),
-        product_intelligence=None,
-        regulatory_assessment=_view(),
-        upload_csrf="upload",
         complete_csrf="complete",
         review_csrf={},
     )
