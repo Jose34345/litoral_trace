@@ -413,7 +413,11 @@ def _is_shipment_description_source(
     forms may also be represented as one-row tables. We reject row-scoped evidence
     only when its enclosing table is clearly botanical, BOM, or customs-line data.
     """
-    if _fold(header) not in _SHIPMENT_DESCRIPTION_HEADERS:
+    folded_header = _fold(header)
+    if (
+        folded_header not in _SHIPMENT_DESCRIPTION_HEADERS
+        and _NUMBERED_DESCRIPTION_HEADER.fullmatch(folded_header) is None
+    ):
         return False
     if not _DATA_ROW.search(str(row.source_locator or "")):
         return True
