@@ -20,9 +20,16 @@ def _detail(*, status="NEW"):
 
 
 def _html(dossier):
-    detail = _detail()
+    detail = _detail(status="REVIEW_REQUIRED")
     identity = SimpleNamespace(legal_name="Portal customer")
-    return render_operation_detail(request=_request(), identity=identity, detail=detail, engine2_dossier=dossier, upload_csrf="upload", complete_csrf="complete", review_csrf={})
+    return render_operation_workspace(
+        request=_request(),
+        identity=identity,
+        detail=detail,
+        engine2_dossier=dossier,
+        complete_csrf="complete",
+        review_csrf={},
+    )
 
 
 def test_current_dossier_renders_all_states_provenance_issues_and_harvest_separately():
@@ -52,7 +59,7 @@ def test_current_dossier_renders_all_states_provenance_issues_and_harvest_separa
     assert "not a legal compliance determination" in html and "human-reviewed preparation record remains authoritative" in html and "ACE or LAWGS" in html
 
 
-def test_terminal_workspace_refreshes_engine2_dossier_out_of_band():
+def test_terminal_workspace_keeps_engine2_dossier_collapsed_for_audit():
     dossier = Engine2DossierView(
         Engine2DossierAvailability.CURRENT,
         "REVIEW_REQUIRED",
@@ -71,7 +78,7 @@ def test_terminal_workspace_refreshes_engine2_dossier_out_of_band():
         review_csrf={},
     )
     assert 'id="engine2-dossier"' in html
-    assert 'hx-swap-oob="outerHTML:#engine2-dossier"' in html
+    assert 'hx-swap-oob="outerHTML:#engine2-dossier"' not in html
     assert 'data-engine2-availability="CURRENT"' in html
     assert "MSKU9228574" in html
     assert 'id="operation-workspace"' in html
