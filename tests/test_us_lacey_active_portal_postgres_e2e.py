@@ -192,6 +192,7 @@ _REQUIRED_REVIEW_VALUES = {
     "consignee_name": "E2E Consignee",
     "importer_address": "100 Test Ave, Miami FL 33101",
     "consignee_address": "200 Test Blvd, Savannah GA 31401",
+    "merchandise_description": "Pine boards",
     "entered_value": "12500",
     "article_component": "Pine boards",
     "percent_recycled": "0",
@@ -367,9 +368,10 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(m
         ]
         if supported:
             bulk_action = f"{operation_path}/review/actions/accept-supported"
+            bulk_form_action = f"{operation_path}/review/accept-supported"
             bulk = client.post(
                 bulk_action,
-                data={"csrf_token": _csrf_for(workspace.text, bulk_action)},
+                data={"csrf_token": _csrf_for(workspace.text, bulk_form_action)},
             )
             assert bulk.status_code == 200
             workspace = bulk
