@@ -18,8 +18,10 @@ from litoral_trace.storage import (
     ObjectWriteResult,
 )
 from litoral_trace.us_lacey.commercial import UsLaceyCommercialConfig
-from litoral_trace.us_lacey.db import reset_us_lacey_engine_state
+from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.us_lacey.db import get_us_lacey_db_session, reset_us_lacey_engine_state
 from litoral_trace.us_lacey.ingestion import UsLaceyIngestionService
+from litoral_trace.us_lacey.jobs import retry_failed_us_lacey_operation
 from litoral_trace.us_lacey.operations import UsLaceyOperationService
 from litoral_trace.us_lacey.self_service import register_us_lacey_company, verify_us_lacey_email
 from litoral_trace.us_lacey.worker import process_one_us_lacey_job
@@ -351,3 +353,157 @@ def test_worker_gate_preserves_species_line_locality_and_derives_component(
     test_article_component_and_species_stay_line_local_after_canonical_publish(
         engine2_postgres_session_factory
     )
+
+
+
+def test_failed_operation_retry_requeues_existing_job_atomically(monkeypatch):
+    reset_us_lacey_engine_state()
+    reset_us_lacey_worker_engine_state()
+    storage = MemoryObjectStorage()
+    monkeypatch.setattr(ingestion_module, "get_us_lacey_storage_client", lambda: storage)
+
+    registered, _email, suffix = _register_active_customer()
+    ingestion = UsLaceyIngestionService()
+    operation = create_us_lacey_customer_operation(
+        organization_id=registered.organization_id,
+        user_id=registered.user_id,
+        client_reference=f"RETRY-{suffix}",
+        line_references=("1",),
+    )
+    queued = upload_and_enqueue_us_lacey_document(
+        organization_id=registered.organization_id,
+        user_id=registered.user_id,
+        operation_public_id=operation.public_id,
+        filename="retry-shipment.csv",
+        content_type="text/csv",
+        content=_csv_bytes(),
+        document_role="COMMERCIAL_INVOICE",
+        ingestion=ingestion,
+    )
+
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, registered.organization_id)
+        session.execute(
+            text(
+                """
+                UPDATE public.us_lacey_processing_jobs
+                SET status = 'FAILED',
+                    attempt_count = max_attempts,
+                    locked_by = 'dead-worker',
+                    locked_at = now(),
+                    heartbeat_at = now(),
+                    started_at = now(),
+                    completed_at = now(),
+                    last_error_code = 'PROCESSING_FAILED',
+                    last_error_message = 'Synthetic failure',
+                    updated_at = now()
+                WHERE organization_id = :organization_id
+                  AND id = :job_id
+                """
+            ),
+            {
+                "organization_id": registered.organization_id,
+                "job_id": queued.job.id,
+            },
+        )
+        session.execute(
+            text(
+                """
+                UPDATE public.assurance_documents
+                SET processing_status = 'FAILED',
+                    last_error_code = 'DOCUMENT_PARSE_FAILED',
+                    last_error_message = 'Synthetic parse failure',
+                    updated_at = now()
+                WHERE organization_id = :organization_id
+                  AND id = :document_id
+                """
+            ),
+            {
+                "organization_id": registered.organization_id,
+                "document_id": queued.ingestion.assurance_document_id,
+            },
+        )
+        session.execute(
+            text(
+                """
+                UPDATE public.us_lacey_operations
+                SET status = 'FAILED',
+                    review_result = 'PROCESSING_FAILED',
+                    updated_at = now()
+                WHERE organization_id = :organization_id
+                  AND public_id = :operation_public_id
+                """
+            ),
+            {
+                "organization_id": registered.organization_id,
+                "operation_public_id": operation.public_id,
+            },
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    retried = retry_failed_us_lacey_operation(
+        organization_id=registered.organization_id,
+        operation_public_id=operation.public_id,
+    )
+    assert retried == 1
+
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, registered.organization_id)
+        row = session.execute(
+            text(
+                """
+                SELECT
+                    job.status AS job_status,
+                    job.attempt_count,
+                    job.locked_by,
+                    job.locked_at,
+                    job.heartbeat_at,
+                    job.started_at,
+                    job.completed_at,
+                    job.last_error_code AS job_error_code,
+                    job.last_error_message AS job_error_message,
+                    operation.status AS operation_status,
+                    operation.review_result,
+                    document.processing_status AS document_status,
+                    document.last_error_code AS document_error_code,
+                    document.last_error_message AS document_error_message
+                FROM public.us_lacey_processing_jobs AS job
+                JOIN public.us_lacey_operations AS operation
+                  ON operation.id = job.operation_id
+                 AND operation.organization_id = job.organization_id
+                JOIN public.assurance_documents AS document
+                  ON document.id = job.assurance_document_id
+                 AND document.organization_id = job.organization_id
+                WHERE job.organization_id = :organization_id
+                  AND job.id = :job_id
+                """
+            ),
+            {
+                "organization_id": registered.organization_id,
+                "job_id": queued.job.id,
+            },
+        ).mappings().one()
+    finally:
+        session.close()
+
+    assert row["job_status"] == "QUEUED"
+    assert row["attempt_count"] == 0
+    assert row["locked_by"] is None
+    assert row["locked_at"] is None
+    assert row["heartbeat_at"] is None
+    assert row["started_at"] is None
+    assert row["completed_at"] is None
+    assert row["job_error_code"] is None
+    assert row["job_error_message"] is None
+    assert row["operation_status"] == "PROCESSING"
+    assert row["review_result"] is None
+    assert row["document_status"] == "UPLOADED"
+    assert row["document_error_code"] is None
+    assert row["document_error_message"] is None
+
+    reset_us_lacey_worker_engine_state()
+    reset_us_lacey_engine_state()
