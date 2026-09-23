@@ -32,12 +32,12 @@ from litoral_trace.lacey_engine.ai_shadow import (
 )
 from litoral_trace.lacey_engine.architecture import AIArchitecture, ai_architecture
 from litoral_trace.lacey_engine.domain import DocumentResolution
-from litoral_trace.lacey_engine.pipeline import ENGINE_VERSION, process_document
+from litoral_trace.lacey_engine.pipeline import ENGINE_VERSION, process_bundle
 from litoral_trace.lacey_engine.serialization import (
-    DOCUMENT_RESOLUTION_SCHEMA_VERSION,
+    BUNDLE_RESOLUTION_SCHEMA_VERSION,
     SHIPMENT_RESOLUTION_SCHEMA_VERSION,
-    deserialize_document_resolution,
-    serialize_document_resolution,
+    deserialize_bundle_resolution,
+    serialize_bundle_resolution,
     serialize_shipment_resolution,
 )
 from litoral_trace.lacey_engine.shipment import LaceyRuleset, ShipmentDocumentInput, process_shipment
@@ -171,13 +171,13 @@ class UsLaceyEngine2Service:
         role_hint: str | None,
         status: str,
     ) -> dict[str, object]:
-        """Return the exact immutable uniqueness identity for an Engine 2 document run."""
+        """Return the immutable identity for one physical-source bundle run."""
         return {
             "organization_id": organization_id,
             "assurance_document_id": assurance_document_id,
             "source_sha256": source_sha256,
             "engine_version": self._engine_version,
-            "schema_version": DOCUMENT_RESOLUTION_SCHEMA_VERSION,
+            "schema_version": BUNDLE_RESOLUTION_SCHEMA_VERSION,
             "role_hint": role_hint,
             "status": status,
         }
@@ -625,26 +625,27 @@ class UsLaceyEngine2Service:
                 )
                 run = self._find_engine2_document_run(session, **success_identity)
                 if run is not None:
-                    resolution = deserialize_document_resolution(run.resolution_json)
+                    bundle = deserialize_bundle_resolution(run.resolution_json)
                 else:
                     with self._vault.materialize_verified_download(
                         organization_id=organization_id,
                         document_id=vault.public_id,
                     ) as download:
-                        resolution = process_document(
-                            filename=vault.original_filename,
-                            content=b"".join(download.iter_chunks()),
-                            role_hint=link.document_role,
-                        )
+                        content = b"".join(download.iter_chunks())
+                    bundle = process_bundle(
+                        filename=vault.original_filename,
+                        content=content,
+                        role_hint=link.document_role,
+                    )
                     run = UsLaceyEngineDocumentRun(
                         **success_identity,
                         operation_id=operation_id,
                         operation_document_id=link.id,
-                        resolution_json=serialize_document_resolution(resolution),
+                        resolution_json=serialize_bundle_resolution(bundle),
                     )
                     session.add(run)
                     session.flush()
-                return link, assurance, vault, resolution
+                return link, assurance, vault, bundle
 
             batch = self._process_engine2_document_batch(
                 documents=tuple(rows),
@@ -671,23 +672,41 @@ class UsLaceyEngine2Service:
             ai_documents: list[_AIShadowDocumentContext] = []
             inputs: list[ShipmentDocumentInput] = []
             for success in batch.succeeded:
-                link, assurance, vault, resolution = success.result
-                ai_documents.append(
-                    _AIShadowDocumentContext(
-                        link=link,
-                        assurance=assurance,
-                        vault=vault,
-                        engine2_resolution=resolution,
+                link, assurance, vault, bundle = success.result
+
+                # Legacy/specialized AI shadow still operates on a physical source
+                # contract. Until that advisory path becomes bundle-aware, preserve
+                # it only for true single-logical-document sources rather than
+                # comparing whole-file AI output against one arbitrary segment.
+                if len(bundle.documents) == 1:
+                    ai_documents.append(
+                        _AIShadowDocumentContext(
+                            link=link,
+                            assurance=assurance,
+                            vault=vault,
+                            engine2_resolution=bundle.documents[0].resolution,
+                        )
                     )
-                )
-                inputs.append(
-                    ShipmentDocumentInput(
-                        str(link.id),
-                        vault.original_filename,
-                        role_hint=link.document_role,
-                        resolution=resolution,
+                else:
+                    LOGGER.info(
+                        "Skipping physical-document AI shadow for multi-document bundle",
+                        extra={
+                            "organization_id": organization_id,
+                            "operation_id": operation_id,
+                            "operation_document_id": link.id,
+                            "logical_document_count": len(bundle.documents),
+                        },
                     )
-                )
+
+                for logical in bundle.documents:
+                    inputs.append(
+                        ShipmentDocumentInput(
+                            document_id=f"{link.id}:{logical.logical_document_id}",
+                            filename=logical.virtual_filename,
+                            role_hint=logical.document_type.value,
+                            resolution=logical.resolution,
+                        )
+                    )
 
             # AI extraction remains non-authoritative, but successful sibling documents
             # can still contribute shadow telemetry even when another source failed.

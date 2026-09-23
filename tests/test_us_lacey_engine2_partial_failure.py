@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from litoral_trace.lacey_engine.serialization import DOCUMENT_RESOLUTION_SCHEMA_VERSION
+from litoral_trace.lacey_engine.serialization import BUNDLE_RESOLUTION_SCHEMA_VERSION
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 
 
@@ -54,7 +54,7 @@ def test_engine2_failed_document_retry_identity_is_idempotent(monkeypatch):
         "assurance_document_id": 11,
         "source_sha256": "a" * 64,
         "engine_version": service._engine_version,
-        "schema_version": DOCUMENT_RESOLUTION_SCHEMA_VERSION,
+        "schema_version": BUNDLE_RESOLUTION_SCHEMA_VERSION,
         "role_hint": "UNKNOWN",
         "status": "FAILED",
     }

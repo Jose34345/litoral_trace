@@ -20,6 +20,8 @@ from litoral_trace.lacey_engine.domain import (
     RawCandidate,
     ResolvedField,
 )
+from tests.test_us_lacey_engine2_persistence import _bundle
+
 from litoral_trace.lacey_engine.multi_agent.contracts import (
     CandidateEnvelope,
     DocumentType,
@@ -160,7 +162,7 @@ def _configure_shadow(monkeypatch, factory) -> None:
     monkeypatch.setenv("US_LACEY_AI_PROVIDER", "gemini")
     monkeypatch.setenv("US_LACEY_AI_ALLOW_EXTERNAL", "1")
     monkeypatch.setenv("US_LACEY_GEMINI_API_KEY", "fixture-key")
-    monkeypatch.setattr(service_module, "process_document", lambda **_: _engine2_resolution())
+    monkeypatch.setattr(service_module, "process_bundle", lambda **_: _bundle(_engine2_resolution()))
     monkeypatch.setattr(service_module, "build_ai_provider", lambda _: LegacySuccessProvider())
     monkeypatch.setattr(ai_suggestions_module, "get_us_lacey_db_session", factory)
 
