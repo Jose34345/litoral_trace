@@ -196,6 +196,11 @@ Rules:
 - Never infer country_of_harvest from country of origin, exporter address, manufacturer address, port of lading, vessel route, or shipper location.
 - Never use shipment gross weight as plant_quantity unless the document explicitly identifies it as the quantity of plant material for the declaration.
 - Never invent HTS, MID/manufacturer_id, filing entry reference, or importer information.
+- container_number must be an explicit freight-container identifier in container context and conform to ISO 6346, including its check digit; never use a seal, vessel, equipment type, or SCAC as a container.
+- seal_number must come from an explicit Seal/Seal Number label and must never be copied into container_number.
+- invoice_total must be the explicit commercial-invoice total/grand total/amount due. Emit only a financial numeric amount; never use claim/loss/damage amounts, line values, weights, or OCR garbage.
+- manufacturer_id/MID must be explicitly labeled as MID/manufacturer identification. SCAC identifies a carrier and is never a MID.
+- supplier_name and importer_name must be actual entity names; never emit phone numbers or one/two-letter OCR fragments as party names.
 - Generic labels such as Seal Number, Equipment Description, City, State Province, Zip Code, Marks and Numbers, or a URL are not container_number, consignee_name, or description values.
 - Prefer exact documentary evidence over contextual guesses.
 - If a field is absent, emit no candidate for that field.
