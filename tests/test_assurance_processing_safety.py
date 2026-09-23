@@ -217,3 +217,55 @@ def test_parse_failure_is_terminal_failed_never_ready_and_is_safely_audited(monk
     assert "corrupto" not in str(audit.after_data)
     assert "corrupto" not in str(audit.detail)
     session.close()
+
+
+
+def test_pdf_processing_budget_exceeded_is_terminal_needs_review(monkeypatch):
+    f = factory()
+    public_id = seed(f, status=DocumentProcessingStatus.UPLOADED.value)
+    patch_successful_pipeline(monkeypatch, version="9.9.10")
+    monkeypatch.setattr(
+        processing,
+        "parse_document",
+        lambda filename, content: SimpleNamespace(
+            file_kind="PDF",
+            text="Commercial shipment evidence from bounded prefix",
+            tables=(),
+            metadata={
+                "page_count": 120,
+                "text_extraction_page_limit": 20,
+                "text_extraction_pages_scanned": 20,
+                "text_extraction_truncated": True,
+                "table_extraction_pages_scanned": 0,
+                "table_extraction_skipped_reason": "PDF_TEXT_BUDGET_EXCEEDED",
+            },
+            ocr_required=False,
+        ),
+    )
+    service = AssuranceProcessingService(
+        session_factory=f,
+        vault_service=FakeVaultService(),
+    )
+
+    result = service.process(
+        organization_id=42,
+        assurance_public_id=public_id,
+        force_reprocess=False,
+    )
+
+    assert result == DocumentProcessingStatus.NEEDS_REVIEW.value
+    session: Session = f()
+    document = session.scalar(
+        select(AssuranceDocument).where(AssuranceDocument.public_id == public_id)
+    )
+    run = session.scalar(
+        select(DocumentExtractionRun)
+        .where(DocumentExtractionRun.assurance_document_id == document.id)
+        .order_by(DocumentExtractionRun.id.desc())
+    )
+    assert document.processing_status == DocumentProcessingStatus.NEEDS_REVIEW.value
+    assert document.last_error_code == "PDF_PROCESSING_BUDGET_EXCEEDED"
+    assert "split the document" in document.last_error_message.lower()
+    assert run.status == ExtractionRunStatus.NEEDS_REVIEW.value
+    assert run.extraction_metadata["text_extraction_truncated"] is True
+    session.close()
