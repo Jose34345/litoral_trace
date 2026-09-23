@@ -93,6 +93,189 @@ def enqueue_us_lacey_document_job(
         session.close()
 
 
+def retry_failed_us_lacey_operation(
+    *,
+    organization_id: int,
+    operation_public_id: UUID | str,
+) -> int:
+    """Requeue failed jobs for one failed operation in a single tenant transaction.
+
+    Existing durable job rows are reset rather than duplicated because the queue
+    enforces one job per operation/document pair. Documents that failed before
+    reaching a reviewable terminal state are returned to UPLOADED; documents
+    already in NEEDS_REVIEW remain authoritative and are not destructively reset.
+
+    Returns the number of jobs requeued.
+    """
+    org_id = int(organization_id)
+    if org_id <= 0:
+        raise UsLaceyJobError("A valid organization is required.")
+
+    try:
+        operation_uuid = UUID(str(operation_public_id))
+    except (TypeError, ValueError) as exc:
+        raise UsLaceyJobError("A valid operation identifier is required.") from exc
+
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, org_id)
+
+        operation = session.execute(
+            text(
+                """
+                SELECT id, status
+                FROM public.us_lacey_operations
+                WHERE organization_id = :organization_id
+                  AND public_id = :operation_public_id
+                FOR UPDATE
+                """
+            ),
+            {
+                "organization_id": org_id,
+                "operation_public_id": operation_uuid,
+            },
+        ).mappings().one_or_none()
+
+        if operation is None:
+            raise UsLaceyJobError("Operation not found.")
+        if str(operation["status"]) != "FAILED":
+            raise UsLaceyJobError("Only failed operations can be retried.")
+
+        operation_id = int(operation["id"])
+
+        active_count = int(
+            session.execute(
+                text(
+                    """
+                    SELECT count(*)
+                    FROM public.us_lacey_processing_jobs
+                    WHERE organization_id = :organization_id
+                      AND operation_id = :operation_id
+                      AND status IN ('QUEUED','RUNNING','RETRY')
+                    """
+                ),
+                {
+                    "organization_id": org_id,
+                    "operation_id": operation_id,
+                },
+            ).scalar_one()
+            or 0
+        )
+        if active_count:
+            raise UsLaceyJobError("This operation already has active processing work.")
+
+        failed_jobs = session.execute(
+            text(
+                """
+                SELECT id, assurance_document_id
+                FROM public.us_lacey_processing_jobs
+                WHERE organization_id = :organization_id
+                  AND operation_id = :operation_id
+                  AND status = 'FAILED'
+                ORDER BY id ASC
+                FOR UPDATE
+                """
+            ),
+            {
+                "organization_id": org_id,
+                "operation_id": operation_id,
+            },
+        ).mappings().all()
+
+        if not failed_jobs:
+            raise UsLaceyJobError("This failed operation has no failed processing job to retry.")
+
+        # Reset only documents that genuinely failed parsing/processing. A
+        # NEEDS_REVIEW document can be the correct durable result even when the
+        # worker died later while finalizing the queue/operation state.
+        session.execute(
+            text(
+                """
+                UPDATE public.assurance_documents AS document
+                SET processing_status = 'UPLOADED',
+                    last_error_code = NULL,
+                    last_error_message = NULL,
+                    updated_at = now()
+                WHERE document.organization_id = :organization_id
+                  AND document.processing_status = 'FAILED'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM public.us_lacey_processing_jobs AS job
+                      WHERE job.organization_id = :organization_id
+                        AND job.operation_id = :operation_id
+                        AND job.status = 'FAILED'
+                        AND job.assurance_document_id = document.id
+                  )
+                """
+            ),
+            {
+                "organization_id": org_id,
+                "operation_id": operation_id,
+            },
+        )
+
+        updated_jobs = session.execute(
+            text(
+                """
+                UPDATE public.us_lacey_processing_jobs
+                SET status = 'QUEUED',
+                    attempt_count = 0,
+                    available_at = now(),
+                    locked_by = NULL,
+                    locked_at = NULL,
+                    heartbeat_at = NULL,
+                    started_at = NULL,
+                    completed_at = NULL,
+                    last_error_code = NULL,
+                    last_error_message = NULL,
+                    updated_at = now()
+                WHERE organization_id = :organization_id
+                  AND operation_id = :operation_id
+                  AND status = 'FAILED'
+                """
+            ),
+            {
+                "organization_id": org_id,
+                "operation_id": operation_id,
+            },
+        ).rowcount
+
+        if int(updated_jobs or 0) != len(failed_jobs):
+            raise UsLaceyJobError("Failed jobs changed while the retry was being prepared.")
+
+        updated_operation = session.execute(
+            text(
+                """
+                UPDATE public.us_lacey_operations
+                SET status = 'PROCESSING',
+                    review_result = NULL,
+                    updated_at = now()
+                WHERE organization_id = :organization_id
+                  AND id = :operation_id
+                  AND status = 'FAILED'
+                """
+            ),
+            {
+                "organization_id": org_id,
+                "operation_id": operation_id,
+            },
+        ).rowcount
+
+        if int(updated_operation or 0) != 1:
+            raise UsLaceyJobError("Operation state changed while the retry was being prepared.")
+
+        session.commit()
+        return len(failed_jobs)
+    except UsLaceyJobError:
+        session.rollback()
+        raise
+    except Exception as exc:
+        session.rollback()
+        raise UsLaceyJobError("Unable to retry failed operation processing.") from exc
+    finally:
+        session.close()
+
+
 def claim_next_us_lacey_job(
     *,
     worker_id: str,

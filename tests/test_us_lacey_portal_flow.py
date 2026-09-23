@@ -498,3 +498,70 @@ def test_logout_preserves_session_cookie_contract(monkeypatch):
     assert response.headers["location"] == "/login"
     assert observed == ["opaque-us-session-token"]
     assert f"{US_LACEY_SESSION_COOKIE}=" in response.headers["set-cookie"]
+
+
+
+def test_retry_processing_htmx_requeues_and_redirects(monkeypatch):
+    _portal_env(monkeypatch)
+    identity = UsLaceyPortalIdentity(
+        user_id=17,
+        organization_id=41,
+        email="broker@example.com",
+        full_name="Broker User",
+        legal_name="Broker LLC",
+        business_type="CUSTOMS_BROKER",
+        account_status="ACTIVE",
+    )
+    entitlement = SimpleNamespace(
+        used_operations=1,
+        monthly_operation_limit=100,
+        remaining_operations=99,
+    )
+    observed: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app._operational_context",
+        lambda _session: (identity, entitlement),
+    )
+
+    def fake_verify(**kwargs):
+        observed["csrf"] = kwargs
+
+    def fake_retry(**kwargs):
+        observed["retry"] = kwargs
+        return 1
+
+    def fake_wake():
+        observed["woke"] = True
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.verify_us_lacey_csrf",
+        fake_verify,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.retry_failed_us_lacey_operation",
+        fake_retry,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.wake_us_lacey_worker",
+        fake_wake,
+    )
+
+    operation_id = "11111111-2222-3333-4444-555555555555"
+    client = TestClient(app, follow_redirects=False)
+    client.cookies.set(US_LACEY_SESSION_COOKIE, "opaque-us-session-token")
+    response = client.post(
+        f"/operations/{operation_id}/actions/retry",
+        data={"csrf_token": "retry-token"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["HX-Redirect"] == f"/operations/{operation_id}"
+    assert observed["retry"] == {
+        "organization_id": 41,
+        "operation_public_id": operation_id,
+    }
+    assert observed["csrf"]["purpose"] == f"retry:{operation_id}"
+    assert observed["csrf"]["submitted_token"] == "retry-token"
+    assert observed["woke"] is True

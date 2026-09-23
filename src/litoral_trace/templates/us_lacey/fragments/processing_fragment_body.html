@@ -3,8 +3,29 @@
   <h2 class="text-lg font-bold text-slate-950">We couldn't finish analyzing this shipment.</h2>
   <p class="mt-2 text-sm text-slate-600">Your original documents remain safely stored. No declaration data was submitted.</p>
   <div class="mt-4 flex flex-wrap gap-3">
-    <a class="lt-button lt-button--secondary" href="/operations/{{ detail.public_id }}">Try again</a>
-    <a class="lt-button lt-button--ghost" href="mailto:comercial@litoraltrace.com">Contact support</a>
+    <form class="inline-flex" data-processing-retry-form>
+      <input type="hidden" name="csrf_token" value="{{ retry_csrf }}">
+      <button
+        type="button"
+        class="lt-button lt-button--secondary"
+        hx-post="/operations/{{ detail.public_id }}/actions/retry"
+        hx-include="closest form"
+        hx-indicator="#operation-retry-indicator-{{ detail.public_id }}"
+        hx-disabled-elt="this"
+        hx-swap="none"
+      >
+        <span>Try again</span>
+        <span
+          id="operation-retry-indicator-{{ detail.public_id }}"
+          class="htmx-indicator ml-2 inline-flex items-center gap-2 text-xs"
+          aria-live="polite"
+        >
+          <span class="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-emerald-200 border-t-emerald-600" aria-hidden="true"></span>
+          Retrying...
+        </span>
+      </button>
+    </form>
+    <a class="lt-button lt-button--ghost" href="mailto:support@litoraltrace.com?subject=Analysis Error - Operation {{ detail.public_id }}">Contact support</a>
   </div>
 </section>
 {% elif processing.state == "WAITING_FOR_DOCUMENT" %}
