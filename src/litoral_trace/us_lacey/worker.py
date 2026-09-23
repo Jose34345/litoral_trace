@@ -578,9 +578,23 @@ def _mark_document_policy_failure(
         session.close()
 
 
-def _preflight_existing_document(*, organization_id: int, descriptor: _DocumentDescriptor) -> None:
-    """Reject legacy queued bulk spreadsheets before the expensive parser allocates memory."""
+def _preflight_existing_document(
+    *,
+    organization_id: int,
+    descriptor: _DocumentDescriptor,
+    operation_id: int | None = None,
+    assurance_document_id: int | None = None,
+) -> None:
+    """Reject unsafe/unsupported sources before the expensive parser allocates memory."""
     suffix = PurePath(descriptor.filename).suffix.lower()
+    if suffix == ".pdf":
+        if operation_id is not None and assurance_document_id is not None:
+            _preflight_engine2_domain(
+                organization_id=organization_id,
+                operation_id=operation_id,
+                assurance_document_id=assurance_document_id,
+            )
+        return
     if suffix not in {".csv", ".xlsx", ".xls"}:
         return
     limits = shipment_spreadsheet_limits()
@@ -707,13 +721,9 @@ def process_one_us_lacey_job(
                     _preflight_existing_document(
                         organization_id=job.organization_id,
                         descriptor=descriptor,
+                        operation_id=job.operation_id,
+                        assurance_document_id=job.assurance_document_id,
                     )
-                    if PurePath(descriptor.filename).suffix.lower() == ".pdf":
-                        _preflight_engine2_domain(
-                            organization_id=job.organization_id,
-                            operation_id=job.operation_id,
-                            assurance_document_id=job.assurance_document_id,
-                        )
                 except UnsupportedDocumentDomainError as exc:
                     queue_status = fail_us_lacey_job(
                         job_id=job.id,
