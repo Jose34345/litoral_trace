@@ -8,6 +8,7 @@ from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 from tests.us_lacey_engine2_postgres import (
     FakeVault,
     add_test_document,
+    bundle_from_resolution,
     create_test_graph,
     engine2_postgres_engine,
     engine2_postgres_session_factory,
@@ -61,9 +62,9 @@ def test_partial_failure_persists_successful_siblings_and_never_snapshots_incomp
         calls.append(filename)
         if filename == "bill.pdf":
             raise RuntimeError("synthetic unreadable source")
-        return _empty_resolution(filename)
+        return bundle_from_resolution(_empty_resolution(filename))
 
-    monkeypatch.setattr(service_module, "process_bundle", process_document)
+    monkeypatch.setattr(service_module, "process_bundle", process_bundle)
     service = UsLaceyEngine2Service(
         session_factory=factory,
         vault_service=FakeVault(b"source"),
@@ -127,9 +128,9 @@ def test_repeated_partial_failure_reuses_one_failed_run_without_unique_violation
         calls.append(filename)
         if filename == "bill.pdf":
             raise RuntimeError("persistent synthetic failure")
-        return _empty_resolution(filename)
+        return bundle_from_resolution(_empty_resolution(filename))
 
-    monkeypatch.setattr(service_module, "process_bundle", process_document)
+    monkeypatch.setattr(service_module, "process_bundle", process_bundle)
     service = UsLaceyEngine2Service(
         session_factory=factory,
         vault_service=FakeVault(b"source"),
@@ -197,7 +198,7 @@ def test_all_failed_source_set_remains_failed_not_partial(
     def process_bundle(**_values):
         raise RuntimeError("synthetic total source failure")
 
-    monkeypatch.setattr(service_module, "process_bundle", process_document)
+    monkeypatch.setattr(service_module, "process_bundle", process_bundle)
     service = UsLaceyEngine2Service(
         session_factory=factory,
         vault_service=FakeVault(b"source"),
