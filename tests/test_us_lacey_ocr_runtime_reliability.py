@@ -26,8 +26,10 @@ def test_parse_pdf_falls_back_to_pdfium_page_count_when_pypdf_inspection_crashes
     content = b"%PDF-1.4\nsynthetic image-only source\n%%EOF"
     monkeypatch.setattr(
         parsers,
-        "_extract_pdf_text_pages",
-        lambda _content: (_ for _ in ()).throw(RuntimeError("pypdf layout crash")),
+        "_extract_pdf_text_pages_bounded",
+        lambda _content, *, page_limit, char_limit: (
+            _ for _ in ()
+        ).throw(RuntimeError("pypdf layout crash")),
     )
     monkeypatch.setattr(parsers, "_pdf_page_count_with_pdfium", lambda _content: 1)
     monkeypatch.setattr(
