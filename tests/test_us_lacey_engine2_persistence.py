@@ -9,11 +9,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from litoral_trace.db.models import ReconciliationIssue, UsLaceyEngineDocumentRun, UsLaceyEngineShipmentRun, UsLaceyOperation, UsLaceyOperationDocument, UsLaceyOperationField, UsLaceyFieldCandidate, User
 from litoral_trace.lacey_engine.domain import AdmittedCandidate, DocumentResolution, DocumentType, EvidenceClass, FieldStatus, LayoutBlock, ParsedLayout, Provenance, RawCandidate, ResolvedField
-from litoral_trace.lacey_engine.serialization import DOCUMENT_RESOLUTION_SCHEMA_VERSION, SHIPMENT_RESOLUTION_SCHEMA_VERSION, deserialize_shipment_resolution, serialize_document_resolution
+from litoral_trace.lacey_engine.serialization import BUNDLE_RESOLUTION_SCHEMA_VERSION, DOCUMENT_RESOLUTION_SCHEMA_VERSION, SHIPMENT_RESOLUTION_SCHEMA_VERSION, deserialize_shipment_resolution, serialize_document_resolution
 from litoral_trace.lacey_engine.shipment import LaceyRuleset
 from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service, source_set_fingerprint
-from tests.us_lacey_engine2_postgres import FakeVault, add_test_document, create_test_graph, engine2_postgres_engine, engine2_postgres_session_factory, tenant_session
+from tests.us_lacey_engine2_postgres import FakeVault, add_test_document, bundle_from_resolution, create_test_graph, engine2_postgres_engine, engine2_postgres_session_factory, tenant_session
 
 
 def _resolution(filename, document_type, facts):
@@ -35,7 +35,7 @@ def _dossier(factory):
 
 
 def _service(factory, resolutions, **kwargs):
-    return UsLaceyEngine2Service(session_factory=factory, vault_service=FakeVault(b"unused"), **kwargs), lambda **values: resolutions[values["filename"]]
+    return UsLaceyEngine2Service(session_factory=factory, vault_service=FakeVault(b"unused"), **kwargs), lambda **values: bundle_from_resolution(resolutions[values["filename"]])
 
 
 def _snapshot(factory, organization_id, snapshot_id):
@@ -44,7 +44,7 @@ def _snapshot(factory, organization_id, snapshot_id):
 
 def test_engine2_document_run_persists_resolution(engine2_postgres_session_factory, monkeypatch):
     org, operation, link, assurance, _, sha = create_test_graph(engine2_postgres_session_factory)
-    monkeypatch.setattr(service_module, "process_document", lambda **_: _resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"}))
+    monkeypatch.setattr(service_module, "process_bundle", lambda **_: bundle_from_resolution(_resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"})))
     assert UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"x")).resolve_operation_with_engine2(organization_id=org, operation_id=operation).status == "SUCCEEDED"
     session = tenant_session(engine2_postgres_session_factory, org); run = session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=link).one()
     assert (run.status, run.assurance_document_id, run.source_sha256) == ("SUCCEEDED", assurance, sha) and run.resolution_json
@@ -53,7 +53,7 @@ def test_engine2_document_run_persists_resolution(engine2_postgres_session_facto
 
 def test_engine2_document_failure_persists_safe_error(engine2_postgres_session_factory, monkeypatch):
     org, operation, link, _, _, _ = create_test_graph(engine2_postgres_session_factory)
-    monkeypatch.setattr(service_module, "process_document", lambda **_: (_ for _ in ()).throw(RuntimeError("secret traceback bytes")))
+    monkeypatch.setattr(service_module, "process_bundle", lambda **_: (_ for _ in ()).throw(RuntimeError("secret traceback bytes")))
     assert UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"x")).resolve_operation_with_engine2(organization_id=org, operation_id=operation).status == "FAILED"
     session = tenant_session(engine2_postgres_session_factory, org); run = session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=link).one()
     assert run.status == "FAILED" and run.resolution_json is None and run.safe_error_code and "traceback" not in run.safe_error_message.lower(); session.close()
@@ -61,7 +61,7 @@ def test_engine2_document_failure_persists_safe_error(engine2_postgres_session_f
 
 def test_engine2_document_run_reuses_identical_success(engine2_postgres_session_factory, monkeypatch):
     org, operation, link, _, _, _ = create_test_graph(engine2_postgres_session_factory); calls = []
-    monkeypatch.setattr(service_module, "process_document", lambda **_: (calls.append(1), _resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"}))[1])
+    monkeypatch.setattr(service_module, "process_bundle", lambda **_: (calls.append(1), bundle_from_resolution(_resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"})))[1])
     service = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"x")); service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     session = tenant_session(engine2_postgres_session_factory, org); assert session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=link, status="SUCCEEDED").count() == 1 and len(calls) == 1; session.close()
 
@@ -74,7 +74,7 @@ def test_engine2_schema_versions_do_not_reuse_document_or_shipment_caches(engine
     old_fingerprint = source_set_fingerprint(organization_id=org, operation_id=operation, documents=[(SimpleNamespace(id=link, assurance_document_id=assurance, version_number=1), SimpleNamespace(sha256=sha))], shipment_schema_version="lacey_shipment_resolution_v0")
     session.add(UsLaceyEngineShipmentRun(organization_id=org, operation_id=operation, engine_version=service_module.ENGINE_VERSION, ruleset_version="lacey_ruleset_2026_01", schema_version="lacey_shipment_resolution_v0", source_set_fingerprint=old_fingerprint, document_count=0, readiness="BLOCKED", resolution_json={"historical": True}))
     session.commit(); session.close()
-    calls = []; monkeypatch.setattr(service_module, "process_document", lambda **_: (calls.append(1), resolution)[1])
+    calls = []; monkeypatch.setattr(service_module, "process_bundle", lambda **_: (calls.append(1), bundle_from_resolution(resolution))[1])
     service = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"schema"))
     first = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); second = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     session = tenant_session(engine2_postgres_session_factory, org)
@@ -89,7 +89,7 @@ def test_engine2_schema_versions_do_not_reuse_document_or_shipment_caches(engine
 def test_engine2_same_sha_is_never_reused_cross_tenant(engine2_postgres_session_factory, monkeypatch):
     a_org, a_operation, a_link, _, _, _ = create_test_graph(engine2_postgres_session_factory, content=b"same-sha")
     b_org, b_operation, b_link, _, _, _ = create_test_graph(engine2_postgres_session_factory, content=b"same-sha")
-    monkeypatch.setattr(service_module, "process_document", lambda **_: _resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"}))
+    monkeypatch.setattr(service_module, "process_bundle", lambda **_: _resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"}))
     service = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"same-sha"))
     service.resolve_operation_with_engine2(organization_id=a_org, operation_id=a_operation); service.resolve_operation_with_engine2(organization_id=b_org, operation_id=b_operation)
     a_session = tenant_session(engine2_postgres_session_factory, a_org); a_run = a_session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=a_link).one(); a_session.close()
@@ -109,7 +109,7 @@ def test_engine2_shadow_preserves_human_review_operation_status_and_legacy_rows(
     issue = ReconciliationIssue(organization_id=org, operation_reference=f"engine2-{operation}", fingerprint=hashlib.sha256(b"issue").hexdigest(), rule_code="TEST_REVIEW", severity="WARNING", status="RESOLVED", left_document_id=assurance, left_source="test", explanation="test", resolution_justification="Human resolved", resolved_at=reviewed_at)
     session.add_all((selected, rejected, issue)); session.query(UsLaceyOperation).filter_by(id=operation).update({"status": "READY_FOR_REVIEW", "review_result": "READY_FOR_HUMAN_CONFIRMATION"}); session.commit(); session.close()
     session = tenant_session(engine2_postgres_session_factory, org); before = (session.query(UsLaceyOperation).filter_by(id=operation).one().status, session.query(UsLaceyOperation).filter_by(id=operation).one().review_result, field.human_value, field.reviewed_by_user_id, field.reviewed_at, selected.decision, selected.decided_by_user_id, selected.decided_at, rejected.decision, rejected.decided_by_user_id, rejected.decided_at, issue.status, issue.resolution_justification, issue.resolved_at, session.query(UsLaceyOperationField).filter_by(operation_id=operation).count(), session.query(UsLaceyFieldCandidate).filter_by(operation_id=operation).count(), session.query(ReconciliationIssue).filter_by(organization_id=org).count()); session.close()
-    monkeypatch.setattr(service_module, "process_document", lambda **_: _resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"}))
+    monkeypatch.setattr(service_module, "process_bundle", lambda **_: _resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"}))
     result = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"x")).resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     session = tenant_session(engine2_postgres_session_factory, org); after_operation = session.query(UsLaceyOperation).filter_by(id=operation).one(); after_field = session.query(UsLaceyOperationField).filter_by(id=field.id).one(); after_candidates = {item.decision: item for item in session.query(UsLaceyFieldCandidate).filter_by(operation_id=operation)}; after_issue = session.query(ReconciliationIssue).filter_by(id=issue.id).one()
     after = (after_operation.status, after_operation.review_result, after_field.human_value, after_field.reviewed_by_user_id, after_field.reviewed_at, after_candidates["SELECTED"].decision, after_candidates["SELECTED"].decided_by_user_id, after_candidates["SELECTED"].decided_at, after_candidates["REJECTED"].decision, after_candidates["REJECTED"].decided_by_user_id, after_candidates["REJECTED"].decided_at, after_issue.status, after_issue.resolution_justification, after_issue.resolved_at, session.query(UsLaceyOperationField).filter_by(operation_id=operation).count(), session.query(UsLaceyFieldCandidate).filter_by(operation_id=operation).count(), session.query(ReconciliationIssue).filter_by(organization_id=org).count())
@@ -119,7 +119,7 @@ def test_engine2_shadow_preserves_human_review_operation_status_and_legacy_rows(
 
 def test_engine2_shipment_snapshot_persists_and_round_trips(engine2_postgres_session_factory, monkeypatch):
     org, operation, bill, supplier, resolutions = _dossier(engine2_postgres_session_factory)
-    service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_document", processor)
+    service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_bundle", processor)
     result = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     row = _snapshot(engine2_postgres_session_factory, org, result.shipment_run_id); restored = deserialize_shipment_resolution(row.resolution_json)
     assert (row.organization_id, row.operation_id, row.ruleset_version, row.schema_version) == (org, operation, "lacey_ruleset_2026_02_semantic_graph", SHIPMENT_RESOLUTION_SCHEMA_VERSION)
@@ -134,7 +134,7 @@ def test_engine2_shipment_snapshot_persists_and_round_trips(engine2_postgres_ses
 
 
 def test_engine2_shipment_snapshot_is_idempotent(engine2_postgres_session_factory, monkeypatch):
-    org, operation, _, _, resolutions = _dossier(engine2_postgres_session_factory); service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_document", processor)
+    org, operation, _, _, resolutions = _dossier(engine2_postgres_session_factory); service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_bundle", processor)
     first = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); second = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     one, two = _snapshot(engine2_postgres_session_factory, org, first.shipment_run_id), _snapshot(engine2_postgres_session_factory, org, second.shipment_run_id)
     session = tenant_session(engine2_postgres_session_factory, org)
@@ -148,7 +148,7 @@ def test_engine2_aggregates_only_current_document_versions(engine2_postgres_sess
     old_link, old_assurance, _, _ = add_test_document(engine2_postgres_session_factory, organization_id=org, operation_id=operation, role="COMMERCIAL_INVOICE", filename="old.pdf", content=b"old", version_number=1, is_current=False)
     new_link, new_assurance, _, new_sha = add_test_document(engine2_postgres_session_factory, organization_id=org, operation_id=operation, role="COMMERCIAL_INVOICE", filename="new.pdf", content=b"new", version_number=2, is_current=True)
     resolutions.update({"old.pdf": _resolution("old.pdf", DocumentType.COMMERCIAL_INVOICE, {"consignee_name": "OLD CONSIGNEE"}), "new.pdf": _resolution("new.pdf", DocumentType.COMMERCIAL_INVOICE, {"consignee_name": "NEW CONSIGNEE"})})
-    service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_document", processor)
+    service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_bundle", processor)
     result = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); restored = deserialize_shipment_resolution(_snapshot(engine2_postgres_session_factory, org, result.shipment_run_id).resolution_json)
     assert str(new_link) in {item.document_id for item in restored.documents} and str(old_link) not in {item.document_id for item in restored.documents}
     session = tenant_session(engine2_postgres_session_factory, org); current = session.query(UsLaceyOperationDocument).filter_by(id=new_link).one(); run = session.query(UsLaceyEngineDocumentRun).filter_by(assurance_document_id=new_assurance).one()
@@ -156,7 +156,7 @@ def test_engine2_aggregates_only_current_document_versions(engine2_postgres_sess
 
 
 def test_engine2_historical_snapshot_is_immutable_after_version_change(engine2_postgres_session_factory, monkeypatch):
-    org, operation, bill, _, resolutions = _dossier(engine2_postgres_session_factory); service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_document", processor)
+    org, operation, bill, _, resolutions = _dossier(engine2_postgres_session_factory); service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_bundle", processor)
     first = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); initial = _snapshot(engine2_postgres_session_factory, org, first.shipment_run_id); captured = (initial.id, initial.source_set_fingerprint, deepcopy(initial.resolution_json), initial.created_at)
     add_test_document(engine2_postgres_session_factory, organization_id=org, operation_id=operation, role="BILL_OF_LADING", filename="bill-v2.pdf", content=b"bill-v2", version_number=2, is_current=True)
     session = tenant_session(engine2_postgres_session_factory, org); session.query(UsLaceyOperationDocument).filter_by(id=bill[0]).update({"is_current": False}); session.commit(); session.close()
@@ -169,7 +169,7 @@ def test_engine2_current_flag_transition_creates_new_snapshot(engine2_postgres_s
     org, operation, bill, _, resolutions = _dossier(engine2_postgres_session_factory)
     alternative, _, _, _ = add_test_document(engine2_postgres_session_factory, organization_id=org, operation_id=operation, role="BILL_OF_LADING", filename="alternate.pdf", content=b"alternate", version_number=1, is_current=False)
     resolutions["alternate.pdf"] = _resolution("alternate.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "ALT-BL", "container_number": "ALT-CN"})
-    service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_document", processor)
+    service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_bundle", processor)
     first = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     session = tenant_session(engine2_postgres_session_factory, org); session.query(UsLaceyOperationDocument).filter_by(id=bill[0]).update({"is_current": False}); session.query(UsLaceyOperationDocument).filter_by(id=alternative).update({"is_current": True}); session.commit(); session.close()
     second = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
@@ -177,7 +177,7 @@ def test_engine2_current_flag_transition_creates_new_snapshot(engine2_postgres_s
 
 
 def test_engine2_engine_and_ruleset_versions_invalidate_independent_caches(engine2_postgres_session_factory, monkeypatch):
-    org, operation, _, _, resolutions = _dossier(engine2_postgres_session_factory); monkeypatch.setattr(service_module, "process_document", lambda **values: resolutions[values["filename"]])
+    org, operation, _, _, resolutions = _dossier(engine2_postgres_session_factory); monkeypatch.setattr(service_module, "process_bundle", lambda **values: bundle_from_resolution(resolutions[values["filename"]]))
     first = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"x"), engine_version="v1").resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     version_two = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"x"), engine_version="v2").resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     ruleset_two = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"x"), engine_version="v2", ruleset=LaceyRuleset(version="rules-v2")).resolve_operation_with_engine2(organization_id=org, operation_id=operation)
@@ -190,8 +190,8 @@ def test_engine2_failed_current_document_blocks_shipment_and_retry_preserves_his
     org, operation, _, supplier, resolutions = _dossier(engine2_postgres_session_factory); calls = {"supplier.pdf": 0}
     def process(**values):
         if values["filename"] == "supplier.pdf" and calls["supplier.pdf"] == 0: calls["supplier.pdf"] += 1; raise RuntimeError("temporary parser failure")
-        return resolutions[values["filename"]]
-    monkeypatch.setattr(service_module, "process_document", process); service = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"x"))
+        return bundle_from_resolution(resolutions[values["filename"]])
+    monkeypatch.setattr(service_module, "process_bundle", process); service = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"x"))
     partial = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     assert partial.status == "BLOCKED_PARTIAL" and partial.shipment_run_id is None and partial.succeeded_document_count == 1 and partial.failed_document_count == 1
     session = tenant_session(engine2_postgres_session_factory, org); assert session.query(UsLaceyEngineShipmentRun).filter_by(organization_id=org, operation_id=operation).count() == 0 and session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=supplier[0], status="FAILED").count() == 1; session.close()
@@ -200,7 +200,7 @@ def test_engine2_failed_current_document_blocks_shipment_and_retry_preserves_his
 
 
 def test_engine2_duplicate_snapshot_constraint_is_database_safe(engine2_postgres_session_factory, monkeypatch):
-    org, operation, _, _, resolutions = _dossier(engine2_postgres_session_factory); service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_document", processor)
+    org, operation, _, _, resolutions = _dossier(engine2_postgres_session_factory); service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_bundle", processor)
     result = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); row = _snapshot(engine2_postgres_session_factory, org, result.shipment_run_id); session = tenant_session(engine2_postgres_session_factory, org)
     session.add(UsLaceyEngineShipmentRun(organization_id=org, operation_id=operation, engine_version=row.engine_version, ruleset_version=row.ruleset_version, schema_version=row.schema_version, source_set_fingerprint=row.source_set_fingerprint, document_count=row.document_count, readiness=row.readiness, resolution_json=row.resolution_json))
     with pytest.raises(IntegrityError): session.commit()
@@ -208,7 +208,7 @@ def test_engine2_duplicate_snapshot_constraint_is_database_safe(engine2_postgres
 
 
 def test_engine2_snapshot_commit_failure_rolls_back_partial_snapshot(engine2_postgres_session_factory, monkeypatch):
-    org, operation, _, _, resolutions = _dossier(engine2_postgres_session_factory); service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_document", processor)
+    org, operation, _, _, resolutions = _dossier(engine2_postgres_session_factory); service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_bundle", processor)
     def fail_commit(_self): raise RuntimeError("forced shipment commit failure")
     monkeypatch.setattr(Session, "commit", fail_commit)
     with pytest.raises(RuntimeError): service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
