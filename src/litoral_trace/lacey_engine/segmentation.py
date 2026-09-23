@@ -222,6 +222,10 @@ _STRONG_ANCHORS: tuple[tuple[re.Pattern[str], DocumentType], ...] = (
         DocumentType.BILL_OF_LADING,
     ),
     (
+        re.compile(r"\b(?:SEA|AIR)\s+WAYBILL\b", re.I),
+        DocumentType.BILL_OF_LADING,
+    ),
+    (
         re.compile(r"\bCOMMERCIAL\s+INVOICE\b", re.I),
         DocumentType.COMMERCIAL_INVOICE,
     ),
