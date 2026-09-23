@@ -83,13 +83,14 @@ def test_specialist_allowed_fields_are_closed_and_domain_specific():
             "consignee_address",
             "filing_entry_reference",
             "manufacturer_id",
+            "supplier_name",
         }
     )
     assert LogisticsExtractor.allowed_fields == frozenset(
-        {"bill_of_lading", "container_number", "estimated_arrival_date"}
+        {"bill_of_lading", "container_number", "seal_number", "estimated_arrival_date"}
     )
     assert CommercialLineExtractor.allowed_fields == frozenset(
-        {"description", "article_component", "hts_code", "entered_value"}
+        {"description", "article_component", "hts_code", "entered_value", "invoice_total"}
     )
     assert BotanicalExtractor.allowed_fields == frozenset(
         {"genus", "species", "country_of_harvest", "plant_quantity", "metric_unit"}
