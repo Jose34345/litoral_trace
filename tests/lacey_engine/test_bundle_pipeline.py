@@ -11,7 +11,10 @@ from litoral_trace.lacey_engine.domain import (
     LogicalDocumentResolution,
     ParsedLayout,
 )
-from litoral_trace.lacey_engine.errors import LaceyEngineError
+from litoral_trace.lacey_engine.errors import (
+    LaceyEngineError,
+    UnsupportedDocumentDomainError,
+)
 from litoral_trace.lacey_engine.pipeline import (
     _slice_layout,
     process_bundle,
@@ -352,3 +355,34 @@ def test_existing_document_schema_version_remains_unchanged():
         == DOCUMENT_RESOLUTION_SCHEMA_VERSION
         == "lacey_document_resolution_v1"
     )
+
+
+
+def test_process_bundle_rejects_when_segmentation_finds_no_supported_logical_document(
+    monkeypatch,
+):
+    layout = ParsedLayout(
+        blocks=(
+            LayoutBlock(
+                "p1",
+                1,
+                None,
+                "Administrative memorandum with no shipment document identity.",
+                "TEXT_LINE",
+            ),
+        ),
+        page_count=1,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.lacey_engine.pipeline.parse_layout",
+        lambda *_args, **_kwargs: layout,
+    )
+
+    with pytest.raises(UnsupportedDocumentDomainError) as excinfo:
+        process_bundle(
+            filename="unsupported.pdf",
+            content=b"not-a-real-pdf-because-layout-is-stubbed",
+        )
+
+    assert excinfo.value.code == "UNSUPPORTED_DOMAIN"
+    assert excinfo.value.domain == "UNSUPPORTED"
