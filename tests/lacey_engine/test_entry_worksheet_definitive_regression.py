@@ -14,7 +14,7 @@ from litoral_trace.lacey_engine.multi_agent.contracts import (
 from litoral_trace.lacey_engine.multi_agent.line_binding import bind_line_items
 from litoral_trace.lacey_engine.pipeline import _extract
 from litoral_trace.us_lacey.projection import (
-    _explicit_plant_data_rows,
+    _explicit_merchandise_rows,
     _has_explicit_line_entered_value,
     _is_line_allocation_table,
     _target_field,
@@ -97,7 +97,7 @@ def test_commercial_pricing_table_is_not_a_customs_line_allocation():
     assert _is_line_allocation_table(headers) is False
 
 
-def test_customs_entry_rows_can_materialize_lines_before_botanical_documents_arrive():
+def test_customs_entry_rows_create_merchandise_facts_without_botanical_materialization():
     table_headers = {
         2: frozenset({"line", "hts", "description", "qty", "entered value"})
     }
@@ -128,10 +128,15 @@ def test_customs_entry_rows_can_materialize_lines_before_botanical_documents_arr
         ),
     ]
 
-    assert _explicit_plant_data_rows(
+    rows = _explicit_merchandise_rows(
         extracted,
         table_headers=table_headers,
-    ) == (1, 2)
+    )
+    assert [(row.line_key, row.hts10) for row in rows] == [
+        ("1", "4407110190"),
+        ("2", "4407990190"),
+    ]
+    assert all(row.plant_material.value == "UNKNOWN" for row in rows)
 
 
 def _candidate(field_key: str, value: str) -> AICandidate:
