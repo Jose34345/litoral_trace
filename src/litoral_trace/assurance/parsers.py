@@ -751,6 +751,7 @@ def parse_pdf(content: bytes) -> ParsedDocument:
     text_extraction_metadata: dict[str, Any] = {}
     text_pages_scanned = 0
     text_char_limit_reached = False
+    text_extraction_failed = False
     try:
         (
             useful_text,
@@ -773,13 +774,15 @@ def parse_pdf(content: bytes) -> ParsedDocument:
         useful_text = ""
         pages_with_text = 0
         text_pages_scanned = 0
+        text_extraction_failed = True
         text_extraction_metadata = {
             "text_extraction_fallback": "pdfium_page_count",
             "text_extraction_error_type": type(exc).__name__,
         }
 
     text_extraction_truncated = (
-        text_pages_scanned < page_count or text_char_limit_reached
+        not text_extraction_failed
+        and (text_pages_scanned < page_count or text_char_limit_reached)
     )
     ocr_required = (
         not text_extraction_truncated
@@ -859,6 +862,7 @@ def parse_pdf(content: bytes) -> ParsedDocument:
         "page_count": page_count,
         "pages_with_text": pages_with_text,
         "text_extraction_engine": "pdfium",
+        "text_extraction_failed": text_extraction_failed,
         "text_extraction_page_limit": text_page_limit,
         "text_extraction_pages_scanned": text_pages_scanned,
         "text_extraction_char_limit": text_char_limit,
