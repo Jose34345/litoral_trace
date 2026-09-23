@@ -13,7 +13,8 @@ def _pdf_bytes(pages: tuple[str, ...]) -> bytes:
         pdf.add_page()
         pdf.set_font("Helvetica", size=10)
         for line in text.split("\n"):
-            pdf.multi_cell(0, 5, text=line)
+            pdf.set_x(pdf.l_margin)
+            pdf.cell(0, 5, text=line, new_x="LMARGIN", new_y="NEXT")
     output = pdf.output()
     return bytes(output) if not isinstance(output, str) else output.encode("latin-1")
 
