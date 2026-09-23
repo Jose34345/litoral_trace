@@ -79,3 +79,84 @@ def test_conflicts_multiple_values_and_inferred_evidence_are_not_promoted():
         },
     }
     assert supported_engine2_suggestions(payload) == ()
+
+
+
+def test_canonical_stale_line_review_condition_does_not_fail_worker(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from litoral_trace.us_lacey import engine2_suggestions as module
+
+    class _Session:
+        def __init__(self):
+            self.rollbacks = 0
+            self.commits = 0
+            self.closed = 0
+
+        def rollback(self):
+            self.rollbacks += 1
+
+        def commit(self):
+            self.commits += 1
+
+        def close(self):
+            self.closed += 1
+
+    session = _Session()
+
+    monkeypatch.setattr(module, "engine2_mode", lambda: module.ENGINE2_SHADOW)
+    monkeypatch.setattr(module, "get_us_lacey_db_session", lambda: session)
+    monkeypatch.setattr(module, "set_tenant_db_context", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        module,
+        "prepare_canonical_publication",
+        lambda *_args, **_kwargs: SimpleNamespace(),
+    )
+
+    def _raise_review(*_args, **_kwargs):
+        raise RuntimeError("CANONICAL_STALE_LINE_REQUIRES_REVIEW")
+
+    monkeypatch.setattr(module, "publish_canonical_shipment_truth", _raise_review)
+
+    result = module.project_engine2_supported_suggestions(
+        organization_id=7,
+        operation_id=11,
+    )
+
+    assert result == 0
+    assert session.rollbacks == 1
+    assert session.commits == 0
+    assert session.closed == 1
+
+
+def test_unexpected_canonical_runtime_error_still_fails_closed(monkeypatch) -> None:
+    import pytest
+
+    from litoral_trace.us_lacey import engine2_suggestions as module
+
+    class _Session:
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(module, "engine2_mode", lambda: module.ENGINE2_SHADOW)
+    monkeypatch.setattr(module, "get_us_lacey_db_session", lambda: _Session())
+    monkeypatch.setattr(module, "set_tenant_db_context", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        module,
+        "prepare_canonical_publication",
+        lambda *_args, **_kwargs: object(),
+    )
+
+    def _raise_unexpected(*_args, **_kwargs):
+        raise RuntimeError("CANONICAL_PPQ_FIELD_SLOT_MISSING")
+
+    monkeypatch.setattr(module, "publish_canonical_shipment_truth", _raise_unexpected)
+
+    with pytest.raises(RuntimeError, match="CANONICAL_PPQ_FIELD_SLOT_MISSING"):
+        module.project_engine2_supported_suggestions(
+            organization_id=7,
+            operation_id=11,
+        )
