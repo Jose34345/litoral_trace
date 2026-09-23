@@ -55,7 +55,7 @@ def processing_view(detail) -> ProcessingView:
     statuses = {str(document.job_status or "").upper() for document in documents}
     document_states = {str(document.processing_status or "").upper() for document in documents}
     error_codes = {
-        str(document.last_error_code or "").upper()
+        str(getattr(document, "last_error_code", None) or "").upper()
         for document in documents
     }
     if "UNSUPPORTED_DOMAIN" in error_codes:
