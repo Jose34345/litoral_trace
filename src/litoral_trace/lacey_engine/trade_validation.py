@@ -103,12 +103,13 @@ def is_valid_entity_name(value: object) -> bool:
         return False
 
     letters = sum(character.isalpha() for character in text)
-    if letters < 2:
-        return False
-
-    # Preserve legitimate compact brands such as 3M, but reject strings that are
-    # overwhelmingly numeric punctuation with a stray OCR letter.
+    digits = sum(character.isdigit() for character in text)
     significant = sum(character.isalnum() for character in text)
+
+    # Preserve legitimate compact alphanumeric brands such as 3M while still
+    # rejecting isolated OCR letters and numeric strings.
+    if letters < 2 and not (letters >= 1 and digits >= 1 and significant >= 2):
+        return False
     return significant > 0 and letters / significant >= 0.20
 
 
