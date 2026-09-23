@@ -81,7 +81,7 @@ def test_engine2_document_failure_persists_safe_error(engine2_postgres_session_f
 
 def test_engine2_document_run_reuses_identical_success(engine2_postgres_session_factory, monkeypatch):
     org, operation, link, _, _, _ = create_test_graph(engine2_postgres_session_factory); calls = []
-    monkeypatch.setattr(service_module, "process_bundle", lambda **_: (calls.append(1), _resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"}))[1])
+    monkeypatch.setattr(service_module, "process_bundle", lambda **_: (calls.append(1), _bundle(_resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"})))[1])
     service = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"x")); service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     session = tenant_session(engine2_postgres_session_factory, org); assert session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=link, status="SUCCEEDED").count() == 1 and len(calls) == 1; session.close()
 
@@ -94,7 +94,7 @@ def test_engine2_schema_versions_do_not_reuse_document_or_shipment_caches(engine
     old_fingerprint = source_set_fingerprint(organization_id=org, operation_id=operation, documents=[(SimpleNamespace(id=link, assurance_document_id=assurance, version_number=1), SimpleNamespace(sha256=sha))], shipment_schema_version="lacey_shipment_resolution_v0")
     session.add(UsLaceyEngineShipmentRun(organization_id=org, operation_id=operation, engine_version=service_module.ENGINE_VERSION, ruleset_version="lacey_ruleset_2026_01", schema_version="lacey_shipment_resolution_v0", source_set_fingerprint=old_fingerprint, document_count=0, readiness="BLOCKED", resolution_json={"historical": True}))
     session.commit(); session.close()
-    calls = []; monkeypatch.setattr(service_module, "process_bundle", lambda **_: (calls.append(1), resolution)[1])
+    calls = []; monkeypatch.setattr(service_module, "process_bundle", lambda **_: (calls.append(1), _bundle(resolution))[1])
     service = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"schema"))
     first = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); second = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     session = tenant_session(engine2_postgres_session_factory, org)
@@ -109,7 +109,7 @@ def test_engine2_schema_versions_do_not_reuse_document_or_shipment_caches(engine
 def test_engine2_same_sha_is_never_reused_cross_tenant(engine2_postgres_session_factory, monkeypatch):
     a_org, a_operation, a_link, _, _, _ = create_test_graph(engine2_postgres_session_factory, content=b"same-sha")
     b_org, b_operation, b_link, _, _, _ = create_test_graph(engine2_postgres_session_factory, content=b"same-sha")
-    monkeypatch.setattr(service_module, "process_bundle", lambda **_: _resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"}))
+    monkeypatch.setattr(service_module, "process_bundle", lambda **_: _bundle(_resolution("bill.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495"})))
     service = UsLaceyEngine2Service(session_factory=engine2_postgres_session_factory, vault_service=FakeVault(b"same-sha"))
     service.resolve_operation_with_engine2(organization_id=a_org, operation_id=a_operation); service.resolve_operation_with_engine2(organization_id=b_org, operation_id=b_operation)
     a_session = tenant_session(engine2_postgres_session_factory, a_org); a_run = a_session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=a_link).one(); a_session.close()
@@ -148,7 +148,7 @@ def test_engine2_shipment_snapshot_persists_and_round_trips(engine2_postgres_ses
     assert restored.canonical_fields["container_number"].values[0].value == "MSKU9228574"
     assert restored.canonical_fields["genus"].values[0].value == "PINUS" and restored.canonical_fields["species"].values[0].value == "RADIATA" and restored.canonical_fields["country_of_harvest"].values[0].value == "CHILE"
     assert restored.issues is not None and restored.metrics["documents_processed"] == 2
-    assert {item.document_id for item in restored.documents} == {str(bill[0]), str(supplier[0])}
+    assert {item.document_id for item in restored.documents} == {f"{bill[0]}:logical-001", f"{supplier[0]}:logical-001"}
     evidence = restored.canonical_fields["species"].supporting_evidence[0]
     assert evidence.scope.value == "PLANT_COMPONENT" and evidence.component_key == "a"
 
@@ -170,7 +170,7 @@ def test_engine2_aggregates_only_current_document_versions(engine2_postgres_sess
     resolutions.update({"old.pdf": _resolution("old.pdf", DocumentType.COMMERCIAL_INVOICE, {"consignee_name": "OLD CONSIGNEE"}), "new.pdf": _resolution("new.pdf", DocumentType.COMMERCIAL_INVOICE, {"consignee_name": "NEW CONSIGNEE"})})
     service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_bundle", processor)
     result = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); restored = deserialize_shipment_resolution(_snapshot(engine2_postgres_session_factory, org, result.shipment_run_id).resolution_json)
-    assert str(new_link) in {item.document_id for item in restored.documents} and str(old_link) not in {item.document_id for item in restored.documents}
+    assert f"{new_link}:logical-001" in {item.document_id for item in restored.documents} and f"{old_link}:logical-001" not in {item.document_id for item in restored.documents}
     session = tenant_session(engine2_postgres_session_factory, org); current = session.query(UsLaceyOperationDocument).filter_by(id=new_link).one(); run = session.query(UsLaceyEngineDocumentRun).filter_by(assurance_document_id=new_assurance).one()
     assert session.query(UsLaceyEngineDocumentRun).filter_by(assurance_document_id=old_assurance).count() == 0 and current.is_current and current.version_number == 2 and run.source_sha256 == new_sha; session.close()
 
