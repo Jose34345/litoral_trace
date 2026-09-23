@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from litoral_trace.config.settings import normalize_database_url
 from litoral_trace.db.models import Organization, UsLaceyOperation, UsLaceyOperationDocument, AssuranceDocument, VaultDocument
 from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.lacey_engine.domain import BundleResolution, LogicalDocumentResolution
 
 ENV = "US_LACEY_POSTGRES_TEST_DATABASE_URL"
 
@@ -61,6 +62,27 @@ def add_test_document(factory, *, organization_id, operation_id, role, filename,
     result = (link.id, assurance.id, vault.id, vault.sha256)
     session.close()
     return result
+
+def bundle_from_resolution(resolution):
+    """Wrap one legacy test DocumentResolution in the new physical bundle contract."""
+    page_count = max(1, int(resolution.layout.page_count))
+    return BundleResolution(
+        filename=resolution.filename,
+        engine_version=resolution.engine_version,
+        page_count=page_count,
+        documents=(
+            LogicalDocumentResolution(
+                logical_document_id="logical-001",
+                parent_filename=resolution.filename,
+                page_start=1,
+                page_end=page_count,
+                document_type=resolution.document_type,
+                type_confidence=resolution.type_confidence,
+                resolution=resolution,
+            ),
+        ),
+    )
+
 
 class FakeVault:
     def __init__(self, content): self.content = content

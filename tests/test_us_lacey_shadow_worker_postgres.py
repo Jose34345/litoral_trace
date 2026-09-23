@@ -28,6 +28,7 @@ from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 from litoral_trace.us_lacey.ppq505 import PPQ505_SHIPMENT_REFERENCE
 from tests.us_lacey_engine2_postgres import (
     FakeVault,
+    bundle_from_resolution,
     create_test_graph,
     engine2_postgres_engine,
     engine2_postgres_session_factory,
@@ -154,7 +155,7 @@ def test_worker_completes_and_ui_projects_only_legacy_when_specialized_crashes(
     monkeypatch.setenv("US_LACEY_AI_PROVIDER", "gemini")
     monkeypatch.setenv("US_LACEY_AI_ALLOW_EXTERNAL", "1")
     monkeypatch.setenv("US_LACEY_GEMINI_API_KEY", "fixture-key")
-    monkeypatch.setattr(service_module, "process_document", lambda **_: _engine2_resolution())
+    monkeypatch.setattr(service_module, "process_bundle", lambda **_: bundle_from_resolution(_engine2_resolution()))
     monkeypatch.setattr(service_module, "build_ai_provider", lambda _: LegacySuccessProvider())
     monkeypatch.setattr(ai_suggestions_module, "get_us_lacey_db_session", engine2_postgres_session_factory)
 

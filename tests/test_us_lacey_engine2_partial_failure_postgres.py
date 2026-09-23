@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from litoral_trace.db.models import UsLaceyEngineDocumentRun, UsLaceyEngineShipmentRun
 from litoral_trace.lacey_engine.domain import DocumentResolution, DocumentType, ParsedLayout
-from litoral_trace.lacey_engine.serialization import DOCUMENT_RESOLUTION_SCHEMA_VERSION
+from litoral_trace.lacey_engine.serialization import BUNDLE_RESOLUTION_SCHEMA_VERSION
 from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 from tests.us_lacey_engine2_postgres import (
     FakeVault,
     add_test_document,
+    bundle_from_resolution,
     create_test_graph,
     engine2_postgres_engine,
     engine2_postgres_session_factory,
@@ -56,14 +57,14 @@ def test_partial_failure_persists_successful_siblings_and_never_snapshots_incomp
     )
     calls: list[str] = []
 
-    def process_document(**values):
+    def process_bundle(**values):
         filename = values["filename"]
         calls.append(filename)
         if filename == "bill.pdf":
             raise RuntimeError("synthetic unreadable source")
-        return _empty_resolution(filename)
+        return bundle_from_resolution(_empty_resolution(filename))
 
-    monkeypatch.setattr(service_module, "process_document", process_document)
+    monkeypatch.setattr(service_module, "process_bundle", process_bundle)
     service = UsLaceyEngine2Service(
         session_factory=factory,
         vault_service=FakeVault(b"source"),
@@ -87,7 +88,7 @@ def test_partial_failure_persists_successful_siblings_and_never_snapshots_incomp
             organization_id=org,
             operation_id=operation,
             engine_version=service_module.ENGINE_VERSION,
-            schema_version=DOCUMENT_RESOLUTION_SCHEMA_VERSION,
+            schema_version=BUNDLE_RESOLUTION_SCHEMA_VERSION,
         )
         .all()
     )
@@ -122,14 +123,14 @@ def test_repeated_partial_failure_reuses_one_failed_run_without_unique_violation
     )
     calls: list[str] = []
 
-    def process_document(**values):
+    def process_bundle(**values):
         filename = values["filename"]
         calls.append(filename)
         if filename == "bill.pdf":
             raise RuntimeError("persistent synthetic failure")
-        return _empty_resolution(filename)
+        return bundle_from_resolution(_empty_resolution(filename))
 
-    monkeypatch.setattr(service_module, "process_document", process_document)
+    monkeypatch.setattr(service_module, "process_bundle", process_bundle)
     service = UsLaceyEngine2Service(
         session_factory=factory,
         vault_service=FakeVault(b"source"),
@@ -159,7 +160,7 @@ def test_repeated_partial_failure_reuses_one_failed_run_without_unique_violation
             operation_id=operation,
             operation_document_id=bill_link,
             engine_version=service_module.ENGINE_VERSION,
-            schema_version=DOCUMENT_RESOLUTION_SCHEMA_VERSION,
+            schema_version=BUNDLE_RESOLUTION_SCHEMA_VERSION,
             status="FAILED",
         )
         .count()
@@ -172,7 +173,7 @@ def test_repeated_partial_failure_reuses_one_failed_run_without_unique_violation
             operation_id=operation,
             operation_document_id=invoice_link,
             engine_version=service_module.ENGINE_VERSION,
-            schema_version=DOCUMENT_RESOLUTION_SCHEMA_VERSION,
+            schema_version=BUNDLE_RESOLUTION_SCHEMA_VERSION,
             status="SUCCEEDED",
         )
         .count()
@@ -194,10 +195,10 @@ def test_all_failed_source_set_remains_failed_not_partial(
     factory = engine2_postgres_session_factory
     org, operation, _, _, _, _ = create_test_graph(factory, content=b"all-broken")
 
-    def process_document(**_values):
+    def process_bundle(**_values):
         raise RuntimeError("synthetic total source failure")
 
-    monkeypatch.setattr(service_module, "process_document", process_document)
+    monkeypatch.setattr(service_module, "process_bundle", process_bundle)
     service = UsLaceyEngine2Service(
         session_factory=factory,
         vault_service=FakeVault(b"source"),
