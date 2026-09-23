@@ -43,6 +43,10 @@ from litoral_trace.us_lacey.operations import (
     UsLaceyOperationService,
 )
 from litoral_trace.us_lacey.lacey_engine_dossier import Engine2DossierAvailability, Engine2DossierView, UsLaceyEngineDossierService
+from litoral_trace.us_lacey.jobs import (
+    UsLaceyJobError,
+    retry_failed_us_lacey_operation,
+)
 from litoral_trace.us_lacey.portal_auth import (
     US_LACEY_SESSION_COOKIE,
     UsLaceyPortalAuthError,
@@ -79,6 +83,7 @@ from litoral_trace.us_lacey.workflow import (
     upload_and_enqueue_us_lacey_document,
     upload_and_enqueue_us_lacey_document_batch,
 )
+from litoral_trace.us_lacey.worker_wakeup import wake_us_lacey_worker
 from litoral_trace.web.us_lacey_operational_views import (
     render_new_operation,
     render_operation_detail,
@@ -188,7 +193,7 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
     except Exception:
         dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
     tokens = {field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}") for field in detail.fields if field.status in {"MISSING", "CONFLICT", "SUPPORTED", "REVIEW", "FOUND"}}
-    return _html(render_operation_detail(request=request, identity=identity, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, error=error, notice=notice), status_code=status_code)
+    return _html(render_operation_detail(request=request, identity=identity, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, retry_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"retry:{detail.public_id}"), error=error, notice=notice), status_code=status_code)
 
 
 def _workspace_fragment(
@@ -593,13 +598,72 @@ def operation_processing_fragment(
             organization_id=identity.organization_id,
             operation_public_id=operation_public_id,
         )
-        return _html(render_processing_fragment(request=request, detail=detail))
+        return _html(
+            render_processing_fragment(
+                request=request,
+                detail=detail,
+                retry_csrf=us_lacey_csrf_token(
+                    session_token=us_session or "",
+                    purpose=f"retry:{detail.public_id}",
+                ),
+            )
+        )
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
     except UsLaceyOperationalAccessError:
         return RedirectResponse("/billing", status_code=303)
     except UsLaceyOperationNotFound:
         return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.post("/operations/{operation_public_id}/actions/retry", response_class=HTMLResponse)
+def operation_retry_processing(
+    operation_public_id: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Requeue failed durable jobs without duplicating operation/document rows."""
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"retry:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        retry_failed_us_lacey_operation(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+        )
+        wake_us_lacey_worker()
+
+        redirect_to = f"/operations/{operation_public_id}"
+        if request.headers.get("HX-Request", "").casefold() == "true":
+            response = Response(status_code=200)
+            response.headers["HX-Redirect"] = redirect_to
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        return RedirectResponse(redirect_to, status_code=303)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyJobError, ValueError) as exc:
+        try:
+            return _detail_page(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                error=str(exc),
+                status_code=409,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(
+                request,
+                "Operation not found.",
+                status_code=404,
+            )
 
 
 @app.get("/operations/{operation_public_id}/workspace-fragment", response_class=HTMLResponse)
