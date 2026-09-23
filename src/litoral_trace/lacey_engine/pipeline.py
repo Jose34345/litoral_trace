@@ -391,7 +391,12 @@ def _extract(layout):
                 found["description"].append(_candidate("description", value, block, match.group("label")))
         for match in re.finditer(r"(?P<label>Entry (?:Number|No\.?)|Filing Entry (?:Reference|Number))\s*[:#-]?\s*(?P<value>[A-Z0-9-]{8,20})", text, re.I):
             found["filing_entry_reference"].append(_candidate("filing_entry_reference", match.group("value").upper(), block, match.group("label")))
-        for match in re.finditer(r"(?P<label>MID|Manufacturer Identification(?: Code)?(?: \(MID\))?|Manufacturer ID)\s*[:#-]?\s*(?P<value>[A-Z0-9][A-Z0-9 -]{4,24})\b", text, re.I):
+        for match in re.finditer(
+            r"\b(?P<label>MID|Manufacturer Identification(?: Code)?(?: \(MID\))?|Manufacturer ID)"
+            r"\b\s*[:#-]?\s*(?P<value>[A-Z0-9][A-Z0-9 -]{4,24})\b",
+            text,
+            re.I,
+        ):
             candidate_value = " ".join(match.group("value").split()).upper()
             if valid_mid_value(
                 candidate_value,
