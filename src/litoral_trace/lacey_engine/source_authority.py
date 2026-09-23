@@ -13,10 +13,13 @@ _AUTHORITY = {
         DocumentType.PACKING_LIST: 10,
     },
     "container_number": {
-        DocumentType.BILL_OF_LADING: 35,
-        DocumentType.PACKING_LIST: 32,
-        DocumentType.CUSTOMS_ENTRY_SUMMARY: 30,
-        DocumentType.COMMERCIAL_INVOICE: 15,
+        DocumentType.BILL_OF_LADING: 50,
+    },
+    "seal_number": {
+        DocumentType.BILL_OF_LADING: 50,
+    },
+    "invoice_total": {
+        DocumentType.COMMERCIAL_INVOICE: 50,
     },
     "estimated_arrival_date": {
         DocumentType.ARRIVAL_NOTICE: 40,
@@ -33,6 +36,11 @@ _AUTHORITY = {
         DocumentType.ISF: 35,
         DocumentType.COMMERCIAL_INVOICE: 20,
         DocumentType.SUPPLIER_DECLARATION: 20,
+    },
+    "supplier_name": {
+        DocumentType.COMMERCIAL_INVOICE: 35,
+        DocumentType.PACKING_LIST: 25,
+        DocumentType.SUPPLIER_DECLARATION: 40,
     },
     "importer_name": {
         DocumentType.CUSTOMS_ENTRY_SUMMARY: 40,
