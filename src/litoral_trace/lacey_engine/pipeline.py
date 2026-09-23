@@ -8,12 +8,17 @@ from .admission import admit
 from .classifier import classify
 from .domain import (
     AdmittedCandidate,
+    BundleResolution,
     DocumentResolution,
+    DocumentSection,
     EvidenceClass,
     LayoutStructureType,
+    LogicalDocumentResolution,
+    ParsedLayout,
     Provenance,
     RawCandidate,
 )
+from .errors import LaceyEngineError
 from .layout_parser import parse_layout
 from .ranking import resolve
 from .segmentation import segment
@@ -24,7 +29,7 @@ from .semantic_graph import (
     valid_mid_value,
 )
 
-ENGINE_VERSION = "lacey-engine-2.3.0"
+ENGINE_VERSION = "lacey-engine-2.4.0"
 _FIELDS = (
     "estimated_arrival_date",
     "bill_of_lading",
@@ -345,14 +350,50 @@ def _extract(layout):
     return found
 
 
-def process_document(*, filename: str, content: bytes, role_hint: str | None = None) -> DocumentResolution:
-    layout = parse_layout(filename, content)
-    document_type, confidence = classify(layout, role_hint)
-    sections = segment(layout, document_type)
-    section_type = {block_id: section.document_type for section in sections for block_id in section.block_ids}
+def _slice_layout(
+    layout: ParsedLayout,
+    *,
+    page_start: int,
+    page_end: int,
+) -> ParsedLayout:
+    """Create a logical view while preserving physical PDF page coordinates."""
+
+    if page_start < 1:
+        raise ValueError("page_start must be >= 1.")
+    if page_end < page_start:
+        raise ValueError("page_end cannot precede page_start.")
+    if page_end > layout.page_count:
+        raise ValueError(
+            "Logical page range exceeds the physical document."
+        )
+
+    blocks = tuple(
+        block
+        for block in layout.blocks
+        if page_start <= block.page <= page_end
+    )
+    return ParsedLayout(
+        blocks=blocks,
+        # Physical page count is an immutable provenance property. LayoutBlock.page
+        # values remain original source-page coordinates rather than being rebased.
+        page_count=layout.page_count,
+    )
+
+
+def _resolve_logical_document(
+    *,
+    filename: str,
+    layout: ParsedLayout,
+    section: DocumentSection,
+) -> DocumentResolution:
+    """Extract and resolve candidates from exactly one logical document."""
+
     extracted = _extract(layout)
 
-    def make(raw, source_score):
+    def make(
+        raw: RawCandidate,
+        source_score: float,
+    ) -> AdmittedCandidate:
         provenance = Provenance(
             filename,
             raw.source_block.page,
@@ -363,12 +404,97 @@ def process_document(*, filename: str, content: bytes, role_hint: str | None = N
             raw.extractor_version,
             raw.evidence_class,
         )
-        source_type = section_type.get(raw.source_block.block_id, document_type)
-        return AdmittedCandidate(raw, provenance, 60 + source_score + (10 if raw.label else 0), source_type)
+        return AdmittedCandidate(
+            raw,
+            provenance,
+            60 + source_score + (10 if raw.label else 0),
+            section.document_type,
+        )
 
-    make.document_type_for = lambda raw: section_type.get(raw.source_block.block_id, document_type)
+    make.document_type_for = lambda _raw: section.document_type
     fields = {
-        key: resolve(key, [raw for raw in candidates if admit(raw)], make)
+        key: resolve(
+            key,
+            [raw for raw in candidates if admit(raw)],
+            make,
+        )
         for key, candidates in extracted.items()
     }
-    return DocumentResolution(filename, ENGINE_VERSION, document_type, confidence, layout, sections, fields)
+    return DocumentResolution(
+        filename,
+        ENGINE_VERSION,
+        section.document_type,
+        section.confidence,
+        layout,
+        (section,),
+        fields,
+    )
+
+
+def process_bundle(
+    *,
+    filename: str,
+    content: bytes,
+    role_hint: str | None = None,
+) -> BundleResolution:
+    """Resolve one immutable physical source into logical documents."""
+
+    layout = parse_layout(filename, content)
+    parent_type, _parent_confidence = classify(layout, role_hint)
+    sections = segment(layout, parent_type)
+    if not sections:
+        raise LaceyEngineError(
+            "Document segmentation produced no logical documents."
+        )
+
+    logical_documents: list[LogicalDocumentResolution] = []
+    for index, section in enumerate(sections, start=1):
+        logical_layout = _slice_layout(
+            layout,
+            page_start=section.page_start,
+            page_end=section.page_end,
+        )
+        resolution = _resolve_logical_document(
+            filename=filename,
+            layout=logical_layout,
+            section=section,
+        )
+        logical_documents.append(
+            LogicalDocumentResolution(
+                logical_document_id=f"logical-{index:03d}",
+                parent_filename=filename,
+                page_start=section.page_start,
+                page_end=section.page_end,
+                document_type=section.document_type,
+                type_confidence=section.confidence,
+                resolution=resolution,
+            )
+        )
+
+    return BundleResolution(
+        filename=filename,
+        engine_version=ENGINE_VERSION,
+        page_count=layout.page_count,
+        documents=tuple(logical_documents),
+    )
+
+
+def process_document(
+    *,
+    filename: str,
+    content: bytes,
+    role_hint: str | None = None,
+) -> DocumentResolution:
+    """Compatibility seam for physical sources containing one logical document."""
+
+    bundle = process_bundle(
+        filename=filename,
+        content=content,
+        role_hint=role_hint,
+    )
+    if len(bundle.documents) != 1:
+        raise LaceyEngineError(
+            "Physical source contains multiple logical documents; "
+            "caller must use process_bundle()."
+        )
+    return bundle.documents[0].resolution
