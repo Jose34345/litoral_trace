@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 import os
+import threading
+import time
 from typing import Any, Mapping, Protocol, runtime_checkable
 
 import boto3
@@ -100,6 +102,14 @@ class OpenSourceTranslationProvider:
     fallback_model_name = "deep-translator-mymemory"
     fallback_model_version = "1"
 
+    # GoogleTranslator is an unofficial public endpoint with a documented
+    # per-IP request ceiling. Backfill jobs can overlap across requests/tenants,
+    # so enforce a process-wide slot rather than relying only on each batch's
+    # inter-item delay.
+    _google_rate_lock = threading.Lock()
+    _google_next_allowed_at = 0.0
+    _google_min_interval_seconds = 0.25
+
     def __init__(
         self,
         *,
@@ -110,13 +120,56 @@ class OpenSourceTranslationProvider:
         self._fallback_translator_cls = fallback_translator_cls
 
     @staticmethod
-    def _backend_language(code: str) -> str:
+    def _google_language(code: str) -> str:
         normalized = (code or "").strip().lower()
-        # deep-translator expects its Chinese locale code rather than the shadow
-        # detector's intentionally generic ISO-639 ``zh`` value.
-        if normalized == "zh":
-            return "zh-CN"
-        return normalized
+        # GoogleTranslator accepts the short ISO forms used by the shadow
+        # detector, except generic Chinese which requires a locale.
+        mapping = {
+            "eng": "en",
+            "spa": "es",
+            "por": "pt",
+            "zh": "zh-CN",
+            "zh-cn": "zh-CN",
+            "zh-hans": "zh-CN",
+        }
+        return mapping.get(normalized, normalized)
+
+    @staticmethod
+    def _mymemory_language(code: str) -> str:
+        normalized = (code or "").strip().lower()
+        # MyMemory's deep-translator adapter does not accept bare ISO-639
+        # values such as "es", "pt" or "en"; it expects one of its locale
+        # codes. Keep this mapping explicit so the fallback is actually usable.
+        mapping = {
+            "en": "en-GB",
+            "eng": "en-GB",
+            "en-us": "en-US",
+            "en-gb": "en-GB",
+            "es": "es-ES",
+            "spa": "es-ES",
+            "es-es": "es-ES",
+            "es-ar": "es-AR",
+            "es-mx": "es-MX",
+            "pt": "pt-PT",
+            "por": "pt-PT",
+            "pt-pt": "pt-PT",
+            "pt-br": "pt-BR",
+            "zh": "zh-CN",
+            "zh-cn": "zh-CN",
+            "zh-hans": "zh-CN",
+        }
+        return mapping.get(normalized, normalized)
+
+    @classmethod
+    def _wait_for_google_slot(cls) -> None:
+        with cls._google_rate_lock:
+            now = time.monotonic()
+            delay = cls._google_next_allowed_at - now
+            if delay > 0:
+                time.sleep(delay)
+            cls._google_next_allowed_at = (
+                time.monotonic() + cls._google_min_interval_seconds
+            )
 
     @staticmethod
     def _error_code(error: Exception) -> Any | None:
@@ -144,13 +197,23 @@ class OpenSourceTranslationProvider:
         source: str,
         target: str,
         email: str | None = None,
+        mymemory: bool = False,
     ) -> str:
+        language_mapper = (
+            self._mymemory_language if mymemory else self._google_language
+        )
         kwargs: dict[str, Any] = {
-            "source": self._backend_language(source),
-            "target": self._backend_language(target),
+            "source": language_mapper(source),
+            "target": language_mapper(target),
         }
         if email is not None:
             kwargs["email"] = email
+
+        # Only throttle the real public Google backend. Injected translators used
+        # by deterministic tests must remain instantaneous.
+        if not mymemory and translator_cls is GoogleTranslator:
+            self._wait_for_google_slot()
+
         translator = translator_cls(**kwargs)
         translated = str(translator.translate(text) or "").strip()
         if not translated:
@@ -207,6 +270,7 @@ class OpenSourceTranslationProvider:
                     source=source_norm,
                     target=target_norm,
                     email=self._mymemory_contact_email(),
+                    mymemory=True,
                 )
             except Exception as fallback_error:
                 LOGGER.warning(
