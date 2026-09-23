@@ -5,7 +5,8 @@ from litoral_trace.lacey_engine.domain import DocumentResolution, DocumentType, 
 from litoral_trace.lacey_engine.serialization import DOCUMENT_RESOLUTION_SCHEMA_VERSION
 from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
-from tests.test_us_lacey_engine2_persistence import _bundle\nfrom tests.us_lacey_engine2_postgres import (
+from tests.test_us_lacey_engine2_persistence import _bundle
+from tests.us_lacey_engine2_postgres import (
     FakeVault,
     add_test_document,
     create_test_graph,
