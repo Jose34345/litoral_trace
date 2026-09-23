@@ -110,7 +110,7 @@ def test_open_source_provider_falls_back_to_mymemory_when_google_fails(
     }
     assert _FailingGoogleTranslator.init_calls == [("es", "en")]
     assert _FakeMyMemoryTranslator.init_calls == [
-        ("es", "en", "translation-test@example.com")
+        ("es-ES", "en-GB", "translation-test@example.com")
     ]
     assert _FakeMyMemoryTranslator.translated_texts == ["Tablas de cortar de madera"]
 
@@ -136,7 +136,7 @@ def test_open_source_provider_uses_default_mymemory_contact_email(monkeypatch) -
     provider.translate("Madera aserrada", "es", "en")
 
     assert _FakeMyMemoryTranslator.init_calls == [
-        ("es", "en", "soporte@litoraltrace.com")
+        ("es-ES", "en-GB", "soporte@litoraltrace.com")
     ]
 
 
