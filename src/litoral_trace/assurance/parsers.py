@@ -57,6 +57,14 @@ _OLE_XLS_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 _MIN_USEFUL_PDF_TEXT_CHARS = 12
 _MIN_USEFUL_PDF_ALPHA_CHARS = 4
 _OCR_MAX_PAGES = 20
+_PDF_TEXT_PAGE_LIMIT = 20
+_PDF_TEXT_PAGE_LIMIT_ENV = "LT_ASSURANCE_PDF_TEXT_PAGE_LIMIT"
+_PDF_TEXT_PAGE_LIMIT_MIN = 1
+_PDF_TEXT_PAGE_LIMIT_MAX = 100
+_PDF_TEXT_CHAR_LIMIT = 250_000
+_PDF_TEXT_CHAR_LIMIT_ENV = "LT_ASSURANCE_PDF_TEXT_CHAR_LIMIT"
+_PDF_TEXT_CHAR_LIMIT_MIN = 10_000
+_PDF_TEXT_CHAR_LIMIT_MAX = 2_000_000
 _OCR_RENDER_SCALE = 2.0
 _OCR_TIMEOUT_SECONDS = 20
 _OCR_TIMEOUT_ENV = "LT_ASSURANCE_OCR_TIMEOUT_SECONDS"
@@ -104,6 +112,36 @@ def _pdf_table_page_limit() -> int:
     return max(
         _PDF_TABLE_PAGE_LIMIT_MIN,
         min(_PDF_TABLE_PAGE_LIMIT_MAX, value),
+    )
+
+
+def _pdf_text_page_limit() -> int:
+    """Bound digital-text extraction so one oversized PDF cannot exhaust the web worker."""
+    raw = str(os.getenv(_PDF_TEXT_PAGE_LIMIT_ENV, "")).strip()
+    if not raw:
+        return _PDF_TEXT_PAGE_LIMIT
+    try:
+        value = int(raw)
+    except ValueError:
+        return _PDF_TEXT_PAGE_LIMIT
+    return max(
+        _PDF_TEXT_PAGE_LIMIT_MIN,
+        min(_PDF_TEXT_PAGE_LIMIT_MAX, value),
+    )
+
+
+def _pdf_text_char_limit() -> int:
+    """Bound retained extracted text independently from the number of PDF pages."""
+    raw = str(os.getenv(_PDF_TEXT_CHAR_LIMIT_ENV, "")).strip()
+    if not raw:
+        return _PDF_TEXT_CHAR_LIMIT
+    try:
+        value = int(raw)
+    except ValueError:
+        return _PDF_TEXT_CHAR_LIMIT
+    return max(
+        _PDF_TEXT_CHAR_LIMIT_MIN,
+        min(_PDF_TEXT_CHAR_LIMIT_MAX, value),
     )
 
 
@@ -433,6 +471,67 @@ def _extract_pdf_text_pages(content: bytes) -> tuple[str, int, int]:
     return text, len(reader.pages), sum(bool(value) for value in page_texts)
 
 
+def _extract_pdf_text_pages_bounded(
+    content: bytes,
+    *,
+    page_limit: int,
+    char_limit: int,
+) -> tuple[str, int, int, int, bool]:
+    """Extract only a bounded prefix of PDF text.
+
+    The full page count is retained for auditability, but page decoding stops at
+    the configured page/character budget. This prevents arbitrary long or
+    graphics-heavy PDFs from exhausting the co-located free-tier worker.
+    """
+    from pypdf import PdfReader
+
+    stream = BytesIO(content)
+    try:
+        reader = PdfReader(stream, strict=False)
+        total_page_count = len(reader.pages)
+        bounded_page_limit = max(0, min(int(page_limit), total_page_count))
+        bounded_char_limit = max(1, int(char_limit))
+        page_texts: list[str] = []
+        pages_with_text = 0
+        pages_scanned = 0
+        retained_chars = 0
+        char_limit_reached = False
+
+        for page_index in range(bounded_page_limit):
+            pages_scanned += 1
+            try:
+                value = (reader.pages[page_index].extract_text() or "").strip()
+            except Exception:
+                value = ""
+            if not value:
+                continue
+
+            pages_with_text += 1
+            remaining = bounded_char_limit - retained_chars
+            if remaining <= 0:
+                char_limit_reached = True
+                break
+            if len(value) > remaining:
+                page_texts.append(value[:remaining])
+                retained_chars += remaining
+                char_limit_reached = True
+                break
+
+            page_texts.append(value)
+            retained_chars += len(value)
+
+        text = "\n\n".join(page_texts).strip()
+        return (
+            text,
+            total_page_count,
+            pages_with_text,
+            pages_scanned,
+            char_limit_reached,
+        )
+    finally:
+        stream.close()
+
+
 def _pdf_page_count_with_pdfium(content: bytes) -> int:
     """Recover a safe page count when pypdf text inspection cannot complete."""
     import pypdfium2 as pdfium
@@ -628,9 +727,23 @@ def parse_pdf(content: bytes) -> ParsedDocument:
     if b"%%EOF" not in content[-4096:]:
         raise DocumentParseError("El PDF no contiene un cierre valido.")
 
+    text_page_limit = _pdf_text_page_limit()
+    text_char_limit = _pdf_text_char_limit()
     text_extraction_metadata: dict[str, Any] = {}
+    text_pages_scanned = 0
+    text_char_limit_reached = False
     try:
-        useful_text, page_count, pages_with_text = _extract_pdf_text_pages(content)
+        (
+            useful_text,
+            page_count,
+            pages_with_text,
+            text_pages_scanned,
+            text_char_limit_reached,
+        ) = _extract_pdf_text_pages_bounded(
+            content,
+            page_limit=text_page_limit,
+            char_limit=text_char_limit,
+        )
     except ImportError as exc:  # pragma: no cover - dependency gate
         raise DocumentParseError("pypdf no esta disponible.") from exc
     except Exception as exc:
@@ -640,11 +753,15 @@ def parse_pdf(content: bytes) -> ParsedDocument:
             raise DocumentParseError("No se pudo abrir el PDF.") from fallback_exc
         useful_text = ""
         pages_with_text = 0
+        text_pages_scanned = 0
         text_extraction_metadata = {
             "text_extraction_fallback": "pdfium_page_count",
             "text_extraction_error_type": type(exc).__name__,
         }
 
+    text_extraction_truncated = (
+        text_pages_scanned < page_count or text_char_limit_reached
+    )
     ocr_required = not _has_useful_pdf_text(useful_text)
     ocr_metadata: dict[str, Any] = {
         "ocr_attempted": False,
@@ -660,7 +777,8 @@ def parse_pdf(content: bytes) -> ParsedDocument:
     table_page_limit = _pdf_table_page_limit()
     table_pages_scanned = 0
     table_extraction_error_type: str | None = None
-    if not ocr_required:
+    table_extraction_skipped_reason: str | None = None
+    if not ocr_required and not text_extraction_truncated:
         try:
             import pdfplumber
 
@@ -707,16 +825,30 @@ def parse_pdf(content: bytes) -> ParsedDocument:
             # Table extraction is best-effort; extracted/OCR text remains authoritative.
             tables = []
             table_extraction_error_type = type(exc).__name__
+    elif text_extraction_truncated:
+        # Do not enter pdfplumber after the cheaper text pass already proved the
+        # file exceeds the automatic-processing budget. This is the critical
+        # memory circuit breaker for long/complex PDFs on the co-located worker.
+        table_extraction_skipped_reason = "PDF_TEXT_BUDGET_EXCEEDED"
 
     metadata = {
         "page_count": page_count,
         "pages_with_text": pages_with_text,
+        "text_extraction_page_limit": text_page_limit,
+        "text_extraction_pages_scanned": text_pages_scanned,
+        "text_extraction_char_limit": text_char_limit,
+        "text_extraction_char_limit_reached": text_char_limit_reached,
+        "text_extraction_truncated": text_extraction_truncated,
         "table_extraction_page_limit": table_page_limit,
         "table_extraction_pages_scanned": table_pages_scanned,
-        "table_extraction_truncated": page_count > table_page_limit,
+        "table_extraction_truncated": (
+            text_extraction_truncated or page_count > table_page_limit
+        ),
     }
     if table_extraction_error_type is not None:
         metadata["table_extraction_error_type"] = table_extraction_error_type
+    if table_extraction_skipped_reason is not None:
+        metadata["table_extraction_skipped_reason"] = table_extraction_skipped_reason
     metadata.update(text_extraction_metadata)
     metadata.update(ocr_metadata)
     return ParsedDocument(
