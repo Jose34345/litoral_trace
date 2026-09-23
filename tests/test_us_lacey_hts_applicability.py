@@ -222,7 +222,7 @@ def test_hts_rule_passes_4407_with_exact_defensive_copy():
     assert result.calculation_trace["catalog_version"] == "aphis-phase-vii-2024"
 
 
-def test_hts_rule_passes_exact_seeded_furniture_code():
+def test_hts_rule_passes_phase_iv_furniture_prefix():
     subject = _subject("9401692010")
     rule = HtsApplicabilityRule()
 
@@ -236,7 +236,7 @@ def test_hts_rule_passes_exact_seeded_furniture_code():
 
     assert result.status is RuleStatus.PASS
     assert result.explanation == PASS_EXPLANATION
-    assert result.calculation_trace["matched_prefix"] == "9401692010"
+    assert result.calculation_trace["matched_prefix"] == "940169"
 
 
 def test_hts_rule_uses_catalog_as_of_when_context_has_no_evaluation_date():
