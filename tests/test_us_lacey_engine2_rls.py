@@ -10,7 +10,7 @@ from litoral_trace.lacey_engine.domain import DocumentResolution, DocumentType, 
 from litoral_trace.lacey_engine.serialization import DOCUMENT_RESOLUTION_SCHEMA_VERSION
 from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
-from tests.us_lacey_engine2_postgres import FakeVault, create_test_graph, engine2_postgres_engine, engine2_postgres_session_factory, tenant_session
+from tests.test_us_lacey_engine2_persistence import _bundle\nfrom tests.us_lacey_engine2_postgres import FakeVault, create_test_graph, engine2_postgres_engine, engine2_postgres_session_factory, tenant_session
 from tests.test_us_lacey_canonical_shipment_truth_postgres import (
     test_canonical_publication_never_overwrites_human_review as _canonical_human_review_contract,
     test_canonical_publication_replaces_machine_state_without_cross_line_leakage as _canonical_publish_contract,
@@ -29,7 +29,7 @@ def _resolution(filename="bill.pdf"):
 
 def _seed_snapshot(factory, monkeypatch, content=b"shared"):
     org, operation, link, assurance, _, sha = create_test_graph(factory, content=content)
-    monkeypatch.setattr(service_module, "process_document", lambda **values: _resolution(values["filename"]))
+    monkeypatch.setattr(service_module, "process_bundle", lambda **values: _bundle(_resolution(values["filename"])))
     result = UsLaceyEngine2Service(session_factory=factory, vault_service=FakeVault(content)).resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     session = tenant_session(factory, org)
     document = session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=link).one()
