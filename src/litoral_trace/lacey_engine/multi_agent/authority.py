@@ -14,13 +14,16 @@ FIELD_SPECIALIST: dict[str, SpecialistRole] = {
     "consignee_address": SpecialistRole.CUSTOMS_IDENTITY,
     "filing_entry_reference": SpecialistRole.CUSTOMS_IDENTITY,
     "manufacturer_id": SpecialistRole.CUSTOMS_IDENTITY,
+    "supplier_name": SpecialistRole.CUSTOMS_IDENTITY,
     "bill_of_lading": SpecialistRole.LOGISTICS,
     "container_number": SpecialistRole.LOGISTICS,
+    "seal_number": SpecialistRole.LOGISTICS,
     "estimated_arrival_date": SpecialistRole.LOGISTICS,
     "description": SpecialistRole.COMMERCIAL_LINES,
     "article_component": SpecialistRole.COMMERCIAL_LINES,
     "hts_code": SpecialistRole.COMMERCIAL_LINES,
     "entered_value": SpecialistRole.COMMERCIAL_LINES,
+    "invoice_total": SpecialistRole.COMMERCIAL_LINES,
     "genus": SpecialistRole.BOTANICAL,
     "species": SpecialistRole.BOTANICAL,
     "country_of_harvest": SpecialistRole.BOTANICAL,
@@ -36,6 +39,10 @@ _DOCUMENT_AUTHORITY: dict[str, dict[DocumentType, int]] = {
     "manufacturer_id": {
         DocumentType.ENTRY_WORKSHEET: 100,
         DocumentType.COMMERCIAL_INVOICE: 80,
+    },
+    "supplier_name": {
+        DocumentType.COMMERCIAL_INVOICE: 80,
+        DocumentType.ENTRY_WORKSHEET: 70,
     },
     "importer_name": {
         DocumentType.ENTRY_WORKSHEET: 100,
@@ -67,6 +74,9 @@ _DOCUMENT_AUTHORITY: dict[str, dict[DocumentType, int]] = {
         DocumentType.ENTRY_WORKSHEET: 100,
         DocumentType.COMMERCIAL_INVOICE: 100,
     },
+    "invoice_total": {
+        DocumentType.COMMERCIAL_INVOICE: 100,
+    },
     "bill_of_lading": {
         DocumentType.BILL_OF_LADING: 100,
         DocumentType.ENTRY_WORKSHEET: 60,
@@ -74,9 +84,9 @@ _DOCUMENT_AUTHORITY: dict[str, dict[DocumentType, int]] = {
     },
     "container_number": {
         DocumentType.BILL_OF_LADING: 100,
-        DocumentType.ARRIVAL_NOTICE: 80,
-        DocumentType.ENTRY_WORKSHEET: 70,
-        DocumentType.PACKING_LIST: 50,
+    },
+    "seal_number": {
+        DocumentType.BILL_OF_LADING: 100,
     },
     "estimated_arrival_date": {
         DocumentType.ARRIVAL_NOTICE: 100,
