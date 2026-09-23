@@ -460,7 +460,8 @@ def process_bundle(
         )
 
     if (
-        domain.domain is not DocumentDomain.COMMERCIAL_TRADE
+        bytes(content or b"").startswith(b"%PDF-")
+        and domain.domain is not DocumentDomain.COMMERCIAL_TRADE
         and not any(
             section.document_type in SUPPORTED_DOCUMENT_TYPES
             for section in sections
