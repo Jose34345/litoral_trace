@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fpdf import FPDF
 
-from litoral_trace.lacey_engine.domain import DocumentType, FieldStatus, PageClassification if False else DocumentType
+from litoral_trace.lacey_engine.domain import DocumentType, FieldStatus
 from litoral_trace.lacey_engine.pipeline import process_bundle
 from litoral_trace.lacey_engine.segmentation import PageClassification, starts_new_document
 
