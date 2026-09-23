@@ -361,6 +361,7 @@ def test_failed_operation_retry_requeues_existing_job_atomically(monkeypatch):
     reset_us_lacey_worker_engine_state()
     storage = MemoryObjectStorage()
     monkeypatch.setattr(ingestion_module, "get_us_lacey_storage_client", lambda: storage)
+    monkeypatch.setattr(worker_module, "get_us_lacey_storage_client", lambda: storage)
 
     registered, _email, suffix = _register_active_customer()
     ingestion = UsLaceyIngestionService()
@@ -504,6 +505,16 @@ def test_failed_operation_retry_requeues_existing_job_atomically(monkeypatch):
     assert row["document_status"] == "UPLOADED"
     assert row["document_error_code"] is None
     assert row["document_error_message"] is None
+
+    # Consume the retried durable row before leaving the shared PostgreSQL gate.
+    # This proves the retry is operational, not merely a state rewrite, and
+    # prevents a QUEUED job from leaking into the next acceptance test.
+    result = process_one_us_lacey_job(worker_id=f"ci-retry-worker-{suffix}")
+    assert result.claimed is True
+    assert result.job_id == queued.job.id
+    assert result.job_status == "COMPLETED"
+    assert result.document_status in {"EXTRACTED", "NEEDS_REVIEW"}
+    assert result.operation_status in {"REVIEW_REQUIRED", "READY_FOR_REVIEW"}
 
     reset_us_lacey_worker_engine_state()
     reset_us_lacey_engine_state()
