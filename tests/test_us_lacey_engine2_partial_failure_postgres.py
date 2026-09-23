@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from litoral_trace.db.models import UsLaceyEngineDocumentRun, UsLaceyEngineShipmentRun
 from litoral_trace.lacey_engine.domain import DocumentResolution, DocumentType, ParsedLayout
-from litoral_trace.lacey_engine.serialization import DOCUMENT_RESOLUTION_SCHEMA_VERSION
+from litoral_trace.lacey_engine.serialization import BUNDLE_RESOLUTION_SCHEMA_VERSION
 from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 from tests.test_us_lacey_engine2_persistence import _bundle
@@ -88,7 +88,7 @@ def test_partial_failure_persists_successful_siblings_and_never_snapshots_incomp
             organization_id=org,
             operation_id=operation,
             engine_version=service_module.ENGINE_VERSION,
-            schema_version=DOCUMENT_RESOLUTION_SCHEMA_VERSION,
+            schema_version=BUNDLE_RESOLUTION_SCHEMA_VERSION,
         )
         .all()
     )
@@ -160,7 +160,7 @@ def test_repeated_partial_failure_reuses_one_failed_run_without_unique_violation
             operation_id=operation,
             operation_document_id=bill_link,
             engine_version=service_module.ENGINE_VERSION,
-            schema_version=DOCUMENT_RESOLUTION_SCHEMA_VERSION,
+            schema_version=BUNDLE_RESOLUTION_SCHEMA_VERSION,
             status="FAILED",
         )
         .count()
@@ -173,7 +173,7 @@ def test_repeated_partial_failure_reuses_one_failed_run_without_unique_violation
             operation_id=operation,
             operation_document_id=invoice_link,
             engine_version=service_module.ENGINE_VERSION,
-            schema_version=DOCUMENT_RESOLUTION_SCHEMA_VERSION,
+            schema_version=BUNDLE_RESOLUTION_SCHEMA_VERSION,
             status="SUCCEEDED",
         )
         .count()
