@@ -13,13 +13,13 @@ from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey.lacey_engine_dossier import Engine2DossierAvailability, UsLaceyEngineDossierService
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 from tests.test_us_lacey_engine2_persistence import _dossier
-from tests.test_us_lacey_engine2_persistence import _resolution
+from tests.test_us_lacey_engine2_persistence import _bundle, _resolution
 from tests.us_lacey_engine2_postgres import FakeVault, add_test_document, create_test_graph, engine2_postgres_engine, engine2_postgres_session_factory, tenant_session
 
 
 def _current(factory, monkeypatch):
     org, operation, _, _, resolutions = _dossier(factory)
-    monkeypatch.setattr(service_module, "process_document", lambda **values: resolutions[values["filename"]])
+    monkeypatch.setattr(service_module, "process_bundle", lambda **values: _bundle(resolutions[values["filename"]]))
     result = UsLaceyEngine2Service(session_factory=factory, vault_service=FakeVault(b"x")).resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     session = tenant_session(factory, org); snapshot = session.query(UsLaceyEngineShipmentRun).filter_by(id=result.shipment_run_id).one(); operation_public_id = session.scalar(select(UsLaceyOperation.public_id).where(UsLaceyOperation.id == operation)); session.expunge(snapshot); session.close()
     return org, operation, operation_public_id, snapshot
