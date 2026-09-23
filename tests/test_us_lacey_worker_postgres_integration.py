@@ -168,7 +168,7 @@ def _register_active_customer():
 def _csv_bytes() -> bytes:
     return (
         "HTS Code,Merchandise Description,Species,Country of Harvest,Plant Quantity,Metric Unit,Container Number,Origin\n"
-        "4407.11,Pine boards,Pinus taeda,Brazil,1000,KG,MSCU1234567,Canada\n"
+        "4407.11.0190,Pine boards,Pinus taeda,Brazil,1000,KG,MSCU1234567,Canada\n"
     ).encode("utf-8")
 
 
@@ -190,7 +190,7 @@ def _xlsx_bytes() -> bytes:
     )
     sheet.append(
         [
-            "4412.31",
+            "4412.31.0000",
             "Plywood panels",
             "Eucalyptus",
             "Eucalyptus grandis",
@@ -271,7 +271,7 @@ def test_worker_processes_csv_and_xlsx_with_real_postgres_and_simulated_storage(
         organization_id=registered.organization_id,
         operation_public_id=csv_operation.public_id,
         expected={
-            "hts_code": "440711",
+            "hts_code": "4407110190",
             "merchandise_description": "Pine boards",
             "species": "Pinus taeda",
             "country_of_harvest": "Brazil",
@@ -313,7 +313,7 @@ def test_worker_processes_csv_and_xlsx_with_real_postgres_and_simulated_storage(
         organization_id=registered.organization_id,
         operation_public_id=xlsx_operation.public_id,
         expected={
-            "hts_code": "441231",
+            "hts_code": "4412310000",
             "genus": "Eucalyptus",
             "species": "Eucalyptus grandis",
             "country_of_harvest": "Uruguay",
