@@ -477,32 +477,51 @@ def _extract_pdf_text_pages_bounded(
     page_limit: int,
     char_limit: int,
 ) -> tuple[str, int, int, int, bool]:
-    """Extract only a bounded prefix of PDF text.
+    """Inspect digital PDF text without letting parser complexity kill the web worker.
 
-    The full page count is retained for auditability, but page decoding stops at
-    the configured page/character budget. This prevents arbitrary long or
-    graphics-heavy PDFs from exhausting the co-located free-tier worker.
+    PDFium is deliberately used for the bounded inspection path because pypdf can
+    materialize a large cross-reference/object graph even when callers only need
+    the first few pages. First obtain the cheap page count. If the document is
+    already over budget, return without decoding any page text at all; the caller
+    will surface a deterministic human-review state instead of attempting a
+    resource-heavy partial parse.
     """
-    from pypdf import PdfReader
+    import pypdfium2 as pdfium
 
-    stream = BytesIO(content)
+    document = None
     try:
-        reader = PdfReader(stream, strict=False)
-        total_page_count = len(reader.pages)
-        bounded_page_limit = max(0, min(int(page_limit), total_page_count))
+        document = pdfium.PdfDocument(content)
+        total_page_count = len(document)
+        bounded_page_limit = max(0, int(page_limit))
         bounded_char_limit = max(1, int(char_limit))
+
+        # Fail fast before page text decoding. Long PDFs must be split into
+        # shipment-relevant documents; a prefix parse would be incomplete and,
+        # more importantly, still permits adversarial object graphs to consume
+        # the shared 512 MiB web-worker budget.
+        if total_page_count > bounded_page_limit:
+            return "", total_page_count, 0, 0, False
+
         page_texts: list[str] = []
         pages_with_text = 0
         pages_scanned = 0
         retained_chars = 0
         char_limit_reached = False
 
-        for page_index in range(bounded_page_limit):
+        for page_index in range(total_page_count):
+            page = None
+            text_page = None
             pages_scanned += 1
             try:
-                value = (reader.pages[page_index].extract_text() or "").strip()
+                page = document[page_index]
+                text_page = page.get_textpage()
+                value = str(text_page.get_text_range() or "").strip()
             except Exception:
                 value = ""
+            finally:
+                _safe_close(text_page)
+                _safe_close(page)
+
             if not value:
                 continue
 
@@ -529,7 +548,7 @@ def _extract_pdf_text_pages_bounded(
             char_limit_reached,
         )
     finally:
-        stream.close()
+        _safe_close(document)
 
 
 def _pdf_page_count_with_pdfium(content: bytes) -> int:
@@ -732,6 +751,7 @@ def parse_pdf(content: bytes) -> ParsedDocument:
     text_extraction_metadata: dict[str, Any] = {}
     text_pages_scanned = 0
     text_char_limit_reached = False
+    text_extraction_failed = False
     try:
         (
             useful_text,
@@ -745,7 +765,7 @@ def parse_pdf(content: bytes) -> ParsedDocument:
             char_limit=text_char_limit,
         )
     except ImportError as exc:  # pragma: no cover - dependency gate
-        raise DocumentParseError("pypdf no esta disponible.") from exc
+        raise DocumentParseError("PDFium no esta disponible.") from exc
     except Exception as exc:
         try:
             page_count = _pdf_page_count_with_pdfium(content)
@@ -754,20 +774,27 @@ def parse_pdf(content: bytes) -> ParsedDocument:
         useful_text = ""
         pages_with_text = 0
         text_pages_scanned = 0
+        text_extraction_failed = True
         text_extraction_metadata = {
             "text_extraction_fallback": "pdfium_page_count",
             "text_extraction_error_type": type(exc).__name__,
         }
 
     text_extraction_truncated = (
-        text_pages_scanned < page_count or text_char_limit_reached
+        not text_extraction_failed
+        and (text_pages_scanned < page_count or text_char_limit_reached)
     )
-    ocr_required = not _has_useful_pdf_text(useful_text)
+    ocr_required = (
+        not text_extraction_truncated
+        and not _has_useful_pdf_text(useful_text)
+    )
     ocr_metadata: dict[str, Any] = {
         "ocr_attempted": False,
         "ocr_applied": False,
     }
-    if ocr_required:
+    if text_extraction_truncated:
+        ocr_metadata["ocr_skipped_reason"] = "PDF_TEXT_BUDGET_EXCEEDED"
+    elif ocr_required:
         ocr_text, ocr_metadata = _ocr_scanned_pdf(content, page_count=page_count)
         if _has_useful_pdf_text(ocr_text):
             useful_text = ocr_text
@@ -834,6 +861,8 @@ def parse_pdf(content: bytes) -> ParsedDocument:
     metadata = {
         "page_count": page_count,
         "pages_with_text": pages_with_text,
+        "text_extraction_engine": "pdfium",
+        "text_extraction_failed": text_extraction_failed,
         "text_extraction_page_limit": text_page_limit,
         "text_extraction_pages_scanned": text_pages_scanned,
         "text_extraction_char_limit": text_char_limit,
