@@ -381,7 +381,7 @@ def test_process_bundle_rejects_when_segmentation_finds_no_supported_logical_doc
     with pytest.raises(UnsupportedDocumentDomainError) as excinfo:
         process_bundle(
             filename="unsupported.pdf",
-            content=b"not-a-real-pdf-because-layout-is-stubbed",
+            content=b"%PDF-stubbed-for-domain-fallback",
         )
 
     assert excinfo.value.code == "UNSUPPORTED_DOMAIN"
