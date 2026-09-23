@@ -239,6 +239,23 @@ def test_large_pdf_bounds_expensive_table_extraction(monkeypatch):
     assert "evidence page 8" in parsed.text
 
 
+def test_oversized_pdf_bounds_text_and_skips_second_heavy_pass(monkeypatch):
+    monkeypatch.setenv("LT_ASSURANCE_PDF_TEXT_PAGE_LIMIT", "3")
+    monkeypatch.setenv("LT_ASSURANCE_PDF_TABLE_PAGE_LIMIT", "3")
+
+    parsed = parse_pdf(_multi_page_pdf_bytes(8))
+
+    assert parsed.ocr_required is False
+    assert parsed.metadata["page_count"] == 8
+    assert parsed.metadata["text_extraction_page_limit"] == 3
+    assert parsed.metadata["text_extraction_pages_scanned"] == 3
+    assert parsed.metadata["text_extraction_truncated"] is True
+    assert parsed.metadata["table_extraction_pages_scanned"] == 0
+    assert parsed.metadata["table_extraction_skipped_reason"] == "PDF_TEXT_BUDGET_EXCEEDED"
+    assert "evidence page 3" in parsed.text
+    assert "evidence page 8" not in parsed.text
+
+
 def test_scanned_pdf_executes_real_ocrmypdf_primary_layer():
     parsed = parse_pdf(_scanned_pdf_bytes())
     assert parsed.ocr_required is False
