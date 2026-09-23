@@ -229,7 +229,7 @@ def test_hts_rule_passes_exact_seeded_furniture_code():
 
     assert result.status is RuleStatus.PASS
     assert result.explanation == PASS_EXPLANATION
-    assert result.calculation_trace["matched_prefix"] == "9401692010"
+    assert result.calculation_trace["matched_prefix"] == "940169"
 
 
 def test_hts_rule_uses_catalog_as_of_when_context_has_no_evaluation_date():
