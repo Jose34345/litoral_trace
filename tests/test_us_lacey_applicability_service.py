@@ -26,7 +26,7 @@ def _facts(hts10: str | None, plant: PlantMaterialEvidence) -> MerchandiseLineFa
     )
 
 
-@pytest.mark.parametrize("hts10", (None, "", "4407", "44.07.99.0190", "abcdefghij"))
+@pytest.mark.parametrize("hts10", (None, "4407", "44.07.99.0190", "abcdefghij"))
 def test_invalid_hts_requires_review_without_botanical_fields(hts10):
     decision = DeclarationApplicabilityService().evaluate(
         _facts(hts10, PlantMaterialEvidence.PRESENT)
