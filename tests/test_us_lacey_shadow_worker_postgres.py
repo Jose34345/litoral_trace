@@ -20,7 +20,9 @@ from litoral_trace.lacey_engine.domain import (
     RawCandidate,
     ResolvedField,
 )
-from tests.test_us_lacey_engine2_persistence import _bundle\n\nfrom litoral_trace.us_lacey import ai_suggestions as ai_suggestions_module
+from tests.test_us_lacey_engine2_persistence import _bundle
+
+from litoral_trace.us_lacey import ai_suggestions as ai_suggestions_module
 from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey import specialized_shadow as specialized_module
 from litoral_trace.us_lacey import worker
