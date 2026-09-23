@@ -22,6 +22,7 @@ from litoral_trace.db.models import (
     ReconciliationIssue,
     UsLaceyFieldCandidate,
     UsLaceyOperation,
+    UsLaceyOperationDocument,
     UsLaceyOperationField,
     UsLaceyPlantDeclaration,
     UsLaceyPpqPlantLine,
@@ -1121,6 +1122,30 @@ def refresh_us_lacey_operation_status(
     # U.S. Lacey sessions intentionally use autoflush=False. State derivation must
     # therefore flush pending field/conflict review decisions before counting them.
     session.flush()
+    rejected_domain_document = session.scalar(
+        select(AssuranceDocument.id)
+        .join(
+            UsLaceyOperationDocument,
+            (UsLaceyOperationDocument.assurance_document_id == AssuranceDocument.id)
+            & (
+                UsLaceyOperationDocument.organization_id
+                == AssuranceDocument.organization_id
+            ),
+        )
+        .where(
+            AssuranceDocument.organization_id == organization_id,
+            AssuranceDocument.last_error_code == "UNSUPPORTED_DOMAIN",
+            UsLaceyOperationDocument.organization_id == organization_id,
+            UsLaceyOperationDocument.operation_id == operation.id,
+            UsLaceyOperationDocument.is_current.is_(True),
+        )
+        .limit(1)
+    )
+    if rejected_domain_document is not None:
+        operation.status = "FAILED"
+        operation.review_result = "DOCUMENT_REJECTED"
+        return operation.status
+
     _apply_percent_recycled_condition(
         session,
         organization_id=organization_id,
