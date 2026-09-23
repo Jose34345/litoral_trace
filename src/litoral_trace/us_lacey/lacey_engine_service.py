@@ -14,6 +14,7 @@ from litoral_trace.db.models import (
     AssuranceDocument,
     UsLaceyEngineDocumentRun,
     UsLaceyEngineShipmentRun,
+    UsLaceyOperation,
     UsLaceyOperationDocument,
     VaultDocument,
 )
@@ -31,7 +32,8 @@ from litoral_trace.lacey_engine.ai_shadow import (
     verify_ai_evidence,
 )
 from litoral_trace.lacey_engine.architecture import AIArchitecture, ai_architecture
-from litoral_trace.lacey_engine.domain import DocumentResolution
+from litoral_trace.lacey_engine.domain import BundleResolution, DocumentResolution
+from litoral_trace.lacey_engine.errors import UnsupportedDocumentDomainError
 from litoral_trace.lacey_engine.pipeline import ENGINE_VERSION, process_bundle
 from litoral_trace.lacey_engine.serialization import (
     BUNDLE_RESOLUTION_SCHEMA_VERSION,
@@ -148,6 +150,21 @@ class UsLaceyEngine2Service:
         for document in documents:
             try:
                 result = process_one(document)
+            except UnsupportedDocumentDomainError as exc:
+                LOGGER.info(
+                    "Lacey Engine 2 rejected out-of-domain document",
+                    extra={
+                        "domain": exc.domain,
+                        "safe_error_code": exc.code,
+                    },
+                )
+                failed.append(
+                    _DocumentBatchFailure(
+                        document=document,
+                        safe_error_code=exc.code,
+                        safe_error_message=exc.safe_message,
+                    )
+                )
             except Exception:
                 LOGGER.exception("Lacey Engine 2 document processing failed")
                 failed.append(_DocumentBatchFailure(document=document))
@@ -200,6 +217,8 @@ class UsLaceyEngine2Service:
         operation_id: int,
         operation_document_id: int,
         identity: dict[str, object],
+        safe_error_code: str = "ENGINE2_SHADOW_FAILED",
+        safe_error_message: str = "Shadow document processing did not complete.",
     ) -> UsLaceyEngineDocumentRun:
         """Reuse an existing immutable failure instead of violating its unique identity."""
         existing = self._find_engine2_document_run(session, **identity)
@@ -209,11 +228,145 @@ class UsLaceyEngine2Service:
             **identity,
             operation_id=operation_id,
             operation_document_id=operation_document_id,
-            safe_error_code="ENGINE2_SHADOW_FAILED",
-            safe_error_message="Shadow document processing did not complete.",
+            safe_error_code=safe_error_code,
+            safe_error_message=safe_error_message,
         )
         session.add(failed)
         return failed
+
+    def preflight_document_domain(
+        self,
+        *,
+        organization_id: int,
+        operation_id: int,
+        assurance_document_id: int,
+    ) -> BundleResolution | None:
+        """Reject unsupported PDFs before Assurance projection or regulatory work.
+
+        A successful Engine 2 bundle is persisted here and reused later by the
+        normal shadow aggregation path, so the early guard does not duplicate
+        deterministic extraction work. Non-domain Engine 2 failures remain
+        best-effort and do not replace Assurance's existing parser authority.
+        """
+
+        session: Session = self._session_factory()
+        try:
+            set_tenant_db_context(session, organization_id)
+            row = session.execute(
+                select(
+                    UsLaceyOperationDocument,
+                    AssuranceDocument,
+                    VaultDocument,
+                    UsLaceyOperation,
+                )
+                .join(
+                    AssuranceDocument,
+                    (AssuranceDocument.id == UsLaceyOperationDocument.assurance_document_id)
+                    & (
+                        AssuranceDocument.organization_id
+                        == UsLaceyOperationDocument.organization_id
+                    ),
+                )
+                .join(
+                    VaultDocument,
+                    (VaultDocument.id == AssuranceDocument.vault_document_id)
+                    & (VaultDocument.organization_id == AssuranceDocument.organization_id),
+                )
+                .join(
+                    UsLaceyOperation,
+                    (UsLaceyOperation.id == UsLaceyOperationDocument.operation_id)
+                    & (
+                        UsLaceyOperation.organization_id
+                        == UsLaceyOperationDocument.organization_id
+                    ),
+                )
+                .where(
+                    UsLaceyOperationDocument.organization_id == organization_id,
+                    UsLaceyOperationDocument.operation_id == operation_id,
+                    UsLaceyOperationDocument.assurance_document_id
+                    == assurance_document_id,
+                    UsLaceyOperationDocument.is_current.is_(True),
+                )
+            ).one_or_none()
+            if row is None:
+                return None
+
+            link, assurance, vault, operation = row
+            success_identity = self._engine2_document_run_identity(
+                organization_id=organization_id,
+                assurance_document_id=assurance.id,
+                source_sha256=vault.sha256,
+                role_hint=link.document_role,
+                status="SUCCEEDED",
+            )
+            succeeded = self._find_engine2_document_run(
+                session,
+                **success_identity,
+            )
+            if succeeded is not None:
+                return deserialize_bundle_resolution(succeeded.resolution_json)
+
+            with self._vault.materialize_verified_download(
+                organization_id=organization_id,
+                document_id=vault.public_id,
+            ) as download:
+                content = b"".join(download.iter_chunks())
+
+            try:
+                bundle = process_bundle(
+                    filename=vault.original_filename,
+                    content=content,
+                    role_hint=link.document_role,
+                )
+            except UnsupportedDocumentDomainError as exc:
+                failed_identity = self._engine2_document_run_identity(
+                    organization_id=organization_id,
+                    assurance_document_id=assurance.id,
+                    source_sha256=vault.sha256,
+                    role_hint=link.document_role,
+                    status="FAILED",
+                )
+                self._get_or_create_failed_engine2_run(
+                    session,
+                    operation_id=operation_id,
+                    operation_document_id=link.id,
+                    identity=failed_identity,
+                    safe_error_code=exc.code,
+                    safe_error_message=exc.safe_message,
+                )
+                assurance.processing_status = "FAILED"
+                assurance.last_error_code = exc.code
+                assurance.last_error_message = exc.safe_message[:512]
+                operation.status = "FAILED"
+                operation.review_result = "DOCUMENT_REJECTED"
+                session.commit()
+                raise
+
+            run = UsLaceyEngineDocumentRun(
+                **success_identity,
+                operation_id=operation_id,
+                operation_document_id=link.id,
+                resolution_json=serialize_bundle_resolution(bundle),
+            )
+            session.add(run)
+            session.commit()
+            return bundle
+        except UnsupportedDocumentDomainError:
+            raise
+        except Exception:
+            session.rollback()
+            LOGGER.exception(
+                "Lacey domain preflight could not complete; legacy parser remains authoritative",
+                extra={
+                    "organization_id": organization_id,
+                    "operation_id": operation_id,
+                    "assurance_document_id": assurance_document_id,
+                },
+            )
+            return None
+        finally:
+            session.close()
+
 
     def _run_ai_shadow_document(
         self,
@@ -665,6 +818,8 @@ class UsLaceyEngine2Service:
                     operation_id=operation_id,
                     operation_document_id=link.id,
                     identity=failed_identity,
+                    safe_error_code=failure.safe_error_code,
+                    safe_error_message=failure.safe_error_message,
                 )
 
             ai_config = AIProviderConfig.from_env()
