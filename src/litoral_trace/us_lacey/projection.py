@@ -612,7 +612,13 @@ def _is_merchandise_table(headers: frozenset[str]) -> bool:
     return (
         bool(headers & _LINE_NUMBER_HEADERS)
         and bool(headers & _CUSTOMS_HTS_HEADERS)
-        and bool(headers & _CUSTOMS_DESCRIPTION_HEADERS)
+        and bool(
+            headers
+            & (
+                _CUSTOMS_DESCRIPTION_HEADERS
+                | frozenset({"article component", "article", "component"})
+            )
+        )
         and "entered value" in headers
     )
 
@@ -692,7 +698,11 @@ def _explicit_merchandise_rows(
         )
         if header in _CUSTOMS_HTS_HEADERS:
             row["hts10"] = _normalized_hts_observation(value)
-        elif header in _CUSTOMS_DESCRIPTION_HEADERS:
+        elif header in _CUSTOMS_DESCRIPTION_HEADERS or header in {
+            "article component",
+            "article",
+            "component",
+        }:
             row["description"] = str(value).strip()
         elif header == "entered value":
             row["entered_value"] = str(value).strip()
