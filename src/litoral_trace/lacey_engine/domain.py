@@ -152,3 +152,155 @@ class DocumentResolution:
 
     def field(self, key: str) -> ResolvedField:
         return self.fields[key]
+
+@dataclass(frozen=True, slots=True)
+class LogicalDocumentResolution:
+    """Logical document discovered inside one immutable physical source."""
+
+    logical_document_id: str
+    parent_filename: str
+    page_start: int
+    page_end: int
+    document_type: DocumentType
+    type_confidence: float
+    resolution: DocumentResolution
+
+    def __post_init__(self) -> None:
+        if not str(self.logical_document_id or "").strip():
+            raise ValueError(
+                "LogicalDocumentResolution.logical_document_id must be non-empty."
+            )
+        if not str(self.parent_filename or "").strip():
+            raise ValueError(
+                "LogicalDocumentResolution.parent_filename must be non-empty."
+            )
+        if self.page_start < 1:
+            raise ValueError(
+                "LogicalDocumentResolution.page_start must be >= 1."
+            )
+        if self.page_end < self.page_start:
+            raise ValueError(
+                "LogicalDocumentResolution.page_end cannot precede page_start."
+            )
+        if not 0.0 <= float(self.type_confidence) <= 1.0:
+            raise ValueError(
+                "LogicalDocumentResolution.type_confidence must be between 0 and 1."
+            )
+        if self.resolution.filename != self.parent_filename:
+            raise ValueError(
+                "Logical document resolution must preserve the physical filename."
+            )
+        if self.resolution.document_type is not self.document_type:
+            raise ValueError(
+                "Logical document type must match DocumentResolution.document_type."
+            )
+        if abs(
+            float(self.resolution.type_confidence) - float(self.type_confidence)
+        ) > 1e-9:
+            raise ValueError(
+                "Logical document confidence must match DocumentResolution."
+            )
+
+        for block in self.resolution.layout.blocks:
+            if not self.page_start <= block.page <= self.page_end:
+                raise ValueError(
+                    "LayoutBlock.page must preserve the original physical page "
+                    "within the logical document range."
+                )
+
+        for section in self.resolution.sections:
+            if (
+                section.page_start < self.page_start
+                or section.page_end > self.page_end
+            ):
+                raise ValueError(
+                    "DocumentResolution section escapes the logical page range."
+                )
+
+    @property
+    def page_count(self) -> int:
+        return self.page_end - self.page_start + 1
+
+    @property
+    def virtual_filename(self) -> str:
+        return (
+            f"{self.parent_filename}"
+            f"#pages={self.page_start}-{self.page_end}"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BundleResolution:
+    """Logical decomposition of one immutable physical source document."""
+
+    filename: str
+    engine_version: str
+    page_count: int
+    documents: tuple[LogicalDocumentResolution, ...]
+
+    def __post_init__(self) -> None:
+        if not str(self.filename or "").strip():
+            raise ValueError("BundleResolution.filename must be non-empty.")
+        if self.page_count < 1:
+            raise ValueError("BundleResolution.page_count must be >= 1.")
+        if not self.documents:
+            raise ValueError(
+                "BundleResolution requires at least one logical document."
+            )
+
+        logical_ids = tuple(
+            item.logical_document_id
+            for item in self.documents
+        )
+        if len(logical_ids) != len(set(logical_ids)):
+            raise ValueError(
+                "BundleResolution logical_document_id values must be unique."
+            )
+
+        ordered = tuple(
+            sorted(
+                self.documents,
+                key=lambda item: (
+                    item.page_start,
+                    item.page_end,
+                    item.logical_document_id,
+                ),
+            )
+        )
+
+        expected_page = 1
+        for item in ordered:
+            if item.parent_filename != self.filename:
+                raise ValueError(
+                    "Logical document parent filename does not match bundle."
+                )
+            if item.resolution.layout.page_count != self.page_count:
+                raise ValueError(
+                    "Logical document layout must retain the physical page_count."
+                )
+            if item.page_start < expected_page:
+                raise ValueError(
+                    "BundleResolution logical documents overlap."
+                )
+            if item.page_start > expected_page:
+                raise ValueError(
+                    "BundleResolution logical documents contain a page gap."
+                )
+            if item.page_end > self.page_count:
+                raise ValueError(
+                    "Logical document exceeds the physical page range."
+                )
+
+            for block in item.resolution.layout.blocks:
+                if not item.page_start <= block.page <= item.page_end:
+                    raise ValueError(
+                        "LayoutBlock.page must preserve the original physical page."
+                    )
+
+            expected_page = item.page_end + 1
+
+        if expected_page != self.page_count + 1:
+            raise ValueError(
+                "BundleResolution does not cover every physical page."
+            )
+

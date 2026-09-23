@@ -3,14 +3,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from .domain import (AdmittedCandidate, BoundingBox, DocumentResolution, DocumentSection,
-                     DocumentType, EvidenceClass, FieldStatus, LayoutBlock,
-                     LayoutStructureType, ParsedLayout, Provenance, RawCandidate, ResolvedField)
+from .domain import (AdmittedCandidate, BoundingBox, BundleResolution,
+                     DocumentResolution, DocumentSection, DocumentType, EvidenceClass,
+                     FieldStatus, LayoutBlock, LayoutStructureType,
+                     LogicalDocumentResolution, ParsedLayout, Provenance, RawCandidate,
+                     ResolvedField)
 from .shipment import (CanonicalFieldCandidate, EvidenceScope, ReconciliationResult,
                        ReconciliationState, ShipmentDocumentResolution, ShipmentEvidence,
                        ShipmentIssue, ShipmentReadiness, ShipmentResolution, QuantitySemanticType)
 
 DOCUMENT_RESOLUTION_SCHEMA_VERSION = "lacey_document_resolution_v1"
+BUNDLE_RESOLUTION_SCHEMA_VERSION = "lacey_bundle_resolution_v1"
 SHIPMENT_RESOLUTION_SCHEMA_VERSION = "lacey_shipment_resolution_v1"
 
 
@@ -51,6 +54,50 @@ def deserialize_document_resolution(payload: dict[str, Any]) -> DocumentResoluti
         candidates = tuple(_load_candidate(value) for value in item["candidates"]); index = item["winning_candidate_index"]
         fields[key] = ResolvedField(item["field_key"], FieldStatus(item["status"]), item["effective_value"], candidates[index] if index is not None else None, candidates)
     return DocumentResolution(payload["filename"], payload["engine_version"], DocumentType(payload["document_type"]), float(payload["type_confidence"]), ParsedLayout(tuple(_load_block(value) for value in payload["layout"]["blocks"]), payload["layout"]["page_count"]), tuple(DocumentSection(item["section_id"], item["page_start"], item["page_end"], DocumentType(item["document_type"]), float(item["confidence"]), tuple(item["block_ids"])) for item in payload["sections"]), fields)
+
+
+def serialize_bundle_resolution(resolution: BundleResolution) -> dict[str, Any]:
+    return {
+        "schema_version": BUNDLE_RESOLUTION_SCHEMA_VERSION,
+        "filename": resolution.filename,
+        "engine_version": resolution.engine_version,
+        "page_count": resolution.page_count,
+        "documents": [
+            {
+                "logical_document_id": item.logical_document_id,
+                "parent_filename": item.parent_filename,
+                "page_start": item.page_start,
+                "page_end": item.page_end,
+                "document_type": item.document_type.value,
+                "type_confidence": item.type_confidence,
+                "resolution": serialize_document_resolution(item.resolution),
+            }
+            for item in resolution.documents
+        ],
+    }
+
+
+def deserialize_bundle_resolution(payload: dict[str, Any]) -> BundleResolution:
+    if payload.get("schema_version") != BUNDLE_RESOLUTION_SCHEMA_VERSION:
+        raise ValueError("Unsupported bundle resolution schema.")
+    documents = tuple(
+        LogicalDocumentResolution(
+            logical_document_id=item["logical_document_id"],
+            parent_filename=item["parent_filename"],
+            page_start=int(item["page_start"]),
+            page_end=int(item["page_end"]),
+            document_type=DocumentType(item["document_type"]),
+            type_confidence=float(item["type_confidence"]),
+            resolution=deserialize_document_resolution(item["resolution"]),
+        )
+        for item in payload["documents"]
+    )
+    return BundleResolution(
+        filename=payload["filename"],
+        engine_version=payload["engine_version"],
+        page_count=int(payload["page_count"]),
+        documents=documents,
+    )
 
 
 def serialize_shipment_resolution(resolution: ShipmentResolution) -> dict[str, Any]:
