@@ -57,7 +57,7 @@ SessionFactory = Callable[[], Session | None]
 PARSER_ENGINE = "assurance-deterministic-parser"
 # Bump when deterministic interpretation changes. Blob identity deliberately
 # remains independent: only the derived extraction cache is invalidated.
-PARSER_ENGINE_VERSION = "1.5.0"
+PARSER_ENGINE_VERSION = "1.6.0"
 _DEFAULT_RAW_CELL_PERSIST_LIMIT = 2000
 
 
