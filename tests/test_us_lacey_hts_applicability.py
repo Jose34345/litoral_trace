@@ -37,7 +37,8 @@ def _subject(hts10: str | None) -> RegulatorySubject:
 
 def test_catalog_is_versioned_and_matches_4407_by_prefix():
     assert APHIS_HTS_SCHEDULE.version == APHIS_HTS_SCHEDULE_VERSION
-    assert APHIS_HTS_SCHEDULE.version == "aphis-phase-vii-2024"\n    assert APHIS_HTS_SCHEDULE.is_complete is True
+    assert APHIS_HTS_SCHEDULE.version == "aphis-phase-vii-2024"
+    assert APHIS_HTS_SCHEDULE.is_complete is True
 
     match = APHIS_HTS_SCHEDULE.match(
         "4407990190",
