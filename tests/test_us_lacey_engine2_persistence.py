@@ -128,7 +128,10 @@ def test_engine2_shipment_snapshot_persists_and_round_trips(engine2_postgres_ses
     assert restored.canonical_fields["container_number"].values[0].value == "MSKU9228574"
     assert restored.canonical_fields["genus"].values[0].value == "PINUS" and restored.canonical_fields["species"].values[0].value == "RADIATA" and restored.canonical_fields["country_of_harvest"].values[0].value == "CHILE"
     assert restored.issues is not None and restored.metrics["documents_processed"] == 2
-    assert {item.document_id for item in restored.documents} == {str(bill[0]), str(supplier[0])}
+    assert {item.document_id for item in restored.documents} == {
+        f"{bill[0]}:logical-001",
+        f"{supplier[0]}:logical-001",
+    }
     evidence = restored.canonical_fields["species"].supporting_evidence[0]
     assert evidence.scope.value == "PLANT_COMPONENT" and evidence.component_key == "a"
 
@@ -150,7 +153,9 @@ def test_engine2_aggregates_only_current_document_versions(engine2_postgres_sess
     resolutions.update({"old.pdf": _resolution("old.pdf", DocumentType.COMMERCIAL_INVOICE, {"consignee_name": "OLD CONSIGNEE"}), "new.pdf": _resolution("new.pdf", DocumentType.COMMERCIAL_INVOICE, {"consignee_name": "NEW CONSIGNEE"})})
     service, processor = _service(engine2_postgres_session_factory, resolutions); monkeypatch.setattr(service_module, "process_bundle", processor)
     result = service.resolve_operation_with_engine2(organization_id=org, operation_id=operation); restored = deserialize_shipment_resolution(_snapshot(engine2_postgres_session_factory, org, result.shipment_run_id).resolution_json)
-    assert str(new_link) in {item.document_id for item in restored.documents} and str(old_link) not in {item.document_id for item in restored.documents}
+    document_ids = {item.document_id for item in restored.documents}
+    assert f"{new_link}:logical-001" in document_ids
+    assert all(not item.startswith(f"{old_link}:") for item in document_ids)
     session = tenant_session(engine2_postgres_session_factory, org); current = session.query(UsLaceyOperationDocument).filter_by(id=new_link).one(); run = session.query(UsLaceyEngineDocumentRun).filter_by(assurance_document_id=new_assurance).one()
     assert session.query(UsLaceyEngineDocumentRun).filter_by(assurance_document_id=old_assurance).count() == 0 and current.is_current and current.version_number == 2 and run.source_sha256 == new_sha; session.close()
 
