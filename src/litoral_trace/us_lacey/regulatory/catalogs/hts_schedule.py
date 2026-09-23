@@ -33,7 +33,7 @@ class HtsScheduleEntry:
 
     hts_prefix: str
     effective_from: date
-    phase: str
+    phase: str = "UNSPECIFIED"
     effective_to: date | None = None
 
     def __post_init__(self) -> None:
