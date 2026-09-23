@@ -8,6 +8,14 @@ from litoral_trace.lacey_engine.segmentation import (
     PageClassification,
     starts_new_document,
 )
+from litoral_trace.us_lacey.regulatory.applicability.domain import (
+    DeclarationScope,
+    MerchandiseLineFacts,
+    PlantMaterialEvidence,
+)
+from litoral_trace.us_lacey.regulatory.applicability.service import (
+    DeclarationApplicabilityService,
+)
 
 
 def _pack_1_pdf() -> bytes:
@@ -183,4 +191,40 @@ def test_pack_1_golden_fixture_segments_three_logical_documents_without_leakage(
         4 <= candidate.provenance.page <= 7
         for field in bill_of_lading.resolution.fields.values()
         for candidate in field.candidates
+    )
+
+
+def test_pack_1_hts_lines_do_not_request_botanical_fields():
+    service = DeclarationApplicabilityService()
+    decisions = tuple(
+        service.evaluate(
+            MerchandiseLineFacts(
+                line_key=f"pack1-{index}",
+                hts10=hts10,
+                description=description,
+                entered_value=None,
+                plant_material=PlantMaterialEvidence.UNKNOWN,
+            )
+        )
+        for index, (hts10, description) in enumerate(
+            (
+                ("7613000000", "Cylinder"),
+                ("8424890000", "Mechanical equipment"),
+                ("8716805070", "Industrial cart"),
+            ),
+            start=1,
+        )
+    )
+
+    assert all(
+        decision.scope in {
+            DeclarationScope.NOT_REQUIRED,
+            DeclarationScope.REVIEW_REQUIRED,
+        }
+        for decision in decisions
+    )
+    assert all(decision.requires_botanical_fields is False for decision in decisions)
+    assert all(
+        "HTS_ON_APHIS_SCHEDULE" not in decision.reason_codes
+        for decision in decisions
     )
