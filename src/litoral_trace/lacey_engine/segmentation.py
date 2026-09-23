@@ -1,10 +1,215 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 import re
 
 from .classifier import classify_text
 from .domain import DocumentSection, DocumentType, ParsedLayout
+
+
+class DocumentDomain(StrEnum):
+    COMMERCIAL_TRADE = "COMMERCIAL_TRADE"
+    COURT_PLEADING = "COURT_PLEADING"
+    LEGAL_DECISION = "LEGAL_DECISION"
+    EMAIL_THREAD = "EMAIL_THREAD"
+    UNSUPPORTED = "UNSUPPORTED"
+    UNDETERMINED = "UNDETERMINED"
+
+
+@dataclass(frozen=True, slots=True)
+class DomainClassification:
+    domain: DocumentDomain
+    confidence: float
+    matched_anchor: str | None = None
+
+    @property
+    def rejected(self) -> bool:
+        return self.domain in {
+            DocumentDomain.COURT_PLEADING,
+            DocumentDomain.LEGAL_DECISION,
+            DocumentDomain.EMAIL_THREAD,
+            DocumentDomain.UNSUPPORTED,
+        }
+
+
+SUPPORTED_DOCUMENT_TYPES = frozenset(
+    kind
+    for kind in DocumentType
+    if kind not in {DocumentType.UNKNOWN, DocumentType.OTHER}
+)
+
+_LEGAL_DECISION_ANCHORS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("initial_decision", re.compile(r"\bINITIAL\s+DECISION\b", re.I)),
+    (
+        "administrative_law_judge",
+        re.compile(r"\b(?:ADMINISTRATIVE\s+LAW\s+JUDGE|OFFICE\s+OF\s+ADMINISTRATIVE\s+LAW\s+JUDGES)\b", re.I),
+    ),
+)
+_COURT_PLEADING_ANCHORS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "before_federal_maritime_commission",
+        re.compile(r"\bBEFORE\s+THE\s+FEDERAL\s+MARITIME\s+COMMISSION\b", re.I),
+    ),
+    ("docket_number", re.compile(r"\bDOCKET\s+NO\.?\s*[A-Z0-9-]+", re.I)),
+    (
+        "adverse_parties",
+        re.compile(
+            r"\b(?:PLAINTIFFS?|COMPLAINANTS?)\b[\s\S]{0,240}\b(?:DEFENDANTS?|RESPONDENTS?)\b",
+            re.I,
+        ),
+    ),
+    (
+        "plaintiff_defendant",
+        re.compile(r"\bPLAINTIFFS?\s*/\s*DEFENDANTS?\b", re.I),
+    ),
+)
+_FEDERAL_MARITIME_COMMISSION = re.compile(
+    r"\bFEDERAL\s+MARITIME\s+COMMISSION\b",
+    re.I,
+)
+_EMAIL_HEADER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("from", re.compile(r"(?im)^\s*from\s*:\s*\S+")),
+    ("sent", re.compile(r"(?im)^\s*sent\s*:\s*\S+")),
+    ("to", re.compile(r"(?im)^\s*to\s*:\s*\S+")),
+    ("subject", re.compile(r"(?im)^\s*subject\s*:\s*\S+")),
+)
+_ADDITIONAL_TRADE_ANCHORS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bARRIVAL\s+NOTICE\b", re.I),
+    re.compile(r"\b(?:SEA|AIR)\s+WAYBILL\b", re.I),
+    re.compile(r"\bCERTIFICATE\s+OF\s+ORIGIN\b", re.I),
+    re.compile(r"\bPHYTOSANITARY\s+CERTIFICATE\b", re.I),
+    re.compile(r"\bCBP\s+FORM\s+7501\b", re.I),
+    re.compile(r"\bIMPORTER\s+SECURITY\s+FILING\b", re.I),
+    re.compile(r"\bSUPPLIER\s+DECLARATION\b", re.I),
+    re.compile(r"\bHARVEST\s+DECLARATION\b", re.I),
+    re.compile(r"\bSPECIES\s+DECLARATION\b", re.I),
+)
+
+
+def _role_hint_document_type(role_hint: str | None) -> DocumentType | None:
+    try:
+        value = DocumentType(str(role_hint or "").strip().upper())
+    except ValueError:
+        return None
+    return value if value in SUPPORTED_DOCUMENT_TYPES else None
+
+
+def classify_domain_text(
+    text: str,
+    *,
+    role_hint: str | None = None,
+) -> DomainClassification:
+    """Classify manifest document domain before extraction.
+
+    Strong negative legal/admin anchors deliberately have precedence over
+    commercial vocabulary appearing in quoted evidence. This prevents a court
+    decision that discusses invoices, bills of lading or wood products from
+    entering the trade-document extraction path.
+    """
+
+    source = str(text or "")
+    folded = " ".join(source.split())
+    if not folded:
+        return DomainClassification(DocumentDomain.UNDETERMINED, 0.0)
+
+    decision_hits = [
+        name for name, pattern in _LEGAL_DECISION_ANCHORS if pattern.search(source)
+    ]
+    if (
+        decision_hits
+        and _FEDERAL_MARITIME_COMMISSION.search(source)
+    ):
+        return DomainClassification(
+            DocumentDomain.LEGAL_DECISION,
+            0.99,
+            decision_hits[0],
+        )
+
+    pleading_hits = [
+        name for name, pattern in _COURT_PLEADING_ANCHORS if pattern.search(source)
+    ]
+    if (
+        "before_federal_maritime_commission" in pleading_hits
+        or "plaintiff_defendant" in pleading_hits
+        or (
+            "docket_number" in pleading_hits
+            and "adverse_parties" in pleading_hits
+        )
+    ):
+        return DomainClassification(
+            DocumentDomain.COURT_PLEADING,
+            0.99,
+            pleading_hits[0] if pleading_hits else "court_pleading",
+        )
+
+    email_hits = [
+        name for name, pattern in _EMAIL_HEADER_PATTERNS if pattern.search(source)
+    ]
+    if len(email_hits) >= 3:
+        return DomainClassification(
+            DocumentDomain.EMAIL_THREAD,
+            0.98,
+            "+".join(email_hits),
+        )
+
+    if _role_hint_document_type(role_hint) is not None:
+        return DomainClassification(
+            DocumentDomain.COMMERCIAL_TRADE,
+            0.95,
+            "role_hint",
+        )
+
+    if _strong_anchor(source) is not None or any(
+        pattern.search(source) for pattern in _ADDITIONAL_TRADE_ANCHORS
+    ):
+        return DomainClassification(
+            DocumentDomain.COMMERCIAL_TRADE,
+            0.95,
+            "trade_anchor",
+        )
+
+    return DomainClassification(DocumentDomain.UNDETERMINED, 0.25)
+
+
+def classify_pdf_first_page_domain(
+    content: bytes,
+    *,
+    role_hint: str | None = None,
+) -> DomainClassification:
+    """Inspect only page one with PDFium for a cheap pre-extraction domain gate."""
+
+    if not bytes(content or b"").startswith(b"%PDF-"):
+        return DomainClassification(DocumentDomain.UNDETERMINED, 0.0)
+
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        return DomainClassification(DocumentDomain.UNDETERMINED, 0.0)
+
+    document = None
+    page = None
+    text_page = None
+    try:
+        document = pdfium.PdfDocument(content)
+        if len(document) < 1:
+            return DomainClassification(DocumentDomain.UNSUPPORTED, 1.0, "empty_pdf")
+        page = document[0]
+        text_page = page.get_textpage()
+        text = str(text_page.get_text_range() or "")
+        return classify_domain_text(text, role_hint=role_hint)
+    except Exception:
+        # Domain classification must not turn an otherwise parseable document into
+        # a false rejection. The normal parser remains authoritative for corruption.
+        return DomainClassification(DocumentDomain.UNDETERMINED, 0.0)
+    finally:
+        for value in (text_page, page, document):
+            close = getattr(value, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
 
 
 _STRONG_ANCHORS: tuple[tuple[re.Pattern[str], DocumentType], ...] = (
@@ -55,6 +260,7 @@ class PageClassification:
     containers: frozenset[str] = frozenset()
     page_number: int | None = None
     page_total: int | None = None
+    domain: DocumentDomain = DocumentDomain.UNDETERMINED
 
 
 def _normalized_tokens(pattern: re.Pattern[str], text: str) -> frozenset[str]:
@@ -91,9 +297,14 @@ def _page_classification(
     block_ids: tuple[str, ...],
     fallback_type: DocumentType,
 ) -> PageClassification:
+    domain = classify_domain_text(text)
     document_type, confidence = classify_text(text)
     anchor = _strong_anchor(text)
-    if anchor is not None:
+    if domain.rejected:
+        document_type = DocumentType.UNKNOWN
+        confidence = max(confidence, domain.confidence)
+        anchor = None
+    elif anchor is not None:
         document_type = anchor
         confidence = max(confidence, 0.95)
     elif document_type is DocumentType.UNKNOWN:
@@ -112,6 +323,7 @@ def _page_classification(
         containers=_normalized_tokens(_CONTAINER_NUMBER, text),
         page_number=page_number,
         page_total=page_total,
+        domain=domain,
     )
 
 
