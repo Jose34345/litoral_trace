@@ -4,6 +4,7 @@ from contextlib import nullcontext
 from types import SimpleNamespace
 from uuid import uuid4
 
+from litoral_trace.lacey_engine.errors import UnsupportedDocumentDomainError
 from litoral_trace.us_lacey import worker
 
 
@@ -165,6 +166,7 @@ def test_worker_defers_operation_ai_until_every_current_source_is_terminal(monke
         lambda **_: SimpleNamespace(filename="document.pdf", size_bytes=1, vault_public_id=uuid4()),
     )
     monkeypatch.setattr(worker, "_preflight_existing_document", lambda **_: None)
+    monkeypatch.setattr(worker, "_preflight_engine2_domain", lambda **_: None)
     monkeypatch.setattr(worker, "us_lacey_operation_projection_lock", lambda **_: nullcontext())
     monkeypatch.setattr(worker, "_claim_source_set_finalization", lambda **_: SimpleNamespace(claimed=False, fingerprint=None))
     monkeypatch.setattr(worker, "_shadow_multilingual_evidence_snapshot", lambda **_: calls.append("snapshot"))
@@ -226,3 +228,60 @@ def test_partial_engine2_shadow_does_not_fail_authoritative_worker_job(monkeypat
     assert result.job_status == "COMPLETED"
     assert result.operation_status == "REVIEW_REQUIRED"
     assert result.document_status == "PROCESSED"
+
+
+
+def test_worker_rejects_unsupported_domain_before_processing_or_projection(monkeypatch):
+    calls: list[str] = []
+    job = _job()
+    monkeypatch.setattr(worker, "claim_next_us_lacey_job", lambda **_: job)
+    monkeypatch.setattr(worker, "_assurance_public_id", lambda **_: uuid4())
+    monkeypatch.setattr(
+        worker,
+        "_document_descriptor",
+        lambda **_: SimpleNamespace(
+            filename="initial-decision.pdf",
+            size_bytes=1024,
+            vault_public_id=uuid4(),
+        ),
+    )
+    monkeypatch.setattr(worker, "_preflight_existing_document", lambda **_: calls.append("budget"))
+
+    def reject(**_kwargs):
+        calls.append("domain")
+        raise UnsupportedDocumentDomainError(domain="LEGAL_DECISION")
+
+    monkeypatch.setattr(worker, "_preflight_engine2_domain", reject)
+    monkeypatch.setattr(
+        worker,
+        "_processing_service",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("Assurance processing must not run for rejected domain")
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        "project_assurance_document_to_us_lacey",
+        lambda **_: (_ for _ in ()).throw(
+            AssertionError("projection must not run for rejected domain")
+        ),
+    )
+
+    observed: dict[str, object] = {}
+
+    def fail(**kwargs):
+        observed.update(kwargs)
+        return "FAILED"
+
+    monkeypatch.setattr(worker, "fail_us_lacey_job", fail)
+
+    result = worker.process_one_us_lacey_job(worker_id="worker-domain-test")
+
+    assert calls == ["budget", "domain"]
+    assert observed["error_code"] == "UNSUPPORTED_DOMAIN"
+    assert observed["retryable"] is False
+    assert result.job_status == "FAILED"
+    assert result.document_status == "FAILED"
+    assert result.operation_status == "FAILED"
+    assert result.projected_count == 0
+    assert result.conflict_count == 0
