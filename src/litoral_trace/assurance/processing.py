@@ -57,7 +57,7 @@ SessionFactory = Callable[[], Session | None]
 PARSER_ENGINE = "assurance-deterministic-parser"
 # Bump when deterministic interpretation changes. Blob identity deliberately
 # remains independent: only the derived extraction cache is invalidated.
-PARSER_ENGINE_VERSION = "1.4.0"
+PARSER_ENGINE_VERSION = "1.5.0"
 _DEFAULT_RAW_CELL_PERSIST_LIMIT = 2000
 
 
@@ -686,7 +686,14 @@ class AssuranceProcessingService:
 
             review_code: str | None = None
             review_message: str | None = None
-            if parsed.ocr_required:
+            if bool(parsed.metadata.get("text_extraction_truncated")):
+                review_code = "PDF_PROCESSING_BUDGET_EXCEEDED"
+                review_message = (
+                    "PDF exceeds the automatic processing budget. "
+                    "Only a bounded prefix was inspected; split the document into "
+                    "smaller shipment-relevant files and review the result."
+                )[:512]
+            elif parsed.ocr_required:
                 review_code = "OCR_REQUIRED"
                 review_message = "PDF sin texto digital util; requiere OCR controlado."
             elif classification.document_type == AssuranceDocumentType.UNKNOWN:
