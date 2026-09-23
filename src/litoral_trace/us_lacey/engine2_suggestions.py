@@ -249,6 +249,27 @@ def project_engine2_supported_suggestions(*, organization_id: int, operation_id:
         )
         session.commit()
         return int(result.field_count) + int(derived_count)
+    except RuntimeError as exc:
+        session.rollback()
+        if str(exc) == "CANONICAL_STALE_LINE_REQUIRES_REVIEW":
+            LOGGER.warning(
+                "U.S. Lacey canonical publication deferred for human review",
+                extra={
+                    "event": "us_lacey_canonical_publication_review_required",
+                    "organization_id": int(organization_id),
+                    "operation_id": int(operation_id),
+                },
+            )
+            return 0
+        LOGGER.exception(
+            "U.S. Lacey canonical publication failed",
+            extra={
+                "event": "us_lacey_canonical_publication_failed",
+                "organization_id": int(organization_id),
+                "operation_id": int(operation_id),
+            },
+        )
+        raise
     except Exception:
         session.rollback()
         LOGGER.exception(
