@@ -516,7 +516,7 @@ def render_new_operation(*, request, identity, entitlement, csrf_token: str, err
     return _render(request, "new_operation", identity=identity, entitlement=entitlement, csrf_token=csrf_token, error=error)
 
 
-def render_operation_detail(*, request, identity, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], product_intelligence=None, regulatory_assessment=None, error: str | None = None, notice: str | None = None) -> str:
+def render_operation_detail(*, request, identity, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], retry_csrf: str = "", product_intelligence=None, regulatory_assessment=None, error: str | None = None, notice: str | None = None) -> str:
     attention_fields, auto_supported_fields, settled_fields = _review_field_groups_with_semantic_evidence(identity, detail)
     progress = processing_view(detail)
     product_intelligence = _product_intelligence_for_detail(identity, detail, product_intelligence)
@@ -534,6 +534,7 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
         upload_csrf=upload_csrf,
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
+        retry_csrf=retry_csrf,
         attention_fields=attention_fields,
         auto_supported_fields=auto_supported_fields,
         settled_fields=settled_fields,
@@ -543,8 +544,14 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
     )
 
 
-def render_processing_fragment(*, request, detail) -> str:
-    return _render(request, "fragments/processing_fragment", detail=detail, processing=processing_view(detail))
+def render_processing_fragment(*, request, detail, retry_csrf: str = "") -> str:
+    return _render(
+        request,
+        "fragments/processing_fragment",
+        detail=detail,
+        processing=processing_view(detail),
+        retry_csrf=retry_csrf,
+    )
 
 
 def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None, is_oob_update: bool | None = None) -> str:
