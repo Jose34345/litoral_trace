@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from litoral_trace.lacey_engine.errors import UnsupportedDocumentDomainError
 from litoral_trace.lacey_engine.serialization import BUNDLE_RESOLUTION_SCHEMA_VERSION
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 
@@ -68,3 +69,20 @@ def test_engine2_failed_document_retry_identity_is_idempotent(monkeypatch):
         identity=identity,
     )
     assert result is existing
+
+
+
+def test_engine2_batch_preserves_unsupported_domain_error_code():
+    service = UsLaceyEngine2Service(session_factory=lambda: None, vault_service=object())
+
+    outcome = service._process_engine2_document_batch(
+        documents=(SimpleNamespace(filename="initial-decision.pdf"),),
+        process_one=lambda _document: (_ for _ in ()).throw(
+            UnsupportedDocumentDomainError(domain="LEGAL_DECISION")
+        ),
+    )
+
+    assert outcome.status == "FAILED"
+    assert len(outcome.failed) == 1
+    assert outcome.failed[0].safe_error_code == "UNSUPPORTED_DOMAIN"
+    assert "legal or administrative files" in outcome.failed[0].safe_error_message
