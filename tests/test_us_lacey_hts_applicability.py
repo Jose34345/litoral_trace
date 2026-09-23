@@ -37,7 +37,8 @@ def _subject(hts10: str | None) -> RegulatorySubject:
 
 def test_catalog_is_versioned_and_matches_4407_by_prefix():
     assert APHIS_HTS_SCHEDULE.version == APHIS_HTS_SCHEDULE_VERSION
-    assert APHIS_HTS_SCHEDULE.version == "aphis-lacey-hts-2026-01-13"
+    assert APHIS_HTS_SCHEDULE.version == "aphis-phase-vii-2024"
+    assert APHIS_HTS_SCHEDULE.is_complete is True
 
     match = APHIS_HTS_SCHEDULE.match(
         "4407990190",
@@ -86,6 +87,13 @@ def test_catalog_uses_longest_active_prefix_match():
     assert match.hts_prefix == "9401692010"
 
 
+def test_phase_vii_catalog_handles_mixed_hierarchy_and_aphis_vetiver_exclusion():
+    assert APHIS_HTS_SCHEDULE.match("1401100000").hts_prefix == "1401"
+    assert APHIS_HTS_SCHEDULE.match("8716100000").hts_prefix == "871610"
+    assert APHIS_HTS_SCHEDULE.match("9405428410").hts_prefix == "9405428410"
+    assert APHIS_HTS_SCHEDULE.match("3301295142") is None
+
+
 def test_catalog_respects_effective_dates():
     catalog = HtsScheduleCatalog(
         version="test-catalog",
@@ -103,7 +111,7 @@ def test_catalog_respects_effective_dates():
 
 
 def test_catalog_rejects_invalid_prefix_and_date_range():
-    with pytest.raises(ValueError, match="4 to 10 digits"):
+    with pytest.raises(ValueError, match="2 to 10 digits"):
         HtsScheduleEntry(
             hts_prefix="44.07",
             effective_from=date(2009, 4, 1),
@@ -149,7 +157,7 @@ def test_hts_rule_malformed_code_is_indeterminate_fail_closed():
     assert result.review_required is True
 
 
-def test_hts_rule_partial_catalog_miss_is_indeterminate_fail_closed():
+def test_default_complete_catalog_miss_is_definitively_not_on_schedule():
     subject = _subject("0101210010")
     rule = HtsApplicabilityRule()
 
@@ -161,9 +169,9 @@ def test_hts_rule_partial_catalog_miss_is_indeterminate_fail_closed():
         ),
     )
 
-    assert result.status is RuleStatus.INDETERMINATE
-    assert result.reason_codes == ("HTS_NOT_IN_PARTIAL_CATALOG",)
-    assert result.review_required is True
+    assert result.status is RuleStatus.FAIL
+    assert result.reason_codes == ("HTS_NOT_ON_APHIS_SCHEDULE",)
+    assert result.review_required is False
     assert result.calculation_trace["matched_prefix"] is None
 
 
@@ -211,10 +219,10 @@ def test_hts_rule_passes_4407_with_exact_defensive_copy():
     assert result.reason_codes == ("HTS_ON_APHIS_SCHEDULE",)
     assert result.explanation == PASS_EXPLANATION
     assert result.calculation_trace["matched_prefix"] == "4407"
-    assert result.calculation_trace["catalog_version"] == "aphis-lacey-hts-2026-01-13"
+    assert result.calculation_trace["catalog_version"] == "aphis-phase-vii-2024"
 
 
-def test_hts_rule_passes_exact_seeded_furniture_code():
+def test_hts_rule_passes_phase_iv_furniture_prefix():
     subject = _subject("9401692010")
     rule = HtsApplicabilityRule()
 
@@ -228,7 +236,7 @@ def test_hts_rule_passes_exact_seeded_furniture_code():
 
     assert result.status is RuleStatus.PASS
     assert result.explanation == PASS_EXPLANATION
-    assert result.calculation_trace["matched_prefix"] == "9401692010"
+    assert result.calculation_trace["matched_prefix"] == "940169"
 
 
 def test_hts_rule_uses_catalog_as_of_when_context_has_no_evaluation_date():
@@ -241,7 +249,7 @@ def test_hts_rule_uses_catalog_as_of_when_context_has_no_evaluation_date():
     )
 
     assert result.status is RuleStatus.PASS
-    assert result.calculation_trace["evaluation_date"] == "2026-01-13"
+    assert result.calculation_trace["evaluation_date"] == "2024-12-01"
 
 
 def test_hts_rule_conforms_to_subject_first_engine_protocol():

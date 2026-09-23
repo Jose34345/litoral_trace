@@ -180,7 +180,7 @@ def _assert_href(html: str, href: str) -> None:
 def _csv_bytes() -> bytes:
     return (
         "HTS Code,Merchandise Description,Genus,Species,Country of Harvest,Plant Quantity,Metric Unit,Bill of Lading\n"
-        "4407.11,Pine boards,Pinus,Pinus taeda,Brazil,1000,KG,BOL-E2E-9001\n"
+        "4407.11.0190,Pine boards,Pinus,Pinus taeda,Brazil,1000,KG,BOL-E2E-9001\n"
     ).encode("utf-8")
 
 

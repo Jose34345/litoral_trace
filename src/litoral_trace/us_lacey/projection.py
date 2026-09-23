@@ -46,6 +46,15 @@ from litoral_trace.us_lacey.reconciliation_invariants import (
     reconcile_entered_value_invariant,
     upsert_shipment_total_entered_value,
 )
+from litoral_trace.us_lacey.regulatory.applicability.domain import (
+    ApplicabilityDecision,
+    DeclarationScope,
+    MerchandiseLineFacts,
+    PlantMaterialEvidence,
+)
+from litoral_trace.us_lacey.regulatory.applicability.service import (
+    DeclarationApplicabilityService,
+)
 
 
 class UsLaceyProjectionError(RuntimeError):
@@ -59,6 +68,18 @@ class UsLaceyProjectionResult:
     review_count: int
     conflict_count: int
     operation_status: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ExplicitMerchandiseRow:
+    table_id: int
+    row_number: int
+    line_key: str
+    hts10: str | None
+    description: str | None
+    entered_value: str | None
+    plant_material: PlantMaterialEvidence
+    evidence_refs: tuple[str, ...]
 
 
 AUTO_SUPPORT_MIN_CONFIDENCE = 0.90
@@ -104,6 +125,10 @@ _EXPLICIT_HEADER_ALIASES = {
     "hts": "hts_code",
     "hts code": "hts_code",
     "hts number": "hts_code",
+    "htsus": "hts_code",
+    "hs": "hts_code",
+    "hs code": "hts_code",
+    "hs number": "hts_code",
     "article component": "article_component",
     "article": "article_component",
     "component": "article_component",
@@ -156,7 +181,7 @@ _LINE_NUMBER_HEADERS = frozenset(
     {"line", "line no", "line number", "item", "item no", "item number"}
 )
 _CUSTOMS_HTS_HEADERS = frozenset(
-    {"hts", "hts code", "hts number", "htsus"}
+    {"hts", "hts code", "hts number", "htsus", "hs", "hs code", "hs number"}
 )
 _CUSTOMS_DESCRIPTION_HEADERS = frozenset(
     {"description", "commodity description", "description of goods", "goods description"}
@@ -275,6 +300,24 @@ _PLANT_ROW_IDENTITY_TARGETS = frozenset(
 )
 _CUSTOMS_LINE_ROW_TARGETS = frozenset(
     {"hts_code", "merchandise_description", "entered_value"}
+)
+_PLANT_MATERIAL_HEADERS = frozenset(
+    {
+        "plant material",
+        "plant material present",
+        "contains plant material",
+        "contains plant",
+        "contains wood",
+    }
+)
+_PLANT_MATERIAL_PRESENT_VALUES = frozenset(
+    {"yes", "y", "true", "1", "present", "contains plant material", "contains wood"}
+)
+_PLANT_MATERIAL_ABSENT_VALUES = frozenset(
+    {"no", "n", "false", "0", "absent", "none", "no plant material", "no wood"}
+)
+_BOTANICAL_PRESENCE_HEADERS = frozenset(
+    {"genus", "species", "country of harvest", "harvest country", "plant quantity", "plant qty"}
 )
 _MAX_AUTO_PLANT_LINES = 500
 
@@ -533,7 +576,12 @@ def _target_field(
 
 
 def _line_reference(
-    *, target: str, source_locator: str | None, line_references: tuple[str, ...]
+    *,
+    target: str,
+    source_locator: str | None,
+    line_references: tuple[str, ...],
+    row_line_references: dict[tuple[int, int], str] | None = None,
+    source_field_name: str | None = None,
 ) -> str:
     contract = PPQ505_FIELDS_BY_KEY.get(target)
     if contract is None:
@@ -543,9 +591,19 @@ def _line_reference(
         return PPQ505_SHIPMENT_REFERENCE
     if not line_references:
         return ""
-    match = _DATA_ROW.search(str(source_locator or ""))
-    if match:
-        row_number = int(match.group("row"))
+
+    row_match = _DATA_ROW.search(str(source_locator or ""))
+    if row_match and row_line_references is not None:
+        raw_match = _RAW_TABLE_FIELD.match(str(source_field_name or ""))
+        if raw_match is not None:
+            key = (int(raw_match.group("table")), int(row_match.group("row")))
+            # A document that contains explicit merchandise rows is applicability
+            # gated. Row-local evidence may never fall through into a different
+            # materialized line.
+            return row_line_references.get(key, "")
+
+    if row_match:
+        row_number = int(row_match.group("row"))
         if 1 <= row_number <= len(line_references):
             return line_references[row_number - 1]
     return line_references[0] if len(line_references) == 1 else ""
@@ -587,47 +645,125 @@ def _shipment_total_entered_value_source(
     return next(iter(distinct.values()))
 
 
-def _explicit_plant_data_rows(
+def _normalize_hts_candidate(value: object) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    digits = re.sub(r"[^0-9]", "", raw)
+    return digits or None
+
+
+def _explicit_merchandise_rows(
     extracted: tuple[ExtractedDocumentField, ...] | list[ExtractedDocumentField],
     *,
     table_headers,
-) -> tuple[int, ...]:
-    """Return explicit table rows that carry line-identity evidence.
+) -> tuple[_ExplicitMerchandiseRow, ...]:
+    """Extract commercial rows without creating PPQ botanical entities."""
 
-    Botanical declaration rows remain the primary source. Customs entry rows may
-    also establish independent PPQ line skeletons, but only when the enclosing table
-    has the strong line + HTS + description + entered-value signature. This makes
-    upload order irrelevant without allowing shipment totals to manufacture lines.
-    """
-    rows: set[int] = set()
+    grouped: dict[tuple[int, int], list[ExtractedDocumentField]] = {}
     for source in extracted:
-        # Only raw table cells have an unambiguous table identity. Generic
-        # structured aliases (for example product emitted from a BOM sheet)
-        # retain a row locator but lose the table id; merging headers across an XLSX
-        # can therefore make a BOM row look like a customs allocation row. Generic
-        # fields remain useful candidates after lines exist, but they are never
-        # allowed to manufacture new PPQ line skeletons.
-        if _RAW_TABLE_FIELD.match(str(source.field_name or "")) is None:
+        raw_match = _RAW_TABLE_FIELD.match(str(source.field_name or ""))
+        row_match = _DATA_ROW.search(str(source.source_locator or ""))
+        if raw_match is None or row_match is None:
             continue
-        target, _priority = _target_field(source, table_headers=table_headers)
-        context_headers = _table_header_context(source, table_headers)
-        is_plant_identity = (
-            target in _PLANT_ROW_IDENTITY_TARGETS
-            and not _is_explicit_bom_table(context_headers)
+        table_id = int(raw_match.group("table"))
+        row_number = int(row_match.group("row"))
+        if not 1 <= row_number <= _MAX_AUTO_PLANT_LINES:
+            continue
+        grouped.setdefault((table_id, row_number), []).append(source)
+
+    rows: list[_ExplicitMerchandiseRow] = []
+    for (table_id, row_number), sources in sorted(grouped.items()):
+        headers = frozenset(table_headers.get(table_id, frozenset()))
+        if _is_explicit_bom_table(headers):
+            continue
+
+        hts_source = None
+        description_source = None
+        entered_value_source = None
+        plant_material = PlantMaterialEvidence.UNKNOWN
+        evidence_refs: list[str] = []
+
+        for source in sources:
+            raw_match = _RAW_TABLE_FIELD.match(str(source.field_name or ""))
+            if raw_match is None:
+                continue
+            header = _fold(raw_match.group("header"))
+            value = source.normalized_value or source.original_value
+            if value is None or not str(value).strip():
+                continue
+
+            locator = str(source.source_locator or "").strip()
+            if locator and locator not in evidence_refs:
+                evidence_refs.append(locator)
+
+            if header in _CUSTOMS_HTS_HEADERS and hts_source is None:
+                hts_source = source
+            elif header in _CUSTOMS_DESCRIPTION_HEADERS and description_source is None:
+                description_source = source
+            elif header == "entered value" and entered_value_source is None:
+                entered_value_source = source
+
+            folded_value = _fold(value)
+            if header in _PLANT_MATERIAL_HEADERS:
+                if folded_value in _PLANT_MATERIAL_ABSENT_VALUES:
+                    plant_material = PlantMaterialEvidence.ABSENT
+                elif folded_value in _PLANT_MATERIAL_PRESENT_VALUES:
+                    plant_material = PlantMaterialEvidence.PRESENT
+            elif (
+                header in _BOTANICAL_PRESENCE_HEADERS
+                and plant_material is not PlantMaterialEvidence.ABSENT
+            ):
+                plant_material = PlantMaterialEvidence.PRESENT
+
+        if hts_source is None:
+            continue
+
+        hts_raw = hts_source.normalized_value or hts_source.original_value
+        description = None
+        if description_source is not None:
+            description = str(
+                description_source.normalized_value or description_source.original_value
+            ).strip() or None
+        entered_value = None
+        if entered_value_source is not None:
+            entered_value = str(
+                entered_value_source.normalized_value or entered_value_source.original_value
+            ).strip() or None
+
+        rows.append(
+            _ExplicitMerchandiseRow(
+                table_id=table_id,
+                row_number=row_number,
+                line_key=f"table-{table_id}:row-{row_number}",
+                hts10=_normalize_hts_candidate(hts_raw),
+                description=description,
+                entered_value=entered_value,
+                plant_material=plant_material,
+                evidence_refs=tuple(evidence_refs),
+            )
         )
-        is_customs_line_identity = (
-            target in _CUSTOMS_LINE_ROW_TARGETS
-            and _is_line_allocation_table(context_headers)
-        )
-        if not (is_plant_identity or is_customs_line_identity):
-            continue
-        match = _DATA_ROW.search(str(source.source_locator or ""))
-        if match is None:
-            continue
-        row_number = int(match.group("row"))
-        if 1 <= row_number <= _MAX_AUTO_PLANT_LINES:
-            rows.add(row_number)
-    return tuple(sorted(rows))
+    return tuple(rows)
+
+
+def _merchandise_facts(row: _ExplicitMerchandiseRow) -> MerchandiseLineFacts:
+    return MerchandiseLineFacts(
+        line_key=row.line_key,
+        hts10=row.hts10,
+        description=row.description,
+        entered_value=row.entered_value,
+        plant_material=row.plant_material,
+        evidence_refs=row.evidence_refs,
+    )
+
+
+def _evaluate_merchandise_rows(
+    rows: tuple[_ExplicitMerchandiseRow, ...],
+    *,
+    service: DeclarationApplicabilityService | None = None,
+) -> tuple[tuple[_ExplicitMerchandiseRow, ApplicabilityDecision], ...]:
+    evaluator = service or DeclarationApplicabilityService()
+    return tuple((row, evaluator.evaluate(_merchandise_facts(row))) for row in rows)
 
 
 def _new_line_reference(*, ordinal: int, used: set[str]) -> str:
@@ -643,22 +779,15 @@ def _new_line_reference(*, ordinal: int, used: set[str]) -> str:
     return candidate
 
 
-def _materialize_explicit_plant_lines(
+def _materialize_applicable_plant_lines(
     session,
     *,
     organization_id: int,
     operation: UsLaceyOperation,
-    extracted: tuple[ExtractedDocumentField, ...] | list[ExtractedDocumentField],
-    table_headers,
-) -> tuple[str, ...]:
-    """Create only consecutively evidenced plant rows missing from an operation.
+    evaluated_rows: tuple[tuple[_ExplicitMerchandiseRow, ApplicabilityDecision], ...],
+) -> dict[tuple[int, int], str]:
+    """Materialize PPQ lines only after applicability requires botanical fields."""
 
-    Upload-first intentionally starts with a minimal operation. When extraction
-    explicitly identifies data_row:2, data_row:3, ... for plant identity fields,
-    those rows must become independent PPQ plant lines before projection. This keeps
-    parallel components from being collapsed into line 1 while refusing large row
-    jumps or shipment-only evidence as a basis for creating regulatory rows.
-    """
     plant_lines = list(
         session.scalars(
             select(UsLaceyPpqPlantLine)
@@ -669,11 +798,24 @@ def _materialize_explicit_plant_lines(
             .order_by(UsLaceyPpqPlantLine.ordinal.asc(), UsLaceyPpqPlantLine.id.asc())
         ).all()
     )
-    explicit_rows = set(_explicit_plant_data_rows(extracted, table_headers=table_headers))
-    used = {str(row.line_reference) for row in plant_lines}
-    next_ordinal = len(plant_lines) + 1
-    while next_ordinal <= _MAX_AUTO_PLANT_LINES and next_ordinal in explicit_rows:
-        line_reference = _new_line_reference(ordinal=next_ordinal, used=used)
+    by_reference = {str(row.line_reference): row for row in plant_lines}
+    used = set(by_reference)
+    next_ordinal = max((int(row.ordinal) for row in plant_lines), default=0) + 1
+    row_line_references: dict[tuple[int, int], str] = {}
+
+    for row, decision in evaluated_rows:
+        if not decision.requires_botanical_fields:
+            continue
+        preferred = str(row.row_number)
+        existing = by_reference.get(preferred)
+        if existing is not None:
+            row_line_references[(row.table_id, row.row_number)] = preferred
+            continue
+
+        line_reference = preferred if preferred not in used else _new_line_reference(
+            ordinal=next_ordinal,
+            used=used,
+        )
         plant_line = UsLaceyPpqPlantLine(
             organization_id=organization_id,
             operation_id=operation.id,
@@ -704,17 +846,111 @@ def _materialize_explicit_plant_lines(
                 )
             )
         plant_lines.append(plant_line)
+        by_reference[line_reference] = plant_line
         used.add(line_reference)
+        row_line_references[(row.table_id, row.row_number)] = line_reference
         next_ordinal += 1
 
     operation.merchandise_line_count = len(plant_lines)
     session.flush()
-    return tuple(str(row.line_reference) for row in plant_lines)
+    return row_line_references
 
 
 def _fingerprint(*parts: object) -> str:
     canonical = "\x1f".join(str(part if part is not None else "") for part in parts)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _sync_applicability_review_issue(
+    session,
+    *,
+    organization_id: int,
+    operation: UsLaceyOperation,
+    document: AssuranceDocument,
+    row: _ExplicitMerchandiseRow,
+    decision: ApplicabilityDecision,
+) -> bool:
+    """Upsert one line-level applicability question without botanical fields."""
+
+    fingerprint = _fingerprint(
+        "US_LACEY_DECLARATION_APPLICABILITY",
+        operation.public_id,
+        row.line_key,
+    )
+    existing = session.scalar(
+        select(ReconciliationIssue).where(
+            ReconciliationIssue.organization_id == organization_id,
+            ReconciliationIssue.fingerprint == fingerprint,
+        )
+    )
+
+    if decision.scope is not DeclarationScope.REVIEW_REQUIRED:
+        if existing is not None and existing.status == "OPEN":
+            existing.status = "RESOLVED"
+            existing.resolution_justification = "Applicability was resolved by deterministic evidence."
+        return False
+
+    reason = decision.reason_codes[0]
+    if reason == "PLANT_MATERIAL_NOT_ESTABLISHED":
+        field_name = "plant_material"
+        explanation = "Does this product contain plant material?"
+    else:
+        field_name = "hts_code"
+        explanation = "A valid 10-digit HTS code is required before Lacey declaration applicability can be determined."
+
+    evidence = {
+        "source": "us_lacey_projection",
+        "line_key": row.line_key,
+        "hts10": row.hts10,
+        "description": row.description,
+        "entered_value": row.entered_value,
+        "plant_material": row.plant_material.value,
+        "scope": decision.scope.value,
+        "reason_codes": list(decision.reason_codes),
+        "catalog_version": decision.catalog_version,
+        "requires_botanical_fields": False,
+        "evidence_refs": list(row.evidence_refs),
+    }
+    left_source = (
+        f"assurance:{document.id}:{row.evidence_refs[0]}"
+        if row.evidence_refs
+        else f"assurance:{document.id}:merchandise:{row.line_key}"
+    )
+    if existing is None:
+        session.add(
+            ReconciliationIssue(
+                organization_id=organization_id,
+                operation_reference=f"us_lacey:{operation.public_id}",
+                fingerprint=fingerprint,
+                rule_code=reason,
+                severity="BLOCKING",
+                status="OPEN",
+                field_name=field_name,
+                us_lacey_operation_field_id=None,
+                left_document_id=document.id,
+                right_document_id=None,
+                left_source=left_source,
+                right_source=None,
+                left_value=row.description or row.hts10,
+                right_value=None,
+                explanation=explanation,
+                evidence_json=evidence,
+            )
+        )
+    else:
+        existing.rule_code = reason
+        existing.severity = "BLOCKING"
+        existing.status = "OPEN"
+        existing.field_name = field_name
+        existing.us_lacey_operation_field_id = None
+        existing.left_document_id = document.id
+        existing.left_source = left_source
+        existing.left_value = row.description or row.hts10
+        existing.explanation = explanation
+        existing.evidence_json = evidence
+        existing.resolution_justification = None
+        existing.resolved_at = None
+    return True
 
 
 def _upsert_conflict(
@@ -1032,13 +1268,39 @@ def project_assurance_document_to_us_lacey(
                 confidence=float(shipment_total_source.confidence),
             )
 
-        line_references = _materialize_explicit_plant_lines(
+        merchandise_rows = _explicit_merchandise_rows(
+            extracted,
+            table_headers=table_headers,
+        )
+        evaluated_merchandise_rows = _evaluate_merchandise_rows(merchandise_rows)
+        applicability_review_count = 0
+        for merchandise_row, applicability in evaluated_merchandise_rows:
+            applicability_review_count += int(
+                _sync_applicability_review_issue(
+                    session,
+                    organization_id=org_id,
+                    operation=operation,
+                    document=document,
+                    row=merchandise_row,
+                    decision=applicability,
+                )
+            )
+
+        row_line_references = _materialize_applicable_plant_lines(
             session,
             organization_id=org_id,
             operation=operation,
-            extracted=extracted,
-            table_headers=table_headers,
+            evaluated_rows=evaluated_merchandise_rows,
         )
+        plant_lines = session.scalars(
+            select(UsLaceyPpqPlantLine)
+            .where(
+                UsLaceyPpqPlantLine.organization_id == org_id,
+                UsLaceyPpqPlantLine.operation_id == operation.id,
+            )
+            .order_by(UsLaceyPpqPlantLine.ordinal.asc(), UsLaceyPpqPlantLine.id.asc())
+        ).all()
+        line_references = tuple(str(row.line_reference) for row in plant_lines)
         operation_fields = session.scalars(
             select(UsLaceyOperationField).where(
                 UsLaceyOperationField.organization_id == org_id,
@@ -1072,13 +1334,18 @@ def project_assurance_document_to_us_lacey(
                 target=target,
                 source_locator=row.source_locator,
                 line_references=line_references,
+                row_line_references=(
+                    row_line_references if merchandise_rows else None
+                ),
+                source_field_name=row.field_name,
             )
             if not line:
                 continue
             key = (line, target)
             candidates.setdefault(key, []).append((priority, row))
 
-        projected = matched = review = conflicts = 0
+        projected = matched = conflicts = 0
+        review = applicability_review_count
         species_for_genus: list[tuple[str, ExtractedDocumentField]] = []
         for (line, target), sources in candidates.items():
             field = indexed.get((line, target))

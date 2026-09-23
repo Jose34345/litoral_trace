@@ -14,11 +14,13 @@ from litoral_trace.lacey_engine.multi_agent.contracts import (
 from litoral_trace.lacey_engine.multi_agent.line_binding import bind_line_items
 from litoral_trace.lacey_engine.pipeline import _extract
 from litoral_trace.us_lacey.projection import (
-    _explicit_plant_data_rows,
+    _evaluate_merchandise_rows,
+    _explicit_merchandise_rows,
     _has_explicit_line_entered_value,
     _is_line_allocation_table,
     _target_field,
 )
+from litoral_trace.us_lacey.regulatory.applicability.domain import DeclarationScope
 
 
 def _entry_summary_rows() -> list[list[str]]:
@@ -97,7 +99,7 @@ def test_commercial_pricing_table_is_not_a_customs_line_allocation():
     assert _is_line_allocation_table(headers) is False
 
 
-def test_customs_entry_rows_can_materialize_lines_before_botanical_documents_arrive():
+def test_customs_entry_rows_remain_merchandise_until_plant_material_is_established():
     table_headers = {
         2: frozenset({"line", "hts", "description", "qty", "entered value"})
     }
@@ -128,10 +130,19 @@ def test_customs_entry_rows_can_materialize_lines_before_botanical_documents_arr
         ),
     ]
 
-    assert _explicit_plant_data_rows(
-        extracted,
-        table_headers=table_headers,
-    ) == (1, 2)
+    rows = _explicit_merchandise_rows(extracted, table_headers=table_headers)
+    evaluated = _evaluate_merchandise_rows(rows)
+
+    assert [row.hts10 for row, _decision in evaluated] == [
+        "4407110190",
+        "4407990190",
+    ]
+    assert all(
+        decision.scope is DeclarationScope.REVIEW_REQUIRED
+        and decision.reason_codes == ("PLANT_MATERIAL_NOT_ESTABLISHED",)
+        and decision.requires_botanical_fields is False
+        for _row, decision in evaluated
+    )
 
 
 def _candidate(field_key: str, value: str) -> AICandidate:
