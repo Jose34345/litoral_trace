@@ -1,4 +1,13 @@
-{% if processing.failed %}
+{% if processing.state == "UNSUPPORTED_DOMAIN" %}
+<section class="lt-card p-6" role="alert" data-unsupported-document-domain>
+  <h2 class="text-lg font-bold text-slate-950">Unsupported document type</h2>
+  <p class="mt-2 text-sm text-slate-600">{{ processing.message }}</p>
+  <p class="mt-2 text-sm text-slate-600">Upload a commercial invoice, packing list, bill of lading, waybill, arrival notice, or another shipment-supporting document.</p>
+  <div class="mt-4 flex flex-wrap gap-3">
+    <a class="lt-button lt-button--ghost" href="mailto:support@litoraltrace.com?subject=Unsupported Document - Operation {{ detail.public_id }}">Contact support</a>
+  </div>
+</section>
+{% elif processing.failed %}
 <section class="lt-card p-6" role="alert">
   <h2 class="text-lg font-bold text-slate-950">We couldn't finish analyzing this shipment.</h2>
   <p class="mt-2 text-sm text-slate-600">Your original documents remain safely stored. No declaration data was submitted.</p>
