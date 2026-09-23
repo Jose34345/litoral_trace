@@ -26,7 +26,7 @@ from tests.test_us_lacey_field_judge_regression_corpus import _corpus, _target
 
 PACK3_SHIPMENT = {
     "bill_of_lading": "RPT-HOU-260913-42",
-    "container_number": "CMAU8842110",
+    "container_number": "CMAU8842118",
     "estimated_arrival_date": "2026-10-10",
 }
 PACK3_LINES = {
@@ -229,7 +229,7 @@ def test_pack3_shipment_semantics_accept_only_exact_bol_container_eta() -> None:
             _ai_payload(
                 "container_number",
                 PACK3_SHIPMENT["container_number"],
-                "Container No: CMAU8842110",
+                "Container No: CMAU8842118",
             ),
             _ai_payload(
                 "estimated_arrival_date",
