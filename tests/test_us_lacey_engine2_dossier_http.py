@@ -17,7 +17,7 @@ from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 from litoral_trace.us_lacey.operations import UsLaceyOperationService
 from litoral_trace.web import us_lacey_pilot_app as portal
 from tests.test_us_lacey_active_portal_postgres_e2e import _activate_account, _configure, _csrf_for, _organization_id_for_email
-from tests.test_us_lacey_engine2_persistence import _resolution
+from tests.test_us_lacey_engine2_persistence import _bundle, _resolution
 from tests.us_lacey_engine2_postgres import FakeVault, add_test_document, create_test_graph, engine2_postgres_engine, engine2_postgres_session_factory, tenant_session
 
 
@@ -38,7 +38,7 @@ def _account_operation(monkeypatch):
 
 def _persist_current(factory, monkeypatch, org, operation):
     link, assurance, _, sha = add_test_document(factory, organization_id=org, operation_id=operation, role="BILL_OF_LADING", filename="dossier.pdf", content=b"dossier")
-    monkeypatch.setattr(engine_module, "process_document", lambda **_: _resolution("dossier.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495", "country_of_harvest": "CHILE"}))
+    monkeypatch.setattr(engine_module, "process_bundle", lambda **_: _bundle(_resolution("dossier.pdf", DocumentType.BILL_OF_LADING, {"bill_of_lading": "MAEU274342495", "country_of_harvest": "CHILE"})))
     assert UsLaceyEngine2Service(session_factory=factory, vault_service=FakeVault(b"dossier")).resolve_operation_with_engine2(organization_id=org, operation_id=operation).status == "SUCCEEDED"
     return link, assurance, sha
 
@@ -57,7 +57,7 @@ def test_authenticated_get_is_read_only_and_uses_persisted_dossier(engine2_postg
     session.add_all((UsLaceyFieldCandidate(organization_id=org, operation_id=operation, operation_field_id=field.id, source_assurance_document_id=assurance, original_value="BRAZIL", normalized_value="BRAZIL", validation_status="VALID", confidence=1, fingerprint=hashlib.sha256(b"selected").hexdigest(), decision="SELECTED", decided_by_user_id=user_id, decided_at=field.reviewed_at), UsLaceyFieldCandidate(organization_id=org, operation_id=operation, operation_field_id=field.id, source_assurance_document_id=assurance, original_value="CHILE", normalized_value="CHILE", validation_status="VALID", confidence=1, fingerprint=hashlib.sha256(b"rejected").hexdigest(), decision="REJECTED", decided_by_user_id=user_id, decided_at=field.reviewed_at), ReconciliationIssue(organization_id=org, operation_reference=str(operation), fingerprint=hashlib.sha256(b"legacy").hexdigest(), rule_code="TEST", severity="WARNING", status="RESOLVED", left_document_id=assurance, left_source="test", explanation="test", resolution_justification="preserved", resolved_at=field.reviewed_at))); session.commit(); session.close()
     before = _state(engine2_postgres_session_factory, org, operation)
     monkeypatch.setenv("US_LACEY_ENGINE2_MODE", "SHADOW")
-    monkeypatch.setattr(engine_module, "process_document", lambda **_: (_ for _ in ()).throw(AssertionError("GET must not execute process_document")))
+    monkeypatch.setattr(engine_module, "process_bundle", lambda **_: (_ for _ in ()).throw(AssertionError("GET must not execute process_document")))
     monkeypatch.setattr(engine_module, "process_shipment", lambda **_: (_ for _ in ()).throw(AssertionError("GET must not execute process_shipment")))
     monkeypatch.setattr(UsLaceyEngine2Service, "resolve_operation_with_engine2", lambda *_, **__: (_ for _ in ()).throw(AssertionError("GET must not resolve Engine2")))
     monkeypatch.setattr(VaultService, "materialize_verified_download", lambda *_, **__: (_ for _ in ()).throw(AssertionError("GET must not read Vault bytes")))
