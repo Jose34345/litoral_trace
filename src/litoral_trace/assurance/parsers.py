@@ -764,7 +764,7 @@ def parse_pdf(content: bytes) -> ParsedDocument:
             char_limit=text_char_limit,
         )
     except ImportError as exc:  # pragma: no cover - dependency gate
-        raise DocumentParseError("pypdf no esta disponible.") from exc
+        raise DocumentParseError("PDFium no esta disponible.") from exc
     except Exception as exc:
         try:
             page_count = _pdf_page_count_with_pdfium(content)
@@ -781,12 +781,17 @@ def parse_pdf(content: bytes) -> ParsedDocument:
     text_extraction_truncated = (
         text_pages_scanned < page_count or text_char_limit_reached
     )
-    ocr_required = not _has_useful_pdf_text(useful_text)
+    ocr_required = (
+        not text_extraction_truncated
+        and not _has_useful_pdf_text(useful_text)
+    )
     ocr_metadata: dict[str, Any] = {
         "ocr_attempted": False,
         "ocr_applied": False,
     }
-    if ocr_required:
+    if text_extraction_truncated:
+        ocr_metadata["ocr_skipped_reason"] = "PDF_TEXT_BUDGET_EXCEEDED"
+    elif ocr_required:
         ocr_text, ocr_metadata = _ocr_scanned_pdf(content, page_count=page_count)
         if _has_useful_pdf_text(ocr_text):
             useful_text = ocr_text
