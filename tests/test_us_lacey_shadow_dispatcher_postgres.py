@@ -20,7 +20,9 @@ from litoral_trace.lacey_engine.domain import (
     RawCandidate,
     ResolvedField,
 )
-from tests.test_us_lacey_engine2_persistence import _bundle\n\nfrom litoral_trace.lacey_engine.multi_agent.contracts import (
+from tests.test_us_lacey_engine2_persistence import _bundle
+
+from litoral_trace.lacey_engine.multi_agent.contracts import (
     CandidateEnvelope,
     DocumentType,
     MultiAgentExtractionResult,
