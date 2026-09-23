@@ -245,13 +245,11 @@ def test_worker_rejects_unsupported_domain_before_processing_or_projection(monke
             vault_public_id=uuid4(),
         ),
     )
-    monkeypatch.setattr(worker, "_preflight_existing_document", lambda **_: calls.append("budget"))
-
     def reject(**_kwargs):
-        calls.append("domain")
+        calls.extend(("budget", "domain"))
         raise UnsupportedDocumentDomainError(domain="LEGAL_DECISION")
 
-    monkeypatch.setattr(worker, "_preflight_engine2_domain", reject)
+    monkeypatch.setattr(worker, "_preflight_existing_document", reject)
     monkeypatch.setattr(
         worker,
         "_processing_service",
