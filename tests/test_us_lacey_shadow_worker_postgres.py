@@ -20,7 +20,7 @@ from litoral_trace.lacey_engine.domain import (
     RawCandidate,
     ResolvedField,
 )
-from litoral_trace.us_lacey import ai_suggestions as ai_suggestions_module
+from tests.test_us_lacey_engine2_persistence import _bundle\n\nfrom litoral_trace.us_lacey import ai_suggestions as ai_suggestions_module
 from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey import specialized_shadow as specialized_module
 from litoral_trace.us_lacey import worker
@@ -154,7 +154,7 @@ def test_worker_completes_and_ui_projects_only_legacy_when_specialized_crashes(
     monkeypatch.setenv("US_LACEY_AI_PROVIDER", "gemini")
     monkeypatch.setenv("US_LACEY_AI_ALLOW_EXTERNAL", "1")
     monkeypatch.setenv("US_LACEY_GEMINI_API_KEY", "fixture-key")
-    monkeypatch.setattr(service_module, "process_document", lambda **_: _engine2_resolution())
+    monkeypatch.setattr(service_module, "process_bundle", lambda **_: _bundle(_engine2_resolution()))
     monkeypatch.setattr(service_module, "build_ai_provider", lambda _: LegacySuccessProvider())
     monkeypatch.setattr(ai_suggestions_module, "get_us_lacey_db_session", engine2_postgres_session_factory)
 
