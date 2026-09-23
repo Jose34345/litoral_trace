@@ -459,9 +459,12 @@ def process_bundle(
             domain=DocumentDomain.UNSUPPORTED.value,
         )
 
-    if not any(
-        section.document_type in SUPPORTED_DOCUMENT_TYPES
-        for section in sections
+    if (
+        domain.domain is not DocumentDomain.COMMERCIAL_TRADE
+        and not any(
+            section.document_type in SUPPORTED_DOCUMENT_TYPES
+            for section in sections
+        )
     ):
         raise UnsupportedDocumentDomainError(
             domain=DocumentDomain.UNSUPPORTED.value,
