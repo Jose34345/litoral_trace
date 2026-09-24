@@ -1,0 +1,9 @@
+{% macro action_status(field) -%}
+  {%- if field.status == "CONFLICT" -%}
+    Conflicting information
+  {%- elif field.proposed_value or field.effective_value -%}
+    Needs confirmation
+  {%- else -%}
+    Missing information
+  {%- endif -%}
+{%- endmacro %}
