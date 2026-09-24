@@ -44,6 +44,7 @@ from litoral_trace.us_lacey.jobs import (
     fail_us_lacey_job,
     heartbeat_us_lacey_job,
     recover_stale_us_lacey_jobs,
+    set_us_lacey_job_stage,
 )
 from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_lock
 from litoral_trace.us_lacey.product_intelligence_snapshot import build_product_intelligence_snapshot
@@ -97,13 +98,41 @@ def _log_stage_timing(
     LOGGER.info("U.S. Lacey worker stage timing", extra=extra)
 
 
+_PERSISTED_STAGE_NAMES = {
+    "preflight": "PREFLIGHT",
+    "document_processing": "EXTRACTION",
+    "authoritative_projection": "PROJECTION",
+    "candidate_equivalence_reconciliation": "RECONCILIATION",
+    "engine2_shadow": "ENGINE_2",
+    "verified_ai_suggestions": "AI_SUGGESTIONS",
+    "canonical_publication": "PROJECTION",
+    "product_intelligence": "PRODUCT_INTELLIGENCE",
+    "regulatory_assessment": "REGULATORY",
+    "multilingual_snapshot": "MULTILINGUAL",
+    "source_set_finalize": "FINALIZE",
+    "queue_complete": "FINALIZE",
+}
+
+
 @contextmanager
 def _timed_worker_stage(
     *,
     job,
     stage: str,
     source_set_fingerprint: str | None = None,
+    worker_id: str | None = None,
 ):
+    if worker_id is not None:
+        persisted_stage = _PERSISTED_STAGE_NAMES.get(stage, stage.upper())
+        if not set_us_lacey_job_stage(
+            job_id=job.id,
+            worker_id=worker_id,
+            stage=persisted_stage,
+        ):
+            raise UsLaceyWorkerError(
+                f"Processing job lost ownership before stage {persisted_stage}."
+            )
+
     started_at = time.perf_counter()
     try:
         yield
@@ -231,7 +260,7 @@ class _UsLaceyJobHeartbeat:
                 continue
             if not owned:
                 LOGGER.warning(
-                    "U.S. Lacey job heartbeat lost ownership",
+                    "U.S. Lacey job heartbeat lost ownership or stage watchdog timed out",
                     extra={"job_id": str(self._job_id), "worker_id": self._worker_id},
                 )
                 return
@@ -711,7 +740,7 @@ def process_one_us_lacey_job(
             document_id=job.assurance_document_id,
         )
 
-        with _timed_worker_stage(job=job, stage="preflight"):
+        with _timed_worker_stage(job=job, stage="preflight", worker_id=worker_id):
             if isinstance(assurance_public_id, UUID):
                 descriptor = _document_descriptor(
                     organization_id=job.organization_id,
@@ -769,7 +798,7 @@ def process_one_us_lacey_job(
                         conflict_count=0,
                     )
 
-        with _timed_worker_stage(job=job, stage="document_processing"):
+        with _timed_worker_stage(job=job, stage="document_processing", worker_id=worker_id):
             document_status = _processing_service().process(
                 organization_id=job.organization_id,
                 assurance_public_id=assurance_public_id,
@@ -806,7 +835,7 @@ def process_one_us_lacey_job(
             else nullcontext()
         )
         with projection_guard:
-            with _timed_worker_stage(job=job, stage="authoritative_projection"):
+            with _timed_worker_stage(job=job, stage="authoritative_projection", worker_id=worker_id):
                 projection = project_assurance_document_to_us_lacey(
                     organization_id=job.organization_id,
                     operation_id=job.operation_id,
@@ -829,6 +858,7 @@ def process_one_us_lacey_job(
                 with _timed_worker_stage(
                     job=job,
                     stage="candidate_equivalence_reconciliation",
+                    worker_id=worker_id,
                     source_set_fingerprint=source_set_fingerprint,
                 ):
                     _reconcile_candidate_equivalence(
@@ -838,6 +868,7 @@ def process_one_us_lacey_job(
                 with _timed_worker_stage(
                     job=job,
                     stage="engine2_shadow",
+                    worker_id=worker_id,
                     source_set_fingerprint=source_set_fingerprint,
                 ):
                     engine2_result = _shadow_engine2(
@@ -847,6 +878,7 @@ def process_one_us_lacey_job(
                 with _timed_worker_stage(
                     job=job,
                     stage="verified_ai_suggestions",
+                    worker_id=worker_id,
                     source_set_fingerprint=source_set_fingerprint,
                 ):
                     _project_verified_ai_suggestions(
@@ -865,6 +897,7 @@ def process_one_us_lacey_job(
                     with _timed_worker_stage(
                         job=job,
                         stage="canonical_publication",
+                    worker_id=worker_id,
                         source_set_fingerprint=source_set_fingerprint,
                     ):
                         _project_engine2_suggestions(
@@ -901,6 +934,7 @@ def process_one_us_lacey_job(
                     with _timed_worker_stage(
                         job=job,
                         stage="product_intelligence",
+                    worker_id=worker_id,
                         source_set_fingerprint=source_set_fingerprint,
                     ):
                         _build_product_intelligence_snapshot(
@@ -911,6 +945,7 @@ def process_one_us_lacey_job(
                     with _timed_worker_stage(
                         job=job,
                         stage="regulatory_assessment",
+                    worker_id=worker_id,
                         source_set_fingerprint=source_set_fingerprint,
                     ):
                         _build_regulatory_assessment_snapshot(
@@ -933,6 +968,7 @@ def process_one_us_lacey_job(
             with _timed_worker_stage(
                 job=job,
                 stage="multilingual_snapshot",
+                    worker_id=worker_id,
                 source_set_fingerprint=source_set_fingerprint,
             ):
                 _shadow_multilingual_evidence_snapshot(
@@ -946,6 +982,7 @@ def process_one_us_lacey_job(
                 with _timed_worker_stage(
                     job=job,
                     stage="source_set_finalize",
+                    worker_id=worker_id,
                     source_set_fingerprint=source_set_fingerprint,
                 ):
                     finalized = finalize_claim(
@@ -958,7 +995,7 @@ def process_one_us_lacey_job(
                     extra={"organization_id": job.organization_id, "operation_id": job.operation_id, "job_id": job.id, "stage": "source_set_finalization", "source_set_fingerprint": source_set_claim.fingerprint},
                 )
 
-        with _timed_worker_stage(job=job, stage="queue_complete"):
+        with _timed_worker_stage(job=job, stage="queue_complete", worker_id=worker_id):
             completed = complete_us_lacey_job(job_id=job.id, worker_id=worker_id)
         if not completed:
             raise UsLaceyWorkerError("Processing job could not be completed atomically.")
