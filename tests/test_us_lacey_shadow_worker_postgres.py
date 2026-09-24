@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+import time
 
 from litoral_trace.db.models import UsLaceyEngineDocumentRun, UsLaceyOperationField
 from litoral_trace.lacey_engine.ai_shadow import (
@@ -24,7 +25,6 @@ from litoral_trace.us_lacey import ai_suggestions as ai_suggestions_module
 from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey import specialized_shadow as specialized_module
 from litoral_trace.us_lacey import worker
-from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 from litoral_trace.us_lacey.ppq505 import PPQ505_SHIPMENT_REFERENCE
 from tests.us_lacey_engine2_postgres import (
     FakeVault,
@@ -171,7 +171,7 @@ def test_worker_completes_and_ui_projects_only_legacy_when_specialized_crashes(
         fail_specialized,
     )
 
-    service = UsLaceyEngine2Service(
+    service = worker.UsLaceyEngine2Service(
         session_factory=engine2_postgres_session_factory,
         vault_service=FakeVault(content),
     )
@@ -218,21 +218,32 @@ def test_worker_completes_and_ui_projects_only_legacy_when_specialized_crashes(
     result = worker.process_one_us_lacey_job(worker_id="unit")
 
     assert result.job_status == "COMPLETED"
-    assert specialized_calls == [1]
 
-    session = tenant_session(engine2_postgres_session_factory, org)
-    legacy_runs = session.query(UsLaceyEngineDocumentRun).filter_by(
-        operation_id=operation,
-        schema_version=AI_SHADOW_SCHEMA_VERSION,
-        status="SUCCEEDED",
-    ).all()
-    field = session.query(UsLaceyOperationField).filter_by(
-        operation_id=operation,
-        field_name="bill_of_lading",
-    ).one()
+    deadline = time.monotonic() + 3.0
+    field = None
+    legacy_runs = []
+    while time.monotonic() < deadline:
+        session = tenant_session(engine2_postgres_session_factory, org)
+        try:
+            legacy_runs = session.query(UsLaceyEngineDocumentRun).filter_by(
+                operation_id=operation,
+                schema_version=AI_SHADOW_SCHEMA_VERSION,
+                status="SUCCEEDED",
+            ).all()
+            field = session.query(UsLaceyOperationField).filter_by(
+                operation_id=operation,
+                field_name="bill_of_lading",
+            ).one()
+            if specialized_calls == [1] and legacy_runs and field.field_status == "FOUND":
+                break
+        finally:
+            session.close()
+        time.sleep(0.01)
+
+    assert specialized_calls == [1]
     assert len(legacy_runs) == 1
     assert legacy_runs[0].resolution_json["architecture"] == "legacy"
+    assert field is not None
     assert field.field_status == "FOUND"
     assert field.normalized_value == BOL
     assert field.extractor == "engine2+legacy-fixture-agreement"
-    session.close()
