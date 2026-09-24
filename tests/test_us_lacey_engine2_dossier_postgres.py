@@ -151,7 +151,7 @@ def test_dossier_marks_version_contract_mismatches_stale(engine2_postgres_sessio
 
 
 
-def test_dossier_auto_recovers_engine_contract_mismatch(
+def test_dossier_stale_get_never_runs_regenerator(
     engine2_postgres_session_factory,
     monkeypatch,
 ):
@@ -162,46 +162,33 @@ def test_dossier_auto_recovers_engine_contract_mismatch(
     session = tenant_session(engine2_postgres_session_factory, org)
     row = session.query(UsLaceyEngineShipmentRun).filter_by(id=snapshot.id).one()
     row.engine_version = "engine-old"
-    # Engine version participates in source_set_fingerprint. A historical run
-    # produced by the old contract therefore necessarily has a different
-    # fingerprint from the current contract.
     row.source_set_fingerprint = "e" * 64
     session.commit()
     session.close()
 
     calls: list[int] = []
 
-    def regenerate(*, organization_id, operation_id, session_factory):
-        calls.append(operation_id)
-        return UsLaceyEngine2Service(
-            session_factory=session_factory,
-            vault_service=FakeVault(b"cached-document-runs-avoid-vault-read"),
-        ).resolve_operation_with_engine2(
-            organization_id=organization_id,
-            operation_id=operation_id,
-        )
+    def must_not_regenerate(**kwargs):
+        calls.append(int(kwargs["operation_id"]))
+        raise AssertionError("GET dossier must never execute a synchronous rebuild")
 
     monkeypatch.setattr(dossier_module, "engine2_mode", lambda: "SHADOW")
     view = UsLaceyEngineDossierService(
         session_factory=engine2_postgres_session_factory,
-        regenerator=regenerate,
+        regenerator=must_not_regenerate,
+        auto_recover_stale=True,
     ).get_dossier(
         organization_id=org,
         operation_public_id=public_id,
     )
 
-    assert calls == [operation]
-    assert view.availability is Engine2DossierAvailability.CURRENT
-    assert view.engine_version == service_module.ENGINE_VERSION
-    assert view.fields
+    assert calls == []
+    assert view.availability is Engine2DossierAvailability.STALE
+    assert "durable processing worker" in view.safe_status_message
 
     session = tenant_session(engine2_postgres_session_factory, org)
     snapshots = session.query(UsLaceyEngineShipmentRun).filter_by(
         operation_id=operation
     ).all()
     session.close()
-    assert len(snapshots) == 2
-    assert {item.engine_version for item in snapshots} == {
-        "engine-old",
-        service_module.ENGINE_VERSION,
-    }
+    assert len(snapshots) == 1
