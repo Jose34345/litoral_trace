@@ -129,6 +129,23 @@ _SHIPMENT_TOTAL_ENTERED_VALUE = "shipment_total_entered_value"
 _BOTANICAL_PPQ_FIELDS = frozenset(_ENGINE_TO_PPQ[key] for key in _COMPONENT_FIELDS)
 _ROW_ORDINAL = re.compile(r"(?:^|:)row:(\d+)$", re.IGNORECASE)
 _TAXON = re.compile(r"^taxon:([^:]+):([^:]+)$", re.IGNORECASE)
+_OPERATION_DOCUMENT_ID = re.compile(r"^(?P<operation_document_id>[1-9]\\d*)(?::.+)?$")
+
+
+def _operation_document_id(document_id: str) -> int:
+    """Resolve physical operation-document identity from Engine 2 logical IDs.
+
+    Shipment evidence is keyed by the logical document identity emitted by the
+    bundle pipeline (for example 57:logical-001). Canonical publication must map
+    that evidence back to the current physical UsLaceyOperationDocument row before
+    looking up its Assurance document. Legacy snapshots used plain integer IDs
+    and remain supported.
+    """
+    match = _OPERATION_DOCUMENT_ID.fullmatch(str(document_id or "").strip())
+    if match is None:
+        raise RuntimeError("CANONICAL_EVIDENCE_DOCUMENT_ID_INVALID")
+    return int(match.group("operation_document_id"))
+
 
 
 def _candidate_payload(row: Mapping) -> Mapping:
@@ -913,10 +930,7 @@ def _publish_field(
         validation = validate_ppq_value(target.field_name, value)
         normalized = validation.normalized_value or value
         for evidence in evidences:
-            try:
-                operation_document_id = int(evidence.document_id)
-            except (TypeError, ValueError) as exc:
-                raise RuntimeError("CANONICAL_EVIDENCE_DOCUMENT_ID_INVALID") from exc
+            operation_document_id = _operation_document_id(evidence.document_id)
             source_assurance = assurance_by_operation_document.get(operation_document_id)
             if source_assurance is None:
                 raise RuntimeError("CANONICAL_EVIDENCE_SOURCE_NOT_CURRENT")
@@ -997,10 +1011,7 @@ def _publish_field(
     primary = _primary_evidence(truth)
     if primary is None:
         raise RuntimeError("CANONICAL_FIELD_WITHOUT_EVIDENCE")
-    try:
-        primary_document = int(primary.document_id)
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError("CANONICAL_EVIDENCE_DOCUMENT_ID_INVALID") from exc
+    primary_document = _operation_document_id(primary.document_id)
     source_assurance = assurance_by_operation_document.get(primary_document)
     if source_assurance is None:
         raise RuntimeError("CANONICAL_EVIDENCE_SOURCE_NOT_CURRENT")
