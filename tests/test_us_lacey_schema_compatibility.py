@@ -44,11 +44,11 @@ class _Engine:
 
 
 def test_required_schema_revision_is_repository_canonical_head() -> None:
-    assert schema_compatibility.required_us_lacey_schema_revision() == "060_us_lacey_processing_stages"
+    assert schema_compatibility.required_us_lacey_schema_revision() == "061_requeue_canonical_logical_id_failure"
 
 
 def test_schema_probe_is_ready_only_on_exact_canonical_head(monkeypatch) -> None:
-    engine = _Engine("060_us_lacey_processing_stages")
+    engine = _Engine("061_requeue_canonical_logical_id_failure")
     monkeypatch.setattr(schema_compatibility, "get_us_lacey_engine", lambda: engine)
 
     assert schema_compatibility.probe_us_lacey_schema_compatibility() is True
