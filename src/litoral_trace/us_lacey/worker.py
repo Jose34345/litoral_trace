@@ -232,6 +232,34 @@ class UsLaceyEngine2Service(_BaseUsLaceyEngine2Service):
         )
 
 
+    def _after_ai_shadow_background(
+        self,
+        *,
+        organization_id: int,
+        operation_id: int,
+        source_set_fingerprint: str,
+    ) -> None:
+        """Project verified AI suggestions asynchronously after shadow completion."""
+        try:
+            with us_lacey_operation_projection_lock(
+                organization_id=organization_id,
+                operation_id=operation_id,
+            ):
+                _project_verified_ai_suggestions(
+                    organization_id=organization_id,
+                    operation_id=operation_id,
+                )
+        except Exception:
+            LOGGER.exception(
+                "Lacey asynchronous verified-AI projection failed",
+                extra={
+                    "organization_id": organization_id,
+                    "operation_id": operation_id,
+                    "source_set_fingerprint": source_set_fingerprint,
+                },
+            )
+
+
 class _UsLaceyJobHeartbeat:
     """Refresh a RUNNING queue lease while parsers and shadow AI are busy."""
 
@@ -878,17 +906,6 @@ def process_one_us_lacey_job(
                         organization_id=job.organization_id,
                         operation_id=job.operation_id,
                     )
-                with _timed_worker_stage(
-                    job=job,
-                    stage="verified_ai_suggestions",
-                    worker_id=worker_id,
-                    source_set_fingerprint=source_set_fingerprint,
-                ):
-                    _project_verified_ai_suggestions(
-                        organization_id=job.organization_id,
-                        operation_id=job.operation_id,
-                    )
-
                 canonical_ready = bool(
                     engine2_result is None
                     or (
