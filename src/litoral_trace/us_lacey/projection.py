@@ -507,6 +507,14 @@ def _target_field(
         header = _fold(raw_match.group("header"))
         if header == "unit" and _is_plant_declaration_table(context_headers):
             target = "metric_unit"
+        elif (
+            header in {"amount", "line amount", "extended amount"}
+            and _is_merchandise_table(context_headers)
+        ):
+            # A line amount on an explicit Line + HTS + Description invoice row is
+            # valid reconciliation evidence for the customs entered-value field.
+            # A differing Entry Worksheet value must surface as a conflict.
+            target = "entered_value"
         else:
             target = _explicit_header_target(raw_match.group("header"))
         value = row.normalized_value or row.original_value
@@ -529,9 +537,15 @@ def _target_field(
         ):
             return None, 0
 
-        if target == "entered_value" and context_headers and not _is_line_allocation_table(context_headers):
-            # A commercial invoice/shipment total is reconciliation evidence, not a
-            # PPQ plant-line allocation. It is persisted separately by the projector.
+        if (
+            target == "entered_value"
+            and header == "entered value"
+            and context_headers
+            and not _is_line_allocation_table(context_headers)
+        ):
+            # A shipment-level Entered Value is reconciliation evidence, not a
+            # PPQ plant-line allocation. Invoice line Amount is handled separately
+            # above only when bound to an explicit merchandise row.
             return None, 0
         if target == "merchandise_description":
             if not _is_shipment_description_source(
@@ -729,7 +743,7 @@ def _explicit_merchandise_rows(
                 is PlantMaterialEvidence.PRESENT
             ):
                 plant_material[row_number] = PlantMaterialEvidence.PRESENT
-        elif header == "entered value":
+        elif header in {"entered value", "amount", "line amount", "extended amount"}:
             row["entered_value"] = str(value).strip()
 
         if header in {
