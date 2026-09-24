@@ -180,3 +180,38 @@ def test_bom_component_header_is_not_a_ppq_article_component():
     )
 
     assert _target_field(row, table_headers=bom_headers) == (None, 0)
+
+
+
+def test_pack2_invoice_amount_is_line_entered_value_only_with_explicit_merchandise_context():
+    row = _row(
+        field_name="raw.table.1.Amount",
+        original_value="48600.00",
+    )
+    row.source_locator = "table:1;data_row:1;column:8"
+    headers = {
+        1: frozenset(
+            {
+                "line",
+                "sku ref",
+                "description",
+                "hts",
+                "qty",
+                "net wt",
+                "unit price",
+                "amount",
+            }
+        )
+    }
+
+    assert _target_field(row, table_headers=headers) == ("entered_value", 3)
+
+    unrelated = _row(
+        field_name="raw.table.2.Amount",
+        original_value="48600.00",
+    )
+    unrelated.source_locator = "table:2;data_row:1;column:2"
+    assert _target_field(
+        unrelated,
+        table_headers={2: frozenset({"description", "amount"})},
+    ) == (None, 0)

@@ -1,0 +1,83 @@
+{
+  "fixture": "golden-pack-2-conflict-resolution",
+  "documents": [
+    {
+      "filename": "01_Commercial_Invoice.pdf",
+      "role": "COMMERCIAL_INVOICE",
+      "fields": [
+        {"field_name":"raw.table.1.Line","value":"1","locator":"table:1;data_row:1;column:1"},
+        {"field_name":"raw.table.1.SKU / Ref","value":"CO-18","locator":"table:1;data_row:1;column:2"},
+        {"field_name":"raw.table.1.Description","value":"Sawn cedar boards - Cedrela odorata","locator":"table:1;data_row:1;column:3"},
+        {"field_name":"raw.table.1.HTS","value":"4407.99.0190","locator":"table:1;data_row:1;column:4"},
+        {"field_name":"raw.table.1.Qty","value":"18.000 m3 / 900 pcs","locator":"table:1;data_row:1;column:5"},
+        {"field_name":"raw.table.1.Net wt","value":"11,700 kg","locator":"table:1;data_row:1;column:6"},
+        {"field_name":"raw.table.1.Unit price","value":"2700.00","locator":"table:1;data_row:1;column:7"},
+        {"field_name":"raw.table.1.Amount","value":"48600.00","locator":"table:1;data_row:1;column:8"},
+        {"field_name":"raw.table.2.Importer Name","value":"Timberline Imports LLC","locator":"table:2;column:1"},
+        {"field_name":"raw.table.2.BOL","value":"ACE-MIA-260913-77","locator":"table:2;column:2"},
+        {"field_name":"raw.table.2.Container","value":"TGHU5519023","locator":"table:2;column:3"}
+      ]
+    },
+    {
+      "filename": "02_Bill_of_Lading.pdf",
+      "role": "BILL_OF_LADING",
+      "fields": [
+        {"field_name":"raw.table.1.BOL","value":"ACE-MIA-260913-77","locator":"table:1;column:1"},
+        {"field_name":"raw.table.1.Consignee Name","value":"Timberline Imports LLC","locator":"table:1;column:2"},
+        {"field_name":"raw.table.1.Container","value":"TGHU5519023","locator":"table:1;column:3"},
+        {"field_name":"raw.table.1.ETA","value":"2026-09-29","locator":"table:1;column:4"},
+        {"field_name":"raw.table.1.Cargo Description","value":"Cedrela sawn boards","locator":"table:1;column:5"}
+      ]
+    },
+    {
+      "filename": "03_Packing_List.pdf",
+      "role": "PACKING_LIST",
+      "fields": [
+        {"field_name":"raw.table.1.BOL","value":"ACE-MIA-260913-77","locator":"table:1;column:1"},
+        {"field_name":"raw.table.1.Container","value":"TGHU5519023","locator":"table:1;column:2"}
+      ]
+    },
+    {
+      "filename": "04_Botanical_Declaration.pdf",
+      "role": "SUPPLIER_DECLARATION",
+      "fields": [
+        {"field_name":"raw.table.1.Genus","value":"Cedrela","locator":"table:1;column:1"},
+        {"field_name":"raw.table.1.Species","value":"odorata","locator":"table:1;column:2"},
+        {"field_name":"raw.table.1.Country of Harvest","value":"Peru","locator":"table:1;column:3"},
+        {"field_name":"raw.table.1.Plant Quantity","value":"18.000","locator":"table:1;column:4"},
+        {"field_name":"raw.table.1.Unit","value":"m3","locator":"table:1;column:5"}
+      ]
+    },
+    {
+      "filename": "05_Supplier_Origin_Declaration.pdf",
+      "role": "SUPPLIER_DECLARATION",
+      "fields": [
+        {"field_name":"raw.table.1.Genus","value":"Cedrela","locator":"table:1;column:1"},
+        {"field_name":"raw.table.1.Species","value":"odorata","locator":"table:1;column:2"},
+        {"field_name":"raw.table.1.Country of Harvest","value":"Brazil","locator":"table:1;column:3"},
+        {"field_name":"raw.table.1.Plant Quantity","value":"18.000","locator":"table:1;column:4"},
+        {"field_name":"raw.table.1.Unit","value":"m3","locator":"table:1;column:5"}
+      ]
+    },
+    {
+      "filename": "06_Entry_Worksheet.pdf",
+      "role": "OTHER",
+      "fields": [
+        {"field_name":"raw.table.1.Line","value":"1","locator":"table:1;data_row:1;column:1"},
+        {"field_name":"raw.table.1.HTS","value":"4407.99.0190","locator":"table:1;data_row:1;column:2"},
+        {"field_name":"raw.table.1.Description","value":"Cedrela odorata sawn boards","locator":"table:1;data_row:1;column:3"},
+        {"field_name":"raw.table.1.Entered Value","value":"49050.00","locator":"table:1;data_row:1;column:4"}
+      ]
+    },
+    {
+      "filename": "07_Arrival_Notice.pdf",
+      "role": "OTHER",
+      "fields": [
+        {"field_name":"raw.table.1.BOL","value":"ACE-MIA-260913-77","locator":"table:1;column:1"},
+        {"field_name":"raw.table.1.Container","value":"TGHU5519023","locator":"table:1;column:2"},
+        {"field_name":"raw.table.1.ETA","value":"2026-10-01","locator":"table:1;column:3"},
+        {"field_name":"raw.table.1.Consignee Name","value":"Timberline Imports LLC","locator":"table:1;column:4"}
+      ]
+    }
+  ]
+}
