@@ -33,6 +33,9 @@ US_LACEY_PROCESSING_STAGES_MIGRATION = Path(
     "alembic/versions/060_us_lacey_processing_stages.py"
 )
 US_LACEY_CANONICAL_RECOVERY_MIGRATION = Path(
+    "alembic/versions/061_requeue_canonical_logical_id_failure.py"
+)
+US_LACEY_POSTDEPLOY_RECOVERY_MIGRATION = Path(
     "alembic/versions/062_requeue_pack2_after_deploy.py"
 )
 
@@ -258,10 +261,19 @@ def test_us_lacey_processing_stages_follows_outreach_attribution():
 
 def test_us_lacey_canonical_recovery_follows_processing_stages():
     text = US_LACEY_CANONICAL_RECOVERY_MIGRATION.read_text(encoding="utf-8")
-    assert 'revision = "062_requeue_pack2_after_deploy"' in text
+    assert 'revision = "061_requeue_canonical_logical_id_failure"' in text
     assert 'down_revision = "060_us_lacey_processing_stages"' in text
     assert "02fe7759-f8b5-4b30-8277-51f3ebc21a26" in text
     assert "REQUEUED_CANONICAL_LOGICAL_ID_HOTFIX" in text
+
+
+def test_us_lacey_postdeploy_recovery_follows_canonical_recovery():
+    text = US_LACEY_POSTDEPLOY_RECOVERY_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "062_requeue_pack2_after_deploy"' in text
+    assert 'down_revision = "061_requeue_canonical_logical_id_failure"' in text
+    assert "02fe7759-f8b5-4b30-8277-51f3ebc21a26" in text
+    assert "REQUEUED_POST_DEPLOY_HOTFIX" in text
+    assert "interval '10 minutes'" in text
 
 
 def test_ci_canonical_head_tracks_latest_platform_migration():
