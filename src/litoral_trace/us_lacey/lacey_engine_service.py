@@ -416,8 +416,6 @@ class UsLaceyEngine2Service:
                     UsLaceyEngineDocumentRun.status == "SUCCEEDED",
                 )
             )
-            # Explicitly end the read transaction before any external I/O.
-            read_session.rollback()
             if succeeded is not None:
                 return
         finally:
@@ -874,9 +872,9 @@ class UsLaceyEngine2Service:
                         run.resolution_json
                     )
 
-            # End the transaction before Vault, parsing, or any provider call.
-            read_session.rollback()
         finally:
+            # Session.close() rolls back the read-only transaction, releases the
+            # connection to the pool, and leaves already-loaded scalar state usable.
             read_session.close()
 
         # ---- Phase 2: external/local processing with no DB Session open -------
