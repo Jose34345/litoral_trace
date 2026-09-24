@@ -608,7 +608,15 @@ def _shipment_total_entered_value_source(
 
 
 def _is_merchandise_table(headers: frozenset[str]) -> bool:
-    """Identify commercial/customs rows without treating them as botanical rows."""
+    """Identify explicit merchandise rows for declaration applicability.
+
+    Applicability is a jurisdiction/material gate, not an entered-value allocation
+    test. A real commercial invoice can carry Line + HTS + Description while its
+    monetary column is named Amount and the shipment total appears elsewhere.
+    Requiring an "Entered Value" column here therefore suppresses otherwise explicit
+    plant merchandise. Allocation semantics remain guarded separately by
+    _is_line_allocation_table().
+    """
     return (
         bool(headers & _LINE_NUMBER_HEADERS)
         and bool(headers & _CUSTOMS_HTS_HEADERS)
@@ -619,7 +627,6 @@ def _is_merchandise_table(headers: frozenset[str]) -> bool:
                 | frozenset({"article component", "article", "component"})
             )
         )
-        and "entered value" in headers
     )
 
 
