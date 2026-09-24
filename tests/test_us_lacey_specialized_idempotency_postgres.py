@@ -6,7 +6,11 @@ from litoral_trace.db.models import UsLaceyEngineDocumentRun
 from litoral_trace.us_lacey import specialized_shadow as specialized_module
 from litoral_trace.us_lacey import worker as worker_module
 from litoral_trace.us_lacey.specialized_shadow import SPECIALIZED_SHADOW_SCHEMA_VERSION
-from tests.test_us_lacey_shadow_dispatcher_postgres import _specialized_success
+from tests.test_us_lacey_shadow_dispatcher_postgres import (
+    _shadow_run_count,
+    _specialized_success,
+    _wait_until,
+)
 from tests.test_us_lacey_specialized_projection_postgres import _configure_projection
 from tests.us_lacey_engine2_postgres import (
     FakeVault,
@@ -60,6 +64,16 @@ def test_specialized_same_immutable_source_set_is_not_reexecuted(
 
     assert first.status == "SUCCEEDED"
     assert second.status == "SUCCEEDED"
+    _wait_until(lambda: calls == 1)
+    _wait_until(
+        lambda: _shadow_run_count(
+            engine2_postgres_session_factory,
+            organization_id=org,
+            operation_id=operation,
+            schema=SPECIALIZED_SHADOW_SCHEMA_VERSION,
+        )
+        == 1
+    )
     assert calls == 1
 
     session = tenant_session(engine2_postgres_session_factory, org)
