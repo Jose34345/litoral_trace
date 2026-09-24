@@ -59,7 +59,7 @@ def test_p26a_ci_runs_pytest_and_disables_postgres_integration():
 def test_p26a_ci_checks_single_canonical_alembic_head():
     workflow = _workflow_text()
     assert "alembic heads" in workflow
-    assert "061_requeue_canonical_logical_id_failure (head)" in workflow
+    assert "062_requeue_pack2_after_deploy (head)" in workflow
     assert "alembic upgrade head" not in workflow
 
 

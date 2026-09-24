@@ -1028,16 +1028,6 @@ def process_one_us_lacey_job(
                 )
 
         if isinstance(assurance_public_id, UUID) and finalize_source_set:
-            with _timed_worker_stage(
-                job=job,
-                stage="multilingual_snapshot",
-                worker_id=worker_id,
-                source_set_fingerprint=source_set_fingerprint,
-            ):
-                _shadow_multilingual_evidence_snapshot(
-                    organization_id=job.organization_id,
-                    operation_id=job.operation_id,
-                )
             with us_lacey_operation_projection_lock(
                 organization_id=job.organization_id,
                 operation_id=job.operation_id,
@@ -1074,6 +1064,26 @@ def process_one_us_lacey_job(
             )
 
         if finalize_source_set:
+            try:
+                with _timed_worker_stage(
+                    job=job,
+                    stage="multilingual_snapshot",
+                    source_set_fingerprint=source_set_fingerprint,
+                ):
+                    _shadow_multilingual_evidence_snapshot(
+                        organization_id=job.organization_id,
+                        operation_id=job.operation_id,
+                    )
+            except Exception:
+                LOGGER.exception(
+                    "Lacey post-completion multilingual shadow failed; completed job remains authoritative",
+                    extra={
+                        "organization_id": job.organization_id,
+                        "operation_id": job.operation_id,
+                        "job_id": job.id,
+                        "source_set_fingerprint": source_set_fingerprint,
+                    },
+                )
             try:
                 with _timed_worker_stage(
                     job=job,

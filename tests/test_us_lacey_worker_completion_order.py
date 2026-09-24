@@ -108,6 +108,58 @@ def test_worker_marks_customer_visible_completion_before_non_authoritative_ai_re
     assert result.conflict_count == 1
 
 
+def test_multilingual_shadow_runs_only_after_durable_completion(monkeypatch) -> None:
+    calls: list[str] = []
+    _stub_success_path(monkeypatch, calls)
+    monkeypatch.setattr(worker, "_assurance_public_id", lambda **_: uuid4())
+    monkeypatch.setattr(
+        worker,
+        "_document_descriptor",
+        lambda **_: SimpleNamespace(
+            filename="document.pdf",
+            size_bytes=1,
+            vault_public_id=uuid4(),
+        ),
+    )
+    monkeypatch.setattr(worker, "_preflight_existing_document", lambda **_: None)
+    monkeypatch.setattr(worker, "us_lacey_operation_projection_lock", lambda **_: nullcontext())
+    monkeypatch.setattr(
+        worker,
+        "_claim_source_set_finalization",
+        lambda **_: SimpleNamespace(claimed=True, fingerprint="f" * 64),
+    )
+    monkeypatch.setattr(worker, "finalize_claim", lambda **_: True)
+
+    def complete(**_: object) -> bool:
+        calls.append("complete")
+        return True
+
+    def refresh(**_: object) -> str:
+        calls.append("refresh")
+        return "READY_FOR_REVIEW"
+
+    def snapshot(**_: object) -> None:
+        calls.append("snapshot")
+        raise RuntimeError("translation backend unavailable")
+
+    monkeypatch.setattr(worker, "complete_us_lacey_job", complete)
+    monkeypatch.setattr(worker, "_refresh_operation", refresh)
+    monkeypatch.setattr(worker, "_shadow_multilingual_evidence_snapshot", snapshot)
+    monkeypatch.setattr(
+        worker,
+        "fail_us_lacey_job",
+        lambda **_: (_ for _ in ()).throw(
+            AssertionError("post-completion multilingual shadow must not requeue the job")
+        ),
+    )
+
+    result = worker.process_one_us_lacey_job(worker_id="worker-test")
+
+    assert result.job_status == "COMPLETED"
+    assert calls.index("complete") < calls.index("refresh") < calls.index("snapshot")
+    assert "fail" not in calls
+
+
 def test_post_completion_ai_review_failure_cannot_requeue_completed_job(monkeypatch) -> None:
     calls: list[str] = []
     _stub_success_path(monkeypatch, calls)

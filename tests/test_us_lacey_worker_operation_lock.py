@@ -98,11 +98,11 @@ def test_worker_holds_operation_lock_across_projection_postprocessors_and_final_
         "engine2-shadow",
         "engine2-suggestions",
         "lock-exit",
-        "snapshot",
         "lock-enter",
         "finalize",
         "lock-exit",
         "complete",
         "refresh",
+        "snapshot",
         "ai-review",
     ]
