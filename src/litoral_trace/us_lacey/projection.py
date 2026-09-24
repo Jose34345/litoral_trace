@@ -147,6 +147,11 @@ _WEIGHT_DESCRIPTION = re.compile(
     r"^\s*[0-9][0-9,.]*\s*(?:KG|KGS?|G|GRAMS?|LB|LBS?|POUNDS?|MT|METRIC\s+TONS?|TONNES?)\s*$",
     re.IGNORECASE,
 )
+_EXPLICIT_PLANT_MERCHANDISE = re.compile(
+    r"\b(?:wood|wooden|timber|lumber|logs?|boards?|sawn|veneer|plywood|"
+    r"fiberboard|particleboard|pulp|paper(?:board)?)\b",
+    re.IGNORECASE,
+)
 _NOT_PAPER_REASON_CODE = "NOT_PAPER_OR_PAPERBOARD"
 _PLANT_DECLARATION_SIGNATURE = frozenset(
     {"genus", "species", "country of harvest", "plant quantity"}
@@ -608,7 +613,14 @@ def _shipment_total_entered_value_source(
 
 
 def _is_merchandise_table(headers: frozenset[str]) -> bool:
-    """Identify commercial/customs rows without treating them as botanical rows."""
+    """Identify an explicit merchandise line for applicability evaluation.
+
+    Applicability needs product identity and HTS classification, not one specific
+    accounting-column spelling. Requiring an Entered Value header excluded valid
+    commercial invoices whose line value is labelled Amount. The regulatory gate
+    remains fail-closed because botanical state is materialized only after both an
+    HTS schedule match and explicit plant-material evidence.
+    """
     return (
         bool(headers & _LINE_NUMBER_HEADERS)
         and bool(headers & _CUSTOMS_HTS_HEADERS)
@@ -619,8 +631,15 @@ def _is_merchandise_table(headers: frozenset[str]) -> bool:
                 | frozenset({"article component", "article", "component"})
             )
         )
-        and "entered value" in headers
     )
+
+
+def _description_plant_material_evidence(value: object) -> PlantMaterialEvidence:
+    """Return PRESENT only for explicit plant-product wording in a merchandise row."""
+    raw = " ".join(str(value or "").split())
+    if raw and _EXPLICIT_PLANT_MERCHANDISE.search(raw):
+        return PlantMaterialEvidence.PRESENT
+    return PlantMaterialEvidence.UNKNOWN
 
 
 def _normalized_hts_observation(value: object) -> str | None:
@@ -662,11 +681,11 @@ def _explicit_merchandise_rows(
 ) -> tuple[MerchandiseLineFacts, ...]:
     """Extract merchandise facts without creating any PPQ botanical state.
 
-    Only raw table cells from a strong Line + HTS + Description + Entered Value
-    merchandise table establish rows. Commercial invoice pricing columns do not
-    disqualify the table here: commercial identity is useful for applicability even
-    though it was intentionally insufficient to manufacture PPQ lines in the old
-    projector.
+    Only raw table cells from a strong Line + HTS + Description merchandise table
+    establish rows. Value columns are optional because invoices commonly label them
+    Amount/Line Amount rather than Entered Value. A botanical line is still created
+    only after the deterministic applicability service sees both a scheduled HTS and
+    explicit plant-material evidence.
     """
     rows: dict[int, dict[str, object]] = {}
     evidence: dict[int, list[str]] = {}
@@ -704,6 +723,12 @@ def _explicit_merchandise_rows(
             "component",
         }:
             row["description"] = str(value).strip()
+            if (
+                row_number not in plant_material
+                and _description_plant_material_evidence(value)
+                is PlantMaterialEvidence.PRESENT
+            ):
+                plant_material[row_number] = PlantMaterialEvidence.PRESENT
         elif header == "entered value":
             row["entered_value"] = str(value).strip()
 
