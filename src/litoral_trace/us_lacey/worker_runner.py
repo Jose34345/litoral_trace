@@ -86,7 +86,8 @@ def _signal_child_group(process: subprocess.Popen[bytes], sig: int) -> None:
                 sig,
                 exc_info=True,
             )
-    if sig == signal.SIGKILL:
+    sigkill = getattr(signal, "SIGKILL", None)
+    if sigkill is not None and sig == sigkill:
         process.kill()
     else:
         process.terminate()
@@ -110,7 +111,7 @@ def _terminate_child(
             process.pid,
             grace_seconds,
         )
-        _signal_child_group(process, signal.SIGKILL)
+        _signal_child_group(process, getattr(signal, "SIGKILL", signal.SIGTERM))
         return int(process.wait())
 
 
