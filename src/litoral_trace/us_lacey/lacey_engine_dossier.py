@@ -18,7 +18,6 @@ from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.lacey_engine_service import (
     ENGINE2_SHADOW,
     engine2_mode,
-    regenerate_operation_engine2_dossier,
     source_set_fingerprint,
 )
 
@@ -70,10 +69,12 @@ class UsLaceyEngineDossierService:
         self,
         *,
         session_factory=get_us_lacey_db_session,
-        regenerator=regenerate_operation_engine2_dossier,
-        auto_recover_stale: bool = True,
+        regenerator=None,
+        auto_recover_stale: bool = False,
     ) -> None:
         self._session_factory = session_factory
+        # Compatibility-only constructor arguments. Read paths must never execute
+        # regeneration work; stale dossiers are rebuilt by the durable worker flow.
         self._regenerator = regenerator
         self._auto_recover_stale = bool(auto_recover_stale)
     def get_dossier(self, *, organization_id: int, operation_public_id: UUID | str) -> Engine2DossierView:
@@ -120,41 +121,6 @@ class UsLaceyEngineDossierService:
                     )
                 )
 
-                if (
-                    historical
-                    and not failed
-                    and self._auto_recover_stale
-                    and self._regenerator is not None
-                ):
-                    try:
-                        rebuilt = self._regenerator(
-                            organization_id=organization_id,
-                            operation_id=operation.id,
-                            session_factory=self._session_factory,
-                        )
-                    except Exception:
-                        LOGGER.exception(
-                            "Engine 2 stale dossier regeneration failed",
-                            extra={
-                                "organization_id": organization_id,
-                                "operation_id": operation.id,
-                                "source_set_fingerprint": fingerprint,
-                            },
-                        )
-                    else:
-                        if rebuilt.status == "SUCCEEDED":
-                            session.expire_all()
-                            snapshot = session.scalar(
-                                select(UsLaceyEngineShipmentRun).where(
-                                    UsLaceyEngineShipmentRun.organization_id == organization_id,
-                                    UsLaceyEngineShipmentRun.operation_id == operation.id,
-                                    UsLaceyEngineShipmentRun.source_set_fingerprint == fingerprint,
-                                    UsLaceyEngineShipmentRun.engine_version == ENGINE_VERSION,
-                                    UsLaceyEngineShipmentRun.ruleset_version == LaceyRuleset().version,
-                                    UsLaceyEngineShipmentRun.schema_version == SHIPMENT_RESOLUTION_SCHEMA_VERSION,
-                                )
-                            )
-
                 if snapshot is None:
                     return Engine2DossierView(
                         Engine2DossierAvailability.FAILED
@@ -168,13 +134,9 @@ class UsLaceyEngineDossierService:
                             "Current shadow document processing did not produce a complete dossier."
                             if failed
                             else (
-                                "The evidence dossier is being rebuilt for the current document set."
-                                if historical and self._auto_recover_stale
-                                else (
-                                    "A previous dossier exists, but it does not match the current document set or Engine 2 contract."
-                                    if historical
-                                    else "Current Engine 2 dossier is not available yet."
-                                )
+                                "A previous dossier exists, but it does not match the current document set or Engine 2 contract. The durable processing worker must rebuild it."
+                                if historical
+                                else "Current Engine 2 dossier is not available yet."
                             )
                         ),
                     )
