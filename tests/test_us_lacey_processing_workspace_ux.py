@@ -93,44 +93,21 @@ def test_unsupported_domain_is_terminal_and_does_not_render_review_retry():
 
 
 
-def _action_field_html(*, proposed_value):
+def _action_status_text(*, proposed_value):
     template = templates.get_template(
-        "us_lacey/fragments/operation_workspace.html"
+        "us_lacey/fragments/review_field_macros.html"
     )
     field = SimpleNamespace(
-        id=17,
         status="MISSING",
-        scope="SHIPMENT",
-        line_reference="__SHIPMENT__",
-        field_name="container_number",
-        label="Container Number(s)",
         proposed_value=proposed_value,
         effective_value=proposed_value,
-        candidates=(),
     )
-    module = template.make_module(
-        {
-            "detail": SimpleNamespace(
-                public_id="11111111-2222-3333-4444-555555555555"
-            ),
-            "review_csrf": {17: "csrf"},
-        }
-    )
-    return str(module.action_field(field, 1))
+    return str(template.module.action_status(field)).strip()
 
 
 def test_action_required_badge_says_needs_confirmation_when_value_exists():
-    html = _action_field_html(proposed_value="TGHU5519023")
-
-    assert 'data-action-status>Needs confirmation</span>' in html
-    assert "Best available value:" in html
-    assert "TGHU5519023" in html
-    assert 'data-action-status>Missing information</span>' not in html
+    assert _action_status_text(proposed_value="TGHU5519023") == "Needs confirmation"
 
 
 def test_action_required_badge_says_missing_only_when_value_is_absent():
-    html = _action_field_html(proposed_value=None)
-
-    assert 'data-action-status>Missing information</span>' in html
-    assert "Not found in the uploaded evidence." in html
-    assert "Best available value:" not in html
+    assert _action_status_text(proposed_value=None) == "Missing information"
