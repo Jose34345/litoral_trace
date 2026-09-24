@@ -7,6 +7,7 @@ from litoral_trace.web.us_lacey_operational_views import _review_field_groups
 ROOT = Path(__file__).resolve().parents[1]
 DETAIL_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/operation_detail.html"
 WORKSPACE_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
+DOSSIER_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/fragments/engine2_dossier.html"
 
 
 def _field(*, status: str, effective_value=None, extractor=None):
@@ -35,10 +36,12 @@ def test_empty_optional_placeholder_is_not_counted_as_confirmed():
 
 
 def test_document_dossier_does_not_claim_final_preparation_readiness():
-    source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
-    assert "Advanced evidence details" in source
-    assert "Technical evidence remains available for audit and troubleshooting" in source
-    assert "Preparation readiness:" not in source
+    workspace = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
+    dossier = DOSSIER_TEMPLATE.read_text(encoding="utf-8")
+    assert '{% include "us_lacey/fragments/engine2_dossier.html" %}' in workspace
+    assert "Advanced evidence details" in dossier
+    assert "Technical evidence remains available for audit and troubleshooting" in dossier
+    assert "Preparation readiness:" not in dossier
 
 
 
