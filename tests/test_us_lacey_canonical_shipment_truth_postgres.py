@@ -24,7 +24,7 @@ from tests.us_lacey_engine2_postgres import (
 )
 
 
-def _seed_two_lines(factory):
+def _seed_two_lines(factory, *, logical_document_ids: bool = False):
     org, operation_id, link_id, assurance_id, _, _ = create_test_graph(
         factory, content=b"canonical-truth"
     )
@@ -57,10 +57,13 @@ def _seed_two_lines(factory):
     operation.merchandise_line_count = 2
 
     payload = _golden_payload()
+    source_document_id = (
+        f"{link_id}:logical-001" if logical_document_ids else str(link_id)
+    )
     for field in payload["canonical_fields"].values():
         for evidence in field["supporting_evidence"]:
-            evidence["document_id"] = str(link_id)
-            evidence["candidate_id"] = f"{link_id}:{evidence['candidate_id']}"
+            evidence["document_id"] = source_document_id
+            evidence["candidate_id"] = f"{source_document_id}:{evidence['candidate_id']}"
     session.add(
         UsLaceyEngineShipmentRun(
             organization_id=org,
@@ -235,6 +238,37 @@ def test_canonical_publication_replaces_machine_state_without_cross_line_leakage
         )
     )
     assert before_candidates == after_candidates
+    session.close()
+
+
+def test_canonical_publication_accepts_bundle_logical_document_ids(
+    engine2_postgres_session_factory,
+):
+    factory = engine2_postgres_session_factory
+    org, operation_id, assurance_id = _seed_two_lines(
+        factory,
+        logical_document_ids=True,
+    )
+    session = tenant_session(factory, org)
+
+    result = publish_canonical_shipment_truth(
+        session,
+        organization_id=org,
+        operation_id=operation_id,
+    )
+    session.commit()
+
+    assert result.line_count == 2
+    description = _field(
+        session,
+        org,
+        operation_id,
+        PPQ505_SHIPMENT_REFERENCE,
+        "merchandise_description",
+    )
+    assert description is not None
+    assert description.source_assurance_document_id == assurance_id
+    assert description.field_status == "FOUND"
     session.close()
 
 
