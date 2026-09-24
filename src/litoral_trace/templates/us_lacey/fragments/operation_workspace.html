@@ -26,6 +26,8 @@
 {% set action_url = "/operations/" ~ detail.public_id ~ "/review/fields/" ~ field.id %}
 {% set htmx_action_url = "/operations/" ~ detail.public_id ~ "/review/actions/fields/" ~ field.id %}
 {% set field_csrf = review_csrf.get(field.id, "") %}
+{% set has_best_value = field.proposed_value is not none and (field.proposed_value|string|trim)|length > 0 %}
+{% set display_status = "NEEDS_CONFIRMATION" if field.status != "CONFLICT" and has_best_value else field.status %}
 <article
   id="review-field-{{ field.id }}"
   class="rounded-xl border border-slate-200 border-l-4 {% if field.status == 'CONFLICT' %}border-l-rose-500{% else %}border-l-amber-500{% endif %} bg-white p-4 shadow-sm"
@@ -41,7 +43,7 @@
       <p class="text-xs font-semibold text-slate-500">{% if field.scope == "SHIPMENT" %}Shipment{% else %}Plant line {{ field.line_reference }}{% endif %}</p>
       <h3 class="mt-1 font-bold text-slate-950">{{ field.label }}</h3>
     </div>
-    <span class="rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset {% if field.status == 'CONFLICT' %}bg-rose-50 text-rose-700 ring-rose-600/20{% else %}bg-amber-50 text-amber-700 ring-amber-600/20{% endif %}">{{ friendly_status(field.status) }}</span>
+    <span class="rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset {% if field.status == 'CONFLICT' %}bg-rose-50 text-rose-700 ring-rose-600/20{% else %}bg-amber-50 text-amber-700 ring-amber-600/20{% endif %}">{{ friendly_status(display_status) }}</span>
   </div>
 
   {% if field.status == "CONFLICT" and field.candidates|length > 1 %}
