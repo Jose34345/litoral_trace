@@ -175,6 +175,48 @@ def test_strong_anchor_beats_shared_bill_fingerprint_across_broker_packet():
 
 
 
+@pytest.mark.parametrize(
+    ("title", "expected_type"),
+    (
+        ("ENTRY WORKSHEET", DocumentType.CUSTOMS_ENTRY_SUMMARY),
+        ("BOTANICAL DECLARATION", DocumentType.SPECIES_DECLARATION),
+        ("ARRIVAL NOTICE", DocumentType.ARRIVAL_NOTICE),
+        ("PLANT DATA WORKSHEET", DocumentType.SPECIES_DECLARATION),
+        ("SUPPLIER DECLARATION", DocumentType.SUPPLIER_DECLARATION),
+    ),
+)
+def test_support_document_strong_anchors_beat_shared_shipment_fingerprint(
+    title,
+    expected_type,
+):
+    shared_bill = "B/L No: MBL-GOLDEN-2026"
+    layout = ParsedLayout(
+        blocks=(
+            LayoutBlock(
+                "p1",
+                1,
+                None,
+                f"COMMERCIAL INVOICE\n{shared_bill}",
+                "TEXT_LINE",
+            ),
+            LayoutBlock(
+                "p2",
+                2,
+                None,
+                f"{title}\n{shared_bill}",
+                "TEXT_LINE",
+            ),
+        ),
+        page_count=2,
+    )
+
+    sections = segment(layout, DocumentType.COMMERCIAL_INVOICE)
+
+    assert len(sections) == 2
+    assert sections[1].document_type is expected_type
+    assert (sections[1].page_start, sections[1].page_end) == (2, 2)
+
+
 def test_high_confidence_semantic_transition_starts_new_document():
     previous = PageClassification(
         page=3,
