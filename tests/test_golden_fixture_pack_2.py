@@ -152,7 +152,7 @@ PACK2 = (
     ),
     (
         "04_Botanical_Declaration.pdf",
-        "SUPPLIER_DECLARATION",
+        "BOTANICAL_DECLARATION",
         (
             ("raw.table.1.Genus", "Cedrela", "table:1;data_row:1;column:1"),
             ("raw.table.1.Species", "odorata", "table:1;data_row:1;column:2"),
