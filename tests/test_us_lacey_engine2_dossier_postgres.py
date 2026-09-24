@@ -25,9 +25,15 @@ def _current(factory, monkeypatch):
     return org, operation, operation_public_id, snapshot
 
 
-def _view(factory, monkeypatch, org, public_id):
+def _view(factory, monkeypatch, org, public_id, *, auto_recover=False):
     monkeypatch.setattr(dossier_module, "engine2_mode", lambda: "SHADOW")
-    return UsLaceyEngineDossierService(session_factory=factory).get_dossier(organization_id=org, operation_public_id=public_id)
+    return UsLaceyEngineDossierService(
+        session_factory=factory,
+        auto_recover=auto_recover,
+    ).get_dossier(
+        organization_id=org,
+        operation_public_id=public_id,
+    )
 
 
 def _document_run(org, operation, identity, *, status, resolution=None):
@@ -140,5 +146,67 @@ def test_dossier_marks_version_contract_mismatches_stale(engine2_postgres_sessio
     org, operation, public_id, snapshot = _current(engine2_postgres_session_factory, monkeypatch)
     session = tenant_session(engine2_postgres_session_factory, org); row = session.query(UsLaceyEngineShipmentRun).filter_by(id=snapshot.id).one(); setattr(row, attribute, old_value); session.commit(); session.close()
     monkeypatch.setattr(dossier_module, "engine2_mode", lambda: "SHADOW")
-    view = UsLaceyEngineDossierService(session_factory=engine2_postgres_session_factory).get_dossier(organization_id=org, operation_public_id=public_id)
+    view = UsLaceyEngineDossierService(
+        session_factory=engine2_postgres_session_factory,
+        auto_recover=False,
+    ).get_dossier(
+        organization_id=org,
+        operation_public_id=public_id,
+    )
     assert view.availability is Engine2DossierAvailability.STALE and not view.fields and not view.issues
+
+
+
+def test_dossier_auto_recovers_stale_engine_contract_and_republishes(
+    engine2_postgres_session_factory,
+    monkeypatch,
+):
+    factory = engine2_postgres_session_factory
+    org, operation, public_id, snapshot = _current(factory, monkeypatch)
+
+    # Simulate a historical snapshot produced by the previous Engine 2 contract.
+    session = tenant_session(factory, org)
+    stale = session.query(UsLaceyEngineShipmentRun).filter_by(id=snapshot.id).one()
+    stale.engine_version = "lacey-engine-previous"
+    stale.source_set_fingerprint = "e" * 64
+    session.commit()
+    session.close()
+
+    published: list[tuple[int, int]] = []
+
+    service = UsLaceyEngineDossierService(
+        session_factory=factory,
+        recovery_service_factory=lambda: UsLaceyEngine2Service(
+            session_factory=factory,
+            vault_service=FakeVault(b"x"),
+        ),
+        projection_publisher=lambda **kwargs: published.append(
+            (int(kwargs["organization_id"]), int(kwargs["operation_id"]))
+        ) or 1,
+        auto_recover=True,
+    )
+    monkeypatch.setattr(dossier_module, "engine2_mode", lambda: "SHADOW")
+
+    view = service.get_dossier(
+        organization_id=org,
+        operation_public_id=public_id,
+    )
+
+    assert view.availability is Engine2DossierAvailability.CURRENT
+    assert view.engine_version == service_module.ENGINE_VERSION
+    assert view.document_count == 2
+    assert view.fields
+    assert published == [(org, operation)]
+
+    session = tenant_session(factory, org)
+    runs = (
+        session.query(UsLaceyEngineShipmentRun)
+        .filter_by(organization_id=org, operation_id=operation)
+        .order_by(UsLaceyEngineShipmentRun.id.asc())
+        .all()
+    )
+    assert len(runs) == 2
+    assert runs[0].engine_version == "lacey-engine-previous"
+    assert runs[1].engine_version == service_module.ENGINE_VERSION
+    assert runs[1].source_set_fingerprint != runs[0].source_set_fingerprint
+    session.close()
