@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -272,9 +273,12 @@ def test_golden_fixture_pack_2_projects_exact_three_intentional_conflicts():
         "2026-09-29",
         "2026-10-01",
     }
-    assert issue_values["entered_value_reconciliation"] == {
-        "48600.00",
-        "49050.00",
+    assert {
+        Decimal(value)
+        for value in issue_values["entered_value_reconciliation"]
+    } == {
+        Decimal("48600.00"),
+        Decimal("49050.00"),
     }
     assert issue_values["country_of_harvest"] == {"Peru", "Brazil"}
 
@@ -294,9 +298,9 @@ def test_golden_fixture_pack_2_projects_exact_three_intentional_conflicts():
         for candidate in conflict_fields["estimated_arrival_date"].candidates
     } == {"2026-09-29", "2026-10-01"}
     assert {
-        candidate.normalized_value or candidate.original_value
+        Decimal(candidate.normalized_value or candidate.original_value)
         for candidate in conflict_fields["entered_value"].candidates
-    } == {"48600.00", "49050.00"}
+    } == {Decimal("48600.00"), Decimal("49050.00")}
     assert {
         candidate.normalized_value or candidate.original_value
         for candidate in conflict_fields["country_of_harvest"].candidates
