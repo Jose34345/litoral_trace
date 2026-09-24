@@ -241,6 +241,22 @@ class UsLaceyEngine2Service(_BaseUsLaceyEngine2Service):
     ) -> None:
         """Project verified AI suggestions asynchronously after shadow completion."""
         try:
+            current_fingerprint = self._current_source_set_fingerprint(
+                organization_id=organization_id,
+                operation_id=operation_id,
+            )
+            if current_fingerprint != source_set_fingerprint:
+                LOGGER.info(
+                    "Skipping stale asynchronous verified-AI projection",
+                    extra={
+                        "organization_id": organization_id,
+                        "operation_id": operation_id,
+                        "shadow_source_set_fingerprint": source_set_fingerprint,
+                        "current_source_set_fingerprint": current_fingerprint,
+                    },
+                )
+                return
+
             with us_lacey_operation_projection_lock(
                 organization_id=organization_id,
                 operation_id=operation_id,
