@@ -18,10 +18,15 @@ from .domain import (
     Provenance,
     RawCandidate,
 )
-from .errors import LaceyEngineError
+from .errors import LaceyEngineError, UnsupportedDocumentDomainError
 from .layout_parser import parse_layout
 from .ranking import resolve
-from .segmentation import segment
+from .segmentation import (
+    DocumentDomain,
+    SUPPORTED_DOCUMENT_TYPES,
+    classify_pdf_first_page_domain,
+    segment,
+)
 from .semantic_graph import (
     is_out_of_scope_context,
     party_address,
@@ -29,7 +34,7 @@ from .semantic_graph import (
     valid_mid_value,
 )
 
-ENGINE_VERSION = "lacey-engine-2.4.0"
+ENGINE_VERSION = "lacey-engine-2.5.0"
 _FIELDS = (
     "estimated_arrival_date",
     "bill_of_lading",
@@ -439,12 +444,31 @@ def process_bundle(
 ) -> BundleResolution:
     """Resolve one immutable physical source into logical documents."""
 
+    domain = classify_pdf_first_page_domain(
+        content,
+        role_hint=role_hint,
+    )
+    if domain.rejected:
+        raise UnsupportedDocumentDomainError(domain=domain.domain.value)
+
     layout = parse_layout(filename, content)
     parent_type, _parent_confidence = classify(layout, role_hint)
     sections = segment(layout, parent_type)
     if not sections:
-        raise LaceyEngineError(
-            "Document segmentation produced no logical documents."
+        raise UnsupportedDocumentDomainError(
+            domain=DocumentDomain.UNSUPPORTED.value,
+        )
+
+    if (
+        bytes(content or b"").startswith(b"%PDF-")
+        and domain.domain is not DocumentDomain.COMMERCIAL_TRADE
+        and not any(
+            section.document_type in SUPPORTED_DOCUMENT_TYPES
+            for section in sections
+        )
+    ):
+        raise UnsupportedDocumentDomainError(
+            domain=DocumentDomain.UNSUPPORTED.value,
         )
 
     logical_documents: list[LogicalDocumentResolution] = []

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from fpdf import FPDF
+import pytest
 
 from litoral_trace.lacey_engine.domain import DocumentType, FieldStatus
+from litoral_trace.lacey_engine.errors import UnsupportedDocumentDomainError
 from litoral_trace.lacey_engine.pipeline import process_bundle
 from litoral_trace.lacey_engine.segmentation import (
+    DocumentDomain,
     PageClassification,
+    classify_domain_text,
     starts_new_document,
 )
 
@@ -184,3 +188,75 @@ def test_pack_1_golden_fixture_segments_three_logical_documents_without_leakage(
         for field in bill_of_lading.resolution.fields.values()
         for candidate in field.candidates
     )
+
+
+
+def _single_page_pdf(text: str) -> bytes:
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=11)
+    for line in text.splitlines():
+        pdf.cell(0, 8, text=line, new_x="LMARGIN", new_y="NEXT")
+    output = pdf.output()
+    return bytes(output) if not isinstance(output, str) else output.encode("latin-1")
+
+
+def test_legal_pleading_anchors_override_incidental_trade_terms():
+    classification = classify_domain_text(
+        "BEFORE THE FEDERAL MARITIME COMMISSION\n"
+        "DOCKET NO. 25-16\n"
+        "IWG INTERNATIONAL WOOD GROUP, Complainants\n"
+        "VERSUS DB SCHENKER USA, INC., Respondent\n"
+        "The pleading discusses a Bill of Lading and commercial invoice."
+    )
+
+    assert classification.domain is DocumentDomain.COURT_PLEADING
+    assert classification.rejected is True
+
+
+def test_initial_decision_anchor_rejects_legal_decision_even_when_logs_are_shipped():
+    classification = classify_domain_text(
+        "FEDERAL MARITIME COMMISSION\n"
+        "Office of Administrative Law Judges\n"
+        "DOCKET NO. 25-16\n"
+        "INITIAL DECISION\n"
+        "The record discusses shipments of logs and bills of lading."
+    )
+
+    assert classification.domain is DocumentDomain.LEGAL_DECISION
+    assert classification.rejected is True
+
+
+def test_email_thread_requires_multiple_header_anchors():
+    classification = classify_domain_text(
+        "From: broker@example.com\n"
+        "Sent: Monday, May 4, 2026 9:00 AM\n"
+        "To: importer@example.com\n"
+        "Subject: shipment question\n"
+        "Please see below."
+    )
+
+    assert classification.domain is DocumentDomain.EMAIL_THREAD
+    assert classification.rejected is True
+
+
+def test_process_bundle_rejects_legal_document_before_layout_extraction(monkeypatch):
+    content = _single_page_pdf(
+        "FEDERAL MARITIME COMMISSION\n"
+        "Office of Administrative Law Judges\n"
+        "DOCKET NO. 25-16\n"
+        "INITIAL DECISION\n"
+        "Shipment of logs under a Bill of Lading"
+    )
+    monkeypatch.setattr(
+        "litoral_trace.lacey_engine.pipeline.parse_layout",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("layout extraction must not run for manifest legal decisions")
+        ),
+    )
+
+    with pytest.raises(UnsupportedDocumentDomainError) as excinfo:
+        process_bundle(filename="initial-decision.pdf", content=content)
+
+    assert excinfo.value.code == "UNSUPPORTED_DOMAIN"
+    assert excinfo.value.domain == "LEGAL_DECISION"

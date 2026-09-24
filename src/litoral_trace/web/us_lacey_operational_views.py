@@ -54,6 +54,22 @@ def processing_view(detail) -> ProcessingView:
     documents = tuple(detail.documents)
     statuses = {str(document.job_status or "").upper() for document in documents}
     document_states = {str(document.processing_status or "").upper() for document in documents}
+    error_codes = {
+        str(getattr(document, "last_error_code", None) or "").upper()
+        for document in documents
+    }
+    if "UNSUPPORTED_DOMAIN" in error_codes:
+        return ProcessingView(
+            100,
+            "UNSUPPORTED_DOMAIN",
+            (
+                "This file does not appear to be a commercial invoice, packing list, "
+                "or transport document. Litoral Trace cannot process legal or "
+                "administrative files."
+            ),
+            True,
+            True,
+        )
     if "FAILED" in statuses or "FAILED" in document_states:
         return ProcessingView(100, "FAILED", "We couldn't finish processing this document.", True, True)
     if detail.status == "COMPLETED":

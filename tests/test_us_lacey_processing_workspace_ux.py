@@ -8,8 +8,12 @@ def _detail(*, status="OPEN", documents=()):
     return SimpleNamespace(status=status, documents=documents)
 
 
-def _document(*, job_status=None, processing_status="STORED"):
-    return SimpleNamespace(job_status=job_status, processing_status=processing_status)
+def _document(*, job_status=None, processing_status="STORED", last_error_code=None):
+    return SimpleNamespace(
+        job_status=job_status,
+        processing_status=processing_status,
+        last_error_code=last_error_code,
+    )
 
 
 def test_processing_progress_uses_durable_job_checkpoints_not_elapsed_time():
@@ -52,3 +56,37 @@ def test_processing_failure_retry_uses_htmx_and_support_mailto():
         in html
     )
     assert "comercial@litoraltrace.com" not in html
+
+
+
+def test_unsupported_domain_is_terminal_and_does_not_render_review_retry():
+    operation_id = "11111111-2222-3333-4444-555555555555"
+    progress = processing_view(
+        _detail(
+            status="FAILED",
+            documents=(
+                _document(
+                    job_status="FAILED",
+                    processing_status="FAILED",
+                    last_error_code="UNSUPPORTED_DOMAIN",
+                ),
+            ),
+        )
+    )
+
+    assert progress.state == "UNSUPPORTED_DOMAIN"
+    assert progress.terminal is True
+    assert progress.failed is True
+    assert "legal or administrative files" in progress.message
+
+    html = templates.get_template(
+        "us_lacey/fragments/processing_fragment_body.html"
+    ).render(
+        detail=SimpleNamespace(public_id=operation_id),
+        processing=progress,
+        retry_csrf="retry-token",
+    )
+    assert 'data-unsupported-document-domain' in html
+    assert "Unsupported document type" in html
+    assert "legal or administrative files" in html
+    assert "/actions/retry" not in html

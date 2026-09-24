@@ -1121,6 +1121,12 @@ def refresh_us_lacey_operation_status(
     # U.S. Lacey sessions intentionally use autoflush=False. State derivation must
     # therefore flush pending field/conflict review decisions before counting them.
     session.flush()
+    if (
+        str(operation.status or "").upper() == "FAILED"
+        and str(operation.review_result or "").upper() == "DOCUMENT_REJECTED"
+    ):
+        return operation.status
+
     _apply_percent_recycled_condition(
         session,
         organization_id=organization_id,

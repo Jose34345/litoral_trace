@@ -7,8 +7,9 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from litoral_trace.db.models import ReconciliationIssue, UsLaceyEngineDocumentRun, UsLaceyEngineShipmentRun, UsLaceyOperation, UsLaceyOperationDocument, UsLaceyOperationField, UsLaceyFieldCandidate, User
+from litoral_trace.db.models import AssuranceDocument, ReconciliationIssue, UsLaceyEngineDocumentRun, UsLaceyEngineShipmentRun, UsLaceyOperation, UsLaceyOperationDocument, UsLaceyOperationField, UsLaceyFieldCandidate, User
 from litoral_trace.lacey_engine.domain import AdmittedCandidate, DocumentResolution, DocumentType, EvidenceClass, FieldStatus, LayoutBlock, ParsedLayout, Provenance, RawCandidate, ResolvedField
+from litoral_trace.lacey_engine.errors import UnsupportedDocumentDomainError
 from litoral_trace.lacey_engine.serialization import BUNDLE_RESOLUTION_SCHEMA_VERSION, DOCUMENT_RESOLUTION_SCHEMA_VERSION, SHIPMENT_RESOLUTION_SCHEMA_VERSION, deserialize_shipment_resolution, serialize_document_resolution
 from litoral_trace.lacey_engine.shipment import LaceyRuleset
 from litoral_trace.us_lacey import lacey_engine_service as service_module
@@ -218,3 +219,52 @@ def test_engine2_snapshot_commit_failure_rolls_back_partial_snapshot(engine2_pos
     monkeypatch.setattr(Session, "commit", fail_commit)
     with pytest.raises(RuntimeError): service.resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     session = tenant_session(engine2_postgres_session_factory, org); assert session.query(UsLaceyEngineShipmentRun).filter_by(organization_id=org, operation_id=operation).count() == 0; session.close()
+
+
+
+def test_engine2_domain_preflight_persists_rejection_before_projection(
+    engine2_postgres_session_factory,
+    monkeypatch,
+):
+    org, operation, link, assurance_id, _, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        role="UNKNOWN",
+        content=b"legal-pdf",
+    )
+
+    def reject(**_values):
+        raise UnsupportedDocumentDomainError(domain="LEGAL_DECISION")
+
+    monkeypatch.setattr(service_module, "process_bundle", reject)
+    service = UsLaceyEngine2Service(
+        session_factory=engine2_postgres_session_factory,
+        vault_service=FakeVault(b"legal-pdf"),
+    )
+
+    with pytest.raises(UnsupportedDocumentDomainError) as excinfo:
+        service.preflight_document_domain(
+            organization_id=org,
+            operation_id=operation,
+            assurance_document_id=assurance_id,
+        )
+
+    assert excinfo.value.code == "UNSUPPORTED_DOMAIN"
+
+    session = tenant_session(engine2_postgres_session_factory, org)
+    try:
+        assurance = session.query(AssuranceDocument).filter_by(id=assurance_id).one()
+        operation_row = session.query(UsLaceyOperation).filter_by(id=operation).one()
+        run = session.query(UsLaceyEngineDocumentRun).filter_by(
+            operation_document_id=link,
+            status="FAILED",
+        ).one()
+
+        assert assurance.processing_status == "FAILED"
+        assert assurance.last_error_code == "UNSUPPORTED_DOMAIN"
+        assert "legal or administrative files" in assurance.last_error_message
+        assert operation_row.status == "FAILED"
+        assert operation_row.review_result == "DOCUMENT_REJECTED"
+        assert run.safe_error_code == "UNSUPPORTED_DOMAIN"
+        assert "legal or administrative files" in run.safe_error_message
+    finally:
+        session.close()
