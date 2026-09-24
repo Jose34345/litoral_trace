@@ -77,11 +77,67 @@ def test_terminal_workspace_keeps_engine2_dossier_collapsed_for_audit():
         complete_csrf="complete",
         review_csrf={},
     )
-    assert 'id="engine2-dossier"' in html
-    assert 'hx-swap-oob="outerHTML:#engine2-dossier"' not in html
+    assert html.count('id="engine2-dossier"') == 1
+    assert 'id="engine2-dossier-slot"' in html
+    assert 'hx-swap-oob="outerHTML:#engine2-dossier-slot"' in html
     assert 'data-engine2-availability="CURRENT"' in html
     assert "MSKU9228574" in html
     assert 'id="operation-workspace"' in html
+
+
+def test_operation_detail_owns_one_dossier_slot_and_workspace_refreshes_it_oob():
+    initial = Engine2DossierView(
+        Engine2DossierAvailability.NOT_AVAILABLE,
+        safe_status_message="Current Engine 2 dossier is not available yet.",
+    )
+    detail = _detail(status="OPEN")
+    page = render_operation_detail(
+        request=_request(),
+        identity=SimpleNamespace(legal_name="Portal customer"),
+        detail=detail,
+        engine2_dossier=initial,
+        upload_csrf="upload",
+        complete_csrf="complete",
+        review_csrf={},
+        retry_csrf="retry",
+    )
+
+    assert page.count('id="engine2-dossier-slot"') == 1
+    assert page.count('id="engine2-dossier"') == 1
+    assert "Current Engine 2 dossier is not available yet." in page
+    assert 'hx-swap-oob="outerHTML:#engine2-dossier-slot"' not in page
+
+    current = Engine2DossierView(
+        Engine2DossierAvailability.CURRENT,
+        "BLOCKED",
+        "engine",
+        "rules",
+        "schema",
+        document_count=1,
+        fields=(
+            Engine2DossierFieldView(
+                "container_number",
+                "Container Number",
+                "SUPPORTED",
+                ("MSKU0857658",),
+                (),
+            ),
+        ),
+    )
+    fragment = render_operation_workspace(
+        request=_request(),
+        identity=SimpleNamespace(legal_name="Portal customer"),
+        detail=_detail(status="REVIEW_REQUIRED"),
+        engine2_dossier=current,
+        complete_csrf="complete",
+        review_csrf={},
+    )
+
+    assert fragment.count('id="engine2-dossier-slot"') == 1
+    assert fragment.count('id="engine2-dossier"') == 1
+    assert 'hx-swap-oob="outerHTML:#engine2-dossier-slot"' in fragment
+    assert 'data-engine2-availability="CURRENT"' in fragment
+    assert "MSKU0857658" in fragment
 
 
 def test_non_current_dossier_states_hide_canonical_values():
