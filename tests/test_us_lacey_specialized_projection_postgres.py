@@ -31,7 +31,9 @@ from tests.test_us_lacey_shadow_dispatcher_postgres import (
     BOL,
     _add_missing_field,
     _configure_shadow,
+    _shadow_run_count,
     _specialized_success,
+    _wait_until,
 )
 from tests.us_lacey_engine2_postgres import (
     FakeVault,
@@ -179,6 +181,15 @@ def test_runtime_shadow_projection_records_telemetry_without_mutating_field(
         vault_service=FakeVault(b"specialized-projection-shadow"),
     ).resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     assert result.status == "SUCCEEDED"
+    _wait_until(
+        lambda: _shadow_run_count(
+            engine2_postgres_session_factory,
+            organization_id=org,
+            operation_id=operation,
+            schema=SPECIALIZED_SHADOW_SCHEMA_VERSION,
+        )
+        == 1
+    )
 
     session = tenant_session(engine2_postgres_session_factory, org)
     field = session.query(UsLaceyOperationField).filter_by(
@@ -236,6 +247,15 @@ def test_runtime_enforce_projection_persists_unconfirmed_pending_candidate(
         operation_id=operation,
     )
     assert repeat.status == "SUCCEEDED"
+    _wait_until(
+        lambda: _shadow_run_count(
+            engine2_postgres_session_factory,
+            organization_id=org,
+            operation_id=operation,
+            schema=SPECIALIZED_SHADOW_SCHEMA_VERSION,
+        )
+        == 1
+    )
 
     session = tenant_session(engine2_postgres_session_factory, org)
     field = session.query(UsLaceyOperationField).filter_by(
@@ -286,6 +306,15 @@ def test_runtime_enforce_materializes_stable_line_before_projecting_value(
         vault_service=FakeVault(b"specialized-line-materialization"),
     ).resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     assert result.status == "SUCCEEDED"
+    _wait_until(
+        lambda: _shadow_run_count(
+            engine2_postgres_session_factory,
+            organization_id=org,
+            operation_id=operation,
+            schema=SPECIALIZED_SHADOW_SCHEMA_VERSION,
+        )
+        == 1
+    )
 
     session = tenant_session(engine2_postgres_session_factory, org)
     lines = session.query(UsLaceyPpqPlantLine).filter_by(operation_id=operation).all()
@@ -335,6 +364,15 @@ def test_runtime_enforce_uses_fusion_conflict_gate_and_never_silently_picks_winn
         vault_service=FakeVault(b"specialized-projection-conflict"),
     ).resolve_operation_with_engine2(organization_id=org, operation_id=operation)
     assert result.status == "SUCCEEDED"
+    _wait_until(
+        lambda: _shadow_run_count(
+            engine2_postgres_session_factory,
+            organization_id=org,
+            operation_id=operation,
+            schema=SPECIALIZED_SHADOW_SCHEMA_VERSION,
+        )
+        == 1
+    )
 
     session = tenant_session(engine2_postgres_session_factory, org)
     field = session.query(UsLaceyOperationField).filter_by(
