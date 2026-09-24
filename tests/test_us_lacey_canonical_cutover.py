@@ -137,12 +137,23 @@ def test_worker_does_not_swallow_canonical_publication_failure(monkeypatch):
         worker._project_engine2_suggestions(organization_id=7, operation_id=11)
 
 
-def test_canonical_publication_is_last_field_writer_in_finalization_chain():
-    source = inspect.getsource(worker.process_one_us_lacey_job)
-    ai_position = source.index("_project_verified_ai_suggestions(")
-    canonical_position = source.index("_project_engine2_suggestions(")
-    review_position = source.index("_run_ai_review_recommendations(")
-    assert ai_position < canonical_position < review_position
+def test_canonical_publication_stays_on_critical_path_and_verified_ai_is_background_only():
+    worker_source = inspect.getsource(worker.process_one_us_lacey_job)
+    background_source = inspect.getsource(
+        worker.UsLaceyEngine2Service._after_ai_shadow_background
+    )
+
+    canonical_position = worker_source.index("_project_engine2_suggestions(")
+    review_position = worker_source.index("_run_ai_review_recommendations(")
+    assert canonical_position < review_position
+    assert "_project_verified_ai_suggestions(" not in worker_source
+
+    # Verified AI may enrich fields only after the deterministic Engine 2 commit.
+    # The background hook re-validates the source set before taking the projection lock.
+    assert "_current_source_set_fingerprint(" in background_source
+    assert "current_fingerprint != source_set_fingerprint" in background_source
+    assert "us_lacey_operation_projection_lock(" in background_source
+    assert "_project_verified_ai_suggestions(" in background_source
 
 
 def test_cache_hit_telemetry_proves_zero_external_provider_calls(caplog):
