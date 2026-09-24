@@ -1,0 +1,414 @@
+name: Forensic 0ed2 Read-Only Autopsy
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/forensic-0ed2-readonly.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      MIGRATION_DATABASE_URL: ${{ secrets.US_LACEY_NEON_MIGRATION_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install SQL dependency
+        run: python -m pip install "sqlalchemy>=2" "psycopg[binary]"
+
+      - name: Run read-only production autopsy
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${MIGRATION_DATABASE_URL:-}"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.engine import make_url
+
+          OP = "0ed2abf2-bda6-4aaf-9223-b1a31f001a62"
+          ENGINE_VERSION = "lacey-engine-2.5.0"
+          RULESET_VERSION = "lacey_ruleset_2026_02_semantic_graph"
+          BUNDLE_SCHEMA = "lacey_bundle_resolution_v1"
+          SHIPMENT_SCHEMA = "lacey_shipment_resolution_v1"
+
+          url = make_url(os.environ["MIGRATION_DATABASE_URL"])
+          if url.drivername in {"postgresql", "postgres", "postgresql+psycopg2"}:
+              url = url.set(drivername="postgresql+psycopg")
+          engine = create_engine(url, pool_pre_ping=True, hide_parameters=True)
+
+          def dump(tag, rows):
+              print(f"\n=== {tag} ===")
+              if not rows:
+                  print(f"{tag} EMPTY")
+                  return
+              for row in rows:
+                  safe = dict(row)
+                  if "locked_by" in safe:
+                      safe["locked_by"] = bool(safe["locked_by"])
+                  print(tag, json.dumps(safe, default=str, sort_keys=True))
+
+          with engine.connect() as conn:
+              tx = conn.begin()
+              conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+              conn.exec_driver_sql("SET LOCAL statement_timeout = '30s'")
+              conn.exec_driver_sql("SET LOCAL lock_timeout = '2s'")
+
+              op = conn.execute(text("""
+                  SELECT id, organization_id, public_id, client_reference, status,
+                         review_result, document_count, merchandise_line_count,
+                         created_at, updated_at
+                  FROM public.us_lacey_operations
+                  WHERE public_id = CAST(:op AS uuid)
+              """), {"op": OP}).mappings().all()
+              dump("OP", op)
+              if not op:
+                  raise SystemExit("operation_not_found")
+              operation_id = int(op[0]["id"])
+              organization_id = int(op[0]["organization_id"])
+
+              jobs = conn.execute(text("""
+                  SELECT j.id AS job_id, j.public_id AS job_public_id, j.status,
+                         j.attempt_count, j.max_attempts, j.available_at,
+                         j.locked_by, j.locked_at, j.heartbeat_at,
+                         j.current_stage, j.stage_started_at,
+                         j.started_at, j.completed_at,
+                         j.last_error_code, j.last_error_message,
+                         j.created_at, j.updated_at,
+                         d.id AS assurance_document_id, d.processing_status AS document_status,
+                         d.last_error_code AS document_error_code,
+                         d.last_error_message AS document_error_message,
+                         od.id AS operation_document_id, od.document_role,
+                         od.version_number, od.is_current,
+                         v.original_filename, v.sha256
+                  FROM public.us_lacey_processing_jobs j
+                  LEFT JOIN public.assurance_documents d
+                    ON d.id=j.assurance_document_id AND d.organization_id=j.organization_id
+                  LEFT JOIN public.us_lacey_operation_documents od
+                    ON od.operation_id=j.operation_id
+                   AND od.organization_id=j.organization_id
+                   AND od.assurance_document_id=j.assurance_document_id
+                   AND od.is_current IS TRUE
+                  LEFT JOIN public.vault_documents v
+                    ON v.id=d.vault_document_id AND v.organization_id=d.organization_id
+                  WHERE j.operation_id=:oid AND j.organization_id=:org
+                  ORDER BY j.id
+              """), {"oid": operation_id, "org": organization_id}).mappings().all()
+              dump("JOB", jobs)
+
+              docs = conn.execute(text("""
+                  SELECT od.id AS operation_document_id,
+                         od.assurance_document_id, od.document_role,
+                         od.version_number, od.is_current, od.created_at,
+                         d.public_id AS assurance_public_id, d.processing_status,
+                         v.original_filename, v.sha256
+                  FROM public.us_lacey_operation_documents od
+                  JOIN public.assurance_documents d
+                    ON d.id=od.assurance_document_id AND d.organization_id=od.organization_id
+                  JOIN public.vault_documents v
+                    ON v.id=d.vault_document_id AND v.organization_id=d.organization_id
+                  WHERE od.operation_id=:oid AND od.organization_id=:org
+                    AND od.is_current IS TRUE
+                  ORDER BY od.id
+              """), {"oid": operation_id, "org": organization_id}).mappings().all()
+              dump("DOC", docs)
+
+              fingerprint_items = [
+                  {
+                      "operation_document_id": int(r["operation_document_id"]),
+                      "assurance_document_id": int(r["assurance_document_id"]),
+                      "version": int(r["version_number"]),
+                      "sha256": str(r["sha256"]),
+                  }
+                  for r in docs
+              ]
+              encoded = json.dumps({
+                  "organization_id": organization_id,
+                  "operation_id": operation_id,
+                  "documents": fingerprint_items,
+                  "engine_version": ENGINE_VERSION,
+                  "ruleset_version": RULESET_VERSION,
+                  "shipment_schema_version": SHIPMENT_SCHEMA,
+              }, sort_keys=True, separators=(",", ":")).encode()
+              current_dossier_fingerprint = hashlib.sha256(encoded).hexdigest()
+              print("\n=== CURRENT_DOSSIER_FINGERPRINT ===")
+              print("CURRENT_DOSSIER_FINGERPRINT", current_dossier_fingerprint)
+
+              revs = conn.execute(text("""
+                  SELECT r.id AS revision_id, r.generation, r.source_set_fingerprint,
+                         r.document_count, r.status, r.is_current,
+                         r.claimed_at, r.finalized_at, r.created_at, r.updated_at,
+                         count(m.id) AS actual_member_count
+                  FROM public.us_lacey_source_set_revisions r
+                  LEFT JOIN public.us_lacey_source_set_members m
+                    ON m.source_set_revision_id=r.id AND m.organization_id=r.organization_id
+                  WHERE r.operation_id=:oid AND r.organization_id=:org
+                  GROUP BY r.id
+                  ORDER BY r.generation
+              """), {"oid": operation_id, "org": organization_id}).mappings().all()
+              dump("SOURCE_REV", revs)
+
+              druns = conn.execute(text("""
+                  SELECT r.id AS run_id, r.operation_document_id, r.assurance_document_id,
+                         r.engine_version, r.schema_version, r.role_hint, r.status,
+                         r.safe_error_code, r.safe_error_message, r.source_sha256,
+                         r.created_at,
+                         (r.resolution_json IS NOT NULL) AS has_payload,
+                         CASE WHEN r.resolution_json IS NULL THEN 0
+                              ELSE octet_length(r.resolution_json::text) END AS payload_bytes,
+                         CASE WHEN jsonb_typeof(r.resolution_json::jsonb -> 'documents')='array'
+                              THEN jsonb_array_length(r.resolution_json::jsonb -> 'documents')
+                              ELSE NULL END AS logical_document_count
+                  FROM public.us_lacey_engine_document_runs r
+                  WHERE r.operation_id=:oid AND r.organization_id=:org
+                  ORDER BY r.created_at, r.id
+              """), {"oid": operation_id, "org": organization_id}).mappings().all()
+              dump("ENGINE_DOC_RUN", druns)
+
+              seg = conn.execute(text("""
+                  SELECT r.id AS run_id, r.operation_document_id,
+                         d.ord AS logical_ordinal,
+                         d.payload ->> 'logical_document_id' AS logical_document_id,
+                         d.payload ->> 'document_type' AS document_type,
+                         d.payload ->> 'page_start' AS page_start,
+                         d.payload ->> 'page_end' AS page_end,
+                         d.payload ->> 'type_confidence' AS type_confidence
+                  FROM public.us_lacey_engine_document_runs r
+                  CROSS JOIN LATERAL jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(r.resolution_json::jsonb -> 'documents')='array'
+                         THEN r.resolution_json::jsonb -> 'documents' ELSE '[]'::jsonb END
+                  ) WITH ORDINALITY AS d(payload, ord)
+                  WHERE r.operation_id=:oid AND r.organization_id=:org
+                    AND r.engine_version=:engine
+                    AND r.schema_version=:bundle_schema
+                    AND r.status='SUCCEEDED'
+                  ORDER BY r.id, d.ord
+              """), {"oid": operation_id, "org": organization_id,
+                      "engine": ENGINE_VERSION, "bundle_schema": BUNDLE_SCHEMA}).mappings().all()
+              dump("SEGMENT", seg)
+
+              bundle_fields = conn.execute(text("""
+                  WITH logical_docs AS (
+                    SELECT r.id AS run_id, r.operation_document_id, d.payload
+                    FROM public.us_lacey_engine_document_runs r
+                    CROSS JOIN LATERAL jsonb_array_elements(
+                      CASE WHEN jsonb_typeof(r.resolution_json::jsonb -> 'documents')='array'
+                           THEN r.resolution_json::jsonb -> 'documents' ELSE '[]'::jsonb END
+                    ) AS d(payload)
+                    WHERE r.operation_id=:oid AND r.organization_id=:org
+                      AND r.engine_version=:engine
+                      AND r.schema_version=:bundle_schema
+                      AND r.status='SUCCEEDED'
+                  )
+                  SELECT run_id, operation_document_id,
+                         payload ->> 'logical_document_id' AS logical_document_id,
+                         payload ->> 'document_type' AS document_type,
+                         f.key AS field_key,
+                         f.value ->> 'status' AS field_status,
+                         f.value ->> 'effective_value' AS effective_value,
+                         CASE WHEN jsonb_typeof(f.value -> 'candidates')='array'
+                              THEN jsonb_array_length(f.value -> 'candidates') ELSE 0 END AS candidate_count
+                  FROM logical_docs
+                  CROSS JOIN LATERAL jsonb_each(
+                    COALESCE(payload #> '{resolution,fields}', '{}'::jsonb)
+                  ) AS f(key, value)
+                  WHERE f.key IN (
+                    'hts_code','entered_value','article_component','genus','species',
+                    'country_of_harvest','plant_quantity','metric_unit'
+                  )
+                  ORDER BY run_id, logical_document_id, field_key
+              """), {"oid": operation_id, "org": organization_id,
+                      "engine": ENGINE_VERSION, "bundle_schema": BUNDLE_SCHEMA}).mappings().all()
+              dump("BUNDLE_FIELD", bundle_fields)
+
+              sruns = conn.execute(text("""
+                  SELECT id AS shipment_run_id, engine_version, ruleset_version,
+                         schema_version, source_set_fingerprint, document_count,
+                         readiness, created_at,
+                         octet_length(resolution_json::text) AS payload_bytes,
+                         CASE WHEN jsonb_typeof(resolution_json::jsonb -> 'documents')='array'
+                              THEN jsonb_array_length(resolution_json::jsonb -> 'documents') ELSE NULL END AS logical_document_count,
+                         CASE WHEN jsonb_typeof(resolution_json::jsonb -> 'issues')='array'
+                              THEN jsonb_array_length(resolution_json::jsonb -> 'issues') ELSE NULL END AS issue_count,
+                         CASE WHEN jsonb_typeof(resolution_json::jsonb -> 'canonical_fields')='object'
+                              THEN (SELECT count(*) FROM jsonb_object_keys(resolution_json::jsonb -> 'canonical_fields'))
+                              ELSE NULL END AS canonical_field_count,
+                         resolution_json::jsonb -> 'metrics' AS metrics
+                  FROM public.us_lacey_engine_shipment_runs
+                  WHERE operation_id=:oid AND organization_id=:org
+                  ORDER BY id
+              """), {"oid": operation_id, "org": organization_id}).mappings().all()
+              dump("SHIPMENT_RUN", sruns)
+
+              print("\n=== DOSSIER_FINGERPRINT_MATCH ===")
+              for r in sruns:
+                  print("DOSSIER_FINGERPRINT_MATCH", json.dumps({
+                      "shipment_run_id": r["shipment_run_id"],
+                      "snapshot_fingerprint": r["source_set_fingerprint"],
+                      "current_fingerprint": current_dossier_fingerprint,
+                      "match": str(r["source_set_fingerprint"]) == current_dossier_fingerprint,
+                  }, sort_keys=True))
+
+              canonical = conn.execute(text("""
+                  SELECT sr.id AS shipment_run_id, sr.created_at,
+                         cf.key AS field_key, cf.value ->> 'state' AS canonical_state,
+                         cf.value -> 'values' AS canonical_values,
+                         CASE WHEN jsonb_typeof(cf.value -> 'supporting_evidence')='array'
+                              THEN jsonb_array_length(cf.value -> 'supporting_evidence') ELSE 0 END
+                              AS supporting_evidence_count
+                  FROM public.us_lacey_engine_shipment_runs sr
+                  CROSS JOIN LATERAL jsonb_each(
+                    COALESCE(sr.resolution_json::jsonb -> 'canonical_fields', '{}'::jsonb)
+                  ) AS cf(key, value)
+                  WHERE sr.operation_id=:oid AND sr.organization_id=:org
+                    AND cf.key IN (
+                      'hts_code','entered_value','article_component','genus','species',
+                      'country_of_harvest','plant_quantity','metric_unit'
+                    )
+                  ORDER BY sr.id, cf.key
+              """), {"oid": operation_id, "org": organization_id}).mappings().all()
+              dump("CANONICAL_FIELD", canonical)
+
+              evidence = conn.execute(text("""
+                  WITH cf AS (
+                    SELECT sr.id AS shipment_run_id, x.key AS field_key, x.value AS field_payload
+                    FROM public.us_lacey_engine_shipment_runs sr
+                    CROSS JOIN LATERAL jsonb_each(
+                      COALESCE(sr.resolution_json::jsonb -> 'canonical_fields','{}'::jsonb)
+                    ) AS x(key, value)
+                    WHERE sr.operation_id=:oid AND sr.organization_id=:org
+                  )
+                  SELECT shipment_run_id, field_key, e.ord AS evidence_ordinal,
+                         e.payload ->> 'candidate_id' AS candidate_id,
+                         e.payload ->> 'document_id' AS logical_document_id,
+                         e.payload ->> 'normalized_value' AS normalized_value,
+                         e.payload ->> 'scope' AS scope,
+                         e.payload ->> 'line_key' AS line_key,
+                         e.payload ->> 'component_key' AS component_key,
+                         e.payload ->> 'quantity_semantic_type' AS quantity_semantic_type,
+                         e.payload ->> 'candidate_score' AS candidate_score,
+                         e.payload ->> 'source_authority' AS source_authority,
+                         e.payload #>> '{candidate,provenance,page}' AS source_page
+                  FROM cf
+                  CROSS JOIN LATERAL jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(field_payload -> 'supporting_evidence')='array'
+                         THEN field_payload -> 'supporting_evidence' ELSE '[]'::jsonb END
+                  ) WITH ORDINALITY AS e(payload, ord)
+                  WHERE field_key IN (
+                    'hts_code','entered_value','article_component','genus','species',
+                    'country_of_harvest','plant_quantity','metric_unit'
+                  )
+                  ORDER BY field_key, e.ord
+              """), {"oid": operation_id, "org": organization_id}).mappings().all()
+              dump("SHIPMENT_EVIDENCE", evidence)
+
+              fields = conn.execute(text("""
+                  SELECT f.id AS field_id, f.field_scope, f.merchandise_line_reference,
+                         f.plant_line_id, pl.ordinal AS plant_line_ordinal,
+                         pl.line_reference,
+                         f.field_name, f.field_status, f.validation_status,
+                         f.validation_error, f.normalized_value,
+                         f.confidence, f.extractor, f.extractor_version,
+                         f.source_assurance_document_id, f.source_page,
+                         f.created_at, f.updated_at
+                  FROM public.us_lacey_operation_fields f
+                  LEFT JOIN public.us_lacey_ppq_plant_lines pl
+                    ON pl.id=f.plant_line_id AND pl.organization_id=f.organization_id
+                  WHERE f.operation_id=:oid AND f.organization_id=:org
+                    AND f.field_name IN (
+                      'hts_code','entered_value','article_component','genus','species',
+                      'country_of_harvest','plant_quantity','metric_unit',
+                      'filing_entry_reference','bill_of_lading','manufacturer_id',
+                      'importer_name','consignee_name','merchandise_description'
+                    )
+                  ORDER BY CASE WHEN f.field_scope='SHIPMENT' THEN 0 ELSE 1 END,
+                           pl.ordinal NULLS FIRST, f.field_name
+              """), {"oid": operation_id, "org": organization_id}).mappings().all()
+              dump("OP_FIELD", fields)
+
+              candidates = conn.execute(text("""
+                  SELECT f.id AS field_id, f.field_scope, f.field_name,
+                         f.merchandise_line_reference, f.plant_line_id,
+                         pl.ordinal AS plant_line_ordinal, pl.line_reference,
+                         f.field_status, f.normalized_value AS published_value,
+                         f.extractor AS published_extractor,
+                         c.id AS candidate_id, c.normalized_value AS candidate_normalized,
+                         c.validation_status, c.validation_error,
+                         c.confidence, c.decision,
+                         c.extractor AS candidate_extractor,
+                         c.extractor_version AS candidate_extractor_version,
+                         c.source_assurance_document_id, c.source_page,
+                         c.fingerprint, c.created_at
+                  FROM public.us_lacey_operation_fields f
+                  LEFT JOIN public.us_lacey_ppq_plant_lines pl
+                    ON pl.id=f.plant_line_id AND pl.organization_id=f.organization_id
+                  LEFT JOIN public.us_lacey_field_candidates c
+                    ON c.operation_field_id=f.id AND c.organization_id=f.organization_id
+                  WHERE f.operation_id=:oid AND f.organization_id=:org
+                    AND f.field_name IN (
+                      'hts_code','entered_value','article_component','genus','species',
+                      'country_of_harvest','plant_quantity','metric_unit'
+                    )
+                  ORDER BY pl.ordinal NULLS FIRST, f.field_name,
+                           c.confidence DESC NULLS LAST, c.id
+              """), {"oid": operation_id, "org": organization_id}).mappings().all()
+              dump("FIELD_CANDIDATE", candidates)
+
+              plant = conn.execute(text("""
+                  SELECT pl.id AS plant_line_id, pl.line_reference, pl.ordinal,
+                         pd.id AS declaration_id, pd.genus, pd.species,
+                         pd.country_of_harvest, pd.quantity, pd.unit,
+                         pd.confidence, pd.extractor, pd.extractor_version,
+                         pd.source_assurance_document_id, pd.source_page
+                  FROM public.us_lacey_ppq_plant_lines pl
+                  LEFT JOIN public.us_lacey_plant_declarations pd
+                    ON pd.plant_line_id=pl.id AND pd.organization_id=pl.organization_id
+                  WHERE pl.operation_id=:oid AND pl.organization_id=:org
+                  ORDER BY pl.ordinal, pd.ordinal
+              """), {"oid": operation_id, "org": organization_id}).mappings().all()
+              dump("PLANT_LINE", plant)
+
+              summary = conn.execute(text("""
+                  SELECT
+                    (SELECT count(*) FROM public.us_lacey_processing_jobs
+                     WHERE operation_id=:oid AND organization_id=:org) AS total_jobs,
+                    (SELECT count(*) FROM public.us_lacey_processing_jobs
+                     WHERE operation_id=:oid AND organization_id=:org AND status='COMPLETED')
+                     AS completed_jobs,
+                    (SELECT count(*) FROM public.us_lacey_engine_document_runs
+                     WHERE operation_id=:oid AND organization_id=:org
+                       AND engine_version=:engine AND schema_version=:bundle_schema
+                       AND status='SUCCEEDED') AS successful_engine2_bundle_runs,
+                    (SELECT count(*) FROM public.us_lacey_engine_document_runs
+                     WHERE operation_id=:oid AND organization_id=:org
+                       AND engine_version=:engine AND schema_version=:bundle_schema
+                       AND status='FAILED') AS failed_engine2_bundle_runs,
+                    (SELECT count(*) FROM public.us_lacey_engine_shipment_runs
+                     WHERE operation_id=:oid AND organization_id=:org
+                       AND engine_version=:engine AND schema_version=:shipment_schema)
+                     AS engine2_shipment_runs,
+                    (SELECT count(*) FROM public.us_lacey_ppq_plant_lines
+                     WHERE operation_id=:oid AND organization_id=:org) AS ppq_plant_lines,
+                    (SELECT count(*) FROM public.us_lacey_operation_fields
+                     WHERE operation_id=:oid AND organization_id=:org) AS operation_fields,
+                    (SELECT count(*) FROM public.us_lacey_field_candidates
+                     WHERE operation_id=:oid AND organization_id=:org) AS persisted_candidates
+              """), {"oid": operation_id, "org": organization_id,
+                      "engine": ENGINE_VERSION, "bundle_schema": BUNDLE_SCHEMA,
+                      "shipment_schema": SHIPMENT_SCHEMA}).mappings().all()
+              dump("SUMMARY", summary)
+
+              tx.rollback()
+
+          engine.dispose()
+          PY
