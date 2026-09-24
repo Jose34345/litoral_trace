@@ -11,7 +11,11 @@ from litoral_trace.us_lacey.projection import (
     _line_reference,
     _materialize_applicable_plant_lines,
 )
-from litoral_trace.us_lacey.regulatory.applicability import PlantMaterialEvidence
+from litoral_trace.us_lacey.regulatory.applicability import (
+    DeclarationApplicabilityService,
+    DeclarationScope,
+    PlantMaterialEvidence,
+)
 
 
 class _ScalarRows:
@@ -177,3 +181,41 @@ def test_explicit_plant_material_flag_is_used_without_description_guessing():
 
     assert len(rows) == 1
     assert rows[0].plant_material is PlantMaterialEvidence.PRESENT
+
+
+
+def test_pack2_wood_invoice_establishes_plant_material_without_boolean_column():
+    headers = {
+        1: frozenset(
+            {
+                "line",
+                "sku",
+                "description",
+                "hts",
+                "qty",
+                "unit price",
+                "amount",
+            }
+        )
+    }
+    rows = _explicit_merchandise_rows(
+        [
+            _source(header="Line", value="1", row=1, source_id=1),
+            _source(header="SKU", value="CO-18", row=1, source_id=2),
+            _source(header="Description", value="Sawn cedar boards - Cedrela odorata", row=1, source_id=3),
+            _source(header="HTS", value="4407.99.0190", row=1, source_id=4),
+            _source(header="Qty", value="18.000 m3 / 900 pcs", row=1, source_id=5),
+            _source(header="Unit Price", value="2700.00/m3", row=1, source_id=6),
+            _source(header="Amount", value="48600.00", row=1, source_id=7),
+        ],
+        table_headers=headers,
+    )
+
+    assert len(rows) == 1
+    assert rows[0].hts10 == "4407990190"
+    assert rows[0].description == "Sawn cedar boards - Cedrela odorata"
+    assert rows[0].plant_material is PlantMaterialEvidence.PRESENT
+
+    decision = DeclarationApplicabilityService().evaluate(rows[0])
+    assert decision.scope is DeclarationScope.POTENTIALLY_REQUIRED
+    assert decision.requires_botanical_fields is True
