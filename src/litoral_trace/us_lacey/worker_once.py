@@ -56,7 +56,7 @@ def run_one(*, worker_id: str) -> int:
             result.conflict_count,
         )
         return EXIT_OK
-    except BaseException:
+    except Exception:
         _LOG.exception("child_worker_iteration_failed worker_id=%s", worker_id)
         return EXIT_ERROR
     finally:
