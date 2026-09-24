@@ -137,7 +137,7 @@ def _review_field(field_id: int, *, value: str | None):
     return OperationFieldView(
         id=field_id,
         line_reference="__shipment__",
-        field_name="container_number" if field_id == 1 else "entry_number",
+        field_name="container_number" if field_id == 1 else "filing_entry_reference",
         label="Container Number(s)" if field_id == 1 else "Entry Number",
         ppq_number=1,
         scope="SHIPMENT",
