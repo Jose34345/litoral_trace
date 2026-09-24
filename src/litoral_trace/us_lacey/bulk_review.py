@@ -1,7 +1,7 @@
 """Atomic customer confirmation for safe U.S. Lacey suggestions.
 
 Bulk confirmation is an explicit human review action. It may promote only current
-``SUPPORTED`` proposals that are unambiguous and have no open reconciliation issue.
+``SUPPORTED`` or canonical ``FOUND`` proposals that are unambiguous and have no open reconciliation issue.
 The whole click is committed as one transaction so a validation failure cannot
 leave a partially-confirmed operation.
 """
@@ -54,11 +54,11 @@ def accept_supported_us_lacey_fields(
     user_id: int,
     user_email: str,
 ) -> UsLaceyBulkAcceptResult:
-    """Confirm every currently safe ``SUPPORTED`` field in one locked transaction.
+    """Confirm every currently safe ``SUPPORTED``/``FOUND`` field in one locked transaction.
 
     Idempotency follows from the state transition itself: after a successful click
     each eligible field is ``MATCHED``. A repeated request therefore sees no
-    eligible ``SUPPORTED`` rows and writes no duplicate field-review audit events.
+    eligible ``SUPPORTED``/``FOUND`` rows and writes no duplicate field-review audit events.
     ``CONFLICT``/``MISSING`` fields and fields with genuinely different open conflicts
     are never touched. Multiple provenance rows supporting the same canonical value
     count as one safe candidate group rather than a conflict.
@@ -92,7 +92,7 @@ def accept_supported_us_lacey_fields(
             .where(
                 UsLaceyOperationField.organization_id == org_id,
                 UsLaceyOperationField.operation_id == operation.id,
-                UsLaceyOperationField.field_status == "SUPPORTED",
+                UsLaceyOperationField.field_status.in_(("SUPPORTED", "FOUND")),
             )
             .order_by(UsLaceyOperationField.id.asc())
             .with_for_update()
@@ -170,7 +170,7 @@ def accept_supported_us_lacey_fields(
                 continue
             validation = validate_ppq_value(field.field_name, proposed)
             if validation.status.value in {"INVALID", "MISSING", "REVIEW_REQUIRED"}:
-                # SUPPORTED is an invariant asserting a safe, valid proposal. If that
+                # SUPPORTED/FOUND assert a safe, valid proposal. If that
                 # invariant is broken, fail the entire click rather than partially
                 # accepting neighboring fields.
                 raise UsLaceyReviewError(
