@@ -385,25 +385,20 @@ def starts_new_document(
     """Return True only when deterministic evidence supports a document boundary.
 
     A strong document title is a boundary signal, even when adjacent shipment
-    documents repeat the same B/L, invoice or container identifier. Explicit
-    sequential pagination is the narrow exception: it proves that a repeated
-    same-type title belongs to the same multipage source.
+    documents repeat the same B/L, invoice or container identifier. The narrow
+    exception is a repeated same-type anchor that also shares a deterministic
+    fingerprint, which preserves multipage invoices/B/Ls with repeated headers.
     """
 
     if previous is None:
         return True
 
     if current.strong_anchor is not None:
-        same_paginated_document = (
+        repeated_same_document_anchor = (
             previous.strong_anchor == current.strong_anchor
-            and previous.page_number is not None
-            and previous.page_total is not None
-            and current.page_number is not None
-            and current.page_total is not None
-            and previous.page_total == current.page_total
-            and current.page_number == previous.page_number + 1
+            and _shares_document_fingerprint(previous, current)
         )
-        if not same_paginated_document:
+        if not repeated_same_document_anchor:
             return True
 
     if _shares_document_fingerprint(previous, current):
