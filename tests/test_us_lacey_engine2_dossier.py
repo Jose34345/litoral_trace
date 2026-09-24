@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from starlette.requests import Request
 from litoral_trace.us_lacey.lacey_engine_dossier import Engine2DossierAvailability, Engine2DossierEvidenceView, Engine2DossierFieldView, Engine2DossierIssueView, Engine2DossierView
+from litoral_trace.us_lacey._operations_core import OperationFieldView
 from litoral_trace.web.us_lacey_pilot_app import app
 from litoral_trace.web.us_lacey_operational_views import render_operation_detail, render_operation_workspace
 
@@ -15,8 +16,8 @@ def _request():
     return Request({"type": "http", "method": "GET", "path": "/operations/test", "headers": [], "scheme": "http", "server": ("testserver", 80), "app": app})
 
 
-def _detail(*, status="NEW"):
-    return SimpleNamespace(public_id=uuid4(), client_reference="DOSSIER-UI", status=status, document_count=1, merchandise_line_count=1, importer_name="Authoritative BRAZIL", supplier_name=None, documents=(), fields=(), plant_declarations=(), conflicts=())
+def _detail(*, status="NEW", fields=()):
+    return SimpleNamespace(public_id=uuid4(), client_reference="DOSSIER-UI", status=status, document_count=1, merchandise_line_count=1, importer_name="Authoritative BRAZIL", supplier_name=None, documents=(), fields=tuple(fields), plant_declarations=(), conflicts=())
 
 
 def _html(dossier):
@@ -129,3 +130,65 @@ def test_dossier_groups_line_evidence_before_global_cross_line_evidence():
     assert "Line SKU:EUC-002 evidence" in html
     assert 'data-engine2-global-evidence' in html
     assert "Global / cross-line evidence" in html
+
+
+
+def _review_field(field_id: int, *, value: str | None):
+    return OperationFieldView(
+        id=field_id,
+        line_reference="__shipment__",
+        field_name="container_number" if field_id == 1 else "entry_number",
+        label="Container Number(s)" if field_id == 1 else "Entry Number",
+        ppq_number=1,
+        scope="SHIPMENT",
+        proposed_value=value,
+        effective_value=value,
+        status="MISSING",
+        confidence=0.89 if value else 0.0,
+        source_assurance_document_id=10 if value else None,
+        source_page=1 if value else None,
+        source_locator="table:1" if value else None,
+        extractor="test" if value else None,
+        extractor_version="1" if value else None,
+        reviewed_by_user_id=None,
+        reviewed_at=None,
+        validation_status="REVIEW_REQUIRED" if value else "MISSING",
+        validation_error=None,
+        not_required_reason_code=None,
+        candidates=(),
+    )
+
+
+def test_action_required_badge_says_needs_confirmation_when_best_value_exists():
+    detail = _detail(
+        status="REVIEW_REQUIRED",
+        fields=(
+            _review_field(1, value="TGHU5519023"),
+            _review_field(2, value=None),
+        ),
+    )
+    html = render_operation_workspace(
+        request=_request(),
+        identity=SimpleNamespace(legal_name="Portal customer"),
+        detail=detail,
+        engine2_dossier=Engine2DossierView(Engine2DossierAvailability.NOT_AVAILABLE),
+        complete_csrf="complete",
+        review_csrf={1: "csrf-1", 2: "csrf-2"},
+    )
+
+    value_card = re.search(
+        r'<article[^>]*data-review-field-id="1".*?</article>',
+        html,
+        re.S,
+    ).group(0)
+    empty_card = re.search(
+        r'<article[^>]*data-review-field-id="2".*?</article>',
+        html,
+        re.S,
+    ).group(0)
+
+    assert "Best available value: TGHU5519023" in value_card
+    assert "Needs confirmation" in value_card
+    assert "Missing information" not in value_card
+    assert "Missing information" in empty_card
+    assert "Needs confirmation" not in empty_card
