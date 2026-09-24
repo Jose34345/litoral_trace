@@ -1134,7 +1134,8 @@ def regenerate_operation_engine2_dossier(
     Historical shipment snapshots are immutable. A document-set, Engine 2, ruleset
     or shipment-schema change therefore invalidates the old fingerprint rather than
     mutating old evidence. This helper materializes a fresh snapshot using the exact
-    current contract and is safe to call from a stale dossier read path.
+    current contract and is intended for worker/admin execution only; HTTP read paths
+    must never call it synchronously.
     """
     settings = build_us_lacey_storage_settings()
     vault = VaultService(
