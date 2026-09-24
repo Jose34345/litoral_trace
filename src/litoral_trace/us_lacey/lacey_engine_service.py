@@ -55,6 +55,8 @@ from litoral_trace.us_lacey.storage import (
 ENGINE2_OFF = "OFF"
 ENGINE2_SHADOW = "SHADOW"
 LOGGER = logging.getLogger(__name__)
+_AI_BACKGROUND_INFLIGHT: set[tuple[int, int, str]] = set()
+_AI_BACKGROUND_LOCK = threading.Lock()
 
 
 def engine2_mode() -> str:
@@ -778,6 +780,20 @@ class UsLaceyEngine2Service:
         if not ai_shadow_enabled(config) or not documents:
             return
 
+        key = (organization_id, operation_id, source_set_fingerprint)
+        with _AI_BACKGROUND_LOCK:
+            if key in _AI_BACKGROUND_INFLIGHT:
+                LOGGER.info(
+                    "Lacey AI shadow dispatch already in flight",
+                    extra={
+                        "organization_id": organization_id,
+                        "operation_id": operation_id,
+                        "source_set_fingerprint": source_set_fingerprint,
+                    },
+                )
+                return
+            _AI_BACKGROUND_INFLIGHT.add(key)
+
         def run() -> None:
             try:
                 self._dispatch_ai_extractors(
@@ -798,6 +814,9 @@ class UsLaceyEngine2Service:
                         "source_set_fingerprint": source_set_fingerprint,
                     },
                 )
+            finally:
+                with _AI_BACKGROUND_LOCK:
+                    _AI_BACKGROUND_INFLIGHT.discard(key)
 
         threading.Thread(
             target=run,
