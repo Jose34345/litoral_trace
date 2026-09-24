@@ -29,6 +29,9 @@ US_LACEY_EXCEPTION_FIRST_MIGRATION = Path(
 US_LACEY_OUTREACH_ATTRIBUTION_MIGRATION = Path(
     "alembic/versions/059_us_lacey_outreach_attribution.py"
 )
+US_LACEY_PROCESSING_STAGES_MIGRATION = Path(
+    "alembic/versions/060_us_lacey_processing_stages.py"
+)
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -241,9 +244,18 @@ def test_us_lacey_outreach_attribution_follows_exception_first():
     assert "extracted_value" not in text
 
 
+def test_us_lacey_processing_stages_follows_outreach_attribution():
+    text = US_LACEY_PROCESSING_STAGES_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "060_us_lacey_processing_stages"' in text
+    assert 'down_revision = "059_us_lacey_outreach_attribution"' in text
+    assert '"current_stage"' in text
+    assert '"stage_started_at"' in text
+    assert "ix_us_lacey_processing_jobs_stage_watchdog" in text
+
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "059_us_lacey_outreach_attribution (head)" in text
+    assert "060_us_lacey_processing_stages (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():

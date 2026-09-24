@@ -16,6 +16,9 @@ class UsLaceyJobError(RuntimeError):
     pass
 
 
+STAGE_TIMEOUT_SECONDS = 300
+
+
 @dataclass(frozen=True)
 class UsLaceyJob:
     id: int
@@ -224,6 +227,8 @@ def retry_failed_us_lacey_operation(
                     locked_by = NULL,
                     locked_at = NULL,
                     heartbeat_at = NULL,
+                    current_stage = NULL,
+                    stage_started_at = NULL,
                     started_at = NULL,
                     completed_at = NULL,
                     last_error_code = NULL,
@@ -313,6 +318,8 @@ def claim_next_us_lacey_job(
                     locked_by = :worker_id,
                     locked_at = now(),
                     heartbeat_at = now(),
+                    current_stage = 'CLAIMED',
+                    stage_started_at = now(),
                     started_at = coalesce(job.started_at, now()),
                     last_error_code = NULL,
                     last_error_message = NULL,
@@ -335,22 +342,122 @@ def claim_next_us_lacey_job(
         session.close()
 
 
-def heartbeat_us_lacey_job(*, job_id: int, worker_id: str) -> bool:
+def set_us_lacey_job_stage(
+    *,
+    job_id: int,
+    worker_id: str,
+    stage: str,
+) -> bool:
+    """Persist one worker stage without extending the stage deadline on re-entry."""
+    normalized_stage = str(stage or "").strip().upper()
+    if not normalized_stage or len(normalized_stage) > 64:
+        raise UsLaceyJobError("stage must be between 1 and 64 characters.")
+
     session = get_us_lacey_worker_db_session()
     try:
         updated = session.execute(
             text(
                 """
                 UPDATE public.us_lacey_processing_jobs
-                SET heartbeat_at = now(), updated_at = now()
-                WHERE id = :job_id AND status = 'RUNNING' AND locked_by = :worker_id
+                SET stage_started_at = CASE
+                        WHEN current_stage IS DISTINCT FROM :stage THEN now()
+                        ELSE coalesce(stage_started_at, now())
+                    END,
+                    current_stage = :stage,
+                    updated_at = now()
+                WHERE id = :job_id
+                  AND status = 'RUNNING'
+                  AND locked_by = :worker_id
                 RETURNING id
                 """
             ),
-            {"job_id": job_id, "worker_id": worker_id},
+            {
+                "job_id": job_id,
+                "worker_id": worker_id,
+                "stage": normalized_stage,
+            },
         ).scalar_one_or_none()
         session.commit()
         return updated is not None
+    except Exception as exc:
+        session.rollback()
+        raise UsLaceyJobError("Unable to update processing job stage.") from exc
+    finally:
+        session.close()
+
+
+def heartbeat_us_lacey_job(*, job_id: int, worker_id: str) -> bool:
+    """Refresh a live lease or atomically fail a stage that exceeded five minutes."""
+    session = get_us_lacey_worker_db_session()
+    try:
+        status = session.execute(
+            text(
+                """
+                UPDATE public.us_lacey_processing_jobs
+                SET status = CASE
+                        WHEN stage_started_at IS NOT NULL
+                         AND stage_started_at
+                             < now() - make_interval(secs => :stage_timeout_seconds)
+                        THEN 'FAILED'
+                        ELSE 'RUNNING'
+                    END,
+                    completed_at = CASE
+                        WHEN stage_started_at IS NOT NULL
+                         AND stage_started_at
+                             < now() - make_interval(secs => :stage_timeout_seconds)
+                        THEN now()
+                        ELSE completed_at
+                    END,
+                    heartbeat_at = CASE
+                        WHEN stage_started_at IS NOT NULL
+                         AND stage_started_at
+                             < now() - make_interval(secs => :stage_timeout_seconds)
+                        THEN NULL
+                        ELSE now()
+                    END,
+                    locked_by = CASE
+                        WHEN stage_started_at IS NOT NULL
+                         AND stage_started_at
+                             < now() - make_interval(secs => :stage_timeout_seconds)
+                        THEN NULL
+                        ELSE locked_by
+                    END,
+                    locked_at = CASE
+                        WHEN stage_started_at IS NOT NULL
+                         AND stage_started_at
+                             < now() - make_interval(secs => :stage_timeout_seconds)
+                        THEN NULL
+                        ELSE locked_at
+                    END,
+                    last_error_code = CASE
+                        WHEN stage_started_at IS NOT NULL
+                         AND stage_started_at
+                             < now() - make_interval(secs => :stage_timeout_seconds)
+                        THEN 'STAGE_TIMEOUT'
+                        ELSE last_error_code
+                    END,
+                    last_error_message = CASE
+                        WHEN stage_started_at IS NOT NULL
+                         AND stage_started_at
+                             < now() - make_interval(secs => :stage_timeout_seconds)
+                        THEN 'Processing stage exceeded the five-minute execution deadline.'
+                        ELSE last_error_message
+                    END,
+                    updated_at = now()
+                WHERE id = :job_id
+                  AND status = 'RUNNING'
+                  AND locked_by = :worker_id
+                RETURNING status
+                """
+            ),
+            {
+                "job_id": job_id,
+                "worker_id": worker_id,
+                "stage_timeout_seconds": STAGE_TIMEOUT_SECONDS,
+            },
+        ).scalar_one_or_none()
+        session.commit()
+        return status == "RUNNING"
     except Exception as exc:
         session.rollback()
         raise UsLaceyJobError("Unable to heartbeat processing job.") from exc
@@ -366,6 +473,7 @@ def complete_us_lacey_job(*, job_id: int, worker_id: str) -> bool:
                 """
                 UPDATE public.us_lacey_processing_jobs
                 SET status = 'COMPLETED', completed_at = now(), heartbeat_at = now(),
+                    current_stage = 'COMPLETED', stage_started_at = NULL,
                     locked_by = NULL, locked_at = NULL, updated_at = now()
                 WHERE id = :job_id AND status = 'RUNNING' AND locked_by = :worker_id
                 RETURNING id
@@ -420,6 +528,14 @@ def fail_us_lacey_job(
                     locked_by = NULL,
                     locked_at = NULL,
                     heartbeat_at = NULL,
+                    current_stage = CASE
+                        WHEN :retryable AND attempt_count < max_attempts THEN NULL
+                        ELSE current_stage
+                    END,
+                    stage_started_at = CASE
+                        WHEN :retryable AND attempt_count < max_attempts THEN NULL
+                        ELSE stage_started_at
+                    END,
                     last_error_code = :error_code,
                     last_error_message = :error_message,
                     updated_at = now()
@@ -475,6 +591,14 @@ def recover_stale_us_lacey_jobs(
                     locked_by = NULL,
                     locked_at = NULL,
                     heartbeat_at = NULL,
+                    current_stage = CASE
+                        WHEN attempt_count < max_attempts THEN NULL
+                        ELSE current_stage
+                    END,
+                    stage_started_at = CASE
+                        WHEN attempt_count < max_attempts THEN NULL
+                        ELSE stage_started_at
+                    END,
                     last_error_code = 'WORKER_STALE',
                     last_error_message = 'Processing worker stopped before completing this job.',
                     updated_at = now()

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from litoral_trace.db.models import UsLaceyEngineDocumentRun, UsLaceyOperationField
+from litoral_trace.us_lacey import lacey_engine_service as service_module
 from litoral_trace.us_lacey import specialized_shadow as specialized_module
 from litoral_trace.us_lacey.lacey_engine_service import UsLaceyEngine2Service
 from litoral_trace.us_lacey.specialized_shadow import SPECIALIZED_SHADOW_SCHEMA_VERSION
 from tests.test_us_lacey_shadow_dispatcher_postgres import (
     _add_missing_field,
     _configure_shadow,
+    _shadow_run_count,
     _specialized_success,
+    _wait_until,
 )
 from tests.us_lacey_engine2_postgres import (
     FakeVault,
@@ -52,6 +55,16 @@ def test_projection_mode_transition_creates_new_auditable_specialized_run(
         operation_id=operation,
     )
     assert first.status == "SUCCEEDED"
+    _wait_until(
+        lambda: _shadow_run_count(
+            engine2_postgres_session_factory,
+            organization_id=org,
+            operation_id=operation,
+            schema=SPECIALIZED_SHADOW_SCHEMA_VERSION,
+        )
+        == 1
+    )
+    _wait_until(lambda: not service_module._AI_BACKGROUND_INFLIGHT)
 
     session = tenant_session(engine2_postgres_session_factory, org)
     first_runs = (
@@ -75,6 +88,15 @@ def test_projection_mode_transition_creates_new_auditable_specialized_run(
         operation_id=operation,
     )
     assert second.status == "SUCCEEDED"
+    _wait_until(
+        lambda: _shadow_run_count(
+            engine2_postgres_session_factory,
+            organization_id=org,
+            operation_id=operation,
+            schema=SPECIALIZED_SHADOW_SCHEMA_VERSION,
+        )
+        == 2
+    )
 
     session = tenant_session(engine2_postgres_session_factory, org)
     runs = (

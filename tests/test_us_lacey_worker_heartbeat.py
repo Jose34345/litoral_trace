@@ -35,3 +35,41 @@ def test_active_job_heartbeat_refreshes_lease_until_stopped(monkeypatch) -> None
     assert len(calls) == count_after_stop
     assert calls
     assert all(call == (job_id, "heartbeat-test") for call in calls)
+
+def test_heartbeat_watchdog_lease_loss_reconciles_operation(monkeypatch) -> None:
+    fired = Event()
+    refreshed: list[tuple[int, int]] = []
+
+    def timed_out(*, job_id: int, worker_id: str) -> bool:
+        del job_id, worker_id
+        fired.set()
+        return False
+
+    monkeypatch.setattr(worker, "heartbeat_us_lacey_job", timed_out)
+    monkeypatch.setattr(
+        worker,
+        "_refresh_operation",
+        lambda *, organization_id, operation_id: refreshed.append(
+            (organization_id, operation_id)
+        )
+        or "FAILED",
+    )
+
+    heartbeat = worker._UsLaceyJobHeartbeat(
+        job_id=77,
+        worker_id="watchdog-test",
+        interval_seconds=0.01,
+        organization_id=5,
+        operation_id=9,
+    )
+    heartbeat.start()
+    try:
+        assert fired.wait(timeout=1.0)
+        deadline = time.monotonic() + 1.0
+        while not refreshed and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        heartbeat.stop()
+
+    assert refreshed == [(5, 9)]
+

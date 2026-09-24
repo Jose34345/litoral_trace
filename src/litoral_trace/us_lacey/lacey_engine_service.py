@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -54,6 +55,8 @@ from litoral_trace.us_lacey.storage import (
 ENGINE2_OFF = "OFF"
 ENGINE2_SHADOW = "SHADOW"
 LOGGER = logging.getLogger(__name__)
+_AI_BACKGROUND_INFLIGHT: set[tuple[int, int, str]] = set()
+_AI_BACKGROUND_LOCK = threading.Lock()
 
 
 def engine2_mode() -> str:
@@ -383,65 +386,104 @@ class UsLaceyEngine2Service:
         vault: VaultDocument,
         engine2_resolution: DocumentResolution,
     ) -> None:
-        """Best-effort legacy AI comparison; never changes authoritative workflow state."""
+        """Best-effort legacy AI comparison without holding DB state across HTTP.
+
+        The read-side idempotency check and the write-side persistence use separate,
+        short-lived transactions. Vault I/O and provider HTTP calls happen with no
+        SQLAlchemy Session checked out.
+        """
         if not ai_shadow_enabled(config):
             return
 
+        operation_document_id = int(link.id)
+        assurance_document_id = int(assurance.id)
+        assurance_public_id = assurance.public_id
+        source_sha256 = str(vault.sha256)
+        role_hint = link.document_role
+        vault_public_id = vault.public_id
+        filename = str(vault.original_filename)
         ai_engine_version = ai_shadow_engine_version(config)
-        session: Session = self._session_factory()
+
+        read_session: Session = self._session_factory()
         try:
-            set_tenant_db_context(session, organization_id)
-            succeeded = session.scalar(
-                select(UsLaceyEngineDocumentRun).where(
+            set_tenant_db_context(read_session, organization_id)
+            succeeded = read_session.scalar(
+                select(UsLaceyEngineDocumentRun.id).where(
                     UsLaceyEngineDocumentRun.organization_id == organization_id,
-                    UsLaceyEngineDocumentRun.assurance_document_id == assurance.id,
-                    UsLaceyEngineDocumentRun.source_sha256 == vault.sha256,
+                    UsLaceyEngineDocumentRun.assurance_document_id == assurance_document_id,
+                    UsLaceyEngineDocumentRun.source_sha256 == source_sha256,
                     UsLaceyEngineDocumentRun.engine_version == ai_engine_version,
                     UsLaceyEngineDocumentRun.schema_version == AI_SHADOW_SCHEMA_VERSION,
-                    UsLaceyEngineDocumentRun.role_hint == link.document_role,
+                    UsLaceyEngineDocumentRun.role_hint == role_hint,
                     UsLaceyEngineDocumentRun.status == "SUCCEEDED",
                 )
             )
             if succeeded is not None:
                 return
+        finally:
+            read_session.close()
 
+        try:
             provider = build_ai_provider(config)
             if provider is None:
                 return
             with self._vault.materialize_verified_download(
                 organization_id=organization_id,
-                document_id=vault.public_id,
+                document_id=vault_public_id,
             ) as download:
                 content = b"".join(download.iter_chunks())
-            ai_result = provider.extract(filename=vault.original_filename, content=content)
+            ai_result = provider.extract(filename=filename, content=content)
             verified_ai = verify_ai_evidence(engine2=engine2_resolution, ai=ai_result)
             comparison = reconcile_engine2_with_ai(engine2=engine2_resolution, ai=verified_ai)
             payload = serialize_ai_shadow_run(ai=verified_ai, comparison=comparison)
             payload["architecture"] = AIArchitecture.LEGACY.value
             payload["candidate_count"] = len(verified_ai.candidates)
-            session.add(
-                UsLaceyEngineDocumentRun(
-                    organization_id=organization_id,
-                    operation_id=operation_id,
-                    operation_document_id=link.id,
-                    assurance_document_id=assurance.id,
-                    engine_version=ai_engine_version,
-                    schema_version=AI_SHADOW_SCHEMA_VERSION,
-                    source_sha256=vault.sha256,
-                    role_hint=link.document_role,
-                    status="SUCCEEDED",
-                    resolution_json=payload,
+
+            write_session: Session = self._session_factory()
+            try:
+                set_tenant_db_context(write_session, organization_id)
+                existing = write_session.scalar(
+                    select(UsLaceyEngineDocumentRun.id).where(
+                        UsLaceyEngineDocumentRun.organization_id == organization_id,
+                        UsLaceyEngineDocumentRun.assurance_document_id == assurance_document_id,
+                        UsLaceyEngineDocumentRun.source_sha256 == source_sha256,
+                        UsLaceyEngineDocumentRun.engine_version == ai_engine_version,
+                        UsLaceyEngineDocumentRun.schema_version == AI_SHADOW_SCHEMA_VERSION,
+                        UsLaceyEngineDocumentRun.role_hint == role_hint,
+                        UsLaceyEngineDocumentRun.status == "SUCCEEDED",
+                    )
                 )
-            )
-            session.commit()
+                if existing is None:
+                    write_session.add(
+                        UsLaceyEngineDocumentRun(
+                            organization_id=organization_id,
+                            operation_id=operation_id,
+                            operation_document_id=operation_document_id,
+                            assurance_document_id=assurance_document_id,
+                            engine_version=ai_engine_version,
+                            schema_version=AI_SHADOW_SCHEMA_VERSION,
+                            source_sha256=source_sha256,
+                            role_hint=role_hint,
+                            status="SUCCEEDED",
+                            resolution_json=payload,
+                        )
+                    )
+                write_session.commit()
+            except Exception:
+                write_session.rollback()
+                raise
+            finally:
+                write_session.close()
+
             LOGGER.info(
                 "Lacey legacy AI shadow persisted",
                 extra={
                     "architecture": AIArchitecture.LEGACY.value,
                     "organization_id": organization_id,
                     "operation_id": operation_id,
-                    "operation_document_id": link.id,
-                    "assurance_document_id": assurance.id,
+                    "operation_document_id": operation_document_id,
+                    "assurance_document_id": assurance_document_id,
+                    "assurance_public_id": str(assurance_public_id),
                     "ai_provider": verified_ai.provider,
                     "ai_model": verified_ai.model,
                     "latency_ms": verified_ai.latency_ms,
@@ -452,63 +494,61 @@ class UsLaceyEngine2Service:
                 },
             )
         except Exception:
-            session.rollback()
             LOGGER.exception(
                 "Lacey AI extraction shadow failed",
                 extra={
                     "architecture": AIArchitecture.LEGACY.value,
                     "organization_id": organization_id,
                     "operation_id": operation_id,
-                    "assurance_document_id": assurance.id,
+                    "assurance_document_id": assurance_document_id,
                     "ai_provider": config.provider,
                     "ai_model": config.model,
                 },
             )
-            # Persist one safe failure snapshot for observability. The unique identity
-            # includes status, so a later successful retry can coexist immutably.
+            failure_session: Session = self._session_factory()
             try:
-                set_tenant_db_context(session, organization_id)
-                failed = session.scalar(
-                    select(UsLaceyEngineDocumentRun).where(
+                set_tenant_db_context(failure_session, organization_id)
+                failed = failure_session.scalar(
+                    select(UsLaceyEngineDocumentRun.id).where(
                         UsLaceyEngineDocumentRun.organization_id == organization_id,
-                        UsLaceyEngineDocumentRun.assurance_document_id == assurance.id,
-                        UsLaceyEngineDocumentRun.source_sha256 == vault.sha256,
+                        UsLaceyEngineDocumentRun.assurance_document_id == assurance_document_id,
+                        UsLaceyEngineDocumentRun.source_sha256 == source_sha256,
                         UsLaceyEngineDocumentRun.engine_version == ai_engine_version,
                         UsLaceyEngineDocumentRun.schema_version == AI_SHADOW_SCHEMA_VERSION,
-                        UsLaceyEngineDocumentRun.role_hint == link.document_role,
+                        UsLaceyEngineDocumentRun.role_hint == role_hint,
                         UsLaceyEngineDocumentRun.status == "FAILED",
                     )
                 )
                 if failed is None:
-                    session.add(
+                    failure_session.add(
                         UsLaceyEngineDocumentRun(
                             organization_id=organization_id,
                             operation_id=operation_id,
-                            operation_document_id=link.id,
-                            assurance_document_id=assurance.id,
+                            operation_document_id=operation_document_id,
+                            assurance_document_id=assurance_document_id,
                             engine_version=ai_engine_version,
                             schema_version=AI_SHADOW_SCHEMA_VERSION,
-                            source_sha256=vault.sha256,
-                            role_hint=link.document_role,
+                            source_sha256=source_sha256,
+                            role_hint=role_hint,
                             status="FAILED",
                             safe_error_code="AI_EXTRACTION_SHADOW_FAILED",
                             safe_error_message="AI extraction shadow did not complete.",
                         )
                     )
-                    session.commit()
+                failure_session.commit()
             except Exception:
-                session.rollback()
+                failure_session.rollback()
                 LOGGER.exception(
                     "Unable to persist Lacey AI extraction shadow failure",
                     extra={
                         "architecture": AIArchitecture.LEGACY.value,
                         "organization_id": organization_id,
                         "operation_id": operation_id,
-                        "assurance_document_id": assurance.id,
+                        "assurance_document_id": assurance_document_id,
                     },
                 )
-        finally:
-            session.close()
+            finally:
+                failure_session.close()
 
     def _run_legacy_ai_operation(
         self,
@@ -726,21 +766,148 @@ class UsLaceyEngine2Service:
                 },
             )
 
+
+    def _current_source_set_fingerprint(
+        self,
+        *,
+        organization_id: int,
+        operation_id: int,
+    ) -> str:
+        """Read the current immutable source-set identity in one short transaction."""
+        session: Session = self._session_factory()
+        try:
+            set_tenant_db_context(session, organization_id)
+            rows = session.execute(
+                select(UsLaceyOperationDocument, VaultDocument)
+                .join(
+                    AssuranceDocument,
+                    (AssuranceDocument.id == UsLaceyOperationDocument.assurance_document_id)
+                    & (
+                        AssuranceDocument.organization_id
+                        == UsLaceyOperationDocument.organization_id
+                    ),
+                )
+                .join(
+                    VaultDocument,
+                    (VaultDocument.id == AssuranceDocument.vault_document_id)
+                    & (VaultDocument.organization_id == AssuranceDocument.organization_id),
+                )
+                .where(
+                    UsLaceyOperationDocument.organization_id == organization_id,
+                    UsLaceyOperationDocument.operation_id == operation_id,
+                    UsLaceyOperationDocument.is_current.is_(True),
+                )
+                .order_by(UsLaceyOperationDocument.id)
+            ).all()
+            return source_set_fingerprint(
+                organization_id=organization_id,
+                operation_id=operation_id,
+                documents=[(row[0], row[1]) for row in rows],
+                engine_version=self._engine_version,
+                ruleset_version=self._ruleset.version,
+            )
+        finally:
+            session.close()
+
+    def _after_ai_shadow_background(
+        self,
+        *,
+        organization_id: int,
+        operation_id: int,
+        source_set_fingerprint: str,
+    ) -> None:
+        """Optional post-shadow hook. Base service keeps AI strictly observational."""
+        return None
+
+    def _dispatch_ai_extractors_background(
+        self,
+        *,
+        config: AIProviderConfig,
+        organization_id: int,
+        operation_id: int,
+        documents: tuple[_AIShadowDocumentContext, ...],
+        source_set_fingerprint: str,
+    ) -> None:
+        """Run non-authoritative AI after deterministic commit, never on critical path."""
+        if not ai_shadow_enabled(config) or not documents:
+            return
+
+        key = (organization_id, operation_id, source_set_fingerprint)
+        with _AI_BACKGROUND_LOCK:
+            if key in _AI_BACKGROUND_INFLIGHT:
+                LOGGER.info(
+                    "Lacey AI shadow dispatch already in flight",
+                    extra={
+                        "organization_id": organization_id,
+                        "operation_id": operation_id,
+                        "source_set_fingerprint": source_set_fingerprint,
+                    },
+                )
+                return
+            _AI_BACKGROUND_INFLIGHT.add(key)
+
+        def run() -> None:
+            try:
+                self._dispatch_ai_extractors(
+                    config=config,
+                    organization_id=organization_id,
+                    operation_id=operation_id,
+                    documents=documents,
+                    source_set_fingerprint=source_set_fingerprint,
+                )
+                self._after_ai_shadow_background(
+                    organization_id=organization_id,
+                    operation_id=operation_id,
+                    source_set_fingerprint=source_set_fingerprint,
+                )
+            except Exception:
+                LOGGER.exception(
+                    "Lacey asynchronous AI shadow failed",
+                    extra={
+                        "organization_id": organization_id,
+                        "operation_id": operation_id,
+                        "ai_provider": config.provider,
+                        "ai_model": config.model,
+                        "source_set_fingerprint": source_set_fingerprint,
+                    },
+                )
+            finally:
+                with _AI_BACKGROUND_LOCK:
+                    _AI_BACKGROUND_INFLIGHT.discard(key)
+
+        threading.Thread(
+            target=run,
+            name=f"lacey-ai-shadow-{operation_id}",
+            daemon=True,
+        ).start()
+
     def resolve_operation_with_engine2(
         self,
         *,
         organization_id: int,
         operation_id: int,
     ) -> ShadowAggregationResult:
-        session: Session = self._session_factory()
-        set_tenant_db_context(session, organization_id)
+        """Resolve deterministic Engine 2 without holding DB transactions over I/O.
+
+        Phase 1 reads and snapshots the current source set in a short transaction.
+        Phase 2 performs Vault reads and deterministic parsing with no Session open.
+        Phase 3 re-validates the source fingerprint and persists immutable results in
+        a fresh short transaction. AI shadow work is launched only after commit.
+        """
+
+        # ---- Phase 1: short read transaction ---------------------------------
+        read_session: Session = self._session_factory()
         try:
-            rows = session.execute(
+            set_tenant_db_context(read_session, organization_id)
+            rows = read_session.execute(
                 select(UsLaceyOperationDocument, AssuranceDocument, VaultDocument)
                 .join(
                     AssuranceDocument,
                     (AssuranceDocument.id == UsLaceyOperationDocument.assurance_document_id)
-                    & (AssuranceDocument.organization_id == UsLaceyOperationDocument.organization_id),
+                    & (
+                        AssuranceDocument.organization_id
+                        == UsLaceyOperationDocument.organization_id
+                    ),
                 )
                 .join(
                     VaultDocument,
@@ -762,19 +929,9 @@ class UsLaceyEngine2Service:
                 engine_version=self._engine_version,
                 ruleset_version=self._ruleset.version,
             )
-            existing = session.scalar(
-                select(UsLaceyEngineShipmentRun).where(
-                    UsLaceyEngineShipmentRun.organization_id == organization_id,
-                    UsLaceyEngineShipmentRun.operation_id == operation_id,
-                    UsLaceyEngineShipmentRun.source_set_fingerprint == fingerprint,
-                    UsLaceyEngineShipmentRun.engine_version == self._engine_version,
-                    UsLaceyEngineShipmentRun.ruleset_version == self._ruleset.version,
-                    UsLaceyEngineShipmentRun.schema_version == SHIPMENT_RESOLUTION_SCHEMA_VERSION,
-                )
-            )
 
-            def process_one(row):
-                link, assurance, vault = row
+            cached_bundles: dict[int, BundleResolution] = {}
+            for link, assurance, vault in rows:
                 success_identity = self._engine2_document_run_identity(
                     organization_id=organization_id,
                     assurance_document_id=assurance.id,
@@ -782,33 +939,151 @@ class UsLaceyEngine2Service:
                     role_hint=link.document_role,
                     status="SUCCEEDED",
                 )
-                run = self._find_engine2_document_run(session, **success_identity)
+                run = self._find_engine2_document_run(
+                    read_session,
+                    **success_identity,
+                )
                 if run is not None:
-                    bundle = deserialize_bundle_resolution(run.resolution_json)
-                else:
-                    with self._vault.materialize_verified_download(
-                        organization_id=organization_id,
-                        document_id=vault.public_id,
-                    ) as download:
-                        bundle = process_bundle(
-                            filename=vault.original_filename,
-                            content=b"".join(download.iter_chunks()),
-                            role_hint=link.document_role,
-                        )
-                    run = UsLaceyEngineDocumentRun(
-                        **success_identity,
-                        operation_id=operation_id,
-                        operation_document_id=link.id,
-                        resolution_json=serialize_bundle_resolution(bundle),
+                    cached_bundles[int(assurance.id)] = deserialize_bundle_resolution(
+                        run.resolution_json
                     )
-                    session.add(run)
-                    session.flush()
-                return link, assurance, vault, bundle
 
-            batch = self._process_engine2_document_batch(
-                documents=tuple(rows),
-                process_one=process_one,
+        finally:
+            # Session.close() rolls back the read-only transaction, releases the
+            # connection to the pool, and leaves already-loaded scalar state usable.
+            read_session.close()
+
+        # ---- Phase 2: external/local processing with no DB Session open -------
+        def process_one(row):
+            link, assurance, vault = row
+            cached = cached_bundles.get(int(assurance.id))
+            if cached is not None:
+                return link, assurance, vault, cached
+            with self._vault.materialize_verified_download(
+                organization_id=organization_id,
+                document_id=vault.public_id,
+            ) as download:
+                bundle = process_bundle(
+                    filename=vault.original_filename,
+                    content=b"".join(download.iter_chunks()),
+                    role_hint=link.document_role,
+                )
+            return link, assurance, vault, bundle
+
+        batch = self._process_engine2_document_batch(
+            documents=tuple(rows),
+            process_one=process_one,
+        )
+
+        ai_config = AIProviderConfig.from_env()
+        ai_documents: list[_AIShadowDocumentContext] = []
+        inputs: list[ShipmentDocumentInput] = []
+        for success in batch.succeeded:
+            link, assurance, vault, bundle = success.result
+            if len(bundle.documents) == 1:
+                ai_documents.append(
+                    _AIShadowDocumentContext(
+                        link=link,
+                        assurance=assurance,
+                        vault=vault,
+                        engine2_resolution=bundle.documents[0].resolution,
+                    )
+                )
+            else:
+                LOGGER.info(
+                    "Skipping legacy AI shadow for multi-document bundle",
+                    extra={
+                        "organization_id": organization_id,
+                        "operation_id": operation_id,
+                        "operation_document_id": link.id,
+                        "logical_document_count": len(bundle.documents),
+                    },
+                )
+
+            for logical in bundle.documents:
+                inputs.append(
+                    ShipmentDocumentInput(
+                        document_id=f"{link.id}:{logical.logical_document_id}",
+                        filename=logical.virtual_filename,
+                        role_hint=logical.document_type.value,
+                        resolution=logical.resolution,
+                    )
+                )
+
+        shipment_resolution = (
+            process_shipment(documents=inputs, ruleset=self._ruleset)
+            if batch.status == "SUCCEEDED"
+            else None
+        )
+
+        # ---- Phase 3: short validation + persistence transaction --------------
+        write_session: Session = self._session_factory()
+        try:
+            set_tenant_db_context(write_session, organization_id)
+            current_rows = write_session.execute(
+                select(UsLaceyOperationDocument, AssuranceDocument, VaultDocument)
+                .join(
+                    AssuranceDocument,
+                    (AssuranceDocument.id == UsLaceyOperationDocument.assurance_document_id)
+                    & (
+                        AssuranceDocument.organization_id
+                        == UsLaceyOperationDocument.organization_id
+                    ),
+                )
+                .join(
+                    VaultDocument,
+                    (VaultDocument.id == AssuranceDocument.vault_document_id)
+                    & (VaultDocument.organization_id == AssuranceDocument.organization_id),
+                )
+                .where(
+                    UsLaceyOperationDocument.organization_id == organization_id,
+                    UsLaceyOperationDocument.operation_id == operation_id,
+                    UsLaceyOperationDocument.is_current.is_(True),
+                )
+                .order_by(UsLaceyOperationDocument.id)
+            ).all()
+            current_fingerprint = source_set_fingerprint(
+                organization_id=organization_id,
+                operation_id=operation_id,
+                documents=[(row[0], row[2]) for row in current_rows],
+                engine_version=self._engine_version,
+                ruleset_version=self._ruleset.version,
             )
+            if current_fingerprint != fingerprint:
+                write_session.rollback()
+                LOGGER.info(
+                    "Engine 2 source set changed before deterministic commit",
+                    extra={
+                        "organization_id": organization_id,
+                        "operation_id": operation_id,
+                        "expected_source_set_fingerprint": fingerprint,
+                        "current_source_set_fingerprint": current_fingerprint,
+                    },
+                )
+                return ShadowAggregationResult(
+                    "SOURCE_SET_CHANGED",
+                    succeeded_document_count=len(batch.succeeded),
+                    failed_document_count=len(batch.failed),
+                )
+
+            for success in batch.succeeded:
+                link, assurance, vault, bundle = success.result
+                success_identity = self._engine2_document_run_identity(
+                    organization_id=organization_id,
+                    assurance_document_id=assurance.id,
+                    source_sha256=vault.sha256,
+                    role_hint=link.document_role,
+                    status="SUCCEEDED",
+                )
+                if self._find_engine2_document_run(write_session, **success_identity) is None:
+                    write_session.add(
+                        UsLaceyEngineDocumentRun(
+                            **success_identity,
+                            operation_id=operation_id,
+                            operation_document_id=link.id,
+                            resolution_json=serialize_bundle_resolution(bundle),
+                        )
+                    )
 
             for failure in batch.failed:
                 link, assurance, vault = failure.document
@@ -820,7 +1095,7 @@ class UsLaceyEngine2Service:
                     status="FAILED",
                 )
                 self._get_or_create_failed_engine2_run(
-                    session,
+                    write_session,
                     operation_id=operation_id,
                     operation_document_id=link.id,
                     identity=failed_identity,
@@ -828,103 +1103,65 @@ class UsLaceyEngine2Service:
                     safe_error_message=failure.safe_error_message,
                 )
 
-            ai_config = AIProviderConfig.from_env()
-            ai_documents: list[_AIShadowDocumentContext] = []
-            inputs: list[ShipmentDocumentInput] = []
-            for success in batch.succeeded:
-                link, assurance, vault, bundle = success.result
-
-                # Existing AI shadow adapters compare one physical source against one
-                # DocumentResolution. Until they become bundle-aware, preserve their
-                # semantics only for genuine single-logical-document sources rather
-                # than comparing the full PDF bytes with an arbitrary logical slice.
-                if len(bundle.documents) == 1:
-                    ai_documents.append(
-                        _AIShadowDocumentContext(
-                            link=link,
-                            assurance=assurance,
-                            vault=vault,
-                            engine2_resolution=bundle.documents[0].resolution,
-                        )
-                    )
-                else:
-                    LOGGER.info(
-                        "Skipping legacy AI shadow for multi-document bundle",
-                        extra={
-                            "organization_id": organization_id,
-                            "operation_id": operation_id,
-                            "operation_document_id": link.id,
-                            "logical_document_count": len(bundle.documents),
-                        },
-                    )
-
-                for logical in bundle.documents:
-                    inputs.append(
-                        ShipmentDocumentInput(
-                            document_id=f"{link.id}:{logical.logical_document_id}",
-                            filename=logical.virtual_filename,
-                            role_hint=logical.document_type.value,
-                            resolution=logical.resolution,
-                        )
-                    )
-
-            # AI extraction remains non-authoritative, but successful sibling documents
-            # can still contribute shadow telemetry even when another source failed.
-            self._dispatch_ai_extractors(
-                config=ai_config,
-                organization_id=organization_id,
-                operation_id=operation_id,
-                documents=tuple(ai_documents),
-                source_set_fingerprint=fingerprint,
-            )
-
-            # Never materialize a shipment snapshot from an incomplete source set.
-            # Mixed outcomes surface as BLOCKED_PARTIAL so callers can distinguish
-            # usable sibling evidence from a total source-processing failure.
             if batch.status != "SUCCEEDED":
-                session.commit()
-                public_status = "BLOCKED_PARTIAL" if batch.status == "PARTIAL" else "FAILED"
-                return ShadowAggregationResult(
-                    public_status,
+                write_session.commit()
+                result = ShadowAggregationResult(
+                    "BLOCKED_PARTIAL" if batch.status == "PARTIAL" else "FAILED",
                     succeeded_document_count=len(batch.succeeded),
                     failed_document_count=len(batch.failed),
                 )
-
-            # Existing Engine 2 shipment snapshots are immutable/reusable, but the
-            # document loop above still lets newly enabled AI architectures backfill
-            # isolated document comparisons without changing that shipment snapshot.
-            if existing is not None:
-                session.commit()
-                return ShadowAggregationResult(
+            else:
+                existing = write_session.scalar(
+                    select(UsLaceyEngineShipmentRun).where(
+                        UsLaceyEngineShipmentRun.organization_id == organization_id,
+                        UsLaceyEngineShipmentRun.operation_id == operation_id,
+                        UsLaceyEngineShipmentRun.source_set_fingerprint == fingerprint,
+                        UsLaceyEngineShipmentRun.engine_version == self._engine_version,
+                        UsLaceyEngineShipmentRun.ruleset_version == self._ruleset.version,
+                        UsLaceyEngineShipmentRun.schema_version
+                        == SHIPMENT_RESOLUTION_SCHEMA_VERSION,
+                    )
+                )
+                if existing is None:
+                    assert shipment_resolution is not None
+                    snapshot = UsLaceyEngineShipmentRun(
+                        organization_id=organization_id,
+                        operation_id=operation_id,
+                        engine_version=shipment_resolution.engine_version,
+                        ruleset_version=shipment_resolution.ruleset_version,
+                        schema_version=SHIPMENT_RESOLUTION_SCHEMA_VERSION,
+                        source_set_fingerprint=fingerprint,
+                        document_count=len(inputs),
+                        readiness=shipment_resolution.readiness.value,
+                        resolution_json=serialize_shipment_resolution(shipment_resolution),
+                    )
+                    write_session.add(snapshot)
+                    write_session.flush()
+                    shipment_run_id = int(snapshot.id)
+                else:
+                    shipment_run_id = int(existing.id)
+                write_session.commit()
+                result = ShadowAggregationResult(
                     "SUCCEEDED",
-                    existing.id,
+                    shipment_run_id,
                     succeeded_document_count=len(batch.succeeded),
                 )
-
-            resolution = process_shipment(documents=inputs, ruleset=self._ruleset)
-            snapshot = UsLaceyEngineShipmentRun(
-                organization_id=organization_id,
-                operation_id=operation_id,
-                engine_version=resolution.engine_version,
-                ruleset_version=resolution.ruleset_version,
-                schema_version=SHIPMENT_RESOLUTION_SCHEMA_VERSION,
-                source_set_fingerprint=fingerprint,
-                document_count=len(inputs),
-                readiness=resolution.readiness.value,
-                resolution_json=serialize_shipment_resolution(resolution),
-            )
-            session.add(snapshot)
-            session.commit()
-            return ShadowAggregationResult(
-                "SUCCEEDED",
-                snapshot.id,
-                succeeded_document_count=len(batch.succeeded),
-            )
         except Exception:
-            session.rollback()
+            write_session.rollback()
             raise
         finally:
-            session.close()
+            write_session.close()
+
+        # AI is intentionally launched after deterministic commit. Provider latency,
+        # rate limits, timeouts and failures can no longer hold or roll back Engine 2.
+        self._dispatch_ai_extractors_background(
+            config=ai_config,
+            organization_id=organization_id,
+            operation_id=operation_id,
+            documents=tuple(ai_documents),
+            source_set_fingerprint=fingerprint,
+        )
+        return result
 
 
 
@@ -939,7 +1176,8 @@ def regenerate_operation_engine2_dossier(
     Historical shipment snapshots are immutable. A document-set, Engine 2, ruleset
     or shipment-schema change therefore invalidates the old fingerprint rather than
     mutating old evidence. This helper materializes a fresh snapshot using the exact
-    current contract and is safe to call from a stale dossier read path.
+    current contract and is intended for worker/admin execution only; HTTP read paths
+    must never call it synchronously.
     """
     settings = build_us_lacey_storage_settings()
     vault = VaultService(

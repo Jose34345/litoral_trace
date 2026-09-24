@@ -358,7 +358,7 @@ def test_existing_document_schema_version_remains_unchanged():
 
 
 
-def test_process_bundle_rejects_when_segmentation_finds_no_supported_logical_document(
+def test_process_bundle_allows_undetermined_support_document_without_negative_anchor(
     monkeypatch,
 ):
     layout = ParsedLayout(
@@ -367,7 +367,7 @@ def test_process_bundle_rejects_when_segmentation_finds_no_supported_logical_doc
                 "p1",
                 1,
                 None,
-                "Administrative memorandum with no shipment document identity.",
+                "Botanical declaration supporting shipment species and country of harvest.",
                 "TEXT_LINE",
             ),
         ),
@@ -378,11 +378,10 @@ def test_process_bundle_rejects_when_segmentation_finds_no_supported_logical_doc
         lambda *_args, **_kwargs: layout,
     )
 
-    with pytest.raises(UnsupportedDocumentDomainError) as excinfo:
-        process_bundle(
-            filename="unsupported.pdf",
-            content=b"%PDF-stubbed-for-domain-fallback",
-        )
+    bundle = process_bundle(
+        filename="04_Botanical_Declaration.pdf",
+        content=b"%PDF-stubbed-for-domain-fallback",
+    )
 
-    assert excinfo.value.code == "UNSUPPORTED_DOMAIN"
-    assert excinfo.value.domain == "UNSUPPORTED"
+    assert len(bundle.documents) == 1
+    assert bundle.documents[0].document_type is DocumentType.UNKNOWN

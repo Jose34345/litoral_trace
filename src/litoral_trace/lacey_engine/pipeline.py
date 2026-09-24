@@ -22,8 +22,6 @@ from .errors import LaceyEngineError, UnsupportedDocumentDomainError
 from .layout_parser import parse_layout
 from .ranking import resolve
 from .segmentation import (
-    DocumentDomain,
-    SUPPORTED_DOCUMENT_TYPES,
     classify_pdf_first_page_domain,
     segment,
 )
@@ -455,20 +453,8 @@ def process_bundle(
     parent_type, _parent_confidence = classify(layout, role_hint)
     sections = segment(layout, parent_type)
     if not sections:
-        raise UnsupportedDocumentDomainError(
-            domain=DocumentDomain.UNSUPPORTED.value,
-        )
-
-    if (
-        bytes(content or b"").startswith(b"%PDF-")
-        and domain.domain is not DocumentDomain.COMMERCIAL_TRADE
-        and not any(
-            section.document_type in SUPPORTED_DOCUMENT_TYPES
-            for section in sections
-        )
-    ):
-        raise UnsupportedDocumentDomainError(
-            domain=DocumentDomain.UNSUPPORTED.value,
+        raise LaceyEngineError(
+            "Document parsing produced no logical sections."
         )
 
     logical_documents: list[LogicalDocumentResolution] = []

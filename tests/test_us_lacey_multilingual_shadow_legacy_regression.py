@@ -96,15 +96,14 @@ def test_legacy_projection_and_operation_result_are_identical_with_shadow_off_an
     assert off_result.projected_count == 4
     assert off_result.conflict_count == 2
 
-    # Provisional machine suggestions run before the canonical publication seam so
-    # CanonicalShipmentTruth remains the final declaration writer. AI review is only
-    # advisory and therefore runs after the customer-visible terminal transition.
+    # Verified AI suggestions are deliberately absent from this synchronous path:
+    # they are projected by the Engine 2 background completion hook. Canonical
+    # deterministic publication remains part of the durable finalization path.
     assert off_legacy_calls == on_legacy_calls == [
         "preflight",
         "process",
         "project",
         "engine2",
-        "ai_suggestions",
         "engine2_suggestions",
         "complete",
         "refresh",

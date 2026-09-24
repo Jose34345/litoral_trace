@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from uuid import uuid4
+import time
 
 from litoral_trace.db.models import UsLaceyEngineDocumentRun, UsLaceyOperationField
 from litoral_trace.lacey_engine.ai_shadow import (
@@ -49,6 +50,31 @@ from tests.us_lacey_engine2_postgres import (
 
 BOL = "MAEU274342495"
 CONTAINER = "MSKU9228574"
+
+
+def _wait_until(predicate, *, timeout: float = 3.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
+    assert predicate(), "asynchronous shadow work did not finish before timeout"
+
+
+def _shadow_run_count(factory, *, organization_id: int, operation_id: int, schema: str) -> int:
+    session = tenant_session(factory, organization_id)
+    try:
+        return (
+            session.query(UsLaceyEngineDocumentRun)
+            .filter_by(
+                operation_id=operation_id,
+                schema_version=schema,
+                status="SUCCEEDED",
+            )
+            .count()
+        )
+    finally:
+        session.close()
 
 
 class LegacySuccessProvider:
@@ -244,7 +270,16 @@ def test_shadow_specialized_failure_keeps_legacy_success_and_ui_projection(
     )
 
     assert result.status == "SUCCEEDED"
-    assert specialized_calls == [1]
+    _wait_until(lambda: specialized_calls == [1])
+    _wait_until(
+        lambda: _shadow_run_count(
+            engine2_postgres_session_factory,
+            organization_id=org,
+            operation_id=operation,
+            schema=AI_SHADOW_SCHEMA_VERSION,
+        )
+        == 1
+    )
 
     session = tenant_session(engine2_postgres_session_factory, org)
     legacy = session.query(UsLaceyEngineDocumentRun).filter_by(
@@ -306,6 +341,22 @@ def test_shadow_dual_persistence_coexists_and_ui_ignores_specialized_schema(
         operation_id=operation,
     )
     assert result.status == "SUCCEEDED"
+    _wait_until(
+        lambda: _shadow_run_count(
+            engine2_postgres_session_factory,
+            organization_id=org,
+            operation_id=operation,
+            schema=AI_SHADOW_SCHEMA_VERSION,
+        )
+        == 1
+        and _shadow_run_count(
+            engine2_postgres_session_factory,
+            organization_id=org,
+            operation_id=operation,
+            schema=SPECIALIZED_SHADOW_SCHEMA_VERSION,
+        )
+        == 1
+    )
 
     session = tenant_session(engine2_postgres_session_factory, org)
     legacy = session.query(UsLaceyEngineDocumentRun).filter_by(

@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 from types import SimpleNamespace
+from threading import Event
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -50,6 +51,62 @@ def test_engine2_document_run_persists_resolution(engine2_postgres_session_facto
     session = tenant_session(engine2_postgres_session_factory, org); run = session.query(UsLaceyEngineDocumentRun).filter_by(operation_document_id=link).one()
     assert (run.status, run.assurance_document_id, run.source_sha256) == ("SUCCEEDED", assurance, sha) and run.resolution_json
     session.close()
+
+
+def test_engine2_commits_deterministic_snapshot_before_blocking_ai_shadow(
+    engine2_postgres_session_factory,
+    monkeypatch,
+):
+    org, operation, _, _, _, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        content=b"deterministic-before-ai",
+    )
+    monkeypatch.setattr(
+        service_module,
+        "process_bundle",
+        lambda **_: bundle_from_resolution(
+            _resolution(
+                "bill.pdf",
+                DocumentType.BILL_OF_LADING,
+                {"bill_of_lading": "MAEU274342495"},
+            )
+        ),
+    )
+    monkeypatch.setenv("US_LACEY_AI_SHADOW_MODE", "shadow")
+    monkeypatch.setenv("US_LACEY_AI_PROVIDER", "gemini")
+    monkeypatch.setenv("US_LACEY_AI_ALLOW_EXTERNAL", "1")
+    monkeypatch.setenv("US_LACEY_GEMINI_API_KEY", "fixture-key")
+
+    started = Event()
+    release = Event()
+    service = UsLaceyEngine2Service(
+        session_factory=engine2_postgres_session_factory,
+        vault_service=FakeVault(b"deterministic-before-ai"),
+    )
+
+    def block_shadow(**_kwargs):
+        started.set()
+        release.wait(timeout=2.0)
+
+    monkeypatch.setattr(service, "_dispatch_ai_extractors", block_shadow)
+
+    try:
+        result = service.resolve_operation_with_engine2(
+            organization_id=org,
+            operation_id=operation,
+        )
+        assert result.status == "SUCCEEDED"
+        assert result.shipment_run_id is not None
+        assert started.wait(timeout=1.0)
+
+        snapshot = _snapshot(
+            engine2_postgres_session_factory,
+            org,
+            result.shipment_run_id,
+        )
+        assert snapshot.source_set_fingerprint
+    finally:
+        release.set()
 
 
 def test_engine2_document_failure_persists_safe_error(engine2_postgres_session_factory, monkeypatch):
