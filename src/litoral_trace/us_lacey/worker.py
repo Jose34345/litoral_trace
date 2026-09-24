@@ -263,9 +263,19 @@ class UsLaceyEngine2Service(_BaseUsLaceyEngine2Service):
 class _UsLaceyJobHeartbeat:
     """Refresh a RUNNING queue lease while parsers and shadow AI are busy."""
 
-    def __init__(self, *, job_id, worker_id: str, interval_seconds: float) -> None:
+    def __init__(
+        self,
+        *,
+        job_id,
+        worker_id: str,
+        interval_seconds: float,
+        organization_id: int | None = None,
+        operation_id: int | None = None,
+    ) -> None:
         self._job_id = job_id
         self._worker_id = worker_id
+        self._organization_id = organization_id
+        self._operation_id = operation_id
         self._interval_seconds = max(float(interval_seconds), 0.001)
         self._stop_event = threading.Event()
         self._thread = threading.Thread(
@@ -294,6 +304,21 @@ class _UsLaceyJobHeartbeat:
                     "U.S. Lacey job heartbeat lost ownership or stage watchdog timed out",
                     extra={"job_id": str(self._job_id), "worker_id": self._worker_id},
                 )
+                if self._organization_id is not None and self._operation_id is not None:
+                    try:
+                        _refresh_operation(
+                            organization_id=self._organization_id,
+                            operation_id=self._operation_id,
+                        )
+                    except Exception:
+                        LOGGER.exception(
+                            "Unable to refresh operation after heartbeat lease loss",
+                            extra={
+                                "job_id": str(self._job_id),
+                                "organization_id": self._organization_id,
+                                "operation_id": self._operation_id,
+                            },
+                        )
                 return
 
     def stop(self) -> None:
@@ -763,6 +788,8 @@ def process_one_us_lacey_job(
         job_id=job.id,
         worker_id=worker_id,
         interval_seconds=_job_heartbeat_interval_seconds(),
+        organization_id=job.organization_id,
+        operation_id=job.operation_id,
     )
     heartbeat.start()
     try:
