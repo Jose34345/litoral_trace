@@ -260,15 +260,14 @@ def test_golden_fixture_pack_2_projects_exact_three_intentional_conflicts():
             )
             .order_by(ReconciliationIssue.id)
         ).all()
+        assert len(open_issues) == 3
+        issue_values = {
+            issue.field_name: {str(issue.left_value), str(issue.right_value)}
+            for issue in open_issues
+        }
     finally:
         session.rollback()
         session.close()
-
-    assert len(open_issues) == 3
-    issue_values = {
-        issue.field_name: {str(issue.left_value), str(issue.right_value)}
-        for issue in open_issues
-    }
     assert issue_values["estimated_arrival_date"] == {
         "2026-09-29",
         "2026-10-01",
