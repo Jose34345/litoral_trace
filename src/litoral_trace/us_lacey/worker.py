@@ -122,7 +122,10 @@ def _timed_worker_stage(
     source_set_fingerprint: str | None = None,
     worker_id: str | None = None,
 ):
-    if worker_id is not None:
+    if (
+        worker_id is not None
+        and getattr(job, "locked_by", None) == worker_id
+    ):
         persisted_stage = _PERSISTED_STAGE_NAMES.get(stage, stage.upper())
         if not set_us_lacey_job_stage(
             job_id=job.id,
@@ -897,7 +900,7 @@ def process_one_us_lacey_job(
                     with _timed_worker_stage(
                         job=job,
                         stage="canonical_publication",
-                    worker_id=worker_id,
+                        worker_id=worker_id,
                         source_set_fingerprint=source_set_fingerprint,
                     ):
                         _project_engine2_suggestions(
@@ -934,7 +937,7 @@ def process_one_us_lacey_job(
                     with _timed_worker_stage(
                         job=job,
                         stage="product_intelligence",
-                    worker_id=worker_id,
+                        worker_id=worker_id,
                         source_set_fingerprint=source_set_fingerprint,
                     ):
                         _build_product_intelligence_snapshot(
@@ -945,7 +948,7 @@ def process_one_us_lacey_job(
                     with _timed_worker_stage(
                         job=job,
                         stage="regulatory_assessment",
-                    worker_id=worker_id,
+                        worker_id=worker_id,
                         source_set_fingerprint=source_set_fingerprint,
                     ):
                         _build_regulatory_assessment_snapshot(
@@ -968,7 +971,7 @@ def process_one_us_lacey_job(
             with _timed_worker_stage(
                 job=job,
                 stage="multilingual_snapshot",
-                    worker_id=worker_id,
+                worker_id=worker_id,
                 source_set_fingerprint=source_set_fingerprint,
             ):
                 _shadow_multilingual_evidence_snapshot(
