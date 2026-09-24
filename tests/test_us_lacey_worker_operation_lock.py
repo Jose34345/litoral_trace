@@ -96,7 +96,6 @@ def test_worker_holds_operation_lock_across_projection_postprocessors_and_final_
         "lock-enter",
         "project",
         "engine2-shadow",
-        "ai-suggestions",
         "engine2-suggestions",
         "lock-exit",
         "snapshot",
