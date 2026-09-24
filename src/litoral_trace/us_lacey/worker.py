@@ -1063,13 +1063,15 @@ def process_one_us_lacey_job(
         if not completed:
             raise UsLaceyWorkerError("Processing job could not be completed atomically.")
 
+        # The durable job is terminal; stop RUNNING-lease heartbeats before any
+        # post-completion bookkeeping so normal completion cannot look like lease loss.
+        heartbeat.stop()
+
         with _timed_worker_stage(job=job, stage="operation_refresh"):
             operation_status = _refresh_operation(
                 organization_id=job.organization_id,
                 operation_id=job.operation_id,
             )
-
-        heartbeat.stop()
 
         if finalize_source_set:
             try:
