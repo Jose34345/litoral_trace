@@ -28,6 +28,7 @@ from litoral_trace.us_lacey.workflow import (
     create_us_lacey_customer_operation,
     upload_and_enqueue_us_lacey_document_batch,
 )
+from litoral_trace.web.us_lacey_operational_views import _review_field_groups
 from tests.test_us_lacey_worker_postgres_integration import (
     MemoryObjectStorage,
     _activate_account,
@@ -174,23 +175,22 @@ def test_golden_fixture_complete_shipment_is_exception_first(monkeypatch):
     assert special_assessments
     assert all(item.get("status") != "FAIL" for item in special_assessments)
 
-    # Acceptance gate 4: only true missing/conflicting fields reach Action Required.
-    action_required = [
-        field
-        for field in detail.fields
-        if field.status in {"MISSING", "CONFLICT"}
-    ]
+    # Acceptance gate 4: presentation must absorb both projection and canonical
+    # vocabularies without hiding supported or review-required customer work.
+    action_required, auto_resolved, _settled = _review_field_groups(detail)
     assert len(action_required) < 10, [
         (field.line_reference, field.field_name, field.status)
         for field in action_required
     ]
 
-    # Legacy review/suggestion states must not leak into the new customer workflow.
-    assert not [
-        field
-        for field in detail.fields
-        if field.status in {"FOUND", "REVIEW"}
-    ]
+    action_ids = {field.id for field in action_required}
+    auto_ids = {field.id for field in auto_resolved}
+    assert {
+        field.id for field in detail.fields if field.status == "REVIEW"
+    } <= action_ids
+    assert {
+        field.id for field in detail.fields if field.status == "FOUND"
+    } <= auto_ids
 
     reset_us_lacey_worker_engine_state()
     reset_us_lacey_engine_state()

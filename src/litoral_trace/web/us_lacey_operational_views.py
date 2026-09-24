@@ -114,8 +114,8 @@ def _field_has_displayable_resolution(field) -> bool:
 
 
 
-_ACTION_REQUIRED_STATUSES = frozenset({"MISSING", "CONFLICT"})
-_AUTO_SUPPORTED_STATUSES = frozenset({"SUPPORTED"})
+_ACTION_REQUIRED_STATUSES = frozenset({"MISSING", "CONFLICT", "REVIEW"})
+_AUTO_SUPPORTED_STATUSES = frozenset({"SUPPORTED", "FOUND"})
 _SETTLED_STATUSES = frozenset({"MATCHED", "NOT_REQUIRED"})
 
 _REGULATORY_RULE_TITLES = {

@@ -28,6 +28,9 @@ from tests.test_us_lacey_worker_postgres_integration import (
     _activate_account,
     _register_active_customer,
 )
+from tests.test_us_lacey_golden_pack3_presentation_postgres import (
+    test_golden_pack3_canonical_review_states_are_visible_in_workspace as _golden_pack3_contract,
+)
 
 
 pytestmark = pytest.mark.skipif(
@@ -326,3 +329,10 @@ def test_golden_fixture_pack_2_projects_exact_three_intentional_conflicts():
     }
 
     reset_us_lacey_engine_state()
+
+
+def test_golden_pack3_transversal_contract_runs_in_quality_output_gate(
+    engine2_postgres_session_factory,
+):
+    """Keep the canonical state/presentation regression inside the mandatory gate."""
+    _golden_pack3_contract(engine2_postgres_session_factory)
