@@ -408,6 +408,70 @@ jobs:
                       "shipment_schema": SHIPMENT_SCHEMA}).mappings().all()
               dump("SUMMARY", summary)
 
+              rls = conn.execute(text("""
+                  SELECT c.relname AS table_name,
+                         c.relrowsecurity AS rls_enabled,
+                         c.relforcerowsecurity AS rls_forced,
+                         p.polname AS policy_name,
+                         p.polcmd AS policy_cmd,
+                         pg_get_expr(p.polqual, p.polrelid) AS using_expr,
+                         pg_get_expr(p.polwithcheck, p.polrelid) AS check_expr
+                  FROM pg_class c
+                  JOIN pg_namespace n ON n.oid=c.relnamespace
+                  LEFT JOIN pg_policy p ON p.polrelid=c.oid
+                  WHERE n.nspname='public'
+                    AND c.relname IN ('us_lacey_engine_document_runs','us_lacey_engine_shipment_runs')
+                  ORDER BY c.relname, p.polname
+              """)).mappings().all()
+              dump("RLS_POLICY", rls)
+
+              roles = conn.execute(text("""
+                  SELECT r.rolname,
+                         r.rolsuper,
+                         r.rolbypassrls,
+                         r.rolinherit,
+                         has_table_privilege(r.rolname, 'public.us_lacey_engine_shipment_runs', 'SELECT')
+                           AS shipment_select,
+                         has_table_privilege(r.rolname, 'public.us_lacey_engine_document_runs', 'SELECT')
+                           AS document_select
+                  FROM pg_roles r
+                  WHERE r.rolname IN (current_user, 'litoral_trace_app', 'litoral_trace_worker_executor')
+                  ORDER BY r.rolname
+              """)).mappings().all()
+              dump("ROLE_PRIV", roles)
+
+              current = conn.execute(text("""
+                  SELECT current_user AS current_user,
+                         session_user AS session_user,
+                         current_setting('app.current_organization_id', true) AS tenant_guc
+              """)).mappings().all()
+              dump("DB_SESSION", current)
+
+              # Test the exact runtime role + tenant RLS read if the migration role
+              # is permitted to SET ROLE. This changes no persistent state.
+              conn.exec_driver_sql("SAVEPOINT runtime_role_probe")
+              try:
+                  conn.exec_driver_sql("SET LOCAL ROLE litoral_trace_app")
+                  conn.execute(text(
+                      "SELECT set_config('app.current_organization_id', :org, true)"
+                  ), {"org": str(organization_id)})
+                  runtime_visible = conn.execute(text("""
+                      SELECT id AS shipment_run_id,
+                             source_set_fingerprint,
+                             engine_version,
+                             ruleset_version,
+                             schema_version
+                      FROM public.us_lacey_engine_shipment_runs
+                      WHERE operation_id=:oid AND organization_id=:org
+                  """), {"oid": operation_id, "org": organization_id}).mappings().all()
+                  dump("RUNTIME_ROLE_SHIPMENT_VISIBLE", runtime_visible)
+                  conn.exec_driver_sql("RESET ROLE")
+                  conn.exec_driver_sql("RELEASE SAVEPOINT runtime_role_probe")
+              except Exception as exc:
+                  conn.exec_driver_sql("ROLLBACK TO SAVEPOINT runtime_role_probe")
+                  conn.exec_driver_sql("RELEASE SAVEPOINT runtime_role_probe")
+                  print("RUNTIME_ROLE_PROBE_ERROR", type(exc).__name__, str(exc).splitlines()[0])
+
               tx.rollback()
 
           engine.dispose()
