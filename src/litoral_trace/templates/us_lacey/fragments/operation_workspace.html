@@ -1,6 +1,6 @@
 {% from "components/ui.html" import button, empty_state %}
+{% from "us_lacey/fragments/review_field_macros.html" import action_status %}
 {% macro friendly_status(value) %}{% set labels = {"MISSING":"Missing information", "CONFLICT":"Conflicting information", "SUPPORTED":"Auto-resolved", "MATCHED":"Confirmed", "NOT_REQUIRED":"Not required", "REVIEW":"Needs review", "FOUND":"Suggested"} %}{{ labels.get(value, value|replace("_", " ")|title) }}{% endmacro %}
-{% macro action_status(field) %}{% if field.status == "CONFLICT" %}Conflicting information{% elif field.proposed_value or field.effective_value %}Needs confirmation{% else %}Missing information{% endif %}{% endmacro %}
 {% macro review_telemetry_inputs() %}<input type="hidden" name="review_started_at" data-review-started-at><input type="hidden" name="review_elapsed_seconds" data-review-elapsed-seconds><input type="hidden" name="review_modified_field_ids" data-review-modified-field-ids>{% endmacro %}
 
 {% macro missing_guidance(field_name) %}{% set guidance = {
