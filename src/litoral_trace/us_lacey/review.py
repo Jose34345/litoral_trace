@@ -367,7 +367,7 @@ def accept_supported_us_lacey_fields(
             .where(
                 UsLaceyOperationField.organization_id == org_id,
                 UsLaceyOperationField.operation_id == operation.id,
-                UsLaceyOperationField.field_status == "SUPPORTED",
+                UsLaceyOperationField.field_status.in_(("SUPPORTED", "FOUND")),
             )
             .order_by(
                 UsLaceyOperationField.merchandise_line_reference,
