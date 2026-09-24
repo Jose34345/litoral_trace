@@ -16,7 +16,12 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from litoral_trace.db.models import ReconciliationIssue, UsLaceyOperation, UsLaceyOperationField
+from litoral_trace.db.models import (
+    ReconciliationIssue,
+    UsLaceyFieldCandidate,
+    UsLaceyOperation,
+    UsLaceyOperationField,
+)
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.ppq505 import PPQ505_SHIPMENT_REFERENCE, validate_ppq_value
@@ -157,6 +162,73 @@ def _resolve_issue(issue: ReconciliationIssue | None, reason: str) -> None:
     issue.resolved_at = _utc_now()
 
 
+def _expose_single_line_shipment_total_candidate(
+    session,
+    *,
+    organization_id: int,
+    operation: UsLaceyOperation,
+    line_fields: list[UsLaceyOperationField],
+    shipment_total_field: UsLaceyOperationField | None,
+) -> None:
+    """Expose invoice total as a competing Entered Value only for one-line shipments.
+
+    With exactly one plant line, shipment total and line allocation are the same
+    economic quantity and can be presented as two evidence-backed alternatives.
+    Multi-line shipments remain arithmetic-only because a total cannot be assigned
+    to any individual line without allocation evidence.
+    """
+    if len(line_fields) != 1 or shipment_total_field is None:
+        return
+    source_document_id = shipment_total_field.source_assurance_document_id
+    raw_value = (
+        shipment_total_field.human_value
+        or shipment_total_field.normalized_value
+        or shipment_total_field.original_value
+    )
+    normalized = _normalized_entered_value(raw_value)
+    if source_document_id is None or normalized is None:
+        return
+
+    field = line_fields[0]
+    normalized_text = format(normalized, "f")
+    fingerprint = _fingerprint(
+        "US_LACEY_SHIPMENT_TOTAL_AS_SINGLE_LINE_CANDIDATE",
+        operation.public_id,
+        field.id,
+        source_document_id,
+        normalized_text,
+        shipment_total_field.source_locator,
+    )
+    existing = session.scalar(
+        select(UsLaceyFieldCandidate).where(
+            UsLaceyFieldCandidate.organization_id == int(organization_id),
+            UsLaceyFieldCandidate.fingerprint == fingerprint,
+        )
+    )
+    if existing is not None:
+        return
+
+    session.add(
+        UsLaceyFieldCandidate(
+            organization_id=int(organization_id),
+            operation_id=operation.id,
+            operation_field_id=field.id,
+            source_assurance_document_id=int(source_document_id),
+            original_value=str(raw_value).strip(),
+            normalized_value=normalized_text,
+            validation_status="VALID",
+            validation_error=None,
+            confidence=float(shipment_total_field.confidence or 0.0),
+            source_page=shipment_total_field.source_page,
+            source_locator=shipment_total_field.source_locator,
+            extractor=shipment_total_field.extractor,
+            extractor_version=shipment_total_field.extractor_version,
+            fingerprint=fingerprint,
+            decision="PENDING",
+        )
+    )
+
+
 def _mark_line_fields_reconciliation_state(
     line_fields: list[UsLaceyOperationField],
     *,
@@ -248,6 +320,15 @@ def reconcile_entered_value_invariant(
             "Arithmetic reconciliation is not currently evaluable because one or more required values are missing or invalid.",
         )
         return result
+
+    if result.evaluated:
+        _expose_single_line_shipment_total_candidate(
+            session,
+            organization_id=org_id,
+            operation=operation,
+            line_fields=list(line_fields),
+            shipment_total_field=shipment_total_field,
+        )
 
     if result.reconciled:
         _mark_line_fields_reconciliation_state(line_fields, reconciled=True)

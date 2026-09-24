@@ -1029,6 +1029,7 @@ jobs:
           set -o pipefail
           python -m pytest -q -rs \
             tests/test_golden_fixture_plywood_shipment.py \
+            tests/test_golden_fixture_pack_2.py \
             tests/test_us_lacey_pack1_applicability_postgres.py \
             | tee /tmp/lacey-golden-applicability-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/lacey-golden-applicability-postgres.txt; then

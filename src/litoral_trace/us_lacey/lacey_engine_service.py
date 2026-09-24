@@ -46,6 +46,10 @@ from litoral_trace.lacey_engine.shipment import LaceyRuleset, ShipmentDocumentIn
 from litoral_trace.services.vault import VaultService
 from litoral_trace.us_lacey import specialized_projection_runtime, specialized_shadow
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
+from litoral_trace.us_lacey.storage import (
+    build_us_lacey_storage_settings,
+    get_us_lacey_storage_client,
+)
 
 ENGINE2_OFF = "OFF"
 ENGINE2_SHADOW = "SHADOW"
@@ -763,6 +767,8 @@ class UsLaceyEngine2Service:
                     UsLaceyEngineShipmentRun.organization_id == organization_id,
                     UsLaceyEngineShipmentRun.operation_id == operation_id,
                     UsLaceyEngineShipmentRun.source_set_fingerprint == fingerprint,
+                    UsLaceyEngineShipmentRun.engine_version == self._engine_version,
+                    UsLaceyEngineShipmentRun.ruleset_version == self._ruleset.version,
                     UsLaceyEngineShipmentRun.schema_version == SHIPMENT_RESOLUTION_SCHEMA_VERSION,
                 )
             )
@@ -919,3 +925,32 @@ class UsLaceyEngine2Service:
             raise
         finally:
             session.close()
+
+
+
+def regenerate_operation_engine2_dossier(
+    *,
+    organization_id: int,
+    operation_id: int,
+    session_factory=get_us_lacey_db_session,
+) -> ShadowAggregationResult:
+    """Publish the Engine 2 shipment snapshot for the current source-set contract.
+
+    Historical shipment snapshots are immutable. A document-set, Engine 2, ruleset
+    or shipment-schema change therefore invalidates the old fingerprint rather than
+    mutating old evidence. This helper materializes a fresh snapshot using the exact
+    current contract and is safe to call from a stale dossier read path.
+    """
+    settings = build_us_lacey_storage_settings()
+    vault = VaultService(
+        storage_settings=settings,
+        storage=get_us_lacey_storage_client(),
+        session_factory=session_factory,
+    )
+    return UsLaceyEngine2Service(
+        session_factory=session_factory,
+        vault_service=vault,
+    ).resolve_operation_with_engine2(
+        organization_id=organization_id,
+        operation_id=operation_id,
+    )

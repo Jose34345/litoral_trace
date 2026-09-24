@@ -90,3 +90,24 @@ def test_unsupported_domain_is_terminal_and_does_not_render_review_retry():
     assert "Unsupported document type" in html
     assert "legal or administrative files" in html
     assert "/actions/retry" not in html
+
+
+
+def _action_status_text(*, proposed_value):
+    template = templates.get_template(
+        "us_lacey/fragments/review_field_macros.html"
+    )
+    field = SimpleNamespace(
+        status="MISSING",
+        proposed_value=proposed_value,
+        effective_value=proposed_value,
+    )
+    return str(template.module.action_status(field)).strip()
+
+
+def test_action_required_badge_says_needs_confirmation_when_value_exists():
+    assert _action_status_text(proposed_value="TGHU5519023") == "Needs confirmation"
+
+
+def test_action_required_badge_says_missing_only_when_value_is_absent():
+    assert _action_status_text(proposed_value=None) == "Missing information"
