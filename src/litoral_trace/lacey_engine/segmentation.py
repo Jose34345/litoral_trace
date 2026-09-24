@@ -25,11 +25,13 @@ class DomainClassification:
 
     @property
     def rejected(self) -> bool:
+        # Domain rejection is opt-in and must be backed by an explicit negative
+        # legal/email anchor. Unknown or unclassified commercial support documents
+        # are allowed to continue through deterministic extraction.
         return self.domain in {
             DocumentDomain.COURT_PLEADING,
             DocumentDomain.LEGAL_DECISION,
             DocumentDomain.EMAIL_THREAD,
-            DocumentDomain.UNSUPPORTED,
         }
 
 
@@ -193,7 +195,8 @@ def classify_pdf_first_page_domain(
     try:
         document = pdfium.PdfDocument(content)
         if len(document) < 1:
-            return DomainClassification(DocumentDomain.UNSUPPORTED, 1.0, "empty_pdf")
+            # Empty/corrupt inputs are parser failures, not domain-policy failures.
+            return DomainClassification(DocumentDomain.UNDETERMINED, 0.0, "empty_pdf")
         page = document[0]
         text_page = page.get_textpage()
         text = str(text_page.get_text_range() or "")
