@@ -631,6 +631,36 @@ def _normalized_hts_observation(value: object) -> str | None:
     return digits or None
 
 
+_PLANT_DESCRIPTION_TERMS = re.compile(
+    r"\b(?:wood|wooden|lumber|timber|logs?|sawn|boards?|veneer|plywood|cedar|oak|pine|mahogany)\b",
+    re.I,
+)
+_BOTANICAL_BINOMIAL = re.compile(r"\b[A-Z][a-z]{2,}\s+[a-z][a-z-]{2,}\b")
+
+
+def _description_establishes_plant_material(
+    *,
+    description: object,
+    hts10: object,
+) -> bool:
+    """Recognize explicit plant merchandise without guessing from generic prose.
+
+    A botanical/wood description is considered explicit only when paired with a
+    plant-goods HTS chapter. This keeps the applicability gate conservative while
+    allowing normal invoices such as "Sawn cedar boards - Cedrela odorata" under
+    HTS 4407 to establish plant material without requiring a dedicated boolean
+    column in the same table.
+    """
+    text = str(description or "").strip()
+    digits = _normalized_hts_observation(hts10)
+    if not text or not digits or not digits.startswith(("44", "47", "48")):
+        return False
+    return bool(
+        _PLANT_DESCRIPTION_TERMS.search(text)
+        or _BOTANICAL_BINOMIAL.search(text)
+    )
+
+
 def _explicit_plant_material_value(value: object) -> PlantMaterialEvidence:
     folded = _fold(value)
     if folded in {
@@ -728,35 +758,45 @@ def _explicit_merchandise_rows(
             f"extracted-field:{getattr(source, 'id', 'unknown')}:{locator or 'unknown'}"
         )
 
-    return tuple(
-        MerchandiseLineFacts(
-            line_key=str(row_number),
-            hts10=(
-                None
-                if row["hts10"] is None
-                else str(row["hts10"])
-            ),
-            description=(
-                None
-                if row["description"] is None
-                else str(row["description"])
-            ),
-            entered_value=(
-                None
-                if row["entered_value"] is None
-                else str(row["entered_value"])
-            ),
-            plant_material=plant_material.get(
-                row_number,
-                PlantMaterialEvidence.UNKNOWN,
-            ),
-            evidence_refs=tuple(evidence.get(row_number, ())),
+    facts: list[MerchandiseLineFacts] = []
+    for row_number, row in sorted(rows.items()):
+        if (
+            row["hts10"] is None
+            and row["description"] is None
+            and row["entered_value"] is None
+        ):
+            continue
+        observed_plant_material = plant_material.get(
+            row_number,
+            PlantMaterialEvidence.UNKNOWN,
         )
-        for row_number, row in sorted(rows.items())
-        if row["hts10"] is not None
-        or row["description"] is not None
-        or row["entered_value"] is not None
-    )
+        if (
+            observed_plant_material is PlantMaterialEvidence.UNKNOWN
+            and _description_establishes_plant_material(
+                description=row["description"],
+                hts10=row["hts10"],
+            )
+        ):
+            observed_plant_material = PlantMaterialEvidence.PRESENT
+        facts.append(
+            MerchandiseLineFacts(
+                line_key=str(row_number),
+                hts10=None if row["hts10"] is None else str(row["hts10"]),
+                description=(
+                    None
+                    if row["description"] is None
+                    else str(row["description"])
+                ),
+                entered_value=(
+                    None
+                    if row["entered_value"] is None
+                    else str(row["entered_value"])
+                ),
+                plant_material=observed_plant_material,
+                evidence_refs=tuple(evidence.get(row_number, ())),
+            )
+        )
+    return tuple(facts)
 
 
 def _materialize_applicable_plant_lines(
