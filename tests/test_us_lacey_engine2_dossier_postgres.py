@@ -162,6 +162,10 @@ def test_dossier_auto_recovers_engine_contract_mismatch(
     session = tenant_session(engine2_postgres_session_factory, org)
     row = session.query(UsLaceyEngineShipmentRun).filter_by(id=snapshot.id).one()
     row.engine_version = "engine-old"
+    # Engine version participates in source_set_fingerprint. A historical run
+    # produced by the old contract therefore necessarily has a different
+    # fingerprint from the current contract.
+    row.source_set_fingerprint = "e" * 64
     session.commit()
     session.close()
 
