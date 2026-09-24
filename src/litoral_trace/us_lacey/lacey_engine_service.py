@@ -767,6 +767,48 @@ class UsLaceyEngine2Service:
             )
 
 
+    def _current_source_set_fingerprint(
+        self,
+        *,
+        organization_id: int,
+        operation_id: int,
+    ) -> str:
+        """Read the current immutable source-set identity in one short transaction."""
+        session: Session = self._session_factory()
+        try:
+            set_tenant_db_context(session, organization_id)
+            rows = session.execute(
+                select(UsLaceyOperationDocument, VaultDocument)
+                .join(
+                    AssuranceDocument,
+                    (AssuranceDocument.id == UsLaceyOperationDocument.assurance_document_id)
+                    & (
+                        AssuranceDocument.organization_id
+                        == UsLaceyOperationDocument.organization_id
+                    ),
+                )
+                .join(
+                    VaultDocument,
+                    (VaultDocument.id == AssuranceDocument.vault_document_id)
+                    & (VaultDocument.organization_id == AssuranceDocument.organization_id),
+                )
+                .where(
+                    UsLaceyOperationDocument.organization_id == organization_id,
+                    UsLaceyOperationDocument.operation_id == operation_id,
+                    UsLaceyOperationDocument.is_current.is_(True),
+                )
+                .order_by(UsLaceyOperationDocument.id)
+            ).all()
+            return source_set_fingerprint(
+                organization_id=organization_id,
+                operation_id=operation_id,
+                documents=[(row[0], row[1]) for row in rows],
+                engine_version=self._engine_version,
+                ruleset_version=self._ruleset.version,
+            )
+        finally:
+            session.close()
+
     def _after_ai_shadow_background(
         self,
         *,
