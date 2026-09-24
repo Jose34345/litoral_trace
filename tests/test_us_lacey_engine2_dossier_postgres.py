@@ -169,6 +169,8 @@ def test_dossier_auto_recovers_stale_engine_contract_and_republishes(
     stale = session.query(UsLaceyEngineShipmentRun).filter_by(id=snapshot.id).one()
     stale.engine_version = "lacey-engine-previous"
     stale.source_set_fingerprint = "e" * 64
+    operation_row = session.query(UsLaceyOperation).filter_by(id=operation).one()
+    operation_row.status = "REVIEW_REQUIRED"
     session.commit()
     session.close()
 
