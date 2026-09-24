@@ -29,6 +29,7 @@ on:
       - "alembic/versions/058_us_lacey_exception_first_states.py"
       - "alembic/versions/059_us_lacey_outreach_attribution.py"
       - "alembic/versions/060_us_lacey_processing_stages.py"
+      - "alembic/versions/061_requeue_canonical_logical_id_failure.py"
       - "alembic/versions/062_requeue_pack2_after_deploy.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
