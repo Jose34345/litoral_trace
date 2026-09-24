@@ -1,4 +1,4 @@
-"""Read-only typed presentation of persisted Engine 2 shipment snapshots."""
+"""Typed presentation and self-healing selection of Engine 2 shipment snapshots."""
 from __future__ import annotations
 
 import logging
@@ -15,7 +15,18 @@ from litoral_trace.lacey_engine.pipeline import ENGINE_VERSION
 from litoral_trace.lacey_engine.serialization import BUNDLE_RESOLUTION_SCHEMA_VERSION, SHIPMENT_RESOLUTION_SCHEMA_VERSION, deserialize_shipment_resolution
 from litoral_trace.lacey_engine.shipment import LaceyRuleset
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
-from litoral_trace.us_lacey.lacey_engine_service import ENGINE2_SHADOW, engine2_mode, source_set_fingerprint
+from litoral_trace.services.vault import VaultService
+from litoral_trace.us_lacey.engine2_suggestions import project_engine2_supported_suggestions
+from litoral_trace.us_lacey.lacey_engine_service import (
+    ENGINE2_SHADOW,
+    UsLaceyEngine2Service,
+    engine2_mode,
+    source_set_fingerprint,
+)
+from litoral_trace.us_lacey.storage import (
+    build_us_lacey_storage_settings,
+    get_us_lacey_storage_client,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,7 +72,87 @@ class Engine2DossierView:
     availability: Engine2DossierAvailability; readiness: str | None = None; engine_version: str | None = None; ruleset_version: str | None = None; schema_version: str | None = None; snapshot_created_at: object | None = None; document_count: int = 0; metrics: dict[str, int] | None = None; fields: tuple[Engine2DossierFieldView, ...] = (); issues: tuple[Engine2DossierIssueView, ...] = (); safe_status_message: str = ""
 
 class UsLaceyEngineDossierService:
-    def __init__(self, *, session_factory=get_us_lacey_db_session) -> None: self._session_factory = session_factory
+    def __init__(
+        self,
+        *,
+        session_factory=get_us_lacey_db_session,
+        recovery_service_factory=None,
+        projection_publisher=project_engine2_supported_suggestions,
+        auto_recover: bool = True,
+    ) -> None:
+        self._session_factory = session_factory
+        self._recovery_service_factory = recovery_service_factory
+        self._projection_publisher = projection_publisher
+        self._auto_recover = bool(auto_recover)
+
+    def _recovery_service(self) -> UsLaceyEngine2Service:
+        if self._recovery_service_factory is not None:
+            return self._recovery_service_factory()
+        settings = build_us_lacey_storage_settings()
+        vault = VaultService(
+            storage_settings=settings,
+            storage=get_us_lacey_storage_client(),
+            session_factory=self._session_factory,
+        )
+        return UsLaceyEngine2Service(
+            session_factory=self._session_factory,
+            vault_service=vault,
+        )
+
+    def _recover_current_dossier(
+        self,
+        *,
+        organization_id: int,
+        operation_id: int,
+    ) -> bool:
+        """Regenerate the current immutable source-set snapshot and republish it.
+
+        Historical snapshots remain untouched for auditability. Recovery succeeds
+        only when Engine 2 produces a complete current shipment run.
+        """
+        try:
+            result = self._recovery_service().resolve_operation_with_engine2(
+                organization_id=organization_id,
+                operation_id=operation_id,
+            )
+            if result.status != "SUCCEEDED" or result.shipment_run_id is None:
+                LOGGER.warning(
+                    "Engine 2 dossier auto-recovery did not produce a complete snapshot",
+                    extra={
+                        "organization_id": organization_id,
+                        "operation_id": operation_id,
+                        "engine2_status": result.status,
+                    },
+                )
+                return False
+            try:
+                self._projection_publisher(
+                    organization_id=organization_id,
+                    operation_id=operation_id,
+                )
+            except Exception:
+                # The current dossier is still valid and useful even if canonical
+                # publication is deferred by a human-reviewed stale line. Preserve
+                # the snapshot and surface the dossier rather than reverting to STALE.
+                LOGGER.exception(
+                    "Engine 2 dossier recovered but canonical publication was deferred",
+                    extra={
+                        "organization_id": organization_id,
+                        "operation_id": operation_id,
+                        "shipment_run_id": result.shipment_run_id,
+                    },
+                )
+            return True
+        except Exception:
+            LOGGER.exception(
+                "Engine 2 dossier auto-recovery failed",
+                extra={
+                    "organization_id": organization_id,
+                    "operation_id": operation_id,
+                },
+            )
+            return False
+
     def get_dossier(self, *, organization_id: int, operation_public_id: UUID | str) -> Engine2DossierView:
         if engine2_mode() != ENGINE2_SHADOW: return Engine2DossierView(Engine2DossierAvailability.DISABLED, safe_status_message="Enhanced evidence dossier is not enabled for this workspace/runtime.")
         session: Session = self._session_factory(); set_tenant_db_context(session, organization_id)
@@ -76,7 +167,26 @@ class UsLaceyEngineDossierService:
             if snapshot is None:
                 failed = any(session.scalar(select(UsLaceyEngineDocumentRun.id).where(UsLaceyEngineDocumentRun.organization_id == organization_id, UsLaceyEngineDocumentRun.assurance_document_id == assurance.id, UsLaceyEngineDocumentRun.source_sha256 == vault.sha256, UsLaceyEngineDocumentRun.engine_version == ENGINE_VERSION, UsLaceyEngineDocumentRun.schema_version == BUNDLE_RESOLUTION_SCHEMA_VERSION, UsLaceyEngineDocumentRun.role_hint == link.document_role, UsLaceyEngineDocumentRun.status == "FAILED")) and not session.scalar(select(UsLaceyEngineDocumentRun.id).where(UsLaceyEngineDocumentRun.organization_id == organization_id, UsLaceyEngineDocumentRun.assurance_document_id == assurance.id, UsLaceyEngineDocumentRun.source_sha256 == vault.sha256, UsLaceyEngineDocumentRun.engine_version == ENGINE_VERSION, UsLaceyEngineDocumentRun.schema_version == BUNDLE_RESOLUTION_SCHEMA_VERSION, UsLaceyEngineDocumentRun.role_hint == link.document_role, UsLaceyEngineDocumentRun.status == "SUCCEEDED")) for link, assurance, vault in rows)
                 historical = session.scalar(select(UsLaceyEngineShipmentRun.id).where(UsLaceyEngineShipmentRun.organization_id == organization_id, UsLaceyEngineShipmentRun.operation_id == operation.id))
-                return Engine2DossierView(Engine2DossierAvailability.FAILED if failed else (Engine2DossierAvailability.STALE if historical else Engine2DossierAvailability.NOT_AVAILABLE), safe_status_message="Current shadow document processing did not produce a complete dossier." if failed else ("A previous dossier exists, but it does not match the current document set or Engine 2 contract." if historical else "Current Engine 2 dossier is not available yet."))
+                if (
+                    historical
+                    and not failed
+                    and self._auto_recover
+                    and self._recover_current_dossier(
+                        organization_id=organization_id,
+                        operation_id=operation.id,
+                    )
+                ):
+                    session.expire_all()
+                    snapshot = session.scalar(select(UsLaceyEngineShipmentRun).where(
+                        UsLaceyEngineShipmentRun.organization_id == organization_id,
+                        UsLaceyEngineShipmentRun.operation_id == operation.id,
+                        UsLaceyEngineShipmentRun.source_set_fingerprint == fingerprint,
+                        UsLaceyEngineShipmentRun.engine_version == ENGINE_VERSION,
+                        UsLaceyEngineShipmentRun.ruleset_version == LaceyRuleset().version,
+                        UsLaceyEngineShipmentRun.schema_version == SHIPMENT_RESOLUTION_SCHEMA_VERSION,
+                    ))
+                if snapshot is None:
+                    return Engine2DossierView(Engine2DossierAvailability.FAILED if failed else (Engine2DossierAvailability.STALE if historical else Engine2DossierAvailability.NOT_AVAILABLE), safe_status_message="Current shadow document processing did not produce a complete dossier." if failed else ("The dossier could not be refreshed for the current document set. Please retry processing." if historical else "Current Engine 2 dossier is not available yet."))
             try:
                 resolution = deserialize_shipment_resolution(snapshot.resolution_json)
                 logical_ids = {item.document_id for item in resolution.documents}
