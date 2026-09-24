@@ -763,6 +763,8 @@ class UsLaceyEngine2Service:
                     UsLaceyEngineShipmentRun.organization_id == organization_id,
                     UsLaceyEngineShipmentRun.operation_id == operation_id,
                     UsLaceyEngineShipmentRun.source_set_fingerprint == fingerprint,
+                    UsLaceyEngineShipmentRun.engine_version == self._engine_version,
+                    UsLaceyEngineShipmentRun.ruleset_version == self._ruleset.version,
                     UsLaceyEngineShipmentRun.schema_version == SHIPMENT_RESOLUTION_SCHEMA_VERSION,
                 )
             )
