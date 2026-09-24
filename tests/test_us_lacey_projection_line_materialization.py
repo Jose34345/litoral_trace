@@ -11,7 +11,11 @@ from litoral_trace.us_lacey.projection import (
     _line_reference,
     _materialize_applicable_plant_lines,
 )
-from litoral_trace.us_lacey.regulatory.applicability import PlantMaterialEvidence
+from litoral_trace.us_lacey.regulatory.applicability import (
+    DeclarationApplicabilityService,
+    DeclarationScope,
+    PlantMaterialEvidence,
+)
 
 
 class _ScalarRows:
@@ -177,3 +181,48 @@ def test_explicit_plant_material_flag_is_used_without_description_guessing():
 
     assert len(rows) == 1
     assert rows[0].plant_material is PlantMaterialEvidence.PRESENT
+
+
+
+def test_pack2_invoice_row_establishes_plant_material_and_lacey_applicability():
+    headers = {
+        1: frozenset(
+            {
+                "line",
+                "sku ref",
+                "description",
+                "hts",
+                "qty",
+                "net wt",
+                "unit price",
+                "amount",
+            }
+        )
+    }
+    rows = _explicit_merchandise_rows(
+        [
+            _source(header="Line", value="1", row=1, source_id=1),
+            _source(header="SKU / Ref", value="CO-18", row=1, source_id=2),
+            _source(
+                header="Description",
+                value="Sawn cedar boards - Cedrela odorata",
+                row=1,
+                source_id=3,
+            ),
+            _source(header="HTS", value="4407.99.0190", row=1, source_id=4),
+            _source(header="Qty", value="18.000 m3 / 900 pcs", row=1, source_id=5),
+            _source(header="Amount", value="48600.00", row=1, source_id=6),
+        ],
+        table_headers=headers,
+    )
+
+    assert len(rows) == 1
+    facts = rows[0]
+    assert facts.hts10 == "4407990190"
+    assert facts.description == "Sawn cedar boards - Cedrela odorata"
+    assert facts.entered_value == "48600.00"
+    assert facts.plant_material is PlantMaterialEvidence.PRESENT
+
+    decision = DeclarationApplicabilityService().evaluate(facts)
+    assert decision.scope is DeclarationScope.POTENTIALLY_REQUIRED
+    assert decision.requires_botanical_fields is True
