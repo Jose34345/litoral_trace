@@ -170,6 +170,7 @@ class UsLaceyEngineDossierService:
                 if (
                     historical
                     and not failed
+                    and str(operation.status or "").upper() not in {"NEW", "PROCESSING"}
                     and self._auto_recover
                     and self._recover_current_dossier(
                         organization_id=organization_id,
