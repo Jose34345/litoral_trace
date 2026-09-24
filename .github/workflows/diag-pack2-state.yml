@@ -1,0 +1,89 @@
+name: Diagnostic Pack 2 Production State
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/diag-pack2-state.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-pack2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      MIGRATION_DATABASE_URL: ${{ secrets.US_LACEY_NEON_MIGRATION_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install SQL dependency
+        run: python -m pip install "sqlalchemy>=2" "psycopg[binary]"
+
+      - name: Inspect operation and jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${MIGRATION_DATABASE_URL:-}"
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.engine import make_url
+
+          OP = "02fe7759-f8b5-4b30-8277-51f3ebc21a26"
+          url = make_url(os.environ["MIGRATION_DATABASE_URL"])
+          if url.drivername in {"postgresql", "postgres", "postgresql+psycopg2"}:
+              url = url.set(drivername="postgresql+psycopg")
+          engine = create_engine(url, pool_pre_ping=True, hide_parameters=True)
+
+          sql = text("""
+          SELECT
+              o.id AS operation_id,
+              o.organization_id,
+              o.status AS operation_status,
+              o.review_result,
+              o.updated_at AS operation_updated_at,
+              j.id AS job_id,
+              j.status AS job_status,
+              j.attempt_count,
+              j.max_attempts,
+              j.available_at,
+              j.locked_by,
+              j.locked_at,
+              j.heartbeat_at,
+              j.current_stage,
+              j.stage_started_at,
+              j.started_at,
+              j.completed_at,
+              j.last_error_code,
+              j.last_error_message,
+              d.id AS assurance_document_id,
+              d.processing_status AS document_status,
+              d.last_error_code AS document_error_code,
+              d.last_error_message AS document_error_message,
+              v.original_filename
+          FROM public.us_lacey_operations o
+          LEFT JOIN public.us_lacey_processing_jobs j
+            ON j.operation_id=o.id AND j.organization_id=o.organization_id
+          LEFT JOIN public.assurance_documents d
+            ON d.id=j.assurance_document_id AND d.organization_id=j.organization_id
+          LEFT JOIN public.vault_documents v
+            ON v.id=d.vault_document_id AND v.organization_id=d.organization_id
+          WHERE o.public_id = CAST(:op AS uuid)
+          ORDER BY j.id
+          """)
+          with engine.connect() as conn:
+              rows = conn.execute(sql, {"op": OP}).mappings().all()
+          engine.dispose()
+
+          if not rows:
+              raise SystemExit("PACK2_DIAG operation_not_found")
+          for row in rows:
+              safe = dict(row)
+              safe["locked_by"] = bool(safe.get("locked_by"))
+              print("PACK2_DIAG", safe)
+          PY
