@@ -21,7 +21,12 @@ from litoral_trace.us_lacey.commercial import UsLaceyCommercialConfig
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session, reset_us_lacey_engine_state
 from litoral_trace.us_lacey.ingestion import UsLaceyIngestionService
-from litoral_trace.us_lacey.jobs import retry_failed_us_lacey_operation
+from litoral_trace.us_lacey.jobs import (
+    claim_next_us_lacey_job,
+    heartbeat_us_lacey_job,
+    retry_failed_us_lacey_operation,
+    set_us_lacey_job_stage,
+)
 from litoral_trace.us_lacey.operations import UsLaceyOperationService
 from litoral_trace.us_lacey.self_service import register_us_lacey_company, verify_us_lacey_email
 from litoral_trace.us_lacey.worker import process_one_us_lacey_job
@@ -463,6 +468,8 @@ def test_failed_operation_retry_requeues_existing_job_atomically(monkeypatch):
                     job.locked_by,
                     job.locked_at,
                     job.heartbeat_at,
+                    job.current_stage,
+                    job.stage_started_at,
                     job.started_at,
                     job.completed_at,
                     job.last_error_code AS job_error_code,
@@ -496,6 +503,8 @@ def test_failed_operation_retry_requeues_existing_job_atomically(monkeypatch):
     assert row["locked_by"] is None
     assert row["locked_at"] is None
     assert row["heartbeat_at"] is None
+    assert row["current_stage"] is None
+    assert row["stage_started_at"] is None
     assert row["started_at"] is None
     assert row["completed_at"] is None
     assert row["job_error_code"] is None
@@ -518,3 +527,97 @@ def test_failed_operation_retry_requeues_existing_job_atomically(monkeypatch):
 
     reset_us_lacey_worker_engine_state()
     reset_us_lacey_engine_state()
+
+def test_processing_stage_watchdog_marks_job_failed_and_releases_lease(monkeypatch):
+    reset_us_lacey_engine_state()
+    reset_us_lacey_worker_engine_state()
+    storage = MemoryObjectStorage()
+    monkeypatch.setattr(ingestion_module, "get_us_lacey_storage_client", lambda: storage)
+    monkeypatch.setattr(worker_module, "get_us_lacey_storage_client", lambda: storage)
+
+    registered, _email, suffix = _register_active_customer()
+    operation = create_us_lacey_customer_operation(
+        organization_id=registered.organization_id,
+        user_id=registered.user_id,
+        client_reference=f"WATCHDOG-{suffix}",
+        line_references=("1",),
+    )
+    queued = upload_and_enqueue_us_lacey_document(
+        organization_id=registered.organization_id,
+        user_id=registered.user_id,
+        operation_public_id=operation.public_id,
+        filename="watchdog.csv",
+        content_type="text/csv",
+        content=_csv_bytes(),
+        document_role="COMMERCIAL_INVOICE",
+        ingestion=UsLaceyIngestionService(),
+    )
+
+    worker_id = f"watchdog-{suffix}"
+    claimed = claim_next_us_lacey_job(worker_id=worker_id)
+    assert claimed is not None
+    assert claimed.id == queued.job.id
+    assert claimed.locked_by == worker_id
+    assert set_us_lacey_job_stage(
+        job_id=claimed.id,
+        worker_id=worker_id,
+        stage="ENGINE_2",
+    )
+
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, registered.organization_id)
+        session.execute(
+            text(
+                """
+                UPDATE public.us_lacey_processing_jobs
+                SET stage_started_at = now() - interval '301 seconds'
+                WHERE organization_id = :organization_id
+                  AND id = :job_id
+                """
+            ),
+            {
+                "organization_id": registered.organization_id,
+                "job_id": claimed.id,
+            },
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    assert heartbeat_us_lacey_job(job_id=claimed.id, worker_id=worker_id) is False
+
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, registered.organization_id)
+        row = session.execute(
+            text(
+                """
+                SELECT status, current_stage, stage_started_at, locked_by, locked_at,
+                       heartbeat_at, completed_at, last_error_code, last_error_message
+                FROM public.us_lacey_processing_jobs
+                WHERE organization_id = :organization_id
+                  AND id = :job_id
+                """
+            ),
+            {
+                "organization_id": registered.organization_id,
+                "job_id": claimed.id,
+            },
+        ).mappings().one()
+    finally:
+        session.close()
+
+    assert row["status"] == "FAILED"
+    assert row["current_stage"] == "ENGINE_2"
+    assert row["stage_started_at"] is not None
+    assert row["locked_by"] is None
+    assert row["locked_at"] is None
+    assert row["heartbeat_at"] is None
+    assert row["completed_at"] is not None
+    assert row["last_error_code"] == "STAGE_TIMEOUT"
+    assert "five-minute" in row["last_error_message"]
+
+    reset_us_lacey_worker_engine_state()
+    reset_us_lacey_engine_state()
+
