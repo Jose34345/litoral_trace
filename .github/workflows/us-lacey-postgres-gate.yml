@@ -29,6 +29,7 @@ on:
       - "alembic/versions/058_us_lacey_exception_first_states.py"
       - "alembic/versions/059_us_lacey_outreach_attribution.py"
       - "alembic/versions/060_us_lacey_processing_stages.py"
+      - "alembic/versions/061_requeue_canonical_logical_id_failure.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
@@ -168,7 +169,7 @@ jobs:
           python -m alembic upgrade 049_lacey_product_intelligence_snapshots
           python -m alembic upgrade 050_lacey_regulatory_assessment_snapshots
           python -m alembic upgrade 052_us_lacey_ephemeral_sandbox
-          python -m alembic upgrade 060_us_lacey_processing_stages
+          python -m alembic upgrade 061_requeue_canonical_logical_id_failure
       - name: Bind dedicated worker login to queue capability
         shell: bash
         run: |
@@ -193,7 +194,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "060_us_lacey_processing_stages (head)" /tmp/alembic-current.txt
+          grep -Fx "061_requeue_canonical_logical_id_failure (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -601,7 +602,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "060_us_lacey_processing_stages (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "061_requeue_canonical_logical_id_failure (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
