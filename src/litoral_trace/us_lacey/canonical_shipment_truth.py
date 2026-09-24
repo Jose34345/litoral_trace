@@ -129,7 +129,7 @@ _SHIPMENT_TOTAL_ENTERED_VALUE = "shipment_total_entered_value"
 _BOTANICAL_PPQ_FIELDS = frozenset(_ENGINE_TO_PPQ[key] for key in _COMPONENT_FIELDS)
 _ROW_ORDINAL = re.compile(r"(?:^|:)row:(\d+)$", re.IGNORECASE)
 _TAXON = re.compile(r"^taxon:([^:]+):([^:]+)$", re.IGNORECASE)
-_OPERATION_DOCUMENT_ID = re.compile(r"^(?P<operation_document_id>[1-9]\\d*)(?::.+)?$")
+_OPERATION_DOCUMENT_ID = re.compile(r"^(?P<operation_document_id>[1-9]\d*)(?::.+)?$")
 
 
 def _operation_document_id(document_id: str) -> int:
