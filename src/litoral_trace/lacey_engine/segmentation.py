@@ -386,8 +386,9 @@ def starts_new_document(
 
     A strong document title is a boundary signal, even when adjacent shipment
     documents repeat the same B/L, invoice or container identifier. The narrow
-    exception is a repeated same-type anchor that also shares a deterministic
-    fingerprint, which preserves multipage invoices/B/Ls with repeated headers.
+    exception is a repeated anchor for the current logical document type that
+    also shares a deterministic fingerprint, which preserves multipage invoices
+    and B/Ls even when an intermediate page omits the repeated title.
     """
 
     if previous is None:
@@ -395,7 +396,7 @@ def starts_new_document(
 
     if current.strong_anchor is not None:
         repeated_same_document_anchor = (
-            previous.strong_anchor == current.strong_anchor
+            previous.document_type == current.strong_anchor
             and _shares_document_fingerprint(previous, current)
         )
         if not repeated_same_document_anchor:
