@@ -53,7 +53,7 @@ def _seed_extraction(factory, *, organization_id: int, assurance_document_id: in
         assurance_document_id=assurance_document_id,
         engine="golden-pack-2",
         engine_version="1",
-        status="COMPLETED",
+        status="SUCCEEDED",
     )
     session.add(run)
     session.flush()
