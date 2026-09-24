@@ -33,16 +33,25 @@ from .semantic_graph import (
     party_core,
     valid_mid_value,
 )
+from .trade_validation import (
+    is_valid_entity_name,
+    normalize_invoice_total,
+    normalize_iso6346_container,
+    normalize_seal_number,
+)
 
 ENGINE_VERSION = "lacey-engine-2.5.0"
 _FIELDS = (
     "estimated_arrival_date",
     "bill_of_lading",
     "container_number",
+    "seal_number",
+    "invoice_total",
     "importer_name",
     "importer_address",
     "consignee_name",
     "consignee_address",
+    "supplier_name",
     "description",
     "species",
     "genus",
@@ -63,6 +72,12 @@ _MERCHANDISE_DESCRIPTION_LABEL = re.compile(
 )
 _IMPORTER_NAME_LABEL = re.compile(r"(?:importer|importer name|importer of record|importer of record name)", re.I)
 _CONSIGNEE_NAME_LABEL = re.compile(r"(?:consignee|consignee name)", re.I)
+_SUPPLIER_NAME_LABEL = re.compile(r"(?:supplier|supplier name|vendor|vendor name)", re.I)
+_SEAL_LABEL = re.compile(r"(?:seal|seal number|seal no\.?)", re.I)
+_INVOICE_TOTAL_LABEL = re.compile(
+    r"(?:invoice total|total invoice|grand total|total amount|amount due)",
+    re.I,
+)
 _ENTRY_LABEL = re.compile(r"(?:entry number|entry no\.?|filing entry reference|filing entry number)", re.I)
 _MID_LABEL = re.compile(r"(?:mid|manufacturer id|manufacturer identification|manufacturer identification code(?: \(mid\))?)", re.I)
 _HTS_LABEL = re.compile(r"(?:hts|hts code|hts number|hts no\.?)", re.I)
@@ -76,7 +91,7 @@ _ISO_CURRENCY = re.compile(r"^(USD|EUR|CAD|GBP|AUD|JPY|CNY|BRL|MXN)\b", re.I)
 
 
 def _candidate(field: str, value: str, block, label: str, evidence=EvidenceClass.EXPLICIT, derived_from=None) -> RawCandidate:
-    return RawCandidate(field, value, value, block, evidence, f"lacey.{field}", "2.3.0", derived_from, label)
+    return RawCandidate(field, value, value, block, evidence, f"lacey.{field}", "2.5.0", derived_from, label)
 
 
 def _normalized_date(value: str) -> str | None:
@@ -175,7 +190,7 @@ def _plant_quantity_row_keys(layout, table_ids: frozenset[str]) -> frozenset[tup
 
 def _append_party(found, *, target: str, address_target: str, value: str, block, label: str) -> None:
     name = party_core(value)
-    if name:
+    if name and is_valid_entity_name(name):
         found[target].append(_candidate(target, name, block, label))
     address = party_address(value)
     if address:
@@ -215,13 +230,54 @@ def _extract(layout):
             elif re.search(r"(?:master (?:bol|b/l)|house bol|bill of lading|b/l no\.?|bol)\b", lower):
                 found["bill_of_lading"].append(_candidate("bill_of_lading", value.upper(), block, key))
             elif re.fullmatch(r"(?:current )?container(?: number| no\.?)?", lower):
-                found["container_number"].append(_candidate("container_number", value.upper(), block, key))
+                container = normalize_iso6346_container(value)
+                if container:
+                    found["container_number"].append(
+                        _candidate("container_number", container, block, key)
+                    )
+            elif _SEAL_LABEL.fullmatch(key):
+                seal = normalize_seal_number(value)
+                if seal:
+                    found["seal_number"].append(
+                        _candidate("seal_number", seal, block, key)
+                    )
+            elif _INVOICE_TOTAL_LABEL.fullmatch(key):
+                total = normalize_invoice_total(value)
+                if total is not None:
+                    found["invoice_total"].append(
+                        _candidate(
+                            "invoice_total",
+                            total,
+                            block,
+                            key,
+                            EvidenceClass.DERIVED,
+                            "invoice_total",
+                        )
+                    )
+                    currency = _ISO_CURRENCY.match(value)
+                    if currency:
+                        found["currency"].append(
+                            _candidate(
+                                "currency",
+                                currency.group(1).upper(),
+                                block,
+                                "Currency",
+                                EvidenceClass.DERIVED,
+                                "invoice_total",
+                            )
+                        )
             elif _IMPORTER_NAME_LABEL.fullmatch(key) and "address" not in lower:
                 _append_party(found, target="importer_name", address_target="importer_address", value=value, block=block, label=key)
             elif re.fullmatch(r"importer(?:'s)? address|importer address", lower):
                 found["importer_address"].append(_candidate("importer_address", value, block, key))
             elif _CONSIGNEE_NAME_LABEL.fullmatch(key) and "address" not in lower:
                 _append_party(found, target="consignee_name", address_target="consignee_address", value=value, block=block, label=key)
+            elif _SUPPLIER_NAME_LABEL.fullmatch(key):
+                supplier = party_core(value)
+                if supplier and is_valid_entity_name(supplier):
+                    found["supplier_name"].append(
+                        _candidate("supplier_name", supplier, block, key)
+                    )
             elif re.fullmatch(r"consignee(?:'s)? address|consignee address", lower):
                 found["consignee_address"].append(_candidate("consignee_address", value, block, key))
             elif _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(key) or (_table_context(block) and lower == "description"):
@@ -230,8 +286,14 @@ def _extract(layout):
                 found["filing_entry_reference"].append(_candidate("filing_entry_reference", value.upper(), block, key))
             elif _MID_LABEL.fullmatch(key):
                 candidate_value = value.upper().strip()
-                if valid_mid_value(candidate_value):
-                    found["manufacturer_id"].append(_candidate("manufacturer_id", candidate_value, block, key))
+                if valid_mid_value(
+                    candidate_value,
+                    source_text=block.text,
+                    label=key,
+                ):
+                    found["manufacturer_id"].append(
+                        _candidate("manufacturer_id", candidate_value, block, key)
+                    )
             elif _HTS_LABEL.fullmatch(key):
                 found["hts_code"].append(_candidate("hts_code", value, block, key))
             elif _ENTERED_VALUE_LABEL.fullmatch(key):
@@ -284,8 +346,46 @@ def _extract(layout):
                 found["estimated_arrival_date"].append(_candidate("estimated_arrival_date", date, block, "Estimated Arrival Date"))
         for match in re.finditer(r"(?P<label>Master\s+(?:Bill of Lading|BOL|B/L)(?:\s*#)?|House\s+(?:Bill of Lading|BOL|B/L)(?:\s*#)?|Bill of Lading|B/L\s*No\.?|\bBOL)\s*[:#-]?\s*(?P<value>[A-Z0-9-]{6,})", text, re.I):
             found["bill_of_lading"].append(_candidate("bill_of_lading", match.group("value").upper(), block, match.group("label")))
-        for match in re.finditer(r"\b(?:Current\s+)?Container(?:\s+(?:Number|No\.?)?)?\s*[:#-]?\s*([A-Z]{4}\d{7})\b", text, re.I):
-            found["container_number"].append(_candidate("container_number", match.group(1).upper(), block, "Container Number"))
+        for match in re.finditer(
+            r"\b(?:Current\s+)?Container(?:\s+(?:Number|No\.?)?)?\s*[:#-]?\s*"
+            r"([A-Z]{4}[\s-]?[0-9]{6}[\s-]?[0-9])\b",
+            text,
+            re.I,
+        ):
+            container = normalize_iso6346_container(match.group(1))
+            if container:
+                found["container_number"].append(
+                    _candidate("container_number", container, block, "Container Number")
+                )
+        for match in re.finditer(
+            r"\b(?P<label>Seal(?:\s+(?:Number|No\.?))?)\s*[:#-]?\s*"
+            r"(?P<value>[A-Z0-9][A-Z0-9-]{2,23})\b",
+            text,
+            re.I,
+        ):
+            seal = normalize_seal_number(match.group("value"))
+            if seal:
+                found["seal_number"].append(
+                    _candidate("seal_number", seal, block, match.group("label"))
+                )
+        for match in re.finditer(
+            r"(?P<label>Invoice\s+Total|Total\s+Invoice|Grand\s+Total|Total\s+Amount|Amount\s+Due)"
+            r"\s*[:#-]?\s*(?P<value>[^\n]{1,80})",
+            text,
+            re.I,
+        ):
+            total = normalize_invoice_total(match.group("value"))
+            if total is not None:
+                found["invoice_total"].append(
+                    _candidate(
+                        "invoice_total",
+                        total,
+                        block,
+                        match.group("label"),
+                        EvidenceClass.DERIVED,
+                        "invoice_total",
+                    )
+                )
         for match in re.finditer(r"\bConsignee(?:\s+Name)?\s*[:#-]?\s*([A-Z][A-Z &.'-]{3,80})", text):
             name = party_core(match.group(1))
             if name:
@@ -296,10 +396,21 @@ def _extract(layout):
                 found["description"].append(_candidate("description", value, block, match.group("label")))
         for match in re.finditer(r"(?P<label>Entry (?:Number|No\.?)|Filing Entry (?:Reference|Number))\s*[:#-]?\s*(?P<value>[A-Z0-9-]{8,20})", text, re.I):
             found["filing_entry_reference"].append(_candidate("filing_entry_reference", match.group("value").upper(), block, match.group("label")))
-        for match in re.finditer(r"(?P<label>MID|Manufacturer Identification(?: Code)?(?: \(MID\))?|Manufacturer ID)\s*[:#-]?\s*(?P<value>[A-Z0-9][A-Z0-9 -]{4,24})\b", text, re.I):
+        for match in re.finditer(
+            r"\b(?P<label>MID|Manufacturer Identification(?: Code)?(?: \(MID\))?|Manufacturer ID)"
+            r"\b\s*[:#-]?\s*(?P<value>[A-Z0-9][A-Z0-9 -]{4,24})\b",
+            text,
+            re.I,
+        ):
             candidate_value = " ".join(match.group("value").split()).upper()
-            if valid_mid_value(candidate_value):
-                found["manufacturer_id"].append(_candidate("manufacturer_id", candidate_value, block, match.group("label")))
+            if valid_mid_value(
+                candidate_value,
+                source_text=text,
+                label=match.group("label"),
+            ):
+                found["manufacturer_id"].append(
+                    _candidate("manufacturer_id", candidate_value, block, match.group("label"))
+                )
         for match in re.finditer(r"(?P<label>HTS(?:\s+(?:Code|Number|No\.?))?)\s*[:#-]?\s*(?P<value>\d{4,10}(?:[. -]\d{1,4})*)", text, re.I):
             found["hts_code"].append(_candidate("hts_code", match.group("value"), block, match.group("label")))
         for match in re.finditer(
@@ -417,10 +528,21 @@ def _resolve_logical_document(
         )
 
     make.document_type_for = lambda _raw: section.document_type
+    def compatible(field_key: str) -> bool:
+        if field_key in {"container_number", "seal_number"}:
+            return section.document_type.value == "BILL_OF_LADING"
+        if field_key == "invoice_total":
+            return section.document_type.value == "COMMERCIAL_INVOICE"
+        return True
+
     fields = {
         key: resolve(
             key,
-            [raw for raw in candidates if admit(raw)],
+            [
+                raw
+                for raw in candidates
+                if compatible(key) and admit(raw)
+            ],
             make,
         )
         for key, candidates in extracted.items()

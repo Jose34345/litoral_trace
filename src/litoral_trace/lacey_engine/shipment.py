@@ -219,12 +219,14 @@ def normalize_quantity(value: str) -> Decimal | None:
 
 _CATALOG = {key: FieldCardinality.SCALAR for key in (
     "estimated_arrival_date", "master_bill_of_lading", "house_bill_of_lading", "bill_of_lading",
+    "invoice_total",
     "importer_name", "importer_address", "consignee_name", "consignee_address", "manufacturer_id",
     "filing_entry_reference", "currency", "notify_party_name", "shipper_name", "supplier_name",
     "manufacturer_name",
 )}
 _CATALOG.update({
     "container_number": FieldCardinality.SET,
+    "seal_number": FieldCardinality.SET,
     "country_of_origin": FieldCardinality.SET,
     "article_component": FieldCardinality.PER_PLANT_COMPONENT,
     "genus": FieldCardinality.PER_PLANT_COMPONENT,

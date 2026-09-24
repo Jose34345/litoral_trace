@@ -13,6 +13,7 @@ import re
 import unicodedata
 
 from .domain import AdmittedCandidate, LayoutStructureType
+from .trade_validation import normalize_mid
 
 
 class EvidenceRelation(str, Enum):
@@ -125,7 +126,7 @@ def semantic_normalize(field_key: str, value: object) -> str:
         return fold_text(raw)
     if key == "hts_code":
         return re.sub(r"\D", "", raw)
-    if key in {"container_number", "bill_of_lading", "manufacturer_id", "filing_entry_reference"}:
+    if key in {"container_number", "seal_number", "bill_of_lading", "manufacturer_id", "filing_entry_reference"}:
         return re.sub(r"[^A-Z0-9]", "", raw.upper())
     if key == "country_of_harvest":
         folded = fold_text(raw)
@@ -138,7 +139,7 @@ def semantic_normalize(field_key: str, value: object) -> str:
             return mass
         number = re.search(r"-?[0-9][0-9,]*(?:\.[0-9]+)?", raw)
         return number.group(0).replace(",", "") if number else fold_text(raw)
-    if key == "entered_value":
+    if key in {"entered_value", "invoice_total"}:
         match = re.fullmatch(r"\s*(?:(USD|EUR|CAD|GBP|AUD|JPY)\s*)?\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*", raw, re.I)
         if match:
             currency = (match.group(1) or ("USD" if "$" in raw else "")).upper()
@@ -158,9 +159,23 @@ def semantic_equal(field_key: str, left: object, right: object) -> bool:
     return bool(a and b and a == b)
 
 
-def valid_mid_value(value: object) -> bool:
+def valid_mid_value(
+    value: object,
+    *,
+    source_text: object = "",
+    label: object = "",
+) -> bool:
     normalized = str(value or "").strip().upper()
-    return bool(normalized) and normalized not in _STRUCTURAL_MID_VALUES and len(normalized) >= 5
+    return (
+        bool(normalized)
+        and normalized not in _STRUCTURAL_MID_VALUES
+        and normalize_mid(
+            normalized,
+            source_text=source_text,
+            label=label,
+        )
+        is not None
+    )
 
 
 def association_key(candidate: AdmittedCandidate, scope: str, document_id: str) -> str | None:

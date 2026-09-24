@@ -16,12 +16,20 @@ from datetime import datetime
 from typing import Mapping, Protocol
 
 from .domain import BoundingBox, DocumentResolution, EvidenceClass, FieldStatus
+from .trade_validation import (
+    is_valid_entity_name,
+    normalize_invoice_total,
+    normalize_iso6346_container,
+    normalize_mid,
+    normalize_seal_number,
+)
 
 AI_SHADOW_SCHEMA_VERSION = "lacey_ai_shadow_v1"
 AI_FIELDS = (
-    "estimated_arrival_date", "bill_of_lading", "container_number", "importer_name",
-    "importer_address", "consignee_name", "consignee_address", "description",
-    "entered_value", "article_component", "species", "genus", "filing_entry_reference",
+    "estimated_arrival_date", "bill_of_lading", "container_number", "seal_number",
+    "invoice_total", "importer_name", "importer_address", "consignee_name",
+    "consignee_address", "supplier_name", "description", "entered_value",
+    "article_component", "species", "genus", "filing_entry_reference",
     "manufacturer_id", "hts_code", "country_of_harvest", "plant_quantity", "metric_unit",
 )
 
@@ -104,8 +112,25 @@ class AIExtractionProvider(Protocol):
     model: str
     def extract(self, *, filename: str, content: bytes) -> AIExtractionResult: ...
 
-_IDENTIFIER_FIELDS = {"bill_of_lading", "container_number", "filing_entry_reference", "manufacturer_id", "hts_code"}
-_CASE_INSENSITIVE_FIELDS = {"consignee_name", "consignee_address", "description", "species", "genus", "country_of_harvest", "metric_unit"}
+_IDENTIFIER_FIELDS = {
+    "bill_of_lading",
+    "container_number",
+    "seal_number",
+    "filing_entry_reference",
+    "manufacturer_id",
+    "hts_code",
+}
+_CASE_INSENSITIVE_FIELDS = {
+    "importer_name",
+    "supplier_name",
+    "consignee_name",
+    "consignee_address",
+    "description",
+    "species",
+    "genus",
+    "country_of_harvest",
+    "metric_unit",
+}
 _GARBAGE_FILTER_FIELDS = frozenset({"article_component", "description"})
 _GARBAGE_MARKERS = frozenset({"PAL", "AUX", "PALLET", "CARTON", "BOX"})
 _GARBAGE_CLEAN_EXACT_TOKENS = frozenset({"NA", "NONE"})
@@ -128,6 +153,15 @@ _ETA_LABEL_PATTERN = re.compile(
     r"|fecha estimada de llegada|data estimada de chegada|previsao de chegada)"
     r"(?= |$)"
 )
+_SEAL_LABEL_PATTERN = re.compile(
+    r"(?:^| )(?:seal(?: no| number| numero| nro| nr| n)?)(?= |$)"
+)
+_INVOICE_TOTAL_LABEL_PATTERN = re.compile(
+    r"(?:^| )(?:invoice total|total invoice|grand total|total amount|amount due)(?= |$)"
+)
+_MID_LABEL_PATTERN = re.compile(
+    r"(?:^| )(?:mid|manufacturer id|manufacturer identification(?: code)?)(?= |$)"
+)
 
 def _fold(value: str) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
@@ -138,6 +172,21 @@ def normalize_ai_value(field_key: str, value: str) -> str:
     text = " ".join(str(value or "").split()).strip()
     if not text:
         raise AIShadowError("AI candidate value is empty.")
+    if field_key == "container_number":
+        normalized = normalize_iso6346_container(text)
+        if normalized is None:
+            raise AIShadowError("AI container candidate is not a valid ISO 6346 freight container ID.")
+        return normalized
+    if field_key == "seal_number":
+        normalized = normalize_seal_number(text)
+        if normalized is None:
+            raise AIShadowError("AI seal candidate is invalid.")
+        return normalized
+    if field_key == "invoice_total":
+        normalized = normalize_invoice_total(text)
+        if normalized is None:
+            raise AIShadowError("AI invoice total is not a valid financial amount.")
+        return normalized
     if field_key in _IDENTIFIER_FIELDS:
         return re.sub(r"[^A-Z0-9.-]+", "", text.upper())
     return text
@@ -216,8 +265,33 @@ def _is_explicit_bill_of_lading_candidate(payload: Mapping[str, object]) -> bool
     return _is_directly_anchored_candidate(payload, _BILL_OF_LADING_LABEL_PATTERN)
 
 def _is_explicit_container_candidate(payload: Mapping[str, object]) -> bool:
-    """Reject vessel, seal, equipment and other logistics values mislabeled as container."""
-    return _is_directly_anchored_candidate(payload, _CONTAINER_LABEL_PATTERN)
+    """Require explicit container context plus a valid ISO 6346 check digit."""
+    return (
+        _is_directly_anchored_candidate(payload, _CONTAINER_LABEL_PATTERN)
+        and normalize_iso6346_container(payload.get("value")) is not None
+    )
+
+def _is_explicit_seal_candidate(payload: Mapping[str, object]) -> bool:
+    return (
+        _is_directly_anchored_candidate(payload, _SEAL_LABEL_PATTERN)
+        and normalize_seal_number(payload.get("value")) is not None
+    )
+
+def _is_explicit_invoice_total_candidate(payload: Mapping[str, object]) -> bool:
+    return (
+        _is_directly_anchored_candidate(payload, _INVOICE_TOTAL_LABEL_PATTERN)
+        and normalize_invoice_total(payload.get("value")) is not None
+    )
+
+def _is_explicit_mid_candidate(payload: Mapping[str, object]) -> bool:
+    return (
+        _is_directly_anchored_candidate(payload, _MID_LABEL_PATTERN)
+        and normalize_mid(
+            payload.get("value"),
+            source_text=payload.get("source_text"),
+            label="MID",
+        ) is not None
+    )
 
 def _is_explicit_eta_candidate(payload: Mapping[str, object]) -> bool:
     """Reject ETD, issue/departure dates and other dates mislabeled as arrival ETA."""
@@ -229,6 +303,14 @@ def _is_semantically_invalid_candidate(payload: Mapping[str, object]) -> bool:
         return not _is_explicit_bill_of_lading_candidate(payload)
     if field_key == "container_number":
         return not _is_explicit_container_candidate(payload)
+    if field_key == "seal_number":
+        return not _is_explicit_seal_candidate(payload)
+    if field_key == "invoice_total":
+        return not _is_explicit_invoice_total_candidate(payload)
+    if field_key == "manufacturer_id":
+        return not _is_explicit_mid_candidate(payload)
+    if field_key in {"supplier_name", "importer_name"}:
+        return not is_valid_entity_name(payload.get("value"))
     if field_key == "estimated_arrival_date":
         return not _is_explicit_eta_candidate(payload)
     return False

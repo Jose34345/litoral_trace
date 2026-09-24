@@ -34,6 +34,8 @@ def _pack_1_pdf() -> bytes:
             "Invoice Number: 406499122214\n"
             "Page 2 of 2\n"
             "Invoice Total: USD 31,110.21\n"
+            "Claim Amount: USD 11,668.25\n"
+            "OCR Total Candidate: vtcNT...KG\n"
             "3A-CRYOGENIC FZE\n"
         ),
         (
@@ -48,6 +50,7 @@ def _pack_1_pdf() -> bytes:
             "B/L No: 24359-07\n"
             "Container Number: MSKU0857658\n"
             "Seal: 6548158\n"
+            "ROSE CONTAINERLINE C/O AZ MIDWEST CFS SCAC: CTII\n"
             "Shipper: CHART INC.\n"
         ),
         (
@@ -172,6 +175,21 @@ def test_pack_1_golden_fixture_segments_three_logical_documents_without_leakage(
     assert container.effective_value == "MSKU0857658"
     assert container.winning_candidate is not None
     assert 4 <= container.winning_candidate.provenance.page <= 7
+
+    seal = bill_of_lading.resolution.field("seal_number")
+    assert seal.status is FieldStatus.MATCHED
+    assert seal.effective_value == "6548158"
+    assert seal.winning_candidate is not None
+    assert 4 <= seal.winning_candidate.provenance.page <= 7
+
+    invoice_total = invoice.resolution.field("invoice_total")
+    assert invoice_total.status is FieldStatus.MATCHED
+    assert invoice_total.effective_value == "31110.21"
+    assert invoice_total.winning_candidate is not None
+    assert 1 <= invoice_total.winning_candidate.provenance.page <= 2
+
+    # Carrier SCAC context must not become a CBP Manufacturer Identification Code.
+    assert bill_of_lading.resolution.field("manufacturer_id").status is FieldStatus.MISSING
 
     assert all(
         1 <= candidate.provenance.page <= 2

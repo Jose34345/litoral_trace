@@ -40,8 +40,8 @@ def test_pack3_logistics_triple_survives_only_with_explicit_field_anchors():
             ),
             _candidate(
                 "container_number",
-                "CMAU8842110",
-                "Container No: CMAU8842110",
+                "CMAU8842118",
+                "Container No: CMAU8842118",
             ),
             _candidate(
                 "estimated_arrival_date",
@@ -59,7 +59,7 @@ def test_pack3_logistics_triple_survives_only_with_explicit_field_anchors():
 
     assert [(item.field_key, item.value) for item in result.candidates] == [
         ("bill_of_lading", "RPT-HOU-260913-42"),
-        ("container_number", "CMAU8842110"),
+        ("container_number", "CMAU8842118"),
         ("estimated_arrival_date", "2026-10-10"),
     ]
 
@@ -126,8 +126,8 @@ def test_specialist_filter_keeps_logistics_sidecars_aligned_after_trap_rejection
                         ),
                         _candidate(
                             "container_number",
-                            "CMAU8842110",
-                            "Container No: CMAU8842110",
+                            "CMAU8842118",
+                            "Container No: CMAU8842118",
                             source_table_id="shipment-header",
                             source_row_index=2,
                         ),
@@ -163,7 +163,7 @@ def test_specialist_filter_keeps_logistics_sidecars_aligned_after_trap_rejection
 
     assert [(item.field_key, item.value) for item in result.candidates] == [
         ("bill_of_lading", "RPT-HOU-260913-42"),
-        ("container_number", "CMAU8842110"),
+        ("container_number", "CMAU8842118"),
         ("estimated_arrival_date", "2026-10-10"),
     ]
     assert [identity.row_index if identity else None for identity in result.row_identities] == [
