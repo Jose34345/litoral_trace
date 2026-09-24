@@ -767,6 +767,16 @@ class UsLaceyEngine2Service:
             )
 
 
+    def _after_ai_shadow_background(
+        self,
+        *,
+        organization_id: int,
+        operation_id: int,
+        source_set_fingerprint: str,
+    ) -> None:
+        """Optional post-shadow hook. Base service keeps AI strictly observational."""
+        return None
+
     def _dispatch_ai_extractors_background(
         self,
         *,
@@ -801,6 +811,11 @@ class UsLaceyEngine2Service:
                     organization_id=organization_id,
                     operation_id=operation_id,
                     documents=documents,
+                    source_set_fingerprint=source_set_fingerprint,
+                )
+                self._after_ai_shadow_background(
+                    organization_id=organization_id,
+                    operation_id=operation_id,
                     source_set_fingerprint=source_set_fingerprint,
                 )
             except Exception:
