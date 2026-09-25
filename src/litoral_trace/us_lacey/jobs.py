@@ -281,6 +281,49 @@ def retry_failed_us_lacey_operation(
         session.close()
 
 
+def has_claimable_us_lacey_job(
+    *,
+    per_organization_limit: int = 2,
+) -> bool:
+    """Return whether a job is currently claimable without mutating queue state.
+
+    This lightweight probe lets the supervisor avoid spawning a fresh Python
+    interpreter while the queue is idle. It deliberately mirrors the admission
+    predicate used by claim_next_us_lacey_job; a child must still claim with
+    FOR UPDATE SKIP LOCKED because this read is only a hint and can race.
+    """
+    if per_organization_limit <= 0 or per_organization_limit > 20:
+        raise UsLaceyJobError("per_organization_limit must be between 1 and 20.")
+
+    session = get_us_lacey_worker_db_session()
+    try:
+        candidate = session.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM public.us_lacey_processing_jobs AS queued
+                    WHERE queued.status IN ('QUEUED','RETRY')
+                      AND queued.available_at <= now()
+                      AND (
+                          SELECT count(*)
+                          FROM public.us_lacey_processing_jobs AS active
+                          WHERE active.organization_id = queued.organization_id
+                            AND active.status = 'RUNNING'
+                      ) < :per_organization_limit
+                )
+                """
+            ),
+            {"per_organization_limit": per_organization_limit},
+        ).scalar_one()
+        session.rollback()
+        return bool(candidate)
+    except Exception as exc:
+        session.rollback()
+        raise UsLaceyJobError("Unable to inspect the processing queue.") from exc
+    finally:
+        session.close()
+
 def claim_next_us_lacey_job(
     *,
     worker_id: str,

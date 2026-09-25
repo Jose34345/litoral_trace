@@ -168,7 +168,7 @@ def _inline_worker_loop(stop_event: threading.Event) -> None:
         "US_LACEY_WORKER_RECOVERY_EVERY_SECONDS", 60, minimum=30, maximum=3600
     )
     stale_after = _int_env(
-        "US_LACEY_WORKER_STALE_AFTER_SECONDS", 600, minimum=60, maximum=86400
+        "US_LACEY_WORKER_STALE_AFTER_SECONDS", 120, minimum=60, maximum=86400
     )
     worker_id = f"inline-{socket.gethostname()}-{uuid4().hex[:12]}"
     next_recovery = 0.0
