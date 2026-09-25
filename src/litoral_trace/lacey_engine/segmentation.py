@@ -236,6 +236,26 @@ _STRONG_ANCHORS: tuple[tuple[re.Pattern[str], DocumentType], ...] = (
         re.compile(r"\bPACKING\s+LIST\b", re.I),
         DocumentType.PACKING_LIST,
     ),
+    (
+        re.compile(r"\bENTRY\s+WORKSHEET\b", re.I),
+        DocumentType.CUSTOMS_ENTRY_SUMMARY,
+    ),
+    (
+        re.compile(r"\bBOTANICAL\s+DECLARATION\b", re.I),
+        DocumentType.SPECIES_DECLARATION,
+    ),
+    (
+        re.compile(r"\bARRIVAL\s+NOTICE\b", re.I),
+        DocumentType.ARRIVAL_NOTICE,
+    ),
+    (
+        re.compile(r"\bPLANT\s+DATA\s+WORKSHEET\b", re.I),
+        DocumentType.SPECIES_DECLARATION,
+    ),
+    (
+        re.compile(r"\bSUPPLIER\s+DECLARATION\b", re.I),
+        DocumentType.SUPPLIER_DECLARATION,
+    ),
 )
 
 _INVOICE_NUMBER = re.compile(
@@ -364,19 +384,26 @@ def starts_new_document(
 ) -> bool:
     """Return True only when deterministic evidence supports a document boundary.
 
-    Continuity fingerprints intentionally have precedence over repeated titles.
-    This keeps repeated headers on multipage invoices/B/Ls inside one logical
-    document while still allowing strong titles to start a genuinely new source.
+    A strong document title is a boundary signal, even when adjacent shipment
+    documents repeat the same B/L, invoice or container identifier. The narrow
+    exception is a repeated anchor for the current logical document type that
+    also shares a deterministic fingerprint, which preserves multipage invoices
+    and B/Ls even when an intermediate page omits the repeated title.
     """
 
     if previous is None:
         return True
 
+    if current.strong_anchor is not None:
+        repeated_same_document_anchor = (
+            previous.document_type == current.strong_anchor
+            and _shares_document_fingerprint(previous, current)
+        )
+        if not repeated_same_document_anchor:
+            return True
+
     if _shares_document_fingerprint(previous, current):
         return False
-
-    if current.strong_anchor is not None:
-        return True
 
     if (
         current.document_type is not previous.document_type

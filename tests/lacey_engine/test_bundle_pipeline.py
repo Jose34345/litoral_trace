@@ -358,7 +358,7 @@ def test_existing_document_schema_version_remains_unchanged():
 
 
 
-def test_process_bundle_allows_undetermined_support_document_without_negative_anchor(
+def test_process_bundle_classifies_botanical_declaration_as_supported_trade_document(
     monkeypatch,
 ):
     layout = ParsedLayout(
@@ -384,4 +384,4 @@ def test_process_bundle_allows_undetermined_support_document_without_negative_an
     )
 
     assert len(bundle.documents) == 1
-    assert bundle.documents[0].document_type is DocumentType.UNKNOWN
+    assert bundle.documents[0].document_type is DocumentType.SPECIES_DECLARATION

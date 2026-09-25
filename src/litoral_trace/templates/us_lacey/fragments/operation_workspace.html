@@ -281,60 +281,16 @@
 
   {% include "us_lacey/fragments/export_declaration_package.html" %}
 
-  <details id="engine2-dossier" class="lt-card p-6" data-engine2-dossier data-engine2-availability="{{ engine2_dossier.availability }}">
-    <summary class="cursor-pointer text-sm font-semibold text-slate-700">Advanced evidence details</summary>
-    <div class="mt-4">
-      <h2 class="text-lg font-bold text-slate-950">Document evidence analysis</h2>
-      <p class="mt-2 text-sm text-slate-600">Technical evidence remains available for audit and troubleshooting without cluttering the review workflow.</p>
-      {% if engine2_dossier.availability != "CURRENT" %}
-        <p class="mt-4 text-sm text-slate-700">{{ engine2_dossier.safe_status_message }}</p>
-      {% else %}
-        <div class="mt-4">
-          <span data-engine2-readiness="{{ engine2_dossier.readiness }}">Document evidence status: {{ engine2_dossier.readiness|replace("_", " ") }}</span>
-          <p class="mt-1 text-xs text-slate-500">Final preparation readiness is determined by the exception-first review above.</p>
-          <p class="mt-1 text-xs text-slate-500">Supported values here are document-evidence candidates and may not yet be accepted into the declaration.</p>
-        </div>
-        <div class="mt-5 grid gap-3">
-          {% for field in engine2_dossier.fields %}
-          <article class="rounded-lg border border-slate-200 p-3" data-engine2-field="{{ field.field_key }}" data-engine2-state="{{ field.state }}">
-            <strong>{{ field.label }}</strong> · {{ field.state|replace("_", " ") }}
-            {% if field.values %}<p class="mt-1">{{ field.values|join(", ") }}</p>{% else %}<p class="mt-1">Missing</p>{% endif %}
-            {% if field.evidence %}
-            <details class="mt-2"><summary>Evidence ({{ field.evidence|length }})</summary>
-              {% for line_key, line_evidence in field.line_evidence_groups %}
-              <section class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2" data-engine2-line-evidence="{{ line_key }}">
-                <p class="text-xs font-semibold text-slate-700">Line {{ line_key }} evidence</p>
-                {% for evidence in line_evidence %}<p class="mt-1 text-xs" data-engine2-evidence data-engine2-evidence-class="{{ evidence.evidence_class }}" data-engine2-source-page="{{ evidence.page }}"><strong>{{ evidence.source_filename }}</strong> · page {{ evidence.page }} · {{ evidence.evidence_class }}<br>Source: {{ evidence.source_text }}<br>Raw: {{ evidence.raw_text }} · Normalized: {{ evidence.normalized_value }} · score {{ evidence.candidate_score }} · authority {{ evidence.source_authority }} · {{ evidence.scope }} · line {{ evidence.line_key }}{% if evidence.component_key %} · component {{ evidence.component_key }}{% endif %}{% if evidence.bbox %} · bbox {{ evidence.bbox|join(", ") }}{% endif %}</p>{% endfor %}
-              </section>
-              {% endfor %}
-              {% if field.global_evidence %}
-              <section class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2" data-engine2-global-evidence>
-                <p class="text-xs font-semibold text-slate-700">Global / cross-line evidence</p>
-                {% for evidence in field.global_evidence %}<p class="mt-1 text-xs" data-engine2-evidence data-engine2-evidence-class="{{ evidence.evidence_class }}" data-engine2-source-page="{{ evidence.page }}"><strong>{{ evidence.source_filename }}</strong> · page {{ evidence.page }} · {{ evidence.evidence_class }}<br>Source: {{ evidence.source_text }}<br>Raw: {{ evidence.raw_text }} · Normalized: {{ evidence.normalized_value }} · score {{ evidence.candidate_score }} · authority {{ evidence.source_authority }} · {{ evidence.scope }}{% if evidence.component_key %} · component {{ evidence.component_key }}{% endif %}{% if evidence.bbox %} · bbox {{ evidence.bbox|join(", ") }}{% endif %}</p>{% endfor %}
-              </section>
-              {% endif %}
-            </details>
-            {% endif %}
-          </article>
-          {% endfor %}
-        </div>
-        {% if engine2_dossier.issues %}
-        <div class="mt-5 grid gap-3">
-          {% for issue in engine2_dossier.issues %}
-          <article class="rounded-lg border border-amber-200 p-3" data-engine2-issue>
-            <strong>{{ issue.label }}</strong> · {{ issue.severity }} · {{ issue.issue_type }}
-            <p>{{ issue.message }}</p>
-            <p class="text-xs">Human review required: {{ issue.requires_human_review }} · {{ issue.source_filenames|join(", ") }}{% if issue.line_key %} · line {{ issue.line_key }}{% endif %}{% if issue.component_key %} · component {{ issue.component_key }}{% endif %}</p>
-          </article>
-          {% endfor %}
-        </div>
-        {% endif %}
-      {% endif %}
-      <p class="mt-5 text-xs text-slate-500">This document-evidence analysis is not a legal compliance determination; the human-reviewed preparation record remains authoritative. Litoral Trace does not submit this operation to ACE or LAWGS.</p>
-    </div>
-  </details>
-
   <p class="px-1 text-xs text-slate-500">Human review required for unresolved exceptions. Litoral Trace does not submit this operation to ACE or LAWGS. Preparation work product only; not a legal compliance determination.</p>
+</div>
+
+<div
+  id="engine2-dossier-slot"
+  class="mt-6"
+  data-engine2-dossier-slot
+  hx-swap-oob="outerHTML:#engine2-dossier-slot"
+>
+  {% include "us_lacey/fragments/engine2_dossier.html" %}
 </div>
 
 <script>

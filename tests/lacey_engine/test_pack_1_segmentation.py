@@ -3,13 +3,14 @@ from __future__ import annotations
 from fpdf import FPDF
 import pytest
 
-from litoral_trace.lacey_engine.domain import DocumentType, FieldStatus
+from litoral_trace.lacey_engine.domain import DocumentType, FieldStatus, LayoutBlock, ParsedLayout
 from litoral_trace.lacey_engine.errors import UnsupportedDocumentDomainError
 from litoral_trace.lacey_engine.pipeline import process_bundle
 from litoral_trace.lacey_engine.segmentation import (
     DocumentDomain,
     PageClassification,
     classify_domain_text,
+    segment,
     starts_new_document,
 )
 
@@ -123,6 +124,47 @@ def test_strong_anchor_starts_new_document_without_continuity():
     )
 
     assert starts_new_document(previous, current) is True
+
+@pytest.mark.parametrize(
+    ("title", "expected_type"),
+    (
+        ("ENTRY WORKSHEET", DocumentType.CUSTOMS_ENTRY_SUMMARY),
+        ("BOTANICAL DECLARATION", DocumentType.SPECIES_DECLARATION),
+        ("ARRIVAL NOTICE", DocumentType.ARRIVAL_NOTICE),
+        ("PLANT DATA WORKSHEET", DocumentType.SPECIES_DECLARATION),
+        ("SUPPLIER DECLARATION", DocumentType.SUPPLIER_DECLARATION),
+    ),
+)
+def test_support_document_strong_anchors_beat_shared_shipment_fingerprint(
+    title,
+    expected_type,
+):
+    shared_bill = "B/L No: MBL-GOLDEN-2026"
+    layout = ParsedLayout(
+        blocks=(
+            LayoutBlock(
+                "p1",
+                1,
+                None,
+                f"COMMERCIAL INVOICE\n{shared_bill}",
+                "TEXT_LINE",
+            ),
+            LayoutBlock(
+                "p2",
+                2,
+                None,
+                f"{title}\n{shared_bill}",
+                "TEXT_LINE",
+            ),
+        ),
+        page_count=2,
+    )
+
+    sections = segment(layout, DocumentType.COMMERCIAL_INVOICE)
+
+    assert len(sections) == 2
+    assert sections[1].document_type is expected_type
+    assert (sections[1].page_start, sections[1].page_end) == (2, 2)
 
 
 def test_high_confidence_semantic_transition_starts_new_document():
