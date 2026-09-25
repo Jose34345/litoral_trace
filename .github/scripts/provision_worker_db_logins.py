@@ -43,9 +43,11 @@ def _ensure_login(cur, *, login: str, password: str, group: str) -> None:
         )
     cur.execute(
         sql.SQL(
-            "ALTER ROLE {} WITH LOGIN INHERIT NOBYPASSRLS PASSWORD %s"
-        ).format(sql.Identifier(login)),
-        (password,),
+            "ALTER ROLE {} WITH LOGIN INHERIT NOBYPASSRLS PASSWORD {}"
+        ).format(
+            sql.Identifier(login),
+            sql.Literal(password),
+        )
     )
     cur.execute(
         sql.SQL("GRANT {} TO {}").format(
