@@ -1,0 +1,31 @@
+name: Probe Worker Health
+
+on:
+  push:
+    branches:
+      - ops/provision-worker-db-logins
+    paths:
+      - ".github/workflows/probe-worker-health.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Probe dedicated worker health
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            code="$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 20               https://litoral-trace-us-lacey-worker-free.onrender.com/health || true)"
+            body="$(cat /tmp/body 2>/dev/null || true)"
+            echo "attempt=$attempt status=$code body=$body"
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
