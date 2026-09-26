@@ -7,6 +7,8 @@ from litoral_trace.web.us_lacey_operational_views import _review_field_groups
 
 ROOT = Path(__file__).resolve().parents[1]
 DETAIL_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/operation_detail.html"
+OPERATIONS_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/operations.html"
+NEW_OPERATION_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/new_operation.html"
 WORKSPACE_TEMPLATE = ROOT / "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
 
 
@@ -62,9 +64,54 @@ def test_document_dossier_does_not_claim_final_preparation_readiness():
 def test_review_workspace_is_exception_first():
     source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
 
-    assert "You only need to handle missing facts, review-required evidence, or genuine conflicts." in source
+    assert "Review shipment" in source
+    assert "Litoral Trace has already reconciled consistent evidence." in source
+    assert "need attention before generating the declaration package." in source
     assert "Only missing information, review-required evidence, or genuinely conflicting evidence appears here." in source
     assert "Auto-Resolved Data" in source
+    assert 'activateTab(root, "action")' in source
+
+
+def test_review_kpis_and_tabs_follow_operational_priority():
+    source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
+
+    action_kpi = source.index('data-review-kpi="action"')
+    resolved_kpi = source.index('data-review-kpi="resolved"')
+    confirmed_kpi = source.index('data-review-kpi="confirmed"')
+    documents_kpi = source.index('data-review-kpi="documents"')
+    assert action_kpi < resolved_kpi < confirmed_kpi < documents_kpi
+
+    action_tab = source.index('data-review-tab-button="action"')
+    resolved_tab = source.index('data-review-tab-button="resolved"')
+    confirmed_tab = source.index('data-review-tab-button="confirmed"')
+    regulatory_tab = source.index('data-review-tab-button="regulatory"')
+    assert action_tab < resolved_tab < confirmed_tab < regulatory_tab
+
+
+def test_document_intake_teaches_complete_pack_and_reprocessing():
+    best_practice = (
+        "Best practice: upload all available shipment documents before the first "
+        "processing run. You can add more files later and reprocess."
+    )
+    operations = OPERATIONS_TEMPLATE.read_text(encoding="utf-8")
+    detail = DETAIL_TEMPLATE.read_text(encoding="utf-8")
+    new_operation = NEW_OPERATION_TEMPLATE.read_text(encoding="utf-8")
+
+    assert best_practice in operations
+    assert best_practice in detail
+    assert best_practice in new_operation
+    assert "Need to add more documents?" in detail
+    assert "Add documents &amp; reprocess" in detail
+    assert "Reprocessing may update auto-resolved fields, evidence, and remaining exceptions." in detail
+
+
+def test_advanced_evidence_uses_customer_safe_missing_language():
+    source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
+
+    assert "NO DIRECT CANDIDATE" in source
+    assert "Resolved downstream by Canonical Truth" not in source
+    assert "engine2_downstream_annotations.get(field.field_key)" in source
+    assert "No direct Engine 2 candidate" in source
 
 
 def test_auto_resolved_contract_includes_canonical_supported_statuses():
