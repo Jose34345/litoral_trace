@@ -165,13 +165,16 @@ def test_high_confidence_semantic_transition_starts_new_document():
     assert starts_new_document(previous, current) is True
 
 
-def test_pack_1_golden_fixture_segments_three_logical_documents_without_leakage():
+def test_pack_1_golden_fixture_segments_strongly_anchored_documents_without_leakage():
     bundle = process_bundle(
         filename="pack-1-fmc-pages-7-13.pdf",
         content=_pack_1_pdf(),
     )
 
-    assert len(bundle.documents) == 3
+    # Page 7 carries a fresh OCEAN BILL OF LADING strong anchor. Under the P0
+    # precedence contract it must start a new logical document even though the
+    # B/L and container fingerprints are shared with pages 4-6.
+    assert len(bundle.documents) == 4
     assert [
         (
             logical.document_type,
@@ -182,19 +185,24 @@ def test_pack_1_golden_fixture_segments_three_logical_documents_without_leakage(
     ] == [
         (DocumentType.COMMERCIAL_INVOICE, 1, 2),
         (DocumentType.PACKING_LIST, 3, 3),
-        (DocumentType.BILL_OF_LADING, 4, 7),
+        (DocumentType.BILL_OF_LADING, 4, 6),
+        (DocumentType.BILL_OF_LADING, 7, 7),
     ]
 
-    invoice, packing_list, bill_of_lading = bundle.documents
+    invoice, packing_list, bill_of_lading, ocean_bill = bundle.documents
 
     assert invoice.resolution.field("container_number").status is FieldStatus.MISSING
     assert packing_list.resolution.field("container_number").status is FieldStatus.MISSING
 
-    container = bill_of_lading.resolution.field("container_number")
-    assert container.status is FieldStatus.MATCHED
-    assert container.effective_value == "MSKU0857658"
-    assert container.winning_candidate is not None
-    assert 4 <= container.winning_candidate.provenance.page <= 7
+    for logical, page_start, page_end in (
+        (bill_of_lading, 4, 6),
+        (ocean_bill, 7, 7),
+    ):
+        container = logical.resolution.field("container_number")
+        assert container.status is FieldStatus.MATCHED
+        assert container.effective_value == "MSKU0857658"
+        assert container.winning_candidate is not None
+        assert page_start <= container.winning_candidate.provenance.page <= page_end
 
     assert all(
         1 <= candidate.provenance.page <= 2
@@ -207,8 +215,13 @@ def test_pack_1_golden_fixture_segments_three_logical_documents_without_leakage(
         for candidate in field.candidates
     )
     assert all(
-        4 <= candidate.provenance.page <= 7
+        4 <= candidate.provenance.page <= 6
         for field in bill_of_lading.resolution.fields.values()
+        for candidate in field.candidates
+    )
+    assert all(
+        candidate.provenance.page == 7
+        for field in ocean_bill.resolution.fields.values()
         for candidate in field.candidates
     )
 
