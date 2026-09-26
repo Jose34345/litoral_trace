@@ -8,7 +8,7 @@
   <div class="flex min-w-0 items-center gap-2"{% if alias_error %} hidden{% endif %} data-operation-alias-display>
     <h1 class="lt-page-header__title min-w-0">
       <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
-      <span class="break-words" data-operation-alias-label>{{ detail.client_reference }}</span>
+      <span id="operation-alias-label" class="break-words" data-operation-alias-label>{{ detail.client_reference }}</span>
     </h1>
     <button
       type="button"
