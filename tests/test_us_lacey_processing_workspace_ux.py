@@ -111,3 +111,32 @@ def test_action_required_badge_says_needs_confirmation_when_value_exists():
 
 def test_action_required_badge_says_missing_only_when_value_is_absent():
     assert _action_status_text(proposed_value=None) == "Missing information"
+
+
+def test_terminal_processing_removes_stale_engine2_dossier_out_of_band():
+    template = templates.get_template(
+        "us_lacey/fragments/processing_fragment.html"
+    )
+    html = template.render(
+        detail=SimpleNamespace(public_id="11111111-2222-3333-4444-555555555555"),
+        processing=SimpleNamespace(
+            terminal=True,
+            failed=False,
+            state="READY_FOR_REVIEW",
+        ),
+    )
+
+    assert 'hx-swap-oob="delete:#engine2-dossier"' in html
+    assert html.count('id="operation-workspace"') == 1
+
+
+def test_final_workspace_defensively_deduplicates_engine2_dossier():
+    from pathlib import Path
+
+    source = Path(
+        "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
+    ).read_text(encoding="utf-8")
+
+    assert source.count('id="engine2-dossier"') == 1
+    assert "function dedupeEngine2Dossier(root)" in source
+    assert 'document.querySelectorAll("#engine2-dossier")' in source
