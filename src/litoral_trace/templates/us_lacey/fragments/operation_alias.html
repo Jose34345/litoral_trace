@@ -5,7 +5,7 @@
   data-operation-alias-shell
   {% if alias_saved %}data-toast-success="Operation name updated."{% endif %}
 >
-  <div class="flex min-w-0 items-center gap-2" data-operation-alias-display>
+  <div class="flex min-w-0 items-center gap-2"{% if alias_error %} hidden{% endif %} data-operation-alias-display>
     <h1 class="lt-page-header__title min-w-0">
       <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
       <span class="break-words" data-operation-alias-label>{{ detail.client_reference }}</span>
@@ -15,7 +15,7 @@
       class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
       aria-label="Edit operation name"
       aria-controls="operation-alias-editor"
-      aria-expanded="false"
+      aria-expanded="{{ 'true' if alias_error else 'false' }}"
       data-operation-alias-edit
     >
       <i class="fa-solid fa-pen" aria-hidden="true"></i>
@@ -30,7 +30,7 @@
     hx-post="/operations/{{ detail.public_id }}/alias"
     hx-target="#operation-alias-shell"
     hx-swap="outerHTML transition:true"
-    hidden
+    {% if not alias_error %}hidden{% endif %}
     data-operation-alias-form
   >
     <input type="hidden" name="csrf_token" value="{{ alias_csrf }}">
