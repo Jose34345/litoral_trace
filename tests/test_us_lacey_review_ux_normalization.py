@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import inspect
+from types import SimpleNamespace
 from pathlib import Path
 
 from litoral_trace.us_lacey.candidate_normalization import (
@@ -14,6 +15,7 @@ from litoral_trace.us_lacey.ppq505 import (
 from litoral_trace.web.us_lacey_operational_views import (
     _auto_resolved_evidence_summary,
     _present_review_field,
+    _review_field_groups,
     render_operation_workspace,
 )
 
@@ -136,6 +138,38 @@ def test_merchandise_description_pool_rejects_golden_packet_structural_noise():
     groups = group_candidate_evidence("merchandise_description", candidates)
     assert len(groups) == 1
     assert groups[0].representative.id == 99
+
+
+def test_review_status_is_visible_in_action_required_and_cannot_disappear_from_ui():
+    detail = SimpleNamespace(
+        fields=(
+            SimpleNamespace(
+                field_name="country_of_harvest",
+                status="REVIEW",
+                candidates=(),
+                proposed_value="Brasil",
+                effective_value=None,
+            ),
+        )
+    )
+
+    attention_fields, auto_supported, settled = _review_field_groups(detail)
+
+    assert len(attention_fields) == 1
+    assert attention_fields[0].field_name == "country_of_harvest"
+    assert attention_fields[0].status == "REVIEW"
+    assert auto_supported == ()
+    assert settled == ()
+
+
+def test_advanced_dossier_labels_extraction_gaps_as_diagnostics_not_required_missing():
+    template = Path(
+        "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
+    ).read_text(encoding="utf-8")
+
+    assert "NO DOCUMENT CANDIDATE" in template
+    assert "diagnostic extraction coverage, not a checklist of required declaration fields" in template
+    assert "Evidence was found, but no canonical value has been accepted yet." in template
 
 
 def test_exception_first_workspace_has_three_tabs_and_htmx_actions():
