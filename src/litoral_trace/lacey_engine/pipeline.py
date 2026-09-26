@@ -33,7 +33,7 @@ from .semantic_graph import (
     valid_mid_value,
 )
 
-ENGINE_VERSION = "lacey-engine-2.6.1"
+ENGINE_VERSION = "lacey-engine-2.6.2"
 _FIELDS = (
     "estimated_arrival_date",
     "bill_of_lading",
