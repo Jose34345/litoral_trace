@@ -32,7 +32,7 @@ from .semantic_graph import (
     valid_mid_value,
 )
 
-ENGINE_VERSION = "lacey-engine-2.5.0"
+ENGINE_VERSION = "lacey-engine-2.6.0"
 _FIELDS = (
     "estimated_arrival_date",
     "bill_of_lading",
@@ -63,11 +63,11 @@ _IMPORTER_NAME_LABEL = re.compile(r"(?:importer|importer name|importer of record
 _CONSIGNEE_NAME_LABEL = re.compile(r"(?:consignee|consignee name)", re.I)
 _ENTRY_LABEL = re.compile(r"(?:entry number|entry no\.?|filing entry reference|filing entry number)", re.I)
 _MID_LABEL = re.compile(r"(?:mid|manufacturer id|manufacturer identification|manufacturer identification code(?: \(mid\))?)", re.I)
-_HTS_LABEL = re.compile(r"(?:hts|hts code|hts number|hts no\.?)", re.I)
-_ENTERED_VALUE_LABEL = re.compile(r"(?:entered value|customs entered value)", re.I)
+_HTS_LABEL = re.compile(r"(?:htsus|hts|hts code|hts number|hts no\.?)", re.I)
+_ENTERED_VALUE_LABEL = re.compile(r"(?:entered value(?: usd)?|customs entered value(?: usd)?)", re.I)
 _CURRENCY_LABEL = re.compile(r"(?:currency|currency code)", re.I)
 _ARTICLE_COMPONENT_LABEL = re.compile(r"(?:article\s*/\s*component|article component|component)", re.I)
-_PLANT_QUANTITY_LABEL = re.compile(r"(?:quantity of plant material|plant material quantity|plant quantity)", re.I)
+_PLANT_QUANTITY_LABEL = re.compile(r"(?:quantity of plant material|plant material quantity|plant quantity|plant qty)", re.I)
 _PLANT_UNIT_LABEL = re.compile(r"(?:metric unit|plant unit|unit of plant material|plant material unit)", re.I)
 _PERCENT_RECYCLED_LABEL = re.compile(r"(?:percent recycled|recycled percentage|% recycled)", re.I)
 _ISO_CURRENCY = re.compile(r"^(USD|EUR|CAD|GBP|AUD|JPY|CNY|BRL|MXN)\b", re.I)
@@ -122,7 +122,10 @@ def _plant_declaration_table_ids(layout) -> frozenset[str]:
         )
     qualified: set[str] = set()
     for table_id, headers in headers_by_table.items():
-        has_quantity = any(_PLANT_QUANTITY_LABEL.fullmatch(header) for header in headers)
+        has_quantity = any(
+            _PLANT_QUANTITY_LABEL.fullmatch(header) or header in {"qty", "quantity"}
+            for header in headers
+        )
         has_unit = any(_PLANT_UNIT_LABEL.fullmatch(header) or header == "unit" for header in headers)
         has_genus = any(re.fullmatch(r"genus|plant genus|scientific name genus", header) for header in headers)
         has_species = any(re.fullmatch(r"species|plant species|scientific name species", header) for header in headers)
@@ -163,7 +166,10 @@ def _plant_quantity_row_keys(layout, table_ids: frozenset[str]) -> frozenset[tup
         if not block.table_id or block.row_index is None or str(block.table_id) not in table_ids:
             continue
         key = " ".join(str(block.key_text or block.table_header or "").split())
-        if not _PLANT_QUANTITY_LABEL.fullmatch(key):
+        if not (
+            _PLANT_QUANTITY_LABEL.fullmatch(key)
+            or key.casefold() in {"qty", "quantity"}
+        ):
             continue
         amount, _unit = _plant_quantity_parts(str(block.value_text or block.text or ""))
         if amount:
@@ -251,7 +257,14 @@ def _extract(layout):
                 found["species"].append(_candidate("species", value, block, key))
             elif re.search(r"country of harvest|harvest country|harvested in", lower):
                 found["country_of_harvest"].append(_candidate("country_of_harvest", value, block, key))
-            elif _PLANT_QUANTITY_LABEL.fullmatch(key):
+            elif (
+                _PLANT_QUANTITY_LABEL.fullmatch(key)
+                or (
+                    lower in {"qty", "quantity"}
+                    and block.table_id is not None
+                    and str(block.table_id) in plant_declaration_tables
+                )
+            ):
                 amount, unit = _plant_quantity_parts(value)
                 if amount:
                     found["plant_quantity"].append(_candidate("plant_quantity", amount, block, key, EvidenceClass.DERIVED, "plant_quantity"))
@@ -298,7 +311,7 @@ def _extract(layout):
             candidate_value = " ".join(match.group("value").split()).upper()
             if valid_mid_value(candidate_value):
                 found["manufacturer_id"].append(_candidate("manufacturer_id", candidate_value, block, match.group("label")))
-        for match in re.finditer(r"(?P<label>HTS(?:\s+(?:Code|Number|No\.?))?)\s*[:#-]?\s*(?P<value>\d{4,10}(?:[. -]\d{1,4})*)", text, re.I):
+        for match in re.finditer(r"(?P<label>HTS(?:US|\s+(?:Code|Number|No\.?))?)\s*[:#-]?\s*(?P<value>\d{4,10}(?:[. -]\d{1,4})*)", text, re.I):
             found["hts_code"].append(_candidate("hts_code", match.group("value"), block, match.group("label")))
         for match in re.finditer(
             r"(?:country of harvest|harvest country|harvested in|pa[ií]s de colheita|pa[ií]s de cosecha)\s*[:#-]?\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .'-]{1,60}?)(?=\s+-|\s+\||$)",
