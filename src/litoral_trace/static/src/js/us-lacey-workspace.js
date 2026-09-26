@@ -84,8 +84,14 @@ const showToast = (message, tone = "success", duration = 4000) => {
 
 window.LitoralTraceToast = showToast;
 
+const scopedNodes = (scope, selector) => {
+  const nodes = [...(scope?.querySelectorAll?.(selector) || [])];
+  if (scope?.matches?.(selector)) nodes.unshift(scope);
+  return nodes;
+};
+
 const hydrateBootstrapToasts = (scope = document) => {
-  scope.querySelectorAll?.("[data-toast-bootstrap], [data-toast-success]").forEach((node) => {
+  scopedNodes(scope, "[data-toast-bootstrap], [data-toast-success]").forEach((node) => {
     if (node.dataset.toastHydrated === "true") return;
     node.dataset.toastHydrated = "true";
     const message = node.dataset.toastBootstrap || node.dataset.toastSuccess || "";
@@ -95,7 +101,7 @@ const hydrateBootstrapToasts = (scope = document) => {
 };
 
 const initializeAliasEditor = (scope = document) => {
-  scope.querySelectorAll?.("[data-operation-alias-shell]").forEach((shell) => {
+  scopedNodes(scope, "[data-operation-alias-shell]").forEach((shell) => {
     if (shell.dataset.aliasBound === "true") return;
     shell.dataset.aliasBound = "true";
 
@@ -216,13 +222,13 @@ const openXmlPreview = async (trigger) => {
 };
 
 const initializeXmlPreview = (scope = document) => {
-  scope.querySelectorAll?.("[data-xml-preview-trigger]").forEach((trigger) => {
+  scopedNodes(scope, "[data-xml-preview-trigger]").forEach((trigger) => {
     if (trigger.dataset.xmlPreviewBound === "true") return;
     trigger.dataset.xmlPreviewBound = "true";
     trigger.addEventListener("click", () => openXmlPreview(trigger));
   });
 
-  scope.querySelectorAll?.("[data-xml-preview-modal]").forEach((modal) => {
+  scopedNodes(scope, "[data-xml-preview-modal]").forEach((modal) => {
     if (modal.dataset.xmlModalBound === "true") return;
     modal.dataset.xmlModalBound = "true";
 
