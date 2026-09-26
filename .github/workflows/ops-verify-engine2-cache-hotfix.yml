@@ -1,0 +1,76 @@
+name: Ops - Verify Engine2 cache hotfix live
+
+on:
+  push:
+    branches:
+      - ops/northflank-release-p0-20260925
+    paths:
+      - .github/workflows/ops-verify-engine2-cache-hotfix.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+      TARGET_SHA: 60f72b34e84587dd327a930661c364c58121c919
+    steps:
+      - run: npm install --global @northflank/cli@0.13.0
+      - run: northflank login -n ci -t "$NORTHFLANK_API_KEY" >/dev/null
+
+      - name: Wait for exact web and worker rollouts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for service in litoral-trace-web litoral-trace-worker; do
+            ready=""
+            for attempt in $(seq 1 120); do
+              northflank get service --project litoral-trace --service "$service" -o json --quiet > "/tmp/$service.json"
+              build="$(jq -r '.status.build.status // empty' "/tmp/$service.json")"
+              deploy="$(jq -r '.status.deployment.status // empty' "/tmp/$service.json")"
+              sha="$(jq -r '.deployment.internal.deployedSHA // empty' "/tmp/$service.json")"
+              echo "$service build=$build deploy=$deploy sha=$sha"
+              if [ "$build" = "SUCCESS" ] && [ "$deploy" = "COMPLETED" ] && [ "$sha" = "$TARGET_SHA" ]; then
+                ready=1
+                break
+              fi
+              sleep 5
+            done
+            test "$ready" = "1"
+          done
+
+      - name: Verify web health and live readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS https://lacey.litoraltrace.com/health -o /tmp/health.json
+          cat /tmp/health.json
+          jq -e '.status == "healthy"' /tmp/health.json >/dev/null
+
+          curl -fsS https://lacey.litoraltrace.com/live-readiness -o /tmp/live.json
+          cat /tmp/live.json
+          jq -e '
+            .status == "ready" and
+            .inline_worker == "disabled" and
+            .storage_roundtrip == "ready" and
+            .ocr_runtime == "ready"
+          ' /tmp/live.json >/dev/null
+          echo "WEB_RUNTIME=PASS"
+
+      - name: Verify worker and Engine2 contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(northflank exec service             --projectId=litoral-trace             --serviceId=litoral-trace-worker             --cmd="python -c \"from litoral_trace.lacey_engine.pipeline import ENGINE_VERSION; from litoral_trace.us_lacey.lacey_engine_service import engine2_mode; from litoral_trace.us_lacey.canonical_shipment_truth import CANONICAL_PUBLISHER_VERSION; print('ENGINE_VERSION='+ENGINE_VERSION); print('ENGINE2_MODE='+engine2_mode()); print('CANONICAL_PUBLISHER_VERSION='+CANONICAL_PUBLISHER_VERSION)\"")"
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q 'ENGINE_VERSION=lacey-engine-2.6.0'
+          printf '%s' "$out" | grep -q 'ENGINE2_MODE=SHADOW'
+          printf '%s' "$out" | grep -q 'CANONICAL_PUBLISHER_VERSION=lacey_canonical_shipment_truth_v3'
+
+          health="$(northflank exec service             --projectId=litoral-trace             --serviceId=litoral-trace-worker             --cmd="curl -fsS http://127.0.0.1:8000/health")"
+          printf '%s\n' "$health"
+          printf '%s' "$health" | grep -q '"status":"healthy"'
+          echo "WORKER_RUNTIME=PASS"
