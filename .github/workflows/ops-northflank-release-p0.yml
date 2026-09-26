@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 40
     env:
       NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
-      TARGET_SHA: f3015f8c80a76f692e6ea6b755979652f7dbbe6e
+      TARGET_SHA: 60f72b34e84587dd327a930661c364c58121c919
       PROJECT_ID: litoral-trace
       WEB_SERVICE: litoral-trace-web
       WORKER_SERVICE: litoral-trace-worker
