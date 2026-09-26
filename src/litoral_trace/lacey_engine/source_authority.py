@@ -56,6 +56,32 @@ _AUTHORITY = {
         DocumentType.ARRIVAL_NOTICE: 35,
         DocumentType.COMMERCIAL_INVOICE: 30,
     },
+    "shipper_name": {
+        DocumentType.BILL_OF_LADING: 45,
+        DocumentType.COMMERCIAL_INVOICE: 25,
+        DocumentType.PACKING_LIST: 15,
+    },
+    "supplier_name": {
+        DocumentType.SUPPLIER_DECLARATION: 50,
+        DocumentType.HARVEST_DECLARATION: 45,
+        DocumentType.SPECIES_DECLARATION: 35,
+        DocumentType.COMMERCIAL_INVOICE: 25,
+    },
+    "manufacturer_name": {
+        DocumentType.SUPPLIER_DECLARATION: 45,
+        DocumentType.COMMERCIAL_INVOICE: 30,
+        DocumentType.CUSTOMS_ENTRY_SUMMARY: 25,
+    },
+    "notify_party_name": {
+        DocumentType.BILL_OF_LADING: 40,
+        DocumentType.ARRIVAL_NOTICE: 35,
+    },
+    "country_of_origin": {
+        DocumentType.CUSTOMS_ENTRY_SUMMARY: 45,
+        DocumentType.CERTIFICATE_OF_ORIGIN: 45,
+        DocumentType.COMMERCIAL_INVOICE: 30,
+        DocumentType.PACKING_LIST: 20,
+    },
     "description": {
         DocumentType.COMMERCIAL_INVOICE: 40,
         DocumentType.BILL_OF_LADING: 35,
