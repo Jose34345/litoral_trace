@@ -133,7 +133,7 @@ _EXPLICIT_HEADER_ALIASES = {
 
 _RAW_TABLE_FIELD = re.compile(r"^raw\.table\.(?P<table>\d+)\.(?P<header>.+)$")
 _HTS_SOURCE_VALUE = re.compile(
-    r"^(?:\d{6,10}|\d{4}[.-]\d{2}[.-]\d{2,4}(?:\s*\d)?)$"
+    r"^(?:\d{6,10}|\d{4}[.-]\d{2}(?:[.-]\d{2,4})?)$"
 )
 _DATA_ROW = re.compile(r"(?:^|;)data_row:(?P<row>\d+)(?:;|$)")
 _CONTAINER_TOKEN = re.compile(
