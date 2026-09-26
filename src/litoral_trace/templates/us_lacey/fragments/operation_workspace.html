@@ -1,6 +1,6 @@
 {% from "components/ui.html" import button, empty_state %}
 {% from "us_lacey/fragments/review_field_macros.html" import action_status %}
-{% macro friendly_status(value) %}{% set labels = {"MISSING":"Missing information", "CONFLICT":"Conflicting information", "SUPPORTED":"Auto-resolved", "MATCHED":"Confirmed", "NOT_REQUIRED":"Not required", "REVIEW":"Needs review", "FOUND":"Suggested"} %}{{ labels.get(value, value|replace("_", " ")|title) }}{% endmacro %}
+{% macro friendly_status(value) %}{% set labels = {"MISSING":"Missing information", "CONFLICT":"Conflicting information", "SUPPORTED":"Auto-resolved", "SUPPORTED MULTIPLE":"Auto-resolved", "SUPPORTED_MULTIPLE":"Auto-resolved", "FOUND":"Auto-resolved", "MATCHED":"Confirmed", "NOT_REQUIRED":"Not required", "REVIEW":"Needs review"} %}{{ labels.get(value, value|replace("_", " ")|title) }}{% endmacro %}
 {% macro review_telemetry_inputs() %}<input type="hidden" name="review_started_at" data-review-started-at><input type="hidden" name="review_elapsed_seconds" data-review-elapsed-seconds><input type="hidden" name="review_modified_field_ids" data-review-modified-field-ids>{% endmacro %}
 
 {% macro missing_guidance(field_name) %}{% set guidance = {
@@ -377,8 +377,16 @@
     }
   }
 
+  function dedupeEngine2Dossier(root) {
+    document.querySelectorAll("#engine2-dossier").forEach((node) => {
+      if (!root.contains(node)) node.remove();
+    });
+  }
+
   function initialize(root) {
-    if (!root || root.dataset.tabsInitialized === "true") return;
+    if (!root) return;
+    dedupeEngine2Dossier(root);
+    if (root.dataset.tabsInitialized === "true") return;
     root.dataset.tabsInitialized = "true";
 
     root.querySelectorAll("[data-review-tab-button]").forEach((button) => {
@@ -400,6 +408,7 @@
       const root = document.querySelector("[data-review-tabs]");
       if (!root) return;
       root.querySelectorAll('[data-review-resolved="true"]').forEach((node) => node.remove());
+      dedupeEngine2Dossier(root);
       refreshActionCount(root);
     });
 
