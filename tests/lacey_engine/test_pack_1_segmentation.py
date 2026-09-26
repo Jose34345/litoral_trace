@@ -81,7 +81,7 @@ def _pack_1_pdf() -> bytes:
     return bytes(output) if not isinstance(output, str) else output.encode("latin-1")
 
 
-def test_continuity_fingerprint_beats_repeated_strong_anchor():
+def test_explicit_same_document_pagination_keeps_repeated_title_together():
     previous = PageClassification(
         page=1,
         document_type=DocumentType.COMMERCIAL_INVOICE,
@@ -120,6 +120,29 @@ def test_strong_anchor_starts_new_document_without_continuity():
         confidence=0.99,
         block_ids=("p3",),
         strong_anchor=DocumentType.PACKING_LIST,
+    )
+
+    assert starts_new_document(previous, current) is True
+
+
+def test_strong_anchor_beats_shared_bill_and_container_fingerprints():
+    previous = PageClassification(
+        page=1,
+        document_type=DocumentType.BILL_OF_LADING,
+        confidence=0.99,
+        block_ids=("p1",),
+        strong_anchor=DocumentType.BILL_OF_LADING,
+        bill_numbers=frozenset({"MAEU2609240001"}),
+        containers=frozenset({"MSCU1234566"}),
+    )
+    current = PageClassification(
+        page=2,
+        document_type=DocumentType.PACKING_LIST,
+        confidence=0.99,
+        block_ids=("p2",),
+        strong_anchor=DocumentType.PACKING_LIST,
+        bill_numbers=frozenset({"MAEU2609240001"}),
+        containers=frozenset({"MSCU1234566"}),
     )
 
     assert starts_new_document(previous, current) is True
@@ -260,3 +283,65 @@ def test_process_bundle_rejects_legal_document_before_layout_extraction(monkeypa
 
     assert excinfo.value.code == "UNSUPPORTED_DOMAIN"
     assert excinfo.value.domain == "LEGAL_DECISION"
+
+
+def _golden_9_document_pdf() -> bytes:
+    """Nine logical documents that intentionally share shipment fingerprints."""
+
+    common = (
+        "Shipment Ref: LT-GOLDEN-2026-0924-A\n"
+        "Invoice No. MHW-INV-260924-01\n"
+        "B/L No: MAEU2609240001\n"
+        "Container No. MSCU1234566\n"
+    )
+    pages = (
+        "COMMERCIAL INVOICE\n" + common + "HTSUS 4419.90.9000\n",
+        "OCEAN BILL OF LADING\n" + common + "Savannah, GA\n",
+        "U.S. ENTRY WORKSHEET\n" + common + "Entry 123-4567890-1\n",
+        "BOTANICAL / LACEY SUPPORTING DECLARATION\n" + common + "Acacia mangium 315 KG Vietnam\n",
+        "PACKING LIST\n" + common + "64 CARTONS\n",
+        "SUPPLIER MATERIAL ORIGIN STATEMENT\n" + common + "Acacia mangium Vietnam\n",
+        "ARRIVAL NOTICE\n" + common + "ETA October 3, 2026\n",
+        "PRODUCT COMPOSITION / BOM DECLARATION\n" + common + "Acacia mangium 0.750 KG\n",
+        "LACEY ACT PLANT DATA WORKSHEET\n" + common + "4419.90.9000 Acacia mangium 315 KG\n",
+    )
+
+    pdf = FPDF()
+    for index, page_text in enumerate(pages, start=1):
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=11)
+        for line in (page_text + f"Page {index} of 9\n").splitlines():
+            pdf.cell(0, 8, text=line, new_x="LMARGIN", new_y="NEXT")
+    output = pdf.output()
+    return bytes(output) if not isinstance(output, str) else output.encode("latin-1")
+
+
+def test_golden_9_document_packet_strong_anchors_override_shared_fingerprints():
+    bundle = process_bundle(
+        filename="Litoral_Trace_Golden_Full_Cycle_Broker_Packet.pdf",
+        content=_golden_9_document_pdf(),
+    )
+
+    assert len(bundle.documents) == 9
+    assert [(doc.page_start, doc.page_end) for doc in bundle.documents] == [
+        (1, 1),
+        (2, 2),
+        (3, 3),
+        (4, 4),
+        (5, 5),
+        (6, 6),
+        (7, 7),
+        (8, 8),
+        (9, 9),
+    ]
+    assert [doc.document_type for doc in bundle.documents] == [
+        DocumentType.COMMERCIAL_INVOICE,
+        DocumentType.BILL_OF_LADING,
+        DocumentType.CUSTOMS_ENTRY_SUMMARY,
+        DocumentType.SPECIES_DECLARATION,
+        DocumentType.PACKING_LIST,
+        DocumentType.SUPPLIER_DECLARATION,
+        DocumentType.ARRIVAL_NOTICE,
+        DocumentType.SUPPLIER_DECLARATION,
+        DocumentType.SPECIES_DECLARATION,
+    ]
