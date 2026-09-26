@@ -182,6 +182,20 @@ def test_canonical_publication_replaces_machine_state_without_cross_line_leakage
             assert row.extractor == "canonical-shipment-truth"
             assert row.field_status == "FOUND"
 
+    importer_address = _field(
+        session,
+        org,
+        operation_id,
+        PPQ505_SHIPMENT_REFERENCE,
+        "importer_address",
+    )
+    assert importer_address is not None
+    assert importer_address.original_value is None
+    assert importer_address.normalized_value is None
+    assert importer_address.field_status == "MISSING"
+    assert importer_address.validation_status == "MISSING"
+    assert importer_address.validation_error is None
+
     description = _field(
         session,
         org,
