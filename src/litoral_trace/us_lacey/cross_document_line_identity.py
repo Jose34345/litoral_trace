@@ -675,6 +675,65 @@ def _set_description_field(field_payload: dict, rows: list[dict]) -> None:
     field_payload["supporting_evidence"] = rows
 
 
+
+def _prefer_authoritative_description_rows(rows: list[dict]) -> list[dict]:
+    """Choose one canonical wording only after exact line identity is established.
+
+    Different documents may describe the same HTS+taxon merchandise line with
+    compatible wording.  When those rows have already collapsed to one strong
+    canonical line identity, use source authority to select the publication wording.
+    Equal-authority disagreements remain untouched so downstream truth fails closed.
+    """
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    unscoped: list[dict] = []
+    for row in rows:
+        line_key = str(row.get("line_key") or "").strip()
+        if not line_key:
+            unscoped.append(row)
+            continue
+        grouped[line_key].append(row)
+
+    selected: list[dict] = list(unscoped)
+    for line_key, scoped_rows in grouped.items():
+        values = {
+            _normalized(row)
+            for row in scoped_rows
+            if _normalized(row)
+        }
+        documents = {
+            str(row.get("document_id") or "").strip()
+            for row in scoped_rows
+            if str(row.get("document_id") or "").strip()
+        }
+        if len(values) <= 1 or len(documents) < 2:
+            selected.extend(scoped_rows)
+            continue
+
+        max_authority = max(float(row.get("source_authority") or 0.0) for row in scoped_rows)
+        top_rows = [
+            row
+            for row in scoped_rows
+            if float(row.get("source_authority") or 0.0) == max_authority
+        ]
+        top_values = {
+            _normalized(row)
+            for row in top_rows
+            if _normalized(row)
+        }
+        if len(top_values) != 1:
+            # Two equally authoritative sources disagree: preserve all rows and let
+            # canonical publication expose REVIEW/CONFLICT rather than guessing.
+            selected.extend(scoped_rows)
+            continue
+
+        winner = next(iter(top_values))
+        selected.extend(
+            row for row in scoped_rows if _normalized(row) == winner
+        )
+
+    return selected
+
+
 def _promote_exact_cross_document_consensus(fields: dict) -> None:
     """Promote aggregate state when every scoped value has independent support.
 
@@ -809,6 +868,11 @@ def reconcile_cross_document_line_identity(payload: Mapping) -> dict:
             description_payload = {}
             fields["description"] = description_payload
         _set_description_field(description_payload, synthesized)
+    elif isinstance(description_payload, dict):
+        current_rows = _rows(description_payload)
+        authoritative_rows = _prefer_authoritative_description_rows(current_rows)
+        if authoritative_rows != current_rows:
+            _set_description_field(description_payload, authoritative_rows)
 
     _promote_exact_cross_document_consensus(fields)
 
