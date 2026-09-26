@@ -118,6 +118,75 @@ _ACTION_REQUIRED_STATUSES = frozenset({"MISSING", "CONFLICT", "REVIEW", "REVIEW_
 _AUTO_SUPPORTED_STATUSES = frozenset({"SUPPORTED", "FOUND", "SUPPORTED MULTIPLE", "SUPPORTED_MULTIPLE"})
 _SETTLED_STATUSES = frozenset({"MATCHED", "NOT_REQUIRED"})
 
+_ENGINE2_TO_PREPARATION_FIELD = {
+    "estimated_arrival_date": "estimated_arrival_date",
+    "bill_of_lading": "bill_of_lading",
+    "container_number": "container_number",
+    "importer_name": "importer_name",
+    "importer_address": "importer_address",
+    "consignee_name": "consignee_name",
+    "consignee_address": "consignee_address",
+    "shipper_name": "shipper_name",
+    "supplier_name": "supplier_name",
+    "manufacturer_name": "manufacturer_name",
+    "manufacturer_id": "manufacturer_id",
+    "filing_entry_reference": "filing_entry_reference",
+    "country_of_origin": "country_of_origin",
+    "description": "merchandise_description",
+    "hts_code": "hts_code",
+    "entered_value": "entered_value",
+    "article_component": "article_component",
+    "genus": "genus",
+    "species": "species",
+    "country_of_harvest": "country_of_harvest",
+    "plant_quantity": "plant_quantity",
+    "metric_unit": "metric_unit",
+    "percent_recycled": "percent_recycled",
+}
+
+_DOWNSTREAM_RESOLVED_STATUSES = (
+    _AUTO_SUPPORTED_STATUSES
+    | _SETTLED_STATUSES
+)
+
+
+def _engine2_downstream_annotations(detail) -> dict[str, str]:
+    """Explain when canonical/preparation stages resolved an Engine 2 gap.
+
+    Engine 2's dossier is intentionally a direct-evidence audit surface. A field can
+    therefore be MISSING there while the authoritative preparation record is safely
+    resolved downstream. Expose that distinction without mutating either source.
+    """
+    fields_by_name: dict[str, list[object]] = {}
+    for field in tuple(getattr(detail, "fields", ()) or ()):
+        field_name = str(getattr(field, "field_name", "") or "").strip()
+        if field_name:
+            fields_by_name.setdefault(field_name, []).append(field)
+
+    annotations: dict[str, str] = {}
+    for engine_key, preparation_field in _ENGINE2_TO_PREPARATION_FIELD.items():
+        matching = fields_by_name.get(preparation_field, ())
+        if not matching:
+            continue
+
+        statuses = {
+            str(getattr(field, "status", "") or "").upper()
+            for field in matching
+        }
+        if statuses and statuses <= {"NOT_REQUIRED"}:
+            annotations[engine_key] = "Not required by preparation rule"
+            continue
+
+        if (
+            statuses
+            and not (statuses & _ACTION_REQUIRED_STATUSES)
+            and statuses <= _DOWNSTREAM_RESOLVED_STATUSES
+            and all(_field_has_displayable_resolution(field) for field in matching)
+        ):
+            annotations[engine_key] = "Resolved downstream by Canonical Truth"
+
+    return annotations
+
 _REGULATORY_RULE_TITLES = {
     "HTS_APPLICABILITY": "HTS Schedule Coverage",
     "DE_MINIMIS": "De Minimis Exemption Assessment",
@@ -554,6 +623,7 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
         attention_fields=attention_fields,
         auto_supported_fields=auto_supported_fields,
         settled_fields=settled_fields,
+        engine2_downstream_annotations=_engine2_downstream_annotations(detail),
         processing=progress,
         error=error,
         notice=notice,
@@ -590,6 +660,7 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         attention_fields=attention_fields,
         auto_supported_fields=auto_supported_fields,
         settled_fields=settled_fields,
+        engine2_downstream_annotations=_engine2_downstream_annotations(detail),
         error=error,
         is_oob_update=is_oob_update,
     )
