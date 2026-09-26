@@ -31,44 +31,41 @@ jobs:
         shell: bash
         run: northflank login -n ci -t "$NORTHFLANK_API_KEY" >/dev/null
 
-      - name: Apply USD 149 runtime override
+      - name: Update existing portal runtime price
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import json
-          payload = {
-              "name": "Litoral Trace Price 149 Runtime",
-              "description": "Commercial price override for U.S. Lacey Early Access",
-              "type": "secret",
-              "secretType": "environment",
-              "priority": 110,
-              "restrictions": {
-                  "restricted": True,
-                  "nfObjects": [{"id": "litoral-trace-web", "type": "service"}],
-                  "tagMatchCondition": "or",
-              },
-              "secrets": {
-                  "variables": {
-                      "US_LACEY_PRIVATE_BETA_PRICE_CENTS": "14900"
-                  }
-              },
-          }
-          with open("/tmp/lt-price-149.json", "w", encoding="utf-8") as fh:
-              json.dump(payload, fh)
-          PY
 
           existing="$(northflank list secrets --project litoral-trace -o json --quiet)"
-          secret_id="$(printf '%s' "$existing" | python -c 'import sys,json; d=json.load(sys.stdin); print(next((x.get("id","") for x in d.get("secrets",[]) if x.get("name")=="Litoral Trace Price 149 Runtime"), ""))')"
+          secret_id="$(printf '%s' "$existing" | python -c 'import sys,json; d=json.load(sys.stdin); print(next((x.get("id","") for x in d.get("secrets",[]) if x.get("name")=="Litoral Trace Portal Runtime"), ""))')"
+          test -n "$secret_id"
 
-          if [ -n "$secret_id" ]; then
-            northflank patch secret --projectId=litoral-trace --secretId="$secret_id" -f /tmp/lt-price-149.json --quiet >/dev/null
-          else
-            northflank create secret --project litoral-trace -f /tmp/lt-price-149.json --quiet >/dev/null
-          fi
+          northflank get secret --projectId=litoral-trace --secretId="$secret_id" -o json --quiet > /tmp/portal-runtime.json
 
-          rm -f /tmp/lt-price-149.json
-          echo "Price override set to 14900 cents."
+          python - <<'PY'
+          import json
+          path="/tmp/portal-runtime.json"
+          with open(path, encoding="utf-8") as f:
+              payload=json.load(f)
+
+          variables=None
+          if isinstance(payload.get("secrets"), dict) and isinstance(payload["secrets"].get("variables"), dict):
+              variables=payload["secrets"]["variables"]
+          elif isinstance(payload.get("variables"), dict):
+              variables=payload["variables"]
+
+          if variables is None:
+              raise RuntimeError("Unexpected Northflank secret shape.")
+
+          variables["US_LACEY_PRIVATE_BETA_PRICE_CENTS"]="14900"
+
+          with open(path, "w", encoding="utf-8") as f:
+              json.dump(payload, f)
+          PY
+
+          northflank patch secret --projectId=litoral-trace --secretId="$secret_id" -f /tmp/portal-runtime.json --quiet >/dev/null
+          rm -f /tmp/portal-runtime.json
+          echo "Portal runtime price set to 14900 cents."
 
       - name: Restart web
         shell: bash
