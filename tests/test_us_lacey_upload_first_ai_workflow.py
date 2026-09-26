@@ -22,7 +22,8 @@ def test_operations_starts_with_multi_file_upload_and_no_manual_metadata_fields(
     assert 'action="/operations/intake"' in source
     assert 'name="documents"' in source
     assert "multiple required" in source
-    assert "No importer, consignee, broker, date or line references are required up front." in source
+    assert "Best practice: upload all available shipment documents before the first processing run." in source
+    assert "You can add more files later and reprocess." in source
     for old_manual_name in (
         'name="client_reference"',
         'name="importer_name"',

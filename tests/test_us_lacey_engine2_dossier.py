@@ -8,7 +8,11 @@ from uuid import uuid4
 from starlette.requests import Request
 from litoral_trace.us_lacey.lacey_engine_dossier import Engine2DossierAvailability, Engine2DossierEvidenceView, Engine2DossierFieldView, Engine2DossierIssueView, Engine2DossierView
 from litoral_trace.web.us_lacey_pilot_app import app
-from litoral_trace.web.us_lacey_operational_views import render_operation_detail, render_operation_workspace
+from litoral_trace.web.us_lacey_operational_views import (
+    _engine2_downstream_annotations,
+    render_operation_detail,
+    render_operation_workspace,
+)
 
 
 def _request():
@@ -51,14 +55,72 @@ def test_current_dossier_renders_all_states_provenance_issues_and_harvest_separa
     assert 'data-engine2-readiness="REVIEW_REQUIRED"' in html and "Document evidence status" in html
     assert "Final preparation readiness is determined by the exception-first review above." in html
     assert "Supported values here are document-evidence candidates and may not yet be accepted into the declaration." in html
-    assert "A MISSING state in this audit panel means Engine 2 did not retain a candidate" in html
+    assert "NO DIRECT CANDIDATE means Engine 2 did not retain direct document evidence" in html
     assert "MSKU1, MSKU2" in html and "WOOD BROKERAGE INTL" in html and 'data-engine2-issue' in html
     assert 'data-engine2-evidence-class="EXPLICIT"' in html and 'data-engine2-evidence-class="DERIVED"' in html and 'data-engine2-source-page="7"' in html
     assert "Raw: radiata" in html and "Normalized: RADIATA" in html and "bbox 1, 2, 3, 4" in html
     harvest = re.search(r'<article[^>]*data-engine2-field="country_of_harvest".*?</article>', html, re.S).group(0)
-    assert "Not found in Engine 2 evidence" in harvest and "New Zealand" not in harvest and "Evidence" not in harvest
+    assert "NO DIRECT CANDIDATE" in harvest and "No direct Engine 2 candidate." in harvest and "New Zealand" not in harvest and "Evidence" not in harvest
     assert "not a legal compliance determination" in html and "human-reviewed preparation record remains authoritative" in html and "ACE or LAWGS" in html
 
+
+
+
+def test_downstream_annotations_distinguish_canonical_resolution_from_not_required():
+    detail = SimpleNamespace(
+        fields=(
+            SimpleNamespace(
+                field_name="merchandise_description",
+                status="FOUND",
+                effective_value="KD boards",
+            ),
+            SimpleNamespace(
+                field_name="article_component",
+                status="FOUND",
+                effective_value="KD boards",
+            ),
+            SimpleNamespace(
+                field_name="article_component",
+                status="FOUND",
+                effective_value="KD boards",
+            ),
+            SimpleNamespace(
+                field_name="percent_recycled",
+                status="NOT_REQUIRED",
+                effective_value=None,
+            ),
+            SimpleNamespace(
+                field_name="percent_recycled",
+                status="NOT_REQUIRED",
+                effective_value=None,
+            ),
+        )
+    )
+
+    annotations = _engine2_downstream_annotations(detail)
+
+    assert annotations["description"] == "Resolved downstream by Canonical Truth"
+    assert annotations["article_component"] == "Resolved downstream by Canonical Truth"
+    assert annotations["percent_recycled"] == "Not required by preparation rule"
+
+
+def test_downstream_annotations_do_not_hide_unresolved_review_fields():
+    detail = SimpleNamespace(
+        fields=(
+            SimpleNamespace(
+                field_name="article_component",
+                status="FOUND",
+                effective_value="KD boards",
+            ),
+            SimpleNamespace(
+                field_name="article_component",
+                status="REVIEW",
+                effective_value=None,
+            ),
+        )
+    )
+
+    assert "article_component" not in _engine2_downstream_annotations(detail)
 
 def test_terminal_workspace_keeps_engine2_dossier_collapsed_for_audit():
     dossier = Engine2DossierView(
