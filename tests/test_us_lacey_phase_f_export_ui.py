@@ -85,9 +85,10 @@ def test_export_microinteraction_preserves_first_native_download_and_blocks_dupl
     assert "window.setTimeout(() => resetExportDownload(link), 1200);" in script
     # There is intentionally no preventDefault on the first activation: the anchor
     # reaches the authenticated Phase E Content-Disposition endpoint natively.
-    busy_guard = script.index('if (link.dataset.exportBusy === "true")')
-    prevent_default = script.index("event.preventDefault();")
-    loading_state = script.index('link.classList.add("is-loading")')
+    export_function = script[script.index("const beginExportDownload"):script.index('document.addEventListener("click"')]
+    busy_guard = export_function.index('if (link.dataset.exportBusy === "true")')
+    prevent_default = export_function.index("event.preventDefault();")
+    loading_state = export_function.index('link.classList.add("is-loading")')
     assert busy_guard < prevent_default < loading_state
 
 

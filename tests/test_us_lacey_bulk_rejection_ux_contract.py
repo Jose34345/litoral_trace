@@ -42,9 +42,9 @@ def test_bulk_rejection_does_not_mix_request_feedback_with_stale_analysis_ui():
     source = TEMPLATE.read_text(encoding="utf-8")
 
     assert '{% set empty_bulk_rejection = bulk_upload_rejection and not detail.documents %}' in source
-    assert '("Documents", "complete" if detail.documents else "current")' in source
+    assert '("Documents", "complete" if detail.documents else "current", "#documents")' in source
     assert '{% set processing_step_state = "pending" if empty_bulk_rejection else ("current" if processing.failed or not processing.terminal else "complete") %}' in source
-    assert '("Processing", processing_step_state)' in source
+    assert '("Processing", processing_step_state, "#processing-status")' in source
 
     # On the response to a rejected multi-shipment upload, do not show an old
     # Engine 2 placeholder or a processing failure that belongs to a previously
@@ -69,4 +69,5 @@ def test_generic_errors_remain_distinct_from_expected_bulk_guidance():
 
     assert '{% elif error %}' in source
     assert '{{ alert("We could not complete that action", error, "danger") }}' in source
-    assert '{{ alert("Update complete", notice, "positive") }}' in source
+    assert 'data-toast-bootstrap="{{ notice }}"' in source
+    assert 'data-toast-tone="success"' in source

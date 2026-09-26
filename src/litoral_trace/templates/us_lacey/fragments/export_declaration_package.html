@@ -13,7 +13,7 @@
   {% set export_block_reason = "Complete the final human confirmation to unlock the declaration package." %}
 {% endif %}
 
-<section class="lt-card lt-export-card overflow-hidden border border-slate-200 bg-white shadow-sm" aria-labelledby="export-package-title" data-export-package data-export-ready="{{ 'true' if export_ready else 'false' }}">
+<section id="declaration-package" class="lt-card lt-export-card lt-scroll-target overflow-hidden border border-slate-200 bg-white shadow-sm" aria-labelledby="export-package-title" data-export-package data-export-ready="{{ 'true' if export_ready else 'false' }}">
   <div class="lt-export-card__body p-6">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div class="max-w-3xl">
@@ -80,20 +80,34 @@
 
     <div class="mt-6 grid gap-4 md:grid-cols-2" aria-label="Declaration export formats">
       {% if export_ready %}
-      <a
-        class="lt-export-action lt-export-action--xml group relative flex min-h-32 items-center gap-4 rounded-xl border border-sky-200 bg-gradient-to-br from-white to-sky-50 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md"
-        href="/operations/{{ detail.public_id }}/export/lawgs-xml"
-        data-export-download
-        data-loading-label="Generating..."
-        aria-label="Download LAWGS XML"
-      >
-        <span class="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-2xl text-sky-700" aria-hidden="true"><i class="fa-solid fa-code"></i></span>
-        <span class="min-w-0">
-          <span class="block font-bold text-slate-950" data-export-label>Download LAWGS XML</span>
-          <span class="mt-1 block text-sm leading-5 text-slate-600">Review-ready LAWGS XML for your downstream ACE/Lacey filing workflow.</span>
-        </span>
-        <span class="lt-export-action__spinner" aria-hidden="true"></span>
-      </a>
+      <div class="lt-export-action-group">
+        <a
+          class="lt-export-action lt-export-action--xml lt-export-action--with-preview group relative flex min-h-32 items-center gap-4 rounded-xl border border-sky-200 bg-gradient-to-br from-white to-sky-50 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md"
+          href="/operations/{{ detail.public_id }}/export/lawgs-xml"
+          data-export-download
+          data-loading-label="Generating..."
+          aria-label="Download LAWGS XML"
+        >
+          <span class="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-2xl text-sky-700" aria-hidden="true"><i class="fa-solid fa-code"></i></span>
+          <span class="min-w-0">
+            <span class="block font-bold text-slate-950" data-export-label>Download LAWGS XML</span>
+            <span class="mt-1 block text-sm leading-5 text-slate-600">Review-ready LAWGS XML for your downstream ACE/Lacey filing workflow.</span>
+          </span>
+          <span class="lt-export-action__spinner" aria-hidden="true"></span>
+        </a>
+        <button
+          type="button"
+          class="lt-export-preview-trigger"
+          data-xml-preview-trigger
+          data-xml-preview-url="/operations/{{ detail.public_id }}/preview/lawgs-xml"
+          aria-haspopup="dialog"
+          aria-controls="lawgs-xml-preview"
+          aria-label="Preview LAWGS XML"
+          title="Preview LAWGS XML"
+        >
+          <i class="fa-regular fa-eye" aria-hidden="true"></i>
+        </button>
+      </div>
 
       <a
         class="lt-export-action lt-export-action--excel group relative flex min-h-32 items-center gap-4 rounded-xl border border-emerald-200 bg-gradient-to-br from-white to-emerald-50 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
@@ -144,4 +158,36 @@
       <span>Preparation work product only. Exporting does not submit the declaration to ACE or LAWGS and does not constitute a legal compliance determination.</span>
     </div>
   </div>
+
+  {% if export_ready %}
+  <div id="lawgs-xml-preview" class="lt-xml-modal" role="dialog" aria-modal="true" aria-labelledby="lawgs-xml-preview-title" hidden data-xml-preview-modal>
+    <button type="button" class="lt-xml-modal__backdrop" aria-label="Close XML preview" data-xml-preview-close></button>
+    <section class="lt-xml-modal__panel" role="document">
+      <header class="lt-xml-modal__header">
+        <div>
+          <p class="text-xs font-bold uppercase tracking-[0.14em] text-sky-700">LAWGS XML preview</p>
+          <h2 id="lawgs-xml-preview-title" class="mt-1 text-lg font-bold text-slate-950">Review generated XML</h2>
+          <p class="mt-1 text-xs text-slate-500">Read-only preview of the same authenticated XML available for download.</p>
+        </div>
+        <button type="button" class="lt-xml-modal__close" aria-label="Close XML preview" data-xml-preview-close>
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+      </header>
+      <div class="lt-xml-modal__body">
+        <div class="lt-xml-modal__loading" data-xml-preview-loading aria-live="polite">
+          <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i>
+          <span>Generating preview…</span>
+        </div>
+        <pre class="lt-xml-code" tabindex="0" aria-label="Generated LAWGS XML" hidden data-xml-preview-code><code></code></pre>
+        <p class="lt-inline-error mt-2 text-sm font-medium" role="alert" hidden data-xml-preview-error></p>
+      </div>
+      <footer class="lt-xml-modal__footer">
+        <button type="button" class="lt-btn lt-btn--secondary" data-xml-copy disabled>
+          <i class="fa-regular fa-copy" aria-hidden="true"></i><span>Copy to clipboard</span>
+        </button>
+        <button type="button" class="lt-btn lt-btn--primary" data-xml-preview-close>Done</button>
+      </footer>
+    </section>
+  </div>
+  {% endif %}
 </section>

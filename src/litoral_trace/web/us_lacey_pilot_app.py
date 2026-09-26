@@ -86,6 +86,7 @@ from litoral_trace.us_lacey.workflow import (
 from litoral_trace.us_lacey.worker_wakeup import wake_us_lacey_worker
 from litoral_trace.web.us_lacey_operational_views import (
     render_new_operation,
+    render_operation_alias,
     render_operation_detail,
     render_operation_workspace,
     render_operations,
@@ -182,7 +183,7 @@ def _generated_customer_operation_reference() -> str:
     return f"LACEY-{stamp}-{uuid4().hex[:12].upper()}"
 
 
-def _detail_page(*, request: Request, identity, operation_public_id: str, us_session: str, error: str | None = None, notice: str | None = None, status_code: int = 200):
+def _detail_page(*, request: Request, identity, operation_public_id: str, us_session: str, error: str | None = None, notice: str | None = None, field_errors: dict[int, str] | None = None, field_input_values: dict[int, str] | None = None, status_code: int = 200):
     service = UsLaceyOperationService()
     detail = service.get_detail(
         organization_id=identity.organization_id,
@@ -193,7 +194,7 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
     except Exception:
         dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
     tokens = {field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}") for field in detail.fields if field.status in {"MISSING", "CONFLICT", "SUPPORTED", "REVIEW", "FOUND"}}
-    return _html(render_operation_detail(request=request, identity=identity, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, retry_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"retry:{detail.public_id}"), error=error, notice=notice), status_code=status_code)
+    return _html(render_operation_detail(request=request, identity=identity, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, alias_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"alias:{detail.public_id}"), retry_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"retry:{detail.public_id}"), error=error, notice=notice, field_errors=field_errors, field_input_values=field_input_values), status_code=status_code)
 
 
 def _workspace_fragment(
@@ -203,6 +204,8 @@ def _workspace_fragment(
     operation_public_id: str,
     us_session: str,
     error: str | None = None,
+    field_errors: dict[int, str] | None = None,
+    field_input_values: dict[int, str] | None = None,
 ) -> HTMLResponse:
     """Render the heavier review UI only after the progress poll is terminal."""
     service = UsLaceyOperationService()
@@ -243,6 +246,8 @@ def _workspace_fragment(
             ),
             review_csrf=review_tokens,
             error=error,
+            field_errors=field_errors,
+            field_input_values=field_input_values,
         )
     )
 
@@ -585,6 +590,80 @@ def operation_detail_page(
         return _operation_error_page(request, "Operation not found.", status_code=404)
 
 
+@app.post("/operations/{operation_public_id}/alias", response_class=HTMLResponse)
+def operation_alias_submit(
+    operation_public_id: str,
+    request: Request,
+    client_reference: str = Form(...),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Rename the customer-facing operation label without changing operation identity."""
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"alias:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        service = UsLaceyOperationService()
+        service.update_client_reference(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            client_reference=client_reference,
+        )
+        detail = service.get_detail(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+        )
+        if request.headers.get("HX-Request", "").casefold() == "true":
+            return _html(
+                render_operation_alias(
+                    request=request,
+                    detail=detail,
+                    alias_csrf=us_lacey_csrf_token(
+                        session_token=us_session or "",
+                        purpose=f"alias:{detail.public_id}",
+                    ),
+                    alias_saved=True,
+                )
+            )
+        return RedirectResponse(f"/operations/{operation_public_id}", status_code=303)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyOperationError, ValueError) as exc:
+        try:
+            detail = UsLaceyOperationService().get_detail(
+                organization_id=identity.organization_id,
+                operation_public_id=operation_public_id,
+            )
+            if request.headers.get("HX-Request", "").casefold() == "true":
+                return _html(
+                    render_operation_alias(
+                        request=request,
+                        detail=detail,
+                        alias_csrf=us_lacey_csrf_token(
+                            session_token=us_session or "",
+                            purpose=f"alias:{detail.public_id}",
+                        ),
+                        alias_error=str(exc),
+                        alias_input_value=client_reference,
+                    )
+                )
+            return _detail_page(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                error=str(exc),
+                status_code=400,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
 @app.get("/operations/{operation_public_id}/processing-fragment", response_class=HTMLResponse)
 def operation_processing_fragment(
     operation_public_id: str,
@@ -803,7 +882,8 @@ def operation_review_submit(
                 identity=identity,
                 operation_public_id=operation_public_id,
                 us_session=us_session or "",
-                error=str(exc),
+                field_errors={int(field_id): str(exc)},
+                field_input_values={int(field_id): value},
                 status_code=400,
             )
         except UsLaceyOperationNotFound:
@@ -861,7 +941,8 @@ def operation_review_action_fragment(
                 identity=identity,
                 operation_public_id=operation_public_id,
                 us_session=us_session or "",
-                error=str(exc),
+                field_errors={int(field_id): str(exc)},
+                field_input_values={int(field_id): value},
             )
         except UsLaceyOperationNotFound:
             return _operation_error_page(request, "Operation not found.", status_code=404)

@@ -601,7 +601,7 @@ def render_new_operation(*, request, identity, entitlement, csrf_token: str, err
     return _render(request, "new_operation", identity=identity, entitlement=entitlement, csrf_token=csrf_token, error=error)
 
 
-def render_operation_detail(*, request, identity, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], retry_csrf: str = "", product_intelligence=None, regulatory_assessment=None, error: str | None = None, notice: str | None = None) -> str:
+def render_operation_detail(*, request, identity, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], alias_csrf: str = "", retry_csrf: str = "", product_intelligence=None, regulatory_assessment=None, error: str | None = None, notice: str | None = None, field_errors: Mapping[int, str] | None = None, field_input_values: Mapping[int, str] | None = None) -> str:
     attention_fields, auto_supported_fields, settled_fields = _review_field_groups_with_semantic_evidence(identity, detail)
     progress = processing_view(detail)
     product_intelligence = _product_intelligence_for_detail(identity, detail, product_intelligence)
@@ -619,7 +619,10 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
         upload_csrf=upload_csrf,
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
+        alias_csrf=alias_csrf,
         retry_csrf=retry_csrf,
+        field_errors=dict(field_errors or {}),
+        field_input_values=dict(field_input_values or {}),
         attention_fields=attention_fields,
         auto_supported_fields=auto_supported_fields,
         settled_fields=settled_fields,
@@ -627,6 +630,26 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
         processing=progress,
         error=error,
         notice=notice,
+    )
+
+
+def render_operation_alias(
+    *,
+    request,
+    detail,
+    alias_csrf: str,
+    alias_error: str | None = None,
+    alias_input_value: str | None = None,
+    alias_saved: bool = False,
+) -> str:
+    return _render(
+        request,
+        "fragments/operation_alias",
+        detail=detail,
+        alias_csrf=alias_csrf,
+        alias_error=alias_error,
+        alias_input_value=alias_input_value,
+        alias_saved=alias_saved,
     )
 
 
@@ -640,7 +663,7 @@ def render_processing_fragment(*, request, detail, retry_csrf: str = "") -> str:
     )
 
 
-def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None, is_oob_update: bool | None = None) -> str:
+def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None, field_errors: Mapping[int, str] | None = None, field_input_values: Mapping[int, str] | None = None, is_oob_update: bool | None = None) -> str:
     attention_fields, auto_supported_fields, settled_fields = _review_field_groups_with_semantic_evidence(identity, detail)
     if is_oob_update is None:
         is_oob_update = str(getattr(request, "method", "GET")).upper() == "POST"
@@ -657,6 +680,8 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         ),
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
+        field_errors=dict(field_errors or {}),
+        field_input_values=dict(field_input_values or {}),
         attention_fields=attention_fields,
         auto_supported_fields=auto_supported_fields,
         settled_fields=settled_fields,

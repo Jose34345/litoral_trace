@@ -124,6 +124,8 @@ def _workspace_fragment(
     operation_public_id: str,
     us_session: str,
     error: str | None = None,
+    field_errors: dict[int, str] | None = None,
+    field_input_values: dict[int, str] | None = None,
 ) -> HTMLResponse:
     detail = UsLaceyOperationService().get_detail(
         organization_id=identity.organization_id,
@@ -163,6 +165,8 @@ def _workspace_fragment(
             ),
             review_csrf=review_tokens,
             error=error,
+            field_errors=field_errors,
+            field_input_values=field_input_values,
         )
     )
 
@@ -343,7 +347,8 @@ def htmx_review_field(
                     identity=identity,
                     operation_public_id=operation_public_id,
                     us_session=us_session or "",
-                    error=str(exc),
+                    field_errors={int(field_id): str(exc)},
+                    field_input_values={int(field_id): value},
                 )
             except UsLaceyOperationNotFound:
                 pass
