@@ -94,6 +94,20 @@ def export_lawgs_xml(
     return response
 
 
+@router.get("/operations/{operation_id}/preview/lawgs-xml")
+def preview_lawgs_xml(
+    operation_id: str,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+) -> Response:
+    """Return the authenticated LAWGS XML inline for a same-origin preview modal."""
+    snapshot = _export_snapshot(operation_id=operation_id, us_session=us_session)
+    xml_data = build_lawgs_xml(snapshot)
+    response = Response(content=xml_data, media_type="application/xml; charset=utf-8")
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 @router.get("/operations/{operation_id}/export/excel")
 def export_lacey_excel(
     operation_id: str,
