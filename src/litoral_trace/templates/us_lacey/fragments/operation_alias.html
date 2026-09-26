@@ -1,0 +1,60 @@
+{% from "components/ui.html" import button %}
+<div
+  id="operation-alias-shell"
+  class="mt-1 min-w-0"
+  data-operation-alias-shell
+  {% if alias_saved %}data-toast-success="Operation name updated."{% endif %}
+>
+  <div class="flex min-w-0 items-center gap-2" data-operation-alias-display>
+    <h1 class="lt-page-header__title min-w-0">
+      <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
+      <span class="break-words" data-operation-alias-label>{{ detail.client_reference }}</span>
+    </h1>
+    <button
+      type="button"
+      class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+      aria-label="Edit operation name"
+      aria-controls="operation-alias-editor"
+      aria-expanded="false"
+      data-operation-alias-edit
+    >
+      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+    </button>
+  </div>
+
+  <form
+    id="operation-alias-editor"
+    class="mt-2 max-w-xl"
+    method="post"
+    action="/operations/{{ detail.public_id }}/alias"
+    hx-post="/operations/{{ detail.public_id }}/alias"
+    hx-target="#operation-alias-shell"
+    hx-swap="outerHTML transition:true"
+    hidden
+    data-operation-alias-form
+  >
+    <input type="hidden" name="csrf_token" value="{{ alias_csrf }}">
+    <label class="sr-only" for="operation-alias-input">Operation name</label>
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <input
+        id="operation-alias-input"
+        class="lt-control min-w-0 flex-1"
+        name="client_reference"
+        maxlength="255"
+        autocomplete="off"
+        required
+        value="{{ alias_input_value|default(detail.client_reference, true) }}"
+        {% if alias_error %}aria-invalid="true" aria-describedby="operation-alias-error"{% endif %}
+        data-operation-alias-input
+      >
+      <div class="flex gap-2">
+        {{ button("Save", variant="primary", button_type="submit", icon="fa-check") }}
+        <button type="button" class="lt-btn lt-btn--ghost" data-operation-alias-cancel>Cancel</button>
+      </div>
+    </div>
+    {% if alias_error %}
+    <p id="operation-alias-error" class="mt-1 text-sm font-medium text-red-600 lt-inline-error" role="alert">{{ alias_error }}</p>
+    {% endif %}
+    <p class="mt-1 text-xs text-slate-500">Use a recognizable internal name such as “PO-4599 Gulf Wood”. The immutable operation ID is unchanged.</p>
+  </form>
+</div>
