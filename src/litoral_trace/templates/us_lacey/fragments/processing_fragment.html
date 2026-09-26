@@ -1,4 +1,8 @@
 {% if processing.terminal and not processing.failed and processing.state != "WAITING_FOR_DOCUMENT" %}
+{# Remove the non-terminal dossier preview before loading the final workspace.
+   Without this OOB delete the final workspace can introduce a second
+   #engine2-dossier, leaving stale "not available yet" copy in the DOM. #}
+<div hx-swap-oob="delete:#engine2-dossier"></div>
 <div
   id="operation-workspace"
   class="mt-6"

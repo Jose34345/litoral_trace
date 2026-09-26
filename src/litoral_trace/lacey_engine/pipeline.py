@@ -33,7 +33,7 @@ from .semantic_graph import (
     valid_mid_value,
 )
 
-ENGINE_VERSION = "lacey-engine-2.6.0"
+ENGINE_VERSION = "lacey-engine-2.6.1"
 _FIELDS = (
     "estimated_arrival_date",
     "bill_of_lading",
@@ -324,7 +324,20 @@ def _extract(layout):
             ):
                 amount, unit = _plant_quantity_parts(value)
                 if amount:
-                    found["plant_quantity"].append(_candidate("plant_quantity", amount, block, key, EvidenceClass.DERIVED, "plant_quantity"))
+                    # This branch is reached only for an explicit plant-quantity
+                    # label or Qty/Quantity inside a strongly typed botanical table.
+                    # Normalize the semantic label so shipment reconciliation does
+                    # not discard "Plant Qty" / "Qty" as a generic quantity.
+                    found["plant_quantity"].append(
+                        _candidate(
+                            "plant_quantity",
+                            amount,
+                            block,
+                            "Plant Quantity",
+                            EvidenceClass.DERIVED,
+                            "plant_quantity",
+                        )
+                    )
                 if unit:
                     found["metric_unit"].append(_candidate("metric_unit", unit, block, key, EvidenceClass.DERIVED, "plant_quantity"))
             elif (

@@ -345,6 +345,14 @@ def review_us_lacey_field(
         session.close()
 
 
+_AUTO_CONFIRMABLE_FIELD_STATUSES = (
+    "SUPPORTED",
+    "FOUND",
+    "SUPPORTED MULTIPLE",
+    "SUPPORTED_MULTIPLE",
+)
+
+
 def accept_supported_us_lacey_fields(
     *,
     organization_id: int,
@@ -367,7 +375,7 @@ def accept_supported_us_lacey_fields(
             .where(
                 UsLaceyOperationField.organization_id == org_id,
                 UsLaceyOperationField.operation_id == operation.id,
-                UsLaceyOperationField.field_status == "SUPPORTED",
+                UsLaceyOperationField.field_status.in_(_AUTO_CONFIRMABLE_FIELD_STATUSES),
             )
             .order_by(
                 UsLaceyOperationField.merchandise_line_reference,

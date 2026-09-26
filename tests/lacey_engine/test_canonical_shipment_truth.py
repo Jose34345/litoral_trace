@@ -296,3 +296,57 @@ def test_description_only_transport_row_does_not_create_phantom_customs_line():
         "6:table:2:row:1",
         "6:table:2:row:2",
     }
+
+
+def test_shipment_total_on_aggregate_description_row_does_not_create_phantom_line():
+    payload = _golden_payload()
+    transport_line = "2:p2-t3:row:1"
+
+    descriptions = payload["canonical_fields"]["description"]["supporting_evidence"]
+    descriptions.append(
+        _evidence(
+            field="description",
+            value="WOODEN KITCHENWARE AND HOUSEHOLD ARTICLES",
+            document_id=2,
+            text="Description of Goods: WOODEN KITCHENWARE AND HOUSEHOLD ARTICLES",
+            line_key=transport_line,
+        )
+    )
+    payload["canonical_fields"]["description"] = _field(
+        "description",
+        "SUPPORTED_MULTIPLE",
+        descriptions,
+    )
+
+    entered_rows = payload["canonical_fields"]["entered_value"]["supporting_evidence"]
+    entered_rows.append(
+        _evidence(
+            field="entered_value",
+            value="30940",
+            document_id=2,
+            text="TOTAL Entered Value USD 30,940.00",
+            line_key=transport_line,
+        )
+    )
+    payload["canonical_fields"]["entered_value"] = _field(
+        "entered_value",
+        "SUPPORTED_MULTIPLE",
+        entered_rows,
+    )
+    payload["canonical_fields"]["shipment_total_entered_value"] = _field(
+        "shipment_total_entered_value",
+        "SUPPORTED",
+        [
+            _evidence(
+                field="shipment_total_entered_value",
+                value="30940",
+                document_id=1,
+                text="Total Entered Value USD 30,940.00",
+            )
+        ],
+    )
+
+    truth = build_canonical_shipment_truth(payload)
+
+    assert len(truth.plant_lines) == 2
+    assert transport_line not in {line.entity_key for line in truth.plant_lines}

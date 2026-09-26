@@ -39,7 +39,7 @@ from litoral_trace.us_lacey.ppq505 import (
 )
 
 
-CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v3"
+CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v4"
 _CANONICAL_EXTRACTOR = "canonical-shipment-truth"
 _CANONICAL_CONFLICT_RESOLUTION = "Superseded by canonical shipment-line reconciliation."
 
@@ -491,6 +491,51 @@ def _composed_merchandise_description(
     )
 
 
+def _promotable_merchandise_line_keys(
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+) -> frozenset[str]:
+    """Return only evidence-backed customs merchandise-line identities.
+
+    Description text is shipment metadata unless the same source row is anchored
+    by a valid HTS or a valid commercial entered value. When valid HTS-backed
+    rows already exist, an entered-value row equal to the shipment total is
+    treated as aggregate reconciliation evidence rather than a new merchandise
+    line. This prevents B/L cargo descriptions and TOTAL rows from manufacturing
+    phantom canonical lines.
+    """
+
+    valid_hts_keys: set[str] = set()
+    for row in evidence_by_field.get("hts_code", ()):
+        if not row.line_key:
+            continue
+        validation = validate_ppq_value("hts_code", row.normalized_value)
+        if validation.status.value == "VALID":
+            valid_hts_keys.add(row.line_key)
+
+    shipment_total_values: set[str] = set()
+    for row in evidence_by_field.get(_SHIPMENT_TOTAL_ENTERED_VALUE, ()):
+        validation = validate_ppq_value("entered_value", row.normalized_value)
+        if validation.status.value == "VALID" and validation.normalized_value:
+            shipment_total_values.add(validation.normalized_value)
+
+    valid_entered_value_keys: set[str] = set()
+    for row in evidence_by_field.get("entered_value", ()):
+        if not row.line_key:
+            continue
+        validation = validate_ppq_value("entered_value", row.normalized_value)
+        if validation.status.value != "VALID" or not validation.normalized_value:
+            continue
+        if (
+            valid_hts_keys
+            and validation.normalized_value in shipment_total_values
+            and row.line_key not in valid_hts_keys
+        ):
+            continue
+        valid_entered_value_keys.add(row.line_key)
+
+    return frozenset(valid_hts_keys | valid_entered_value_keys)
+
+
 def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
     """Build one fail-closed shipment/plant-line truth from Engine 2 JSON."""
     payload = reconcile_cross_document_line_identity(payload)
@@ -512,24 +557,8 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
             if isinstance(row, Mapping)
         )
 
-    customs_backed_keys = {
-        row.line_key
-        for key in ("hts_code", "entered_value")
-        for row in evidence_by_field.get(key, ())
-        if row.line_key
-    }
-    all_merchandise_keys = {
-        row.line_key
-        for key in _MERCHANDISE_FIELDS
-        for row in evidence_by_field.get(key, ())
-        if row.line_key
-    }
-    # When customs-line evidence exists, an aggregate B/L/packing description
-    # must not manufacture an extra declaration line merely because it has a
-    # table row identity. Botanical-only source sets still fall back to component
-    # materialization below.
     merchandise_keys = sorted(
-        customs_backed_keys if customs_backed_keys else all_merchandise_keys,
+        _promotable_merchandise_line_keys(evidence_by_field),
         key=lambda value: (_ordinal(value) is None, _ordinal(value) or 10**9, value),
     )
     component_keys = sorted(
