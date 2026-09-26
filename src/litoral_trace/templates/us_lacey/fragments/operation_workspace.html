@@ -129,7 +129,7 @@
       <div>
         <p class="text-xs font-bold uppercase tracking-wider text-emerald-700">Shipment prepared</p>
         <h2 id="quality-output-title" class="mt-1 text-xl font-bold text-slate-950">Review the remaining exceptions</h2>
-        <p class="mt-2 text-sm text-slate-600">Litoral Trace automatically resolves consistent evidence. You only need to handle missing facts or genuine conflicts.</p>
+        <p class="mt-2 text-sm text-slate-600">Litoral Trace automatically resolves consistent evidence. You only need to handle missing facts, review-required evidence, or genuine conflicts.</p>
       </div>
       {% if attention_fields %}
       <span class="rounded-md bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">{{ attention_fields|length }} action required</span>
@@ -163,7 +163,7 @@
     <div role="tabpanel" data-review-tab-panel="action" class="p-6">
       <div class="mb-5">
         <h2 class="text-lg font-bold text-slate-950">Action Required</h2>
-        <p class="mt-1 text-sm text-slate-600">Only missing information or genuinely conflicting evidence appears here.</p>
+        <p class="mt-1 text-sm text-slate-600">Only missing information, review-required evidence, or genuinely conflicting evidence appears here.</p>
       </div>
       <div id="action-required-fields" class="grid gap-6" data-action-required-list>
         {% for line_reference, fields in attention_fields|groupby("line_reference") %}
@@ -293,12 +293,13 @@
           <span data-engine2-readiness="{{ engine2_dossier.readiness }}">Document evidence status: {{ engine2_dossier.readiness|replace("_", " ") }}</span>
           <p class="mt-1 text-xs text-slate-500">Final preparation readiness is determined by the exception-first review above.</p>
           <p class="mt-1 text-xs text-slate-500">Supported values here are document-evidence candidates and may not yet be accepted into the declaration.</p>
+          <p class="mt-1 text-xs text-slate-500">A MISSING state in this audit panel means Engine 2 did not retain a candidate for that technical field. It is not, by itself, a customer action item; unresolved declaration requirements appear in Action Required above.</p>
         </div>
         <div class="mt-5 grid gap-3">
           {% for field in engine2_dossier.fields %}
           <article class="rounded-lg border border-slate-200 p-3" data-engine2-field="{{ field.field_key }}" data-engine2-state="{{ field.state }}">
             <strong>{{ field.label }}</strong> · {{ field.state|replace("_", " ") }}
-            {% if field.values %}<p class="mt-1">{{ field.values|join(", ") }}</p>{% else %}<p class="mt-1">Missing</p>{% endif %}
+            {% if field.values %}<p class="mt-1">{{ field.values|join(", ") }}</p>{% elif field.state == "MISSING" %}<p class="mt-1 text-slate-600">Not found in Engine 2 evidence</p>{% else %}<p class="mt-1 text-slate-600">No accepted value</p>{% endif %}
             {% if field.evidence %}
             <details class="mt-2"><summary>Evidence ({{ field.evidence|length }})</summary>
               {% for line_key, line_evidence in field.line_evidence_groups %}
