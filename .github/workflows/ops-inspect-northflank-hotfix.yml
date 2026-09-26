@@ -1,0 +1,49 @@
+name: Ops - Inspect Northflank hotfix rollout
+
+on:
+  push:
+    branches:
+      - ops/northflank-release-p0-20260925
+    paths:
+      - .github/workflows/ops-inspect-northflank-hotfix.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+    steps:
+      - run: npm install --global @northflank/cli@0.13.0
+      - run: northflank login -n ci -t "$NORTHFLANK_API_KEY" >/dev/null
+      - name: Inspect service rollout metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          for service in litoral-trace-web litoral-trace-worker; do
+            northflank get service --project litoral-trace --service "$service" -o json --quiet > "/tmp/$service.json"
+            python - "$service" "/tmp/$service.json" <<'PY'
+          import json, re, sys
+          service, path = sys.argv[1], sys.argv[2]
+          data = json.load(open(path, encoding="utf-8"))
+          print(f"SERVICE={service}")
+          print("BUILD_STATUS="+str((data.get("status") or {}).get("build",{}).get("status")))
+          print("DEPLOY_STATUS="+str((data.get("status") or {}).get("deployment",{}).get("status")))
+          def walk(obj, prefix=""):
+              if isinstance(obj, dict):
+                  for k,v in obj.items():
+                      p=f"{prefix}.{k}" if prefix else k
+                      if re.search(r"(sha|commit|build|image|deploy)", k, re.I) and not re.search(r"(secret|env|credential|token)", p, re.I):
+                          if isinstance(v,(str,int,float,bool)) or v is None:
+                              print(f"META {p}={v}")
+                      walk(v,p)
+              elif isinstance(obj,list):
+                  for i,v in enumerate(obj):
+                      walk(v,f"{prefix}[{i}]")
+          walk(data)
+          print("---")
+          PY
+          done
