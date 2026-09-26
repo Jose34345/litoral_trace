@@ -70,6 +70,28 @@ def test_weight_and_origin_context_do_not_become_lacey_facts():
     assert extracted["country_of_harvest"] == []
 
 
+
+def test_explicit_origin_and_party_audit_fields_are_extracted_without_inference():
+    layout = layout_from_key_value_rows(
+        [
+            ("Country of Origin", "Brazil"),
+            ("Shipper", "Rio Parana Trading S.A."),
+            ("Supplier", "Florestal Serra Verde Ltda."),
+            ("Manufacturer", "Madeira Industrial Ltda."),
+            ("Notify Party", "Houston Brokerage LLC"),
+        ]
+    )
+
+    extracted = _extract(layout)
+
+    assert [c.normalized_value for c in extracted["country_of_origin"]] == ["Brazil"]
+    assert [c.normalized_value for c in extracted["shipper_name"]] == ["Rio Parana Trading S.A."]
+    assert [c.normalized_value for c in extracted["supplier_name"]] == ["Florestal Serra Verde Ltda."]
+    assert [c.normalized_value for c in extracted["manufacturer_name"]] == ["Madeira Industrial Ltda."]
+    assert [c.normalized_value for c in extracted["notify_party_name"]] == ["Houston Brokerage LLC"]
+    assert extracted["country_of_harvest"] == []
+
+
 def test_generic_identifier_labels_do_not_create_entry_mid_or_hts_candidates():
     layout = layout_from_key_value_rows(
         [
