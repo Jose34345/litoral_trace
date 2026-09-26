@@ -361,6 +361,10 @@ def us_lacey_live_readiness(response: Response) -> dict[str, str]:
         ocr_runtime=str(
             getattr(app.state, "us_lacey_ocr_runtime", "not_ready")
         ),
+        inline_worker_enabled=_bool_env(
+            "US_LACEY_INLINE_WORKER_ENABLED",
+            default=False,
+        ),
     )
     if result["status"] != "ready":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
