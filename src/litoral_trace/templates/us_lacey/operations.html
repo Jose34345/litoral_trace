@@ -2,14 +2,14 @@
 {% set authenticated = true %}
 {% block lacey_title %}Operations{% endblock %}
 {% block lacey_content %}
-{{ page_header("Operations", "Workspace", "Best practice: upload all available shipment documents before the first processing run. You can add more files later and reprocess.", icon="fa-briefcase") }}
+{{ page_header("Operations", "Workspace", "Start with the most complete shipment pack available. Litoral Trace will reconcile the evidence and surface only what still needs review.", icon="fa-briefcase") }}
 
 <section id="new-shipment" class="lt-card p-6">
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div class="max-w-2xl">
       <p class="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Start here</p>
       <h2 class="mt-2 text-2xl font-bold tracking-tight text-slate-950">Upload shipment documents</h2>
-      <p class="mt-2 text-sm leading-6 text-slate-600">Best practice: upload all available shipment documents before the first processing run. You can add more files later and reprocess. Litoral Trace will extract supported values, reconcile the evidence and show only what still needs your attention.</p>
+      <p class="mt-2 text-sm leading-6 text-slate-600">No shipment metadata is required up front. Litoral Trace extracts supported values from the evidence; additional documents can be added later if the shipment record changes.</p>
     </div>
     <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
       <p class="font-semibold text-slate-900">{{ identity.legal_name }}</p>
