@@ -6,7 +6,14 @@
 {% block lacey_content %}
 {% set bulk_upload_rejection = error and error.startswith("This file contains multiple shipments.") %}
 {% set empty_bulk_rejection = bulk_upload_rejection and not detail.documents %}
-{{ page_header(detail.client_reference, "Lacey Act Declaration Preparation", "Manage the shipment evidence, review exceptions, and prepare the declaration package from one auditable workspace.", icon="fa-folder-open") }}
+<header class="lt-page-header" aria-labelledby="operation-alias-label">
+  <div class="lt-page-header__copy">
+    <p class="lt-page-header__eyebrow">Lacey Act Declaration Preparation</p>
+    {% include "us_lacey/fragments/operation_alias.html" %}
+    <p class="lt-page-header__description">Manage the shipment evidence, review exceptions, and prepare the declaration package from one auditable workspace.</p>
+    <p class="mt-1 text-xs text-slate-400">Operation ID · {{ detail.public_id }}</p>
+  </div>
+</header>
 
 {% if bulk_upload_rejection %}
 <section class="lt-alert lt-alert--warning" role="status" data-bulk-upload-rejection>
@@ -20,12 +27,23 @@
 {% elif error %}
 {{ alert("We could not complete that action", error, "danger") }}
 {% endif %}
-{% if notice %}{{ alert("Update complete", notice, "positive") }}{% endif %}
+{% if notice %}<span hidden data-toast-bootstrap="{{ notice }}" data-toast-tone="success"></span>{% endif %}
 
 {% set processing_step_state = "pending" if empty_bulk_rejection else ("current" if processing.failed or not processing.terminal else "complete") %}
 <ol class="lt-progress-steps mb-6 border-b border-slate-200 pb-4 sm:grid sm:grid-cols-5" aria-label="Preparation workflow">
-{% for title,state in [("Documents", "complete" if detail.documents else "current"),("Processing", processing_step_state),("Review", "current" if processing.state == "READY_FOR_REVIEW" else "pending"),("Final confirmation", "current" if detail.status == "COMPLETED" else "pending"),("Preparation package", "complete" if detail.status == "COMPLETED" else "pending")] %}
-<li class="lt-progress-step" data-state="{{ state }}"><span class="lt-progress-step__marker" aria-hidden="true">{% if state == "complete" %}✓{% else %}{{ loop.index }}{% endif %}</span><p class="lt-progress-step__title">{{ title }}</p></li>
+{% for title,state,href in [
+  ("Documents", "complete" if detail.documents else "current", "#documents"),
+  ("Processing", processing_step_state, "#processing-status"),
+  ("Review", "current" if processing.state == "READY_FOR_REVIEW" else "pending", "#review-summary"),
+  ("Final confirmation", "current" if detail.status == "COMPLETED" else "pending", "#declaration-package"),
+  ("Preparation package", "complete" if detail.status == "COMPLETED" else "pending", "#declaration-package")
+] %}
+<li class="lt-progress-step" data-state="{{ state }}">
+  <a class="lt-progress-step__link" href="{{ href }}" data-workflow-step-link{% if state == "current" %} aria-current="step"{% endif %}>
+    <span class="lt-progress-step__marker" aria-hidden="true">{% if state == "complete" %}✓{% else %}{{ loop.index }}{% endif %}</span>
+    <span class="lt-progress-step__title">{{ title }}</span>
+  </a>
+</li>
 {% endfor %}</ol>
 
 <section class="lt-card p-6" id="documents">
@@ -77,7 +95,7 @@
 {# A rejected upload is request-local feedback. Do not mix it with stale analysis
    or a previous processing failure from documents already stored on the operation. #}
 {% if not bulk_upload_rejection %}
-<div class="mt-6">{% include "us_lacey/fragments/processing_fragment.html" %}</div>
+<div id="processing-status" class="mt-6 scroll-mt-28">{% include "us_lacey/fragments/processing_fragment.html" %}</div>
 {% endif %}
 
 {% if not bulk_upload_rejection and not processing.terminal %}
