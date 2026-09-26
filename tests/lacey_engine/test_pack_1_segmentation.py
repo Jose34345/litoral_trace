@@ -303,8 +303,8 @@ def _golden_9_document_pdf() -> bytes:
 
     common = (
         "Shipment Ref: LT-GOLDEN-2026-0924-A\n"
-        "Invoice No. MHW-INV-260924-01\n"
-        "B/L No: MAEU2609240001\n"
+        "Commercial Invoice: MHW-INV-260924-01\n"
+        "Bill of Lading: MAEU2609240001\n"
         "Container No. MSCU1234566\n"
     )
     pages = (

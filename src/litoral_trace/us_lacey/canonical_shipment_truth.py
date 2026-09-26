@@ -39,7 +39,7 @@ from litoral_trace.us_lacey.ppq505 import (
 )
 
 
-CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v2"
+CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v3"
 _CANONICAL_EXTRACTOR = "canonical-shipment-truth"
 _CANONICAL_CONFLICT_RESOLUTION = "Superseded by canonical shipment-line reconciliation."
 
@@ -512,13 +512,24 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
             if isinstance(row, Mapping)
         )
 
+    customs_backed_keys = {
+        row.line_key
+        for key in ("hts_code", "entered_value")
+        for row in evidence_by_field.get(key, ())
+        if row.line_key
+    }
+    all_merchandise_keys = {
+        row.line_key
+        for key in _MERCHANDISE_FIELDS
+        for row in evidence_by_field.get(key, ())
+        if row.line_key
+    }
+    # When customs-line evidence exists, an aggregate B/L/packing description
+    # must not manufacture an extra declaration line merely because it has a
+    # table row identity. Botanical-only source sets still fall back to component
+    # materialization below.
     merchandise_keys = sorted(
-        {
-            row.line_key
-            for key in _MERCHANDISE_FIELDS
-            for row in evidence_by_field.get(key, ())
-            if row.line_key
-        },
+        customs_backed_keys if customs_backed_keys else all_merchandise_keys,
         key=lambda value: (_ordinal(value) is None, _ordinal(value) or 10**9, value),
     )
     component_keys = sorted(
