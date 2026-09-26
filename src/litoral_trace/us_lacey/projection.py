@@ -114,6 +114,7 @@ _EXPLICIT_HEADER_ALIASES = {
     "hts": "hts_code",
     "hts code": "hts_code",
     "hts number": "hts_code",
+    "htsus": "hts_code",
     "article component": "article_component",
     "article": "article_component",
     "component": "article_component",
@@ -132,6 +133,9 @@ _EXPLICIT_HEADER_ALIASES = {
 }
 
 _RAW_TABLE_FIELD = re.compile(r"^raw\.table\.(?P<table>\d+)\.(?P<header>.+)$")
+_HTS_SOURCE_VALUE = re.compile(
+    r"^(?:\d{6,10}|\d{4}[.-]\d{2}(?:[.-]\d{2,4})?)$"
+)
 _DATA_ROW = re.compile(r"(?:^|;)data_row:(?P<row>\d+)(?:;|$)")
 _CONTAINER_TOKEN = re.compile(
     r"(?<![A-Z0-9])[A-Z]{4}(?:[ -]?\d){7}(?![A-Z0-9])",
@@ -465,6 +469,14 @@ def _is_candidate_admissible(
         return False
     if folded and folded in table_headers:
         return False
+    if target == "hts_code":
+        # A field/header label is not enough to confer HTS semantics. Reject
+        # SKU/packaging tokens (PAL, ACTTRAY18, RUBCB32, etc.) before they can
+        # become operation candidates on the legacy/cutover projection path.
+        presentation_normalized = re.sub(r"\s+", "", raw)
+        if not _HTS_SOURCE_VALUE.fullmatch(presentation_normalized):
+            return False
+        return validate_ppq_value("hts_code", raw).status.value == "VALID"
     if target == "container_number":
         if _URLISH.search(raw):
             return False

@@ -198,8 +198,30 @@ def _distinct_values(rows: tuple[CanonicalEvidence, ...]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(row.normalized_value for row in rows if row.normalized_value))
 
 
+def _has_independent_valid_consensus(
+    *,
+    target_key: str,
+    rows: tuple[CanonicalEvidence, ...],
+) -> bool:
+    """Return True only for exact valid agreement across independent documents."""
+
+    values = _distinct_values(rows)
+    if len(values) != 1:
+        return False
+    documents = {
+        row.document_id
+        for row in rows
+        if str(row.document_id or "").strip()
+    }
+    if len(documents) < 2:
+        return False
+    validation = validate_ppq_value(target_key, values[0])
+    return validation.status.value == "VALID"
+
+
 def _field_state(
     *,
+    target_key: str,
     aggregate_state: str,
     rows: tuple[CanonicalEvidence, ...],
     force_review: bool = False,
@@ -209,6 +231,13 @@ def _field_state(
     values = _distinct_values(rows)
     if len(values) > 1:
         return CanonicalTruthState.CONFLICT
+
+    # Exact agreement from independent valid documents is stronger evidence
+    # than a conservative upstream REVIEW/LOW_AUTHORITY state. Conflicts still
+    # win above, and same-document duplicates never qualify as consensus.
+    if _has_independent_valid_consensus(target_key=target_key, rows=rows):
+        return CanonicalTruthState.SUPPORTED_MULTIPLE
+
     if force_review or aggregate_state == CanonicalTruthState.REVIEW_REQUIRED.value:
         return CanonicalTruthState.REVIEW_REQUIRED
     if aggregate_state == CanonicalTruthState.NEAR_MATCH.value:
@@ -228,6 +257,7 @@ def _field_truth(
     return CanonicalFieldTruth(
         field_name=target_key,
         state=_field_state(
+            target_key=target_key,
             aggregate_state=str(field_payload.get("state") or "MISSING"),
             rows=rows,
             force_review=force_review,

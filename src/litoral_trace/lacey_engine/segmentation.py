@@ -236,6 +236,30 @@ _STRONG_ANCHORS: tuple[tuple[re.Pattern[str], DocumentType], ...] = (
         re.compile(r"\bPACKING\s+LIST\b", re.I),
         DocumentType.PACKING_LIST,
     ),
+    (
+        re.compile(r"\b(?:U\.S\.\s+)?ENTRY\s+WORKSHEET\b", re.I),
+        DocumentType.CUSTOMS_ENTRY_SUMMARY,
+    ),
+    (
+        re.compile(r"\bBOTANICAL\s*/?\s*LACEY\s+SUPPORTING\s+DECLARATION\b", re.I),
+        DocumentType.SPECIES_DECLARATION,
+    ),
+    (
+        re.compile(r"\bSUPPLIER\s+MATERIAL\s+ORIGIN\s+STATEMENT\b", re.I),
+        DocumentType.SUPPLIER_DECLARATION,
+    ),
+    (
+        re.compile(r"\bARRIVAL\s+NOTICE\b", re.I),
+        DocumentType.ARRIVAL_NOTICE,
+    ),
+    (
+        re.compile(r"\bPRODUCT\s+COMPOSITION\s*/?\s*BOM\s+DECLARATION\b", re.I),
+        DocumentType.SUPPLIER_DECLARATION,
+    ),
+    (
+        re.compile(r"\bLACEY\s+ACT\s+PLANT\s+DATA\s+WORKSHEET\b", re.I),
+        DocumentType.SPECIES_DECLARATION,
+    ),
 )
 
 _INVOICE_NUMBER = re.compile(
@@ -345,17 +369,30 @@ def _shares_document_fingerprint(
     if previous.containers & current.containers:
         return True
 
-    if (
+    return False
+
+
+def _is_explicit_pagination_continuation(
+    previous: PageClassification,
+    current: PageClassification,
+) -> bool:
+    """Keep an explicitly paginated same-document continuation together.
+
+    Shared business identifiers (invoice, B/L, container) are not continuity
+    proof. Explicit sequential pagination is: it is the only continuity signal
+    allowed to outrank a repeated same-type title.
+    """
+
+    return bool(
         previous.page_number is not None
         and previous.page_total is not None
         and current.page_number is not None
         and current.page_total is not None
         and previous.page_total == current.page_total
         and current.page_number == previous.page_number + 1
-    ):
-        return True
-
-    return False
+        and current.document_type is previous.document_type
+        and current.strong_anchor is previous.strong_anchor
+    )
 
 
 def starts_new_document(
@@ -364,19 +401,24 @@ def starts_new_document(
 ) -> bool:
     """Return True only when deterministic evidence supports a document boundary.
 
-    Continuity fingerprints intentionally have precedence over repeated titles.
-    This keeps repeated headers on multipage invoices/B/Ls inside one logical
-    document while still allowing strong titles to start a genuinely new source.
+    Strong document-title anchors have precedence over shared business
+    fingerprints such as invoice, B/L, or container identifiers. The only
+    exception is an explicit sequential page continuation of the same document
+    type, which prevents repeated headers on a true multipage document from
+    creating artificial splits.
     """
 
     if previous is None:
         return True
 
-    if _shares_document_fingerprint(previous, current):
+    if _is_explicit_pagination_continuation(previous, current):
         return False
 
     if current.strong_anchor is not None:
         return True
+
+    if _shares_document_fingerprint(previous, current):
+        return False
 
     if (
         current.document_type is not previous.document_type

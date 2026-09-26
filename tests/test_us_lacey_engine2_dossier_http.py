@@ -77,11 +77,14 @@ def test_authenticated_foreign_operation_is_not_rendered(engine2_postgres_sessio
     a_client.close(); b_client.close()
 
 
-def test_invalid_and_disabled_dossier_gets_fail_safe_http_200(engine2_postgres_session_factory, monkeypatch):
+def test_invalid_dossier_remains_fail_safe_when_shadow_mode_is_off(engine2_postgres_session_factory, monkeypatch):
     client, org, operation, public_id = _account_operation(monkeypatch); _persist_current(engine2_postgres_session_factory, monkeypatch, org, operation)
     session = tenant_session(engine2_postgres_session_factory, org); snapshot = session.scalar(select(UsLaceyEngineShipmentRun).where(UsLaceyEngineShipmentRun.operation_id == operation)); payload = dict(snapshot.resolution_json); payload["documents"] = []; snapshot.resolution_json = payload; session.commit(); session.close()
     monkeypatch.setenv("US_LACEY_ENGINE2_MODE", "SHADOW")
     invalid = client.get(f"/operations/{public_id}"); assert invalid.status_code == 200 and 'data-engine2-availability="INVALID"' in invalid.text and "Traceback" not in invalid.text
     monkeypatch.setenv("US_LACEY_ENGINE2_MODE", "off")
-    disabled = client.get(f"/operations/{public_id}"); assert disabled.status_code == 200 and 'data-engine2-availability="DISABLED"' in disabled.text
+    still_visible = client.get(f"/operations/{public_id}")
+    assert still_visible.status_code == 200
+    assert 'data-engine2-availability="INVALID"' in still_visible.text
+    assert 'data-engine2-availability="DISABLED"' not in still_visible.text
     client.close()

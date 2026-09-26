@@ -222,3 +222,51 @@ def test_ambiguous_components_fail_closed_instead_of_leaking_across_lines():
     )
     assert "species" not in truth.plant_lines[0].fields
     assert "species" not in truth.plant_lines[1].fields
+
+
+def test_exact_independent_consensus_overrides_review_required_state():
+    payload = _golden_payload()
+    harvest_rows = payload["canonical_fields"]["country_of_harvest"]["supporting_evidence"]
+
+    duplicates = []
+    for row in harvest_rows:
+        clone = {
+            **row,
+            "candidate": {
+                **row["candidate"],
+                "raw": dict(row["candidate"]["raw"]),
+                "provenance": dict(row["candidate"]["provenance"]),
+            },
+        }
+        clone["document_id"] = "8"
+        clone["candidate_id"] = "8:" + row["candidate_id"]
+        duplicates.append(clone)
+
+    harvest_rows.extend(duplicates)
+
+    truth = build_canonical_shipment_truth(payload)
+
+    assert all(
+        line.fields["country_of_harvest"].state
+        is CanonicalTruthState.SUPPORTED_MULTIPLE
+        for line in truth.plant_lines
+    )
+    assert all(
+        {evidence.document_id for evidence in line.fields["country_of_harvest"].evidence}
+        == {"5", "8"}
+        for line in truth.plant_lines
+    )
+
+
+def test_same_document_duplicate_does_not_override_review_required_state():
+    payload = _golden_payload()
+    harvest_rows = payload["canonical_fields"]["country_of_harvest"]["supporting_evidence"]
+    harvest_rows.extend(dict(row) for row in list(harvest_rows))
+
+    truth = build_canonical_shipment_truth(payload)
+
+    assert all(
+        line.fields["country_of_harvest"].state
+        is CanonicalTruthState.REVIEW_REQUIRED
+        for line in truth.plant_lines
+    )

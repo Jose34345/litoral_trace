@@ -208,3 +208,32 @@ def test_exact_golden_packet_supplier_statement_cannot_be_merchandise_descriptio
         for row in commercial_sources
         if str(row.field_name).casefold() == "product"
     )
+
+
+def test_projection_boundary_rejects_sku_and_packaging_tokens_as_hts():
+    headers = {1: frozenset({"line", "hts", "description", "entered value"})}
+    for value in ("PAL", "ACTTRAY18", "RUBCB32", "BOX", "CART"):
+        source = SimpleNamespace(
+            field_name="raw.table.1.HTS",
+            original_value=value,
+            normalized_value=value,
+            source_page=1,
+            source_locator="table:1;data_row:1;column:2",
+        )
+        assert _target_field(source, table_headers=headers) == (None, 0)
+
+    for header, value in (
+        ("HTS", "4419.90.9000"),
+        ("HTS", "4407.11"),
+        ("HTS", "440711"),
+        ("HTS", "4407.11.019 0"),
+        ("HTSUS", "4419.90.9000"),
+    ):
+        valid = SimpleNamespace(
+            field_name=f"raw.table.1.{header}",
+            original_value=value,
+            normalized_value=value,
+            source_page=1,
+            source_locator="table:1;data_row:1;column:2",
+        )
+        assert _target_field(valid, table_headers=headers) == ("hts_code", 3)
