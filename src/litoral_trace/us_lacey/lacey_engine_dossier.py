@@ -15,7 +15,10 @@ from litoral_trace.lacey_engine.pipeline import ENGINE_VERSION
 from litoral_trace.lacey_engine.serialization import BUNDLE_RESOLUTION_SCHEMA_VERSION, SHIPMENT_RESOLUTION_SCHEMA_VERSION, deserialize_shipment_resolution
 from litoral_trace.lacey_engine.shipment import LaceyRuleset
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
-from litoral_trace.us_lacey.lacey_engine_service import source_set_fingerprint
+from litoral_trace.us_lacey.lacey_engine_service import (
+    engine2_mode,  # compatibility seam for existing tests/integrations; no UI gate
+    source_set_fingerprint,
+)
 
 LOGGER = logging.getLogger(__name__)
 
