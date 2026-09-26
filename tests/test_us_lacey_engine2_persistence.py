@@ -352,7 +352,7 @@ def test_engine_contract_bump_does_not_reuse_prior_document_cache(
     historical = UsLaceyEngine2Service(
         session_factory=engine2_postgres_session_factory,
         vault_service=FakeVault(b"same-golden-pdf-bytes"),
-        engine_version="lacey-engine-2.5.0",
+        engine_version="lacey-engine-2.6.0",
     )
     current = UsLaceyEngine2Service(
         session_factory=engine2_postgres_session_factory,
@@ -380,5 +380,5 @@ def test_engine_contract_bump_does_not_reuse_prior_document_cache(
         session.close()
 
     assert calls == [1, 1]
-    assert versions == {"lacey-engine-2.5.0", service_module.ENGINE_VERSION}
-    assert service_module.ENGINE_VERSION == "lacey-engine-2.6.0"
+    assert versions == {"lacey-engine-2.6.0", service_module.ENGINE_VERSION}
+    assert service_module.ENGINE_VERSION == "lacey-engine-2.6.1"
