@@ -26,6 +26,7 @@ from .segmentation import (
     segment,
 )
 from .semantic_graph import (
+    fold_text,
     is_out_of_scope_context,
     party_address,
     party_core,
@@ -61,16 +62,66 @@ _MERCHANDISE_DESCRIPTION_LABEL = re.compile(
 )
 _IMPORTER_NAME_LABEL = re.compile(r"(?:importer|importer name|importer of record|importer of record name)", re.I)
 _CONSIGNEE_NAME_LABEL = re.compile(r"(?:consignee|consignee name)", re.I)
-_ENTRY_LABEL = re.compile(r"(?:entry number|entry no\.?|filing entry reference|filing entry number)", re.I)
+_ENTRY_LABEL = re.compile(r"(?:entry number|entry no\.?|entry reference|entry\s*/\s*filing ref\.?|filing ref\.?|filing entry reference|filing entry number)", re.I)
 _MID_LABEL = re.compile(r"(?:mid|manufacturer id|manufacturer identification|manufacturer identification code(?: \(mid\))?)", re.I)
 _HTS_LABEL = re.compile(r"(?:htsus|hts|hts code|hts number|hts no\.?)", re.I)
-_ENTERED_VALUE_LABEL = re.compile(r"(?:entered value(?: usd)?|customs entered value(?: usd)?)", re.I)
+_ENTERED_VALUE_LABEL = re.compile(r"(?:entered value(?: usd)?|customs entered value(?: usd)?|line value)", re.I)
 _CURRENCY_LABEL = re.compile(r"(?:currency|currency code)", re.I)
 _ARTICLE_COMPONENT_LABEL = re.compile(r"(?:article\s*/\s*component|article component|component)", re.I)
 _PLANT_QUANTITY_LABEL = re.compile(r"(?:quantity of plant material|plant material quantity|plant quantity|plant qty)", re.I)
 _PLANT_UNIT_LABEL = re.compile(r"(?:metric unit|plant unit|unit of plant material|plant material unit)", re.I)
 _PERCENT_RECYCLED_LABEL = re.compile(r"(?:percent recycled|recycled percentage|% recycled)", re.I)
 _ISO_CURRENCY = re.compile(r"^(USD|EUR|CAD|GBP|AUD|JPY|CNY|BRL|MXN)\b", re.I)
+_STRUCTURAL_PARTY_VALUES = frozenset({
+    "consignee",
+    "importer",
+    "notify party",
+    "notify party importer",
+    "shipper",
+})
+_DESCRIPTION_NOISE = frozenset({
+    "gross wt",
+    "gross weight",
+    "net wt",
+    "net weight",
+    "marks nos",
+    "marks and nos",
+    "packages",
+})
+
+
+def _mid_candidate(value: object) -> str | None:
+    """Extract only the compact CBP MID token from an adjacent-label text run."""
+
+    text = " ".join(str(value or "").upper().split())
+    match = re.match(r"^([A-Z0-9]{5,15})(?=\s|$)", text)
+    if match is None:
+        return None
+    candidate = match.group(1)
+    return candidate if valid_mid_value(candidate) else None
+
+
+def _valid_party_candidate(value: object) -> bool:
+    folded = fold_text(value)
+    return bool(folded) and folded not in _STRUCTURAL_PARTY_VALUES
+
+
+def _valid_description_candidate(value: object) -> bool:
+    text = " ".join(str(value or "").split()).strip(" .,:;-")
+    if len(text) < 4:
+        return False
+    return fold_text(text) not in _DESCRIPTION_NOISE
+
+
+def _valid_country_candidate(value: object) -> bool:
+    text = " ".join(str(value or "").split()).strip(" .,:;-")
+    if not text:
+        return False
+    words = text.split()
+    if len(words) > 3 or words[0].casefold() in {"is", "are", "the"}:
+        return False
+    return True
+
 
 
 def _candidate(field: str, value: str, block, label: str, evidence=EvidenceClass.EXPLICIT, derived_from=None) -> RawCandidate:
@@ -179,7 +230,7 @@ def _plant_quantity_row_keys(layout, table_ids: frozenset[str]) -> frozenset[tup
 
 def _append_party(found, *, target: str, address_target: str, value: str, block, label: str) -> None:
     name = party_core(value)
-    if name:
+    if name and _valid_party_candidate(name):
         found[target].append(_candidate(target, name, block, label))
     address = party_address(value)
     if address:
@@ -229,12 +280,13 @@ def _extract(layout):
             elif re.fullmatch(r"consignee(?:'s)? address|consignee address", lower):
                 found["consignee_address"].append(_candidate("consignee_address", value, block, key))
             elif _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(key) or (_table_context(block) and lower == "description"):
-                found["description"].append(_candidate("description", value, block, key))
+                if _valid_description_candidate(value):
+                    found["description"].append(_candidate("description", value, block, key))
             elif _ENTRY_LABEL.fullmatch(key):
                 found["filing_entry_reference"].append(_candidate("filing_entry_reference", value.upper(), block, key))
             elif _MID_LABEL.fullmatch(key):
-                candidate_value = value.upper().strip()
-                if valid_mid_value(candidate_value):
+                candidate_value = _mid_candidate(value)
+                if candidate_value is not None:
                     found["manufacturer_id"].append(_candidate("manufacturer_id", candidate_value, block, key))
             elif _HTS_LABEL.fullmatch(key):
                 found["hts_code"].append(_candidate("hts_code", value, block, key))
@@ -255,8 +307,13 @@ def _extract(layout):
                 found["genus"].append(_candidate("genus", value, block, key))
             elif re.fullmatch(r"species|plant species|scientific name species", lower):
                 found["species"].append(_candidate("species", value, block, key))
-            elif re.search(r"country of harvest|harvest country|harvested in", lower):
-                found["country_of_harvest"].append(_candidate("country_of_harvest", value, block, key))
+            elif re.search(r"country of harvest|harvest country|harvested in", lower) or (
+                lower == "harvest"
+                and block.table_id is not None
+                and str(block.table_id) in plant_declaration_tables
+            ):
+                if _valid_country_candidate(value):
+                    found["country_of_harvest"].append(_candidate("country_of_harvest", value, block, key))
             elif (
                 _PLANT_QUANTITY_LABEL.fullmatch(key)
                 or (
@@ -303,13 +360,13 @@ def _extract(layout):
                 found["consignee_name"].append(_candidate("consignee_name", name, block, "Consignee Name"))
         for match in re.finditer(r"(?P<label>Commodity Description|Cargo Description\s+\d+|Description of Goods|Goods Description|Merchandise Description)\s*[:#-]?\s*(?P<value>[^\n]{1,240})", text, re.I):
             value = " ".join(match.group("value").split())
-            if value:
+            if _valid_description_candidate(value):
                 found["description"].append(_candidate("description", value, block, match.group("label")))
         for match in re.finditer(r"(?P<label>Entry (?:Number|No\.?)|Filing Entry (?:Reference|Number))\s*[:#-]?\s*(?P<value>[A-Z0-9-]{8,20})", text, re.I):
             found["filing_entry_reference"].append(_candidate("filing_entry_reference", match.group("value").upper(), block, match.group("label")))
-        for match in re.finditer(r"(?P<label>MID|Manufacturer Identification(?: Code)?(?: \(MID\))?|Manufacturer ID)\s*[:#-]?\s*(?P<value>[A-Z0-9][A-Z0-9 -]{4,24})\b", text, re.I):
-            candidate_value = " ".join(match.group("value").split()).upper()
-            if valid_mid_value(candidate_value):
+        for match in re.finditer(r"(?P<label>MID|Manufacturer Identification(?: Code)?(?: \(MID\))?|Manufacturer ID)\s*[:#-]?\s*(?P<value>[A-Z0-9]{5,15})\b", text, re.I):
+            candidate_value = _mid_candidate(match.group("value"))
+            if candidate_value is not None:
                 found["manufacturer_id"].append(_candidate("manufacturer_id", candidate_value, block, match.group("label")))
         for match in re.finditer(r"(?P<label>HTS(?:US|\s+(?:Code|Number|No\.?))?)\s*[:#-]?\s*(?P<value>\d{4,10}(?:[. -]\d{1,4})*)", text, re.I):
             found["hts_code"].append(_candidate("hts_code", match.group("value"), block, match.group("label")))
@@ -319,7 +376,7 @@ def _extract(layout):
             re.I,
         ):
             country = " ".join(match.group(1).split()).strip(" .,-")
-            if country:
+            if _valid_country_candidate(country):
                 found["country_of_harvest"].append(_candidate("country_of_harvest", country, block, "Country of Harvest"))
 
     genera = {"pinus", "eucalyptus", "quercus", "acer", "betula", "fagus", "fraxinus", "populus", "tectona", "hevea"}
