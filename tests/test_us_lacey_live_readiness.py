@@ -162,3 +162,18 @@ def test_free_tier_worker_readiness_requires_fresh_successful_db_heartbeat(monke
 
     us_lacey_free_app.app.state.us_lacey_inline_worker_last_success_monotonic = 80.0
     assert us_lacey_free_app._inline_worker_ready() is False
+
+
+def test_live_runtime_status_is_ready_with_dedicated_worker_topology(monkeypatch):
+    monkeypatch.delenv("LT_LACEY_MULTILINGUAL_SHADOW", raising=False)
+    payload = live_readiness.live_runtime_status(
+        worker_ready=False,
+        storage_roundtrip="ready",
+        ocr_runtime="ready",
+        inline_worker_enabled=False,
+    )
+
+    assert payload["status"] == "ready"
+    assert payload["inline_worker"] == "disabled"
+    assert payload["storage_roundtrip"] == "ready"
+    assert payload["ocr_runtime"] == "ready"
