@@ -404,14 +404,6 @@ def _extract(layout):
             name = party_core(match.group(1))
             if name and _valid_party_candidate(name):
                 found["shipper_name"].append(_candidate("shipper_name", name, block, "Shipper"))
-        for match in re.finditer(r"\b(?:Supplier|Fornecedor|Proveedor)\s*[:#-]\s*([^\n]{3,140})", text, re.I):
-            name = party_core(match.group(1))
-            if name and _valid_party_candidate(name):
-                found["supplier_name"].append(_candidate("supplier_name", name, block, "Supplier"))
-        for match in re.finditer(r"\bCountry of Origin\s*[:#-]?\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .'-]{1,60})", text, re.I):
-            country = " ".join(match.group(1).split()).strip(" .,-")
-            if _valid_country_candidate(country):
-                found["country_of_origin"].append(_candidate("country_of_origin", country, block, "Country of Origin"))
         for match in re.finditer(r"(?P<label>Commodity Description|Cargo Description\s+\d+|Description of Goods|Goods Description|Merchandise Description)\s*[:#-]?\s*(?P<value>[^\n]{1,240})", text, re.I):
             value = " ".join(match.group("value").split())
             if _valid_description_candidate(value):
