@@ -1,0 +1,66 @@
+name: Ops - Enable Engine2 worker runtime
+
+on:
+  push:
+    branches:
+      - ops/northflank-release-p0-20260925
+    paths:
+      - .github/workflows/ops-enable-engine2-runtime.yml
+
+permissions:
+  contents: read
+
+jobs:
+  enable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+    steps:
+      - run: npm install --global @northflank/cli@0.13.0
+      - run: northflank login -n ci -t "$NORTHFLANK_API_KEY" >/dev/null
+      - name: Enable Engine2 on dedicated worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          payload={
+            "name":"Litoral Trace Engine2 Runtime",
+            "description":"Enable deterministic Engine 2 canonical resolution on the dedicated U.S. Lacey worker.",
+            "type":"secret",
+            "secretType":"environment",
+            "priority":100,
+            "restrictions":{
+              "restricted":True,
+              "nfObjects":[{"id":"litoral-trace-worker","type":"service"}],
+              "tagMatchCondition":"or"
+            },
+            "secrets":{"variables":{"US_LACEY_ENGINE2_MODE":"SHADOW"}}
+          }
+          with open("/tmp/engine2.json","w") as f:
+              json.dump(payload,f)
+          PY
+          existing="$(northflank list secrets --project litoral-trace -o json --quiet)"
+          sid="$(printf '%s' "$existing" | python -c 'import sys,json; d=json.load(sys.stdin); print(next((x.get("id","") for x in d.get("secrets",[]) if x.get("name")=="Litoral Trace Engine2 Runtime"), ""))')"
+          if [ -n "$sid" ]; then
+            northflank patch secret --projectId=litoral-trace --secretId="$sid" -f /tmp/engine2.json --quiet >/dev/null
+          else
+            northflank create secret --project litoral-trace -f /tmp/engine2.json --quiet >/dev/null
+          fi
+          rm -f /tmp/engine2.json
+          northflank restart service --projectId=litoral-trace --serviceId=litoral-trace-worker --quiet >/dev/null
+
+      - name: Verify mode after restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            out="$(northflank exec service --projectId=litoral-trace --serviceId=litoral-trace-worker --cmd="python -c \"from litoral_trace.us_lacey.lacey_engine_service import engine2_mode; print('ENGINE2_MODE='+engine2_mode())\"" 2>/dev/null || true)"
+            if printf '%s' "$out" | grep -q 'ENGINE2_MODE=SHADOW'; then
+              printf '%s\n' "$out"
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
