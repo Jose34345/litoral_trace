@@ -121,3 +121,79 @@ def test_equivalent_hts_formatting_collapses_cross_document_product_lines() -> N
         "4407.11.019 0",
         "4407.99.019 0",
     }
+
+
+def test_typed_row_binding_rejects_skus_and_packaging_codes_as_hts() -> None:
+    product_line = "200:p1-t2:row:1"
+    sku_line = "200:p1-t2:row:2"
+    pallet_line = "200:p1-t2:row:3"
+    rubber_sku_line = "200:p1-t2:row:4"
+
+    payload = {
+        "canonical_fields": {
+            "hts_code": _field(
+                "hts_code",
+                [
+                    _row(
+                        document_id=200,
+                        field="hts_code",
+                        value="4419.90.9000",
+                        line_key=product_line,
+                        row_index=1,
+                    ),
+                    _row(
+                        document_id=200,
+                        field="hts_code",
+                        value="ACTTRAY18",
+                        line_key=sku_line,
+                        row_index=2,
+                    ),
+                    _row(
+                        document_id=200,
+                        field="hts_code",
+                        value="PAL",
+                        line_key=pallet_line,
+                        row_index=3,
+                    ),
+                    _row(
+                        document_id=200,
+                        field="hts_code",
+                        value="RUBCB32",
+                        line_key=rubber_sku_line,
+                        row_index=4,
+                    ),
+                ],
+            ),
+            "description": _field(
+                "description",
+                [
+                    _row(
+                        document_id=200,
+                        field="description",
+                        value="Acacia serving tray",
+                        line_key=product_line,
+                        row_index=1,
+                    ),
+                    _row(
+                        document_id=200,
+                        field="description",
+                        value="PAL",
+                        line_key=pallet_line,
+                        row_index=3,
+                    ),
+                ],
+            ),
+        }
+    }
+
+    reconciled = reconcile_cross_document_line_identity(payload)
+
+    hts_rows = reconciled["canonical_fields"]["hts_code"]["supporting_evidence"]
+    assert [(row["normalized_value"], row["line_key"]) for row in hts_rows] == [
+        ("4419909000", product_line),
+    ]
+
+    description_rows = reconciled["canonical_fields"]["description"]["supporting_evidence"]
+    assert [(row["normalized_value"], row["line_key"]) for row in description_rows] == [
+        ("Acacia serving tray", product_line),
+    ]
