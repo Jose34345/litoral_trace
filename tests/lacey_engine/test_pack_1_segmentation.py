@@ -148,6 +148,29 @@ def test_strong_anchor_beats_shared_bill_and_container_fingerprints():
     assert starts_new_document(previous, current) is True
 
 
+
+@pytest.mark.parametrize(
+    ("title", "expected_type"),
+    (
+        ("DECLARACAO BOTANICA / SPECIES DECLARATION", DocumentType.SPECIES_DECLARATION),
+        ("DECLARACAO DE ORIGEM DO FORNECEDOR", DocumentType.SUPPLIER_DECLARATION),
+        ("DECLARACION BOTANICA / SPECIES DECLARATION", DocumentType.SPECIES_DECLARATION),
+        ("DECLARACION DE ORIGEN DEL PROVEEDOR", DocumentType.SUPPLIER_DECLARATION),
+    ),
+)
+def test_multilingual_declaration_titles_are_strong_engine2_anchors(title, expected_type):
+    bundle = process_bundle(
+        filename="multilingual-declaration.pdf",
+        content=_single_page_pdf(
+            title
+            + "\nLinha 1 - Pinus taeda - Pais de colheita: Brasil - Quantidade: 30.000 m3"
+        ),
+    )
+
+    assert len(bundle.documents) == 1
+    assert bundle.documents[0].document_type is expected_type
+
+
 def test_high_confidence_semantic_transition_starts_new_document():
     previous = PageClassification(
         page=3,

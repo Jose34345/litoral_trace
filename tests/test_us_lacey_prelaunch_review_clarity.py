@@ -35,6 +35,22 @@ def test_empty_optional_placeholder_is_not_counted_as_confirmed():
     assert settled[0].effective_value == "MSKU9228574"
 
 
+
+def test_review_required_status_is_customer_action_required():
+    detail = SimpleNamespace(
+        fields=(
+            _field(status="REVIEW", effective_value="Brasil"),
+            _field(status="REVIEW_REQUIRED", effective_value=None),
+            _field(status="MATCHED", effective_value="Gulf Wood Supply Inc."),
+        )
+    )
+
+    attention, supported, settled = _review_field_groups(detail)
+
+    assert [field.status for field in attention] == ["REVIEW", "REVIEW_REQUIRED"]
+    assert supported == ()
+    assert len(settled) == 1
+
 def test_document_dossier_does_not_claim_final_preparation_readiness():
     source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
     assert "Advanced evidence details" in source
@@ -46,8 +62,8 @@ def test_document_dossier_does_not_claim_final_preparation_readiness():
 def test_review_workspace_is_exception_first():
     source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
 
-    assert "You only need to handle missing facts or genuine conflicts." in source
-    assert "Only missing information or genuinely conflicting evidence appears here." in source
+    assert "You only need to handle missing facts, review-required evidence, or genuine conflicts." in source
+    assert "Only missing information, review-required evidence, or genuinely conflicting evidence appears here." in source
     assert "Auto-Resolved Data" in source
 
 

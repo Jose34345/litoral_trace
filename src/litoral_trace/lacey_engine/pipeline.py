@@ -33,7 +33,7 @@ from .semantic_graph import (
     valid_mid_value,
 )
 
-ENGINE_VERSION = "lacey-engine-2.6.1"
+ENGINE_VERSION = "lacey-engine-2.6.2"
 _FIELDS = (
     "estimated_arrival_date",
     "bill_of_lading",
@@ -42,6 +42,11 @@ _FIELDS = (
     "importer_address",
     "consignee_name",
     "consignee_address",
+    "country_of_origin",
+    "shipper_name",
+    "supplier_name",
+    "manufacturer_name",
+    "notify_party_name",
     "description",
     "species",
     "genus",
@@ -62,6 +67,11 @@ _MERCHANDISE_DESCRIPTION_LABEL = re.compile(
 )
 _IMPORTER_NAME_LABEL = re.compile(r"(?:importer|importer name|importer of record|importer of record name)", re.I)
 _CONSIGNEE_NAME_LABEL = re.compile(r"(?:consignee|consignee name)", re.I)
+_COUNTRY_OF_ORIGIN_LABEL = re.compile(r"(?:country of origin|pa[ií]s de origem|pa[ií]s de origen)", re.I)
+_SHIPPER_NAME_LABEL = re.compile(r"(?:shipper(?: name)?|shipper\s*/\s*embarcador|embarcador)", re.I)
+_SUPPLIER_NAME_LABEL = re.compile(r"(?:supplier(?: name)?|fornecedor|proveedor)", re.I)
+_MANUFACTURER_NAME_LABEL = re.compile(r"(?:manufacturer(?: name)?|fabricante)", re.I)
+_NOTIFY_PARTY_NAME_LABEL = re.compile(r"(?:notify party(?: name)?)", re.I)
 _ENTRY_LABEL = re.compile(r"(?:entry number|entry no\.?|entry reference|entry\s*/\s*filing ref\.?|filing ref\.?|filing entry reference|filing entry number)", re.I)
 _MID_LABEL = re.compile(r"(?:mid|manufacturer id|manufacturer identification|manufacturer identification code(?: \(mid\))?)", re.I)
 _HTS_LABEL = re.compile(r"(?:htsus|hts|hts code|hts number|hts no\.?)", re.I)
@@ -279,6 +289,25 @@ def _extract(layout):
                 _append_party(found, target="consignee_name", address_target="consignee_address", value=value, block=block, label=key)
             elif re.fullmatch(r"consignee(?:'s)? address|consignee address", lower):
                 found["consignee_address"].append(_candidate("consignee_address", value, block, key))
+            elif _COUNTRY_OF_ORIGIN_LABEL.fullmatch(key):
+                if _valid_country_candidate(value):
+                    found["country_of_origin"].append(_candidate("country_of_origin", value, block, key))
+            elif _SHIPPER_NAME_LABEL.fullmatch(key):
+                name = party_core(value)
+                if name and _valid_party_candidate(name):
+                    found["shipper_name"].append(_candidate("shipper_name", name, block, key))
+            elif _SUPPLIER_NAME_LABEL.fullmatch(key):
+                name = party_core(value)
+                if name and _valid_party_candidate(name):
+                    found["supplier_name"].append(_candidate("supplier_name", name, block, key))
+            elif _MANUFACTURER_NAME_LABEL.fullmatch(key):
+                name = party_core(value)
+                if name and _valid_party_candidate(name):
+                    found["manufacturer_name"].append(_candidate("manufacturer_name", name, block, key))
+            elif _NOTIFY_PARTY_NAME_LABEL.fullmatch(key):
+                name = party_core(value)
+                if name and _valid_party_candidate(name):
+                    found["notify_party_name"].append(_candidate("notify_party_name", name, block, key))
             elif _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(key) or (_table_context(block) and lower == "description"):
                 if _valid_description_candidate(value):
                     found["description"].append(_candidate("description", value, block, key))
@@ -371,6 +400,10 @@ def _extract(layout):
             name = party_core(match.group(1))
             if name:
                 found["consignee_name"].append(_candidate("consignee_name", name, block, "Consignee Name"))
+        for match in re.finditer(r"\b(?:Shipper|Embarcador)\s*(?:/\s*Embarcador)?\s*[:#-]?\s*([A-Z][A-Za-z0-9 &.'()-]{3,100})", text):
+            name = party_core(match.group(1))
+            if name and _valid_party_candidate(name):
+                found["shipper_name"].append(_candidate("shipper_name", name, block, "Shipper"))
         for match in re.finditer(r"(?P<label>Commodity Description|Cargo Description\s+\d+|Description of Goods|Goods Description|Merchandise Description)\s*[:#-]?\s*(?P<value>[^\n]{1,240})", text, re.I):
             value = " ".join(match.group("value").split())
             if _valid_description_candidate(value):

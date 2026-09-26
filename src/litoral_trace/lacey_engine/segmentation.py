@@ -245,7 +245,35 @@ _STRONG_ANCHORS: tuple[tuple[re.Pattern[str], DocumentType], ...] = (
         DocumentType.SPECIES_DECLARATION,
     ),
     (
+        re.compile(
+            r"\bDECLARA(?:C|Ç)(?:A|Ã)O\s+BOT(?:A|Â)NICA(?:\s*/\s*(?:SPECIES\s+DECLARATION|SUPORTE\s+LACEY))?\b",
+            re.I,
+        ),
+        DocumentType.SPECIES_DECLARATION,
+    ),
+    (
+        re.compile(
+            r"\bDECLARACI(?:O|Ó)N\s+BOT(?:A|Á)NICA(?:\s*/\s*(?:SPECIES\s+DECLARATION|SOPORTE\s+LACEY))?\b",
+            re.I,
+        ),
+        DocumentType.SPECIES_DECLARATION,
+    ),
+    (
         re.compile(r"\bSUPPLIER\s+MATERIAL\s+ORIGIN\s+STATEMENT\b", re.I),
+        DocumentType.SUPPLIER_DECLARATION,
+    ),
+    (
+        re.compile(
+            r"\bDECLARA(?:C|Ç)(?:A|Ã)O\s+DE\s+ORIGEM\s+DO\s+FORNECEDOR\b",
+            re.I,
+        ),
+        DocumentType.SUPPLIER_DECLARATION,
+    ),
+    (
+        re.compile(
+            r"\bDECLARACI(?:O|Ó)N\s+DE\s+ORIGEN\s+DEL\s+PROVEEDOR\b",
+            re.I,
+        ),
         DocumentType.SUPPLIER_DECLARATION,
     ),
     (

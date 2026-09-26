@@ -1,6 +1,6 @@
 from __future__ import annotations
 import re
-from .domain import RawCandidate
+from .domain import LayoutStructureType, RawCandidate
 from .garbage_patterns import is_label_garbage
 
 _CONTAINER = re.compile(r"^[A-Z]{4}\d{7}$")
@@ -34,7 +34,16 @@ def admit(raw: RawCandidate) -> bool:
             and any(character.isalpha() for character in value)
         )
     if raw.field_key == "description":
-        return raw.label is not None and bool(_MERCHANDISE_DESCRIPTION_LABEL.fullmatch(raw.label.strip()))
+        if raw.label is None:
+            return False
+        label = raw.label.strip()
+        if _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(label):
+            return True
+        return (
+            label.casefold() == "description"
+            and raw.source_block.structure_type
+            in {LayoutStructureType.LINE_ITEM_TABLE, LayoutStructureType.MATRIX_TABLE}
+        )
     if raw.field_key == "country_of_harvest":
         return raw.label is not None and bool(re.search(r"(?:country of harvest|harvest country|harvested in)", raw.label, re.I))
     if raw.field_key == "plant_quantity":

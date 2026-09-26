@@ -8,7 +8,7 @@ import pytest
 
 from litoral_trace.lacey_engine.admission import admit
 from litoral_trace.lacey_engine.domain import (
-    EvidenceClass, FieldStatus, LayoutBlock, ParsedLayout, RawCandidate, ResolvedField,
+    EvidenceClass, FieldStatus, LayoutBlock, LayoutStructureType, ParsedLayout, RawCandidate, ResolvedField,
 )
 import litoral_trace.lacey_engine.layout_parser as layout_parser
 from litoral_trace.lacey_engine.layout_parser import layout_from_key_value_rows
@@ -53,6 +53,31 @@ def test_explicit_merchandise_description_is_extracted_and_admitted(monkeypatch,
     field = resolution.field("description")
     assert field.status is FieldStatus.MATCHED and "PINUS RADIATA TIMBER" in field.effective_value
     assert field.winning_candidate.raw.evidence_class is EvidenceClass.EXPLICIT and field.winning_candidate.raw.label == label
+
+
+
+def test_plain_description_is_admitted_only_when_typed_as_line_item_table(monkeypatch):
+    block = LayoutBlock(
+        "p1-t1-r1-c2",
+        1,
+        None,
+        "Description: Pinus taeda KD sawn boards",
+        "TABLE_CELL",
+        structure_type=LayoutStructureType.LINE_ITEM_TABLE,
+        table_id="p1-t1",
+        row_index=1,
+        column_index=2,
+        table_header="Description",
+        key_text="Description",
+        value_text="Pinus taeda KD sawn boards",
+    )
+    layout = ParsedLayout((block,), 1)
+    monkeypatch.setattr("litoral_trace.lacey_engine.pipeline.parse_layout", lambda *_: layout)
+
+    field = process_document(filename="entry.pdf", content=b"unused").field("description")
+
+    assert field.status is FieldStatus.MATCHED
+    assert field.effective_value == "Pinus taeda KD sawn boards"
 
 
 @pytest.mark.parametrize("label", ("Equipment Description", "Description"))

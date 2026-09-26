@@ -69,26 +69,26 @@ def test_schema_probe_fails_closed_when_database_is_unavailable(monkeypatch) -> 
     assert schema_compatibility.probe_us_lacey_schema_compatibility() is False
 
 
-def test_render_runtime_declares_schema_compatibility_dependency() -> None:
+def test_production_runtime_declares_schema_compatibility_dependency() -> None:
     root = Path(__file__).resolve().parents[1]
     requirements = (root / "requirements.txt").read_text(encoding="utf-8")
 
     assert "alembic>=1.13,<2" in requirements
 
 
-def test_release_contract_migrates_neon_before_render_checks_pass_deploy() -> None:
+def test_release_contract_uses_provider_agnostic_production_live_gate() -> None:
     root = Path(__file__).resolve().parents[1]
-    neon = (root / ".github/workflows/us-lacey-neon-live-gate.yml").read_text(
-        encoding="utf-8"
-    )
-    render = (root / "deploy/render-us-lacey-pilot-free.yaml").read_text(
+    workflows = root / ".github/workflows"
+    production = (workflows / "us-lacey-production-live-gate.yml").read_text(
         encoding="utf-8"
     )
 
-    assert "feature/us-lacey-pilot-platform" in neon
-    assert 'MODE="migrate"' in neon
-    assert "python -m alembic upgrade head" in neon
-    assert "US_LACEY_NEON_MIGRATION_DATABASE_URL" in neon
-    assert "autoDeployTrigger: checksPass" in render
-    assert "US_LACEY_NEON_MIGRATION_DATABASE_URL" not in render
-    assert "MIGRATION_DATABASE_URL" not in render
+    assert not (workflows / "us-lacey-neon-live-gate.yml").exists()
+    assert not (workflows / "us-lacey-render-live-gate.yml").exists()
+    assert "name: US Lacey Production Live Gate" in production
+    assert "feature/us-lacey-pilot-platform" in production
+    assert "https://lacey.litoraltrace.com" in production
+    assert "inline_worker" in production
+    assert "WORKER_ORIGIN" not in production
+    assert "onrender.com" not in production
+    assert "US_LACEY_NEON_MIGRATION_DATABASE_URL" not in production
