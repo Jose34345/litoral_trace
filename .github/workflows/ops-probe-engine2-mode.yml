@@ -1,0 +1,26 @@
+name: Ops - Probe Engine2 production mode
+
+on:
+  push:
+    branches:
+      - ops/northflank-release-p0-20260925
+    paths:
+      - .github/workflows/ops-probe-engine2-mode.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+    steps:
+      - run: npm install --global @northflank/cli@0.13.0
+      - run: northflank login -n ci -t "$NORTHFLANK_API_KEY" >/dev/null
+      - name: Probe worker mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          northflank exec service             --projectId=litoral-trace             --serviceId=litoral-trace-worker             --cmd="python -c \"from litoral_trace.us_lacey.lacey_engine_service import engine2_mode; print('ENGINE2_MODE='+engine2_mode())\""
