@@ -7,8 +7,10 @@ human-reviewed work.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 import hashlib
 import json
@@ -39,7 +41,7 @@ from litoral_trace.us_lacey.ppq505 import (
 )
 
 
-CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v5"
+CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v6"
 _CANONICAL_EXTRACTOR = "canonical-shipment-truth"
 _CANONICAL_CONFLICT_RESOLUTION = "Superseded by canonical shipment-line reconciliation."
 
@@ -272,6 +274,287 @@ def _ordinal(key: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _decimal_value(value: str) -> Decimal | None:
+    text = str(value or "").strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        return Decimal(text)
+    except InvalidOperation:
+        return None
+
+
+def _valid_commercial_anchor_tokens(
+    *,
+    line_key: str,
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+) -> frozenset[tuple[str, str]]:
+    """Return final-attribute-independent commercial anchors for one source row."""
+    tokens: set[tuple[str, str]] = set()
+    for field_name in ("entered_value", "hts_code"):
+        for row in evidence_by_field.get(field_name, ()):
+            if row.line_key != line_key:
+                continue
+            validation = validate_ppq_value(field_name, row.normalized_value)
+            if validation.status.value == "VALID" and validation.normalized_value:
+                tokens.add((field_name, validation.normalized_value))
+    return frozenset(tokens)
+
+
+def _structural_merchandise_groups(
+    *,
+    merchandise_keys: tuple[str, ...],
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+) -> tuple[dict[str, str], dict[str, frozenset[str]]]:
+    """Collapse source rows using relational/sequential evidence, never HTS+taxon.
+
+    Engine 2 emits document-local row identities.  Commercial documents can describe
+    the same customs line with different attributes, so canonical identity is proven
+    from repeated commercial values and corroborated row order.  HTS may corroborate
+    a commercial join, but taxon is deliberately absent from the grouping key.
+    """
+    parent = {key: key for key in merchandise_keys}
+
+    def find(key: str) -> str:
+        while parent[key] != key:
+            parent[key] = parent[parent[key]]
+            key = parent[key]
+        return key
+
+    def union(left: str, right: str) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root == right_root:
+            return
+        # Stable representative for deterministic publication.
+        representative, other = sorted(
+            (left_root, right_root),
+            key=lambda key: (
+                _ordinal(key) is None,
+                _ordinal(key) or 10**9,
+                key,
+            ),
+        )
+        parent[other] = representative
+
+    documents_by_line: dict[str, frozenset[str]] = {}
+    for line_key in merchandise_keys:
+        documents_by_line[line_key] = frozenset(
+            row.document_id
+            for field_name in _MERCHANDISE_FIELDS
+            for row in evidence_by_field.get(field_name, ())
+            if row.line_key == line_key and row.document_id
+        )
+
+    anchors = {
+        line_key: _valid_commercial_anchor_tokens(
+            line_key=line_key,
+            evidence_by_field=evidence_by_field,
+        )
+        for line_key in merchandise_keys
+    }
+
+    # First use exact relational evidence.  A shared entered value is admissible
+    # only with an additional structural/HTS corroborator; HTS alone never merges
+    # rows because the same classification can legitimately occur on many lines.
+    for index, left in enumerate(merchandise_keys):
+        for right in merchandise_keys[index + 1 :]:
+            left_docs = documents_by_line[left]
+            right_docs = documents_by_line[right]
+            if not left_docs or not right_docs or left_docs & right_docs:
+                continue
+            shared = anchors[left] & anchors[right]
+            if not shared:
+                continue
+            same_ordinal = (
+                _ordinal(left) is not None
+                and _ordinal(left) == _ordinal(right)
+            )
+            shared_entered = any(field == "entered_value" for field, _ in shared)
+            shared_hts = any(field == "hts_code" for field, _ in shared)
+            if (shared_entered and (same_ordinal or shared_hts)) or (
+                same_ordinal and shared_hts
+            ):
+                union(left, right)
+
+    # Then recover sparse fields through a corroborated sequential table alignment.
+    # Two source documents must expose the same multi-row ordinal set and at least
+    # two corresponding rows must already agree on a commercial anchor.
+    document_rows: dict[str, dict[int, str]] = defaultdict(dict)
+    ambiguous_document_ordinals: set[tuple[str, int]] = set()
+    for line_key in merchandise_keys:
+        ordinal = _ordinal(line_key)
+        if ordinal is None:
+            continue
+        for document_id in documents_by_line[line_key]:
+            existing = document_rows[document_id].get(ordinal)
+            if existing is not None and existing != line_key:
+                ambiguous_document_ordinals.add((document_id, ordinal))
+            else:
+                document_rows[document_id][ordinal] = line_key
+
+    document_ids = sorted(document_rows)
+    for index, left_doc in enumerate(document_ids):
+        left_rows = document_rows[left_doc]
+        if len(left_rows) < 2:
+            continue
+        for right_doc in document_ids[index + 1 :]:
+            right_rows = document_rows[right_doc]
+            if set(left_rows) != set(right_rows) or len(right_rows) < 2:
+                continue
+            ordinals = sorted(left_rows)
+            if any(
+                (left_doc, ordinal) in ambiguous_document_ordinals
+                or (right_doc, ordinal) in ambiguous_document_ordinals
+                for ordinal in ordinals
+            ):
+                continue
+            corroborated = sum(
+                bool(anchors[left_rows[ordinal]] & anchors[right_rows[ordinal]])
+                for ordinal in ordinals
+            )
+            if corroborated < min(2, len(ordinals)):
+                continue
+            for ordinal in ordinals:
+                union(left_rows[ordinal], right_rows[ordinal])
+
+    members_by_root: dict[str, set[str]] = defaultdict(set)
+    for key in merchandise_keys:
+        members_by_root[find(key)].add(key)
+
+    member_to_rep: dict[str, str] = {}
+    rep_to_members: dict[str, frozenset[str]] = {}
+    for members in members_by_root.values():
+        representative = sorted(
+            members,
+            key=lambda key: (
+                _ordinal(key) is None,
+                _ordinal(key) or 10**9,
+                key,
+            ),
+        )[0]
+        frozen = frozenset(members)
+        rep_to_members[representative] = frozen
+        for member in frozen:
+            member_to_rep[member] = representative
+    return member_to_rep, rep_to_members
+
+
+def _authoritative_description_evidence(
+    rows: tuple[CanonicalEvidence, ...],
+) -> tuple[CanonicalEvidence, ...]:
+    """Preserve PR #337: unique highest-authority wording wins per unified line."""
+    values = _distinct_values(rows)
+    documents = {row.document_id for row in rows if row.document_id}
+    if len(values) <= 1 or len(documents) < 2:
+        return rows
+
+    max_authority = max(row.source_authority for row in rows)
+    top_rows = tuple(row for row in rows if row.source_authority == max_authority)
+    top_values = _distinct_values(top_rows)
+    if len(top_values) != 1:
+        # Equal-authority disagreement remains fail-closed.
+        return rows
+    winner = top_values[0]
+    return tuple(row for row in rows if row.normalized_value == winner)
+
+
+def _component_taxon(
+    *,
+    component_key: str,
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+) -> str | None:
+    explicit = _taxon_parts(component_key)
+    if explicit is not None:
+        return f"taxon:{explicit[0]}:{explicit[1]}"
+
+    genus = {
+        row.normalized_value.casefold()
+        for row in evidence_by_field.get("genus", ())
+        if row.component_key == component_key and row.normalized_value
+    }
+    species = {
+        row.normalized_value.casefold()
+        for row in evidence_by_field.get("species", ())
+        if row.component_key == component_key and row.normalized_value
+    }
+    if len(genus) != 1 or len(species) != 1:
+        return None
+    return f"taxon:{next(iter(genus))}:{next(iter(species))}"
+
+
+def _component_groups(
+    *,
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+) -> tuple[dict[str, str], dict[str, frozenset[str]]]:
+    component_keys = {
+        row.component_key
+        for key in (_COMPONENT_FIELDS - _QUANTITATIVE_COMPONENT_FIELDS)
+        for row in evidence_by_field.get(key, ())
+        if row.component_key
+    }
+    grouped: dict[str, set[str]] = defaultdict(set)
+    for component_key in component_keys:
+        taxon = _component_taxon(
+            component_key=component_key,
+            evidence_by_field=evidence_by_field,
+        )
+        grouped[taxon or component_key].add(component_key)
+
+    member_to_group: dict[str, str] = {}
+    group_to_members: dict[str, frozenset[str]] = {}
+    for group_key, members in grouped.items():
+        frozen = frozenset(members)
+        group_to_members[group_key] = frozen
+        for member in frozen:
+            member_to_group[member] = group_key
+    return member_to_group, group_to_members
+
+
+def _structural_component_line_matches(
+    *,
+    component_group: str,
+    component_members: frozenset[str],
+    member_to_rep: Mapping[str, str],
+    rep_to_members: Mapping[str, frozenset[str]],
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+    description_text_by_line: Mapping[str, str],
+) -> tuple[str, ...]:
+    """Bind botanical components after commercial lines exist.
+
+    Exact source-row identity and aligned row ordinals are structural anchors.
+    Taxon text is a downstream corroborator/fallback, never part of the commercial
+    grouping key.
+    """
+    candidates: set[str] = set()
+
+    for member in component_members:
+        if member in member_to_rep:
+            candidates.add(member_to_rep[member])
+        ordinal = _ordinal(member)
+        if ordinal is not None:
+            ordinal_reps = {
+                representative
+                for representative in rep_to_members
+                if _ordinal(representative) == ordinal
+            }
+            if len(ordinal_reps) == 1:
+                candidates.update(ordinal_reps)
+
+    for field_name in ("genus", "species"):
+        for row in evidence_by_field.get(field_name, ()):
+            if row.component_key not in component_members:
+                continue
+            if row.line_key in member_to_rep:
+                candidates.add(member_to_rep[row.line_key])
+
+    if len(candidates) <= 1:
+        return tuple(sorted(candidates))
+
+    # Multiple structural candidates are ambiguous; do not let text guess through it.
+    return tuple(sorted(candidates))
+
+
 def _taxon_parts(key: str) -> tuple[str, str] | None:
     match = _TAXON.fullmatch(key.strip())
     if not match:
@@ -496,12 +779,11 @@ def _promotable_merchandise_line_keys(
 ) -> frozenset[str]:
     """Return only evidence-backed customs merchandise-line identities.
 
-    Description text is shipment metadata unless the same source row is anchored
-    by a valid HTS or a valid commercial entered value. When valid HTS-backed
-    rows already exist, an entered-value row equal to the shipment total is
-    treated as aggregate reconciliation evidence rather than a new merchandise
-    line. This prevents B/L cargo descriptions and TOTAL rows from manufacturing
-    phantom canonical lines.
+    A row is promotable when it carries a valid HTS or a valid commercial entered
+    value. Aggregate invoice/entry totals are excluded even when Engine 2 emitted
+    them as ordinary entered-value rows: a non-HTS row equal to the mathematical
+    sum of the document's HTS-backed rows (or the globally corroborated ordinal
+    line values) is shipment-total evidence, not a fourth merchandise line.
     """
 
     valid_hts_keys: set[str] = set()
@@ -518,18 +800,74 @@ def _promotable_merchandise_line_keys(
         if validation.status.value == "VALID" and validation.normalized_value:
             shipment_total_values.add(validation.normalized_value)
 
-    valid_entered_value_keys: set[str] = set()
+    entered_rows: list[tuple[CanonicalEvidence, str, Decimal]] = []
     for row in evidence_by_field.get("entered_value", ()):
         if not row.line_key:
             continue
         validation = validate_ppq_value("entered_value", row.normalized_value)
         if validation.status.value != "VALID" or not validation.normalized_value:
             continue
-        if (
-            valid_hts_keys
-            and validation.normalized_value in shipment_total_values
-            and row.line_key not in valid_hts_keys
-        ):
+        decimal_value = _decimal_value(validation.normalized_value)
+        if decimal_value is None:
+            continue
+        entered_rows.append((row, validation.normalized_value, decimal_value))
+
+    # Sum HTS-backed lines within each source document. This is the strongest
+    # anti-total proof because it never mixes duplicates from independent docs.
+    document_line_values: dict[str, dict[str, Decimal]] = defaultdict(dict)
+    for row, _normalized, value in entered_rows:
+        if row.line_key in valid_hts_keys and row.document_id:
+            existing = document_line_values[row.document_id].get(row.line_key)
+            if existing is None:
+                document_line_values[row.document_id][row.line_key] = value
+            elif existing != value:
+                # Ambiguous source row: do not use this document for sum inference.
+                document_line_values[row.document_id].clear()
+
+    document_totals = {
+        document_id: sum(values.values(), Decimal("0"))
+        for document_id, values in document_line_values.items()
+        if len(values) >= 2
+    }
+
+    # Also derive one cross-document total from stable ordinals when every
+    # HTS-backed ordinal has one exact value. This catches totals emitted in a
+    # separate customs document while avoiding duplicate evidence multiplication.
+    values_by_ordinal: dict[int, set[Decimal]] = defaultdict(set)
+    for row, _normalized, value in entered_rows:
+        if row.line_key not in valid_hts_keys:
+            continue
+        ordinal = _ordinal(row.line_key)
+        if ordinal is not None:
+            values_by_ordinal[ordinal].add(value)
+    stable_ordinal_values = [
+        next(iter(values))
+        for _ordinal_value, values in sorted(values_by_ordinal.items())
+        if len(values) == 1
+    ]
+    global_line_total = (
+        sum(stable_ordinal_values, Decimal("0"))
+        if len(stable_ordinal_values) >= 2
+        and len(stable_ordinal_values) == len(values_by_ordinal)
+        else None
+    )
+
+    valid_entered_value_keys: set[str] = set()
+    for row, normalized_value, decimal_value in entered_rows:
+        if row.line_key in valid_hts_keys:
+            valid_entered_value_keys.add(row.line_key)
+            continue
+
+        explicit_total = normalized_value in shipment_total_values
+        same_document_total = (
+            row.document_id in document_totals
+            and decimal_value == document_totals[row.document_id]
+        )
+        corroborated_global_total = (
+            global_line_total is not None
+            and decimal_value == global_line_total
+        )
+        if explicit_total or same_document_total or corroborated_global_total:
             continue
         valid_entered_value_keys.add(row.line_key)
 
@@ -537,7 +875,12 @@ def _promotable_merchandise_line_keys(
 
 
 def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
-    """Build one fail-closed shipment/plant-line truth from Engine 2 JSON."""
+    """Build one fail-closed shipment/plant-line truth from Engine 2 JSON.
+
+    Cross-document reconciliation may enrich evidence, but canonical line identity
+    is rebuilt here from structural/relational anchors. Final customs attributes
+    such as HTS+taxon are outputs of that join, never its prerequisite.
+    """
     payload = reconcile_cross_document_line_identity(payload)
     fields_payload = payload.get("canonical_fields")
     if not isinstance(fields_payload, Mapping):
@@ -557,53 +900,88 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
             if isinstance(row, Mapping)
         )
 
-    merchandise_keys = sorted(
-        _promotable_merchandise_line_keys(evidence_by_field),
-        key=lambda value: (_ordinal(value) is None, _ordinal(value) or 10**9, value),
+    source_merchandise_keys = tuple(
+        sorted(
+            _promotable_merchandise_line_keys(evidence_by_field),
+            key=lambda value: (
+                _ordinal(value) is None,
+                _ordinal(value) or 10**9,
+                value,
+            ),
+        )
     )
-    component_keys = sorted(
-        {
-            row.component_key
-            for key in (_COMPONENT_FIELDS - _QUANTITATIVE_COMPONENT_FIELDS)
-            for row in evidence_by_field.get(key, ())
-            if row.component_key
-        }
+    member_to_rep, rep_to_members = _structural_merchandise_groups(
+        merchandise_keys=source_merchandise_keys,
+        evidence_by_field=evidence_by_field,
+    )
+    merchandise_keys = tuple(
+        sorted(
+            rep_to_members,
+            key=lambda value: (
+                _ordinal(value) is None,
+                _ordinal(value) or 10**9,
+                value,
+            ),
+        )
+    )
+
+    _component_member_to_group, component_groups = _component_groups(
+        evidence_by_field=evidence_by_field,
+    )
+    component_keys = tuple(
+        sorted(
+            component_groups,
+            key=lambda key: (
+                min(
+                    (
+                        ordinal
+                        for member in component_groups[key]
+                        if (ordinal := _ordinal(member)) is not None
+                    ),
+                    default=10**9,
+                ),
+                key,
+            ),
+        )
     )
 
     description_text_by_line: dict[str, str] = {}
-    for line_key in merchandise_keys:
-        description_text_by_line[line_key] = " ".join(
+    for representative in merchandise_keys:
+        members = rep_to_members[representative]
+        description_text_by_line[representative] = " ".join(
             part
             for row in evidence_by_field.get("description", ())
-            if row.line_key == line_key
+            if row.line_key in members
             for part in (row.normalized_value, row.source_text)
             if part
         )
 
     matches_by_component: dict[str, tuple[str, ...]] = {}
     for component_key in component_keys:
-        explicit_matches = _explicit_component_line_matches(
-            component_key=component_key,
-            merchandise_keys=merchandise_keys,
+        component_members = component_groups[component_key]
+        matches = _structural_component_line_matches(
+            component_group=component_key,
+            component_members=component_members,
+            member_to_rep=member_to_rep,
+            rep_to_members=rep_to_members,
             evidence_by_field=evidence_by_field,
+            description_text_by_line=description_text_by_line,
         )
-        if explicit_matches is not None:
-            matches = explicit_matches
-        else:
+        if not matches and _taxon_parts(component_key) is not None:
             matches = tuple(
-                line_key
-                for line_key in merchandise_keys
+                representative
+                for representative in merchandise_keys
                 if _contains_taxon(
-                    description_text_by_line.get(line_key, ""),
+                    description_text_by_line.get(representative, ""),
                     component_key,
                 )
             )
-            if (
-                not matches
-                and len(merchandise_keys) == 1
-                and len(component_keys) == 1
-            ):
-                matches = (merchandise_keys[0],)
+        if (
+            not matches
+            and len(merchandise_keys) == 1
+            and len(component_keys) == 1
+        ):
+            matches = (merchandise_keys[0],)
         matches_by_component[component_key] = matches
 
     component_for_line: dict[str, str] = {}
@@ -621,14 +999,19 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
 
     line_truths: list[CanonicalPlantLineTruth] = []
     for line_key in merchandise_keys:
+        line_members = rep_to_members[line_key]
         line_fields: dict[str, CanonicalFieldTruth] = {}
         for engine_key in _MERCHANDISE_FIELDS:
             field_payload = field_payloads.get(engine_key)
             if field_payload is None:
                 continue
             rows = tuple(
-                row for row in evidence_by_field.get(engine_key, ()) if row.line_key == line_key
+                row
+                for row in evidence_by_field.get(engine_key, ())
+                if row.line_key in line_members
             )
+            if engine_key == "description":
+                rows = _authoritative_description_evidence(rows)
             if not rows:
                 continue
             line_fields[_ENGINE_TO_PPQ[engine_key]] = _field_truth(
@@ -639,23 +1022,17 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
 
         component_key = component_for_line.get(line_key)
         if component_key:
+            component_members = component_groups[component_key]
             for engine_key in _COMPONENT_FIELDS:
                 field_payload = field_payloads.get(engine_key)
                 if field_payload is None:
                     continue
-                if engine_key in _QUANTITATIVE_COMPONENT_FIELDS:
-                    rows = _quantitative_component_rows(
-                        engine_key=engine_key,
-                        line_key=line_key,
-                        component_key=component_key,
-                        evidence_by_field=evidence_by_field,
-                    )
-                else:
-                    rows = tuple(
-                        row
-                        for row in evidence_by_field.get(engine_key, ())
-                        if row.component_key == component_key
-                    )
+                rows = tuple(
+                    row
+                    for row in evidence_by_field.get(engine_key, ())
+                    if row.component_key in component_members
+                    or row.line_key in line_members
+                )
                 if not rows:
                     continue
                 line_fields[_ENGINE_TO_PPQ[engine_key]] = _field_truth(
@@ -669,13 +1046,18 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
             CanonicalPlantLineTruth(
                 entity_key=line_key,
                 ordinal_hint=_ordinal(line_key),
-                taxon_key=component_key,
+                taxon_key=(
+                    component_key
+                    if component_key and _taxon_parts(component_key) is not None
+                    else None
+                ),
                 fields=line_fields,
             )
         )
 
     if not merchandise_keys:
         for ordinal, component_key in enumerate(component_keys, start=1):
+            component_members = component_groups[component_key]
             line_fields: dict[str, CanonicalFieldTruth] = {}
             for engine_key in _COMPONENT_FIELDS:
                 field_payload = field_payloads.get(engine_key)
@@ -684,7 +1066,7 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
                 rows = tuple(
                     row
                     for row in evidence_by_field.get(engine_key, ())
-                    if row.component_key == component_key
+                    if row.component_key in component_members
                 )
                 if not rows:
                     continue
@@ -694,11 +1076,23 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
                     rows=rows,
                     force_review=engine_key in low_authority_fields,
                 )
+            component_ordinal = min(
+                (
+                    source_ordinal
+                    for member in component_members
+                    if (source_ordinal := _ordinal(member)) is not None
+                ),
+                default=ordinal,
+            )
             line_truths.append(
                 CanonicalPlantLineTruth(
                     entity_key=component_key,
-                    ordinal_hint=ordinal,
-                    taxon_key=component_key,
+                    ordinal_hint=component_ordinal,
+                    taxon_key=(
+                        component_key
+                        if _taxon_parts(component_key) is not None
+                        else None
+                    ),
                     fields=line_fields,
                 )
             )
@@ -710,6 +1104,7 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
         evidence_by_field=evidence_by_field,
     )
     plant_lines = tuple(line_truths)
+
     shipment_fields: dict[str, CanonicalFieldTruth] = {}
     for engine_key, field_payload in field_payloads.items():
         if engine_key in _MERCHANDISE_FIELDS or engine_key in _COMPONENT_FIELDS:
