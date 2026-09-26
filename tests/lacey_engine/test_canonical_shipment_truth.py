@@ -270,3 +270,29 @@ def test_same_document_duplicate_does_not_override_review_required_state():
         is CanonicalTruthState.REVIEW_REQUIRED
         for line in truth.plant_lines
     )
+
+
+def test_description_only_transport_row_does_not_create_phantom_customs_line():
+    payload = _golden_payload()
+    description_rows = payload["canonical_fields"]["description"]["supporting_evidence"]
+    transport = _evidence(
+        field="description",
+        value="WOODEN KITCHENWARE AND HOUSEHOLD ARTICLES",
+        document_id=2,
+        text="Description of Goods: WOODEN KITCHENWARE AND HOUSEHOLD ARTICLES",
+        line_key="2:p2-t3:row:1",
+    )
+    description_rows.append(transport)
+    payload["canonical_fields"]["description"]["state"] = "SUPPORTED_MULTIPLE"
+    payload["canonical_fields"]["description"]["values"] = [
+        {"value": row["normalized_value"], "evidence_ids": []}
+        for row in description_rows
+    ]
+
+    truth = build_canonical_shipment_truth(payload)
+
+    assert len(truth.plant_lines) == 2
+    assert {line.entity_key for line in truth.plant_lines} == {
+        "6:table:2:row:1",
+        "6:table:2:row:2",
+    }
