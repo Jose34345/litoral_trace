@@ -207,7 +207,10 @@ const openXmlPreview = async (trigger) => {
       credentials: "same-origin",
       headers: { Accept: "application/xml, text/xml;q=0.9" },
     });
-    if (!response.ok) throw new Error("The XML preview could not be generated.");
+    const contentType = response.headers.get("content-type") || "";
+    if (!response.ok || response.redirected || !contentType.includes("xml")) {
+      throw new Error("The XML preview could not be generated.");
+    }
     const xml = await response.text();
     modal.__xmlText = xml;
     codeNode.innerHTML = highlightXml(xml);
