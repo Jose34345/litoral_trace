@@ -779,12 +779,11 @@ def _promotable_merchandise_line_keys(
 ) -> frozenset[str]:
     """Return only evidence-backed customs merchandise-line identities.
 
-    Description text is shipment metadata unless the same source row is anchored
-    by a valid HTS or a valid commercial entered value. When valid HTS-backed
-    rows already exist, an entered-value row equal to the shipment total is
-    treated as aggregate reconciliation evidence rather than a new merchandise
-    line. This prevents B/L cargo descriptions and TOTAL rows from manufacturing
-    phantom canonical lines.
+    A row is promotable when it carries a valid HTS or a valid commercial entered
+    value. Aggregate invoice/entry totals are excluded even when Engine 2 emitted
+    them as ordinary entered-value rows: a non-HTS row equal to the mathematical
+    sum of the document's HTS-backed rows (or the globally corroborated ordinal
+    line values) is shipment-total evidence, not a fourth merchandise line.
     """
 
     valid_hts_keys: set[str] = set()
@@ -801,18 +800,74 @@ def _promotable_merchandise_line_keys(
         if validation.status.value == "VALID" and validation.normalized_value:
             shipment_total_values.add(validation.normalized_value)
 
-    valid_entered_value_keys: set[str] = set()
+    entered_rows: list[tuple[CanonicalEvidence, str, Decimal]] = []
     for row in evidence_by_field.get("entered_value", ()):
         if not row.line_key:
             continue
         validation = validate_ppq_value("entered_value", row.normalized_value)
         if validation.status.value != "VALID" or not validation.normalized_value:
             continue
-        if (
-            valid_hts_keys
-            and validation.normalized_value in shipment_total_values
-            and row.line_key not in valid_hts_keys
-        ):
+        decimal_value = _decimal_value(validation.normalized_value)
+        if decimal_value is None:
+            continue
+        entered_rows.append((row, validation.normalized_value, decimal_value))
+
+    # Sum HTS-backed lines within each source document. This is the strongest
+    # anti-total proof because it never mixes duplicates from independent docs.
+    document_line_values: dict[str, dict[str, Decimal]] = defaultdict(dict)
+    for row, _normalized, value in entered_rows:
+        if row.line_key in valid_hts_keys and row.document_id:
+            existing = document_line_values[row.document_id].get(row.line_key)
+            if existing is None:
+                document_line_values[row.document_id][row.line_key] = value
+            elif existing != value:
+                # Ambiguous source row: do not use this document for sum inference.
+                document_line_values[row.document_id].clear()
+
+    document_totals = {
+        document_id: sum(values.values(), Decimal("0"))
+        for document_id, values in document_line_values.items()
+        if len(values) >= 2
+    }
+
+    # Also derive one cross-document total from stable ordinals when every
+    # HTS-backed ordinal has one exact value. This catches totals emitted in a
+    # separate customs document while avoiding duplicate evidence multiplication.
+    values_by_ordinal: dict[int, set[Decimal]] = defaultdict(set)
+    for row, _normalized, value in entered_rows:
+        if row.line_key not in valid_hts_keys:
+            continue
+        ordinal = _ordinal(row.line_key)
+        if ordinal is not None:
+            values_by_ordinal[ordinal].add(value)
+    stable_ordinal_values = [
+        next(iter(values))
+        for _ordinal_value, values in sorted(values_by_ordinal.items())
+        if len(values) == 1
+    ]
+    global_line_total = (
+        sum(stable_ordinal_values, Decimal("0"))
+        if len(stable_ordinal_values) >= 2
+        and len(stable_ordinal_values) == len(values_by_ordinal)
+        else None
+    )
+
+    valid_entered_value_keys: set[str] = set()
+    for row, normalized_value, decimal_value in entered_rows:
+        if row.line_key in valid_hts_keys:
+            valid_entered_value_keys.add(row.line_key)
+            continue
+
+        explicit_total = normalized_value in shipment_total_values
+        same_document_total = (
+            row.document_id in document_totals
+            and decimal_value == document_totals[row.document_id]
+        )
+        corroborated_global_total = (
+            global_line_total is not None
+            and decimal_value == global_line_total
+        )
+        if explicit_total or same_document_total or corroborated_global_total:
             continue
         valid_entered_value_keys.add(row.line_key)
 
