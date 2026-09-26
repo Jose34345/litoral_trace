@@ -1,12 +1,11 @@
-name: US Lacey Render Live Gate
+name: US Lacey Production Live Gate
 
 on:
   push:
     branches:
       - feature/us-lacey-pilot-platform
     paths:
-      - .github/workflows/us-lacey-render-live-gate.yml
-      - deploy/render-us-lacey-pilot-free.yaml
+      - .github/workflows/us-lacey-production-live-gate.yml
       - requirements.txt
       - alembic/versions/*us_lacey*.py
       - src/litoral_trace/db/models/us_lacey*.py
@@ -21,12 +20,11 @@ permissions:
   contents: read
 
 jobs:
-  render-live-gate:
+  production-live-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
       ORIGIN: https://lacey.litoraltrace.com
-      WORKER_ORIGIN: https://litoral-trace-us-lacey-worker-free.onrender.com
     steps:
       - name: Wake service and verify health
         shell: bash
@@ -37,7 +35,7 @@ jobs:
             if [ "$code" = "200" ]; then
               break
             fi
-            echo "health attempt $attempt returned HTTP ${code:-network-error}; waiting for free-tier wake-up"
+            echo "health attempt $attempt returned HTTP ${code:-network-error}; waiting for production rollout"
             sleep 5
           done
           test "${code:-}" = "200"
@@ -47,7 +45,7 @@ jobs:
           body = json.loads(Path('/tmp/health.json').read_text())
           assert body.get('status') == 'healthy', body
           assert body.get('service') == 'us-lacey-pilot', body
-          print('render_health=PASS')
+          print('production_health=PASS')
           PY
 
       - name: Wait for unified Early Access landing deployment
@@ -108,7 +106,7 @@ jobs:
               exit 1
             fi
           done
-          echo 'render_early_access_landing=PASS'
+          echo 'production_early_access_landing=PASS'
 
       - name: Verify canonical and legacy marketing routes
         shell: bash
@@ -190,9 +188,9 @@ jobs:
           code="$(curl -sS -D /tmp/operations.headers -o /tmp/operations.body -w '%{http_code}' --max-time 20 "$ORIGIN/operations")"
           test "$code" = "303"
           grep -Eiq '^location: */login' /tmp/operations.headers
-          echo 'render_operations_auth_guard=PASS'
+          echo 'production_operations_auth_guard=PASS'
 
-      - name: Verify deployed worker and storage roundtrip
+      - name: Verify production readiness and storage roundtrip
         shell: bash
         run: |
           set -euo pipefail
@@ -230,38 +228,24 @@ jobs:
           assert body.get('inline_worker') in ('disabled', 'not_ready'), body
           shadow = body.get('multilingual_shadow')
           assert shadow in (None, 'disabled'), body
-          print('render_web_storage_roundtrip=PASS')
-          print('render_web_ocr_runtime=PASS')
-          print('render_inline_worker=DISABLED_AS_EXPECTED')
+          print('production_web_storage_roundtrip=PASS')
+          print('production_web_ocr_runtime=PASS')
+          print('production_inline_worker=DISABLED_AS_EXPECTED')
           PY
 
-          # Processing readiness belongs to the dedicated service.
-          for attempt in $(seq 1 48); do
-            worker_code="$(curl -sS -o /tmp/worker-health.json -w '%{http_code}' --max-time 20 "$WORKER_ORIGIN/health" || true)"
-            if [ "$worker_code" = "200" ]; then
-              break
-            fi
-            echo "worker health attempt $attempt returned HTTP ${worker_code:-network-error}; waiting for dedicated worker"
-            sleep 5
-          done
-          test "${worker_code:-}" = "200"
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          body = json.loads(Path('/tmp/worker-health.json').read_text())
-          assert body.get('status') == 'healthy', body
-          assert body.get('service') == 'us-lacey-worker', body
-          print('render_dedicated_worker=PASS')
-          PY
+          # The dedicated U.S. Lacey worker is internal to Northflank and has no
+          # public ingress by design. Its liveness belongs to Northflank's internal
+          # healthcheck/monitoring plane, not to a public GitHub Actions probe.
+          echo 'production_worker_topology=DEDICATED_INTERNAL'
 
       - name: Verify readiness contract
         shell: bash
         run: |
           set -euo pipefail
-          code="$(curl -sS -o /tmp/ready.json -w '%{http_code}' --max-time 20 "$ORIGIN/ready")"
-          echo "render_ready_http=$code"
-          if [ "$code" = "200" ]; then
-            python - <<'PY'
+          for attempt in $(seq 1 48); do
+            code="$(curl -sS -o /tmp/ready.json -w '%{http_code}' --max-time 20 "$ORIGIN/ready" || true)"
+            if [ "$code" = "200" ]; then
+              if python - <<'PY'
           import json
           from pathlib import Path
           body = json.loads(Path('/tmp/ready.json').read_text())
@@ -269,17 +253,26 @@ jobs:
           assert body.get('service') == 'us-lacey-pilot', body
           assert body.get('environment') == 'production', body
           assert body.get('hostname') == 'lacey.litoraltrace.com', body
-          print('render_ready=PASS')
           PY
-          elif [ "$code" = "503" ]; then
-            echo "render_ready=FAIL_CLOSED_503"
-            cat /tmp/ready.json
-            exit 1
-          else
-            echo "Unexpected /ready HTTP $code"
-            cat /tmp/ready.json
-            exit 1
-          fi
+              then
+                break
+              fi
+            fi
+            echo "ready attempt $attempt returned HTTP ${code:-network-error}; waiting for production rollout"
+            sleep 5
+          done
+
+          test "${code:-}" = "200"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          body = json.loads(Path('/tmp/ready.json').read_text())
+          assert body.get('status') == 'ready', body
+          assert body.get('service') == 'us-lacey-pilot', body
+          assert body.get('environment') == 'production', body
+          assert body.get('hostname') == 'lacey.litoraltrace.com', body
+          print('production_ready=PASS')
+          PY
 
       - name: Verify legal pages
         shell: bash
