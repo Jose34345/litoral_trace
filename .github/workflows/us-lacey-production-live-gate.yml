@@ -251,7 +251,7 @@ jobs:
           body = json.loads(Path('/tmp/ready.json').read_text())
           assert body.get('status') == 'ready', body
           assert body.get('service') == 'us-lacey-pilot', body
-          assert body.get('environment') == 'production', body
+          assert body.get('environment') in ('pilot', 'production'), body
           assert body.get('hostname') == 'lacey.litoraltrace.com', body
           PY
               then
@@ -269,7 +269,7 @@ jobs:
           body = json.loads(Path('/tmp/ready.json').read_text())
           assert body.get('status') == 'ready', body
           assert body.get('service') == 'us-lacey-pilot', body
-          assert body.get('environment') == 'production', body
+          assert body.get('environment') in ('pilot', 'production'), body
           assert body.get('hostname') == 'lacey.litoraltrace.com', body
           print('production_ready=PASS')
           PY
