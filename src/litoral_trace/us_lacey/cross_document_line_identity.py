@@ -35,6 +35,17 @@ _TAXON = re.compile(r"^taxon:([^:]+):([^:]+)$", re.IGNORECASE)
 _EXPLICIT_SKU = re.compile(r"^SKU:[A-Z0-9][A-Z0-9._/-]*$", re.IGNORECASE)
 _EXPLICIT_LINE = re.compile(r"^LINE:(\d{1,6})$", re.IGNORECASE)
 _ROW = re.compile(r"^(?P<document>[^:]+):(?P<table>.+):row:(?P<row>\d+)$", re.IGNORECASE)
+_HTS_SOURCE_VALUE = re.compile(
+    r"^(?:\d{6,10}|\d{4}[.-]\d{2}[.-]\d{2,4}(?:\s*\d)?)$"
+)
+_PACKAGING_NOISE_TOKEN = re.compile(
+    r"^(?:PAL(?:LET)?|BOX|CART(?:ON)?|AUX(?:-\d+)?|DUNNAGE|TRAY)$",
+    re.IGNORECASE,
+)
+_PACKAGING_CONTEXT = re.compile(
+    r"\b(?:pallet|packag(?:e|ing)?|dunnage|carton|box|corner\s+protector|auxiliary)\b",
+    re.IGNORECASE,
+)
 
 
 def _candidate(row: Mapping) -> Mapping:
@@ -120,16 +131,87 @@ def _line_values(
 
 
 def _hts_identity(value: str) -> str | None:
-    """Return the PPQ-normalized HTS only for a contract-valid source value.
+    """Return a canonical HTS only for a semantically valid source token.
 
-    Identity matching may ignore presentation punctuation/spacing while the persisted
-    source candidate/raw evidence remains unchanged. Invalid values fail closed rather
-    than being guessed into an equivalence class.
+    Source evidence must already look like an HTS/HTSUS value. This prevents SKU,
+    packaging-code, or arbitrary alphanumeric cells from becoming line identity
+    merely because they were emitted under an HTS-shaped field upstream.
     """
-    validation = normalize_hts(value)
+
+    text = str(value or "").strip()
+    if not _HTS_SOURCE_VALUE.fullmatch(text):
+        return None
+    validation = normalize_hts(text)
     if validation.status is not PpqValidationStatus.VALID:
         return None
     return validation.normalized_value
+
+
+def _is_packaging_noise_row(row: Mapping) -> bool:
+    """Reject explicit package/admin rows before merchandise-line binding.
+
+    Exact row/code tokens such as PAL, BOX, CART, or TRAY are noise. For free
+    row text we additionally require packaging context so legitimate products
+    such as "Acacia serving tray" are never discarded merely because they
+    contain the word "tray".
+    """
+
+    block = _source_block(row)
+    direct_values = (
+        _normalized(row),
+        str(block.get("value_text") or "").strip(),
+        str(block.get("key_text") or "").strip(),
+    )
+    if any(_PACKAGING_NOISE_TOKEN.fullmatch(value) for value in direct_values if value):
+        return True
+
+    row_text = " ".join(
+        str(value or "").strip()
+        for value in (
+            block.get("text"),
+            _provenance(row).get("source_text"),
+        )
+        if str(value or "").strip()
+    )
+    if not row_text or not _PACKAGING_CONTEXT.search(row_text):
+        return False
+    first_token = re.split(r"\s+", row_text.strip(), maxsplit=1)[0].strip(":-")
+    return bool(_PACKAGING_NOISE_TOKEN.fullmatch(first_token))
+
+
+def _replace_supporting_rows(field_payload: dict, rows: list[dict]) -> None:
+    field_payload["supporting_evidence"] = rows
+    values = list(dict.fromkeys(_normalized(row) for row in rows if _normalized(row)))
+    field_payload["values"] = [
+        {"value": value, "evidence_ids": []}
+        for value in values
+    ]
+    field_payload["state"] = (
+        "MISSING"
+        if not values
+        else ("SUPPORTED" if len(values) == 1 else "SUPPORTED_MULTIPLE")
+    )
+
+
+def _filter_typed_merchandise_rows(fields: dict) -> None:
+    """Apply type and row-domain guards before deriving shipment line keys."""
+
+    for field_name in _MERCHANDISE_FIELDS:
+        field_payload = fields.get(field_name)
+        if not isinstance(field_payload, dict):
+            continue
+        rows = _field_rows(fields, field_name)
+        filtered = [
+            row
+            for row in rows
+            if not _is_packaging_noise_row(row)
+            and (
+                field_name != "hts_code"
+                or _hts_identity(_normalized(row)) is not None
+            )
+        ]
+        if len(filtered) != len(rows):
+            _replace_supporting_rows(field_payload, filtered)
 
 
 def _taxon_tokens(taxon: str) -> tuple[str, str] | None:
@@ -603,6 +685,8 @@ def reconcile_cross_document_line_identity(payload: Mapping) -> dict:
     fields = rewritten.get("canonical_fields")
     if not isinstance(fields, dict):
         return rewritten
+
+    _filter_typed_merchandise_rows(fields)
 
     line_keys = tuple(
         sorted(
