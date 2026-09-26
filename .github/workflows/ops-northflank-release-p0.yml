@@ -1,0 +1,67 @@
+name: Ops - Inspect Northflank P0 release
+
+on:
+  push:
+    branches:
+      - ops/northflank-release-p0-20260925
+    paths:
+      - .github/workflows/ops-northflank-release-p0.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+    steps:
+      - name: Validate Northflank secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$NORTHFLANK_API_KEY"
+          echo "Northflank secret available."
+
+      - name: Install Northflank CLI
+        run: npm install --global @northflank/cli@0.13.0
+
+      - name: Authenticate
+        shell: bash
+        run: northflank login -n ci -t "$NORTHFLANK_API_KEY" >/dev/null
+
+      - name: Inspect web and worker release state
+        shell: bash
+        run: |
+          set -euo pipefail
+          for id in litoral-trace-web litoral-trace-worker; do
+            northflank get service --project litoral-trace --service "$id" -o json --quiet > "/tmp/$id.json"
+            python - "$id" "/tmp/$id.json" <<'PY'
+          import json, sys
+          service_id, path = sys.argv[1], sys.argv[2]
+          with open(path, encoding="utf-8") as fh:
+              data = json.load(fh)
+          print(f"SERVICE={service_id}")
+          print(f"BUILD_STATUS={data.get('status',{}).get('build',{}).get('status')}")
+          print(f"DEPLOY_STATUS={data.get('status',{}).get('deployment',{}).get('status')}")
+          vcs = data.get("vcsData") or {}
+          print(f"VCS_BRANCH={vcs.get('branch')}")
+          print(f"VCS_SHA={vcs.get('sha') or vcs.get('commitSha') or ''}")
+          build = data.get("build") or {}
+          print(f"BUILD_BRANCH={build.get('branch') or ''}")
+          print(f"BUILD_SHA={build.get('sha') or build.get('commitSha') or ''}")
+          deployment = data.get("deployment") or {}
+          print(f"DEPLOY_IMAGE={deployment.get('imagePath') or deployment.get('image') or ''}")
+          print(f"DEPLOY_SHA={deployment.get('sha') or deployment.get('commitSha') or ''}")
+          print("---")
+          PY
+          done
+
+      - name: Show available deploy commands
+        shell: bash
+        run: |
+          northflank --help | grep -i -E 'build|deploy|restart' || true
+          northflank build --help || true
+          northflank deploy --help || true
+          northflank restart service --help || true
