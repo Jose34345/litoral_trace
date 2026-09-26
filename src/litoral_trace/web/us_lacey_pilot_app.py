@@ -882,7 +882,8 @@ def operation_review_submit(
                 identity=identity,
                 operation_public_id=operation_public_id,
                 us_session=us_session or "",
-                error=str(exc),
+                field_errors={int(field_id): str(exc)},
+                field_input_values={int(field_id): value},
                 status_code=400,
             )
         except UsLaceyOperationNotFound:
