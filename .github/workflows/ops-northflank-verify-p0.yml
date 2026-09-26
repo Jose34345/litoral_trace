@@ -1,0 +1,47 @@
+name: Ops - Verify Northflank P0 runtime
+
+on:
+  push:
+    branches:
+      - ops/northflank-release-p0-20260925
+    paths:
+      - .github/workflows/ops-northflank-verify-p0.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+    steps:
+      - name: Install Northflank CLI
+        run: npm install --global @northflank/cli@0.13.0
+
+      - name: Authenticate
+        shell: bash
+        run: northflank login -n ci -t "$NORTHFLANK_API_KEY" >/dev/null
+
+      - name: Verify web live-readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS https://lacey.litoraltrace.com/live-readiness -o /tmp/live.json
+          cat /tmp/live.json
+          jq -e '
+            .status == "ready" and
+            .inline_worker == "disabled" and
+            .storage_roundtrip == "ready" and
+            .ocr_runtime == "ready"
+          ' /tmp/live.json >/dev/null
+          echo "LIVE_READINESS=PASS"
+
+      - name: Verify P0 segmentation in deployed container
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(northflank exec service             --projectId=litoral-trace             --serviceId=litoral-trace-worker             --cmd="python -c \"from litoral_trace.lacey_engine.segmentation import PageClassification,starts_new_document; from litoral_trace.lacey_engine.domain import DocumentType; p=PageClassification(page=1,document_type=DocumentType.BILL_OF_LADING,confidence=0.99,block_ids=('p1',),strong_anchor=DocumentType.BILL_OF_LADING,bill_numbers=frozenset({'MAEU2609240001'}),containers=frozenset({'MSCU1234566'})); c=PageClassification(page=2,document_type=DocumentType.PACKING_LIST,confidence=0.99,block_ids=('p2',),strong_anchor=DocumentType.PACKING_LIST,bill_numbers=frozenset({'MAEU2609240001'}),containers=frozenset({'MSCU1234566'})); assert starts_new_document(p,c) is True; print('P0_SEGMENTATION=PASS')\"")"
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q 'P0_SEGMENTATION=PASS'
