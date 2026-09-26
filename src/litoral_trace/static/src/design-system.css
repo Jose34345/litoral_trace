@@ -467,6 +467,53 @@ html {
   animation: lt-validation-shake 280ms ease-out;
 }
 
+.lt-scroll-target {
+  scroll-margin-top: 7rem;
+}
+
+.lt-review-card {
+  border-left-width: 4px;
+  transform: translateZ(0);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.lt-review-card--blocking {
+  border-left-color: #dc2626;
+  background: #fffafa;
+}
+
+.lt-review-card--confirmation {
+  border-left-color: #f59e0b;
+  background: #fffdf5;
+}
+
+.lt-review-status {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+}
+
+.lt-review-status--blocking {
+  border-color: rgb(220 38 38 / 0.22);
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.lt-review-status--confirmation {
+  border-color: rgb(217 119 6 / 0.22);
+  background: #fffbeb;
+  color: #b45309;
+}
+
 .lt-sticky-action-bar {
   position: sticky;
   z-index: 45;
