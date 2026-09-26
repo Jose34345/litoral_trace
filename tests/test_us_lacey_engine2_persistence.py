@@ -325,3 +325,60 @@ def test_engine2_domain_preflight_persists_rejection_before_projection(
         assert "legal or administrative files" in run.safe_error_message
     finally:
         session.close()
+
+
+def test_engine_contract_bump_does_not_reuse_prior_document_cache(
+    engine2_postgres_session_factory,
+    monkeypatch,
+):
+    org, operation, link, _, _, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        content=b"same-golden-pdf-bytes",
+    )
+    calls = []
+
+    def process(**_kwargs):
+        calls.append(1)
+        return bundle_from_resolution(
+            _resolution(
+                "bill.pdf",
+                DocumentType.BILL_OF_LADING,
+                {"bill_of_lading": "MAEU2609240001"},
+            )
+        )
+
+    monkeypatch.setattr(service_module, "process_bundle", process)
+
+    historical = UsLaceyEngine2Service(
+        session_factory=engine2_postgres_session_factory,
+        vault_service=FakeVault(b"same-golden-pdf-bytes"),
+        engine_version="lacey-engine-2.5.0",
+    )
+    current = UsLaceyEngine2Service(
+        session_factory=engine2_postgres_session_factory,
+        vault_service=FakeVault(b"same-golden-pdf-bytes"),
+    )
+
+    assert historical.resolve_operation_with_engine2(
+        organization_id=org,
+        operation_id=operation,
+    ).status == "SUCCEEDED"
+    assert current.resolve_operation_with_engine2(
+        organization_id=org,
+        operation_id=operation,
+    ).status == "SUCCEEDED"
+
+    session = tenant_session(engine2_postgres_session_factory, org)
+    try:
+        versions = {
+            row.engine_version
+            for row in session.query(UsLaceyEngineDocumentRun)
+            .filter_by(operation_document_id=link, status="SUCCEEDED")
+            .all()
+        }
+    finally:
+        session.close()
+
+    assert calls == [1, 1]
+    assert versions == {"lacey-engine-2.5.0", service_module.ENGINE_VERSION}
+    assert service_module.ENGINE_VERSION == "lacey-engine-2.6.0"
