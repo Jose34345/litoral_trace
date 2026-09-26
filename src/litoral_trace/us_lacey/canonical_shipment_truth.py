@@ -966,7 +966,7 @@ def _publish_field(
     if _reviewed(target):
         return 0, 0, 0
 
-    if truth is None:
+    if truth is None or truth.state is CanonicalTruthState.MISSING:
         rejected = _reject_stale_machine_candidates(
             session,
             organization_id=organization_id,
