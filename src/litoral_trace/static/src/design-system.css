@@ -430,3 +430,204 @@
     transition-duration: 0.01ms;
   }
 }
+
+/* Enterprise motion primitives: compositor-only transitions prevent layout shift. */
+html {
+  scroll-behavior: smooth;
+}
+
+#operation-workspace,
+[data-operation-alias-shell],
+.lt-empty-state-transition {
+  transform: translateZ(0);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
+  will-change: opacity, transform;
+}
+
+#operation-workspace.htmx-swapping,
+[data-operation-alias-shell].htmx-swapping {
+  opacity: 0.35;
+  transform: translate3d(0, 4px, 0);
+}
+
+#operation-workspace.htmx-added,
+[data-operation-alias-shell].htmx-added {
+  animation: lt-fade-in-up 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lt-inline-error {
+  transform: translateZ(0);
+  animation: lt-fade-in-up 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lt-validation-shake {
+  animation: lt-validation-shake 280ms ease-out;
+}
+
+.lt-sticky-action-bar {
+  position: sticky;
+  z-index: 45;
+  bottom: 0.75rem;
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.875rem;
+  margin: 0 -0.25rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid rgb(203 213 225 / 0.86);
+  border-radius: 0.875rem;
+  background: rgb(255 255 255 / 0.9);
+  box-shadow: 0 18px 48px -26px rgb(15 23 42 / 0.42);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.lt-toast-region {
+  position: fixed;
+  z-index: 100;
+  right: 1rem;
+  bottom: 1rem;
+  width: min(24rem, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.75rem;
+  pointer-events: none;
+}
+
+.lt-toast {
+  --lt-toast-duration: 4000ms;
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+  border: 1px solid var(--lt-border);
+  border-radius: 0.875rem;
+  background: rgb(255 255 255 / 0.96);
+  padding: 0.875rem 0.875rem 1rem;
+  color: var(--lt-text-primary);
+  box-shadow: 0 22px 52px -24px rgb(15 23 42 / 0.48);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  pointer-events: auto;
+  transform: translate3d(0, 10px, 0);
+  opacity: 0;
+  animation: lt-toast-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.lt-toast.is-leaving {
+  animation: lt-toast-exit 180ms ease-in forwards;
+}
+
+.lt-toast--success .lt-toast__icon {
+  color: var(--lt-positive);
+}
+
+.lt-toast--danger .lt-toast__icon {
+  color: var(--lt-danger);
+}
+
+.lt-toast--info .lt-toast__icon {
+  color: var(--lt-info);
+}
+
+.lt-toast__message {
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+}
+
+.lt-toast__close {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--lt-text-muted);
+  cursor: pointer;
+}
+
+.lt-toast__close:hover {
+  background: var(--lt-surface-subtle);
+  color: var(--lt-text-primary);
+}
+
+.lt-toast__progress {
+  position: absolute;
+  inset: auto 0 0;
+  height: 3px;
+  background: color-mix(in srgb, var(--lt-accent) 72%, white);
+  transform: scaleX(1);
+  transform-origin: left;
+  animation: lt-toast-progress var(--lt-toast-duration) linear forwards;
+}
+
+@keyframes lt-fade-in-up {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes lt-validation-shake {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(-4px, 0, 0); }
+  50% { transform: translate3d(4px, 0, 0); }
+  75% { transform: translate3d(-2px, 0, 0); }
+}
+
+@keyframes lt-toast-enter {
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes lt-toast-exit {
+  to { opacity: 0; transform: translate3d(0, 8px, 0); }
+}
+
+@keyframes lt-toast-progress {
+  to { transform: scaleX(0); }
+}
+
+@media (max-width: 639px) {
+  .lt-sticky-action-bar {
+    bottom: 0.5rem;
+    align-items: stretch;
+  }
+
+  .lt-sticky-action-bar > * {
+    width: 100%;
+  }
+
+  .lt-sticky-action-bar .lt-btn,
+  .lt-sticky-action-bar form {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  #operation-workspace,
+  [data-operation-alias-shell],
+  .lt-empty-state-transition,
+  .lt-inline-error,
+  .lt-validation-shake,
+  .lt-toast {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+
+  .lt-toast__progress {
+    animation: none;
+  }
+}
+
