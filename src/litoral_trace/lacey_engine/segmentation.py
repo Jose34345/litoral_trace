@@ -303,10 +303,22 @@ def _normalized_tokens(pattern: re.Pattern[str], text: str) -> frozenset[str]:
 
 
 def _strong_anchor(text: str) -> DocumentType | None:
-    for pattern, document_type in _STRONG_ANCHORS:
-        if pattern.search(text):
-            return document_type
-    return None
+    """Return the earliest strong document-title anchor on the page.
+
+    Shipment forms routinely mention other document names in their body
+    (for example an Entry Worksheet contains a "Bill of Lading" field and an
+    Arrival Notice contains a "Commercial Invoice" field). Pattern declaration
+    order must therefore never outrank visual/textual title order.
+    """
+
+    matches: list[tuple[int, int, DocumentType]] = []
+    for priority, (pattern, document_type) in enumerate(_STRONG_ANCHORS):
+        match = pattern.search(text)
+        if match is not None:
+            matches.append((match.start(), priority, document_type))
+    if not matches:
+        return None
+    return min(matches, key=lambda item: (item[0], item[1]))[2]
 
 
 def _pagination(text: str) -> tuple[int | None, int | None]:
