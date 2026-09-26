@@ -42,6 +42,11 @@ _FIELDS = (
     "importer_address",
     "consignee_name",
     "consignee_address",
+    "shipper_name",
+    "supplier_name",
+    "manufacturer_name",
+    "notify_party_name",
+    "country_of_origin",
     "description",
     "species",
     "genus",
@@ -62,6 +67,26 @@ _MERCHANDISE_DESCRIPTION_LABEL = re.compile(
 )
 _IMPORTER_NAME_LABEL = re.compile(r"(?:importer|importer name|importer of record|importer of record name)", re.I)
 _CONSIGNEE_NAME_LABEL = re.compile(r"(?:consignee|consignee name)", re.I)
+_SHIPPER_NAME_LABEL = re.compile(
+    r"(?:shipper(?: name)?|embarcador|cargador)(?:\s*/\s*(?:shipper|embarcador|cargador))?",
+    re.I,
+)
+_SUPPLIER_NAME_LABEL = re.compile(
+    r"(?:supplier(?: name)?|fornecedor|proveedor)(?:\s*/\s*(?:supplier|fornecedor|proveedor))?",
+    re.I,
+)
+_MANUFACTURER_NAME_LABEL = re.compile(
+    r"(?:manufacturer(?: name)?|fabricante)(?:\s*/\s*(?:manufacturer|fabricante))?",
+    re.I,
+)
+_NOTIFY_PARTY_NAME_LABEL = re.compile(
+    r"(?:notify party(?: name)?|parte a notificar|parte para notificacao|parte para notificação)",
+    re.I,
+)
+_COUNTRY_OF_ORIGIN_LABEL = re.compile(
+    r"(?:country of origin|pa[ií]s de origen|pa[ií]s de origem)",
+    re.I,
+)
 _ENTRY_LABEL = re.compile(r"(?:entry number|entry no\.?|entry reference|entry\s*/\s*filing ref\.?|filing ref\.?|filing entry reference|filing entry number)", re.I)
 _MID_LABEL = re.compile(r"(?:mid|manufacturer id|manufacturer identification|manufacturer identification code(?: \(mid\))?)", re.I)
 _HTS_LABEL = re.compile(r"(?:htsus|hts|hts code|hts number|hts no\.?)", re.I)
@@ -279,6 +304,25 @@ def _extract(layout):
                 _append_party(found, target="consignee_name", address_target="consignee_address", value=value, block=block, label=key)
             elif re.fullmatch(r"consignee(?:'s)? address|consignee address", lower):
                 found["consignee_address"].append(_candidate("consignee_address", value, block, key))
+            elif _SHIPPER_NAME_LABEL.fullmatch(key):
+                name = party_core(value)
+                if name and _valid_party_candidate(name):
+                    found["shipper_name"].append(_candidate("shipper_name", name, block, key))
+            elif _SUPPLIER_NAME_LABEL.fullmatch(key):
+                name = party_core(value)
+                if name and _valid_party_candidate(name):
+                    found["supplier_name"].append(_candidate("supplier_name", name, block, key))
+            elif _MANUFACTURER_NAME_LABEL.fullmatch(key):
+                name = party_core(value)
+                if name and _valid_party_candidate(name):
+                    found["manufacturer_name"].append(_candidate("manufacturer_name", name, block, key))
+            elif _NOTIFY_PARTY_NAME_LABEL.fullmatch(key):
+                name = party_core(value)
+                if name and _valid_party_candidate(name):
+                    found["notify_party_name"].append(_candidate("notify_party_name", name, block, key))
+            elif _COUNTRY_OF_ORIGIN_LABEL.fullmatch(key):
+                if _valid_country_candidate(value):
+                    found["country_of_origin"].append(_candidate("country_of_origin", value, block, key))
             elif _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(key) or (_table_context(block) and lower == "description"):
                 if _valid_description_candidate(value):
                     found["description"].append(_candidate("description", value, block, key))
@@ -307,7 +351,10 @@ def _extract(layout):
                 found["genus"].append(_candidate("genus", value, block, key))
             elif re.fullmatch(r"species|plant species|scientific name species", lower):
                 found["species"].append(_candidate("species", value, block, key))
-            elif re.search(r"country of harvest|harvest country|harvested in", lower) or (
+            elif re.search(
+                r"country of harvest|harvest country|harvested in|pa[ií]s de colheita|pa[ií]s de cosecha",
+                lower,
+            ) or (
                 lower == "harvest"
                 and block.table_id is not None
                 and str(block.table_id) in plant_declaration_tables
@@ -384,7 +431,9 @@ def _extract(layout):
         for match in re.finditer(r"(?P<label>HTS(?:US|\s+(?:Code|Number|No\.?))?)\s*[:#-]?\s*(?P<value>\d{4,10}(?:[. -]\d{1,4})*)", text, re.I):
             found["hts_code"].append(_candidate("hts_code", match.group("value"), block, match.group("label")))
         for match in re.finditer(
-            r"(?:country of harvest|harvest country|harvested in|pa[ií]s de colheita|pa[ií]s de cosecha)\s*[:#-]?\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .'-]{1,60}?)(?=\s+-|\s+\||$)",
+            r"(?:country of harvest|harvest country|harvested in|pa[ií]s de colheita|pa[ií]s de cosecha)"
+            r"(?:\s+de\s+ambas\s+(?:l[ií]neas|linhas))?\s*[:#-]?\s*"
+            r"([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .'-]{1,60}?)(?=\s+-|\s+\||$)",
             text,
             re.I,
         ):
