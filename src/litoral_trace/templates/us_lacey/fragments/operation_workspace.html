@@ -105,7 +105,7 @@
         {% if field_error %}aria-invalid="true" aria-describedby="field-error-{{ field.id }}"{% endif %}
       >
       {% if field_error %}
-      <p id="field-error-{{ field.id }}" class="lt-inline-error mt-1 text-sm font-medium text-red-600" role="alert" data-inline-field-error>{{ field_error }}</p>
+      <p id="field-error-{{ field.id }}" class="lt-inline-error mt-1 text-sm font-medium" role="alert" data-inline-field-error>{{ field_error }}</p>
       {% endif %}
     </div>
     {{ button("Save", variant="secondary", button_type="submit", extra_classes="hover:border-slate-400 hover:bg-slate-50") }}
