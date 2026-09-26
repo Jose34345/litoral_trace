@@ -674,6 +674,52 @@ def _set_description_field(field_payload: dict, rows: list[dict]) -> None:
     field_payload["supporting_evidence"] = rows
 
 
+def _promote_exact_cross_document_consensus(fields: dict) -> None:
+    """Promote aggregate state when every scoped value has independent support.
+
+    This does not merge or invent evidence. It only removes an upstream review
+    state when the same normalized value is repeated by at least two distinct
+    physical/logical documents for each line/component scope represented.
+    """
+
+    for field_payload in fields.values():
+        if not isinstance(field_payload, dict):
+            continue
+        rows = _rows(field_payload)
+        if not rows:
+            continue
+
+        grouped: dict[tuple[str, str], list[dict]] = defaultdict(list)
+        for row in rows:
+            scope_key = (
+                str(row.get("line_key") or "").strip(),
+                str(row.get("component_key") or "").strip(),
+            )
+            grouped[scope_key].append(row)
+
+        if not grouped:
+            continue
+
+        independently_supported = True
+        for scoped_rows in grouped.values():
+            values = {
+                _normalized(row)
+                for row in scoped_rows
+                if _normalized(row)
+            }
+            documents = {
+                str(row.get("document_id") or "").strip()
+                for row in scoped_rows
+                if str(row.get("document_id") or "").strip()
+            }
+            if len(values) != 1 or len(documents) < 2:
+                independently_supported = False
+                break
+
+        if independently_supported:
+            field_payload["state"] = "SUPPORTED_MULTIPLE"
+
+
 def reconcile_cross_document_line_identity(payload: Mapping) -> dict:
     """Return a shipment payload with only strongly equivalent rows collapsed.
 
@@ -762,5 +808,7 @@ def reconcile_cross_document_line_identity(payload: Mapping) -> dict:
             description_payload = {}
             fields["description"] = description_payload
         _set_description_field(description_payload, synthesized)
+
+    _promote_exact_cross_document_consensus(fields)
 
     return rewritten
