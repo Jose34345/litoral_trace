@@ -1,4 +1,4 @@
-name: Ops - Inspect Northflank P0 release
+name: Ops - Deploy Northflank P0 release
 
 on:
   push:
@@ -11,57 +11,147 @@ permissions:
   contents: read
 
 jobs:
-  inspect:
+  deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 40
     env:
       NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+      TARGET_SHA: f3015f8c80a76f692e6ea6b755979652f7dbbe6e
+      PROJECT_ID: litoral-trace
+      WEB_SERVICE: litoral-trace-web
+      WORKER_SERVICE: litoral-trace-worker
     steps:
-      - name: Validate Northflank secret
+      - name: Validate release inputs
         shell: bash
         run: |
           set -euo pipefail
           test -n "$NORTHFLANK_API_KEY"
-          echo "Northflank secret available."
+          test "${#TARGET_SHA}" = "40"
+          echo "TARGET_SHA=$TARGET_SHA"
 
       - name: Install Northflank CLI
         run: npm install --global @northflank/cli@0.13.0
 
-      - name: Authenticate
+      - name: Authenticate Northflank
         shell: bash
         run: northflank login -n ci -t "$NORTHFLANK_API_KEY" >/dev/null
 
-      - name: Inspect web and worker release state
+      - name: Trigger exact web and worker builds
         shell: bash
         run: |
           set -euo pipefail
-          for id in litoral-trace-web litoral-trace-worker; do
-            northflank get service --project litoral-trace --service "$id" -o json --quiet > "/tmp/$id.json"
-            python - "$id" "/tmp/$id.json" <<'PY'
-          import json, sys
-          service_id, path = sys.argv[1], sys.argv[2]
-          with open(path, encoding="utf-8") as fh:
-              data = json.load(fh)
-          print(f"SERVICE={service_id}")
-          print(f"BUILD_STATUS={data.get('status',{}).get('build',{}).get('status')}")
-          print(f"DEPLOY_STATUS={data.get('status',{}).get('deployment',{}).get('status')}")
-          vcs = data.get("vcsData") or {}
-          print(f"VCS_BRANCH={vcs.get('branch')}")
-          print(f"VCS_SHA={vcs.get('sha') or vcs.get('commitSha') or ''}")
-          build = data.get("build") or {}
-          print(f"BUILD_BRANCH={build.get('branch') or ''}")
-          print(f"BUILD_SHA={build.get('sha') or build.get('commitSha') or ''}")
-          deployment = data.get("deployment") or {}
-          print(f"DEPLOY_IMAGE={deployment.get('imagePath') or deployment.get('image') or ''}")
-          print(f"DEPLOY_SHA={deployment.get('sha') or deployment.get('commitSha') or ''}")
-          print("---")
-          PY
+          for service in "$WEB_SERVICE" "$WORKER_SERVICE"; do
+            response="$(curl -fsS               -H "Authorization: Bearer $NORTHFLANK_API_KEY"               -H "Content-Type: application/json"               -X POST               -d "{\"sha\":\"$TARGET_SHA\"}"               "https://api.northflank.com/v1/projects/$PROJECT_ID/services/$service/build")"
+
+            build_id="$(printf '%s' "$response" | jq -r '.data.id // empty')"
+            build_sha="$(printf '%s' "$response" | jq -r '.data.sha // empty')"
+            test -n "$build_id"
+            test "$build_sha" = "$TARGET_SHA"
+            echo "$build_id" > "/tmp/$service.build_id"
+            echo "$service BUILD_ID=$build_id SHA=$build_sha"
           done
 
-      - name: Show available deploy commands
+      - name: Wait for both builds
         shell: bash
         run: |
-          northflank --help | grep -i -E 'build|deploy|restart' || true
-          northflank build --help || true
-          northflank deploy --help || true
-          northflank restart service --help || true
+          set -euo pipefail
+          for service in "$WEB_SERVICE" "$WORKER_SERVICE"; do
+            build_id="$(cat "/tmp/$service.build_id")"
+            final_status=""
+            for attempt in $(seq 1 180); do
+              response="$(curl -fsS                 -H "Authorization: Bearer $NORTHFLANK_API_KEY"                 "https://api.northflank.com/v1/projects/$PROJECT_ID/services/$service/build/$build_id")"
+              status="$(printf '%s' "$response" | jq -r '.data.status // empty')"
+              sha="$(printf '%s' "$response" | jq -r '.data.sha // empty')"
+              concluded="$(printf '%s' "$response" | jq -r '.data.concluded // false')"
+              success="$(printf '%s' "$response" | jq -r '.data.success // false')"
+              if [ "$concluded" = "true" ]; then
+                final_status="$status"
+                echo "$service BUILD_STATUS=$status BUILD_SHA=$sha"
+                test "$success" = "true"
+                test "$sha" = "$TARGET_SHA"
+                break
+              fi
+              if [ $((attempt % 12)) -eq 0 ]; then
+                echo "$service build still $status (attempt $attempt)"
+              fi
+              sleep 5
+            done
+            test "$final_status" = "SUCCESS"
+          done
+
+      - name: Wait for combined-service rollouts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for service in "$WEB_SERVICE" "$WORKER_SERVICE"; do
+            completed=""
+            for attempt in $(seq 1 120); do
+              northflank get service --project "$PROJECT_ID" --service "$service" -o json --quiet > "/tmp/$service.service.json"
+              status="$(jq -r '.status.deployment.status // empty' "/tmp/$service.service.json")"
+              build_status="$(jq -r '.status.build.status // empty' "/tmp/$service.service.json")"
+              if [ "$status" = "COMPLETED" ] && [ "$build_status" = "SUCCESS" ]; then
+                completed=1
+                echo "$service DEPLOYMENT=COMPLETED BUILD=SUCCESS"
+                break
+              fi
+              if [ $((attempt % 12)) -eq 0 ]; then
+                echo "$service rollout build=$build_status deployment=$status"
+              fi
+              sleep 5
+            done
+            test "$completed" = "1"
+          done
+
+      - name: Verify deployed build identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          for service in "$WEB_SERVICE" "$WORKER_SERVICE"; do
+            build_id="$(cat "/tmp/$service.build_id")"
+            response="$(curl -fsS               -H "Authorization: Bearer $NORTHFLANK_API_KEY"               "https://api.northflank.com/v1/projects/$PROJECT_ID/services/$service/build/$build_id")"
+            sha="$(printf '%s' "$response" | jq -r '.data.sha')"
+            status="$(printf '%s' "$response" | jq -r '.data.status')"
+            test "$sha" = "$TARGET_SHA"
+            test "$status" = "SUCCESS"
+            echo "$service VERIFIED_BUILD_SHA=$sha"
+          done
+
+      - name: Verify public web health
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            code="$(curl -sS -o /tmp/web-health.json -w '%{http_code}' --max-time 15 https://lacey.litoraltrace.com/health || true)"
+            if [ "$code" = "200" ]; then
+              break
+            fi
+            echo "web health attempt $attempt returned ${code:-network-error}"
+            sleep 5
+          done
+          test "$code" = "200"
+          jq -e '.status == "healthy" and .service == "us-lacey-pilot"' /tmp/web-health.json >/dev/null
+          echo "WEB_HEALTH=PASS"
+
+      - name: Verify dedicated worker health and P0 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          worker_health="$(northflank exec service             --projectId="$PROJECT_ID"             --serviceId="$WORKER_SERVICE"             --cmd="curl -fsS http://127.0.0.1:8000/health")"
+          printf '%s\n' "$worker_health"
+          printf '%s' "$worker_health" | grep -q '"status":"healthy"'
+          printf '%s' "$worker_health" | grep -q '"service":"us-lacey-worker"'
+          echo "WORKER_HEALTH=PASS"
+
+          p0_probe="$(northflank exec service             --projectId="$PROJECT_ID"             --serviceId="$WORKER_SERVICE"             --cmd="python -c \"from litoral_trace.us_lacey.cross_document_line_identity import _hts_identity; assert _hts_identity('PAL') is None; assert _hts_identity('ACTTRAY18') is None; assert _hts_identity('4419.90.9000') == '4419909000'; print('P0_HTS_GUARD=PASS')\"")"
+          printf '%s\n' "$p0_probe"
+          printf '%s' "$p0_probe" | grep -q 'P0_HTS_GUARD=PASS'
+
+      - name: Verify production portal basics
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(curl -sS -o /dev/null -w '%{http_code}' https://lacey.litoraltrace.com/login)" = "200"
+          test "$(curl -sS -o /dev/null -w '%{http_code}' https://lacey.litoraltrace.com/signup)" = "200"
+          test "$(curl -sS -o /dev/null -w '%{http_code}' https://lacey.litoraltrace.com/static/dist/app.css)" = "200"
+          echo "PORTAL_SMOKE=PASS"
