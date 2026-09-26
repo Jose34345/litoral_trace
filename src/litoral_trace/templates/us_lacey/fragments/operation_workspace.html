@@ -189,22 +189,22 @@
 
   <section class="lt-card overflow-hidden">
     <nav class="flex overflow-x-auto border-b border-slate-200 px-4" role="tablist" aria-label="Shipment review">
-      <button type="button" role="tab" aria-selected="true" data-review-tab-button="action" class="border-b-2 border-emerald-600 px-4 py-4 text-sm font-bold text-emerald-700">
+      <button id="review-tab-action" type="button" role="tab" aria-selected="true" aria-controls="review-panel-action" tabindex="0" data-review-tab-button="action" class="border-b-2 border-emerald-600 px-4 py-4 text-sm font-bold text-emerald-700">
         Action Required
         <span class="ml-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20" data-action-tab-count>{{ attention_fields|length }}</span>
       </button>
-      <button type="button" role="tab" aria-selected="false" data-review-tab-button="resolved" class="border-b-2 border-transparent px-4 py-4 text-sm font-semibold text-slate-500">
+      <button id="review-tab-resolved" type="button" role="tab" aria-selected="false" aria-controls="review-panel-resolved" tabindex="-1" data-review-tab-button="resolved" class="border-b-2 border-transparent px-4 py-4 text-sm font-semibold text-slate-500">
         Auto-Resolved <span class="ml-1 text-xs">{{ auto_supported_fields|length }}</span>
       </button>
-      <button type="button" role="tab" aria-selected="false" data-review-tab-button="confirmed" class="border-b-2 border-transparent px-4 py-4 text-sm font-semibold text-slate-500">
+      <button id="review-tab-confirmed" type="button" role="tab" aria-selected="false" aria-controls="review-panel-confirmed" tabindex="-1" data-review-tab-button="confirmed" class="border-b-2 border-transparent px-4 py-4 text-sm font-semibold text-slate-500">
         Confirmed <span class="ml-1 text-xs">{{ settled_fields|length }}</span>
       </button>
-      <button type="button" role="tab" aria-selected="false" data-review-tab-button="regulatory" class="border-b-2 border-transparent px-4 py-4 text-sm font-semibold text-slate-500">
+      <button id="review-tab-regulatory" type="button" role="tab" aria-selected="false" aria-controls="review-panel-regulatory" tabindex="-1" data-review-tab-button="regulatory" class="border-b-2 border-transparent px-4 py-4 text-sm font-semibold text-slate-500">
         Regulatory Analysis
       </button>
     </nav>
 
-    <div role="tabpanel" data-review-tab-panel="action" class="p-6">
+    <div id="review-panel-action" role="tabpanel" aria-labelledby="review-tab-action" data-review-tab-panel="action" class="p-6">
       <div class="mb-5">
         <h2 class="text-lg font-bold text-slate-950">Action Required</h2>
         <p class="mt-1 text-sm text-slate-600">Only missing information, review-required evidence, or genuinely conflicting evidence appears here.</p>
@@ -230,7 +230,7 @@
       </div>
     </div>
 
-    <div role="tabpanel" data-review-tab-panel="resolved" class="hidden p-6">
+    <div id="review-panel-resolved" role="tabpanel" aria-labelledby="review-tab-resolved" data-review-tab-panel="resolved" class="hidden p-6">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 class="text-lg font-bold text-slate-950">Auto-Resolved Data</h2>
@@ -309,7 +309,7 @@
       {% endif %}
     </div>
 
-    <div role="tabpanel" data-review-tab-panel="confirmed" class="hidden p-6">
+    <div id="review-panel-confirmed" role="tabpanel" aria-labelledby="review-tab-confirmed" data-review-tab-panel="confirmed" class="hidden p-6">
       <div class="mb-5">
         <h2 class="text-lg font-bold text-slate-950">Confirmed</h2>
         <p class="mt-1 text-sm text-slate-600">Fields already settled by human review or an explicit preparation rule.</p>
@@ -332,7 +332,7 @@
       </div>
     </div>
 
-    <div role="tabpanel" data-review-tab-panel="regulatory" class="hidden p-6">
+    <div id="review-panel-regulatory" role="tabpanel" aria-labelledby="review-tab-regulatory" data-review-tab-panel="regulatory" class="hidden p-6">
       <div class="mb-5">
         <h2 class="text-lg font-bold text-slate-950">Regulatory Analysis</h2>
         <p class="mt-1 text-sm text-slate-600">Rule-specific analysis for audit and preparation. It does not represent an overall legal compliance determination.</p>
@@ -470,6 +470,7 @@
     root.querySelectorAll("[data-review-tab-button]").forEach((button) => {
       const active = button.dataset.reviewTabButton === name;
       button.setAttribute("aria-selected", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
       button.classList.toggle("border-emerald-600", active);
       button.classList.toggle("text-emerald-700", active);
       button.classList.toggle("font-bold", active);
