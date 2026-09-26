@@ -350,3 +350,190 @@ def test_shipment_total_on_aggregate_description_row_does_not_create_phantom_lin
 
     assert len(truth.plant_lines) == 2
     assert transport_line not in {line.entity_key for line in truth.plant_lines}
+
+def _fragmented_three_line_payload() -> dict:
+    invoice = ["1:p1-t1:row:1", "1:p1-t1:row:2", "1:p1-t1:row:3"]
+    entry = ["3:p3-t1:row:1", "3:p3-t1:row:2", "3:p3-t1:row:3"]
+    total_line = "3:p3-t1:row:4"
+    botanical = ["4:p4-t1:row:1", "4:p4-t1:row:2", "4:p4-t1:row:3"]
+
+    descriptions = [
+        _evidence(
+            field="description",
+            value=value,
+            document_id=1,
+            text=value,
+            line_key=line_key,
+            authority=40.0,
+        )
+        for line_key, value in zip(
+            invoice,
+            (
+                "Acacia serving trays",
+                "Rubberwood cutting boards",
+                "Teak salad-server pairs",
+            ),
+        )
+    ]
+    hts_values = ("4419909000", "4419908000", "4421999880")
+    entered_values = ("18900.00", "17760.00", "11200.00")
+    hts = [
+        _evidence(
+            field="hts_code",
+            value=value,
+            document_id=document_id,
+            text=value,
+            line_key=line_key,
+            authority=authority,
+        )
+        for document_id, keys, authority in (
+            (1, invoice, 35.0),
+            (3, entry, 45.0),
+        )
+        for line_key, value in zip(keys, hts_values)
+    ]
+    entered = [
+        _evidence(
+            field="entered_value",
+            value=value,
+            document_id=document_id,
+            text=value,
+            line_key=line_key,
+            authority=authority,
+        )
+        for document_id, keys, authority in (
+            (1, invoice, 40.0),
+            (3, entry, 45.0),
+        )
+        for line_key, value in zip(keys, entered_values)
+    ]
+    entered.append(
+        _evidence(
+            field="entered_value",
+            value="47860.00",
+            document_id=3,
+            text="TOTAL 47,860.00",
+            line_key=total_line,
+            authority=45.0,
+        )
+    )
+
+    taxa = (
+        ("Acacia", "mangium", "315"),
+        ("Hevea", "brasiliensis", "510"),
+        ("Tectona", "grandis", "145"),
+    )
+    genus = [
+        _evidence(
+            field="genus",
+            value=genus_value,
+            document_id=4,
+            text=f"{genus_value} {species_value}",
+            component_key=component_key,
+            authority=45.0,
+        )
+        for component_key, (genus_value, species_value, _quantity) in zip(botanical, taxa)
+    ]
+    species = [
+        _evidence(
+            field="species",
+            value=species_value,
+            document_id=4,
+            text=f"{genus_value} {species_value}",
+            component_key=component_key,
+            authority=45.0,
+        )
+        for component_key, (genus_value, species_value, _quantity) in zip(botanical, taxa)
+    ]
+    harvest = [
+        _evidence(
+            field="country_of_harvest",
+            value="Vietnam",
+            document_id=4,
+            text="Country of Harvest: Vietnam",
+            component_key=component_key,
+            authority=45.0,
+        )
+        for component_key in botanical
+    ]
+    quantity = [
+        _evidence(
+            field="plant_quantity",
+            value=quantity_value,
+            document_id=4,
+            text=f"{quantity_value} KG",
+            component_key=component_key,
+            authority=35.0,
+        )
+        for component_key, (_genus, _species, quantity_value) in zip(botanical, taxa)
+    ]
+    units = [
+        _evidence(
+            field="metric_unit",
+            value="KG",
+            document_id=4,
+            text="KG",
+            component_key=component_key,
+            authority=35.0,
+        )
+        for component_key in botanical
+    ]
+
+    return {
+        "schema_version": "lacey_shipment_resolution_v1",
+        "engine_version": "fragmented-three-line-regression",
+        "canonical_fields": {
+            "description": _field("description", "SUPPORTED_MULTIPLE", descriptions),
+            "hts_code": _field("hts_code", "SUPPORTED_MULTIPLE", hts),
+            "entered_value": _field("entered_value", "SUPPORTED_MULTIPLE", entered),
+            "genus": _field("genus", "SUPPORTED_MULTIPLE", genus),
+            "species": _field("species", "SUPPORTED_MULTIPLE", species),
+            "country_of_harvest": _field("country_of_harvest", "SUPPORTED_MULTIPLE", harvest),
+            "plant_quantity": _field("plant_quantity", "SUPPORTED_MULTIPLE", quantity),
+            "metric_unit": _field("metric_unit", "SUPPORTED_MULTIPLE", units),
+        },
+        "issues": [],
+    }
+
+
+def test_structural_binding_restores_three_cross_document_canonical_lines():
+    truth = build_canonical_shipment_truth(_fragmented_three_line_payload())
+
+    assert len(truth.plant_lines) == 3
+    assert [line.ordinal_hint for line in truth.plant_lines] == [1, 2, 3]
+    assert [line.taxon_key for line in truth.plant_lines] == [
+        "taxon:acacia:mangium",
+        "taxon:hevea:brasiliensis",
+        "taxon:tectona:grandis",
+    ]
+    assert [line.fields["hts_code"].values for line in truth.plant_lines] == [
+        ("4419909000",),
+        ("4419908000",),
+        ("4421999880",),
+    ]
+    assert [line.fields["entered_value"].values for line in truth.plant_lines] == [
+        ("18900.00",),
+        ("17760.00",),
+        ("11200.00",),
+    ]
+    assert [line.fields["genus"].values for line in truth.plant_lines] == [
+        ("Acacia",),
+        ("Hevea",),
+        ("Tectona",),
+    ]
+    assert [line.fields["species"].values for line in truth.plant_lines] == [
+        ("mangium",),
+        ("brasiliensis",),
+        ("grandis",),
+    ]
+    assert [line.fields["plant_quantity"].values for line in truth.plant_lines] == [
+        ("315",),
+        ("510",),
+        ("145",),
+    ]
+    assert truth.unresolved_component_keys == ()
+    assert all(
+        "47860.00" not in line.fields["entered_value"].values
+        for line in truth.plant_lines
+    )
+
