@@ -369,6 +369,52 @@ class UsLaceyOperationService:
         finally:
             session.close()
 
+    def update_client_reference(
+        self,
+        *,
+        organization_id: int,
+        operation_public_id: UUID | str,
+        client_reference: str,
+    ) -> OperationSnapshot:
+        """Rename one tenant-scoped operation without changing its immutable public id."""
+        reference = str(client_reference or "").strip()
+        if not reference:
+            raise ValueError("Operation name is required.")
+        if len(reference) > 255:
+            raise ValueError("Operation name cannot exceed 255 characters.")
+
+        org_id = int(organization_id)
+        session = self._session(org_id)
+        try:
+            operation = self._get_model(
+                session,
+                organization_id=org_id,
+                operation_public_id=operation_public_id,
+            )
+            existing = session.scalar(
+                select(UsLaceyOperation.id).where(
+                    UsLaceyOperation.organization_id == org_id,
+                    UsLaceyOperation.client_reference == reference,
+                    UsLaceyOperation.id != operation.id,
+                )
+            )
+            if existing is not None:
+                raise UsLaceyOperationConflict(
+                    "That operation name is already in use for this company."
+                )
+            operation.client_reference = reference
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+        return self.get_operation(
+            organization_id=org_id,
+            operation_public_id=operation_public_id,
+        )
+
     def _get_model(
         self,
         session: Session,
