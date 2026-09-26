@@ -90,14 +90,28 @@ def live_runtime_status(
     worker_ready: bool,
     storage_roundtrip: str,
     ocr_runtime: str,
+    inline_worker_enabled: bool = True,
 ) -> dict[str, str]:
-    """Return a secret-free status document for the deployed free-tier workload."""
-    inline_worker = "ready" if worker_ready else "not_ready"
+    """Return a secret-free status document for the deployed web workload.
+
+    The web service can run in either legacy inline-worker mode or the current
+    dedicated-worker topology. When the inline worker is explicitly disabled,
+    web readiness must not fail merely because no inline worker thread exists;
+    the dedicated worker is probed independently by the release gate.
+    """
+
+    if inline_worker_enabled:
+        inline_worker = "ready" if worker_ready else "not_ready"
+        worker_requirement_ready = worker_ready
+    else:
+        inline_worker = "disabled"
+        worker_requirement_ready = True
+
     storage = "ready" if storage_roundtrip == "ready" else "not_ready"
     ocr = "ready" if ocr_runtime == "ready" else "not_ready"
     overall = (
         "ready"
-        if inline_worker == "ready" and storage == "ready" and ocr == "ready"
+        if worker_requirement_ready and storage == "ready" and ocr == "ready"
         else "not_ready"
     )
     return {
