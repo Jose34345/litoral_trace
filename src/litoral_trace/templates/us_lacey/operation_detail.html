@@ -1,6 +1,7 @@
 {% extends "us_lacey/base.html" %}
 {% set authenticated = true %}
 {% from "components/ui.html" import button, alert, page_header %}
+{% set engine2_downstream_annotations = engine2_downstream_annotations|default({}) %}
 {% block lacey_title %}Review shipment{% endblock %}
 {% block lacey_content %}
 {% set bulk_upload_rejection = error and error.startswith("This file contains multiple shipments.") %}
