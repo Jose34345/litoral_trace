@@ -875,7 +875,12 @@ def _promotable_merchandise_line_keys(
 
 
 def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
-    """Build one fail-closed shipment/plant-line truth from Engine 2 JSON."""
+    """Build one fail-closed shipment/plant-line truth from Engine 2 JSON.
+
+    Cross-document reconciliation may enrich evidence, but canonical line identity
+    is rebuilt here from structural/relational anchors. Final customs attributes
+    such as HTS+taxon are outputs of that join, never its prerequisite.
+    """
     payload = reconcile_cross_document_line_identity(payload)
     fields_payload = payload.get("canonical_fields")
     if not isinstance(fields_payload, Mapping):
@@ -895,53 +900,88 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
             if isinstance(row, Mapping)
         )
 
-    merchandise_keys = sorted(
-        _promotable_merchandise_line_keys(evidence_by_field),
-        key=lambda value: (_ordinal(value) is None, _ordinal(value) or 10**9, value),
+    source_merchandise_keys = tuple(
+        sorted(
+            _promotable_merchandise_line_keys(evidence_by_field),
+            key=lambda value: (
+                _ordinal(value) is None,
+                _ordinal(value) or 10**9,
+                value,
+            ),
+        )
     )
-    component_keys = sorted(
-        {
-            row.component_key
-            for key in (_COMPONENT_FIELDS - _QUANTITATIVE_COMPONENT_FIELDS)
-            for row in evidence_by_field.get(key, ())
-            if row.component_key
-        }
+    member_to_rep, rep_to_members = _structural_merchandise_groups(
+        merchandise_keys=source_merchandise_keys,
+        evidence_by_field=evidence_by_field,
+    )
+    merchandise_keys = tuple(
+        sorted(
+            rep_to_members,
+            key=lambda value: (
+                _ordinal(value) is None,
+                _ordinal(value) or 10**9,
+                value,
+            ),
+        )
+    )
+
+    _component_member_to_group, component_groups = _component_groups(
+        evidence_by_field=evidence_by_field,
+    )
+    component_keys = tuple(
+        sorted(
+            component_groups,
+            key=lambda key: (
+                min(
+                    (
+                        ordinal
+                        for member in component_groups[key]
+                        if (ordinal := _ordinal(member)) is not None
+                    ),
+                    default=10**9,
+                ),
+                key,
+            ),
+        )
     )
 
     description_text_by_line: dict[str, str] = {}
-    for line_key in merchandise_keys:
-        description_text_by_line[line_key] = " ".join(
+    for representative in merchandise_keys:
+        members = rep_to_members[representative]
+        description_text_by_line[representative] = " ".join(
             part
             for row in evidence_by_field.get("description", ())
-            if row.line_key == line_key
+            if row.line_key in members
             for part in (row.normalized_value, row.source_text)
             if part
         )
 
     matches_by_component: dict[str, tuple[str, ...]] = {}
     for component_key in component_keys:
-        explicit_matches = _explicit_component_line_matches(
-            component_key=component_key,
-            merchandise_keys=merchandise_keys,
+        component_members = component_groups[component_key]
+        matches = _structural_component_line_matches(
+            component_group=component_key,
+            component_members=component_members,
+            member_to_rep=member_to_rep,
+            rep_to_members=rep_to_members,
             evidence_by_field=evidence_by_field,
+            description_text_by_line=description_text_by_line,
         )
-        if explicit_matches is not None:
-            matches = explicit_matches
-        else:
+        if not matches and _taxon_parts(component_key) is not None:
             matches = tuple(
-                line_key
-                for line_key in merchandise_keys
+                representative
+                for representative in merchandise_keys
                 if _contains_taxon(
-                    description_text_by_line.get(line_key, ""),
+                    description_text_by_line.get(representative, ""),
                     component_key,
                 )
             )
-            if (
-                not matches
-                and len(merchandise_keys) == 1
-                and len(component_keys) == 1
-            ):
-                matches = (merchandise_keys[0],)
+        if (
+            not matches
+            and len(merchandise_keys) == 1
+            and len(component_keys) == 1
+        ):
+            matches = (merchandise_keys[0],)
         matches_by_component[component_key] = matches
 
     component_for_line: dict[str, str] = {}
@@ -959,14 +999,19 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
 
     line_truths: list[CanonicalPlantLineTruth] = []
     for line_key in merchandise_keys:
+        line_members = rep_to_members[line_key]
         line_fields: dict[str, CanonicalFieldTruth] = {}
         for engine_key in _MERCHANDISE_FIELDS:
             field_payload = field_payloads.get(engine_key)
             if field_payload is None:
                 continue
             rows = tuple(
-                row for row in evidence_by_field.get(engine_key, ()) if row.line_key == line_key
+                row
+                for row in evidence_by_field.get(engine_key, ())
+                if row.line_key in line_members
             )
+            if engine_key == "description":
+                rows = _authoritative_description_evidence(rows)
             if not rows:
                 continue
             line_fields[_ENGINE_TO_PPQ[engine_key]] = _field_truth(
@@ -977,23 +1022,17 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
 
         component_key = component_for_line.get(line_key)
         if component_key:
+            component_members = component_groups[component_key]
             for engine_key in _COMPONENT_FIELDS:
                 field_payload = field_payloads.get(engine_key)
                 if field_payload is None:
                     continue
-                if engine_key in _QUANTITATIVE_COMPONENT_FIELDS:
-                    rows = _quantitative_component_rows(
-                        engine_key=engine_key,
-                        line_key=line_key,
-                        component_key=component_key,
-                        evidence_by_field=evidence_by_field,
-                    )
-                else:
-                    rows = tuple(
-                        row
-                        for row in evidence_by_field.get(engine_key, ())
-                        if row.component_key == component_key
-                    )
+                rows = tuple(
+                    row
+                    for row in evidence_by_field.get(engine_key, ())
+                    if row.component_key in component_members
+                    or row.line_key in line_members
+                )
                 if not rows:
                     continue
                 line_fields[_ENGINE_TO_PPQ[engine_key]] = _field_truth(
@@ -1007,13 +1046,18 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
             CanonicalPlantLineTruth(
                 entity_key=line_key,
                 ordinal_hint=_ordinal(line_key),
-                taxon_key=component_key,
+                taxon_key=(
+                    component_key
+                    if component_key and _taxon_parts(component_key) is not None
+                    else None
+                ),
                 fields=line_fields,
             )
         )
 
     if not merchandise_keys:
         for ordinal, component_key in enumerate(component_keys, start=1):
+            component_members = component_groups[component_key]
             line_fields: dict[str, CanonicalFieldTruth] = {}
             for engine_key in _COMPONENT_FIELDS:
                 field_payload = field_payloads.get(engine_key)
@@ -1022,7 +1066,7 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
                 rows = tuple(
                     row
                     for row in evidence_by_field.get(engine_key, ())
-                    if row.component_key == component_key
+                    if row.component_key in component_members
                 )
                 if not rows:
                     continue
@@ -1032,11 +1076,23 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
                     rows=rows,
                     force_review=engine_key in low_authority_fields,
                 )
+            component_ordinal = min(
+                (
+                    source_ordinal
+                    for member in component_members
+                    if (source_ordinal := _ordinal(member)) is not None
+                ),
+                default=ordinal,
+            )
             line_truths.append(
                 CanonicalPlantLineTruth(
                     entity_key=component_key,
-                    ordinal_hint=ordinal,
-                    taxon_key=component_key,
+                    ordinal_hint=component_ordinal,
+                    taxon_key=(
+                        component_key
+                        if _taxon_parts(component_key) is not None
+                        else None
+                    ),
                     fields=line_fields,
                 )
             )
@@ -1048,6 +1104,7 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
         evidence_by_field=evidence_by_field,
     )
     plant_lines = tuple(line_truths)
+
     shipment_fields: dict[str, CanonicalFieldTruth] = {}
     for engine_key, field_payload in field_payloads.items():
         if engine_key in _MERCHANDISE_FIELDS or engine_key in _COMPONENT_FIELDS:
