@@ -36,7 +36,7 @@ _EXPLICIT_SKU = re.compile(r"^SKU:[A-Z0-9][A-Z0-9._/-]*$", re.IGNORECASE)
 _EXPLICIT_LINE = re.compile(r"^LINE:(\d{1,6})$", re.IGNORECASE)
 _ROW = re.compile(r"^(?P<document>[^:]+):(?P<table>.+):row:(?P<row>\d+)$", re.IGNORECASE)
 _HTS_SOURCE_VALUE = re.compile(
-    r"^(?:\d{6,10}|\d{4}[.-]\d{2}[.-]\d{2,4}(?:\s*\d)?)$"
+    r"^(?:\d{6,10}|\d{4}[.-]\d{2}(?:[.-]\d{2,4})?)$"
 )
 _PACKAGING_NOISE_TOKEN = re.compile(
     r"^(?:PAL(?:LET)?|BOX|CART(?:ON)?|AUX(?:-\d+)?|DUNNAGE|TRAY)$",
