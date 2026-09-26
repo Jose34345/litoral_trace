@@ -323,9 +323,15 @@ def _extract(layout):
             elif _COUNTRY_OF_ORIGIN_LABEL.fullmatch(key):
                 if _valid_country_candidate(value):
                     found["country_of_origin"].append(_candidate("country_of_origin", value, block, key))
-            elif _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(key) or (_table_context(block) and lower == "description"):
+            elif _MERCHANDISE_DESCRIPTION_LABEL.fullmatch(key) or (
+                block.structure_type is LayoutStructureType.LINE_ITEM_TABLE
+                and lower == "description"
+            ):
                 if _valid_description_candidate(value):
-                    found["description"].append(_candidate("description", value, block, key))
+                    semantic_label = "Commodity Description" if lower == "description" else key
+                    found["description"].append(
+                        _candidate("description", value, block, semantic_label)
+                    )
             elif _ENTRY_LABEL.fullmatch(key):
                 found["filing_entry_reference"].append(_candidate("filing_entry_reference", value.upper(), block, key))
             elif _MID_LABEL.fullmatch(key):
