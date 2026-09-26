@@ -15,11 +15,7 @@ from litoral_trace.lacey_engine.pipeline import ENGINE_VERSION
 from litoral_trace.lacey_engine.serialization import BUNDLE_RESOLUTION_SCHEMA_VERSION, SHIPMENT_RESOLUTION_SCHEMA_VERSION, deserialize_shipment_resolution
 from litoral_trace.lacey_engine.shipment import LaceyRuleset
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
-from litoral_trace.us_lacey.lacey_engine_service import (
-    ENGINE2_SHADOW,
-    engine2_mode,
-    source_set_fingerprint,
-)
+from litoral_trace.us_lacey.lacey_engine_service import source_set_fingerprint
 
 LOGGER = logging.getLogger(__name__)
 
@@ -78,7 +74,10 @@ class UsLaceyEngineDossierService:
         self._regenerator = regenerator
         self._auto_recover_stale = bool(auto_recover_stale)
     def get_dossier(self, *, organization_id: int, operation_public_id: UUID | str) -> Engine2DossierView:
-        if engine2_mode() != ENGINE2_SHADOW: return Engine2DossierView(Engine2DossierAvailability.DISABLED, safe_status_message="Enhanced evidence dossier is not enabled for this workspace/runtime.")
+        # Evidence provenance is a core compliance/audit surface, not a shadow
+        # feature. Read paths remain side-effect free: if no current snapshot
+        # exists we return the existing NOT_AVAILABLE/STALE/FAILED states rather
+        # than rebuilding synchronously.
         session: Session = self._session_factory(); set_tenant_db_context(session, organization_id)
         try:
             operation = session.scalar(select(UsLaceyOperation).where(UsLaceyOperation.organization_id == organization_id, UsLaceyOperation.public_id == UUID(str(operation_public_id))))
