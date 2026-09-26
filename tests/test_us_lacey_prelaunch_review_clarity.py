@@ -1,6 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from litoral_trace.us_lacey.review import _AUTO_CONFIRMABLE_FIELD_STATUSES
 from litoral_trace.web.us_lacey_operational_views import _review_field_groups
 
 
@@ -48,3 +49,29 @@ def test_review_workspace_is_exception_first():
     assert "You only need to handle missing facts or genuine conflicts." in source
     assert "Only missing information or genuinely conflicting evidence appears here." in source
     assert "Auto-Resolved Data" in source
+
+
+def test_auto_resolved_contract_includes_canonical_supported_statuses():
+    detail = SimpleNamespace(
+        fields=(
+            _field(status="SUPPORTED", effective_value="USD"),
+            _field(status="FOUND", effective_value="VNMKHOM123HCM"),
+            _field(status="SUPPORTED MULTIPLE", effective_value="MAEU2609240001"),
+            _field(status="SUPPORTED_MULTIPLE", effective_value="MSCU1234566"),
+        )
+    )
+
+    attention, supported, settled = _review_field_groups(detail)
+
+    assert attention == ()
+    assert settled == ()
+    assert len(supported) == 4
+
+
+def test_bulk_confirmation_accepts_all_auto_resolved_status_variants():
+    assert set(_AUTO_CONFIRMABLE_FIELD_STATUSES) == {
+        "SUPPORTED",
+        "FOUND",
+        "SUPPORTED MULTIPLE",
+        "SUPPORTED_MULTIPLE",
+    }
