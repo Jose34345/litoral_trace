@@ -459,8 +459,14 @@ html {
 }
 
 .lt-inline-error {
+  color: #dc2626;
   transform: translateZ(0);
   animation: lt-fade-in-up 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lt-alias-edit-button:focus-visible {
+  outline: 2px solid var(--lt-focus);
+  outline-offset: 2px;
 }
 
 .lt-validation-shake {
