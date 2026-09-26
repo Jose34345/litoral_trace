@@ -8,12 +8,12 @@ import pytest
 
 from litoral_trace.lacey_engine.admission import admit
 from litoral_trace.lacey_engine.domain import (
-    EvidenceClass, FieldStatus, LayoutBlock, ParsedLayout, RawCandidate, ResolvedField,
+    EvidenceClass, FieldStatus, LayoutBlock, LayoutStructureType, ParsedLayout, RawCandidate, ResolvedField,
 )
 import litoral_trace.lacey_engine.layout_parser as layout_parser
 from litoral_trace.lacey_engine.layout_parser import layout_from_key_value_rows
 from litoral_trace.lacey_engine.pipeline import _extract, process_document
-from litoral_trace.lacey_engine.classifier import classify
+from litoral_trace.lacey_engine.classifier import classify, classify_text
 from litoral_trace.lacey_engine.segmentation import segment
 from litoral_trace.lacey_engine.domain import DocumentType
 from litoral_trace.lacey_engine.shipment import ReconciliationState, ShipmentDocumentInput, process_shipment
@@ -55,6 +55,33 @@ def test_explicit_merchandise_description_is_extracted_and_admitted(monkeypatch,
     assert field.winning_candidate.raw.evidence_class is EvidenceClass.EXPLICIT and field.winning_candidate.raw.label == label
 
 
+def test_bare_description_header_is_admitted_only_when_it_is_a_line_item_column():
+    layout = ParsedLayout(
+        (
+            LayoutBlock(
+                "p1-t1-r1-c2",
+                1,
+                None,
+                "Description: Pinus taeda KD sawn boards",
+                "TABLE_CELL",
+                key_text="Description",
+                value_text="Pinus taeda KD sawn boards",
+                structure_type=LayoutStructureType.LINE_ITEM_TABLE,
+                table_id="p1-t1",
+                row_index=1,
+                column_index=2,
+                table_header="Description",
+            ),
+        ),
+        1,
+    )
+
+    [candidate] = _extract(layout)["description"]
+
+    assert candidate.label == "Commodity Description"
+    assert admit(candidate)
+
+
 @pytest.mark.parametrize("label", ("Equipment Description", "Description"))
 def test_non_merchandise_description_labels_remain_missing(monkeypatch, label):
     layout = layout_from_key_value_rows([(label, "Opening(s) at one end or both ends.")])
@@ -87,6 +114,67 @@ def test_split_taxon_is_missing_and_never_cross_block_crashes():
 def test_title_scoring_beats_referenced_fields(text, expected):
     layout = ParsedLayout((LayoutBlock("p1", 1, None, text, "TEXT_LINE"),), 1)
     assert classify(layout)[0] is expected
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    (
+        "DECLARACAO BOTANICA / SPECIES DECLARATION\n"
+        "Linha 1 - Genero: Pinus - Especie: taeda - Pais de colheita: Brasil",
+        DocumentType.SPECIES_DECLARATION,
+    ),
+    (
+        "DECLARACAO DE ORIGEM DO FORNECEDOR\n"
+        "Fornecedor: Florestal Serra Verde Ltda.\nPais de colheita Brasil",
+        DocumentType.SUPPLIER_DECLARATION,
+    ),
+])
+def test_deterministic_classifier_recognizes_portuguese_lacey_declarations(text, expected):
+    document_type, confidence = classify_text(text)
+
+    assert document_type is expected
+    assert confidence >= 0.95
+
+
+def test_spanish_shipment_wide_harvest_phrase_is_explicit_evidence():
+    layout = ParsedLayout(
+        (
+            LayoutBlock(
+                "p1-l15",
+                1,
+                None,
+                "País de cosecha de ambas líneas: Brasil",
+                "TEXT_LINE",
+            ),
+        ),
+        1,
+    )
+
+    extracted = _extract(layout)
+
+    assert [candidate.normalized_value for candidate in extracted["country_of_harvest"]] == ["Brasil"]
+    assert extracted["country_of_harvest"][0].evidence_class is EvidenceClass.EXPLICIT
+
+
+def test_extended_shipment_identity_fields_are_extracted_from_explicit_labels():
+    layout = layout_from_key_value_rows(
+        [
+            ("Shipper / Embarcador", "Rio Parana Trading S.A."),
+            ("Fornecedor", "Florestal Serra Verde Ltda."),
+            ("Country of Origin", "Brazil"),
+        ]
+    )
+
+    extracted = _extract(layout)
+
+    assert [candidate.normalized_value for candidate in extracted["shipper_name"]] == [
+        "Rio Parana Trading S.A."
+    ]
+    assert [candidate.normalized_value for candidate in extracted["supplier_name"]] == [
+        "Florestal Serra Verde Ltda."
+    ]
+    assert [candidate.normalized_value for candidate in extracted["country_of_origin"]] == [
+        "Brazil"
+    ]
 
 
 def test_packet_segmentation_keeps_continuation_and_uses_section_type():

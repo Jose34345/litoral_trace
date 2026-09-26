@@ -129,7 +129,7 @@
       <div>
         <p class="text-xs font-bold uppercase tracking-wider text-emerald-700">Shipment prepared</p>
         <h2 id="quality-output-title" class="mt-1 text-xl font-bold text-slate-950">Review the remaining exceptions</h2>
-        <p class="mt-2 text-sm text-slate-600">Litoral Trace automatically resolves consistent evidence. You only need to handle missing facts or genuine conflicts.</p>
+        <p class="mt-2 text-sm text-slate-600">Litoral Trace automatically resolves consistent evidence. You only need to handle missing facts, evidence that needs confirmation, or genuine conflicts.</p>
       </div>
       {% if attention_fields %}
       <span class="rounded-md bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">{{ attention_fields|length }} action required</span>
@@ -163,7 +163,7 @@
     <div role="tabpanel" data-review-tab-panel="action" class="p-6">
       <div class="mb-5">
         <h2 class="text-lg font-bold text-slate-950">Action Required</h2>
-        <p class="mt-1 text-sm text-slate-600">Only missing information or genuinely conflicting evidence appears here.</p>
+        <p class="mt-1 text-sm text-slate-600">Only information that needs your input or confirmation appears here.</p>
       </div>
       <div id="action-required-fields" class="grid gap-6" data-action-required-list>
         {% for line_reference, fields in attention_fields|groupby("line_reference") %}
@@ -285,20 +285,26 @@
     <summary class="cursor-pointer text-sm font-semibold text-slate-700">Advanced evidence details</summary>
     <div class="mt-4">
       <h2 class="text-lg font-bold text-slate-950">Document evidence analysis</h2>
-      <p class="mt-2 text-sm text-slate-600">Technical evidence remains available for audit and troubleshooting without cluttering the review workflow.</p>
+      <p class="mt-2 text-sm text-slate-600">Technical extraction diagnostics remain available for audit and troubleshooting without cluttering the review workflow.</p>
       {% if engine2_dossier.availability != "CURRENT" %}
         <p class="mt-4 text-sm text-slate-700">{{ engine2_dossier.safe_status_message }}</p>
       {% else %}
         <div class="mt-4">
           <span data-engine2-readiness="{{ engine2_dossier.readiness }}">Document evidence status: {{ engine2_dossier.readiness|replace("_", " ") }}</span>
-          <p class="mt-1 text-xs text-slate-500">Final preparation readiness is determined by the exception-first review above.</p>
-          <p class="mt-1 text-xs text-slate-500">Supported values here are document-evidence candidates and may not yet be accepted into the declaration.</p>
+          <p class="mt-1 text-xs text-slate-500">Final preparation readiness is determined by the Action Required and Auto-Resolved workflow above.</p>
+          <p class="mt-1 text-xs text-slate-500">This panel is diagnostic extraction coverage, not a checklist of required declaration fields. A field with no document candidate does not by itself block preparation.</p>
         </div>
         <div class="mt-5 grid gap-3">
           {% for field in engine2_dossier.fields %}
           <article class="rounded-lg border border-slate-200 p-3" data-engine2-field="{{ field.field_key }}" data-engine2-state="{{ field.state }}">
-            <strong>{{ field.label }}</strong> · {{ field.state|replace("_", " ") }}
-            {% if field.values %}<p class="mt-1">{{ field.values|join(", ") }}</p>{% else %}<p class="mt-1">Missing</p>{% endif %}
+            <strong>{{ field.label }}</strong> · {% if field.state == "MISSING" %}NO DOCUMENT CANDIDATE{% else %}{{ field.state|replace("_", " ") }}{% endif %}
+            {% if field.values %}
+            <p class="mt-1">{{ field.values|join(", ") }}</p>
+            {% elif field.state == "MISSING" %}
+            <p class="mt-1 text-sm text-slate-600">No candidate was extracted from the uploaded documents. This diagnostic does not by itself mean the declaration requires this field.</p>
+            {% else %}
+            <p class="mt-1 text-sm text-slate-600">Evidence was found, but no canonical value has been accepted yet. Review the Action Required tab when human confirmation is needed.</p>
+            {% endif %}
             {% if field.evidence %}
             <details class="mt-2"><summary>Evidence ({{ field.evidence|length }})</summary>
               {% for line_key, line_evidence in field.line_evidence_groups %}

@@ -127,7 +127,7 @@ def semantic_normalize(field_key: str, value: object) -> str:
         return re.sub(r"\D", "", raw)
     if key in {"container_number", "bill_of_lading", "manufacturer_id", "filing_entry_reference"}:
         return re.sub(r"[^A-Z0-9]", "", raw.upper())
-    if key == "country_of_harvest":
+    if key in {"country_of_harvest", "country_of_origin"}:
         folded = fold_text(raw)
         return _COUNTRY_ALIASES.get(folded, folded)
     if key in {"genus", "species", "metric_unit"}:

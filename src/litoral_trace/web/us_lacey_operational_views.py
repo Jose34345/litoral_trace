@@ -114,7 +114,10 @@ def _field_has_displayable_resolution(field) -> bool:
 
 
 
-_ACTION_REQUIRED_STATUSES = frozenset({"MISSING", "CONFLICT"})
+# REVIEW is a backend-blocking state (review._counts/finalize_us_lacey_review).
+# It must therefore be visible and actionable in the exception-first UI rather
+# than silently disappearing between MISSING/CONFLICT and MATCHED.
+_ACTION_REQUIRED_STATUSES = frozenset({"MISSING", "CONFLICT", "REVIEW"})
 _AUTO_SUPPORTED_STATUSES = frozenset({"SUPPORTED", "FOUND", "SUPPORTED MULTIPLE", "SUPPORTED_MULTIPLE"})
 _SETTLED_STATUSES = frozenset({"MATCHED", "NOT_REQUIRED"})
 

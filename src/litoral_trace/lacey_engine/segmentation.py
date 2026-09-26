@@ -241,11 +241,22 @@ _STRONG_ANCHORS: tuple[tuple[re.Pattern[str], DocumentType], ...] = (
         DocumentType.CUSTOMS_ENTRY_SUMMARY,
     ),
     (
-        re.compile(r"\bBOTANICAL\s*/?\s*LACEY\s+SUPPORTING\s+DECLARATION\b", re.I),
+        re.compile(
+            r"\b(?:BOTANICAL(?:\s*/?\s*LACEY\s+SUPPORTING)?\s+DECLARATION"
+            r"|SPECIES\s+DECLARATION"
+            r"|DECLARA(?:CAO|ÇÃO)\s+BOT[ÂA]NICA"
+            r"|DECLARACI[ÓO]N\s+BOT[ÁA]NICA)\b",
+            re.I,
+        ),
         DocumentType.SPECIES_DECLARATION,
     ),
     (
-        re.compile(r"\bSUPPLIER\s+MATERIAL\s+ORIGIN\s+STATEMENT\b", re.I),
+        re.compile(
+            r"\b(?:SUPPLIER\s+(?:MATERIAL\s+)?ORIGIN\s+(?:STATEMENT|DECLARATION)"
+            r"|DECLARA(?:CAO|ÇÃO)\s+DE\s+ORIGEM\s+DO\s+FORNECEDOR"
+            r"|DECLARACI[ÓO]N\s+DE\s+ORIGEN\s+DEL\s+PROVEEDOR)\b",
+            re.I,
+        ),
         DocumentType.SUPPLIER_DECLARATION,
     ),
     (

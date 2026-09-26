@@ -126,6 +126,7 @@ def _golden_payload() -> dict:
         "schema_version": "lacey_shipment_resolution_v1",
         "engine_version": "fixture",
         "canonical_fields": {
+            "importer_address": _field("importer_address", "MISSING", []),
             "description": _field("description", "SUPPORTED_MULTIPLE", descriptions),
             "hts_code": _field("hts_code", "SUPPORTED_MULTIPLE", hts),
             "entered_value": _field("entered_value", "SUPPORTED_MULTIPLE", entered),

@@ -381,4 +381,4 @@ def test_engine_contract_bump_does_not_reuse_prior_document_cache(
 
     assert calls == [1, 1]
     assert versions == {"lacey-engine-2.6.0", service_module.ENGINE_VERSION}
-    assert service_module.ENGINE_VERSION == "lacey-engine-2.6.1"
+    assert service_module.ENGINE_VERSION == "lacey-engine-2.6.2"
