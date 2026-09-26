@@ -333,6 +333,10 @@
   min-width: 0;
 }
 
+.lt-export-action--with-preview {
+  padding-right: 4rem;
+}
+
 .lt-export-preview-trigger {
   position: absolute;
   z-index: 3;
