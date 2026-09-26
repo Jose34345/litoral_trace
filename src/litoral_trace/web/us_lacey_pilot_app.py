@@ -657,8 +657,7 @@ def operation_alias_submit(
                 identity=identity,
                 operation_public_id=operation_public_id,
                 us_session=us_session or "",
-                field_errors={int(field_id): str(exc)},
-                field_input_values={int(field_id): value},
+                error=str(exc),
                 status_code=400,
             )
         except UsLaceyOperationNotFound:
