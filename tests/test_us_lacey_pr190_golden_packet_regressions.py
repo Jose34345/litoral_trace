@@ -222,9 +222,15 @@ def test_projection_boundary_rejects_sku_and_packaging_tokens_as_hts():
         )
         assert _target_field(source, table_headers=headers) == (None, 0)
 
-    for value in ("4419.90.9000", "4407.11", "440711"):
+    for header, value in (
+        ("HTS", "4419.90.9000"),
+        ("HTS", "4407.11"),
+        ("HTS", "440711"),
+        ("HTS", "4407.11.019 0"),
+        ("HTSUS", "4419.90.9000"),
+    ):
         valid = SimpleNamespace(
-            field_name="raw.table.1.HTS",
+            field_name=f"raw.table.1.{header}",
             original_value=value,
             normalized_value=value,
             source_page=1,
