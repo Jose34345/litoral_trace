@@ -6,7 +6,7 @@
 {% block lacey_content %}
 {% set bulk_upload_rejection = error and error.startswith("This file contains multiple shipments.") %}
 {% set empty_bulk_rejection = bulk_upload_rejection and not detail.documents %}
-{{ page_header(detail.client_reference, "Lacey Act Declaration Preparation", "Best practice: upload all available shipment documents before the first processing run. You can add more files later and reprocess.", icon="fa-folder-open") }}
+{{ page_header(detail.client_reference, "Lacey Act Declaration Preparation", "Manage the shipment evidence, review exceptions, and prepare the declaration package from one auditable workspace.", icon="fa-folder-open") }}
 
 {% if bulk_upload_rejection %}
 <section class="lt-alert lt-alert--warning" role="status" data-bulk-upload-rejection>
@@ -32,7 +32,7 @@
 <div class="flex flex-wrap items-start justify-between gap-4">
   <div class="max-w-3xl">
     <h2 class="text-lg font-bold text-slate-950">Shipment documents</h2>
-    <p class="mt-1 text-sm leading-6 text-slate-600">Best practice: upload all available shipment documents before the first processing run. You can add more files later and reprocess.</p>
+    <p class="mt-1 text-sm leading-6 text-slate-600">Keep the source set together so Litoral Trace can reconcile invoice, transport, customs, and supplier evidence across the same shipment.</p>
   </div>
   <span class="text-sm font-semibold text-slate-600">{{ detail.document_count }} document{{ '' if detail.document_count == 1 else 's' }}</span>
 </div>
