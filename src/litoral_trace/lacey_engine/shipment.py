@@ -321,6 +321,7 @@ def _quantity_semantic_type(label: str) -> QuantitySemanticType:
     label = label.casefold()
     for phrase, semantic in (
         ("plant quantity", QuantitySemanticType.PLANT_MATERIAL_QUANTITY),
+        ("plant qty", QuantitySemanticType.PLANT_MATERIAL_QUANTITY),
         ("plant material", QuantitySemanticType.PLANT_MATERIAL_QUANTITY),
         ("gross weight", QuantitySemanticType.GROSS_WEIGHT),
         ("net weight", QuantitySemanticType.NET_WEIGHT),
