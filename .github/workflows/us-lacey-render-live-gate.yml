@@ -26,6 +26,7 @@ jobs:
     timeout-minutes: 12
     env:
       ORIGIN: https://lacey.litoraltrace.com
+      WORKER_ORIGIN: https://litoral-trace-us-lacey-worker-free.onrender.com
     steps:
       - name: Wake service and verify health
         shell: bash
@@ -195,39 +196,62 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # Web readiness is topology-aware. The previously deployed revision may
+          # still return HTTP 503 because it predates the dedicated-worker readiness
+          # contract, so accept 200/503 only when storage + OCR are healthy and the
+          # inline worker is explicitly absent/not-ready.
           for attempt in $(seq 1 48); do
             code="$(curl -sS -o /tmp/live.json -w '%{http_code}' --max-time 20 "$ORIGIN/live-readiness" || true)"
-            if [ "$code" = "200" ]; then
-              break
+            if [ "$code" = "200" ] || [ "$code" = "503" ]; then
+              if python - <<'PY'
+          import json
+          from pathlib import Path
+          body = json.loads(Path('/tmp/live.json').read_text())
+          assert body.get('storage_roundtrip') == 'ready', body
+          assert body.get('ocr_runtime') == 'ready', body
+          assert body.get('inline_worker') in ('disabled', 'not_ready'), body
+          PY
+              then
+                break
+              fi
             fi
-            echo "live-readiness attempt $attempt returned HTTP ${code:-network-error}; waiting for Render deployment/runtime readiness"
+            echo "live-readiness attempt $attempt returned HTTP ${code:-network-error}; waiting for web runtime readiness"
             sleep 5
           done
-          test "${code:-}" = "200"
+          test "${code:-}" = "200" -o "${code:-}" = "503"
+
           python - <<'PY'
           import json
           from pathlib import Path
           body = json.loads(Path('/tmp/live.json').read_text())
-          required = {
-              'status': 'ready',
-              'inline_worker': 'ready',
-              'storage_roundtrip': 'ready',
-          }
-          for key, expected in required.items():
-              assert body.get(key) == expected, body
-
-          # Render is configured with autoDeployTrigger=checksPass, so this workflow
-          # executes against the previously deployed revision before the candidate
-          # can be released. Allow the legacy response to omit the newly introduced
-          # observability key, but fail closed if an exposed key is not enabled.
+          assert body.get('storage_roundtrip') == 'ready', body
+          assert body.get('ocr_runtime') == 'ready', body
+          assert body.get('inline_worker') in ('disabled', 'not_ready'), body
           shadow = body.get('multilingual_shadow')
-          assert shadow in (None, 'enabled'), body
-          print('render_inline_worker=PASS')
-          print('render_storage_roundtrip=PASS')
-          print(
-              'render_multilingual_shadow=' +
-              ('PASS' if shadow == 'enabled' else 'PREDEPLOY_NOT_EXPOSED')
-          )
+          assert shadow in (None, 'disabled'), body
+          print('render_web_storage_roundtrip=PASS')
+          print('render_web_ocr_runtime=PASS')
+          print('render_inline_worker=DISABLED_AS_EXPECTED')
+          PY
+
+          # Processing readiness belongs to the dedicated service.
+          for attempt in $(seq 1 48); do
+            worker_code="$(curl -sS -o /tmp/worker-health.json -w '%{http_code}' --max-time 20 "$WORKER_ORIGIN/health" || true)"
+            if [ "$worker_code" = "200" ]; then
+              break
+            fi
+            echo "worker health attempt $attempt returned HTTP ${worker_code:-network-error}; waiting for dedicated worker"
+            sleep 5
+          done
+          test "${worker_code:-}" = "200"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          body = json.loads(Path('/tmp/worker-health.json').read_text())
+          assert body.get('status') == 'healthy', body
+          assert body.get('service') == 'us-lacey-worker', body
+          print('render_dedicated_worker=PASS')
           PY
 
       - name: Verify readiness contract
