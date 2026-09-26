@@ -234,3 +234,98 @@ def test_cross_document_rows_collapse_to_two_canonical_product_lines():
     assert description.values == (
         "Pinus taeda KD sawn boards; Eucalyptus grandis KD sawn boards",
     )
+
+def _description_rows_for_authority_regression(*, entry_authority: float = 30.0) -> list[dict]:
+    return [
+        _evidence(
+            field="description",
+            value="Tablas secas / KD boards - Pinus taeda",
+            document_id=176,
+            line_key="176:p1-t2:row:1",
+            text="Description: Tablas secas / KD boards - Pinus taeda",
+            table_id="p1-t2",
+            row_index=1,
+            key_text="Description",
+            value_text="Tablas secas / KD boards - Pinus taeda",
+            authority=40.0,
+        ),
+        _evidence(
+            field="description",
+            value="Tablas secas / KD boards - Eucalyptus grandis",
+            document_id=176,
+            line_key="176:p1-t2:row:2",
+            text="Description: Tablas secas / KD boards - Eucalyptus grandis",
+            table_id="p1-t2",
+            row_index=2,
+            key_text="Description",
+            value_text="Tablas secas / KD boards - Eucalyptus grandis",
+            authority=40.0,
+        ),
+        _evidence(
+            field="description",
+            value="Pinus taeda KD sawn boards",
+            document_id=181,
+            line_key="181:p1-t2:row:1",
+            text="Description: Pinus taeda KD sawn boards",
+            table_id="p1-t2",
+            row_index=1,
+            key_text="Description",
+            value_text="Pinus taeda KD sawn boards",
+            authority=entry_authority,
+        ),
+        _evidence(
+            field="description",
+            value="Eucalyptus grandis KD sawn boards",
+            document_id=181,
+            line_key="181:p1-t2:row:2",
+            text="Description: Eucalyptus grandis KD sawn boards",
+            table_id="p1-t2",
+            row_index=2,
+            key_text="Description",
+            value_text="Eucalyptus grandis KD sawn boards",
+            authority=entry_authority,
+        ),
+    ]
+
+
+def test_cross_document_description_uses_unique_highest_authority_wording_per_line():
+    payload = _payload()
+    payload["canonical_fields"]["description"] = _field(
+        "description",
+        "SUPPORTED_MULTIPLE",
+        _description_rows_for_authority_regression(),
+    )
+
+    truth = build_canonical_shipment_truth(payload)
+
+    pinus, eucalyptus = truth.plant_lines
+    assert pinus.fields["merchandise_description"].values == (
+        "Tablas secas / KD boards - Pinus taeda",
+    )
+    assert eucalyptus.fields["merchandise_description"].values == (
+        "Tablas secas / KD boards - Eucalyptus grandis",
+    )
+    assert {row.document_id for row in pinus.fields["merchandise_description"].evidence} == {"176"}
+    assert {row.document_id for row in eucalyptus.fields["merchandise_description"].evidence} == {"176"}
+    assert truth.shipment_fields["merchandise_description"].values == (
+        "Tablas secas / KD boards - Pinus taeda; "
+        "Tablas secas / KD boards - Eucalyptus grandis",
+    )
+
+
+def test_cross_document_description_equal_authority_disagreement_fails_closed():
+    payload = _payload()
+    payload["canonical_fields"]["description"] = _field(
+        "description",
+        "SUPPORTED_MULTIPLE",
+        _description_rows_for_authority_regression(entry_authority=40.0),
+    )
+
+    truth = build_canonical_shipment_truth(payload)
+
+    assert all(
+        line.fields["merchandise_description"].state is CanonicalTruthState.CONFLICT
+        for line in truth.plant_lines
+    )
+    assert "merchandise_description" not in truth.shipment_fields
+
