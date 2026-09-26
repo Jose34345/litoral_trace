@@ -138,19 +138,22 @@ def test_merchandise_description_pool_rejects_golden_packet_structural_noise():
     assert groups[0].representative.id == 99
 
 
-def test_exception_first_workspace_has_three_tabs_and_htmx_actions():
+def test_exception_first_workspace_has_four_tabs_and_htmx_actions():
     template = Path(
         "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
     ).read_text(encoding="utf-8")
 
     assert 'data-review-tab-button="action"' in template
     assert 'data-review-tab-button="resolved"' in template
+    assert 'data-review-tab-button="confirmed"' in template
     assert 'data-review-tab-button="regulatory"' in template
     assert 'data-review-tab-panel="action"' in template
     assert 'data-review-tab-panel="resolved"' in template
+    assert 'data-review-tab-panel="confirmed"' in template
     assert 'data-review-tab-panel="regulatory"' in template
     assert "Action Required" in template
     assert "Auto-Resolved Data" in template
+    assert ">Confirmed <" in template
     assert "Regulatory Analysis" in template
     assert "Confirm All Auto-Resolved Data" in template
     assert 'hx-target="#operation-workspace"' in template
@@ -192,7 +195,8 @@ def test_exception_first_ui_polish_uses_quiet_enterprise_surfaces():
         "src/litoral_trace/templates/us_lacey/fragments/regulatory_assessment_card.html"
     ).read_text(encoding="utf-8")
 
-    assert "border border-slate-200 border-l-4" in workspace
+    assert "lt-review-card--blocking" in workspace
+    assert "lt-review-card--confirmation" in workspace
     assert "bg-emerald-50/40" not in workspace
     assert "border-emerald-200 bg-emerald-50/40" not in workspace
     assert "ring-emerald-600/20" in workspace
