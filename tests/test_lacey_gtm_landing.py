@@ -22,27 +22,41 @@ def test_lacey_landing_leads_with_document_to_data_differentiation():
     response = client.get("/lacey")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store, max-age=0"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
 
     html = response.text
-    assert '<html lang="en">' in html
+    assert '<html lang="en-US"' in html
     assert "Stop manually preparing Lacey spreadsheets." in html
     assert "Start before the spreadsheet" in html
-    assert "Upload the shipment documents you already receive" in html
-    assert "See a sample shipment" in html
+    assert "Upload your commercial invoices and packing lists." in html
+    assert "Launch Zero-Touch Sandbox" in html
     assert "Extract" in html
     assert "Compare" in html
     assert "Preserve evidence" in html
-    assert "No ERP access" in html
+    assert "Early Access · U.S. Lacey Act" in html
+    assert "Founding Early Access — USD 149/month" in html
+    assert "Up to 100 Lacey operations/month. Early-access pricing locked for 12 months." in html
+    assert "USD 99/month" not in html
+    assert "USD 199" not in html
+    assert "25 operations" not in html
+    assert "Phase VII" not in html
+    assert 'href="/signup"' in html
+    assert 'href="/login"' in html
     assert "comercial@litoraltrace.com" in html
 
 
-def test_lacey_landing_has_exact_five_field_conversion_form():
+def test_lacey_landing_routes_trial_traffic_to_zero_touch_sandbox():
     html = client.get("/lacey").text
+
+    assert html.count('href="/sandbox/start"') >= 3
+    assert "Launch Zero-Touch Sandbox" in html
+    assert "Test it instantly with your own documents." in html
+    assert "All test files are permanently destroyed after 4 hours." in html
+    assert 'id="lacey-beta-form"' not in html
+    assert "Request a written Early Access review" not in html
     for field_name in ("work_email", "role", "volume", "workflow", "willingness"):
-        assert f'name="{field_name}"' in html
-        assert html.count(f'name="{field_name}"') == 1
-    assert "No sales call is required" in html
-    assert "Yes" in html and "Maybe" in html and "No" in html
+        assert f'name="{field_name}"' not in html
 
 
 def test_lacey_demo_is_synthetic_and_surfaces_missing_conflicting_data():
@@ -68,9 +82,8 @@ def test_lacey_landing_contains_responsive_and_accessibility_contracts():
     landing = client.get("/lacey").text
     demo = client.get("/lacey/demo").text
     assert 'href="#main-content"' in landing
-    assert 'aria-live="polite"' in landing
-    assert 'label for="work_email"' in landing
-    assert 'label for="role"' in landing
+    assert 'aria-label="Launch Zero-Touch Sandbox with your own documents"' in landing
+    assert 'aria-label="Launch the four-hour Zero-Touch Sandbox"' in landing
     assert 'href="#main-content"' in demo
     assert 'aria-live="polite"' in demo
 

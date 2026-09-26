@@ -33,6 +33,10 @@ from litoral_trace.db.models import (
     TraceabilityBatch,
     TraceabilityEvent,
     User,
+    UsLaceyOperation,
+    UsLaceyOperationDocument,
+    UsLaceyOperationField,
+    UsLaceyOrganizationProfile,
 )
 
 
@@ -57,6 +61,10 @@ TenantModel = type[
     | ExternalReference
     | IntegrationDocument
     | IntegrationEvent
+    | UsLaceyOrganizationProfile
+    | UsLaceyOperation
+    | UsLaceyOperationDocument
+    | UsLaceyOperationField
 ]
 TenantEntity = (
     Lote
@@ -77,6 +85,10 @@ TenantEntity = (
     | ExternalReference
     | IntegrationDocument
     | IntegrationEvent
+    | UsLaceyOrganizationProfile
+    | UsLaceyOperation
+    | UsLaceyOperationDocument
+    | UsLaceyOperationField
 )
 
 

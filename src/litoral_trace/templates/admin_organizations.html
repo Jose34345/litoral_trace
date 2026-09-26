@@ -68,5 +68,16 @@
             <div id="adminCreateResult" class="mt-4"></div>
         </article>
     </div>
+
+    <article
+        id="usLaceyOwnerConsole"
+        class="space-y-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 lt-data-table"
+        hx-get="/api/v1/admin/us-lacey/accounts/fragment"
+        hx-trigger="load"
+        hx-swap="innerHTML"
+        aria-live="polite"
+    >
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">Cargando estado U.S. Lacey…</div>
+    </article>
 </section>
 {% endblock %}
