@@ -1,6 +1,8 @@
 {% from "components/ui.html" import button, empty_state %}
 {% from "us_lacey/fragments/review_field_macros.html" import action_status %}
 {% set engine2_downstream_annotations = engine2_downstream_annotations|default({}) %}
+{% set field_errors = field_errors|default({}) %}
+{% set field_input_values = field_input_values|default({}) %}
 {% macro friendly_status(value) %}{% set labels = {"MISSING":"Missing information", "CONFLICT":"Conflicting information", "SUPPORTED":"Auto-resolved", "SUPPORTED MULTIPLE":"Auto-resolved", "SUPPORTED_MULTIPLE":"Auto-resolved", "FOUND":"Auto-resolved", "MATCHED":"Confirmed", "NOT_REQUIRED":"Not required", "REVIEW":"Needs review"} %}{{ labels.get(value, value|replace("_", " ")|title) }}{% endmacro %}
 {% macro review_telemetry_inputs() %}<input type="hidden" name="review_started_at" data-review-started-at><input type="hidden" name="review_elapsed_seconds" data-review-elapsed-seconds><input type="hidden" name="review_modified_field_ids" data-review-modified-field-ids>{% endmacro %}
 
@@ -30,7 +32,7 @@
 {% set field_csrf = review_csrf.get(field.id, "") %}
 <article
   id="review-field-{{ field.id }}"
-  class="rounded-xl border border-slate-200 border-l-4 {% if field.status == 'CONFLICT' %}border-l-rose-500{% else %}border-l-amber-500{% endif %} bg-white p-4 shadow-sm"
+  class="rounded-xl border border-slate-200 border-l-4 {% if field.status in ['MISSING', 'CONFLICT'] %}border-l-red-600 bg-red-50/30{% else %}border-l-amber-500 bg-amber-50/30{% endif %} p-4 shadow-sm transition-[opacity,transform,box-shadow] duration-200 ease-out"
   data-review-field
   data-review-field-id="{{ field.id }}"
   data-review-field-name="{{ field.field_name }}"
@@ -43,7 +45,7 @@
       <p class="text-xs font-semibold text-slate-500">{% if field.scope == "SHIPMENT" %}Shipment{% else %}Plant line {{ field.line_reference }}{% endif %}</p>
       <h3 class="mt-1 font-bold text-slate-950">{{ field.label }}</h3>
     </div>
-    <span class="rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset {% if field.status == 'CONFLICT' %}bg-rose-50 text-rose-700 ring-rose-600/20{% else %}bg-amber-50 text-amber-700 ring-amber-600/20{% endif %}" data-action-status>{{ action_status(field) }}</span>
+    <span class="rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset {% if field.status in ['MISSING', 'CONFLICT'] %}bg-red-50 text-red-700 ring-red-600/20{% else %}bg-amber-50 text-amber-700 ring-amber-600/20{% endif %}" data-action-status>{{ action_status(field) }}</span>
   </div>
 
   {% if field.status == "CONFLICT" and field.candidates|length > 1 %}
@@ -55,8 +57,9 @@
       action="{{ action_url }}"
       hx-post="{{ htmx_action_url }}"
       hx-target="#operation-workspace"
-      hx-swap="outerHTML"
+      hx-swap="outerHTML transition:true"
       data-review-action
+      data-review-action-kind="accept"
       class="rounded-lg border border-slate-200 bg-white p-3"
     >
       <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
@@ -81,13 +84,30 @@
     action="{{ action_url }}"
     hx-post="{{ htmx_action_url }}"
     hx-target="#operation-workspace"
-    hx-swap="outerHTML"
+    hx-swap="outerHTML transition:true"
     data-review-action
+    data-review-action-kind="edit"
   >
     <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
     <input type="hidden" name="action" value="edit">
-    <label class="sr-only" for="field-{{ field.id }}">Add or correct {{ field.label }}</label>
-    <input id="field-{{ field.id }}" class="lt-control flex-1 border-slate-200 bg-slate-50 focus:border-emerald-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600" name="value" maxlength="4000" required placeholder="Add or correct information" value="{{ field.effective_value or '' }}">
+    {% set field_error = field_errors.get(field.id) %}
+    <div class="min-w-0 flex-1">
+      <label class="sr-only" for="field-{{ field.id }}">Add or correct {{ field.label }}</label>
+      <input
+        id="field-{{ field.id }}"
+        class="lt-control border-slate-200 bg-slate-50 focus:border-emerald-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600"
+        name="value"
+        maxlength="4000"
+        required
+        placeholder="Add or correct information"
+        value="{{ field_input_values.get(field.id, field.effective_value or '') }}"
+        data-review-entry-input
+        {% if field_error %}aria-invalid="true" aria-describedby="field-error-{{ field.id }}"{% endif %}
+      >
+      {% if field_error %}
+      <p id="field-error-{{ field.id }}" class="lt-inline-error mt-1 text-sm font-medium text-red-600" role="alert" data-inline-field-error>{{ field_error }}</p>
+      {% endif %}
+    </div>
     {{ button("Save", variant="secondary", button_type="submit", extra_classes="hover:border-slate-400 hover:bg-slate-50") }}
   </form>
 
@@ -98,8 +118,9 @@
     action="{{ action_url }}"
     hx-post="{{ htmx_action_url }}"
     hx-target="#operation-workspace"
-    hx-swap="outerHTML"
+    hx-swap="outerHTML transition:true"
     data-review-action
+    data-review-action-kind="not-required"
   >
     <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
     <input type="hidden" name="action" value="not_required">
@@ -200,7 +221,7 @@
           </div>
         </section>
         {% else %}
-        <div class="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm" data-no-action-required>
+        <div class="lt-empty-state-transition rounded-xl border border-emerald-200 bg-emerald-50 p-8 text-center shadow-sm" data-no-action-required>
           <i class="fa-solid fa-circle-check text-2xl text-emerald-600" aria-hidden="true"></i>
           <h3 class="mt-3 font-bold text-slate-950">No action required</h3>
           <p class="mt-1 text-sm text-slate-600">All available shipment evidence has been reconciled.</p>
@@ -221,7 +242,7 @@
           action="/operations/{{ detail.public_id }}/review/accept-supported"
           hx-post="/operations/{{ detail.public_id }}/review/actions/accept-supported"
           hx-target="#operation-workspace"
-          hx-swap="outerHTML"
+          hx-swap="outerHTML transition:true"
           data-review-bulk
         >
           <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
@@ -325,6 +346,54 @@
     {% for field in settled_fields %}<div id="review-field-{{ field.id }}" hidden data-review-resolved="true"></div>{% endfor %}
   </section>
 
+  <div class="lt-sticky-action-bar" data-sticky-action-bar role="region" aria-label="Review actions">
+    <div class="flex min-w-0 flex-1 items-center gap-3">
+      <span class="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 sm:flex" aria-hidden="true"><i class="fa-solid fa-bolt"></i></span>
+      <div class="min-w-0">
+        {% if attention_fields %}
+        <p class="text-sm font-bold text-slate-950">{{ attention_fields|length }} item{{ '' if attention_fields|length == 1 else 's' }} still need attention</p>
+        <p class="text-xs text-slate-500">Resolve the remaining exceptions to continue.</p>
+        {% elif auto_supported_fields %}
+        <p class="text-sm font-bold text-slate-950">Exceptions resolved</p>
+        <p class="text-xs text-slate-500">Confirm the auto-resolved evidence before final preparation.</p>
+        {% elif detail.status != "COMPLETED" %}
+        <p class="text-sm font-bold text-slate-950">Ready for final confirmation</p>
+        <p class="text-xs text-slate-500">All required information has been resolved.</p>
+        {% else %}
+        <p class="text-sm font-bold text-slate-950">Preparation package ready</p>
+        <p class="text-xs text-slate-500">Download the reviewed work products below.</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      {% if attention_fields %}
+      <a href="#review-field-{{ attention_fields[0].id }}" class="lt-btn lt-btn--primary" data-focus-next-required>
+        <i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span>Review next item</span>
+      </a>
+      {% elif auto_supported_fields %}
+      <form
+        method="post"
+        action="/operations/{{ detail.public_id }}/review/accept-supported"
+        hx-post="/operations/{{ detail.public_id }}/review/actions/accept-supported"
+        hx-target="#operation-workspace"
+        hx-swap="outerHTML transition:true"
+        data-review-bulk
+      >
+        <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
+        {{ button("Confirm All", variant="primary", button_type="submit", icon="fa-check-double") }}
+      </form>
+      {% elif detail.status != "COMPLETED" %}
+      <form method="post" action="/operations/{{ detail.public_id }}/complete" data-review-completion-form>
+        <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
+        {{ review_telemetry_inputs() }}
+        {{ button("Proceed to Final Confirmation", variant="primary", button_type="submit", icon="fa-arrow-right") }}
+      </form>
+      {% else %}
+      <a href="#declaration-package" class="lt-btn lt-btn--primary"><i class="fa-solid fa-box-open" aria-hidden="true"></i><span>View package</span></a>
+      {% endif %}
+    </div>
+  </div>
+
   {% include "us_lacey/fragments/export_declaration_package.html" %}
 
   <details id="engine2-dossier" class="lt-card p-6" data-engine2-dossier data-engine2-availability="{{ engine2_dossier.availability }}">
@@ -427,7 +496,7 @@
     const list = root.querySelector("[data-action-required-list]");
     if (list && unresolved === 0 && !list.querySelector("[data-no-action-required]")) {
       list.innerHTML = `
-        <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-8 text-center" data-no-action-required>
+        <div class="lt-empty-state-transition rounded-xl border border-emerald-200 bg-emerald-50 p-8 text-center" data-no-action-required>
           <div class="font-bold text-slate-950">No action required</div>
           <p class="mt-1 text-sm text-slate-600">All available evidence has been reconciled.</p>
         </div>
