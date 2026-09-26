@@ -139,7 +139,8 @@ def _hts_identity(value: str) -> str | None:
     """
 
     text = str(value or "").strip()
-    if not _HTS_SOURCE_VALUE.fullmatch(text):
+    presentation_normalized = re.sub(r"\s+", "", text)
+    if not _HTS_SOURCE_VALUE.fullmatch(presentation_normalized):
         return None
     validation = normalize_hts(text)
     if validation.status is not PpqValidationStatus.VALID:
