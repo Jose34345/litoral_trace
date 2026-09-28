@@ -21,9 +21,17 @@ from litoral_trace.lacey_engine.domain import DocumentType
 
 LOGGER = logging.getLogger("litoral_trace.us_lacey.pilot_alerts")
 _SAFE_TOKEN = re.compile(r"^[A-Z0-9_]{1,64}$")
-_SAFE_VERSION = re.compile(r"^[A-Za-z0-9._:+/\\-]{1,100}$")
+_SAFE_VERSION = re.compile(r"^[A-Za-z0-9._:+/-]{1,100}$")
 _ALLOWED_TRIGGERS = frozenset({"INITIAL_PROCESS", "REPROCESS", "WATCHDOG"})
 _ALLOWED_SEVERITIES = frozenset({"P0", "P1"})
+_ALLOWED_DETECTORS = frozenset(
+    {
+        "LINE_FRAGMENTATION_SPIKE",
+        "ACTION_REQUIRED_SPIKE",
+        "ZERO_AUTOMATION",
+        "PROCESSING_STALLED",
+    }
+)
 _ALLOWED_DOCUMENT_TYPES = frozenset(item.value for item in DocumentType)
 
 
