@@ -6,6 +6,8 @@ from uuid import UUID
 
 from litoral_trace.us_lacey.pilot_alerts import (
     GitHubIssueNotifier,
+    StructuredLogNotifier,
+    configured_pilot_incident_notifiers,
     sanitize_diagnostic_manifest,
 )
 
@@ -146,3 +148,16 @@ def test_sanitize_diagnostic_manifest_drops_unknown_nested_keys() -> None:
         "PACKING_LIST": 1,
     }
     assert safe["lines"] == {"commercial_structural": 3, "canonical": 10}
+
+
+def test_invalid_optional_transport_config_keeps_structured_log_active(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("LT_PILOT_ALERT_WEBHOOK_URL", "not-a-url")
+    monkeypatch.delenv("LT_PILOT_GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("LT_PILOT_GITHUB_REPOSITORY", raising=False)
+
+    notifiers = configured_pilot_incident_notifiers()
+
+    assert len(notifiers) == 1
+    assert isinstance(notifiers[0], StructuredLogNotifier)

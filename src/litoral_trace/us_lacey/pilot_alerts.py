@@ -103,10 +103,14 @@ def sanitize_diagnostic_manifest(raw: Mapping[str, Any] | None) -> dict[str, Any
     if trigger not in _ALLOWED_TRIGGERS:
         trigger = "UNKNOWN"
 
+    detector_code = _safe_token(detector.get("code"))
+    if detector_code not in _ALLOWED_DETECTORS:
+        detector_code = "UNKNOWN"
+
     return {
         "schema_version": _safe_nonnegative_int(source.get("schema_version")),
         "detector": {
-            "code": _safe_token(detector.get("code")),
+            "code": detector_code,
             "severity": severity,
         },
         "operation_public_id": _safe_uuid(source.get("operation_public_id")),
@@ -171,11 +175,14 @@ def _incident_context(
     severity = _safe_token(incident.severity)
     if severity not in _ALLOWED_SEVERITIES:
         severity = str(manifest["detector"]["severity"])
+    incident_detector = _safe_token(incident.detector_code)
+    if incident_detector not in _ALLOWED_DETECTORS:
+        incident_detector = "UNKNOWN"
     return {
         "incident_public_id": _safe_uuid(incident.incident_public_id),
         "prospect_slug": opaque_prospect_slug(incident.organization_id),
         "operation_public_id": manifest["operation_public_id"],
-        "detector_code": _safe_token(incident.detector_code),
+        "detector_code": incident_detector,
         "severity": severity,
         "summary": _summary(manifest),
         "engine_version": _safe_version(snapshot.engine_version)
@@ -362,12 +369,20 @@ def configured_pilot_incident_notifiers() -> tuple[PilotIncidentNotifier, ...]:
 
     webhook_url = str(os.environ.get("LT_PILOT_ALERT_WEBHOOK_URL") or "").strip()
     if webhook_url:
-        notifiers.append(WebhookNotifier(url=webhook_url))
+        try:
+            notifiers.append(WebhookNotifier(url=webhook_url))
+        except Exception:
+            LOGGER.exception("pilot_webhook_notifier_disabled invalid_configuration=true")
 
     token = str(os.environ.get("LT_PILOT_GITHUB_TOKEN") or "").strip()
     repository = str(os.environ.get("LT_PILOT_GITHUB_REPOSITORY") or "").strip()
     if token and repository:
-        notifiers.append(GitHubIssueNotifier(token=token, repository=repository))
+        try:
+            notifiers.append(
+                GitHubIssueNotifier(token=token, repository=repository)
+            )
+        except Exception:
+            LOGGER.exception("pilot_github_notifier_disabled invalid_configuration=true")
     elif token or repository:
         LOGGER.warning("pilot_github_notifier_disabled incomplete_configuration=true")
 
