@@ -173,10 +173,13 @@ def test_pilot_incidents_are_idempotent_and_hidden_from_runtime():
             "customer_name",
             "supplier_name",
             "importer_name",
-            "species",
-            "taxon",
+            "consignee_name",
+            "filename",
             "source_text",
-            "price",
+            "normalized_value",
+            "raw_text",
+            "price_value",
+            "taxon_value",
         ):
             assert forbidden not in manifest_text
 
