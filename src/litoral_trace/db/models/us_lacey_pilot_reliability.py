@@ -10,7 +10,6 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     ForeignKeyConstraint,
     Index,
     Integer,
@@ -56,7 +55,6 @@ class UsLaceyPilotQualitySnapshot(Base):
     operation_id: Mapped[int] = mapped_column(Integer, nullable=False)
     attribution_session_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
-        ForeignKey("us_lacey_outreach_sessions.id", ondelete="SET NULL"),
         nullable=True,
     )
     trigger: Mapped[str] = mapped_column(String(24), nullable=False)
@@ -151,7 +149,6 @@ class UsLaceyPilotIncident(Base):
     quality_snapshot_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     attribution_session_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
-        ForeignKey("us_lacey_outreach_sessions.id", ondelete="SET NULL"),
         nullable=True,
     )
 
