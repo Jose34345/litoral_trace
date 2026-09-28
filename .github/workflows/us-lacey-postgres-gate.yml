@@ -31,6 +31,7 @@ on:
       - "alembic/versions/060_us_lacey_processing_stages.py"
       - "alembic/versions/061_requeue_canonical_logical_id_failure.py"
       - "alembic/versions/062_requeue_pack2_after_deploy.py"
+      - "alembic/versions/063_us_lacey_pilot_reliability.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
@@ -170,7 +171,7 @@ jobs:
           python -m alembic upgrade 049_lacey_product_intelligence_snapshots
           python -m alembic upgrade 050_lacey_regulatory_assessment_snapshots
           python -m alembic upgrade 052_us_lacey_ephemeral_sandbox
-          python -m alembic upgrade 062_requeue_pack2_after_deploy
+          python -m alembic upgrade 063_us_lacey_pilot_reliability
       - name: Bind dedicated worker login to queue capability
         shell: bash
         run: |
@@ -195,7 +196,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "062_requeue_pack2_after_deploy (head)" /tmp/alembic-current.txt
+          grep -Fx "063_us_lacey_pilot_reliability (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -603,7 +604,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "062_requeue_pack2_after_deploy (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "063_us_lacey_pilot_reliability (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
@@ -725,6 +726,18 @@ jobs:
             | tee /tmp/outreach-attribution-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT)' /tmp/outreach-attribution-postgres.txt; then
             echo "Outreach attribution PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
+      - name: Prove pilot reliability incident idempotency and privacy
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs \
+            tests/test_us_lacey_pilot_reliability_postgres.py \
+            | tee /tmp/pilot-reliability-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/pilot-reliability-postgres.txt; then
+            echo "Pilot reliability PostgreSQL acceptance must not skip in CI."
             exit 1
           fi
       - name: Prove Engine 2 shadow-worker contracts

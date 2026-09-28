@@ -72,6 +72,13 @@ from litoral_trace.db.models.us_lacey_telemetry import (
     TelemetryFieldAction,
     TelemetryRun,
 )
+from litoral_trace.db.models.us_lacey_pilot_reliability import (
+    PilotIncidentSeverity,
+    PilotIncidentStatus,
+    PilotQualityTrigger,
+    UsLaceyPilotIncident,
+    UsLaceyPilotQualitySnapshot,
+)
 from litoral_trace.db.models.integration import (
     ExternalEntity,
     ExternalEntityVersion,
@@ -142,6 +149,11 @@ __all__ = [
     "UsLaceyPaymentEvent",
     "TelemetryRun",
     "TelemetryFieldAction",
+    "PilotQualityTrigger",
+    "PilotIncidentSeverity",
+    "PilotIncidentStatus",
+    "UsLaceyPilotQualitySnapshot",
+    "UsLaceyPilotIncident",
     "UsLaceyTermsAcceptance",
     "UsLaceyProcessingJob",
     "TraceabilityBatch",

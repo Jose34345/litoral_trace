@@ -38,6 +38,9 @@ US_LACEY_CANONICAL_RECOVERY_MIGRATION = Path(
 US_LACEY_POSTDEPLOY_RECOVERY_MIGRATION = Path(
     "alembic/versions/062_requeue_pack2_after_deploy.py"
 )
+US_LACEY_PILOT_RELIABILITY_MIGRATION = Path(
+    "alembic/versions/063_us_lacey_pilot_reliability.py"
+)
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -276,9 +279,17 @@ def test_us_lacey_postdeploy_recovery_follows_canonical_recovery():
     assert "interval '10 minutes'" in text
 
 
+def test_us_lacey_pilot_reliability_follows_postdeploy_recovery():
+    text = US_LACEY_PILOT_RELIABILITY_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "063_us_lacey_pilot_reliability"' in text
+    assert 'down_revision = "062_requeue_pack2_after_deploy"' in text
+    assert "us_lacey_pilot_quality_snapshots" in text
+    assert "us_lacey_pilot_incidents" in text
+
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "062_requeue_pack2_after_deploy (head)" in text
+    assert "063_us_lacey_pilot_reliability (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():
