@@ -604,7 +604,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "062_requeue_pack2_after_deploy (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "063_us_lacey_pilot_reliability (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
