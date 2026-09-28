@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from litoral_trace.lacey_engine.errors import UnsupportedDocumentDomainError
 from litoral_trace.us_lacey import worker
+from litoral_trace.us_lacey.pilot_reliability import PilotQualityGuard
 
 
 class _ProcessingService:
@@ -201,6 +202,80 @@ def test_post_completion_ai_review_failure_cannot_requeue_completed_job(monkeypa
     assert result.claimed is True
     assert result.job_status == "COMPLETED"
     assert result.operation_status == "READY_FOR_REVIEW"
+    assert result.document_status == "PROCESSED"
+    assert result.projected_count == 3
+    assert result.conflict_count == 1
+
+
+def test_pilot_quality_guard_failure_cannot_requeue_completed_job(monkeypatch) -> None:
+    calls: list[str] = []
+    _stub_success_path(monkeypatch, calls)
+    monkeypatch.setattr(worker, "_assurance_public_id", lambda **_: uuid4())
+    monkeypatch.setattr(
+        worker,
+        "_document_descriptor",
+        lambda **_: SimpleNamespace(
+            filename="document.pdf",
+            size_bytes=1,
+            vault_public_id=uuid4(),
+        ),
+    )
+    monkeypatch.setattr(worker, "_preflight_existing_document", lambda **_: None)
+    monkeypatch.setattr(worker, "us_lacey_operation_projection_lock", lambda **_: nullcontext())
+    monkeypatch.setattr(
+        worker,
+        "_claim_source_set_finalization",
+        lambda **_: SimpleNamespace(claimed=True, fingerprint="f" * 64),
+    )
+    monkeypatch.setattr(worker, "finalize_claim", lambda **_: True)
+    monkeypatch.setattr(worker, "_build_product_intelligence_snapshot", lambda **_: None)
+    monkeypatch.setattr(worker, "_build_regulatory_assessment_snapshot", lambda **_: None)
+    monkeypatch.setattr(worker, "_shadow_multilingual_evidence_snapshot", lambda **_: None)
+
+    def complete(**_: object) -> bool:
+        calls.append("complete")
+        return True
+
+    def refresh(**_: object) -> str:
+        calls.append("refresh")
+        return "REVIEW_REQUIRED"
+
+    def guard_failure(_cls, _snapshot):
+        raise RuntimeError("synthetic PilotQualityGuard failure")
+
+    monkeypatch.setattr(PilotQualityGuard, "evaluate", classmethod(guard_failure))
+
+    def capture_quality(**_: object):
+        calls.append("pilot_quality")
+        return PilotQualityGuard.evaluate(None)
+
+    monkeypatch.setattr(worker, "capture_completed_pilot_quality", capture_quality)
+    monkeypatch.setattr(worker, "complete_us_lacey_job", complete)
+    monkeypatch.setattr(worker, "_refresh_operation", refresh)
+    monkeypatch.setattr(
+        worker,
+        "fail_us_lacey_job",
+        lambda **_: (_ for _ in ()).throw(
+            AssertionError("observability failure must never requeue a completed job")
+        ),
+    )
+
+    result = worker.process_one_us_lacey_job(worker_id="worker-quality-isolation")
+
+    assert calls == [
+        "process",
+        "project",
+        "candidate_equivalence",
+        "engine2",
+        "engine2_suggestions",
+        "complete",
+        "refresh",
+        "pilot_quality",
+        "ai_review",
+    ]
+    assert result.claimed is True
+    assert result.job_status == "COMPLETED"
+    assert result.operation_status == "REVIEW_REQUIRED"
     assert result.document_status == "PROCESSED"
     assert result.projected_count == 3
     assert result.conflict_count == 1
