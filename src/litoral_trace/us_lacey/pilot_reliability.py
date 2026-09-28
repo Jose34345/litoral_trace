@@ -9,17 +9,17 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import re
 from typing import Mapping
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from litoral_trace.db.models.organization import Organization
 from litoral_trace.db.models.us_lacey import (
     UsLaceyEngineShipmentRun,
     UsLaceyOperation,
@@ -35,8 +35,10 @@ from litoral_trace.db.models.us_lacey_pilot_reliability import (
     UsLaceyPilotIncident,
     UsLaceyPilotQualitySnapshot,
 )
+from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.lacey_engine.domain import DocumentType
 from litoral_trace.us_lacey.canonical_shipment_truth import CANONICAL_PUBLISHER_VERSION
+from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.worker_db import get_us_lacey_worker_db_session
 
 
@@ -282,22 +284,24 @@ def _processing_duration_ms(
     session: Session,
     organization_id: int,
     operation_id: int,
-    engine_run: UsLaceyEngineShipmentRun,
+    engine_run: UsLaceyEngineShipmentRun | None,
+    watchdog: bool = False,
 ) -> int | None:
-    revision = session.scalar(
-        select(UsLaceySourceSetRevision)
-        .where(
-            UsLaceySourceSetRevision.organization_id == organization_id,
-            UsLaceySourceSetRevision.operation_id == operation_id,
-            UsLaceySourceSetRevision.source_set_fingerprint
-            == engine_run.source_set_fingerprint,
+    if engine_run is not None:
+        revision = session.scalar(
+            select(UsLaceySourceSetRevision)
+            .where(
+                UsLaceySourceSetRevision.organization_id == organization_id,
+                UsLaceySourceSetRevision.operation_id == operation_id,
+                UsLaceySourceSetRevision.source_set_fingerprint
+                == engine_run.source_set_fingerprint,
+            )
+            .order_by(UsLaceySourceSetRevision.generation.desc())
+            .limit(1)
         )
-        .order_by(UsLaceySourceSetRevision.generation.desc())
-        .limit(1)
-    )
-    if revision is not None and revision.created_at and engine_run.created_at:
-        duration = engine_run.created_at - revision.created_at
-        return max(0, int(duration.total_seconds() * 1000))
+        if revision is not None and revision.created_at and engine_run.created_at:
+            duration = engine_run.created_at - revision.created_at
+            return max(0, int(duration.total_seconds() * 1000))
 
     jobs = tuple(
         session.scalars(
@@ -309,7 +313,11 @@ def _processing_duration_ms(
     )
     starts = [job.started_at for job in jobs if job.started_at is not None]
     ends = [job.completed_at for job in jobs if job.completed_at is not None]
-    if not starts or not ends:
+    if not starts:
+        return None
+    if watchdog:
+        ends.append(datetime.now(timezone.utc))
+    if not ends:
         return None
     duration = max(ends) - min(starts)
     return max(0, int(duration.total_seconds() * 1000))
@@ -325,6 +333,7 @@ class PilotQualitySnapshotBuilder:
         organization_id: int,
         operation_id: int,
         trigger: PilotQualityTrigger,
+        attribution_session_id: UUID | None = None,
     ) -> PilotQualitySnapshotData:
         operation = session.scalar(
             select(UsLaceyOperation).where(
@@ -334,7 +343,13 @@ class PilotQualitySnapshotBuilder:
         )
         if operation is None:
             raise ValueError("Pilot quality operation was not found.")
-        if str(operation.status or "").upper() not in TERMINAL_PROCESSING_STATUSES:
+        operation_status = str(operation.status or "").upper()
+        if trigger == PilotQualityTrigger.WATCHDOG:
+            if operation_status != "PROCESSING":
+                raise ValueError(
+                    "WATCHDOG snapshots require an operation still in PROCESSING."
+                )
+        elif operation_status not in TERMINAL_PROCESSING_STATUSES:
             raise ValueError("Pilot quality snapshots require a terminal processing state.")
 
         engine_run = session.scalar(
@@ -346,11 +361,15 @@ class PilotQualitySnapshotBuilder:
             .order_by(UsLaceyEngineShipmentRun.id.desc())
             .limit(1)
         )
-        if engine_run is None:
+        if engine_run is None and trigger != PilotQualityTrigger.WATCHDOG:
             raise ValueError("Pilot quality snapshot requires an Engine 2 shipment run.")
 
-        resolution = engine_run.resolution_json
-        if not isinstance(resolution, Mapping):
+        resolution = (
+            engine_run.resolution_json
+            if engine_run is not None and isinstance(engine_run.resolution_json, Mapping)
+            else {}
+        )
+        if engine_run is not None and not resolution:
             raise ValueError("Pilot quality snapshot requires structured Engine 2 output.")
 
         _types_by_id, type_counts, valid_document_count = _document_catalog(resolution)
@@ -386,23 +405,16 @@ class PilotQualitySnapshotBuilder:
             or 0
         )
 
-        organization = session.scalar(
-            select(Organization).where(Organization.id == int(organization_id))
-        )
-        attribution_session_id = (
-            None
-            if organization is None
-            else organization.sandbox_attribution_session_id
-        )
-
         return PilotQualitySnapshotData(
             organization_id=int(organization_id),
             operation_id=int(operation_id),
             operation_public_id=operation.public_id,
             attribution_session_id=attribution_session_id,
             trigger=trigger,
-            source_set_fingerprint=engine_run.source_set_fingerprint,
-            engine_version=engine_run.engine_version,
+            source_set_fingerprint=(
+                engine_run.source_set_fingerprint if engine_run is not None else None
+            ),
+            engine_version=engine_run.engine_version if engine_run is not None else None,
             canonical_publisher_version=CANONICAL_PUBLISHER_VERSION,
             document_count=int(operation.document_count),
             valid_document_count=int(valid_document_count),
@@ -420,6 +432,7 @@ class PilotQualitySnapshotBuilder:
                 organization_id=int(organization_id),
                 operation_id=int(operation_id),
                 engine_run=engine_run,
+                watchdog=trigger == PilotQualityTrigger.WATCHDOG,
             ),
             export_ready=action_required_count == 0,
         )
@@ -582,11 +595,16 @@ def _persist_incident(
     snapshot_row: UsLaceyPilotQualitySnapshot,
     snapshot: PilotQualitySnapshotData,
     anomaly: PilotQualityAnomaly,
+    fingerprint_version: str | None = None,
 ) -> UsLaceyPilotIncident:
     fingerprint = incident_fingerprint(
         operation_public_id=snapshot.operation_public_id,
         detector_code=anomaly.detector_code,
-        engine_version=snapshot.engine_version,
+        engine_version=(
+            fingerprint_version
+            if fingerprint_version is not None
+            else snapshot.engine_version
+        ),
     )
     incident_public_id = uuid4()
     values = {
@@ -618,6 +636,91 @@ def _persist_incident(
     return incident
 
 
+def _operation_attribution_session_id(
+    session: Session,
+    *,
+    organization_id: int,
+    operation_id: int,
+) -> UUID | None:
+    return session.scalar(
+        text(
+            "SELECT public.us_lacey_pilot_operation_attribution("
+            ":organization_id, :operation_id)"
+        ),
+        {
+            "organization_id": int(organization_id),
+            "operation_id": int(operation_id),
+        },
+    )
+
+
+def _processing_quality_trigger(
+    session: Session,
+    *,
+    organization_id: int,
+    operation_id: int,
+) -> PilotQualityTrigger:
+    prior_processing_snapshot = session.scalar(
+        select(UsLaceyPilotQualitySnapshot.id)
+        .where(
+            UsLaceyPilotQualitySnapshot.organization_id == int(organization_id),
+            UsLaceyPilotQualitySnapshot.operation_id == int(operation_id),
+            UsLaceyPilotQualitySnapshot.trigger.in_(
+                (
+                    PilotQualityTrigger.INITIAL_PROCESS.value,
+                    PilotQualityTrigger.REPROCESS.value,
+                )
+            ),
+        )
+        .limit(1)
+    )
+    return (
+        PilotQualityTrigger.REPROCESS
+        if prior_processing_snapshot is not None
+        else PilotQualityTrigger.INITIAL_PROCESS
+    )
+
+
+def _capture_with_sessions(
+    *,
+    read_session: Session,
+    write_session: Session,
+    organization_id: int,
+    operation_id: int,
+    trigger: PilotQualityTrigger,
+    attribution_session_id: UUID | None,
+    direct_anomaly: PilotQualityAnomaly | None = None,
+    fingerprint_version: str | None = None,
+) -> PilotReliabilityCapture:
+    snapshot = PilotQualitySnapshotBuilder.build(
+        read_session,
+        organization_id=int(organization_id),
+        operation_id=int(operation_id),
+        trigger=trigger,
+        attribution_session_id=attribution_session_id,
+    )
+    snapshot_row = PilotQualitySnapshotBuilder.persist(write_session, snapshot)
+    anomalies = (
+        (direct_anomaly,)
+        if direct_anomaly is not None
+        else PilotQualityGuard.evaluate(snapshot)
+    )
+    incidents = tuple(
+        _persist_incident(
+            write_session,
+            snapshot_row=snapshot_row,
+            snapshot=snapshot,
+            anomaly=anomaly,
+            fingerprint_version=fingerprint_version,
+        )
+        for anomaly in anomalies
+    )
+    return PilotReliabilityCapture(
+        snapshot=snapshot_row,
+        incidents=incidents,
+    )
+
+
 def capture_pilot_quality(
     *,
     organization_id: int,
@@ -625,37 +728,123 @@ def capture_pilot_quality(
     trigger: PilotQualityTrigger,
     session: Session | None = None,
 ) -> PilotReliabilityCapture:
-    """Persist one snapshot and idempotently open incidents for detected anomalies."""
-    owns_session = session is None
-    db = session or get_us_lacey_worker_db_session()
-    try:
-        snapshot = PilotQualitySnapshotBuilder.build(
-            db,
+    """Persist one snapshot and idempotently open incidents for detected anomalies.
+
+    When no session is supplied, the customer-runtime role reads only the known
+    tenant's processing outputs while the dedicated worker role writes the internal
+    observability tables. This preserves the least-privilege boundary introduced by
+    the P1 schema.
+    """
+    if session is not None:
+        capture = _capture_with_sessions(
+            read_session=session,
+            write_session=session,
             organization_id=int(organization_id),
             operation_id=int(operation_id),
             trigger=trigger,
+            attribution_session_id=None,
         )
-        snapshot_row = PilotQualitySnapshotBuilder.persist(db, snapshot)
-        anomalies = PilotQualityGuard.evaluate(snapshot)
-        incidents = tuple(
-            _persist_incident(
-                db,
-                snapshot_row=snapshot_row,
-                snapshot=snapshot,
-                anomaly=anomaly,
-            )
-            for anomaly in anomalies
+        return capture
+
+    reader = get_us_lacey_db_session()
+    writer = get_us_lacey_worker_db_session()
+    try:
+        set_tenant_db_context(reader, int(organization_id))
+        attribution_session_id = _operation_attribution_session_id(
+            writer,
+            organization_id=int(organization_id),
+            operation_id=int(operation_id),
         )
-        if owns_session:
-            db.commit()
-        return PilotReliabilityCapture(
-            snapshot=snapshot_row,
-            incidents=incidents,
+        capture = _capture_with_sessions(
+            read_session=reader,
+            write_session=writer,
+            organization_id=int(organization_id),
+            operation_id=int(operation_id),
+            trigger=trigger,
+            attribution_session_id=attribution_session_id,
         )
+        writer.commit()
+        return capture
     except Exception:
-        if owns_session:
-            db.rollback()
+        writer.rollback()
         raise
     finally:
-        if owns_session:
-            db.close()
+        reader.close()
+        writer.close()
+
+
+def capture_completed_pilot_quality(
+    *,
+    organization_id: int,
+    operation_id: int,
+) -> PilotReliabilityCapture:
+    """Capture a successful finalization without letting WATCHDOG alter run semantics."""
+    writer = get_us_lacey_worker_db_session()
+    reader = get_us_lacey_db_session()
+    try:
+        trigger = _processing_quality_trigger(
+            writer,
+            organization_id=int(organization_id),
+            operation_id=int(operation_id),
+        )
+        attribution_session_id = _operation_attribution_session_id(
+            writer,
+            organization_id=int(organization_id),
+            operation_id=int(operation_id),
+        )
+        set_tenant_db_context(reader, int(organization_id))
+        capture = _capture_with_sessions(
+            read_session=reader,
+            write_session=writer,
+            organization_id=int(organization_id),
+            operation_id=int(operation_id),
+            trigger=trigger,
+            attribution_session_id=attribution_session_id,
+        )
+        writer.commit()
+        return capture
+    except Exception:
+        writer.rollback()
+        raise
+    finally:
+        reader.close()
+        writer.close()
+
+
+def capture_stalled_pilot_quality(
+    *,
+    organization_id: int,
+    operation_id: int,
+    attribution_session_id: UUID,
+) -> PilotReliabilityCapture:
+    """Capture one stalled PROCESSING observation and idempotently open one P0."""
+    writer = get_us_lacey_worker_db_session()
+    reader = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(reader, int(organization_id))
+        anomaly = PilotQualityAnomaly(
+            detector_code="PROCESSING_STALLED",
+            severity=PilotIncidentSeverity.P0,
+            reason="Attributed pilot operation remained PROCESSING beyond the watchdog threshold.",
+        )
+        capture = _capture_with_sessions(
+            read_session=reader,
+            write_session=writer,
+            organization_id=int(organization_id),
+            operation_id=int(operation_id),
+            trigger=PilotQualityTrigger.WATCHDOG,
+            attribution_session_id=attribution_session_id,
+            direct_anomaly=anomaly,
+            # This is an operational detector rather than an Engine-2 detector.
+            # A stable version namespace guarantees one incident per operation
+            # even if Engine 2 materializes while the same stall is being observed.
+            fingerprint_version="pilot-watchdog-v1",
+        )
+        writer.commit()
+        return capture
+    except Exception:
+        writer.rollback()
+        raise
+    finally:
+        reader.close()
+        writer.close()

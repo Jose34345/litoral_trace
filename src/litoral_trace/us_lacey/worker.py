@@ -47,6 +47,7 @@ from litoral_trace.us_lacey.jobs import (
     set_us_lacey_job_stage,
 )
 from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_lock
+from litoral_trace.us_lacey.pilot_reliability import capture_completed_pilot_quality
 from litoral_trace.us_lacey.product_intelligence_snapshot import build_product_intelligence_snapshot
 from litoral_trace.us_lacey.regulatory_assessment_snapshot import build_regulatory_assessment_snapshot
 from litoral_trace.us_lacey.source_sets import SourceSetClaim, claim_ready_source_set, finalize_claim
@@ -599,6 +600,33 @@ def _shadow_multilingual_evidence_snapshot(*, organization_id: int, operation_id
         )
 
 
+
+
+_PILOT_QUALITY_TERMINAL_STATUSES = frozenset(
+    {"READY_FOR_REVIEW", "REVIEW_REQUIRED", "COMPLETED"}
+)
+
+
+def _capture_pilot_quality_after_completion(
+    *,
+    organization_id: int,
+    operation_id: int,
+) -> None:
+    """Best-effort observability boundary; never affects regulatory completion."""
+    try:
+        capture_completed_pilot_quality(
+            organization_id=organization_id,
+            operation_id=operation_id,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Lacey pilot quality capture failed; completed job remains authoritative",
+            extra={
+                "organization_id": organization_id,
+                "operation_id": operation_id,
+            },
+        )
+
 def _assurance_public_id(*, organization_id: int, document_id: int) -> UUID:
     """Preserve the worker's stable lookup seam used by existing contracts/tests."""
     session = get_us_lacey_db_session()
@@ -1059,6 +1087,16 @@ def process_one_us_lacey_job(
 
         with _timed_worker_stage(job=job, stage="operation_refresh"):
             operation_status = _refresh_operation(
+                organization_id=job.organization_id,
+                operation_id=job.operation_id,
+            )
+
+        if (
+            isinstance(assurance_public_id, UUID)
+            and finalize_source_set
+            and str(operation_status or "").upper() in _PILOT_QUALITY_TERMINAL_STATUSES
+        ):
+            _capture_pilot_quality_after_completion(
                 organization_id=job.organization_id,
                 operation_id=job.operation_id,
             )

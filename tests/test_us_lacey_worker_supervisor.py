@@ -55,6 +55,20 @@ def test_supervisor_spawns_one_child_only_when_queue_is_claimable(monkeypatch) -
     process = _ImmediateProcess(returncode=worker_once.EXIT_OK)
 
     monkeypatch.setattr(worker_runner, "recover_stale_us_lacey_jobs", lambda **_: (0, 0))
+    watchdog_calls: list[int] = []
+    monkeypatch.setattr(
+        worker_runner,
+        "run_lacey_pilot_watchdog",
+        lambda **kwargs: (
+            watchdog_calls.append(int(kwargs["stale_after_seconds"])),
+            SimpleNamespace(
+                scanned_count=0,
+                snapshot_count=0,
+                incident_count=0,
+                failure_count=0,
+            ),
+        )[1],
+    )
 
     def probe() -> bool:
         nonlocal probes
@@ -76,6 +90,7 @@ def test_supervisor_spawns_one_child_only_when_queue_is_claimable(monkeypatch) -
 
     assert len(spawned) == 1
     assert process.wait_calls >= 1
+    assert watchdog_calls == [600]
 
 
 def test_supervisor_does_not_spawn_child_for_idle_queue(monkeypatch) -> None:
@@ -83,6 +98,20 @@ def test_supervisor_does_not_spawn_child_for_idle_queue(monkeypatch) -> None:
     spawned = False
 
     monkeypatch.setattr(worker_runner, "recover_stale_us_lacey_jobs", lambda **_: (0, 0))
+    watchdog_calls: list[int] = []
+    monkeypatch.setattr(
+        worker_runner,
+        "run_lacey_pilot_watchdog",
+        lambda **kwargs: (
+            watchdog_calls.append(int(kwargs["stale_after_seconds"])),
+            SimpleNamespace(
+                scanned_count=0,
+                snapshot_count=0,
+                incident_count=0,
+                failure_count=0,
+            ),
+        )[1],
+    )
 
     def probe() -> bool:
         stop.set()
@@ -100,6 +129,7 @@ def test_supervisor_does_not_spawn_child_for_idle_queue(monkeypatch) -> None:
     worker_runner.run_supervisor(stop_event=stop)
 
     assert spawned is False
+    assert watchdog_calls == [600]
 
 
 def test_terminate_child_reaps_after_graceful_signal(monkeypatch) -> None:

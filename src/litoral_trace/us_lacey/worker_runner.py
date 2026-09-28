@@ -21,6 +21,10 @@ from litoral_trace.us_lacey.jobs import (
     has_claimable_us_lacey_job,
     recover_stale_us_lacey_jobs,
 )
+from litoral_trace.us_lacey.pilot_watchdog import (
+    DEFAULT_STALE_AFTER_SECONDS as PILOT_WATCHDOG_STALE_AFTER_SECONDS,
+    run_lacey_pilot_watchdog,
+)
 from litoral_trace.us_lacey.worker_once import EXIT_NO_JOB, EXIT_OK
 
 
@@ -155,11 +159,15 @@ def run_supervisor(
     stale_after = _int_env(
         "US_LACEY_WORKER_STALE_AFTER_SECONDS", 120, minimum=60, maximum=86400
     )
+    pilot_watchdog_every = _int_env(
+        "US_LACEY_PILOT_WATCHDOG_SECONDS", 60, minimum=30, maximum=3600
+    )
     child_grace_seconds = _float_env(
         "US_LACEY_WORKER_CHILD_GRACE_SECONDS", 15.0, minimum=1.0, maximum=120.0
     )
     supervisor_id = f"supervisor-{socket.gethostname()}-{uuid4().hex[:10]}"
     next_recovery = 0.0
+    next_pilot_watchdog = 0.0
 
     _LOG.info(
         "us_lacey_worker_supervisor_started supervisor_id=%s stale_after_seconds=%s",
@@ -168,6 +176,25 @@ def run_supervisor(
     )
     while not stop.is_set():
         now = time.monotonic()
+        if now >= next_pilot_watchdog:
+            try:
+                watchdog = run_lacey_pilot_watchdog(
+                    stale_after_seconds=PILOT_WATCHDOG_STALE_AFTER_SECONDS
+                )
+                if watchdog.scanned_count or watchdog.failure_count:
+                    _LOG.info(
+                        "pilot_watchdog_completed scanned=%s snapshots=%s "
+                        "incidents=%s failures=%s",
+                        watchdog.scanned_count,
+                        watchdog.snapshot_count,
+                        watchdog.incident_count,
+                        watchdog.failure_count,
+                    )
+            except Exception:
+                # Observability is strictly subordinate to customer processing.
+                _LOG.exception("pilot_watchdog_failed")
+            next_pilot_watchdog = now + pilot_watchdog_every
+
         if now >= next_recovery:
             try:
                 retried, failed = recover_stale_us_lacey_jobs(
