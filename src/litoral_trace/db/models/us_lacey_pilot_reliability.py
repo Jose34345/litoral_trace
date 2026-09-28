@@ -209,7 +209,7 @@ class UsLaceyPilotIncident(Base):
             name="ck_lacey_pilot_incident_status",
         ),
         CheckConstraint(
-            "char_length(fingerprint) = 64",
+            "length(fingerprint) = 64",
             name="ck_lacey_pilot_incident_fingerprint_length",
         ),
         Index(
