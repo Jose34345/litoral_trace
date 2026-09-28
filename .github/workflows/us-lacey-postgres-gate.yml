@@ -728,6 +728,18 @@ jobs:
             echo "Outreach attribution PostgreSQL acceptance must not skip in CI."
             exit 1
           fi
+      - name: Prove pilot reliability incident idempotency and privacy
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs \
+            tests/test_us_lacey_pilot_reliability_postgres.py \
+            | tee /tmp/pilot-reliability-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/pilot-reliability-postgres.txt; then
+            echo "Pilot reliability PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
       - name: Prove Engine 2 shadow-worker contracts
         run: python -m pytest -q -rs tests/test_us_lacey_engine2_shadow_worker.py
       - name: Prove Engine 2 static schema contracts
