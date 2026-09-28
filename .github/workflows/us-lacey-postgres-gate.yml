@@ -172,7 +172,7 @@ jobs:
           python -m alembic upgrade 049_lacey_product_intelligence_snapshots
           python -m alembic upgrade 050_lacey_regulatory_assessment_snapshots
           python -m alembic upgrade 052_us_lacey_ephemeral_sandbox
-          python -m alembic upgrade 064_us_lacey_pilot_watchdog
+          python -m alembic upgrade 065_us_lacey_pilot_watch
       - name: Bind dedicated worker login to queue capability
         shell: bash
         run: |
@@ -197,7 +197,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "064_us_lacey_pilot_watchdog (head)" /tmp/alembic-current.txt
+          grep -Fx "065_us_lacey_pilot_watch (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -605,7 +605,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "064_us_lacey_pilot_watchdog (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "065_us_lacey_pilot_watch (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |

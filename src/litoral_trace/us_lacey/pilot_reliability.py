@@ -39,6 +39,7 @@ from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.lacey_engine.domain import DocumentType
 from litoral_trace.us_lacey.canonical_shipment_truth import CANONICAL_PUBLISHER_VERSION
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
+from litoral_trace.us_lacey.pilot_alerts import notify_pilot_incidents_best_effort
 from litoral_trace.us_lacey.worker_db import get_us_lacey_worker_db_session
 
 
@@ -764,6 +765,10 @@ def capture_pilot_quality(
             attribution_session_id=attribution_session_id,
         )
         writer.commit()
+        notify_pilot_incidents_best_effort(
+            incidents=capture.incidents,
+            snapshot=capture.snapshot,
+        )
         return capture
     except Exception:
         writer.rollback()
@@ -802,6 +807,10 @@ def capture_completed_pilot_quality(
             attribution_session_id=attribution_session_id,
         )
         writer.commit()
+        notify_pilot_incidents_best_effort(
+            incidents=capture.incidents,
+            snapshot=capture.snapshot,
+        )
         return capture
     except Exception:
         writer.rollback()
@@ -841,6 +850,10 @@ def capture_stalled_pilot_quality(
             fingerprint_version="pilot-watchdog-v1",
         )
         writer.commit()
+        notify_pilot_incidents_best_effort(
+            incidents=capture.incidents,
+            snapshot=capture.snapshot,
+        )
         return capture
     except Exception:
         writer.rollback()
