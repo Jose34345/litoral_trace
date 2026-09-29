@@ -70,6 +70,11 @@ def test_us_lacey_templates_use_shared_design_system_with_isolated_english_shell
         }:
             continue
         source = path.read_text(encoding="utf-8")
+        if path.name.startswith("_"):
+            # Jinja/HTMX fragments render inside an existing U.S. Lacey shell;
+            # requiring a second full-page base would make the fragment invalid.
+            assert "{% extends " not in source
+            continue
         if path.name == "sandbox_start.html":
             # The public zero-touch entry intentionally uses an isolated,
             # script-free shell while still consuming the canonical Tailwind
