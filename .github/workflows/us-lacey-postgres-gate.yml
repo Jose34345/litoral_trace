@@ -142,6 +142,16 @@ jobs:
                 NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
               """,
               """
+              CREATE ROLE anon
+                NOLOGIN
+                NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+              """,
+              """
+              CREATE ROLE authenticated
+                NOLOGIN
+                NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+              """,
+              """
               CREATE ROLE litoral_trace_us_lacey_worker
                 LOGIN
                 NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS
@@ -165,6 +175,18 @@ jobs:
               connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO litoral_trace_app")
               connection.exec_driver_sql("GRANT CONNECT ON DATABASE litoral_trace_us_lacey_ci TO litoral_trace_us_lacey_worker")
               connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO litoral_trace_us_lacey_worker")
+              connection.exec_driver_sql(
+                  "ALTER DEFAULT PRIVILEGES FOR ROLE lt_us_lacey_migrator IN SCHEMA public "
+                  "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated"
+              )
+              connection.exec_driver_sql(
+                  "ALTER DEFAULT PRIVILEGES FOR ROLE lt_us_lacey_migrator IN SCHEMA public "
+                  "GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated"
+              )
+              connection.exec_driver_sql(
+                  "ALTER DEFAULT PRIVILEGES FOR ROLE lt_us_lacey_migrator IN SCHEMA public "
+                  "GRANT EXECUTE ON FUNCTIONS TO anon, authenticated"
+              )
           target.dispose()
           PY
       - name: Migrate through pre-Assurance baseline
@@ -732,6 +754,19 @@ jobs:
             echo "Outreach attribution PostgreSQL acceptance must not skip in CI."
             exit 1
           fi
+      - name: Prove Supabase public API hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs \
+            tests/test_supabase_public_api_hardening_postgres.py \
+            | tee /tmp/supabase-public-api-hardening.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/supabase-public-api-hardening.txt; then
+            echo "Supabase public API hardening acceptance must not skip in CI."
+            exit 1
+          fi
+
       - name: Prove pilot reliability incident idempotency and privacy
         shell: bash
         run: |
