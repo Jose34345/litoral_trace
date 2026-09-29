@@ -100,7 +100,7 @@ def _enable_rls_and_revoke_data_api() -> None:
     )
 
 
-def _harden_security_definers() -> None:
+def _revoke_security_definers_owned_by_current_role() -> None:
     op.execute(
         """
         DO $$
@@ -112,6 +112,7 @@ def _harden_security_definers() -> None:
                 JOIN pg_namespace n ON n.oid = p.pronamespace
                 WHERE n.nspname = 'public'
                   AND p.prosecdef
+                  AND p.proowner = (SELECT oid FROM pg_roles WHERE rolname = current_user)
                   AND NOT EXISTS (
                       SELECT 1
                       FROM pg_depend d
@@ -130,12 +131,24 @@ def _harden_security_definers() -> None:
         """
     )
 
-    # These capabilities were historically reachable through PUBLIC. Preserve
-    # only the callers that actually use them.
+
+def _harden_security_definers() -> None:
+    # Functions owned by the migration principal can be hardened directly.
+    _revoke_security_definers_owned_by_current_role()
+
+    # Platform capabilities intentionally keep their non-login owner. Temporarily
+    # SET that role so ACL changes are made by the actual function owner.
+    _grant_temp_platform_set()
+    op.execute(f"SET LOCAL ROLE {PLATFORM_ROLE}")
+    _revoke_security_definers_owned_by_current_role()
+
     for signature in RUNTIME_DEBUG_FUNCTIONS:
         op.execute(f"GRANT EXECUTE ON FUNCTION {signature} TO {RUNTIME_ROLE}")
     for signature in WORKER_PURGE_FUNCTIONS:
         op.execute(f"GRANT EXECUTE ON FUNCTION {signature} TO {WORKER_ROLE}")
+
+    op.execute("RESET ROLE")
+    _revoke_temp_platform_set()
 
 
 def _create_policy(
@@ -314,10 +327,12 @@ def _harden_default_privileges() -> None:
     )
 
     _grant_temp_platform_set()
+    op.execute(f"SET LOCAL ROLE {PLATFORM_ROLE}")
     op.execute(
-        f"ALTER DEFAULT PRIVILEGES FOR ROLE {PLATFORM_ROLE} IN SCHEMA public "
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
         "REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC, anon, authenticated"
     )
+    op.execute("RESET ROLE")
     _revoke_temp_platform_set()
 
 
