@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from uuid import uuid4
 
+import litoral_trace.us_lacey.ingestion as ingestion_module
 from litoral_trace.us_lacey.ingestion import UsLaceyIngestionService
 
 
@@ -46,17 +47,27 @@ class _FakeOperations:
         return 77
 
 
-def _service() -> tuple[UsLaceyIngestionService, _FakeSharedIngestion, _FakeOperations]:
+def _service(monkeypatch) -> tuple[UsLaceyIngestionService, _FakeSharedIngestion, _FakeOperations]:
     service = UsLaceyIngestionService.__new__(UsLaceyIngestionService)
     shared = _FakeSharedIngestion()
     operations = _FakeOperations()
-    service._ingestion = shared
+    service._storage = object()
     service._operations = operations
+    monkeypatch.setattr(
+        service,
+        "_storage_settings_for_document",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        ingestion_module,
+        "AssuranceIngestionService",
+        lambda **_kwargs: shared,
+    )
     return service, shared, operations
 
 
-def test_adapter_passes_creator_to_existing_vault_first_ingestion_contract():
-    service, shared, operations = _service()
+def test_adapter_passes_creator_to_existing_vault_first_ingestion_contract(monkeypatch):
+    service, shared, operations = _service(monkeypatch)
     operation_public_id = uuid4()
 
     result = service.ingest_document(
@@ -87,8 +98,8 @@ def test_adapter_passes_creator_to_existing_vault_first_ingestion_contract():
     assert result.assurance_document_id == 44
 
 
-def test_unknown_customer_document_role_is_kept_but_does_not_invent_a_type():
-    service, _shared, operations = _service()
+def test_unknown_customer_document_role_is_kept_but_does_not_invent_a_type(monkeypatch):
+    service, _shared, operations = _service(monkeypatch)
 
     service.ingest_document(
         organization_id=9,

@@ -47,6 +47,9 @@ US_LACEY_PILOT_WATCHDOG_MIGRATION = Path(
 US_LACEY_PILOT_WATCH_MIGRATION = Path(
     "alembic/versions/065_us_lacey_pilot_watch.py"
 )
+US_LACEY_DEBUG_RETENTION_MIGRATION = Path(
+    "alembic/versions/066_us_lacey_debug_retention.py"
+)
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -314,9 +317,23 @@ def test_us_lacey_pilot_watch_follows_watchdog():
     assert "supplier_name" not in text
 
 
+
+def test_us_lacey_debug_retention_follows_pilot_watch():
+    text = US_LACEY_DEBUG_RETENTION_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "066_us_lacey_debug_retention"' in text
+    assert 'down_revision = "065_us_lacey_pilot_watch"' in text
+    assert "support_debug_consent" in text
+    assert "debug_retention_until" in text
+    assert "interval '72 hours'" in text
+    assert "us_lacey_sandbox_set_debug_consent" in text
+    assert "us_lacey_sandbox_debug_policy" in text
+    assert "support-quarantine" not in text
+    assert "SECURITY DEFINER" in text
+    assert "REVOKE ALL ON FUNCTION" in text
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "065_us_lacey_pilot_watch (head)" in text
+    assert "066_us_lacey_debug_retention (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():
