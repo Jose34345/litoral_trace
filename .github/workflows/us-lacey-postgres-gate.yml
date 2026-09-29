@@ -36,6 +36,7 @@ on:
       - "alembic/versions/065_us_lacey_pilot_watch.py"
       - "alembic/versions/066_us_lacey_debug_retention.py"
       - "alembic/versions/067_us_lacey_outreach_audit_hotfix.py"
+      - "alembic/versions/068_supabase_public_api_hardening.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
@@ -197,7 +198,7 @@ jobs:
           python -m alembic upgrade 049_lacey_product_intelligence_snapshots
           python -m alembic upgrade 050_lacey_regulatory_assessment_snapshots
           python -m alembic upgrade 052_us_lacey_ephemeral_sandbox
-          python -m alembic upgrade 067_us_lacey_outreach_audit_hotfix
+          python -m alembic upgrade 068_supabase_public_api_hardening
       - name: Bind dedicated worker login to queue capability
         shell: bash
         run: |
@@ -222,7 +223,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m alembic current | tee /tmp/alembic-current.txt
-          grep -Fx "067_us_lacey_outreach_audit_hotfix (head)" /tmp/alembic-current.txt
+          grep -Fx "068_supabase_public_api_hardening (head)" /tmp/alembic-current.txt
           python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
@@ -630,7 +631,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "067_us_lacey_outreach_audit_hotfix (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "068_supabase_public_api_hardening (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
