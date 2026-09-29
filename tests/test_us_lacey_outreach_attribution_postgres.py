@@ -211,3 +211,118 @@ def test_outreach_attribution_capabilities_are_runtime_safe_and_durable():
         transaction.rollback()
         connection.close()
         engine.dispose()
+
+
+def test_platform_admin_outreach_link_creation_writes_tenant_scoped_audit_log():
+    engine = _root_engine()
+    connection = engine.connect()
+    transaction = connection.begin()
+    try:
+        suffix = uuid4().hex[:12]
+        token_hash = uuid4().hex + uuid4().hex
+        org_id = connection.execute(
+            text(
+                """
+                INSERT INTO public.organizations(
+                    name, slug, tax_id, tier, description,
+                    is_active, created_at, updated_at
+                ) VALUES (
+                    :name, :slug, :tax_id, 'enterprise',
+                    'outreach audit regression actor',
+                    true, now(), now()
+                )
+                RETURNING id
+                """
+            ),
+            {
+                "name": f"Outreach Audit Gate {suffix}",
+                "slug": f"outreach-audit-{suffix}",
+                "tax_id": f"OUTREACH-AUDIT-{suffix}",
+            },
+        ).scalar_one()
+        user_id = connection.execute(
+            text(
+                """
+                INSERT INTO public.users(
+                    organization_id, email, username, password_hash, role,
+                    full_name, is_active, created_at, updated_at
+                ) VALUES (
+                    :org_id, :email, :username,
+                    :password_hash, 'superadmin',
+                    'Outreach Audit Gate', true, now(), now()
+                )
+                RETURNING id
+                """
+            ),
+            {
+                "org_id": org_id,
+                "email": f"outreach-audit-{suffix}@example.com",
+                "username": f"outreach_audit_{suffix}",
+                "password_hash": "$2b$12$" + ("x" * 53),
+            },
+        ).scalar_one()
+        connection.execute(
+            text(
+                """
+                INSERT INTO public.user_sessions(
+                    user_id, organization_id, family_id, token_hash,
+                    issued_at, expires_at, revoked_at, replaced_by_session_id,
+                    created_ip, user_agent, created_at, updated_at
+                ) VALUES (
+                    :user_id, :org_id, :family_id, :token_hash,
+                    now(), now() + interval '1 hour', null, null,
+                    '127.0.0.1', 'outreach-audit-regression', now(), now()
+                )
+                """
+            ),
+            {
+                "user_id": user_id,
+                "org_id": org_id,
+                "family_id": str(uuid4()),
+                "token_hash": token_hash,
+            },
+        )
+
+        slug = f"outreach-audit-{suffix}"
+        connection.execute(text("SET LOCAL ROLE litoral_trace_app"))
+        created = connection.execute(
+            text(
+                """
+                SELECT *
+                FROM public.platform_admin_create_outreach_link(
+                    :token_hash,
+                    :slug,
+                    'Outreach Audit Prospect',
+                    'outreach-audit-regression',
+                    'direct_outreach'
+                )
+                """
+            ),
+            {"token_hash": token_hash, "slug": slug},
+        ).mappings().one()
+        connection.execute(text("RESET ROLE"))
+
+        audit = connection.execute(
+            text(
+                """
+                SELECT organization_id, user_id, action, entity_type, entity_id
+                FROM public.audit_logs
+                WHERE action = 'OUTREACH_LINK_CREATED'
+                  AND entity_type = 'us_lacey_outreach_link'
+                  AND entity_id = :entity_id
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ),
+            {"entity_id": created["outreach_link_id"]},
+        ).mappings().one()
+
+        assert audit["organization_id"] == org_id
+        assert audit["user_id"] == user_id
+        assert audit["action"] == "OUTREACH_LINK_CREATED"
+        assert audit["entity_type"] == "us_lacey_outreach_link"
+        assert audit["entity_id"] == created["outreach_link_id"]
+    finally:
+        transaction.rollback()
+        connection.close()
+        engine.dispose()
