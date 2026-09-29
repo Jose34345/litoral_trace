@@ -21,6 +21,7 @@ from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
 
 SANDBOX_TTL_HOURS = 4
+SUPPORT_DEBUG_RETENTION_HOURS = 72
 SANDBOX_MAX_OPERATIONS = 1
 SANDBOX_MAX_DOCUMENTS_PER_OPERATION = 3
 
@@ -51,6 +52,12 @@ class UsLaceySandboxPolicy:
     max_documents_per_operation: int = SANDBOX_MAX_DOCUMENTS_PER_OPERATION
 
 
+@dataclass(frozen=True, slots=True)
+class UsLaceyDebugRetentionPolicy:
+    support_debug_consent: bool
+    debug_retention_until: datetime | None
+
+
 def _utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
@@ -66,6 +73,7 @@ def provision_us_lacey_sandbox(
     client_ip: str | None = None,
     user_agent: str | None = None,
     learning_opt_in: bool = False,
+    support_debug_opt_in: bool = False,
 ) -> UsLaceySandboxSession:
     """Atomically create an ephemeral tenant, principal and opaque web session."""
 
@@ -108,6 +116,26 @@ def provision_us_lacey_sandbox(
                 text(
                     """
                     SELECT public.us_lacey_sandbox_set_learning_consent(
+                        :token_hash,
+                        :organization_id,
+                        true
+                    )
+                    """
+                ),
+                {
+                    "token_hash": token_hash,
+                    "organization_id": int(row["organization_id"]),
+                },
+            )
+
+        # Debug retention is a separate, explicit opt-in. The browser session and
+        # commercial sandbox access still expire after four hours; only the
+        # physical purge deadline is extended for support debugging.
+        if support_debug_opt_in:
+            session.execute(
+                text(
+                    """
+                    SELECT public.us_lacey_sandbox_set_debug_consent(
                         :token_hash,
                         :organization_id,
                         true
@@ -179,6 +207,46 @@ def get_us_lacey_sandbox_policy(
     except Exception as exc:
         raise UsLaceySandboxError(
             "Unable to verify sandbox limits right now."
+        ) from exc
+    finally:
+        session.close()
+
+
+def get_us_lacey_debug_retention_policy(
+    *,
+    organization_id: int,
+) -> UsLaceyDebugRetentionPolicy:
+    """Read the tenant-scoped support-debug retention decision fail-closed."""
+
+    org_id = int(organization_id)
+    if org_id <= 0:
+        raise UsLaceySandboxError("Sandbox organization is invalid.")
+
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, org_id)
+        row = session.execute(
+            text(
+                """
+                SELECT support_debug_consent, debug_retention_until
+                FROM public.us_lacey_sandbox_debug_policy(:organization_id)
+                """
+            ),
+            {"organization_id": org_id},
+        ).mappings().one()
+
+        retention_until = row["debug_retention_until"]
+        return UsLaceyDebugRetentionPolicy(
+            support_debug_consent=bool(row["support_debug_consent"]),
+            debug_retention_until=(
+                _utc(retention_until)
+                if retention_until is not None
+                else None
+            ),
+        )
+    except Exception as exc:
+        raise UsLaceySandboxError(
+            "Unable to verify support debug retention."
         ) from exc
     finally:
         session.close()
