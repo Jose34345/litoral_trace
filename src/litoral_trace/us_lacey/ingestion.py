@@ -7,6 +7,7 @@ from uuid import UUID
 from litoral_trace.assurance.ingestion import AssuranceIngestionService
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.operations import UsLaceyOperationService
+from litoral_trace.us_lacey.sandbox import get_us_lacey_debug_retention_policy
 from litoral_trace.us_lacey.storage import (
     build_us_lacey_storage_settings,
     get_us_lacey_storage_client,
@@ -44,12 +45,8 @@ class UsLaceyIngestionService:
     """Persist original evidence in the isolated U.S. Vault and link it to an operation."""
 
     def __init__(self) -> None:
-        storage_settings = build_us_lacey_storage_settings()
-        self._ingestion = AssuranceIngestionService(
-            storage_settings=storage_settings,
-            storage=get_us_lacey_storage_client(),
-            session_factory=get_us_lacey_db_session,
-        )
+        self._storage_settings = build_us_lacey_storage_settings()
+        self._storage = get_us_lacey_storage_client()
         self._operations = UsLaceyOperationService(session_factory=get_us_lacey_db_session)
 
     @staticmethod
@@ -65,6 +62,34 @@ class UsLaceyIngestionService:
             return value
         return UUID(str(value))
 
+    def _storage_settings_for_document(
+        self,
+        *,
+        organization_id: int,
+        operation_public_id: UUID | str,
+    ):
+        """Route consented sandbox originals into an isolated quarantine prefix."""
+
+        policy = get_us_lacey_debug_retention_policy(
+            organization_id=organization_id,
+        )
+        if not policy.support_debug_consent:
+            return self._storage_settings
+        if policy.debug_retention_until is None:
+            raise RuntimeError(
+                "Debug retention consent is missing its retention deadline."
+            )
+
+        operation_id = self._operation_public_id(operation_public_id)
+        base_prefix = self._storage_settings.normalized_key_prefix
+        return self._storage_settings.model_copy(
+            update={
+                "key_prefix": (
+                    f"{base_prefix}/support-quarantine/{operation_id}"
+                )
+            }
+        )
+
     def ingest_document(
         self,
         *,
@@ -78,7 +103,16 @@ class UsLaceyIngestionService:
     ) -> UsLaceyIngestionResult:
         # The shared ingestion layer validates extension/content, hashes the exact
         # original bytes, deduplicates within the tenant and persists them to Vault.
-        result = self._ingestion.ingest(
+        storage_settings = self._storage_settings_for_document(
+            organization_id=organization_id,
+            operation_public_id=operation_public_id,
+        )
+        ingestion = AssuranceIngestionService(
+            storage_settings=storage_settings,
+            storage=self._storage,
+            session_factory=get_us_lacey_db_session,
+        )
+        result = ingestion.ingest(
             organization_id=organization_id,
             created_by_user_id=user_id,
             filename=filename,
