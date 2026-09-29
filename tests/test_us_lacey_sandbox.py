@@ -39,12 +39,15 @@ class _ProvisionSession:
     def __init__(self, row):
         self.row = row
         self.params = None
+        self.calls = []
         self.committed = False
         self.rolled_back = False
         self.closed = False
 
-    def execute(self, _statement, params=None):
-        self.params = params
+    def execute(self, statement, params=None):
+        if self.params is None:
+            self.params = params
+        self.calls.append((str(statement), params))
         return _Result(self.row)
 
     def commit(self):
@@ -188,15 +191,23 @@ def test_public_sandbox_get_is_side_effect_free(monkeypatch):
     assert "Start Document Analysis" in response.text
     assert "Test the compliance engine with your own shipment documents." in response.text
     assert (
-        "For your privacy, this ephemeral workspace and all uploaded files are"
+        "By default, this ephemeral workspace and all uploaded files are"
         in response.text
     )
     assert "permanently destroyed after 4 hours" in response.text
+    assert "permanently destroyed no later than 72 hours after consent" in response.text
     assert 'method="post"' in response.text
     assert 'action="/sandbox/start"' in response.text
     assert 'name="consent"' in response.text
     assert 'name="learning_consent"' in response.text
+    assert 'name="support_debug_consent"' in response.text
     assert "Help improve Litoral Trace" in response.text
+    assert "Support debugging (optional)" in response.text
+    assert (
+        "Share this test with Litoral Trace support for debugging in case of "
+        "processing errors (72-hour retention)."
+        in response.text
+    )
     assert "de-identified excerpts from corrected fields" in response.text
     assert 'value="accepted"' in response.text
     assert "/static/dist/app.css" in response.text
@@ -227,7 +238,11 @@ def test_public_sandbox_post_sets_opaque_cookie_and_redirects_to_new_operation(m
 
     response = client.post(
         "/sandbox/start",
-        data={"consent": "accepted", "learning_consent": "accepted"},
+        data={
+            "consent": "accepted",
+            "learning_consent": "accepted",
+            "support_debug_consent": "accepted",
+        },
         follow_redirects=False,
     )
 
@@ -240,6 +255,81 @@ def test_public_sandbox_post_sets_opaque_cookie_and_redirects_to_new_operation(m
     assert response.headers["cache-control"] == "no-store, max-age=0"
     assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
     assert provision_calls[0]["learning_opt_in"] is True
+    assert provision_calls[0]["support_debug_opt_in"] is True
+
+
+def test_debug_consent_is_independent_from_learning_consent(monkeypatch):
+    client.cookies.clear()
+    monkeypatch.setattr(
+        sandbox_web,
+        "load_us_lacey_portal_config",
+        lambda: SimpleNamespace(session_cookie_secure=False),
+    )
+    provision_calls = []
+
+    def provision(**kwargs):
+        provision_calls.append(kwargs)
+        return _sandbox_session()
+
+    monkeypatch.setattr(
+        sandbox_web,
+        "provision_us_lacey_sandbox",
+        provision,
+    )
+
+    response = client.post(
+        "/sandbox/start",
+        data={
+            "consent": "accepted",
+            "support_debug_consent": "accepted",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert provision_calls[0]["learning_opt_in"] is False
+    assert provision_calls[0]["support_debug_opt_in"] is True
+
+
+def test_provision_debug_opt_in_uses_separate_definer_call(monkeypatch):
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=4)
+    fake = _ProvisionSession(
+        {
+            "organization_id": 901,
+            "user_id": 902,
+            "session_id": 903,
+            "expires_at": expires_at,
+        }
+    )
+    monkeypatch.setattr(sandbox_service, "get_us_lacey_db_session", lambda: fake)
+    monkeypatch.setattr(
+        sandbox_service.secrets,
+        "token_urlsafe",
+        lambda size: "browser-opaque-token" if size == 48 else "unrecoverable-password",
+    )
+    monkeypatch.setattr(
+        sandbox_service,
+        "hash_password",
+        lambda _value: "$2b$12$" + ("x" * 53),
+    )
+
+    provision_us_lacey_sandbox(
+        client_ip="203.0.113.91",
+        user_agent="pytest-debug-consent",
+        learning_opt_in=False,
+        support_debug_opt_in=True,
+    )
+
+    statements = [statement for statement, _params in fake.calls]
+    assert any("us_lacey_sandbox_provision" in statement for statement in statements)
+    assert any(
+        "us_lacey_sandbox_set_debug_consent" in statement
+        for statement in statements
+    )
+    assert not any(
+        "us_lacey_sandbox_set_learning_consent" in statement
+        for statement in statements
+    )
 
 
 def test_public_sandbox_post_requires_explicit_consent(monkeypatch):
