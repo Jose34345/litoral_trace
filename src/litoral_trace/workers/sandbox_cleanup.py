@@ -150,7 +150,7 @@ def claim_next_sandbox_purge_job(
     *,
     worker_id: str,
 ) -> SandboxPurgeJob | None:
-    """Atomically claim one expired sandbox without blocking peer workers."""
+    """Claim one sandbox whose effective retention deadline has elapsed.\n\n    ``job.expires_at`` is the canonical physical purge deadline: four hours by\n    default, or the bounded 72-hour deadline after explicit support-debug opt-in.\n    """
 
     normalized_worker_id = _normalize_worker_id(worker_id)
     session = get_us_lacey_worker_db_session()
