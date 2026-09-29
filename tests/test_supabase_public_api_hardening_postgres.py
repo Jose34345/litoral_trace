@@ -225,7 +225,13 @@ def test_future_migration_objects_do_not_auto_grant_data_api_roles() -> None:
                 LEFT JOIN pg_namespace n ON n.oid = d.defaclnamespace
                 WHERE COALESCE(n.nspname, 'public') = 'public'
                   AND pg_get_userbyid(d.defaclrole) IN (
-                      current_user,
+                      (
+                          SELECT pg_get_userbyid(c.relowner)
+                          FROM pg_class c
+                          JOIN pg_namespace n2 ON n2.oid = c.relnamespace
+                          WHERE n2.nspname = 'public'
+                            AND c.relname = 'alembic_version'
+                      ),
                       'litoral_trace_platform_definer'
                   )
                   AND COALESCE(grantee.rolname, 'PUBLIC') IN (
