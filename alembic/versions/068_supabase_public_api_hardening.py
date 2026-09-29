@@ -346,6 +346,23 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Deliberately fail secure: rollback may remove the RLS policies introduced
     # by this revision, but it never restores Data API or PUBLIC grants.
+    #
+    # Remove only the explicit internal EXECUTE grants introduced by 068 before
+    # handing control back to historical downgrades. Older migrations created
+    # these functions under PLATFORM_ROLE and expect the absence of a direct
+    # runtime/worker ACL when unwinding them.
+    _grant_temp_platform_set()
+    op.execute(f"SET LOCAL ROLE {PLATFORM_ROLE}")
+    for signature in RUNTIME_DEBUG_FUNCTIONS:
+        op.execute(
+            f"REVOKE EXECUTE ON FUNCTION {signature} FROM {RUNTIME_ROLE}"
+        )
+    for signature in WORKER_PURGE_FUNCTIONS:
+        op.execute(
+            f"REVOKE EXECUTE ON FUNCTION {signature} FROM {WORKER_ROLE}"
+        )
+    op.execute("RESET ROLE")
+    _revoke_temp_platform_set()
     policy_specs = (
         ("alembic_version", "runtime_select"),
         ("us_lacey_email_verifications", "platform_select"),
