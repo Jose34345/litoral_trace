@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 30
     environment: production-backup
     env:
-      BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BACKUP_DATABASE_URL: ${{ secrets.LT_PROD_DATABASE_URL }}
       BACKUP_S3_KMS_KEY_ID: ${{ secrets.BACKUP_S3_KMS_KEY_ID }}
       BACKUP_AWS_ROLE_ARN: ${{ vars.BACKUP_AWS_ROLE_ARN }}
       BACKUP_S3_BUCKET: ${{ vars.BACKUP_S3_BUCKET }}
@@ -35,7 +35,7 @@ jobs:
       BACKUP_S3_REGION: ${{ vars.BACKUP_S3_REGION }}
       BACKUP_S3_SSE: ${{ vars.BACKUP_S3_SSE }}
       BACKUP_RELEASE_COMMIT: ${{ vars.BACKUP_RELEASE_COMMIT }}
-      MIGRATION_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      MIGRATION_DATABASE_URL: ${{ secrets.LT_PROD_DATABASE_URL }}
       PRE_MIGRATION_SOURCE_RELEASE_COMMIT: ${{ vars.BACKUP_RELEASE_COMMIT }}
       PRE_MIGRATION_OPERATOR: ${{ github.actor }}
       PRE_MIGRATION_TARGET_ENV: production
