@@ -107,6 +107,7 @@ def sandbox_start_provision(
     request: Request,
     consent: str | None = Form(default=None),
     learning_consent: str | None = Form(default=None),
+    support_debug_consent: str | None = Form(default=None),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
     outreach_attribution: str | None = Cookie(
         None,
@@ -160,6 +161,7 @@ def sandbox_start_provision(
             client_ip=client_ip,
             user_agent=user_agent,
             learning_opt_in=learning_consent == "accepted",
+            support_debug_opt_in=support_debug_consent == "accepted",
         )
     except UsLaceySandboxError as exc:
         response_status = (
