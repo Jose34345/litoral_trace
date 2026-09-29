@@ -32,6 +32,15 @@ class Organization(Base, TimestampMixin):
         DateTime(timezone=True),
         nullable=True,
     )
+    support_debug_consent: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    debug_retention_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     created_as_sandbox: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
