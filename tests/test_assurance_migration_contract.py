@@ -44,6 +44,9 @@ US_LACEY_PILOT_RELIABILITY_MIGRATION = Path(
 US_LACEY_PILOT_WATCHDOG_MIGRATION = Path(
     "alembic/versions/064_us_lacey_pilot_watchdog.py"
 )
+US_LACEY_PILOT_WATCH_MIGRATION = Path(
+    "alembic/versions/065_us_lacey_pilot_watch.py"
+)
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -299,9 +302,21 @@ def test_us_lacey_pilot_watchdog_follows_pilot_reliability():
     assert "SECURITY DEFINER" in text
 
 
+def test_us_lacey_pilot_watch_follows_watchdog():
+    text = US_LACEY_PILOT_WATCH_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "065_us_lacey_pilot_watch"' in text
+    assert 'down_revision = "064_us_lacey_pilot_watchdog"' in text
+    assert "platform_admin_pilot_watch_metrics" in text
+    assert "platform_admin_pilot_watch_feed" in text
+    assert "SECURITY DEFINER" in text
+    assert "admin_contact_email" not in text
+    assert "importer_name" not in text
+    assert "supplier_name" not in text
+
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "064_us_lacey_pilot_watchdog (head)" in text
+    assert "065_us_lacey_pilot_watch (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():

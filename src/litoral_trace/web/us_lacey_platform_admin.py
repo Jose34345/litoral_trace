@@ -326,6 +326,41 @@ def list_outreach_funnel_superadmin(
     )
 
 
+def pilot_watch_metrics_superadmin(
+    *,
+    refresh_token: str,
+) -> dict[str, Any]:
+    rows = _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM public.platform_admin_pilot_watch_metrics("
+            ":actor_refresh_token_hash)"
+        ),
+    )
+    return rows[0] if rows else {
+        "active_sandboxes": 0,
+        "tests_today": 0,
+        "open_p0": 0,
+        "open_p1": 0,
+        "exports_completed": 0,
+    }
+
+
+def list_pilot_watch_feed_superadmin(
+    *,
+    refresh_token: str,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    return _control_plane_call(
+        refresh_token=refresh_token,
+        statement=(
+            "SELECT * FROM public.platform_admin_pilot_watch_feed("
+            ":actor_refresh_token_hash, :requested_limit)"
+        ),
+        values={"requested_limit": int(limit)},
+    )
+
+
 def create_outreach_link_superadmin(
     *,
     refresh_token: str,
@@ -376,6 +411,44 @@ def convert_sandbox_to_commercial_superadmin(
         values={"organization_id": organization_id},
         commit=True,
     )[0]
+
+
+def _relative_time(value: datetime | None, *, now: datetime | None = None) -> str:
+    if value is None:
+        return "—"
+    current = now or datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    seconds = max(0, int((current - value).total_seconds()))
+    if seconds < 45:
+        return "just now"
+    if seconds < 3600:
+        return f"{seconds // 60}m ago"
+    if seconds < 86400:
+        return f"{seconds // 3600}h ago"
+    return f"{seconds // 86400}d ago"
+
+
+def _pilot_watch_context(*, request: Request, us_session: str) -> dict[str, Any]:
+    refresh_token = _platform_admin_refresh_token(us_session)
+    metrics = pilot_watch_metrics_superadmin(refresh_token=refresh_token)
+    feed = list_pilot_watch_feed_superadmin(
+        refresh_token=refresh_token,
+        limit=75,
+    )
+    now = datetime.now(timezone.utc)
+    for item in feed:
+        item["last_event_relative"] = _relative_time(
+            item.get("last_event_at"),
+            now=now,
+        )
+    return {
+        "request": request,
+        "authenticated": True,
+        "metrics": metrics,
+        "feed": feed,
+        "refreshed_at": now.strftime("%H:%M:%S UTC"),
+    }
 
 
 def _require_us_session(us_session: str | None) -> str:
@@ -539,6 +612,61 @@ def platform_admin_sandbox_conversion_analytics(
 
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return {"cohorts": cohorts}
+
+
+@router.get("/admin/pilot-watch", response_class=HTMLResponse)
+def platform_admin_pilot_watch_page(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        session_token = _require_us_session(us_session)
+        refresh_token = _platform_admin_refresh_token(session_token)
+        # Capability invocation is the authorization boundary: the underlying
+        # SECURITY DEFINER function rejects every non-superadmin session.
+        pilot_watch_metrics_superadmin(refresh_token=refresh_token)
+        content = templates.get_template("us_lacey/pilot_watch.html").render(
+            request=request,
+            authenticated=True,
+        )
+        return HTMLResponse(
+            content=content,
+            status_code=status.HTTP_200_OK,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            return _access_denied(request)
+        raise
+
+
+@router.get("/admin/pilot-watch/fragment", response_class=HTMLResponse)
+def platform_admin_pilot_watch_fragment(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        session_token = _require_us_session(us_session)
+        context = _pilot_watch_context(
+            request=request,
+            us_session=session_token,
+        )
+        content = templates.get_template(
+            "us_lacey/_pilot_watch_fragment.html"
+        ).render(**context)
+        return HTMLResponse(
+            content=content,
+            status_code=status.HTTP_200_OK,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            return _access_denied(request)
+        raise
 
 
 @router.get("/admin", response_class=HTMLResponse)
