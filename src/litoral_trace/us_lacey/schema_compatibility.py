@@ -1,8 +1,8 @@
-"""Fail-closed schema compatibility probe for the isolated U.S. Lacey runtime.
+"""Fail-closed schema compatibility probe for the U.S. Lacey runtime.
 
-The application runtime never migrates the database. It only compares the single
-repository Alembic head with the revision recorded by PostgreSQL and reports a
-boolean readiness signal. Migration credentials stay outside the Render runtime.
+The runtime never migrates the database. It verifies that PostgreSQL contains
+the minimum Alembic revision required by the Lacey domain. Unrelated descendant
+migrations may advance the repository/database head without invalidating Lacey.
 """
 from __future__ import annotations
 
@@ -19,42 +19,65 @@ from litoral_trace.us_lacey.db import get_us_lacey_engine
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.schema_compatibility")
 
+# 068 is the latest migration that changes the U.S. Lacey runtime contract.
+# 069 retires only legacy PostGIS/satellite objects.
+_REQUIRED_US_LACEY_SCHEMA_REVISION = "068_supabase_public_api_hardening"
+
 
 @lru_cache(maxsize=1)
-def required_us_lacey_schema_revision() -> str:
-    """Return the repository's single canonical Alembic head.
-
-    A release with multiple heads is not safely deployable and therefore raises.
-    """
+def _repository_script_directory() -> ScriptDirectory:
     repository_root = Path(__file__).resolve().parents[3]
     config = Config(str(repository_root / "alembic.ini"))
     config.set_main_option("script_location", str(repository_root / "alembic"))
-    script = ScriptDirectory.from_config(config)
-    heads = tuple(script.get_heads())
-    if len(heads) != 1:
+    return ScriptDirectory.from_config(config)
+
+
+@lru_cache(maxsize=1)
+def required_us_lacey_schema_revision() -> str:
+    """Return the minimum Alembic revision required by Lacey."""
+    script = _repository_script_directory()
+    if script.get_revision(_REQUIRED_US_LACEY_SCHEMA_REVISION) is None:
         raise RuntimeError(
-            f"Expected exactly one canonical Alembic head; found {len(heads)}."
+            "Required U.S. Lacey Alembic revision is not present in the repository."
         )
-    return heads[0]
+    return _REQUIRED_US_LACEY_SCHEMA_REVISION
+
+
+def _revision_satisfies_required(*, current: str, required: str) -> bool:
+    if current == required:
+        return True
+
+    script = _repository_script_directory()
+    try:
+        revisions = script.iterate_revisions(current, "base")
+    except Exception:
+        _LOG.exception(
+            "us_lacey_schema_revision_graph_lookup_failed current=%s",
+            current,
+        )
+        return False
+
+    return any(revision.revision == required for revision in revisions)
 
 
 def probe_us_lacey_schema_compatibility() -> bool:
-    """Return True only when the runtime database is exactly at the code-required head.
-
-    The query is deliberately read-only. Error details and connection information are
-    logged server-side only and are never returned to HTTP clients.
-    """
+    """Return True when the database includes the required Lacey revision."""
     try:
         required = required_us_lacey_schema_revision()
         with get_us_lacey_engine().connect() as connection:
-            current = connection.execute(
-                text("SELECT version_num FROM alembic_version")
-            ).scalar_one()
+            current = str(
+                connection.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one()
+            )
     except Exception:
         _LOG.exception("us_lacey_schema_compatibility_probe_failed")
         return False
 
-    if str(current) != required:
+    if not _revision_satisfies_required(
+        current=current,
+        required=required,
+    ):
         _LOG.warning(
             "us_lacey_schema_revision_mismatch required=%s current=%s",
             required,
@@ -62,5 +85,9 @@ def probe_us_lacey_schema_compatibility() -> bool:
         )
         return False
 
-    _LOG.info("us_lacey_schema_revision_ready revision=%s", required)
+    _LOG.info(
+        "us_lacey_schema_revision_ready required=%s current=%s",
+        required,
+        current,
+    )
     return True

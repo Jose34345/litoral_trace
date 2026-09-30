@@ -1,32 +1,10 @@
 """Base declarativa y mixins comunes para SQLAlchemy 2.x."""
 from __future__ import annotations
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlalchemy import DateTime, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from litoral_trace.config import get_settings
 
-
-def _disable_geoalchemy_sqlite_admin_for_non_production() -> None:
-    """Evita hooks SpatiaLite en entornos locales donde sólo usamos SQLite simple."""
-    if get_settings().is_production:
-        return
-
-    try:
-        from geoalchemy2.admin.dialects import sqlite as geoalchemy_sqlite
-    except Exception:
-        return
-
-    def _noop(*args, **kwargs):
-        return None
-
-    geoalchemy_sqlite.before_create = _noop
-    geoalchemy_sqlite.after_create = _noop
-    geoalchemy_sqlite.before_drop = _noop
-    geoalchemy_sqlite.after_drop = _noop
-
-
-_disable_geoalchemy_sqlite_admin_for_non_production()
 
 
 class Base(DeclarativeBase):

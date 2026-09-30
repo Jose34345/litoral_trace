@@ -37,6 +37,7 @@ on:
       - "alembic/versions/066_us_lacey_debug_retention.py"
       - "alembic/versions/067_us_lacey_outreach_audit_hotfix.py"
       - "alembic/versions/068_supabase_public_api_hardening.py"
+      - "alembic/versions/069_remove_postgis_geometry.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"

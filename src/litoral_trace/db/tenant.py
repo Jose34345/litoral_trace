@@ -27,8 +27,6 @@ from litoral_trace.db.models import (
     IntegrationSyncRun,
     License,
     Lote,
-    SatelliteJob,
-    SatelliteNdviObservation,
     Shipment,
     TraceabilityBatch,
     TraceabilityEvent,
@@ -48,8 +46,6 @@ TenantModel = type[
     | AuditLog
     | ApiKey
     | License
-    | SatelliteJob
-    | SatelliteNdviObservation
     | BatchImport
     | TraceabilityBatch
     | TraceabilityEvent
@@ -72,8 +68,6 @@ TenantEntity = (
     | AuditLog
     | ApiKey
     | License
-    | SatelliteJob
-    | SatelliteNdviObservation
     | BatchImport
     | TraceabilityBatch
     | TraceabilityEvent
