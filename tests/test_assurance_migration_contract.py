@@ -362,7 +362,7 @@ def test_us_lacey_supabase_hardening_follows_outreach_hotfix():
 
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "068_supabase_public_api_hardening (head)" in text
+    assert "069_remove_postgis_geometry (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():
