@@ -57,9 +57,6 @@ from litoral_trace.api.batch_evidence import (
 from litoral_trace.api.lotes import (
     router as lotes_router,
 )
-from litoral_trace.api.satellite import (
-    router as satellite_router,
-)
 from litoral_trace.api.settings import (
     router as settings_router,
 )
@@ -178,10 +175,6 @@ app.include_router(
 
 app.include_router(
     admin_router
-)
-
-app.include_router(
-    satellite_router
 )
 
 
