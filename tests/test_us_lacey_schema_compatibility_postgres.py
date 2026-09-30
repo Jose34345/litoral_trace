@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from litoral_trace.us_lacey.schema_compatibility import (
+    _revision_satisfies_required,
     required_us_lacey_schema_revision,
 )
 
@@ -16,7 +17,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_runtime_role_reads_only_schema_revision_and_matches_repository_head() -> None:
+def test_runtime_role_reads_only_schema_revision_and_satisfies_lacey_requirement() -> None:
     runtime_url = os.environ["US_LACEY_DATABASE_URL"]
     audit_url = os.environ["US_LACEY_TEST_AUDIT_DATABASE_URL"]
 
@@ -56,7 +57,10 @@ def test_runtime_role_reads_only_schema_revision_and_matches_repository_head() -
     audit.dispose()
 
     assert current_user == "litoral_trace_app"
-    assert current_revision == required_us_lacey_schema_revision()
+    assert _revision_satisfies_required(
+        current=str(current_revision),
+        required=required_us_lacey_schema_revision(),
+    )
     assert dict(privileges) == {
         "runtime_select": True,
         "worker_select": False,

@@ -93,7 +93,7 @@ jobs:
             echo "Expected exactly one Alembic head."
             exit 1
           fi
-          grep -Fx "068_supabase_public_api_hardening (head)" alembic-heads.txt
+          grep -Fx "069_remove_postgis_geometry (head)" alembic-heads.txt
 
       - name: Run pytest suite
         run: python -m pytest -q -rs
