@@ -53,6 +53,9 @@ US_LACEY_DEBUG_RETENTION_MIGRATION = Path(
 US_LACEY_OUTREACH_AUDIT_HOTFIX_MIGRATION = Path(
     "alembic/versions/067_us_lacey_outreach_audit_hotfix.py"
 )
+US_LACEY_SUPABASE_HARDENING_MIGRATION = Path(
+    "alembic/versions/068_supabase_public_api_hardening.py"
+)
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -344,9 +347,22 @@ def test_us_lacey_outreach_audit_hotfix_follows_debug_retention():
     assert "new_link.id::integer" in text
     assert "CREATE OR REPLACE FUNCTION" in text
 
+
+def test_us_lacey_supabase_hardening_follows_outreach_hotfix():
+    text = US_LACEY_SUPABASE_HARDENING_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "068_supabase_public_api_hardening"' in text
+    assert 'down_revision = "067_us_lacey_outreach_audit_hotfix"' in text
+    assert "ENABLE ROW LEVEL SECURITY" in text
+    assert "REVOKE ALL PRIVILEGES ON TABLE" in text
+    assert "REVOKE EXECUTE ON FUNCTION" in text
+    assert "ALTER DEFAULT PRIVILEGES" in text
+    assert "anon, authenticated" in text
+    assert "litoral_trace_worker_executor" in text
+    assert "litoral_trace_platform_definer" in text
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "067_us_lacey_outreach_audit_hotfix (head)" in text
+    assert "068_supabase_public_api_hardening (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():

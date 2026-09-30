@@ -581,15 +581,14 @@ def downgrade() -> None:
         """
     )
 
+    _grant_temp_platform_set()
+    op.execute(f"SET LOCAL ROLE {PLATFORM_ROLE}")
     op.execute(
         f"REVOKE EXECUTE ON FUNCTION {MANIFEST_FUNCTION} FROM {WORKER_ROLE}"
     )
     op.execute(
         f"REVOKE EXECUTE ON FUNCTION {DATABASE_PURGE_FUNCTION} FROM {WORKER_ROLE}"
     )
-
-    _grant_temp_platform_set()
-    op.execute(f"SET LOCAL ROLE {PLATFORM_ROLE}")
     op.execute(f"DROP FUNCTION IF EXISTS {DATABASE_PURGE_FUNCTION}")
     op.execute(f"DROP FUNCTION IF EXISTS {MANIFEST_FUNCTION}")
     op.execute(f"DROP FUNCTION IF EXISTS {TRIGGER_FUNCTION}")

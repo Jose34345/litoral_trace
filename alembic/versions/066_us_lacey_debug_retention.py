@@ -674,12 +674,16 @@ def downgrade() -> None:
         """
     )
 
+    _grant_temp_platform_set()
+    op.execute(f"SET LOCAL ROLE {PLATFORM_ROLE}")
     op.execute(
         f"REVOKE EXECUTE ON FUNCTION {SET_CONSENT_FUNCTION} FROM {RUNTIME_ROLE}"
     )
     op.execute(
         f"REVOKE EXECUTE ON FUNCTION {DEBUG_POLICY_FUNCTION} FROM {RUNTIME_ROLE}"
     )
+    op.execute("RESET ROLE")
+    _revoke_temp_platform_set()
 
     _replace_purge_policies(debug_aware=False)
 
