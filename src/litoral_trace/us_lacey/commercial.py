@@ -50,9 +50,9 @@ def load_us_lacey_commercial_config(
 ) -> UsLaceyCommercialConfig:
     env = os.environ if environ is None else environ
     provider = _required(env, "US_LACEY_PAYMENT_PROVIDER").upper()
-    if provider not in {"MANUAL_BANK_TRANSFER", "LEMON_SQUEEZY"}:
+    if provider not in {"MANUAL_BANK_TRANSFER", "LEMON_SQUEEZY", "PADDLE"}:
         raise UsLaceyCommercialConfigurationError(
-            "US_LACEY_PAYMENT_PROVIDER must be MANUAL_BANK_TRANSFER or LEMON_SQUEEZY."
+            "US_LACEY_PAYMENT_PROVIDER must be MANUAL_BANK_TRANSFER, LEMON_SQUEEZY or PADDLE."
         )
 
     bank_instructions = str(env.get("US_LACEY_BANK_TRANSFER_INSTRUCTIONS", "")).strip()
