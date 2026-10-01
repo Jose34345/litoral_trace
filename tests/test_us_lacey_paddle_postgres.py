@@ -28,8 +28,9 @@ from litoral_trace.us_lacey.self_service import (
 pytestmark = pytest.mark.skipif(
     os.environ.get("ENABLE_POSTGRES_TESTS") != "1"
     or not os.environ.get("US_LACEY_DATABASE_URL")
-    or not os.environ.get("TEST_POSTGRES_MIGRATION_DATABASE_URL"),
-    reason="requires isolated U.S. Lacey PostgreSQL runtime and migration databases",
+    or not os.environ.get("TEST_POSTGRES_MIGRATION_DATABASE_URL")
+    or not os.environ.get("US_LACEY_TEST_AUDIT_DATABASE_URL"),
+    reason="requires isolated U.S. Lacey PostgreSQL runtime, migration, and audit databases",
 )
 
 PRICE = 14900
@@ -52,13 +53,6 @@ def _commercial_config() -> UsLaceyCommercialConfig:
 
 def _sha(seed: str) -> str:
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()
-
-
-def _set_tenant_context(connection, organization_id: int) -> None:
-    connection.execute(
-        text("SELECT set_config('app.current_organization_id', :org_id, true)"),
-        {"org_id": str(organization_id)},
-    )
 
 
 def _subscription_event(
@@ -114,10 +108,16 @@ def test_paddle_signup_activation_renewal_idempotency_and_cancel() -> None:
         pool_pre_ping=True,
         hide_parameters=True,
     )
+    audit_engine = create_engine(
+        os.environ["US_LACEY_TEST_AUDIT_DATABASE_URL"],
+        pool_pre_ping=True,
+        hide_parameters=True,
+    )
     with migration_engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
     if revision != "070_us_lacey_paddle_billing":
         migration_engine.dispose()
+        audit_engine.dispose()
         pytest.skip("POSTGRES_SCHEMA_NOT_MIGRATED_TO_070")
 
     suffix = uuid4().hex[:12]
@@ -134,8 +134,7 @@ def test_paddle_signup_activation_renewal_idempotency_and_cancel() -> None:
         verified = verify_us_lacey_email(registered.verification_token)
         assert verified.account_status == "PAYMENT_PENDING"
 
-        with migration_engine.begin() as connection:
-            _set_tenant_context(connection, org_id)
+        with audit_engine.begin() as connection:
             initial = connection.execute(
                 text(
                     """
@@ -184,8 +183,7 @@ def test_paddle_signup_activation_renewal_idempotency_and_cancel() -> None:
         assert activated.account_status == "ACTIVE"
         assert activated.idempotent is False
 
-        with migration_engine.begin() as connection:
-            _set_tenant_context(connection, org_id)
+        with audit_engine.begin() as connection:
             connection.execute(
                 text(
                     "UPDATE public.us_lacey_subscriptions "
@@ -207,8 +205,7 @@ def test_paddle_signup_activation_renewal_idempotency_and_cancel() -> None:
         replayed = apply_us_lacey_paddle_transaction(renewal_event)
         assert replayed.idempotent is True
 
-        with migration_engine.begin() as connection:
-            _set_tenant_context(connection, org_id)
+        with audit_engine.begin() as connection:
             used_operations = connection.execute(
                 text(
                     "SELECT used_operations FROM public.us_lacey_subscriptions "
@@ -232,10 +229,10 @@ def test_paddle_signup_activation_renewal_idempotency_and_cancel() -> None:
         assert canceled.account_status == "SUSPENDED"
 
     finally:
-        with migration_engine.begin() as connection:
-            _set_tenant_context(connection, org_id)
+        with audit_engine.begin() as connection:
             connection.execute(
                 text("DELETE FROM public.organizations WHERE id=:org_id"),
                 {"org_id": org_id},
             )
         migration_engine.dispose()
+        audit_engine.dispose()
