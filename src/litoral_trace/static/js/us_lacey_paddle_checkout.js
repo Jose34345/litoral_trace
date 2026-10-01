@@ -25,13 +25,18 @@
   Paddle.Initialize({
     token,
     eventCallback(event) {
-      if (event && event.name === "checkout.completed") {
+      if (!event) return;
+      if (event.name === "checkout.completed") {
         button.disabled = true;
         if (status) {
           status.textContent =
             "Payment received by Paddle. Litoral Trace is confirming it server-side…";
         }
         window.setTimeout(() => window.location.reload(), 2500);
+        return;
+      }
+      if (event.name === "checkout.closed" || event.name === "checkout.error") {
+        button.disabled = false;
       }
     },
   });
@@ -56,9 +61,6 @@
           showAddTaxId: true,
         },
       });
-      window.setTimeout(() => {
-        if (button.disabled) button.disabled = false;
-      }, 1500);
     } catch (_error) {
       button.disabled = false;
       if (status) {

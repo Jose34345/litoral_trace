@@ -15,6 +15,7 @@ from uuid import UUID
 
 _ID_RE = re.compile(r"^[a-z]{3}_[a-z0-9]{26}$")
 _PRICE_RE = re.compile(r"^pri_[a-z0-9]{26}$")
+_PADDLE_SIGNATURE_TOLERANCE_SECONDS = 5
 
 
 class UsLaceyPaddleConfigurationError(RuntimeError):
@@ -134,7 +135,7 @@ def verify_us_lacey_paddle_signature(
     signature: str,
     secret: str,
     now: int | None = None,
-    tolerance_seconds: int = 300,
+    tolerance_seconds: int = _PADDLE_SIGNATURE_TOLERANCE_SECONDS,
 ) -> bool:
     if not raw_body or not signature or not secret:
         return False
@@ -232,6 +233,8 @@ def parse_us_lacey_paddle_transaction(
     if not isinstance(price, dict):
         raise UsLaceyPaddleWebhookError("Paddle transaction price is missing.")
     price_id = str(price.get("id", "")).strip()
+    if price.get("trial_period") is not None:
+        raise UsLaceyPaddleWebhookError("Paddle trials are not supported for this offer.")
     try:
         quantity = int(item.get("quantity"))
         unit_amount = int(price["unit_price"]["amount"])
@@ -248,6 +251,41 @@ def parse_us_lacey_paddle_transaction(
         or unit_amount != expected_price_cents
     ):
         raise UsLaceyPaddleWebhookError("Paddle transaction does not match this offer.")
+
+    details = data.get("details")
+    totals = details.get("totals") if isinstance(details, dict) else None
+    if not isinstance(totals, dict):
+        raise UsLaceyPaddleWebhookError("Paddle transaction totals are missing.")
+    try:
+        subtotal = int(totals["subtotal"])
+        discount = int(totals["discount"])
+        credit = int(totals["credit"])
+        grand_total = int(totals["grand_total"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise UsLaceyPaddleWebhookError("Paddle transaction totals are invalid.") from exc
+    if (
+        subtotal != expected_price_cents
+        or discount != 0
+        or credit != 0
+        or grand_total <= 0
+    ):
+        raise UsLaceyPaddleWebhookError("Paddle transaction totals do not match this offer.")
+
+    payments = data.get("payments")
+    if not isinstance(payments, list) or not payments:
+        raise UsLaceyPaddleWebhookError("Paddle transaction payments are missing.")
+    captured_total = 0
+    for payment in payments:
+        if not isinstance(payment, dict) or payment.get("status") != "captured":
+            continue
+        try:
+            captured_total += int(payment["amount"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise UsLaceyPaddleWebhookError("Paddle captured payment is invalid.") from exc
+    if captured_total != grand_total:
+        raise UsLaceyPaddleWebhookError(
+            "Paddle captured payments do not match the transaction total."
+        )
 
     billing_period = data.get("billing_period")
     period_start = period_end = None
@@ -287,6 +325,24 @@ def parse_us_lacey_paddle_subscription_event(
     status = str(data.get("status", "")).lower()
     if status not in {"active", "trialing", "past_due", "paused", "canceled"}:
         raise UsLaceyPaddleWebhookError("Paddle subscription status is unsupported.")
+
+    items = data.get("items")
+    if not isinstance(items, list) or len(items) != 1:
+        raise UsLaceyPaddleWebhookError("Paddle subscription does not match this offer.")
+    item = items[0]
+    price = item.get("price") if isinstance(item, dict) else None
+    if not isinstance(price, dict):
+        raise UsLaceyPaddleWebhookError("Paddle subscription price is missing.")
+    try:
+        quantity = int(item.get("quantity"))
+    except (TypeError, ValueError) as exc:
+        raise UsLaceyPaddleWebhookError("Paddle subscription quantity is invalid.") from exc
+    if (
+        str(price.get("id", "")).strip() != config.price_id
+        or quantity != 1
+        or str(data.get("currency_code", "")).upper() != "USD"
+    ):
+        raise UsLaceyPaddleWebhookError("Paddle subscription does not match this offer.")
     return UsLaceyPaddleSubscriptionEvent(
         organization_id=organization_id,
         payment_public_id=payment_public_id,

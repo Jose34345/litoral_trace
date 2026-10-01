@@ -65,9 +65,19 @@ def _transaction_payload(**overrides: object) -> bytes:
                 "price": {
                     "id": PRICE_ID,
                     "unit_price": {"amount": "14900", "currency_code": "USD"},
+                    "trial_period": None,
                 },
             }
         ],
+        "details": {
+            "totals": {
+                "subtotal": "14900",
+                "discount": "0",
+                "credit": "0",
+                "grand_total": "14900",
+            }
+        },
+        "payments": [{"status": "captured", "amount": "14900"}],
         "billing_period": {
             "starts_at": "2026-10-01T12:00:00Z",
             "ends_at": "2026-11-01T12:00:00Z",
@@ -95,6 +105,13 @@ def _subscription_payload(*, status: str = "active") -> bytes:
                 "id": SUBSCRIPTION_ID,
                 "customer_id": CUSTOMER_ID,
                 "status": status,
+                "currency_code": "USD",
+                "items": [
+                    {
+                        "quantity": 1,
+                        "price": {"id": PRICE_ID},
+                    }
+                ],
                 "next_billed_at": "2026-11-01T12:00:00Z",
                 "custom_data": {
                     "organization_id": 42,
@@ -220,6 +237,63 @@ def test_subscription_event_carries_same_tenant_identity() -> None:
     assert event.subscription_id == SUBSCRIPTION_ID
     assert event.status == "past_due"
 
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"details": {"totals": {"subtotal": "14900", "discount": "100", "credit": "0", "grand_total": "14800"}}},
+        {"details": {"totals": {"subtotal": "14900", "discount": "0", "credit": "100", "grand_total": "14800"}}},
+        {"details": {"totals": {"subtotal": "9900", "discount": "0", "credit": "0", "grand_total": "9900"}}},
+        {"payments": [{"status": "captured", "amount": "14899"}]},
+    ],
+)
+def test_transaction_rejects_financial_mismatch(override: dict[str, object]) -> None:
+    config = load_us_lacey_paddle_config(_env())
+    body = _transaction_payload(**override)
+    with pytest.raises(UsLaceyPaddleWebhookError):
+        parse_us_lacey_paddle_transaction(
+            raw_body=body,
+            signature=_sign(body),
+            config=config,
+            expected_price_cents=14900,
+        )
+
+
+def test_transaction_rejects_trial_price() -> None:
+    config = load_us_lacey_paddle_config(_env())
+    body = _transaction_payload(
+        items=[
+            {
+                "quantity": 1,
+                "price": {
+                    "id": PRICE_ID,
+                    "unit_price": {"amount": "14900", "currency_code": "USD"},
+                    "trial_period": {"interval": "day", "frequency": 14},
+                },
+            }
+        ]
+    )
+    with pytest.raises(UsLaceyPaddleWebhookError):
+        parse_us_lacey_paddle_transaction(
+            raw_body=body,
+            signature=_sign(body),
+            config=config,
+            expected_price_cents=14900,
+        )
+
+
+def test_subscription_event_rejects_wrong_offer() -> None:
+    config = load_us_lacey_paddle_config(_env())
+    payload = json.loads(_subscription_payload().decode())
+    payload["data"]["items"][0]["price"]["id"] = "pri_" + "z" * 26
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    with pytest.raises(UsLaceyPaddleWebhookError):
+        parse_us_lacey_paddle_subscription_event(
+            raw_body=body,
+            signature=_sign(body),
+            config=config,
+        )
 
 def test_invalid_signature_never_parses_provider_event() -> None:
     config = load_us_lacey_paddle_config(_env())

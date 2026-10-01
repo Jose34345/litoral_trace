@@ -16,6 +16,7 @@ from litoral_trace.us_lacey.paddle import (
     load_us_lacey_paddle_config,
     parse_us_lacey_paddle_subscription_event,
     parse_us_lacey_paddle_transaction,
+    verify_us_lacey_paddle_signature,
 )
 from litoral_trace.us_lacey.paddle_billing import (
     UsLaceyPaddleBillingError,
@@ -83,6 +84,30 @@ async def paddle_webhook(request: Request) -> Response:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
 
     try:
+        commercial = load_us_lacey_commercial_config()
+        if commercial.payment_provider != "PADDLE":
+            raise UsLaceyPaddleConfigurationError("Paddle is not enabled.")
+        paddle = load_us_lacey_paddle_config()
+    except (
+        UsLaceyCommercialConfigurationError,
+        UsLaceyPaddleConfigurationError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Payment webhook is not configured.",
+        ) from exc
+
+    if not verify_us_lacey_paddle_signature(
+        raw_body=raw_body,
+        signature=signature,
+        secret=paddle.webhook_secret,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid payment event.",
+        )
+
+    try:
         envelope = json.loads(raw_body.decode("utf-8"))
         event_type = str(envelope.get("event_type", ""))
     except (UnicodeDecodeError, json.JSONDecodeError, AttributeError) as exc:
@@ -98,11 +123,6 @@ async def paddle_webhook(request: Request) -> Response:
         )
 
     try:
-        commercial = load_us_lacey_commercial_config()
-        if commercial.payment_provider != "PADDLE":
-            raise UsLaceyPaddleConfigurationError("Paddle is not enabled.")
-        paddle = load_us_lacey_paddle_config()
-
         if event_type == "transaction.completed":
             event = parse_us_lacey_paddle_transaction(
                 raw_body=raw_body,
@@ -118,14 +138,6 @@ async def paddle_webhook(request: Request) -> Response:
                 config=paddle,
             )
             apply_us_lacey_paddle_subscription_event(event)
-    except (
-        UsLaceyCommercialConfigurationError,
-        UsLaceyPaddleConfigurationError,
-    ) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Payment webhook is not configured.",
-        ) from exc
     except UsLaceyPaddleWebhookError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
