@@ -415,6 +415,76 @@ def us_lacey_privacy(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/legal/refunds", response_class=HTMLResponse)
+def us_lacey_refund_policy(request: Request) -> HTMLResponse:
+    return _legal_response(
+        request,
+        "Refund Policy",
+        "US_LACEY_REFUNDS_VERSION",
+        [
+            (
+                "Business purchases only",
+                "Litoral Trace is a business-to-business software service intended "
+                "exclusively for companies, importers, customs brokers, compliance "
+                "professionals, and other authorized business users. Subscriptions "
+                "are purchased for commercial and professional use and are not "
+                "intended for personal or consumer use.",
+            ),
+            (
+                "Final and non-refundable charges",
+                "Except where a refund is required by applicable law or must be "
+                "issued by our Merchant of Record, all purchases, subscription fees, "
+                "renewals, and other charges for Litoral Trace are final and "
+                "non-refundable once successfully charged.",
+            ),
+            (
+                "No prorated refunds or credits",
+                "Litoral Trace does not provide prorated refunds, partial refunds, "
+                "service credits, or account credits for partial billing periods, "
+                "unused days, unused Lacey Act operations, unused document-processing "
+                "capacity, reduced usage, account inactivity, or cancellation before "
+                "the end of a paid billing period.",
+            ),
+            (
+                "Cancellation and continued access",
+                "Canceling a subscription prevents future renewals but does not "
+                "reverse or refund a charge that has already been processed. After "
+                "cancellation, the customer will retain access to the subscribed "
+                "Litoral Trace platform, including its U.S. Lacey Act "
+                "declaration-preparation tools, through the end of the then-current "
+                "paid monthly billing period. Access will terminate or revert to any "
+                "applicable non-paid status when that billing period ends.",
+            ),
+            (
+                "No refund for unused service after cancellation",
+                "Choosing not to use the service after cancellation, or using only "
+                "part of the remaining billing period, does not create a right to a "
+                "refund or credit.",
+            ),
+            (
+                "Billing errors and mandatory refunds",
+                "If you believe a charge was duplicated, unauthorized, or processed "
+                "in error, contact Litoral Trace promptly so the transaction can be "
+                "reviewed. Nothing in this Refund Policy limits any refund right that "
+                "cannot lawfully be excluded under applicable law.",
+            ),
+            (
+                "Merchant of Record",
+                "Payments for Litoral Trace may be processed by Paddle, which acts as "
+                "Merchant of Record for applicable transactions. Where Paddle is "
+                "required by applicable law, payment-network rules, or its Merchant "
+                "of Record obligations to issue or administer a refund, that "
+                "requirement will control to the extent legally necessary.",
+            ),
+            (
+                "Contact",
+                "Questions regarding billing, cancellations, or this Refund Policy "
+                "may be sent to support@litoraltrace.com.",
+            ),
+        ],
+    )
+
+
 @app.get("/legal/private-beta", response_class=HTMLResponse)
 def us_lacey_private_beta_terms(request: Request) -> HTMLResponse:
     return _legal_response(
