@@ -44,6 +44,9 @@ class UsLaceySubscription(Base):
     )
     provider_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_last_transaction_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_last_event_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_last_event_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     billing_sync_status: Mapped[str] = mapped_column(
         String(24), nullable=False, server_default="NEVER_SYNCED"
     )
@@ -91,6 +94,13 @@ class UsLaceySubscription(Base):
             "provider_subscription_id",
             unique=True,
             postgresql_where=text("provider_subscription_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_us_lacey_subscriptions_provider_last_transaction",
+            "billing_provider",
+            "provider_last_transaction_id",
+            unique=True,
+            postgresql_where=text("provider_last_transaction_id IS NOT NULL"),
         ),
         Index(
             "ix_us_lacey_subscriptions_billing_sync",
