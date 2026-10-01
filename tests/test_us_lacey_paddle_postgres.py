@@ -54,6 +54,13 @@ def _sha(seed: str) -> str:
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()
 
 
+def _set_tenant_context(connection, organization_id: int) -> None:
+    connection.execute(
+        text("SELECT set_config('app.current_organization_id', :org_id, true)"),
+        {"org_id": str(organization_id)},
+    )
+
+
 def _subscription_event(
     *,
     organization_id: int,
@@ -128,6 +135,7 @@ def test_paddle_signup_activation_renewal_idempotency_and_cancel() -> None:
         assert verified.account_status == "PAYMENT_PENDING"
 
         with migration_engine.begin() as connection:
+            _set_tenant_context(connection, org_id)
             initial = connection.execute(
                 text(
                     """
@@ -177,6 +185,7 @@ def test_paddle_signup_activation_renewal_idempotency_and_cancel() -> None:
         assert activated.idempotent is False
 
         with migration_engine.begin() as connection:
+            _set_tenant_context(connection, org_id)
             connection.execute(
                 text(
                     "UPDATE public.us_lacey_subscriptions "
@@ -199,6 +208,7 @@ def test_paddle_signup_activation_renewal_idempotency_and_cancel() -> None:
         assert replayed.idempotent is True
 
         with migration_engine.begin() as connection:
+            _set_tenant_context(connection, org_id)
             used_operations = connection.execute(
                 text(
                     "SELECT used_operations FROM public.us_lacey_subscriptions "
@@ -223,6 +233,7 @@ def test_paddle_signup_activation_renewal_idempotency_and_cancel() -> None:
 
     finally:
         with migration_engine.begin() as connection:
+            _set_tenant_context(connection, org_id)
             connection.execute(
                 text("DELETE FROM public.organizations WHERE id=:org_id"),
                 {"org_id": org_id},
