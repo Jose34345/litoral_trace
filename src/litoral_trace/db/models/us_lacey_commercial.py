@@ -77,7 +77,7 @@ class UsLaceySubscription(Base):
             name="ck_us_lacey_subscriptions_status",
         ),
         CheckConstraint(
-            "billing_provider IN ('NONE','MANUAL','LEMON_SQUEEZY','STRIPE')",
+            "billing_provider IN ('NONE','MANUAL','LEMON_SQUEEZY','PADDLE','STRIPE')",
             name="ck_us_lacey_subscriptions_billing_provider",
         ),
         CheckConstraint(
@@ -136,7 +136,7 @@ class UsLaceyPayment(Base):
         CheckConstraint("amount_cents > 0", name="ck_us_lacey_payments_amount_positive"),
         CheckConstraint("currency = 'USD'", name="ck_us_lacey_payments_currency_usd"),
         CheckConstraint(
-            "provider IN ('MANUAL_BANK_TRANSFER','WISE','STRIPE','LEMON_SQUEEZY')",
+            "provider IN ('MANUAL_BANK_TRANSFER','WISE','STRIPE','LEMON_SQUEEZY','PADDLE')",
             name="ck_us_lacey_payments_provider",
         ),
         CheckConstraint(
