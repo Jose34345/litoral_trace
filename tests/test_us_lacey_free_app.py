@@ -3,12 +3,32 @@ from __future__ import annotations
 import threading
 from types import SimpleNamespace
 
+from fastapi.testclient import TestClient
+
 from litoral_trace.web import us_lacey_free_app as free_app
 from litoral_trace.web import us_lacey_pilot_app as pilot_app
 
 
 def test_free_entrypoint_reuses_hardened_portal_app() -> None:
     assert free_app.app is pilot_app.app
+
+
+def test_refund_policy_is_public(monkeypatch) -> None:
+    monkeypatch.setenv("US_LACEY_REFUNDS_VERSION", "2026-10-01-v1")
+    client = TestClient(free_app.app)
+
+    response = client.get("/legal/refunds")
+
+    assert response.status_code == 200
+    assert "Refund Policy" in response.text
+    assert "Version 2026-10-01-v1" in response.text
+    assert "Business purchases only" in response.text
+    assert "Final and non-refundable charges" in response.text
+    assert "No prorated refunds or credits" in response.text
+    assert "Cancellation and continued access" in response.text
+    assert "Merchant of Record" in response.text
+    assert "support@litoraltrace.com" in response.text
+    assert 'href="/legal/refunds"' in response.text
 
 
 def test_inline_worker_disabled_by_default(monkeypatch) -> None:
