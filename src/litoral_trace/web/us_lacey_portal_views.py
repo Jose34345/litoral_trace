@@ -29,8 +29,16 @@ def render_verification_error(*, request, message: str) -> str:
     return _render(request, "verification_error", message=message)
 
 
-def render_billing(*, request, identity, billing, commercial) -> str:
-    return _render(request, "billing", identity=identity, billing=billing, commercial=commercial, money=money)
+def render_billing(*, request, identity, billing, commercial, paddle=None) -> str:
+    return _render(
+        request,
+        "billing",
+        identity=identity,
+        billing=billing,
+        commercial=commercial,
+        paddle=paddle,
+        money=money,
+    )
 
 
 def render_message_page(*, request, title: str, message: str, authenticated: bool = False, action_href: str = "/login", action_label: str = "Return to sign in") -> str:
