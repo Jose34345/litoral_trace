@@ -43,12 +43,12 @@ class _Engine:
         return _Connection(self._value, self.statements)
 
 
-def test_required_schema_revision_is_repository_canonical_head() -> None:
-    assert schema_compatibility.required_us_lacey_schema_revision() == "068_supabase_public_api_hardening"
+def test_required_schema_revision_is_paddle_billing_contract() -> None:
+    assert schema_compatibility.required_us_lacey_schema_revision() == "070_us_lacey_paddle_billing"
 
 
-def test_schema_probe_is_ready_only_on_exact_canonical_head(monkeypatch) -> None:
-    engine = _Engine("068_supabase_public_api_hardening")
+def test_schema_probe_is_ready_on_required_paddle_revision(monkeypatch) -> None:
+    engine = _Engine("070_us_lacey_paddle_billing")
     monkeypatch.setattr(schema_compatibility, "get_us_lacey_engine", lambda: engine)
 
     assert schema_compatibility.probe_us_lacey_schema_compatibility() is True
