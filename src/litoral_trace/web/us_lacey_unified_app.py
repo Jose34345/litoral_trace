@@ -1,6 +1,6 @@
-"""Unified free-tier entrypoint for the customer-facing U.S. Lacey product.
+"""Unified production entrypoint for the customer-facing U.S. Lacey product.
 
-This module composes the already-certified private portal/inline-worker runtime
+This module composes the certified customer portal and worker runtime
 with the public U.S. Lacey marketing, synthetic-demo, hosted-billing and
 superadmin-only owner-control routes.
 

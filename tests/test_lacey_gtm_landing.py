@@ -34,9 +34,9 @@ def test_lacey_landing_leads_with_document_to_data_differentiation():
     assert "Extract" in html
     assert "Compare" in html
     assert "Preserve evidence" in html
-    assert "Early Access · U.S. Lacey Act" in html
-    assert "Founding Early Access — USD 149/month" in html
-    assert "Up to 100 Lacey operations/month. Early-access pricing locked for 12 months." in html
+    assert "U.S. Lacey Act Compliance Automation" in html
+    assert "Professional Plan — USD 149/month" in html
+    assert "Includes up to 100 Lacey operations/month." in html
     assert "USD 99/month" not in html
     assert "USD 199" not in html
     assert "25 operations" not in html
@@ -54,7 +54,8 @@ def test_lacey_landing_routes_trial_traffic_to_zero_touch_sandbox():
     assert "Test it instantly with your own documents." in html
     assert "All test files are permanently destroyed after 4 hours." in html
     assert 'id="lacey-beta-form"' not in html
-    assert "Request a written Early Access review" not in html
+    assert "Early Access" not in html
+    assert "Private Beta" not in html
     for field_name in ("work_email", "role", "volume", "workflow", "willingness"):
         assert f'name="{field_name}"' not in html
 

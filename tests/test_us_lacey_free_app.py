@@ -31,6 +31,23 @@ def test_refund_policy_is_public(monkeypatch) -> None:
     assert 'href="/legal/refunds"' in response.text
 
 
+def test_product_use_terms_are_public_and_legacy_beta_url_redirects(monkeypatch) -> None:
+    monkeypatch.setenv("US_LACEY_BETA_TERMS_VERSION", "2026-10-01-v1")
+    client = TestClient(free_app.app)
+
+    response = client.get("/legal/product-use-terms")
+    assert response.status_code == 200
+    assert "Product Use Terms" in response.text
+    assert "Version 2026-10-01-v1" in response.text
+    assert "Production service" in response.text
+    assert "Private Beta" not in response.text
+    assert "Early Access" not in response.text
+
+    legacy = client.get("/legal/private-beta", follow_redirects=False)
+    assert legacy.status_code == 308
+    assert legacy.headers["location"] == "/legal/product-use-terms"
+
+
 def test_inline_worker_disabled_by_default(monkeypatch) -> None:
     monkeypatch.delenv("US_LACEY_INLINE_WORKER_ENABLED", raising=False)
 

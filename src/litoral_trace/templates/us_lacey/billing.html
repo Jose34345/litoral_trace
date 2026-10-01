@@ -15,7 +15,7 @@
 <section class="lt-card p-6">
   <dl class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
     {% for label, value in [
-      ("Early Access price", money(billing.price_cents, billing.currency)),
+      ("Plan price", money(billing.price_cents, billing.currency)),
       ("Operations", billing.used_operations ~ " / " ~ billing.monthly_operation_limit),
       ("Subscription", billing.subscription_status),
       ("Payment", billing.payment_status)
@@ -32,7 +32,7 @@
       {% if billing.payment_provider == "PADDLE" and paddle %}
         <h2 class="text-lg font-bold text-slate-950">Complete payment securely</h2>
         <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-          Subscribe to Litoral Trace Early Access through Paddle's secure checkout.
+          Subscribe to the Litoral Trace Professional Plan through Paddle's secure checkout.
           Document processing unlocks only after Paddle confirms the completed transaction
           to Litoral Trace server-side.
         </p>
@@ -65,7 +65,7 @@
       {% elif billing.payment_provider == "LEMON_SQUEEZY" %}
         <h2 class="text-lg font-bold text-slate-950">Complete payment securely</h2>
         <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-          Your account is ready. Complete the Early Access payment through our secure checkout.
+          Your account is ready. Complete your subscription payment through our secure checkout.
           Litoral Trace activates document processing only after the payment provider confirms
           the transaction server-side.
         </p>
@@ -106,6 +106,13 @@
           contact <a class="font-semibold text-emerald-700 hover:text-emerald-800" href="mailto:{{ commercial.support_email }}">{{ commercial.support_email }}</a>.
         </p>
       {% endif %}
+      <p class="mt-6 text-xs leading-5 text-slate-500">
+        Subscription billing is subject to our
+        <a class="font-semibold text-emerald-700 hover:text-emerald-800" href="/legal/terms">Terms of Service</a>,
+        <a class="font-semibold text-emerald-700 hover:text-emerald-800" href="/legal/product-use-terms">Product Use Terms</a>,
+        <a class="font-semibold text-emerald-700 hover:text-emerald-800" href="/legal/privacy">Privacy Policy</a>,
+        and <a class="font-semibold text-emerald-700 hover:text-emerald-800" href="/legal/refunds">Refund Policy</a>.
+      </p>
     </div>
   {% else %}
     <div class="mt-8 border-t border-slate-200 pt-6">

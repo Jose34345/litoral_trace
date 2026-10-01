@@ -6,7 +6,7 @@ queue consumer in a daemon thread while the web instance is awake.
 
 The queue still uses ``US_LACEY_WORKER_DATABASE_URL`` and therefore preserves
 the dedicated least-privilege PostgreSQL worker role. The free deployment is a
-private-beta convenience only: when Render spins the web service down, queue
+legacy convenience only: when Render spins the web service down, queue
 processing pauses and resumes on the next wake-up.
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ from uuid import uuid4
 from alembic import command
 from alembic.config import Config
 from fastapi import Request, Response, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 
@@ -392,8 +392,8 @@ def us_lacey_terms(request: Request) -> HTMLResponse:
             ("Purpose", "The service helps authorized business users organize shipment and supplier documents, extract structured data, reconcile fields, surface missing or conflicting information, retain evidence, support human review, and prepare export or pre-filing work products."),
             ("Customer responsibility", "You are responsible for the accuracy, completeness, legality, and authorization of the information and documents you submit, and for all filing, import, customs, regulatory, and legal decisions made using the service."),
             ("No legal determination", "Outputs are operational assistance only. They must be reviewed by an appropriately qualified person before being relied upon for a filing, declaration, compliance decision, or representation to a regulator, broker, customer, or other third party."),
-            ("Private beta", "Features, workflows, limits, and availability may change during the private beta. Beta access may be suspended when necessary to protect security, data integrity, or service reliability."),
-            ("Fees and activation", "Any applicable private-beta fee, operation limit, and activation status are shown in the account billing workflow. Access to operational features may remain blocked until the agreed payment or manual activation is confirmed."),
+            ("Service availability", "Litoral Trace is operated as a production B2B SaaS. Planned maintenance, security events, provider outages, or required updates may temporarily affect availability. Access may be suspended when necessary to protect security, data integrity, legal obligations, or service reliability."),
+            ("Fees, subscription and refunds", "Applicable subscription fees, operation limits, billing periods, and activation status are shown in the account billing workflow. Access may be restricted while payment is pending, overdue, canceled, or reversed. Refunds are governed by the published Refund Policy."),
         ],
     )
 
@@ -407,9 +407,9 @@ def us_lacey_privacy(request: Request) -> HTMLResponse:
         [
             ("Information processed", "The service may process company and account details, uploaded business documents, extracted document data, operation metadata, audit records, technical request information such as IP address and user agent, and support communications."),
             ("Why it is processed", "Information is used to provide the requested workflow, authenticate users, isolate organizations, process and store evidence, troubleshoot the service, prevent abuse, maintain auditability, and provide support."),
-            ("Infrastructure", "The private U.S. beta uses isolated U.S.-region cloud infrastructure for application hosting, database services, and evidence storage. Service providers may process data solely as needed to operate those components."),
+            ("Infrastructure", "The U.S. service uses isolated U.S.-region cloud infrastructure for application hosting, database services, and evidence storage. Service providers may process data solely as needed to operate those components."),
             ("Sharing", "Litoral Trace does not sell customer conversation or business-document data to advertisers. Data may be disclosed when necessary to operate the service, comply with law, protect rights or security, or when directed by an authorized customer."),
-            ("Retention and deletion", "Data is retained as needed to provide the beta, preserve required audit evidence, investigate incidents, and satisfy legitimate contractual or legal obligations. Deletion requests for beta data can be submitted to the contact address below and will be evaluated against those obligations."),
+            ("Retention and deletion", "Data is retained as needed to provide the service, preserve required audit evidence, investigate incidents, and satisfy legitimate contractual or legal obligations. Deletion requests can be submitted to the contact address below and will be evaluated against those obligations."),
             ("Security", "The service uses tenant isolation, least-privilege database roles, row-level security, private object storage, transport encryption, and audit controls. No Internet service can guarantee absolute security."),
         ],
     )
@@ -485,18 +485,23 @@ def us_lacey_refund_policy(request: Request) -> HTMLResponse:
     )
 
 
-@app.get("/legal/private-beta", response_class=HTMLResponse)
-def us_lacey_private_beta_terms(request: Request) -> HTMLResponse:
+@app.get("/legal/product-use-terms", response_class=HTMLResponse)
+def us_lacey_product_use_terms(request: Request) -> HTMLResponse:
     return _legal_response(
         request,
-        "Private Beta Terms",
+        "Product Use Terms",
         "US_LACEY_BETA_TERMS_VERSION",
         [
-            ("Beta status", "This environment is an early private beta intended for controlled evaluation with authorized businesses. It is not offered with a production service-level commitment."),
-            ("Free-tier behavior", "During the free infrastructure phase, the web instance can sleep after inactivity. Background document processing pauses while the instance is asleep and resumes after the service wakes."),
+            ("Production service", "Litoral Trace is a production B2B software service for authorized business users preparing U.S. Lacey Act work products. It is operated for commercial use and is not presented as an experimental or evaluation-only environment."),
             ("Authorized documents only", "You may upload only documents and data that your organization is authorized to provide and process. Do not upload unrelated personal, confidential, export-controlled, or regulated material unless its use is specifically authorized and appropriate for the service."),
             ("Human review required", "Extraction, reconciliation, exception detection, and generated work products can contain errors or omissions. A qualified human must review material outputs before they are used operationally."),
-            ("No live government filing", "The private beta does not claim live ACE/LAWGS submission. Exported or prepared data is a work product for review and downstream use, not proof that a government filing was accepted."),
-            ("Changes and feedback", "Because this is a beta, functionality and limits may change. Operational feedback may be used to improve the product, while customer documents and tenant data remain subject to the Privacy Notice."),
+            ("No direct government filing", "Litoral Trace prepares structured work products for review and downstream use. Unless a separate filing capability is expressly identified in the product, exported or prepared data is not proof that a filing was submitted to or accepted by APHIS, CBP, ACE, LAWGS, or another government system."),
+            ("Service changes", "Litoral Trace may update features, workflows, integrations, and limits as the product evolves. Material contractual or billing changes will be communicated through the service or other appropriate business channels."),
+            ("Account and billing", "Access is subject to the selected subscription plan, payment status, operation limits, the Terms of Service, the Privacy Notice, and the published Refund Policy."),
         ],
     )
+
+
+@app.get("/legal/private-beta", include_in_schema=False)
+def us_lacey_legacy_private_beta_terms() -> RedirectResponse:
+    return RedirectResponse("/legal/product-use-terms", status_code=308)
