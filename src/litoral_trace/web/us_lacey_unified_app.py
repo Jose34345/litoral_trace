@@ -30,6 +30,7 @@ from litoral_trace.web.us_lacey_free_app import app
 from litoral_trace.web.us_lacey_intelligent_workflow import router as intelligent_workflow_router
 from litoral_trace.web.us_lacey_impersonation import router as impersonation_router
 from litoral_trace.web.us_lacey_lemon_billing import router as lemon_billing_router
+from litoral_trace.web.us_lacey_paddle_billing import router as paddle_billing_router
 from litoral_trace.web.us_lacey_platform_admin import router as platform_admin_router
 from litoral_trace.web.us_lacey_sandbox import router as sandbox_router
 
@@ -41,6 +42,7 @@ from litoral_trace.web.us_lacey_sandbox import router as sandbox_router
 # collision sentinel keeps working.
 app.include_router(lacey_router)
 app.include_router(lemon_billing_router)
+app.include_router(paddle_billing_router)
 app.include_router(intelligent_workflow_router)
 app.include_router(platform_admin_router)
 app.include_router(impersonation_router)

@@ -19,9 +19,9 @@ from litoral_trace.us_lacey.db import get_us_lacey_engine
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.schema_compatibility")
 
-# 068 is the latest migration that changes the U.S. Lacey runtime contract.
-# 069 retires only legacy PostGIS/satellite objects.
-_REQUIRED_US_LACEY_SCHEMA_REVISION = "068_supabase_public_api_hardening"
+# 070 adds the Paddle billing functions and constraints required by the
+# customer-facing recurring checkout runtime.
+_REQUIRED_US_LACEY_SCHEMA_REVISION = "070_us_lacey_paddle_billing"
 
 
 @lru_cache(maxsize=1)

@@ -47,6 +47,10 @@ from litoral_trace.us_lacey.jobs import (
     UsLaceyJobError,
     retry_failed_us_lacey_operation,
 )
+from litoral_trace.us_lacey.paddle import (
+    UsLaceyPaddleConfigurationError,
+    load_us_lacey_paddle_config,
+)
 from litoral_trace.us_lacey.portal_auth import (
     US_LACEY_SESSION_COOKIE,
     UsLaceyPortalAuthError,
@@ -263,12 +267,15 @@ def ready() -> dict[str, str]:
     """Fail closed until isolated runtime, commercial, legal and email config exists."""
     try:
         config = load_us_lacey_runtime_config()
-        load_us_lacey_commercial_config()
+        commercial = load_us_lacey_commercial_config()
+        if commercial.payment_provider == "PADDLE":
+            load_us_lacey_paddle_config()
         load_us_lacey_portal_config()
         load_us_lacey_email_config()
     except (
         UsLaceyConfigurationError,
         UsLaceyCommercialConfigurationError,
+        UsLaceyPaddleConfigurationError,
         UsLaceyPortalConfigurationError,
         UsLaceyEmailConfigurationError,
     ) as exc:
@@ -469,12 +476,29 @@ def billing_page(
         identity = resolve_us_lacey_session(us_session)
         billing = get_us_lacey_billing_summary(organization_id=identity.organization_id)
         commercial = load_us_lacey_commercial_config()
+        paddle = (
+            load_us_lacey_paddle_config()
+            if commercial.payment_provider == "PADDLE"
+            else None
+        )
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=True)
-    except (UsLaceySelfServiceError, UsLaceyCommercialConfigurationError):
+    except (
+        UsLaceySelfServiceError,
+        UsLaceyCommercialConfigurationError,
+        UsLaceyPaddleConfigurationError,
+    ):
         return _html(render_message_page(request=request, title="Billing temporarily unavailable.", message="We could not load this account's billing state.", authenticated=True, action_href="/billing", action_label="Try billing again"), status_code=503)
 
-    return _html(render_billing(request=request, identity=identity, billing=billing, commercial=commercial))
+    return _html(
+        render_billing(
+            request=request,
+            identity=identity,
+            billing=billing,
+            commercial=commercial,
+            paddle=paddle,
+        )
+    )
 
 
 @app.get("/operations", response_class=HTMLResponse)

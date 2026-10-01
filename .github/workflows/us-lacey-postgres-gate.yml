@@ -632,7 +632,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "069_remove_postgis_geometry (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "070_us_lacey_paddle_billing (head)" /tmp/alembic-reupgraded.txt
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
@@ -1058,6 +1058,24 @@ jobs:
           PY
       - name: Prove Lemon fail-closed parsing contracts
         run: python -m pytest -q -rs tests/test_us_lacey_lemon_squeezy.py
+      - name: Prove Paddle billing entitlement state machine
+        env:
+          DATABASE_URL: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+
+          python -m pytest -q -rs \
+            tests/test_us_lacey_paddle_postgres.py \
+            | tee /tmp/paddle-postgres.txt
+
+          if grep -Eq \
+            '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' \
+            /tmp/paddle-postgres.txt; then
+            echo "Paddle PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
       - name: Prove zero-touch sandbox provisioning and FORCE RLS
         env:
           DATABASE_URL: ""

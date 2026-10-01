@@ -31,7 +31,7 @@ def test_lemon_squeezy_remains_valid_without_transfer_instructions() -> None:
 def test_wise_is_rejected_fail_closed() -> None:
     with pytest.raises(
         UsLaceyCommercialConfigurationError,
-        match="MANUAL_BANK_TRANSFER or LEMON_SQUEEZY",
+        match="MANUAL_BANK_TRANSFER, LEMON_SQUEEZY or PADDLE",
     ):
         load_us_lacey_commercial_config(
             _env(

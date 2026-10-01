@@ -44,6 +44,9 @@ class UsLaceySubscription(Base):
     )
     provider_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_last_transaction_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_last_event_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_last_event_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     billing_sync_status: Mapped[str] = mapped_column(
         String(24), nullable=False, server_default="NEVER_SYNCED"
     )
@@ -77,7 +80,7 @@ class UsLaceySubscription(Base):
             name="ck_us_lacey_subscriptions_status",
         ),
         CheckConstraint(
-            "billing_provider IN ('NONE','MANUAL','LEMON_SQUEEZY','STRIPE')",
+            "billing_provider IN ('NONE','MANUAL','LEMON_SQUEEZY','PADDLE','STRIPE')",
             name="ck_us_lacey_subscriptions_billing_provider",
         ),
         CheckConstraint(
@@ -91,6 +94,13 @@ class UsLaceySubscription(Base):
             "provider_subscription_id",
             unique=True,
             postgresql_where=text("provider_subscription_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_us_lacey_subscriptions_provider_last_transaction",
+            "billing_provider",
+            "provider_last_transaction_id",
+            unique=True,
+            postgresql_where=text("provider_last_transaction_id IS NOT NULL"),
         ),
         Index(
             "ix_us_lacey_subscriptions_billing_sync",
@@ -136,7 +146,7 @@ class UsLaceyPayment(Base):
         CheckConstraint("amount_cents > 0", name="ck_us_lacey_payments_amount_positive"),
         CheckConstraint("currency = 'USD'", name="ck_us_lacey_payments_currency_usd"),
         CheckConstraint(
-            "provider IN ('MANUAL_BANK_TRANSFER','WISE','STRIPE','LEMON_SQUEEZY')",
+            "provider IN ('MANUAL_BANK_TRANSFER','WISE','STRIPE','LEMON_SQUEEZY','PADDLE')",
             name="ck_us_lacey_payments_provider",
         ),
         CheckConstraint(
