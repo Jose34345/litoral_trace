@@ -19,14 +19,16 @@ def test_signup_hides_internal_legal_versions_from_customer_copy() -> None:
     assert "I accept the <a" in signup
     assert "Terms of Service" in signup
     assert "Privacy Policy" in signup
-    assert "Early Access Terms" in signup
+    assert "Product Use Terms" in signup
+    assert "Early Access Terms" not in signup
     assert "Private Beta Terms" not in signup
 
 
-def test_portal_navigation_uses_early_access_language() -> None:
+def test_portal_navigation_uses_production_language() -> None:
     base = _template("base.html")
 
-    assert "Early Access Terms" in base
+    assert "Product Use Terms" in base
+    assert "Early Access Terms" not in base
     assert ">Private Beta Terms<" not in base
 
 

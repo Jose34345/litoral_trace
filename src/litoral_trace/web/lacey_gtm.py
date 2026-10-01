@@ -13,7 +13,7 @@ from prometheus_client import Counter
 from litoral_trace.web.templates import render_template
 
 
-router = APIRouter(tags=["U.S. GTM experiment"])
+router = APIRouter(tags=["U.S. Lacey Marketing"])
 
 _ALLOWED_EVENTS = frozenset(
     {
@@ -29,7 +29,7 @@ _ALLOWED_EVENTS = frozenset(
 
 _LACEY_GTM_EVENTS = Counter(
     "litoral_trace_lacey_gtm_events_total",
-    "Aggregate non-PII conversion events for the U.S. Lacey private beta landing.",
+    "Aggregate non-PII conversion events for the U.S. Lacey production landing.",
     ("event",),
 )
 
@@ -54,7 +54,7 @@ def render_lacey_landing(request: Request) -> HTMLResponse:
 
 
 @router.get("/lacey", response_class=HTMLResponse, include_in_schema=False)
-async def render_lacey_private_beta(request: Request) -> HTMLResponse:
+async def render_lacey_legacy_landing(request: Request) -> HTMLResponse:
     """Keep the historical /lacey URL available during the domain cutover."""
     return render_lacey_landing(request)
 

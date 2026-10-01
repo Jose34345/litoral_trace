@@ -14,7 +14,7 @@ from litoral_trace.web.templates import STATIC_DIR
 
 
 app = FastAPI(
-    title="Litoral Trace — U.S. Lacey Private Beta",
+    title="Litoral Trace — U.S. Lacey Act Compliance",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,

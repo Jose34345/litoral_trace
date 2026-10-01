@@ -1,6 +1,6 @@
 {% extends "us_lacey/base.html" %}{% set authenticated = false %}{% block lacey_title %}Sign in{% endblock %}
 {% block lacey_content %}
-{{ page_header("Sign in to your U.S. Lacey workspace", "Private beta", "Verified accounts can access their company billing status.", icon="fa-lock") }}
+{{ page_header("Sign in to your U.S. Lacey workspace", "Secure business workspace", "Verified accounts can access their company billing status.", icon="fa-lock") }}
 {% if verified %}{{ alert("Email verified", "Sign in to continue to billing.", "positive") }}{% elif error %}{{ alert("Sign in unavailable", error, "danger") }}{% endif %}
 <section class="lt-card mx-auto w-full max-w-md p-6 sm:p-8">
   <form method="post" action="/login" class="lt-form space-y-5">
