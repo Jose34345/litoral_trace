@@ -238,8 +238,10 @@ def parse_us_lacey_paddle_transaction(
     except (KeyError, TypeError, ValueError) as exc:
         raise UsLaceyPaddleWebhookError("Paddle transaction amount is invalid.") from exc
     currency = str(data.get("currency_code", "")).upper()
+    origin = str(data.get("origin", "")).lower()
     if (
         price_id != config.price_id
+        or origin not in {"web", "subscription_recurring"}
         or quantity != 1
         or currency != "USD"
         or expected_price_cents <= 0
