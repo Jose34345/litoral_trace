@@ -11,11 +11,11 @@ class LaceySocialMetadataTests(unittest.TestCase):
     def test_lacey_landing_has_complete_absolute_social_metadata(self):
         source = (TEMPLATES / "public" / "lacey.html").read_text(encoding="utf-8")
 
-        title = "Litoral Trace — U.S. Lacey Act Compliance Automation"
+        title = "Litoral Trace — U.S. Lacey Act Compliance Infrastructure"
         description = (
-            "From supplier and shipment documents to structured Lacey Act data: "
-            "species, BOM, country of harvest, supplier evidence, exception review "
-            "and review-ready LAWGS XML."
+            "Lacey compliance infrastructure for wood and plant-product supply chains: "
+            "supplier evidence, product composition/BOM, species, country of harvest, "
+            "exception review and declaration-ready work products."
         )
         image_url = "https://lacey.litoraltrace.com/static/img/litoral-trace-lacey-og.png"
 
@@ -31,7 +31,7 @@ class LaceySocialMetadataTests(unittest.TestCase):
         self.assertIn('<meta property="og:image:width" content="1200">', source)
         self.assertIn('<meta property="og:image:height" content="627">', source)
         self.assertIn('<meta property="og:image:type" content="image/png">', source)
-        self.assertIn('<meta property="og:image:alt" content="Litoral Trace U.S. Lacey Act Compliance Automation">', source)
+        self.assertIn('<meta property="og:image:alt" content="Litoral Trace U.S. Lacey Act Compliance Infrastructure">', source)
         self.assertIn('<meta name="twitter:card" content="summary_large_image">', source)
         self.assertIn(f'<meta name="twitter:title" content="{title}">', source)
         self.assertIn(f'<meta name="twitter:description" content="{description}">', source)

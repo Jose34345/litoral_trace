@@ -18,7 +18,7 @@ def test_lacey_microsite_health_and_root_redirect():
     assert root.headers["location"] == "/lacey"
 
 
-def test_lacey_landing_leads_with_document_to_data_differentiation():
+def test_lacey_landing_leads_with_compliance_infrastructure_positioning():
     response = client.get("/lacey")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store, max-age=0"
@@ -27,32 +27,82 @@ def test_lacey_landing_leads_with_document_to_data_differentiation():
 
     html = response.text
     assert '<html lang="en-US"' in html
-    assert "Stop manually preparing Lacey spreadsheets." in html
-    assert "Start before the spreadsheet" in html
-    assert "Upload your commercial invoices and packing lists." in html
-    assert "Launch Zero-Touch Sandbox" in html
-    assert "Extract" in html
-    assert "Compare" in html
-    assert "Preserve evidence" in html
-    assert "U.S. Lacey Act Compliance Automation" in html
-    assert "Professional Plan — USD 149/month" in html
-    assert "Includes up to 100 Lacey operations/month." in html
+    assert "U.S. Lacey Act Compliance Infrastructure" in html
+    assert "From supplier evidence and product composition to declaration-ready Lacey data." in html
+    assert "wood and plant-product supply chains" in html
+    assert "Run a sample shipment" in html
+    assert "Analyze my documents" in html
+    assert "No documents required. Test the synthetic sample first." in html
+    assert "7" in html
+    assert "31" in html
+    assert "24" in html
+    assert "4" in html
+    assert "3" in html
+    assert "Professional Plan — USD 149/month" not in html
+    assert "Includes up to 100 Lacey operations/month." not in html
+    assert "USD 149/month" not in html
     assert "USD 99/month" not in html
     assert "USD 199" not in html
     assert "25 operations" not in html
     assert "Phase VII" not in html
-    assert 'href="/signup"' in html
+    assert 'href="/demo"' in html
+    assert 'href="/sandbox/start"' in html
     assert 'href="/login"' in html
     assert "comercial@litoraltrace.com" in html
 
 
-def test_lacey_landing_routes_trial_traffic_to_zero_touch_sandbox():
+def test_lacey_landing_surfaces_full_compliance_workflow():
     html = client.get("/lacey").text
 
-    assert html.count('href="/sandbox/start"') >= 3
-    assert "Launch Zero-Touch Sandbox" in html
-    assert "Test it instantly with your own documents." in html
-    assert "All test files are permanently destroyed after 4 hours." in html
+    assert "Built for the work your compliance team already does" in html
+    for step in (
+        "Collect supplier evidence",
+        "Identify plant components",
+        "Resolve genus / species",
+        "Verify country of harvest",
+        "Reconcile shipment documents",
+        "Review exceptions &amp; prepare filing data",
+    ):
+        assert step in html
+
+    assert "Stop chasing the same evidence shipment by shipment" in html
+    for evidence_item in (
+        "Commercial invoice",
+        "Packing list",
+        "Bill of lading",
+        "Species declaration",
+        "Harvest affidavit",
+        "Country-of-harvest evidence",
+        "Supplier questionnaire",
+    ):
+        assert evidence_item in html
+
+    assert "Taxonomy &amp; resolution" in html
+    assert "White Oak" in html
+    assert "Quercus" in html
+    assert "alba" in html
+    assert "supplier_species.xlsx · row 18" in html
+
+    for flow_stage in (
+        "Suppliers + BOM/product data + shipment documents",
+        "species + harvest + quantities + evidence",
+        "reconciliation",
+        "exceptions",
+        "filing readiness",
+    ):
+        assert flow_stage in html
+
+
+def test_lacey_landing_routes_evaluation_to_sample_before_document_upload():
+    html = client.get("/lacey").text
+
+    sample_index = html.index("Run a sample shipment")
+    upload_index = html.index("Analyze my documents")
+    assert sample_index < upload_index
+    assert html.count('href="/demo"') >= 2
+    assert html.count('href="/sandbox/start"') >= 2
+    assert "See the system before sharing a document." in html
+    assert "isolated four-hour workspace" in html
     assert 'id="lacey-beta-form"' not in html
     assert "Early Access" not in html
     assert "Private Beta" not in html
@@ -66,7 +116,10 @@ def test_lacey_demo_is_synthetic_and_surfaces_missing_conflicting_data():
     assert response.headers["cache-control"] == "no-store, max-age=0"
     html = response.text
     assert "Illustrative sample" in html
+    assert "No documents are required for this walkthrough." in html
     assert "Analyze sample shipment" in html
+    assert "Analyze my documents" in html
+    assert "Evaluate with your workflow" in html
     assert "25" in html
     assert "Country of Harvest" in html
     assert "Manufacturer ID" in html
@@ -83,8 +136,10 @@ def test_lacey_landing_contains_responsive_and_accessibility_contracts():
     landing = client.get("/lacey").text
     demo = client.get("/lacey/demo").text
     assert 'href="#main-content"' in landing
-    assert 'aria-label="Launch Zero-Touch Sandbox with your own documents"' in landing
-    assert 'aria-label="Launch the four-hour Zero-Touch Sandbox"' in landing
+    assert 'aria-label="Run a synthetic U.S. Lacey sample shipment"' in landing
+    assert 'aria-label="Analyze my documents in the four-hour sandbox"' in landing
+    assert 'aria-label="Illustrative Lacey readiness dashboard"' in landing
+    assert 'aria-label="Illustrative supplier evidence checklist"' in landing
     assert 'href="#main-content"' in demo
     assert 'aria-live="polite"' in demo
 
