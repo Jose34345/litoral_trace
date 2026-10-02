@@ -20,18 +20,19 @@ def test_anonymous_root_is_professional_us_lacey_landing():
 
     html = response.text
     assert '<html lang="en-US"' in html
-    assert "U.S. Lacey Act document preparation" in html
-    assert "Stop manually preparing Lacey spreadsheets." in html
-    assert 'href="/signup"' in html
+    assert "U.S. Lacey Act Compliance Infrastructure" in html
+    assert "From supplier evidence and product composition to declaration-ready Lacey data." in html
+    assert 'href="/demo"' in html
     assert 'href="/login"' in html
     assert 'href="/sandbox/start"' in html
-    assert "Launch Zero-Touch Sandbox" in html
-    assert "Professional Plan — USD 149/month" in html
-    assert "Includes up to 100 Lacey operations/month." in html
+    assert "Run a sample shipment" in html
+    assert "Analyze my documents" in html
+    assert "Professional Plan — USD 149/month" not in html
+    assert "Includes up to 100 Lacey operations/month." not in html
     assert "USD 99/month" not in html
     assert "USD 199" not in html
     assert "25 operations" not in html
-    assert "Human review required" in html
+    assert "Human review remains required" in html
     assert "Private Beta" not in html
     assert "Early Access" not in html
     assert "Phase VII" not in html
@@ -73,7 +74,7 @@ def test_canonical_and_legacy_marketing_routes_coexist():
 
     legacy_landing = client.get("/lacey")
     assert legacy_landing.status_code == 200
-    assert "Create account" in legacy_landing.text
+    assert "Run a sample shipment" in legacy_landing.text\n    assert "Analyze my documents" in legacy_landing.text
 
     for path in ("/event", "/lacey/event"):
         response = client.post(path, data={"event": "lacey_visit"})
