@@ -35,9 +35,9 @@ def test_us_lacey_templates_use_shared_design_system_with_isolated_english_shell
     assert '{% extends "base.html" %}' in marketing_base
     assert '{% extends "public/base_public.html" %}' not in marketing_base
     assert 'lang="en-US"' in marketing_base
-    assert "U.S. Lacey Act document preparation" in marketing_base
-    assert "U.S. Lacey Act workspace" in marketing_base
-    assert 'href="/signup"' in marketing_base
+    assert "U.S. Lacey Act compliance infrastructure" in marketing_base
+    assert "Lacey compliance infrastructure" in marketing_base
+    assert 'href="/demo"' in marketing_base\n    assert 'href="/sandbox/start"' in marketing_base
     assert 'href="/login"' in marketing_base
     assert "Trazabilidad de origen" not in marketing_base
     assert "Debida diligencia" not in marketing_base
