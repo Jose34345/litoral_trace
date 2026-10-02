@@ -6,8 +6,12 @@
 
 {% if identity.account_status == "PAYMENT_PENDING" %}
   {{ alert("Payment pending", "Your email is verified, but document processing stays locked until payment is confirmed.", "warning") }}
-{% elif identity.account_status in ["ACTIVE", "PILOT"] %}
+{% elif identity.account_status == "ACTIVE" %}
   {{ alert("Account active", "Billing is verified for this workspace.", "positive") }}
+{% elif identity.account_status == "PILOT" and billing.payment_status == "PENDING" %}
+  {{ alert("Workspace access active", "Access is enabled for this workspace. Subscription billing is still pending confirmation.", "info") }}
+{% elif identity.account_status == "PILOT" %}
+  {{ alert("Workspace access active", "This workspace has non-subscription access enabled.", "info") }}
 {% else %}
   {{ alert("Account status", identity.account_status, "warning") }}
 {% endif %}
