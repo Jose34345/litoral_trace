@@ -58,7 +58,8 @@ jobs:
         run: |
           curl --fail --silent --show-error http://127.0.0.1:10000/health | grep -q 'healthy'
           curl --fail --silent --show-error http://127.0.0.1:10000/lacey > /tmp/lacey.html
-          grep -q 'Stop manually preparing Lacey spreadsheets' /tmp/lacey.html
+          grep -q 'U.S. Lacey Act Compliance Infrastructure' /tmp/lacey.html
+          grep -q 'Run a sample shipment' /tmp/lacey.html
           curl --fail --silent --show-error http://127.0.0.1:10000/lacey/demo > /tmp/lacey-demo.html
           grep -q 'Analyze sample shipment' /tmp/lacey-demo.html
           curl --fail --silent --show-error http://127.0.0.1:10000/static/demo/litoral-trace-lacey-demo-output.xlsx > /tmp/lacey-demo.xlsx
