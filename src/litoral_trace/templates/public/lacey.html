@@ -1,5 +1,5 @@
 {% extends "us_lacey/marketing_base.html" %}
-{% from "components/ui.html" import button, status_badge %}
+{% from "components/ui.html" import badge, button, status_badge %}
 
 {% block title %}Litoral Trace — U.S. Lacey Act Compliance Infrastructure{% endblock %}
 {% block head_extra %}
@@ -198,7 +198,7 @@
           <div class="p-4"><p class="text-xs text-slate-500">Supplier species sheet</p><p class="mt-1 text-sm font-bold text-slate-950">Quercus alba</p></div>
           <div class="p-4"><p class="text-xs text-slate-500">Product specification</p><p class="mt-1 text-sm font-bold text-slate-950">Quercus rubra</p></div>
         </div>
-        <div class="mt-5">{{ status_badge("REVIEW REQUIRED") }}</div>
+        <div class="mt-5">{{ badge("REVIEW REQUIRED", "warning") }}</div>
         <p class="mt-4 text-sm leading-6 text-slate-600">When evidence disagrees, Litoral Trace surfaces the conflict for human review instead of inventing a reconciliation.</p>
       </section>
     </div>
