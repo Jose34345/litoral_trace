@@ -74,7 +74,8 @@ def test_canonical_and_legacy_marketing_routes_coexist():
 
     legacy_landing = client.get("/lacey")
     assert legacy_landing.status_code == 200
-    assert "Run a sample shipment" in legacy_landing.text\n    assert "Analyze my documents" in legacy_landing.text
+    assert "Run a sample shipment" in legacy_landing.text
+    assert "Analyze my documents" in legacy_landing.text
 
     for path in ("/event", "/lacey/event"):
         response = client.post(path, data={"event": "lacey_visit"})
