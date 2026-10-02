@@ -286,8 +286,8 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
         currency="USD",
         used_operations=2,
         monthly_operation_limit=5,
-        subscription_status="PILOT",
-        payment_status="WAIVED",
+        subscription_status="PENDING",
+        payment_status="PENDING",
         payment_reference="LT-US-PILOT",
         payment_provider="MANUAL_BANK_TRANSFER",
     )
@@ -332,8 +332,9 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
 
     billing_page = client.get("/billing")
     assert billing_page.status_code == 200
-    assert "Account active" in billing_page.text
-    assert "PILOT" in billing_page.text
+    assert "Workspace access active" in billing_page.text
+    assert "Subscription billing is still pending confirmation." in billing_page.text
+    assert "Billing is verified for this workspace." not in billing_page.text
 
     operations = client.get("/operations")
     assert operations.status_code == 200
