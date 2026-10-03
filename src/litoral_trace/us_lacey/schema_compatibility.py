@@ -19,9 +19,9 @@ from litoral_trace.us_lacey.db import get_us_lacey_engine
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.schema_compatibility")
 
-# 070 adds the Paddle billing functions and constraints required by the
-# customer-facing recurring checkout runtime.
-_REQUIRED_US_LACEY_SCHEMA_REVISION = "070_us_lacey_paddle_billing"
+# 071 adds the reusable supplier-evidence tables required by the
+# customer-facing cross-shipment reconciliation contract.
+_REQUIRED_US_LACEY_SCHEMA_REVISION = "071_us_lacey_reusable_supplier_evidence"
 
 
 @lru_cache(maxsize=1)
