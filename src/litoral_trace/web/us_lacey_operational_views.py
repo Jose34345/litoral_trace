@@ -36,13 +36,13 @@ def _render(request, name: str, **context: object) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-@dataclass(frozen=True, slots=True)
 class ReviewProvenanceSummary:
     current_shipment_count: int
     reused_evidence_count: int
     review_required_count: int
 
 
+@dataclass(frozen=True, slots=True)
 class ProcessingView:
     """Small, customer-safe operation progress projection.
 
