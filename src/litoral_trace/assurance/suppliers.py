@@ -250,7 +250,7 @@ class AssuranceSupplierService:
                         entity_type="SUPPLIER",
                         entity_reference=reference,
                         link_confidence=1.0 if cuit else 0.95,
-                        link_method="EXACT_CUIT" if cuit else "NORMALIZED_NAME",
+                        link_method="EXACT_IDENTIFIER" if cuit else "NORMALIZED_IDENTIFIER",
                         human_confirmed=False,
                     )
                 )

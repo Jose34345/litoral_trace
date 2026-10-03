@@ -57,6 +57,7 @@ def test_worker_emits_structured_stage_durations_for_finalizing_job(monkeypatch,
     monkeypatch.setattr(worker, "_reconcile_candidate_equivalence", lambda **_: 0)
     monkeypatch.setattr(worker, "_shadow_engine2", lambda **_: None)
     monkeypatch.setattr(worker, "_project_engine2_suggestions", lambda **_: 0)
+    monkeypatch.setattr(worker, "_apply_reusable_supplier_evidence", lambda **_: 0)
     monkeypatch.setattr(worker, "_project_verified_ai_suggestions", lambda **_: 0)
     monkeypatch.setattr(worker, "_run_ai_review_recommendations", lambda **_: None)
     monkeypatch.setattr(worker, "_shadow_multilingual_evidence_snapshot", lambda **_: None)
@@ -87,6 +88,7 @@ def test_worker_emits_structured_stage_durations_for_finalizing_job(monkeypatch,
         "engine2_shadow",
         "canonical_publication",
         "product_intelligence",
+        "reusable_evidence",
         "regulatory_assessment",
         "ai_review_recommendations",
         "multilingual_snapshot",

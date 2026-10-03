@@ -23,6 +23,7 @@ from litoral_trace.us_lacey.self_service import (
     register_us_lacey_company,
     verify_us_lacey_email,
 )
+from litoral_trace.us_lacey.schema_compatibility import _revision_satisfies_required
 
 
 pytestmark = pytest.mark.skipif(
@@ -115,7 +116,9 @@ def test_paddle_signup_activation_renewal_idempotency_and_cancel() -> None:
     )
     with migration_engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    if revision != "070_us_lacey_paddle_billing":
+    if not _revision_satisfies_required(
+        current=str(revision), required="070_us_lacey_paddle_billing"
+    ):
         migration_engine.dispose()
         audit_engine.dispose()
         pytest.skip("POSTGRES_SCHEMA_NOT_MIGRATED_TO_070")

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import logging
 from uuid import uuid4
 
-from fastapi import APIRouter, Cookie, File, Form, Request, UploadFile
+from fastapi import APIRouter, Cookie, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from litoral_trace.assurance.ingestion import (
@@ -44,6 +44,11 @@ from litoral_trace.us_lacey.portal_auth import (
     resolve_us_lacey_session,
 )
 from litoral_trace.us_lacey.review import UsLaceyReviewError, review_us_lacey_field
+from litoral_trace.us_lacey.reconciliation_schemas import (
+    DetectedSupplierProductInput,
+    ReusableEvidenceReconciliationResponse,
+)
+from litoral_trace.us_lacey.reusable_evidence import ReusableEvidenceService
 from litoral_trace.us_lacey.storage import build_us_lacey_storage_settings
 from litoral_trace.us_lacey.workflow import (
     UsLaceyWorkflowError,
@@ -169,6 +174,43 @@ def _workspace_fragment(
             field_input_values=field_input_values,
         )
     )
+
+
+@router.post(
+    "/operations/{operation_public_id}/reconciliation/reusable-evidence",
+    response_model=ReusableEvidenceReconciliationResponse,
+)
+def reconcile_reusable_supplier_evidence(
+    operation_public_id: str,
+    payload: DetectedSupplierProductInput,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+) -> ReusableEvidenceReconciliationResponse:
+    """Preview conservative historical reuse for one exact detected product.
+
+    This endpoint is intentionally read-only. The worker/reconciliation pipeline
+    can apply historical evidence only after upstream code has proven the exact
+    supplier/product/line identity. A browser preview cannot make historical
+    evidence authoritative by itself.
+    """
+    try:
+        identity, _entitlement = _identity_and_entitlement(us_session)
+        detail = UsLaceyOperationService().get_detail(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+        )
+        line_references = {field.line_reference for field in detail.fields}
+        if payload.line_reference not in line_references:
+            raise HTTPException(status_code=404, detail="Shipment line not found.")
+        return ReusableEvidenceService().reconcile_detected_product(
+            organization_id=identity.organization_id,
+            detected=payload,
+        )
+    except UsLaceyPortalAuthError as exc:
+        raise HTTPException(status_code=401, detail="Sign in to continue.") from exc
+    except UsLaceyOperationalAccessError as exc:
+        raise HTTPException(status_code=403, detail="Operational access is not active.") from exc
+    except UsLaceyOperationNotFound as exc:
+        raise HTTPException(status_code=404, detail="Operation not found.") from exc
 
 
 @router.post("/operations/intake", response_class=HTMLResponse)

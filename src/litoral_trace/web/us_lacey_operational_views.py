@@ -36,6 +36,13 @@ def _render(request, name: str, **context: object) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class ReviewProvenanceSummary:
+    current_shipment_count: int
+    reused_evidence_count: int
+    review_required_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class ProcessingView:
     """Small, customer-safe operation progress projection.
 
@@ -346,6 +353,32 @@ def _present_review_field(field, *, all_fields=()):
     return replace(field, candidates=tuple(presented))
 
 
+def _review_provenance_summary(detail) -> ReviewProvenanceSummary:
+    """Count customer-facing field provenance without double-counting placeholders."""
+    current = 0
+    reused = 0
+    review_required = 0
+    for field in tuple(getattr(detail, "fields", ()) or ()):
+        if not _is_customer_ppq_field(field):
+            continue
+        status = str(getattr(field, "status", "") or "").upper()
+        provenance = str(getattr(field, "provenance", "current_shipment") or "current_shipment")
+        if status in _ACTION_REQUIRED_STATUSES:
+            review_required += 1
+            continue
+        if not _field_has_displayable_resolution(field):
+            continue
+        if provenance == "reused_evidence":
+            reused += 1
+        else:
+            current += 1
+    return ReviewProvenanceSummary(
+        current_shipment_count=current,
+        reused_evidence_count=reused,
+        review_required_count=review_required,
+    )
+
+
 def _review_field_groups(detail):
     """Partition the customer workflow into exception-first presentation buckets."""
     customer_fields = tuple(
@@ -626,6 +659,7 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
         attention_fields=attention_fields,
         auto_supported_fields=auto_supported_fields,
         settled_fields=settled_fields,
+        provenance_summary=_review_provenance_summary(detail),
         engine2_downstream_annotations=_engine2_downstream_annotations(detail),
         processing=progress,
         error=error,
@@ -685,6 +719,7 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         attention_fields=attention_fields,
         auto_supported_fields=auto_supported_fields,
         settled_fields=settled_fields,
+        provenance_summary=_review_provenance_summary(detail),
         engine2_downstream_annotations=_engine2_downstream_annotations(detail),
         error=error,
         is_oob_update=is_oob_update,

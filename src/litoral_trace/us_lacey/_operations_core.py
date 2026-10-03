@@ -116,6 +116,7 @@ class OperationFieldView:
     validation_error: str | None
     not_required_reason_code: str | None
     candidates: tuple["FieldCandidateView", ...]
+    provenance: str = "current_shipment"
 
 
 @dataclass(frozen=True, slots=True)
@@ -749,6 +750,15 @@ class UsLaceyOperationService:
                     validation_error=row.validation_error,
                     not_required_reason_code=row.not_required_reason_code,
                     candidates=tuple(candidates_by_field.get(row.id, ())),
+                    provenance=(
+                        "reused_evidence"
+                        if row.extractor == "reusable-supplier-evidence"
+                        else (
+                            "review_required"
+                            if row.field_status in {"MISSING", "REVIEW", "CONFLICT"}
+                            else "current_shipment"
+                        )
+                    ),
                 )
                 for row in field_rows
             )

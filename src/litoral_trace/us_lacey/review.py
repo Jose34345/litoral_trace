@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO, StringIO
 import csv
+import logging
 from uuid import UUID
 
 from openpyxl import Workbook
@@ -33,6 +34,7 @@ from litoral_trace.us_lacey.domain import US_LACEY_REVIEW_FIELDS
 from litoral_trace.us_lacey.operations import UsLaceyOperationNotFound
 from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
 from litoral_trace.us_lacey.reconciliation_invariants import reconcile_entered_value_invariant
+from litoral_trace.us_lacey.reusable_evidence_promotion import promote_reviewed_field
 from litoral_trace.us_lacey.review_telemetry import ReviewTelemetry
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS,
@@ -75,6 +77,7 @@ class UsLaceyBulkReviewResult:
 
 
 _LABELS = dict(US_LACEY_REVIEW_FIELDS)
+LOGGER = logging.getLogger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -277,6 +280,35 @@ def review_us_lacey_field(
             )
             issue.resolved_at = field.reviewed_at
 
+        promotion_reason = "not_applicable"
+        promotion_promoted = False
+        if normalized_action in {"accept", "edit"}:
+            try:
+                # Reusable memory is an additive optimization, not part of the
+                # regulatory review transaction's availability contract. A savepoint
+                # keeps an unexpected promotion failure from invalidating the user's
+                # otherwise-valid review decision.
+                with session.begin_nested():
+                    promotion = promote_reviewed_field(
+                        session,
+                        organization_id=org_id,
+                        operation=operation,
+                        field=field,
+                        user_id=int(user_id),
+                    )
+                promotion_reason = promotion.reason
+                promotion_promoted = promotion.promoted
+            except Exception:
+                promotion_reason = "promotion_failed_closed"
+                LOGGER.exception(
+                    "Reusable supplier evidence promotion failed closed",
+                    extra={
+                        "organization_id": org_id,
+                        "operation_id": operation.id,
+                        "field_id": field.id,
+                    },
+                )
+
         # Human review is a state-machine mutation. Recompute the arithmetic invariant
         # in the same transaction before deriving aggregate readiness or committing.
         reconcile_entered_value_invariant(
@@ -317,6 +349,8 @@ def review_us_lacey_field(
                 "field_name": field.field_name,
                 "review_action": normalized_action,
                 "resolved_conflict_count": len(open_issues),
+                "reusable_evidence_promoted": promotion_promoted,
+                "reusable_evidence_promotion_reason": promotion_reason,
             },
             before_data=before,
             after_data={
@@ -385,6 +419,7 @@ def accept_supported_us_lacey_fields(
 
         reviewed_at = _utc_now()
         accepted_ids: list[int] = []
+        promoted_field_ids: list[int] = []
         for field in fields:
             proposed = field.normalized_value or field.original_value
             if proposed is None or not str(proposed).strip():
@@ -405,6 +440,26 @@ def accept_supported_us_lacey_fields(
             field.reviewed_by_user_id = int(user_id)
             field.reviewed_at = reviewed_at
             accepted_ids.append(int(field.id))
+            try:
+                with session.begin_nested():
+                    promotion = promote_reviewed_field(
+                        session,
+                        organization_id=org_id,
+                        operation=operation,
+                        field=field,
+                        user_id=int(user_id),
+                    )
+                if promotion.promoted:
+                    promoted_field_ids.append(int(field.id))
+            except Exception:
+                LOGGER.exception(
+                    "Bulk reusable supplier evidence promotion failed closed",
+                    extra={
+                        "organization_id": org_id,
+                        "operation_id": operation.id,
+                        "field_id": field.id,
+                    },
+                )
 
         reconcile_entered_value_invariant(
             session,
@@ -441,6 +496,8 @@ def accept_supported_us_lacey_fields(
                     "review_action": "accept_supported",
                     "accepted_field_count": len(accepted_ids),
                     "accepted_field_ids": accepted_ids,
+                    "reusable_evidence_promoted_count": len(promoted_field_ids),
+                    "reusable_evidence_promoted_field_ids": promoted_field_ids,
                 },
                 before_data={"supported_field_count": len(accepted_ids)},
                 after_data={

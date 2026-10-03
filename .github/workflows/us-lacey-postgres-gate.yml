@@ -38,6 +38,8 @@ on:
       - "alembic/versions/067_us_lacey_outreach_audit_hotfix.py"
       - "alembic/versions/068_supabase_public_api_hardening.py"
       - "alembic/versions/069_remove_postgis_geometry.py"
+      - "alembic/versions/070_us_lacey_paddle_billing.py"
+      - "alembic/versions/071_us_lacey_reusable_supplier_evidence.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
@@ -53,6 +55,7 @@ on:
       - "src/litoral_trace/db/models/us_lacey_evidence_snapshot.py"
       - "src/litoral_trace/db/models/us_lacey_product_intelligence.py"
       - "src/litoral_trace/db/models/us_lacey_regulatory_assessment.py"
+      - "src/litoral_trace/db/models/us_lacey_reusable_evidence.py"
       - "src/litoral_trace/db/models/document_text.py"
       - "src/litoral_trace/db/models/semantic_evidence.py"
       - "src/litoral_trace/db/models/us_lacey_commercial.py"
@@ -632,7 +635,22 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "070_us_lacey_paddle_billing (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "071_us_lacey_reusable_supplier_evidence (head)" /tmp/alembic-reupgraded.txt
+      - name: Prove reusable supplier evidence persistence and tenant isolation
+        env:
+          DATABASE_URL: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs \
+            tests/test_us_lacey_reusable_evidence_postgres.py \
+            tests/test_us_lacey_reusable_evidence_multishipment_postgres.py \
+            | tee /tmp/reusable-evidence-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/reusable-evidence-postgres.txt; then
+            echo "Reusable evidence PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
       - name: Prove multilingual snapshot persistence and tenant constraints
         shell: bash
         run: |
