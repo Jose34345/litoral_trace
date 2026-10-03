@@ -22,21 +22,20 @@
 {% endblock %}
 
 {% block content %}
-<section class="bg-slate-950 px-4 py-16 text-white sm:px-6 lg:px-8 lg:py-20">
-  <div class="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[0.92fr_1.08fr]">
+<section class="bg-slate-950 px-4 py-12 text-white sm:px-6 lg:px-8 lg:py-14">
+  <div class="mx-auto grid max-w-7xl items-start gap-10 lg:grid-cols-[1.03fr_0.97fr]">
     <div class="max-w-3xl">
       <span class="lt-badge lt-badge--positive">Built for import compliance teams</span>
       <h1 class="mt-5 text-4xl font-bold tracking-tight text-white sm:text-5xl">U.S. Lacey Act Compliance Infrastructure</h1>
       <p class="mt-5 max-w-2xl text-xl font-semibold leading-8 text-slate-200">Turn supplier evidence, BOM data and shipment documents into review-ready Lacey data.</p>
-      <p class="mt-4 max-w-2xl text-base leading-7 text-slate-400">Resolve species, harvest country and quantities. Reconcile source documents. Surface only missing evidence and conflicts that require human review.</p>
+      <p class="mt-4 max-w-xl text-base leading-7 text-slate-400">Resolve species, harvest country and quantities. Reconcile source documents. Surface only missing evidence and conflicts that require human review.</p>
       <div class="mt-7 flex flex-wrap gap-3">
         <a href="/demo" class="lt-btn lt-btn--primary lacey-demo-link" aria-label="Run a synthetic U.S. Lacey sample shipment"><i class="fa-solid fa-play" aria-hidden="true"></i><span>Run a sample shipment</span></a>
         {{ button("Analyze my documents", "/sandbox/start", "secondary", "fa-file-import", extra_classes="lacey-sandbox-link", aria_label="Analyze my documents in the four-hour sandbox") }}
       </div>
-      <p class="mt-3 text-sm leading-6 text-slate-400">No documents required for the sample.</p>
     </div>
 
-    <section class="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-xl" aria-label="Illustrative Lacey readiness dashboard">
+    <section class="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-xl lg:mt-8" aria-label="Illustrative Lacey readiness dashboard">
       <header class="flex items-center justify-between gap-4 border-b border-slate-700 p-5">
         <div>
           <h2 class="text-sm font-bold text-white">Lacey readiness pipeline</h2>
@@ -54,7 +53,7 @@
           {% endfor %}
         </div>
         <div class="mt-4 divide-y divide-slate-700 overflow-hidden rounded-xl border border-slate-700">
-          {% for label, source, state in [("Species and taxonomy", "Supplier record and product data", "READY"), ("Country of harvest", "Supplier evidence", "READY"), ("Plant quantity", "Invoice and packing list", "REVIEW"), ("Supporting evidence", "Harvest record incomplete", "MISSING")] %}
+          {% for label, source, state in [("Species", "Supplier and product data", "READY"), ("Country of harvest", "Supplier evidence", "READY"), ("Plant quantity", "Invoice and packing list", "REVIEW"), ("Supporting evidence", "Harvest record incomplete", "MISSING")] %}
           <div class="flex items-center justify-between gap-4 p-3">
             <div class="text-xs text-slate-200">{{ label }}<span class="mt-1 block text-[11px] text-slate-500">{{ source }}</span></div>
             {{ status_badge(state) }}
@@ -66,55 +65,65 @@
   </div>
 </section>
 
-<section id="workflow" class="bg-white px-4 py-16 sm:px-6 lg:px-8">
+<section id="workflow" class="bg-white px-4 py-14 sm:px-6 lg:px-8">
   <div class="mx-auto max-w-7xl">
     <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">What compliance teams need</p>
     <h2 class="mt-3 max-w-4xl text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">One workflow from evidence to filing-ready review.</h2>
-    <p class="mt-4 max-w-3xl text-base leading-7 text-slate-600">Litoral Trace brings the three jobs that repeatedly appear in Lacey operations into one auditable workflow.</p>
+    <p class="mt-4 max-w-2xl text-base leading-7 text-slate-600">The recurring Lacey workload, in one review path.</p>
 
     <div class="mt-8 grid gap-5 lg:grid-cols-3">
-      {% for number, title, copy, detail in [
-        ("01", "Collect evidence", "Supplier records, BOM data and shipment documents.", "Keep the source set together."),
-        ("02", "Resolve regulatory data", "Species, harvest country, quantities and supporting evidence.", "Reconcile values across sources."),
-        ("03", "Review what matters", "Conflicts, missing evidence and filing readiness.", "Send only exceptions to a human.")
+      {% for number, title, copy, result in [
+        ("01", "Collect evidence", "Supplier records, BOM data and shipment documents.", "Source set preserved"),
+        ("02", "Resolve regulatory data", "Species, harvest country, quantities and supporting evidence.", "Sources reconciled"),
+        ("03", "Review what matters", "Conflicts, missing evidence and filing readiness.", "Exceptions isolated")
       ] %}
-      <article class="lt-card h-full p-6">
+      <article class="rounded-2xl bg-slate-50 p-6">
         <p class="text-sm font-bold text-emerald-700">{{ number }}</p>
         <h3 class="mt-4 text-xl font-bold text-slate-950">{{ title }}</h3>
         <p class="mt-3 text-base leading-7 text-slate-700">{{ copy }}</p>
-        <p class="mt-5 text-sm font-semibold text-slate-500">{{ detail }}</p>
+        <p class="mt-5 flex items-center gap-2 text-sm font-semibold text-slate-500"><i class="fa-solid fa-check text-emerald-700" aria-hidden="true"></i><span>{{ result }}</span></p>
       </article>
       {% endfor %}
     </div>
   </div>
 </section>
 
-<section id="evidence" class="border-y border-slate-200 bg-slate-50 px-4 py-16 sm:px-6 lg:px-8">
+<section id="evidence" class="bg-slate-50 px-4 py-14 sm:px-6 lg:px-8">
   <div class="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[0.9fr_1.1fr]">
     <section class="lt-card h-full p-8">
       <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Supplier evidence</p>
       <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950">Know what is missing before filing.</h2>
-      <p class="mt-4 max-w-xl text-base leading-7 text-slate-600">Give reviewers one shipment-level view of the evidence state instead of chasing the same supplier records again.</p>
-      <div class="mt-7 grid gap-3">
-        {% for title, copy in [
-          ("Complete evidence", "Ready values stay tied to their source."),
-          ("Conflicting evidence", "Differences are sent to review."),
-          ("Missing evidence", "Gaps are visible before downstream filing work.")
+      <p class="mt-4 max-w-xl text-base leading-7 text-slate-600">One shipment-level view of the evidence state, with every ready value still tied to its source.</p>
+
+      <div class="mt-7 grid gap-5">
+        {% for icon, title, copy in [
+          ("fa-circle-check", "Complete evidence", "Ready values stay traceable to source."),
+          ("fa-triangle-exclamation", "Conflicting evidence", "Differences are sent to review."),
+          ("fa-circle-xmark", "Missing evidence", "Gaps are visible before downstream filing work.")
         ] %}
-        <div class="rounded-xl bg-slate-50 p-4">
-          <p class="text-sm font-bold text-slate-950">{{ title }}</p>
-          <p class="mt-1 text-sm leading-6 text-slate-600">{{ copy }}</p>
+        <div class="flex gap-3">
+          <span class="mt-1 text-emerald-700" aria-hidden="true"><i class="fa-solid {{ icon }}"></i></span>
+          <div>
+            <p class="text-sm font-bold text-slate-950">{{ title }}</p>
+            <p class="mt-1 text-sm leading-6 text-slate-600">{{ copy }}</p>
+          </div>
         </div>
         {% endfor %}
       </div>
+
+      <p class="mt-7 text-sm font-semibold text-slate-700">Review gaps, not complete records.</p>
     </section>
 
-    <section class="lt-card h-full overflow-hidden" aria-label="Illustrative supplier evidence checklist">
-      <header class="bg-slate-50 p-5">
-        <h3 class="text-lg font-bold text-slate-950">Shipment evidence status</h3>
-        <p class="mt-1 text-xs text-slate-500">Illustrative review checklist</p>
-      </header>
-      <div class="grid">
+    <section class="lt-card h-full p-6" aria-label="Illustrative supplier evidence checklist">
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h3 class="text-lg font-bold text-slate-950">Sample shipment · Evidence status</h3>
+          <p class="mt-1 text-xs text-slate-500">One view of what is ready, what needs review and what is still missing.</p>
+        </div>
+        <p class="text-xs font-semibold text-slate-500">5 ready · 1 review · 1 missing</p>
+      </div>
+
+      <div class="mt-5 grid gap-2">
         {% for label, state in [
           ("Commercial invoice", "READY"),
           ("Packing list", "READY"),
@@ -124,7 +133,7 @@
           ("Country-of-harvest evidence", "MISSING"),
           ("Supplier questionnaire", "READY")
         ] %}
-        <div class="flex items-center justify-between gap-4 border-t border-slate-200 p-4">
+        <div class="flex items-center justify-between gap-4 py-2">
           <span class="text-sm font-semibold text-slate-700">{{ label }}</span>
           {{ status_badge(state) }}
         </div>
@@ -134,27 +143,25 @@
   </div>
 </section>
 
-<section id="taxonomy" class="bg-white px-4 py-16 sm:px-6 lg:px-8">
+<section id="taxonomy" class="bg-white px-4 py-14 sm:px-6 lg:px-8">
   <div class="mx-auto max-w-7xl">
     <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Taxonomy and conflicts</p>
     <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Resolve species. Preserve the evidence.</h2>
+
     <div class="mt-8 grid gap-5 lg:grid-cols-2">
       <section class="lt-card h-full p-6">
         <p class="text-sm font-bold text-slate-950">Taxonomy resolution</p>
-        <div class="mt-5 grid gap-3 sm:grid-cols-2">
-          <div class="rounded-xl bg-slate-50 p-5">
-            <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Supplier term</p>
-            <p class="mt-2 text-xl font-bold text-slate-950">White Oak</p>
+        <div class="mt-6 grid gap-6 sm:grid-cols-2">
+          <div>
+            <p class="text-sm font-medium text-slate-500">Supplier term</p>
+            <p class="mt-2 text-2xl font-bold text-slate-950">White Oak</p>
           </div>
-          <div class="rounded-xl bg-slate-50 p-5">
-            <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Resolved taxonomy</p>
-            <p class="mt-2 text-xl font-bold text-slate-950">Quercus alba</p>
+          <div>
+            <p class="text-sm font-medium text-slate-500">Resolved taxonomy</p>
+            <p class="mt-2 text-2xl font-bold text-slate-950">Quercus alba</p>
           </div>
         </div>
-        <div class="mt-4 rounded-xl bg-slate-50 p-5">
-          <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Evidence source</p>
-          <p class="mt-2 text-sm font-semibold text-slate-700">supplier_species.xlsx · row 18</p>
-        </div>
+        <p class="mt-7 text-sm text-slate-500">Evidence source <span class="font-semibold text-slate-700">supplier_species.xlsx · row 18</span></p>
       </section>
 
       <section class="lt-card h-full p-6">
@@ -162,15 +169,15 @@
           <p class="text-sm font-bold text-slate-950">Conflict handling</p>
           {{ badge("REVIEW REQUIRED", "warning") }}
         </div>
-        <p class="mt-3 text-base leading-7 text-slate-600">When sources disagree, Litoral Trace keeps both values visible instead of inventing a reconciliation.</p>
-        <div class="mt-5 grid gap-3 sm:grid-cols-2">
-          <div class="rounded-xl bg-slate-50 p-5">
-            <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Supplier species sheet</p>
-            <p class="mt-2 text-lg font-bold text-slate-950">Quercus alba</p>
+        <p class="mt-3 max-w-xl text-base leading-7 text-slate-600">When sources disagree, both values remain visible for human review.</p>
+        <div class="mt-6 grid gap-6 sm:grid-cols-2">
+          <div>
+            <p class="text-sm font-medium text-slate-500">Supplier species sheet</p>
+            <p class="mt-2 text-xl font-bold text-slate-950">Quercus alba</p>
           </div>
-          <div class="rounded-xl bg-slate-50 p-5">
-            <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Product specification</p>
-            <p class="mt-2 text-lg font-bold text-slate-950">Quercus rubra</p>
+          <div>
+            <p class="text-sm font-medium text-slate-500">Product specification</p>
+            <p class="mt-2 text-xl font-bold text-slate-950">Quercus rubra</p>
           </div>
         </div>
       </section>
@@ -178,16 +185,15 @@
   </div>
 </section>
 
-<section id="evaluate" class="bg-slate-950 px-4 py-14 text-white sm:px-6 lg:px-8">
+<section id="evaluate" class="bg-slate-950 px-4 py-12 text-white sm:px-6 lg:px-8">
   <div class="mx-auto max-w-4xl text-center">
     <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-400">Evaluate the workflow</p>
-    <h2 class="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">See the system before sharing a document.</h2>
-    <p class="mx-auto mt-4 max-w-2xl text-base leading-7 text-slate-300">Run the synthetic shipment first. Use your own authorized documents only when you are ready.</p>
+    <h2 class="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">See Litoral Trace analyze a sample shipment.</h2>
+    <p class="mx-auto mt-4 max-w-2xl text-base leading-7 text-slate-300">Synthetic data. No upload required.</p>
     <div class="mt-7 flex flex-wrap justify-center gap-3">
       <a href="/demo" class="lt-btn lt-btn--primary lacey-demo-link" aria-label="Run the synthetic U.S. Lacey sample shipment"><i class="fa-solid fa-play" aria-hidden="true"></i><span>Run a sample shipment</span></a>
       {{ button("Analyze my documents", "/sandbox/start", "secondary", "fa-file-import", extra_classes="lacey-sandbox-link", aria_label="Analyze my documents in the four-hour sandbox") }}
     </div>
-    <p class="mx-auto mt-5 max-w-2xl text-xs leading-5 text-slate-500">Litoral Trace prepares review work products. It does not file declarations, provide legal advice, or make an automatic legal-compliance determination.</p>
   </div>
 </section>
 {% endblock %}
