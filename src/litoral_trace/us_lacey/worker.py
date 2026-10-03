@@ -50,8 +50,7 @@ from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_
 from litoral_trace.us_lacey.pilot_reliability import capture_completed_pilot_quality
 from litoral_trace.us_lacey.product_intelligence_snapshot import build_product_intelligence_snapshot
 from litoral_trace.us_lacey.regulatory_assessment_snapshot import build_regulatory_assessment_snapshot
-from litoral_trace.us_lacey.reusable_evidence import ReusableEvidenceService
-from litoral_trace.us_lacey.reusable_evidence_promotion import discover_operation_reusable_products
+from litoral_trace.us_lacey.reusable_evidence_promotion import apply_reusable_evidence_for_operation
 from litoral_trace.us_lacey.source_sets import SourceSetClaim, claim_ready_source_set, finalize_claim
 from litoral_trace.us_lacey.projection import (
     project_assurance_document_to_us_lacey,
@@ -520,39 +519,23 @@ def _apply_reusable_supplier_evidence(*, organization_id: int, operation_id: int
     A reuse failure never makes a shipment less safe: the operation simply remains
     review-required and the customer can resolve it manually.
     """
-    discovery_session = get_us_lacey_db_session()
     try:
-        set_tenant_db_context(discovery_session, organization_id)
-        identities = discover_operation_reusable_products(
-            discovery_session,
-            organization_id=organization_id,
-            operation_id=operation_id,
-        )
-    finally:
-        discovery_session.close()
-
-    reused_count = 0
-    service = ReusableEvidenceService()
-    for identity in identities:
-        try:
-            result = service.apply_to_operation_line(
+        return int(
+            apply_reusable_evidence_for_operation(
                 organization_id=organization_id,
                 operation_id=operation_id,
-                supplier_key=identity.supplier_key,
-                product_key=identity.product_key,
-                line_reference=identity.line_reference,
             )
-            reused_count += int(result.reused_evidence_count)
-        except Exception:
-            LOGGER.exception(
-                "Lacey reusable supplier evidence application failed closed",
-                extra={
-                    "organization_id": organization_id,
-                    "operation_id": operation_id,
-                    "line_reference": identity.line_reference,
-                },
-            )
-    return reused_count
+            or 0
+        )
+    except Exception:
+        LOGGER.exception(
+            "Lacey reusable supplier evidence application failed closed",
+            extra={
+                "organization_id": organization_id,
+                "operation_id": operation_id,
+            },
+        )
+        return 0
 
 
 def _build_regulatory_assessment_snapshot(*, organization_id: int, operation_id: int, claim: SourceSetClaim):
