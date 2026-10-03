@@ -28,11 +28,11 @@ def test_lacey_landing_leads_with_compliance_infrastructure_positioning():
     html = response.text
     assert '<html lang="en-US"' in html
     assert "U.S. Lacey Act Compliance Infrastructure" in html
-    assert "From supplier evidence and product composition to declaration-ready Lacey data." in html
-    assert "wood and plant-product supply chains" in html
+    assert "Turn supplier evidence, BOM data and shipment documents into review-ready Lacey data." in html
+    assert "Built for import compliance teams" in html
     assert "Run a sample shipment" in html
     assert "Analyze my documents" in html
-    assert "Start with the synthetic shipment — no documents required." in html
+    assert "No documents required for the sample." in html
     assert "7" in html
     assert "31" in html
     assert "24" in html
@@ -54,18 +54,16 @@ def test_lacey_landing_leads_with_compliance_infrastructure_positioning():
 def test_lacey_landing_surfaces_full_compliance_workflow():
     html = client.get("/lacey").text
 
-    assert "Built for the work your compliance team already does" in html
+    assert "What compliance teams need" in html
+    assert "One workflow from evidence to filing-ready review." in html
     for step in (
-        "Collect supplier evidence",
-        "Identify plant components",
-        "Resolve genus / species",
-        "Verify country of harvest",
-        "Reconcile shipment documents",
-        "Review exceptions &amp; prepare filing data",
+        "Collect evidence",
+        "Resolve regulatory data",
+        "Review what matters",
     ):
         assert step in html
 
-    assert "Stop chasing the same evidence shipment by shipment" in html
+    assert "Know what is missing before filing." in html
     for evidence_item in (
         "Commercial invoice",
         "Packing list",
@@ -77,18 +75,16 @@ def test_lacey_landing_surfaces_full_compliance_workflow():
     ):
         assert evidence_item in html
 
-    assert "Taxonomy &amp; resolution" in html
+    assert "Taxonomy and conflicts" in html
     assert "White Oak" in html
     assert "Quercus" in html
     assert "alba" in html
     assert "supplier_species.xlsx · row 18" in html
 
     for flow_stage in (
-        "Suppliers + BOM/product data + shipment documents",
-        "species + harvest + quantities + evidence",
-        "reconciliation",
-        "exceptions",
-        "filing readiness",
+        "Supplier records, BOM data and shipment documents.",
+        "Species, harvest country, quantities and supporting evidence.",
+        "Conflicts, missing evidence and filing readiness.",
     ):
         assert flow_stage in html
 
@@ -102,7 +98,7 @@ def test_lacey_landing_routes_evaluation_to_sample_before_document_upload():
     assert html.count('href="/demo"') >= 2
     assert html.count('href="/sandbox/start"') >= 2
     assert "See the system before sharing a document." in html
-    assert "isolated four-hour workspace" in html
+    assert "Run the synthetic shipment first." in html
     assert 'id="lacey-beta-form"' not in html
     assert "Early Access" not in html
     assert "Private Beta" not in html
