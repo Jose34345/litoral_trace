@@ -14,7 +14,7 @@ class LaceySocialMetadataTests(unittest.TestCase):
         title = "Litoral Trace — U.S. Lacey Act Compliance Infrastructure"
         description = (
             "Lacey compliance infrastructure for wood and plant-product supply chains: "
-            "supplier evidence, product composition/BOM, species, country of harvest, "
+            "supplier evidence, product composition, species, country of harvest, "
             "exception review and declaration-ready work products."
         )
         image_url = "https://lacey.litoraltrace.com/static/img/litoral-trace-lacey-og.png"
