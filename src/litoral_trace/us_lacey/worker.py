@@ -50,6 +50,8 @@ from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_
 from litoral_trace.us_lacey.pilot_reliability import capture_completed_pilot_quality
 from litoral_trace.us_lacey.product_intelligence_snapshot import build_product_intelligence_snapshot
 from litoral_trace.us_lacey.regulatory_assessment_snapshot import build_regulatory_assessment_snapshot
+from litoral_trace.us_lacey.reusable_evidence import ReusableEvidenceService
+from litoral_trace.us_lacey.reusable_evidence_promotion import discover_operation_reusable_products
 from litoral_trace.us_lacey.source_sets import SourceSetClaim, claim_ready_source_set, finalize_claim
 from litoral_trace.us_lacey.projection import (
     project_assurance_document_to_us_lacey,
@@ -108,6 +110,7 @@ _PERSISTED_STAGE_NAMES = {
     "verified_ai_suggestions": "AI_SUGGESTIONS",
     "canonical_publication": "PROJECTION",
     "product_intelligence": "PRODUCT_INTELLIGENCE",
+    "reusable_evidence": "RECONCILIATION",
     "regulatory_assessment": "REGULATORY",
     "multilingual_snapshot": "MULTILINGUAL",
     "source_set_finalize": "FINALIZE",
@@ -509,6 +512,47 @@ def _build_product_intelligence_snapshot(*, organization_id: int, operation_id: 
             },
         )
         return None
+
+
+def _apply_reusable_supplier_evidence(*, organization_id: int, operation_id: int) -> int:
+    """Best-effort reuse after exact supplier/SKU identities are available.
+
+    A reuse failure never makes a shipment less safe: the operation simply remains
+    review-required and the customer can resolve it manually.
+    """
+    discovery_session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(discovery_session, organization_id)
+        identities = discover_operation_reusable_products(
+            discovery_session,
+            organization_id=organization_id,
+            operation_id=operation_id,
+        )
+    finally:
+        discovery_session.close()
+
+    reused_count = 0
+    service = ReusableEvidenceService()
+    for identity in identities:
+        try:
+            result = service.apply_to_operation_line(
+                organization_id=organization_id,
+                operation_id=operation_id,
+                supplier_key=identity.supplier_key,
+                product_key=identity.product_key,
+                line_reference=identity.line_reference,
+            )
+            reused_count += int(result.reused_evidence_count)
+        except Exception:
+            LOGGER.exception(
+                "Lacey reusable supplier evidence application failed closed",
+                extra={
+                    "organization_id": organization_id,
+                    "operation_id": operation_id,
+                    "line_reference": identity.line_reference,
+                },
+            )
+    return reused_count
 
 
 def _build_regulatory_assessment_snapshot(*, organization_id: int, operation_id: int, claim: SourceSetClaim):
@@ -1032,6 +1076,16 @@ def process_one_us_lacey_job(
                             organization_id=job.organization_id,
                             operation_id=job.operation_id,
                             claim=source_set_claim,
+                        )
+                    with _timed_worker_stage(
+                        job=job,
+                        stage="reusable_evidence",
+                        worker_id=worker_id,
+                        source_set_fingerprint=source_set_fingerprint,
+                    ):
+                        _apply_reusable_supplier_evidence(
+                            organization_id=job.organization_id,
+                            operation_id=job.operation_id,
                         )
                     with _timed_worker_stage(
                         job=job,
