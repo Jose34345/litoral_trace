@@ -21,7 +21,7 @@ def test_anonymous_root_is_professional_us_lacey_landing():
     html = response.text
     assert '<html lang="en-US"' in html
     assert "U.S. Lacey Act Compliance Infrastructure" in html
-    assert "From supplier evidence and product composition to declaration-ready Lacey data." in html
+    assert "Turn supplier evidence, BOM data and shipment documents into review-ready Lacey data." in html
     assert 'href="/demo"' in html
     assert 'href="/login"' in html
     assert 'href="/sandbox/start"' in html
