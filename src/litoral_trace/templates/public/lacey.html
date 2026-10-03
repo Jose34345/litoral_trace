@@ -22,19 +22,18 @@
 {% endblock %}
 
 {% block content %}
-<section class="bg-slate-950 px-4 py-16 text-white sm:px-6 lg:px-8 lg:py-24">
-  <div class="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
-    <div>
+<section class="bg-slate-950 px-4 py-16 text-white sm:px-6 lg:px-8 lg:py-20">
+  <div class="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[0.92fr_1.08fr]">
+    <div class="max-w-3xl">
       <span class="lt-badge lt-badge--positive">For wood and plant-product supply chains</span>
-      <h1 class="mt-6 max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">U.S. Lacey Act Compliance Infrastructure</h1>
-      <p class="mt-6 max-w-3xl text-lg leading-8 text-slate-300">From supplier evidence and product composition to declaration-ready Lacey data.</p>
-      <p class="mt-4 max-w-3xl text-base leading-7 text-slate-400">Litoral Trace turns shipment documents, supplier records, and plant-product data into an auditable Lacey workflow. Reconcile genus/species, country of harvest, quantities, and supporting evidence across invoices, bills of lading, packing lists, and supplier documentation — then review only the exceptions before preparing downstream ACE/LAWGS work products.</p>
-      <div class="mt-8 flex flex-wrap gap-3">
+      <h1 class="mt-5 text-4xl font-bold tracking-tight text-white sm:text-5xl">U.S. Lacey Act Compliance Infrastructure</h1>
+      <p class="mt-5 max-w-2xl text-lg leading-8 text-slate-300">From supplier evidence and product composition to declaration-ready Lacey data.</p>
+      <p class="mt-4 max-w-2xl text-base leading-7 text-slate-400">Litoral Trace turns shipment documents, supplier records, and plant-product data into one auditable Lacey workflow. Reconcile genus/species, country of harvest, quantities and supporting evidence across the document set, then surface only the conflicts and gaps that require human review before downstream ACE/LAWGS work products.</p>
+      <div class="mt-7 flex flex-wrap gap-3">
         <a href="/demo" class="lt-btn lt-btn--primary lacey-demo-link" aria-label="Run a synthetic U.S. Lacey sample shipment"><i class="fa-solid fa-play" aria-hidden="true"></i><span>Run a sample shipment</span></a>
         {{ button("Analyze my documents", "/sandbox/start", "secondary", "fa-file-import", extra_classes="lacey-sandbox-link", aria_label="Analyze my documents in the four-hour sandbox") }}
       </div>
-      <p class="mt-4 text-sm text-slate-400">No documents required. Test the synthetic sample first.</p>
-      <p class="mt-3 text-xs leading-5 text-slate-500">Already have an account? <a class="font-semibold text-emerald-400 hover:text-emerald-300" href="/login">Sign in to your workspace.</a> Human review remains required before downstream filing use.</p>
+      <p class="mt-3 text-sm leading-6 text-slate-400">Start with the synthetic shipment — no documents required.</p>
     </div>
 
     <section class="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-xl" aria-label="Illustrative Lacey readiness dashboard">
@@ -70,14 +69,21 @@
 <section id="architecture" class="border-y border-slate-200 bg-slate-50 px-4 py-16 sm:px-6 lg:px-8">
   <div class="mx-auto max-w-7xl">
     <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Compliance infrastructure</p>
-    <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Connect the evidence before the filing workflow begins.</h2>
-    <p class="mt-4 max-w-4xl text-base leading-7 text-slate-600">Litoral Trace organizes the supplier, product and shipment evidence that compliance teams need to review before preparing downstream Lacey work products.</p>
+    <h2 class="mt-3 max-w-4xl text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Connect the evidence before the filing workflow begins.</h2>
+    <p class="mt-4 max-w-3xl text-base leading-7 text-slate-600">Three connected layers turn fragmented supplier and shipment records into a reviewable Lacey record without hiding the evidence or the exceptions.</p>
 
-    <div class="mt-8 grid gap-4 lg:grid-cols-2">
+    <div class="mt-8 grid gap-5 lg:grid-cols-3" aria-label="Lacey compliance data flow">
       <section class="lt-card p-6">
-        <h3 class="text-lg font-bold text-slate-950">Inputs your team already receives</h3>
-        <div class="mt-4 grid gap-3 sm:grid-cols-3">
-          {% for title, detail in [("Suppliers", "Declarations, questionnaires and supporting records"), ("BOM / product data", "Plant components and product composition"), ("Shipment documents", "Invoice, B/L, packing list and related evidence")] %}
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="text-xs font-bold uppercase tracking-wide text-emerald-700">01 · Sources</p>
+            <h3 class="mt-2 text-lg font-bold text-slate-950">Evidence enters once</h3>
+          </div>
+          <span class="text-xs font-semibold text-slate-500">INPUT</span>
+        </div>
+        <p class="mt-3 text-sm leading-6 text-slate-600">Suppliers + BOM/product data + shipment documents</p>
+        <div class="mt-5 grid gap-3">
+          {% for title, detail in [("Supplier evidence", "Declarations, questionnaires and supporting records"), ("BOM / product data", "Plant components and product composition"), ("Shipment documents", "Invoice, B/L, packing list and related evidence")] %}
           <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p class="text-sm font-bold text-slate-950">{{ title }}</p>
             <p class="mt-1 text-xs leading-5 text-slate-500">{{ detail }}</p>
@@ -87,27 +93,54 @@
       </section>
 
       <section class="lt-card p-6">
-        <h3 class="text-lg font-bold text-slate-950">What Litoral Trace structures for review</h3>
-        <div class="mt-4 grid gap-3 sm:grid-cols-2">
-          {% for title, detail in [("Species", "Genus / species with source evidence"), ("Harvest", "Country-of-harvest evidence"), ("Quantities", "Shipment-level reconciliation"), ("Evidence", "Traceable source references")] %}
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="text-xs font-bold uppercase tracking-wide text-emerald-700">02 · Resolution layer</p>
+            <h3 class="mt-2 text-lg font-bold text-slate-950">Evidence becomes structured data</h3>
+          </div>
+          <span class="text-xs font-semibold text-slate-500">RESOLVE</span>
+        </div>
+        <p class="mt-3 text-sm leading-6 text-slate-600">species + harvest + quantities + evidence</p>
+        <div class="mt-5 grid gap-3 sm:grid-cols-2">
+          {% for title, detail in [("Species", "Genus / species"), ("Harvest", "Country of harvest"), ("Quantities", "Shipment values"), ("Evidence", "Source references")] %}
           <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p class="text-sm font-bold text-slate-950">{{ title }}</p>
             <p class="mt-1 text-xs leading-5 text-slate-500">{{ detail }}</p>
           </article>
           {% endfor %}
         </div>
+        <div class="mt-5 border-t border-slate-200 pt-4">
+          <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Reconciliation</p>
+          <p class="mt-1 text-sm leading-6 text-slate-700">reconciliation across documents and source evidence</p>
+        </div>
       </section>
-    </div>
 
-    <div class="mt-8 grid gap-4" aria-label="Lacey compliance data flow">
-      {% for label in ["Suppliers + BOM/product data + shipment documents", "species + harvest + quantities + evidence", "reconciliation", "exceptions", "filing readiness"] %}
-      <div class="rounded-xl border border-slate-200 bg-white p-5 text-center shadow-sm">
-        <p class="text-sm font-bold text-slate-950">{{ label }}</p>
-      </div>
-      {% if not loop.last %}
-      <div class="flex justify-center text-emerald-700" aria-hidden="true"><i class="fa-solid fa-arrow-down"></i></div>
-      {% endif %}
-      {% endfor %}
+      <section class="lt-card p-6">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="text-xs font-bold uppercase tracking-wide text-emerald-700">03 · Review &amp; readiness</p>
+            <h3 class="mt-2 text-lg font-bold text-slate-950">Humans see only what needs attention</h3>
+          </div>
+          <span class="text-xs font-semibold text-slate-500">REVIEW</span>
+        </div>
+        <p class="mt-3 text-sm leading-6 text-slate-600">The system preserves resolved data and separates unresolved issues from filing-ready work.</p>
+        <div class="mt-5 divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200">
+          <div class="p-4">
+            <div class="flex items-center justify-between gap-4">
+              <p class="text-sm font-bold text-slate-950">exceptions</p>
+              {{ status_badge("REVIEW") }}
+            </div>
+            <p class="mt-1 text-xs leading-5 text-slate-500">Conflicts and missing evidence are surfaced for human review.</p>
+          </div>
+          <div class="p-4">
+            <div class="flex items-center justify-between gap-4">
+              <p class="text-sm font-bold text-slate-950">filing readiness</p>
+              {{ status_badge("READY") }}
+            </div>
+            <p class="mt-1 text-xs leading-5 text-slate-500">Reviewed data can move into downstream ACE/LAWGS work products.</p>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 </section>

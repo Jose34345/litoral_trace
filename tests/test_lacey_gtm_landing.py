@@ -32,7 +32,7 @@ def test_lacey_landing_leads_with_compliance_infrastructure_positioning():
     assert "wood and plant-product supply chains" in html
     assert "Run a sample shipment" in html
     assert "Analyze my documents" in html
-    assert "No documents required. Test the synthetic sample first." in html
+    assert "Start with the synthetic shipment — no documents required." in html
     assert "7" in html
     assert "31" in html
     assert "24" in html
