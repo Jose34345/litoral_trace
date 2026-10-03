@@ -56,6 +56,9 @@ US_LACEY_OUTREACH_AUDIT_HOTFIX_MIGRATION = Path(
 US_LACEY_SUPABASE_HARDENING_MIGRATION = Path(
     "alembic/versions/068_supabase_public_api_hardening.py"
 )
+US_LACEY_REUSABLE_EVIDENCE_MIGRATION = Path(
+    "alembic/versions/071_us_lacey_reusable_supplier_evidence.py"
+)
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -359,6 +362,23 @@ def test_us_lacey_supabase_hardening_follows_outreach_hotfix():
     assert "anon, authenticated" in text
     assert "litoral_trace_worker_executor" in text
     assert "litoral_trace_platform_definer" in text
+
+def test_us_lacey_reusable_evidence_follows_paddle_billing():
+    text = US_LACEY_REUSABLE_EVIDENCE_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "071_us_lacey_reusable_supplier_evidence"' in text
+    assert 'down_revision = "070_us_lacey_paddle_billing"' in text
+    for table in (
+        "us_lacey_supplier",
+        "us_lacey_supplier_product",
+        "us_lacey_supplier_evidence",
+        "us_lacey_evidence_claim",
+    ):
+        assert table in text
+    assert "FORCE ROW LEVEL SECURITY" in text
+    assert "app.current_organization_id" in text
+    assert "document_hash" in text
+    assert "LargeBinary" not in text
+
 
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
