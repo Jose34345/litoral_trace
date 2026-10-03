@@ -32,7 +32,7 @@ def test_anonymous_root_is_professional_us_lacey_landing():
     assert "USD 99/month" not in html
     assert "USD 199" not in html
     assert "25 operations" not in html
-    assert "Human review remains required" in html
+    assert "does not file declarations" in html
     assert "Private Beta" not in html
     assert "Early Access" not in html
     assert "Phase VII" not in html
