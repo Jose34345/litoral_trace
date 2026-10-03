@@ -1,0 +1,115 @@
+{% extends "us_lacey/base.html" %}
+{% set authenticated = true %}
+{% from "components/ui.html" import button, alert, page_header %}
+{% set engine2_downstream_annotations = engine2_downstream_annotations|default({}) %}
+{% block lacey_title %}Review shipment{% endblock %}
+{% block lacey_content %}
+{% set bulk_upload_rejection = error and error.startswith("This file contains multiple shipments.") %}
+{% set empty_bulk_rejection = bulk_upload_rejection and not detail.documents %}
+<header class="lt-page-header" aria-labelledby="operation-alias-label">
+  <div class="lt-page-header__copy">
+    <p class="lt-page-header__eyebrow">Lacey Act Declaration Preparation</p>
+    {% include "us_lacey/fragments/operation_alias.html" %}
+    <p class="lt-page-header__description">Manage the shipment evidence, review exceptions, and prepare the declaration package from one auditable workspace.</p>
+    <p class="mt-1 text-xs text-slate-400">Operation ID · {{ detail.public_id }}</p>
+  </div>
+</header>
+
+{% if bulk_upload_rejection %}
+<section class="lt-alert lt-alert--warning" role="status" data-bulk-upload-rejection>
+    <i class="fa-solid fa-triangle-exclamation lt-alert__icon" aria-hidden="true"></i>
+    <div>
+        <p class="lt-alert__title">This file contains multiple shipments</p>
+        <p class="lt-alert__message">Litoral Trace processes one shipment per operation. Split this file so it contains only one shipment, then upload that file to this operation.</p>
+        <p class="mt-2 text-xs font-semibold text-slate-600">Nothing was added to this operation.</p>
+    </div>
+</section>
+{% elif error %}
+{{ alert("We could not complete that action", error, "danger") }}
+{% endif %}
+{% if notice %}<span hidden data-toast-bootstrap="{{ notice }}" data-toast-tone="success"></span>{% endif %}
+
+{% set processing_step_state = "pending" if empty_bulk_rejection else ("current" if processing.failed or not processing.terminal else "complete") %}
+<ol class="lt-progress-steps mb-6 border-b border-slate-200 pb-4 sm:grid sm:grid-cols-5" aria-label="Preparation workflow">
+{% for title,state,href in [
+  ("Documents", "complete" if detail.documents else "current", "#documents"),
+  ("Processing", processing_step_state, "#processing-status"),
+  ("Review", "current" if processing.state == "READY_FOR_REVIEW" else "pending", "#review-summary"),
+  ("Final confirmation", "current" if detail.status == "COMPLETED" else "pending", "#declaration-package"),
+  ("Preparation package", "complete" if detail.status == "COMPLETED" else "pending", "#declaration-package")
+] %}
+<li class="lt-progress-step" data-state="{{ state }}">
+  <a class="lt-progress-step__link" href="{{ href }}" data-workflow-step-link{% if state == "current" %} aria-current="step"{% endif %}>
+    <span class="lt-progress-step__marker" aria-hidden="true">{% if state == "complete" %}✓{% else %}{{ loop.index }}{% endif %}</span>
+    <span class="lt-progress-step__title">{{ title }}</span>
+  </a>
+</li>
+{% endfor %}</ol>
+
+<section class="lt-card p-6" id="documents">
+<div class="flex flex-wrap items-start justify-between gap-4">
+  <div class="max-w-3xl">
+    <h2 class="text-lg font-bold text-slate-950">Shipment documents</h2>
+    <p class="mt-1 text-sm leading-6 text-slate-600">Keep the source set together so Litoral Trace can reconcile invoice, transport, customs, and supplier evidence across the same shipment.</p>
+  </div>
+  <span class="text-sm font-semibold text-slate-600">{{ detail.document_count }} document{{ '' if detail.document_count == 1 else 's' }}</span>
+</div>
+{% if detail.documents %}
+<div class="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4" data-reprocess-guidance>
+  <div class="max-w-2xl">
+    <p class="font-bold text-slate-950">Need to add more documents?</p>
+    <p class="mt-1 text-xs leading-5 text-slate-600">Reprocessing may update auto-resolved fields, evidence, and remaining exceptions.</p>
+  </div>
+  <button type="button" class="lt-btn lt-btn--secondary" data-add-documents-trigger>
+    <i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i>
+    <span>Add documents &amp; reprocess</span>
+  </button>
+</div>
+{% endif %}
+<!-- Tailwind compatibility safelist for tracked stylesheet: md:items-end md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] -->
+<form method="post" enctype="multipart/form-data" action="/operations/{{ detail.public_id }}/upload" class="lt-form mt-5" data-file-staging-form>
+  <input type="hidden" name="csrf_token" value="{{ upload_csrf }}">
+  <label for="operation-documents" class="lt-upload-dropzone" data-file-dropzone role="button" tabindex="0">
+    <span class="lt-upload-dropzone__icon" aria-hidden="true"><i class="fa-solid fa-cloud-arrow-up"></i></span>
+    <span class="lt-upload-dropzone__title">Drop shipment files here or click to browse</span>
+    <span class="lt-upload-dropzone__help">Best practice: upload all available shipment documents before the first processing run. You can add more files later and reprocess.</span>
+    <span class="mt-1 block text-xs text-slate-500">PDF, XLSX, XLS or CSV · multiple files supported</span>
+  </label>
+  <input id="operation-documents" hidden name="documents" type="file" accept=".pdf,.xlsx,.xls,.csv" multiple required data-file-dropzone-input aria-describedby="operation-file-summary">
+  <div id="operation-file-summary" class="mt-3 text-sm text-slate-600" aria-live="polite" data-file-empty-state>No files selected.</div>
+  <div class="lt-upload-staging" hidden data-file-staging>
+    <div class="lt-upload-staging__header"><span>Ready to upload</span><span data-file-count></span></div>
+    <ul class="lt-upload-staging__list" data-file-staging-list></ul>
+  </div>
+  <div class="mt-5 flex flex-wrap items-center gap-3">
+    {% if detail.documents %}
+    {{ button("Add documents & reprocess", variant="primary", button_type="submit", icon="fa-rotate") }}
+    {% else %}
+    {{ button("Upload and analyze", variant="primary", button_type="submit", icon="fa-wand-magic-sparkles") }}
+    {% endif %}
+  </div>
+  <details class="mt-4 text-sm text-slate-600"><summary class="cursor-pointer font-semibold">Advanced: set document type manually</summary><label class="lt-field mt-3 max-w-md"><span class="lt-field__label">Document type</span><select id="document_role" class="lt-control" name="document_role"><option value="UNKNOWN" selected>Auto-detect</option>{% for value,label in [("COMMERCIAL_INVOICE","Commercial invoice"),("PACKING_LIST","Packing list"),("BILL_OF_LADING","Bill of lading"),("SUPPLIER_DECLARATION","Supplier declaration"),("CERTIFICATE","Certificate"),("OTHER","Other document")] %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select><span class="mt-1 block text-xs text-slate-500">Only override auto-detection when you know the document type.</span></label></details>
+</form>
+<div class="mt-5 grid gap-2">{% for doc in detail.documents %}<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2"><span class="font-semibold text-slate-900">{{ doc.filename }}</span><span class="text-xs font-semibold text-slate-600">{{ 'Auto-detect' if doc.document_role == 'UNKNOWN' else doc.document_role|replace('_', ' ')|title }}</span></div>{% else %}<p class="text-sm text-slate-600">No documents uploaded yet.</p>{% endfor %}</div></section>
+
+{# A rejected upload is request-local feedback. Do not mix it with stale analysis
+   or a previous processing failure from documents already stored on the operation. #}
+{% if not bulk_upload_rejection %}
+<div id="processing-status" class="lt-scroll-target mt-6">{% include "us_lacey/fragments/processing_fragment.html" %}</div>
+{% endif %}
+
+{% if not bulk_upload_rejection and not processing.terminal %}
+<details id="engine2-dossier" class="lt-card mt-6 p-6" data-engine2-dossier data-engine2-availability="{{ engine2_dossier.availability }}"><summary class="cursor-pointer text-sm font-semibold text-slate-700">Advanced evidence details</summary><div class="mt-4"><h2 class="text-lg font-bold text-slate-950">Document evidence analysis</h2><p class="mt-2 text-sm text-slate-600">Technical evidence preview for audit and troubleshooting. Final preparation data still comes from the human review workflow.</p>{% if engine2_dossier.availability != "CURRENT" %}<p class="mt-4 text-sm text-slate-700">{{ engine2_dossier.safe_status_message }}</p>{% else %}<div class="mt-4"><span data-engine2-readiness="{{ engine2_dossier.readiness }}">Document evidence status: {{ engine2_dossier.readiness|replace("_", " ") }}</span><p class="mt-1 text-xs text-slate-500">This status reflects document-evidence reconciliation only. Final preparation readiness is determined by the human review below.</p><p class="mt-1 text-xs text-slate-500">Supported values here are document-evidence candidates and may not yet be accepted into the declaration.</p></div><div class="mt-5 grid gap-3">{% for field in engine2_dossier.fields %}<article class="rounded-lg border border-slate-200 p-3" data-engine2-field="{{ field.field_key }}" data-engine2-state="{{ field.state }}"><div class="flex flex-wrap items-center gap-2"><strong>{{ field.label }}</strong>{% if field.state == "MISSING" %}<span class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">NO DIRECT CANDIDATE</span>{% else %}<span class="text-sm text-slate-600">{{ field.state|replace("_", " ") }}</span>{% endif %}{% set downstream_note = engine2_downstream_annotations.get(field.field_key) %}{% if field.state == "MISSING" and downstream_note %}<span class="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">{{ downstream_note }}</span>{% endif %}</div>{% if field.values %}<p class="mt-1">{{ field.values|join(", ") }}</p>{% elif field.state == "MISSING" %}<p class="mt-1 text-slate-600">{% if downstream_note %}No direct Engine 2 candidate; the preparation record is resolved downstream.{% else %}No direct Engine 2 candidate.{% endif %}</p>{% else %}<p class="mt-1 text-slate-600">No accepted value</p>{% endif %}{% if field.evidence %}<details class="mt-2"><summary>Evidence ({{ field.evidence|length }})</summary>{% for line_key, line_evidence in field.line_evidence_groups %}<section class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2" data-engine2-line-evidence="{{ line_key }}"><p class="text-xs font-semibold text-slate-700">Line {{ line_key }} evidence</p>{% for evidence in line_evidence %}<p class="mt-1 text-xs" data-engine2-evidence data-engine2-evidence-class="{{ evidence.evidence_class }}" data-engine2-source-page="{{ evidence.page }}"><strong>{{ evidence.source_filename }}</strong> · page {{ evidence.page }} · {{ evidence.evidence_class }}<br>Source: {{ evidence.source_text }}<br>Raw: {{ evidence.raw_text }} · Normalized: {{ evidence.normalized_value }} · score {{ evidence.candidate_score }} · authority {{ evidence.source_authority }} · {{ evidence.scope }} · line {{ evidence.line_key }}{% if evidence.component_key %} · component {{ evidence.component_key }}{% endif %}{% if evidence.bbox %} · bbox {{ evidence.bbox|join(", ") }}{% endif %}</p>{% endfor %}</section>{% endfor %}{% if field.global_evidence %}<section class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2" data-engine2-global-evidence><p class="text-xs font-semibold text-slate-700">Global / cross-line evidence</p>{% for evidence in field.global_evidence %}<p class="mt-1 text-xs" data-engine2-evidence data-engine2-evidence-class="{{ evidence.evidence_class }}" data-engine2-source-page="{{ evidence.page }}"><strong>{{ evidence.source_filename }}</strong> · page {{ evidence.page }} · {{ evidence.evidence_class }}<br>Source: {{ evidence.source_text }}<br>Raw: {{ evidence.raw_text }} · Normalized: {{ evidence.normalized_value }} · score {{ evidence.candidate_score }} · authority {{ evidence.source_authority }} · {{ evidence.scope }}{% if evidence.component_key %} · component {{ evidence.component_key }}{% endif %}{% if evidence.bbox %} · bbox {{ evidence.bbox|join(", ") }}{% endif %}</p>{% endfor %}</section>{% endif %}</details>{% endif %}</article>{% endfor %}</div>{% if engine2_dossier.issues %}<div class="mt-5 grid gap-3">{% for issue in engine2_dossier.issues %}<article class="rounded-lg border border-amber-200 p-3" data-engine2-issue><strong>{{ issue.label }}</strong> · {{ issue.severity }} · {{ issue.issue_type }}<p>{{ issue.message }}</p><p class="text-xs">Human review required: {{ issue.requires_human_review }} · {{ issue.source_filenames|join(", ") }}{% if issue.line_key %} · line {{ issue.line_key }}{% endif %}{% if issue.component_key %} · component {{ issue.component_key }}{% endif %}</p></article>{% endfor %}</div>{% endif %}{% endif %}<p class="mt-5 text-xs text-slate-500">This document-evidence analysis is not a legal compliance determination; the human-reviewed preparation record remains authoritative. Litoral Trace does not submit this operation to ACE or LAWGS.</p></div></details>
+{% endif %}
+
+<script>
+(() => {
+  const trigger = document.querySelector('[data-add-documents-trigger]');
+  const input = document.getElementById('operation-documents');
+  if (!trigger || !input) return;
+  trigger.addEventListener('click', () => {
+    input.click();
+  });
+})();
+</script>
+{% endblock %}

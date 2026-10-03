@@ -1,0 +1,58 @@
+{% extends "us_lacey/base.html" %}
+{% set authenticated = true %}
+
+{% block lacey_title %}New operation{% endblock %}
+
+{% block lacey_content %}
+{{ page_header(
+    "New operation",
+    "Workspace",
+    "Best practice: upload all available shipment documents before the first processing run. You can add more files later and reprocess.",
+    icon="fa-plus"
+) }}
+
+{% if error %}
+    {{ alert("Operation could not be created", error, "danger") }}
+{% endif %}
+
+<section class="lt-card p-6">
+    <dl class="mb-6 grid gap-4 sm:grid-cols-2">
+        <div class="rounded-xl border border-slate-200 p-4">
+            <dt class="text-xs text-slate-500">Available operations</dt>
+            <dd class="text-xl font-bold">{{ entitlement.remaining_operations }}</dd>
+        </div>
+        <div class="rounded-xl border border-slate-200 p-4">
+            <dt class="text-xs text-slate-500">Plan</dt>
+            <dd class="text-xl font-bold">Founding Broker</dd>
+        </div>
+    </dl>
+
+    <form method="post" action="/operations/new" class="lt-form space-y-5">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <label class="lt-field">
+            <span class="lt-field__label">Shipment / client reference <span class="text-slate-500">(optional)</span></span>
+            <input
+                id="client_reference"
+                class="lt-control"
+                name="client_reference"
+                maxlength="255"
+                placeholder="Entry, job, PO or shipment number"
+                aria-describedby="client_reference_hint"
+            >
+            <span id="client_reference_hint" class="text-xs text-slate-500">
+                Leave this blank and Litoral Trace will create an internal reference automatically.
+            </span>
+        </label>
+
+        <p class="text-sm text-slate-500">
+            Litoral Trace will extract importer, supplier, consignee, broker, shipment dates and merchandise lines whenever supported by the evidence. Start with the most complete shipment pack available; you can add more source files later and reprocess the operation.
+        </p>
+
+        <div class="lt-form__actions">
+            {{ button("Create workspace & upload documents", variant="primary", button_type="submit") }}
+            {{ button("Cancel", "/operations", "secondary") }}
+        </div>
+    </form>
+</section>
+{% endblock %}

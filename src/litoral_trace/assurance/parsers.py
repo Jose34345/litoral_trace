@@ -14,6 +14,7 @@ from io import BytesIO, StringIO
 import os
 from pathlib import Path, PurePath
 import re
+import shutil
 from tempfile import TemporaryDirectory
 from typing import Any, Iterable
 import zipfile
@@ -40,6 +41,7 @@ class ParsedTable:
     headers: tuple[str, ...]
     rows: tuple[dict[str, Any], ...]
     source: SourceLocation
+    row_numbers: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,11 +57,23 @@ _OLE_XLS_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 _MIN_USEFUL_PDF_TEXT_CHARS = 12
 _MIN_USEFUL_PDF_ALPHA_CHARS = 4
 _OCR_MAX_PAGES = 20
+_PDF_TEXT_PAGE_LIMIT = 20
+_PDF_TEXT_PAGE_LIMIT_ENV = "LT_ASSURANCE_PDF_TEXT_PAGE_LIMIT"
+_PDF_TEXT_PAGE_LIMIT_MIN = 1
+_PDF_TEXT_PAGE_LIMIT_MAX = 100
+_PDF_TEXT_CHAR_LIMIT = 250_000
+_PDF_TEXT_CHAR_LIMIT_ENV = "LT_ASSURANCE_PDF_TEXT_CHAR_LIMIT"
+_PDF_TEXT_CHAR_LIMIT_MIN = 10_000
+_PDF_TEXT_CHAR_LIMIT_MAX = 2_000_000
 _OCR_RENDER_SCALE = 2.0
 _OCR_TIMEOUT_SECONDS = 20
 _OCR_TIMEOUT_ENV = "LT_ASSURANCE_OCR_TIMEOUT_SECONDS"
 _OCR_TIMEOUT_MIN_SECONDS = 5
 _OCR_TIMEOUT_MAX_SECONDS = 120
+_PDF_TABLE_PAGE_LIMIT = 15
+_PDF_TABLE_PAGE_LIMIT_ENV = "LT_ASSURANCE_PDF_TABLE_PAGE_LIMIT"
+_PDF_TABLE_PAGE_LIMIT_MIN = 1
+_PDF_TABLE_PAGE_LIMIT_MAX = 50
 _OCR_LANGUAGES = ("spa", "eng")
 _OCR_LANGUAGE = "+".join(_OCR_LANGUAGES)
 _TOTAL_MARKERS = frozenset(
@@ -86,6 +100,51 @@ def _ocr_timeout_seconds() -> int:
     return max(_OCR_TIMEOUT_MIN_SECONDS, min(_OCR_TIMEOUT_MAX_SECONDS, value))
 
 
+def _pdf_table_page_limit() -> int:
+    """Bound expensive pdfplumber table extraction for large mixed-document PDFs."""
+    raw = str(os.getenv(_PDF_TABLE_PAGE_LIMIT_ENV, "")).strip()
+    if not raw:
+        return _PDF_TABLE_PAGE_LIMIT
+    try:
+        value = int(raw)
+    except ValueError:
+        return _PDF_TABLE_PAGE_LIMIT
+    return max(
+        _PDF_TABLE_PAGE_LIMIT_MIN,
+        min(_PDF_TABLE_PAGE_LIMIT_MAX, value),
+    )
+
+
+def _pdf_text_page_limit() -> int:
+    """Bound digital-text extraction so one oversized PDF cannot exhaust the web worker."""
+    raw = str(os.getenv(_PDF_TEXT_PAGE_LIMIT_ENV, "")).strip()
+    if not raw:
+        return _PDF_TEXT_PAGE_LIMIT
+    try:
+        value = int(raw)
+    except ValueError:
+        return _PDF_TEXT_PAGE_LIMIT
+    return max(
+        _PDF_TEXT_PAGE_LIMIT_MIN,
+        min(_PDF_TEXT_PAGE_LIMIT_MAX, value),
+    )
+
+
+def _pdf_text_char_limit() -> int:
+    """Bound retained extracted text independently from the number of PDF pages."""
+    raw = str(os.getenv(_PDF_TEXT_CHAR_LIMIT_ENV, "")).strip()
+    if not raw:
+        return _PDF_TEXT_CHAR_LIMIT
+    try:
+        value = int(raw)
+    except ValueError:
+        return _PDF_TEXT_CHAR_LIMIT
+    return max(
+        _PDF_TEXT_CHAR_LIMIT_MIN,
+        min(_PDF_TEXT_CHAR_LIMIT_MAX, value),
+    )
+
+
 def _clean_cell(value: Any) -> Any:
     if isinstance(value, str):
         cleaned = re.sub(r"\s+", " ", value).strip()
@@ -103,6 +162,58 @@ def _header_label(value: Any, index: int) -> str:
 
 def _row_nonempty_count(row: Iterable[Any]) -> int:
     return sum(_clean_cell(value) is not None for value in row)
+
+
+def _looks_like_key_value_matrix(rows: list[list[Any]]) -> bool:
+    """Recognize physical label/value pairs, not a conventional header row.
+
+    A matrix is safe to reinterpret only when every populated odd column is a
+    short textual label across the table.  Ambiguous grids retain the existing
+    tabular path rather than inventing a schema.
+    """
+    populated = [list(row) for row in rows if _row_nonempty_count(row)]
+    # PDF extractors commonly emit a vertical form as two physical columns. It
+    # has the same label -> adjacent value semantics as the four-column layout.
+    # Other formats retain the legacy path because the caller must opt in.
+    if len(populated) < 2 or max(map(len, populated)) < 2:
+        return False
+    labels: list[str] = []
+    for row in populated:
+        row_labels: set[str] = set()
+        for index in range(0, len(row), 2):
+            value = _clean_cell(row[index])
+            paired_value = _clean_cell(row[index + 1]) if index + 1 < len(row) else None
+            if (value is None) != (paired_value is None):
+                return False
+            if value is None:
+                continue
+            text = str(value).strip()
+            if not text or len(text) > 48 or any(character.isdigit() for character in text):
+                return False
+            if text.casefold() in row_labels:
+                return False
+            row_labels.add(text.casefold())
+            labels.append(text)
+    return len(labels) >= 4 and len({label.casefold() for label in labels}) >= 4
+
+
+def _records_from_key_value_matrix(rows: list[list[Any]]) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
+    headers: list[str] = []
+    records: list[dict[str, Any]] = []
+    for row in rows:
+        record: dict[str, Any] = {}
+        for index in range(0, len(row), 2):
+            label = _clean_cell(row[index])
+            value = _clean_cell(row[index + 1]) if index + 1 < len(row) else None
+            if label is None or value is None:
+                continue
+            header = _header_label(label, len(headers))
+            if header not in headers:
+                headers.append(header)
+            record[header] = value
+        if record:
+            records.append(record)
+    return tuple(headers), tuple(records)
 
 
 def detect_header_row(rows: list[list[Any]], *, scan_limit: int = 25) -> int | None:
@@ -134,15 +245,17 @@ def _is_decorative_or_total_row(values: list[Any]) -> bool:
     return False
 
 
-def _records_from_rows(
+def _records_from_rows_with_numbers(
     rows: list[list[Any]],
     *,
     header_index: int,
-) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
+) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...], tuple[int, ...]]:
+    """Build records while retaining 1-based physical source row numbers."""
     raw_headers = rows[header_index]
     headers = tuple(_header_label(value, index) for index, value in enumerate(raw_headers))
     records: list[dict[str, Any]] = []
-    for row in rows[header_index + 1 :]:
+    row_numbers: list[int] = []
+    for physical_row, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
         padded = list(row) + [None] * max(0, len(headers) - len(row))
         values = padded[: len(headers)]
         if _is_decorative_or_total_row(values):
@@ -153,7 +266,23 @@ def _records_from_rows(
         }
         if any(value is not None for value in record.values()):
             records.append(record)
-    return headers, tuple(records)
+            row_numbers.append(physical_row)
+    return headers, tuple(records), tuple(row_numbers)
+
+
+def _records_from_rows(
+    rows: list[list[Any]],
+    *,
+    header_index: int,
+    allow_key_value_matrix: bool = False,
+) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
+    if allow_key_value_matrix and _looks_like_key_value_matrix(rows):
+        return _records_from_key_value_matrix(rows)
+    headers, records, _row_numbers = _records_from_rows_with_numbers(
+        rows,
+        header_index=header_index,
+    )
+    return headers, records
 
 
 def validate_xlsx_bytes(content: bytes) -> None:
@@ -188,7 +317,7 @@ def parse_xlsx(content: bytes) -> ParsedDocument:
             header_index = detect_header_row(rows)
             if header_index is None:
                 continue
-            headers, records = _records_from_rows(rows, header_index=header_index)
+            headers, records, row_numbers = _records_from_rows_with_numbers(rows, header_index=header_index)
             if not records:
                 continue
             tables.append(
@@ -201,6 +330,7 @@ def parse_xlsx(content: bytes) -> ParsedDocument:
                         row=header_index + 1,
                         locator=f"sheet:{worksheet.title};header_row:{header_index + 1}",
                     ),
+                    row_numbers=row_numbers,
                 )
             )
     finally:
@@ -234,7 +364,7 @@ def parse_xls(content: bytes) -> ParsedDocument:
             header_index = detect_header_row(rows)
             if header_index is None:
                 continue
-            headers, records = _records_from_rows(rows, header_index=header_index)
+            headers, records, row_numbers = _records_from_rows_with_numbers(rows, header_index=header_index)
             if not records:
                 continue
             tables.append(
@@ -247,6 +377,7 @@ def parse_xls(content: bytes) -> ParsedDocument:
                         row=header_index + 1,
                         locator=f"sheet:{sheet_name};header_row:{header_index + 1}",
                     ),
+                    row_numbers=row_numbers,
                 )
             )
     finally:
@@ -285,7 +416,7 @@ def parse_csv(content: bytes) -> ParsedDocument:
     header_index = detect_header_row(rows)
     if header_index is None:
         raise DocumentParseError("El CSV no contiene una cabecera util.")
-    headers, records = _records_from_rows(rows, header_index=header_index)
+    headers, records, row_numbers = _records_from_rows_with_numbers(rows, header_index=header_index)
     table = ParsedTable(
         name="csv",
         headers=headers,
@@ -294,6 +425,7 @@ def parse_csv(content: bytes) -> ParsedDocument:
             row=header_index + 1,
             locator=f"csv:header_row:{header_index + 1}",
         ),
+        row_numbers=row_numbers,
     )
     return ParsedDocument(
         file_kind="CSV",
@@ -337,6 +469,98 @@ def _extract_pdf_text_pages(content: bytes) -> tuple[str, int, int]:
             page_texts.append("")
     text = "\n\n".join(value for value in page_texts if value).strip()
     return text, len(reader.pages), sum(bool(value) for value in page_texts)
+
+
+def _extract_pdf_text_pages_bounded(
+    content: bytes,
+    *,
+    page_limit: int,
+    char_limit: int,
+) -> tuple[str, int, int, int, bool]:
+    """Inspect digital PDF text without letting parser complexity kill the web worker.
+
+    PDFium is deliberately used for the bounded inspection path because pypdf can
+    materialize a large cross-reference/object graph even when callers only need
+    the first few pages. First obtain the cheap page count. If the document is
+    already over budget, return without decoding any page text at all; the caller
+    will surface a deterministic human-review state instead of attempting a
+    resource-heavy partial parse.
+    """
+    import pypdfium2 as pdfium
+
+    document = None
+    try:
+        document = pdfium.PdfDocument(content)
+        total_page_count = len(document)
+        bounded_page_limit = max(0, int(page_limit))
+        bounded_char_limit = max(1, int(char_limit))
+
+        # Fail fast before page text decoding. Long PDFs must be split into
+        # shipment-relevant documents; a prefix parse would be incomplete and,
+        # more importantly, still permits adversarial object graphs to consume
+        # the shared 512 MiB web-worker budget.
+        if total_page_count > bounded_page_limit:
+            return "", total_page_count, 0, 0, False
+
+        page_texts: list[str] = []
+        pages_with_text = 0
+        pages_scanned = 0
+        retained_chars = 0
+        char_limit_reached = False
+
+        for page_index in range(total_page_count):
+            page = None
+            text_page = None
+            pages_scanned += 1
+            try:
+                page = document[page_index]
+                text_page = page.get_textpage()
+                value = str(text_page.get_text_range() or "").strip()
+            except Exception:
+                value = ""
+            finally:
+                _safe_close(text_page)
+                _safe_close(page)
+
+            if not value:
+                continue
+
+            pages_with_text += 1
+            remaining = bounded_char_limit - retained_chars
+            if remaining <= 0:
+                char_limit_reached = True
+                break
+            if len(value) > remaining:
+                page_texts.append(value[:remaining])
+                retained_chars += remaining
+                char_limit_reached = True
+                break
+
+            page_texts.append(value)
+            retained_chars += len(value)
+
+        text = "\n\n".join(page_texts).strip()
+        return (
+            text,
+            total_page_count,
+            pages_with_text,
+            pages_scanned,
+            char_limit_reached,
+        )
+    finally:
+        _safe_close(document)
+
+
+def _pdf_page_count_with_pdfium(content: bytes) -> int:
+    """Recover a safe page count when pypdf text inspection cannot complete."""
+    import pypdfium2 as pdfium
+
+    document = None
+    try:
+        document = pdfium.PdfDocument(content)
+        return len(document)
+    finally:
+        _safe_close(document)
 
 
 def _ocr_scanned_pdf_with_ocrmypdf(
@@ -426,6 +650,7 @@ def _ocr_scanned_pdf_with_tesseract(
         "ocr_language": _OCR_LANGUAGE,
         "ocr_pages_processed": 0,
         "ocr_timeout_seconds": timeout_seconds,
+        "ocr_binary": "tesseract",
     }
     if page_count <= 0:
         metadata["ocr_error_code"] = "OCR_NO_PAGES"
@@ -433,6 +658,9 @@ def _ocr_scanned_pdf_with_tesseract(
     if page_count > _OCR_MAX_PAGES:
         metadata["ocr_error_code"] = "OCR_PAGE_LIMIT_EXCEEDED"
         metadata["ocr_page_limit"] = _OCR_MAX_PAGES
+        return "", metadata
+    if shutil.which("tesseract") is None:
+        metadata["ocr_error_code"] = "OCR_TESSERACT_BINARY_UNAVAILABLE"
         return "", metadata
 
     try:
@@ -518,62 +746,139 @@ def parse_pdf(content: bytes) -> ParsedDocument:
     if b"%%EOF" not in content[-4096:]:
         raise DocumentParseError("El PDF no contiene un cierre valido.")
 
+    text_page_limit = _pdf_text_page_limit()
+    text_char_limit = _pdf_text_char_limit()
+    text_extraction_metadata: dict[str, Any] = {}
+    text_pages_scanned = 0
+    text_char_limit_reached = False
+    text_extraction_failed = False
     try:
-        useful_text, page_count, pages_with_text = _extract_pdf_text_pages(content)
+        (
+            useful_text,
+            page_count,
+            pages_with_text,
+            text_pages_scanned,
+            text_char_limit_reached,
+        ) = _extract_pdf_text_pages_bounded(
+            content,
+            page_limit=text_page_limit,
+            char_limit=text_char_limit,
+        )
     except ImportError as exc:  # pragma: no cover - dependency gate
-        raise DocumentParseError("pypdf no esta disponible.") from exc
+        raise DocumentParseError("PDFium no esta disponible.") from exc
     except Exception as exc:
-        raise DocumentParseError("No se pudo abrir el PDF.") from exc
+        try:
+            page_count = _pdf_page_count_with_pdfium(content)
+        except Exception as fallback_exc:
+            raise DocumentParseError("No se pudo abrir el PDF.") from fallback_exc
+        useful_text = ""
+        pages_with_text = 0
+        text_pages_scanned = 0
+        text_extraction_failed = True
+        text_extraction_metadata = {
+            "text_extraction_fallback": "pdfium_page_count",
+            "text_extraction_error_type": type(exc).__name__,
+        }
 
-    ocr_required = not _has_useful_pdf_text(useful_text)
+    text_extraction_truncated = (
+        not text_extraction_failed
+        and (text_pages_scanned < page_count or text_char_limit_reached)
+    )
+    ocr_required = (
+        not text_extraction_truncated
+        and not _has_useful_pdf_text(useful_text)
+    )
     ocr_metadata: dict[str, Any] = {
         "ocr_attempted": False,
         "ocr_applied": False,
     }
-    if ocr_required:
+    if text_extraction_truncated:
+        ocr_metadata["ocr_skipped_reason"] = "PDF_TEXT_BUDGET_EXCEEDED"
+    elif ocr_required:
         ocr_text, ocr_metadata = _ocr_scanned_pdf(content, page_count=page_count)
         if _has_useful_pdf_text(ocr_text):
             useful_text = ocr_text
             ocr_required = False
 
     tables: list[ParsedTable] = []
-    if not ocr_required:
+    table_page_limit = _pdf_table_page_limit()
+    table_pages_scanned = 0
+    table_extraction_error_type: str | None = None
+    table_extraction_skipped_reason: str | None = None
+    if not ocr_required and not text_extraction_truncated:
         try:
             import pdfplumber
 
             with pdfplumber.open(BytesIO(content)) as pdf:
-                for page_number, page in enumerate(pdf.pages, start=1):
-                    for table_index, raw_table in enumerate(page.extract_tables() or [], start=1):
-                        rows = [list(row or []) for row in raw_table if row]
-                        header_index = detect_header_row(rows, scan_limit=10)
-                        if header_index is None:
-                            continue
-                        headers, records = _records_from_rows(rows, header_index=header_index)
-                        if not records:
-                            continue
-                        tables.append(
-                            ParsedTable(
-                                name=f"page_{page_number}_table_{table_index}",
-                                headers=headers,
-                                rows=records,
-                                source=SourceLocation(
-                                    page=page_number,
-                                    row=header_index + 1,
-                                    locator=(
-                                        f"pdf:page:{page_number};table:{table_index};"
-                                        f"header_row:{header_index + 1}"
-                                    ),
-                                ),
+                for page_number, page in enumerate(
+                    pdf.pages[:table_page_limit],
+                    start=1,
+                ):
+                    table_pages_scanned += 1
+                    try:
+                        raw_tables = page.extract_tables() or []
+                        for table_index, raw_table in enumerate(raw_tables, start=1):
+                            rows = [list(row or []) for row in raw_table if row]
+                            header_index = detect_header_row(rows, scan_limit=10)
+                            if header_index is None:
+                                continue
+                            headers, records = _records_from_rows(
+                                rows,
+                                header_index=header_index,
+                                allow_key_value_matrix=True,
                             )
-                        )
-        except Exception:
+                            if not records:
+                                continue
+                            tables.append(
+                                ParsedTable(
+                                    name=f"page_{page_number}_table_{table_index}",
+                                    headers=headers,
+                                    rows=records,
+                                    source=SourceLocation(
+                                        page=page_number,
+                                        row=header_index + 1,
+                                        locator=(
+                                            f"pdf:page:{page_number};table:{table_index};"
+                                            f"header_row:{header_index + 1}"
+                                        ),
+                                    ),
+                                )
+                            )
+                    finally:
+                        close_page = getattr(page, "close", None)
+                        if callable(close_page):
+                            close_page()
+        except Exception as exc:
             # Table extraction is best-effort; extracted/OCR text remains authoritative.
             tables = []
+            table_extraction_error_type = type(exc).__name__
+    elif text_extraction_truncated:
+        # Do not enter pdfplumber after the cheaper text pass already proved the
+        # file exceeds the automatic-processing budget. This is the critical
+        # memory circuit breaker for long/complex PDFs on the co-located worker.
+        table_extraction_skipped_reason = "PDF_TEXT_BUDGET_EXCEEDED"
 
     metadata = {
         "page_count": page_count,
         "pages_with_text": pages_with_text,
+        "text_extraction_engine": "pdfium",
+        "text_extraction_failed": text_extraction_failed,
+        "text_extraction_page_limit": text_page_limit,
+        "text_extraction_pages_scanned": text_pages_scanned,
+        "text_extraction_char_limit": text_char_limit,
+        "text_extraction_char_limit_reached": text_char_limit_reached,
+        "text_extraction_truncated": text_extraction_truncated,
+        "table_extraction_page_limit": table_page_limit,
+        "table_extraction_pages_scanned": table_pages_scanned,
+        "table_extraction_truncated": (
+            text_extraction_truncated or page_count > table_page_limit
+        ),
     }
+    if table_extraction_error_type is not None:
+        metadata["table_extraction_error_type"] = table_extraction_error_type
+    if table_extraction_skipped_reason is not None:
+        metadata["table_extraction_skipped_reason"] = table_extraction_skipped_reason
+    metadata.update(text_extraction_metadata)
     metadata.update(ocr_metadata)
     return ParsedDocument(
         file_kind="PDF",

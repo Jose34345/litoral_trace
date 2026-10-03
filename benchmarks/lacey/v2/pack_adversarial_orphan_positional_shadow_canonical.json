@@ -1,0 +1,171 @@
+{
+  "version": "p2-shadow-canonical-v2-adversarial",
+  "pack_id": "pack-adversarial-orphan-positional",
+  "description": "Two distinct taxa share HTS 4407990190 while invoice quantities are position-only observations. Canonical must not guess quantity-to-taxon joins.",
+  "shadow": {
+    "availability": "CURRENT",
+    "fields": [
+      {
+        "field_key": "hts_code",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "4407990190"
+        ],
+        "evidence": [
+          {
+            "scope": "MERCHANDISE_LINE",
+            "line_key": "invoice:items:row:1",
+            "component_key": null,
+            "normalized_value": "4407990190",
+            "source_filename": "01_Commercial_Invoice_Orphans.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          },
+          {
+            "scope": "MERCHANDISE_LINE",
+            "line_key": "invoice:items:row:2",
+            "component_key": null,
+            "normalized_value": "4407990190",
+            "source_filename": "01_Commercial_Invoice_Orphans.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "species",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "Pinus taeda",
+          "Eucalyptus grandis"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": null,
+            "component_key": "taxon:pinus:taeda",
+            "normalized_value": "Pinus taeda",
+            "source_filename": "02_Botanical_Declaration_Orphans.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": null,
+            "component_key": "taxon:eucalyptus:grandis",
+            "normalized_value": "Eucalyptus grandis",
+            "source_filename": "02_Botanical_Declaration_Orphans.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "plant_quantity",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "20",
+          "15"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": null,
+            "component_key": null,
+            "normalized_value": "20",
+            "source_filename": "01_Commercial_Invoice_Orphans.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": null,
+            "component_key": null,
+            "normalized_value": "15",
+            "source_filename": "01_Commercial_Invoice_Orphans.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "metric_unit",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "m3"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": null,
+            "component_key": null,
+            "normalized_value": "m3",
+            "source_filename": "01_Commercial_Invoice_Orphans.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          },
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": null,
+            "component_key": null,
+            "normalized_value": "m3",
+            "source_filename": "01_Commercial_Invoice_Orphans.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      }
+    ]
+  },
+  "canonical": {
+    "shipment_fields": {},
+    "plant_lines": [
+      {
+        "entity_key": "invoice:items:row:1",
+        "fields": {
+          "hts_code": {
+            "state": "SUPPORTED",
+            "values": [
+              "4407990190"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          }
+        }
+      },
+      {
+        "entity_key": "invoice:items:row:2",
+        "fields": {
+          "hts_code": {
+            "state": "SUPPORTED",
+            "values": [
+              "4407990190"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          }
+        }
+      }
+    ],
+    "unresolved_component_keys": [
+      "taxon:eucalyptus:grandis",
+      "taxon:pinus:taeda"
+    ]
+  },
+  "expected_diff": {
+    "comparable_slots": 8,
+    "agreement_count": 2,
+    "shadow_supported_but_canonical_missing": 6,
+    "canonical_supported_but_shadow_missing": 0,
+    "false_conflict_count": 0,
+    "safe_review_count": 0
+  }
+}

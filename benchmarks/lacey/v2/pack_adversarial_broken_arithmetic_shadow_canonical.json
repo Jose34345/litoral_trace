@@ -1,0 +1,167 @@
+{
+  "version": "p2-shadow-canonical-v2-adversarial",
+  "pack_id": "pack-adversarial-broken-arithmetic",
+  "description": "One declarable Eucalyptus line has two distinct shipment-level entered value totals. The one-line arithmetic inference must abort.",
+  "shadow": {
+    "availability": "CURRENT",
+    "fields": [
+      {
+        "field_key": "hts_code",
+        "state": "SUPPORTED",
+        "values": [
+          "4407990190"
+        ],
+        "evidence": [
+          {
+            "scope": "MERCHANDISE_LINE",
+            "line_key": "SKU:EG-ONE-01",
+            "component_key": null,
+            "normalized_value": "4407990190",
+            "source_filename": "01_Commercial_Invoice_Totals.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "species",
+        "state": "SUPPORTED",
+        "values": [
+          "Eucalyptus grandis"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:EG-ONE-01",
+            "component_key": "taxon:eucalyptus:grandis",
+            "normalized_value": "Eucalyptus grandis",
+            "source_filename": "03_Botanical_Declaration_Totals.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "plant_quantity",
+        "state": "SUPPORTED",
+        "values": [
+          "12"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:EG-ONE-01",
+            "component_key": "taxon:eucalyptus:grandis",
+            "normalized_value": "12",
+            "source_filename": "03_Botanical_Declaration_Totals.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "metric_unit",
+        "state": "SUPPORTED",
+        "values": [
+          "m3"
+        ],
+        "evidence": [
+          {
+            "scope": "PLANT_COMPONENT",
+            "line_key": "SKU:EG-ONE-01",
+            "component_key": "taxon:eucalyptus:grandis",
+            "normalized_value": "m3",
+            "source_filename": "03_Botanical_Declaration_Totals.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      },
+      {
+        "field_key": "shipment_total_entered_value",
+        "state": "SUPPORTED_MULTIPLE",
+        "values": [
+          "12000",
+          "12750"
+        ],
+        "evidence": [
+          {
+            "scope": "SHIPMENT",
+            "line_key": null,
+            "component_key": null,
+            "normalized_value": "12000",
+            "source_filename": "01_Commercial_Invoice_Totals.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          },
+          {
+            "scope": "SHIPMENT",
+            "line_key": null,
+            "component_key": null,
+            "normalized_value": "12750",
+            "source_filename": "02_Bill_of_Lading_Totals.pdf",
+            "page": 1,
+            "evidence_verified": true,
+            "language": "en"
+          }
+        ]
+      }
+    ]
+  },
+  "canonical": {
+    "shipment_fields": {},
+    "plant_lines": [
+      {
+        "entity_key": "SKU:EG-ONE-01",
+        "fields": {
+          "hts_code": {
+            "state": "SUPPORTED",
+            "values": [
+              "4407990190"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "metric_unit": {
+            "state": "SUPPORTED",
+            "values": [
+              "m3"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "plant_quantity": {
+            "state": "SUPPORTED",
+            "values": [
+              "12"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          },
+          "species": {
+            "state": "SUPPORTED",
+            "values": [
+              "Eucalyptus grandis"
+            ],
+            "publication_status": "FOUND",
+            "issue_types": []
+          }
+        }
+      }
+    ],
+    "unresolved_component_keys": []
+  },
+  "expected_diff": {
+    "comparable_slots": 5,
+    "agreement_count": 4,
+    "shadow_supported_but_canonical_missing": 1,
+    "canonical_supported_but_shadow_missing": 0,
+    "false_conflict_count": 0,
+    "safe_review_count": 0
+  }
+}

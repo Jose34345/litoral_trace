@@ -1,0 +1,214 @@
+{
+  "version": "lacey-golden-v1",
+  "source_fixture": "tests/fixtures/lacey_router_packet_7_docs.json",
+  "fields": [
+    {
+      "field_key": "bill_of_lading",
+      "value": "OOLU-TEST-260912-01",
+      "document_id": "02_Bill_of_Lading.pdf",
+      "page": 1,
+      "line_item_key": null,
+      "evidence_text": "Ocean Bill of Lading OOLU-TEST-260912-01 Container No. TLLU4827315"
+    },
+    {
+      "field_key": "container_number",
+      "value": "TLLU4827315",
+      "document_id": "02_Bill_of_Lading.pdf",
+      "page": 1,
+      "line_item_key": null,
+      "evidence_text": "Ocean Bill of Lading OOLU-TEST-260912-01 Container No. TLLU4827315"
+    },
+    {
+      "field_key": "filing_entry_reference",
+      "value": "123-4567890-1",
+      "document_id": "03_Entry_Worksheet.pdf",
+      "page": 1,
+      "line_item_key": null,
+      "evidence_text": "Entry / Filing Reference 123-4567890-1 Estimated Arrival 10/03/2026"
+    },
+    {
+      "field_key": "hts_code",
+      "value": "4419.90.9000",
+      "document_id": "01_Commercial_Invoice.pdf",
+      "page": 1,
+      "line_item_key": "SKU:ACT-TRAY-18",
+      "evidence_text": "1 ACT-TRAY-18 Acacia solid-wood serving trays, rectangular, food-service grade 4419.90.9000 420 $45.00 $18,900.00"
+    },
+    {
+      "field_key": "entered_value",
+      "value": "18,900.00",
+      "document_id": "03_Entry_Worksheet.pdf",
+      "page": 1,
+      "line_item_key": "SKU:ACT-TRAY-18",
+      "evidence_text": "1 4419.90.9000 Acacia solid-wood serving trays, rectangular, food-service grade 18,900.00 VN"
+    },
+    {
+      "field_key": "hts_code",
+      "value": "4419.90.8000",
+      "document_id": "01_Commercial_Invoice.pdf",
+      "page": 1,
+      "line_item_key": "SKU:RUB-CB-32",
+      "evidence_text": "2 RUB-CB-32 Rubberwood kitchen cutting boards with juice groove 4419.90.8000 600 $29.60 $17,760.00"
+    },
+    {
+      "field_key": "entered_value",
+      "value": "17,760.00",
+      "document_id": "03_Entry_Worksheet.pdf",
+      "page": 1,
+      "line_item_key": "SKU:RUB-CB-32",
+      "evidence_text": "2 4419.90.8000 Rubberwood kitchen cutting boards with juice groove 17,760.00 VN"
+    },
+    {
+      "field_key": "hts_code",
+      "value": "4421.99.9880",
+      "document_id": "01_Commercial_Invoice.pdf",
+      "page": 1,
+      "line_item_key": "SKU:TEK-SRV-04",
+      "evidence_text": "3 TEK-SRV-04 Teak salad-server pairs, hand-finished, two-piece sets 4421.99.9880 250 $44.80 $11,200.00"
+    },
+    {
+      "field_key": "entered_value",
+      "value": "11,200.00",
+      "document_id": "03_Entry_Worksheet.pdf",
+      "page": 1,
+      "line_item_key": "SKU:TEK-SRV-04",
+      "evidence_text": "3 4421.99.9880 Teak salad-server pairs, hand-finished, two-piece sets 11,200.00 VN"
+    },
+    {
+      "field_key": "genus",
+      "value": "Acacia",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:ACT-TRAY-18",
+      "evidence_text": "ACT-TRAY-18 Serving tray / solid wood Acacia mangium Vietnam 315 KG VN-AC-2608-17"
+    },
+    {
+      "field_key": "species",
+      "value": "mangium",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:ACT-TRAY-18",
+      "evidence_text": "ACT-TRAY-18 Serving tray / solid wood Acacia mangium Vietnam 315 KG VN-AC-2608-17"
+    },
+    {
+      "field_key": "country_of_harvest",
+      "value": "Vietnam",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:ACT-TRAY-18",
+      "evidence_text": "ACT-TRAY-18 Serving tray / solid wood Acacia mangium Vietnam 315 KG VN-AC-2608-17"
+    },
+    {
+      "field_key": "plant_quantity",
+      "value": "315",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:ACT-TRAY-18",
+      "evidence_text": "ACT-TRAY-18 Serving tray / solid wood Acacia mangium Vietnam 315 KG VN-AC-2608-17"
+    },
+    {
+      "field_key": "metric_unit",
+      "value": "KG",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:ACT-TRAY-18",
+      "evidence_text": "ACT-TRAY-18 Serving tray / solid wood Acacia mangium Vietnam 315 KG VN-AC-2608-17"
+    },
+    {
+      "field_key": "genus",
+      "value": "Hevea",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:RUB-CB-32",
+      "evidence_text": "RUB-CB-32 Cutting board / solid wood Hevea brasiliensis Vietnam 510 KG VN-HB-2608-41"
+    },
+    {
+      "field_key": "species",
+      "value": "brasiliensis",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:RUB-CB-32",
+      "evidence_text": "RUB-CB-32 Cutting board / solid wood Hevea brasiliensis Vietnam 510 KG VN-HB-2608-41"
+    },
+    {
+      "field_key": "country_of_harvest",
+      "value": "Vietnam",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:RUB-CB-32",
+      "evidence_text": "RUB-CB-32 Cutting board / solid wood Hevea brasiliensis Vietnam 510 KG VN-HB-2608-41"
+    },
+    {
+      "field_key": "plant_quantity",
+      "value": "510",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:RUB-CB-32",
+      "evidence_text": "RUB-CB-32 Cutting board / solid wood Hevea brasiliensis Vietnam 510 KG VN-HB-2608-41"
+    },
+    {
+      "field_key": "metric_unit",
+      "value": "KG",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:RUB-CB-32",
+      "evidence_text": "RUB-CB-32 Cutting board / solid wood Hevea brasiliensis Vietnam 510 KG VN-HB-2608-41"
+    },
+    {
+      "field_key": "genus",
+      "value": "Tectona",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:TEK-SRV-04",
+      "evidence_text": "TEK-SRV-04 Salad servers / solid wood Tectona grandis Indonesia 145 KG ID-TG-2607-09"
+    },
+    {
+      "field_key": "species",
+      "value": "grandis",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:TEK-SRV-04",
+      "evidence_text": "TEK-SRV-04 Salad servers / solid wood Tectona grandis Indonesia 145 KG ID-TG-2607-09"
+    },
+    {
+      "field_key": "country_of_harvest",
+      "value": "Indonesia",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:TEK-SRV-04",
+      "evidence_text": "TEK-SRV-04 Salad servers / solid wood Tectona grandis Indonesia 145 KG ID-TG-2607-09"
+    },
+    {
+      "field_key": "plant_quantity",
+      "value": "145",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:TEK-SRV-04",
+      "evidence_text": "TEK-SRV-04 Salad servers / solid wood Tectona grandis Indonesia 145 KG ID-TG-2607-09"
+    },
+    {
+      "field_key": "metric_unit",
+      "value": "KG",
+      "document_id": "04_Botanical_Declaration.pdf",
+      "page": 1,
+      "line_item_key": "SKU:TEK-SRV-04",
+      "evidence_text": "TEK-SRV-04 Salad servers / solid wood Tectona grandis Indonesia 145 KG ID-TG-2607-09"
+    },
+    {
+      "field_key": "estimated_arrival_date",
+      "value": "2026-10-03",
+      "document_id": "07_Arrival_Notice.pdf",
+      "page": 1,
+      "line_item_key": null,
+      "evidence_text": "Vessel / Voyage MV Pacific Meridian / PM0926E ETA October 3, 2026"
+    },
+    {
+      "field_key": "manufacturer_id",
+      "value": "VNMKHOM123HCM",
+      "document_id": "03_Entry_Worksheet.pdf",
+      "page": 1,
+      "line_item_key": null,
+      "evidence_text": "Importer Number 88-7654321 Manufacturer ID VNMKHOM123HCM"
+    }
+  ]
+}

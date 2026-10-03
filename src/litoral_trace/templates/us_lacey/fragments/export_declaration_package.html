@@ -1,0 +1,193 @@
+{% set export_ready = detail.status == "COMPLETED" %}
+{% set action_count = attention_fields|default(())|length %}
+{% set auto_count = auto_supported_fields|default(())|length %}
+{% if export_ready %}
+  {% set export_block_reason = "" %}
+{% elif arithmetic_blocked|default(false) %}
+  {% set export_block_reason = "Resolve the Entered Value reconciliation inconsistency and complete document preparation to unlock exports." %}
+{% elif action_count > 0 %}
+  {% set export_block_reason = "Resolve the remaining Action Required items, then complete preparation to unlock the declaration package." %}
+{% elif auto_count > 0 %}
+  {% set export_block_reason = "Confirm the auto-resolved fields, then complete preparation to unlock the declaration package." %}
+{% else %}
+  {% set export_block_reason = "Complete the final human confirmation to unlock the declaration package." %}
+{% endif %}
+
+<section id="declaration-package" class="lt-card lt-export-card lt-scroll-target overflow-hidden border border-slate-200 bg-white shadow-sm" aria-labelledby="export-package-title" data-export-package data-export-ready="{{ 'true' if export_ready else 'false' }}">
+  <div class="lt-export-card__body p-6">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="max-w-3xl">
+        <p class="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">Declaration package</p>
+        <h2 id="export-package-title" class="mt-1 text-2xl font-bold tracking-tight text-slate-950">Generate Declaration Package</h2>
+        <p class="mt-2 text-sm leading-6 text-slate-600">Turn the reviewed shipment evidence into filing-ready work products while preserving the evidence trail for human review and audit.</p>
+      </div>
+      {% if export_ready %}
+      <span class="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-800" aria-label="Declaration package ready">
+        <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+        Package ready
+      </span>
+      {% endif %}
+    </div>
+
+    {% if export_ready %}
+    <div class="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+      <div class="flex gap-3">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-box-open"></i></span>
+        <div>
+          <h3 class="font-bold text-slate-950">Your declaration package is ready</h3>
+          <p class="mt-1 text-sm leading-6 text-slate-600">Download the review-ready LAWGS XML and audit workbook generated from the evidence your team confirmed.</p>
+        </div>
+      </div>
+    </div>
+    {% elif action_count > 0 %}
+    <div class="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-5" data-export-unlock-banner>
+      <div class="flex gap-3">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700" aria-hidden="true"><i class="fa-solid fa-lock-open"></i></span>
+        <div>
+          <h3 class="font-bold text-slate-950">Unlock your declaration package</h3>
+          <p class="mt-1 text-sm leading-6 text-slate-600">You are almost done. Resolve the <strong>{{ action_count }}</strong> item{{ '' if action_count == 1 else 's' }} in the Action Required tab to generate your review-ready LAWGS XML and audit summary. Litoral Trace has already auto-resolved <strong>{{ auto_count }}</strong> field{{ '' if auto_count == 1 else 's' }} for you.</p>
+        </div>
+      </div>
+    </div>
+    {% elif auto_count > 0 %}
+    <div class="mt-6 rounded-xl border border-sky-200 bg-sky-50 p-5" data-export-unlock-banner>
+      <div class="flex gap-3">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700" aria-hidden="true"><i class="fa-solid fa-check-double"></i></span>
+        <div>
+          <h3 class="font-bold text-slate-950">One confirmation away</h3>
+          <p class="mt-1 text-sm leading-6 text-slate-600">Confirm the <strong>{{ auto_count }}</strong> auto-resolved field{{ '' if auto_count == 1 else 's' }} in the Auto-Resolved tab, then complete preparation to unlock your declaration package.</p>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-5" data-export-final-confirmation>
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex gap-3">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-circle-check"></i></span>
+          <div>
+            <h3 class="font-bold text-slate-950">Ready for final confirmation</h3>
+            <p class="mt-1 text-sm leading-6 text-slate-600">All required fields are resolved. Complete preparation to generate the declaration package.</p>
+          </div>
+        </div>
+        <form method="post" action="/operations/{{ detail.public_id }}/complete" data-review-completion-form>
+          <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
+          {{ review_telemetry_inputs() }}
+          {{ button("Complete preparation", variant="primary", button_type="submit", icon="fa-check") }}
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="mt-6 grid gap-4 md:grid-cols-2" aria-label="Declaration export formats">
+      {% if export_ready %}
+      <div class="lt-export-action-group">
+        <a
+          class="lt-export-action lt-export-action--xml lt-export-action--with-preview group relative flex min-h-32 items-center gap-4 rounded-xl border border-sky-200 bg-gradient-to-br from-white to-sky-50 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md"
+          href="/operations/{{ detail.public_id }}/export/lawgs-xml"
+          data-export-download
+          data-loading-label="Generating..."
+          aria-label="Download LAWGS XML"
+        >
+          <span class="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-2xl text-sky-700" aria-hidden="true"><i class="fa-solid fa-code"></i></span>
+          <span class="min-w-0">
+            <span class="block font-bold text-slate-950" data-export-label>Download LAWGS XML</span>
+            <span class="mt-1 block text-sm leading-5 text-slate-600">Review-ready LAWGS XML for your downstream ACE/Lacey filing workflow.</span>
+          </span>
+          <span class="lt-export-action__spinner" aria-hidden="true"></span>
+        </a>
+        <button
+          type="button"
+          class="lt-export-preview-trigger"
+          data-xml-preview-trigger
+          data-xml-preview-url="/operations/{{ detail.public_id }}/preview/lawgs-xml"
+          aria-haspopup="dialog"
+          aria-controls="lawgs-xml-preview"
+          aria-label="Preview LAWGS XML"
+          title="Preview LAWGS XML"
+        >
+          <i class="fa-regular fa-eye" aria-hidden="true"></i>
+        </button>
+      </div>
+
+      <a
+        class="lt-export-action lt-export-action--excel group relative flex min-h-32 items-center gap-4 rounded-xl border border-emerald-200 bg-gradient-to-br from-white to-emerald-50 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
+        href="/operations/{{ detail.public_id }}/export/excel"
+        data-export-download
+        data-loading-label="Generating..."
+        aria-label="Download Excel Summary"
+      >
+        <span class="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-2xl text-emerald-700" aria-hidden="true"><i class="fa-solid fa-file-excel"></i></span>
+        <span class="min-w-0">
+          <span class="block font-bold text-slate-950" data-export-label>Download Excel Summary</span>
+          <span class="mt-1 block text-sm leading-5 text-slate-600">Audit-ready workbook summarizing reviewed values and source-evidence context.</span>
+        </span>
+        <span class="lt-export-action__spinner" aria-hidden="true"></span>
+      </a>
+
+      <span hidden aria-hidden="true" data-legacy-export-compat>
+        <a href="/operations/{{ detail.public_id }}/export.xlsx" tabindex="-1">Legacy XLSX export</a>
+        <a href="/operations/{{ detail.public_id }}/export.csv" tabindex="-1">Legacy CSV export</a>
+      </span>
+      {% else %}
+      <span class="lt-export-tooltip" tabindex="0" data-tooltip="{{ export_block_reason }}" aria-label="Download LAWGS XML unavailable. {{ export_block_reason }}">
+        <span class="lt-export-action lt-export-action--xml is-disabled relative flex min-h-32 items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-5 opacity-50" aria-disabled="true">
+          <span class="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-2xl text-sky-700" aria-hidden="true"><i class="fa-solid fa-code"></i></span>
+          <span class="min-w-0">
+            <span class="block font-bold text-slate-950">Download LAWGS XML</span>
+            <span class="mt-1 block text-sm leading-5 text-slate-600">Review-ready LAWGS XML for your downstream ACE/Lacey filing workflow.</span>
+          </span>
+          <i class="fa-solid fa-lock absolute right-4 top-4 text-slate-500" aria-hidden="true"></i>
+        </span>
+      </span>
+
+      <span class="lt-export-tooltip" tabindex="0" data-tooltip="{{ export_block_reason }}" aria-label="Download Excel Summary unavailable. {{ export_block_reason }}">
+        <span class="lt-export-action lt-export-action--excel is-disabled relative flex min-h-32 items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-5 opacity-50" aria-disabled="true">
+          <span class="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-2xl text-emerald-700" aria-hidden="true"><i class="fa-solid fa-file-excel"></i></span>
+          <span class="min-w-0">
+            <span class="block font-bold text-slate-950">Download Excel Summary</span>
+            <span class="mt-1 block text-sm leading-5 text-slate-600">Audit-ready workbook summarizing reviewed values and source-evidence context.</span>
+          </span>
+          <i class="fa-solid fa-lock absolute right-4 top-4 text-slate-500" aria-hidden="true"></i>
+        </span>
+      </span>
+      {% endif %}
+    </div>
+
+    <div class="mt-5 flex items-start gap-2 text-xs leading-5 text-slate-500">
+      <i class="fa-solid fa-shield-halved mt-0.5 text-sky-700" aria-hidden="true"></i>
+      <span>Preparation work product only. Exporting does not submit the declaration to ACE or LAWGS and does not constitute a legal compliance determination.</span>
+    </div>
+  </div>
+
+  {% if export_ready %}
+  <div id="lawgs-xml-preview" class="lt-xml-modal" role="dialog" aria-modal="true" aria-labelledby="lawgs-xml-preview-title" hidden data-xml-preview-modal>
+    <button type="button" class="lt-xml-modal__backdrop" aria-label="Close XML preview" data-xml-preview-close></button>
+    <section class="lt-xml-modal__panel" role="document">
+      <header class="lt-xml-modal__header">
+        <div>
+          <p class="text-xs font-bold uppercase tracking-[0.14em] text-sky-700">LAWGS XML preview</p>
+          <h2 id="lawgs-xml-preview-title" class="mt-1 text-lg font-bold text-slate-950">Review generated XML</h2>
+          <p class="mt-1 text-xs text-slate-500">Read-only preview of the same authenticated XML available for download.</p>
+        </div>
+        <button type="button" class="lt-xml-modal__close" aria-label="Close XML preview" data-xml-preview-close>
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+      </header>
+      <div class="lt-xml-modal__body">
+        <div class="lt-xml-modal__loading" data-xml-preview-loading aria-live="polite">
+          <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i>
+          <span>Generating preview…</span>
+        </div>
+        <pre class="lt-xml-code" tabindex="0" aria-label="Generated LAWGS XML" hidden data-xml-preview-code><code></code></pre>
+        <p class="lt-inline-error mt-2 text-sm font-medium" role="alert" hidden data-xml-preview-error></p>
+      </div>
+      <footer class="lt-xml-modal__footer">
+        <button type="button" class="lt-btn lt-btn--secondary" data-xml-copy disabled>
+          <i class="fa-regular fa-copy" aria-hidden="true"></i><span>Copy to clipboard</span>
+        </button>
+        <button type="button" class="lt-btn lt-btn--primary" data-xml-preview-close>Done</button>
+      </footer>
+    </section>
+  </div>
+  {% endif %}
+</section>

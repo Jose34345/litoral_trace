@@ -1,0 +1,51 @@
+{% extends "us_lacey/impersonation_base.html" %}
+
+{% block impersonation_title %}Support Operations{% endblock %}
+
+{% block impersonation_content %}
+<section class="space-y-6">
+  <div>
+    <p class="text-xs font-bold uppercase tracking-[0.14em] text-amber-800">Tenant {{ target_organization_id }}</p>
+    <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-950">Customer operations</h1>
+    <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Read-only operational data visible through the dedicated impersonation database role and tenant RLS policies.</p>
+  </div>
+
+  <article class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div class="border-b border-slate-200 px-5 py-4">
+      <h2 class="font-bold text-slate-950">Operations</h2>
+      <p class="mt-1 text-xs text-slate-500">{{ operations|length }} operation(s) visible</p>
+    </div>
+
+    {% if operations %}
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[42rem] text-left text-sm">
+        <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <tr><th class="p-3">Reference</th><th class="p-3">Status</th><th class="p-3">Documents</th><th class="p-3">Lines</th><th class="p-3">Review</th><th class="p-3">Created</th></tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for item in operations %}
+          <tr class="hover:bg-slate-50">
+            <td class="p-3">
+              <a href="/admin/impersonation/operations/{{ item.public_id }}" class="font-bold text-amber-800 ">{{ item.client_reference }}</a>
+              <div class="mt-1 font-mono text-[10px] text-slate-400">{{ item.public_id }}</div>
+            </td>
+            <td class="p-3">{{ status_badge(item.status|replace("_", " ")) }}</td>
+            <td class="p-3 font-semibold">{{ item.document_count }}</td>
+            <td class="p-3 font-semibold">{{ item.merchandise_line_count }}</td>
+            <td class="p-3 text-slate-600">{{ item.review_result or "—" }}</td>
+            <td class="p-3 text-slate-500">{{ item.created_at.strftime("%Y-%m-%d %H:%M") }} UTC</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-8 text-center">
+      <i class="fa-regular fa-folder-open text-3xl text-slate-300" aria-hidden="true"></i>
+      <p class="mt-3 font-bold text-slate-800">No operations visible</p>
+      <p class="mt-1 text-sm text-slate-500">This tenant currently has no U.S. Lacey operations.</p>
+    </div>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

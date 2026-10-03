@@ -1,0 +1,94 @@
+<svg
+  viewBox="0 0 512 512"
+  xmlns="http://www.w3.org/2000/svg"
+  role="img"
+  aria-label="Litoral Trace"
+>
+  <g
+    fill="none"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <!-- Outer origin ring -->
+    <path
+      d="M360 92
+         C286 49 188 61 126 126
+         C64 191 58 292 111 363
+         C164 434 261 458 340 422"
+      stroke="#059669"
+      stroke-width="30"
+    />
+
+    <!-- Inner provenance ring -->
+    <path
+      d="M329 142
+         C274 111 204 119 159 163
+         C112 208 105 282 142 336
+         C179 390 250 410 310 385"
+      stroke="#059669"
+      stroke-width="30"
+    />
+
+    <!-- Data spine -->
+    <path
+      d="M254 168 V344"
+      stroke="#020617"
+      stroke-width="30"
+    />
+
+    <!-- Trace branches -->
+    <path
+      d="M254 211 H330 L374 167"
+      stroke="#020617"
+      stroke-width="28"
+    />
+
+    <path
+      d="M254 256 H390"
+      stroke="#020617"
+      stroke-width="28"
+    />
+
+    <path
+      d="M254 301 H330 L374 345"
+      stroke="#020617"
+      stroke-width="28"
+    />
+  </g>
+
+  <!-- Origin core -->
+  <circle
+    cx="254"
+    cy="256"
+    r="24"
+    fill="#059669"
+  />
+
+  <!-- Traceability nodes -->
+  <circle
+    cx="382"
+    cy="159"
+    r="19"
+    fill="#059669"
+    stroke="#020617"
+    stroke-width="12"
+  />
+
+  <circle
+    cx="402"
+    cy="256"
+    r="19"
+    fill="#059669"
+    stroke="#020617"
+    stroke-width="12"
+  />
+
+  <circle
+    cx="382"
+    cy="353"
+    r="19"
+    fill="#059669"
+    stroke="#020617"
+    stroke-width="12"
+  />
+</svg>

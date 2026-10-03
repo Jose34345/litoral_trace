@@ -1,0 +1,54 @@
+{
+  "source": "Parsed text from the seven synthetic Lacey packet PDFs generated for LT-TEST-2026-0912-A.",
+  "documents": [
+    {
+      "filename": "01_Commercial_Invoice.pdf",
+      "expected_type": "COMMERCIAL_INVOICE",
+      "pages": {
+        "1": "SYNTHETIC TEST DOCUMENT - NOT FOR COMMERCIAL OR CUSTOMS USE Shipment LT-TEST-2026-0912-A | Page 1\nCOMMERCIAL INVOICE\nSynthetic multi-line-item import transaction\nSeller / Exporter Importer of Record\nMekong Homewares Co., Ltd.\n28 Nguyen Van Linh Export Zone\nDistrict 7, Ho Chi Minh City 700000\nVietnam\nNorthstar Kitchen Imports LLC\n104 Harbor Commerce Blvd.\nSavannah, GA 31401\nUnited States\nInvoice No. MHW-INV-260915-77 Invoice Date September 15, 2026\nShipment Ref. LT-TEST-2026-0912-A Terms FOB Ho Chi Minh City\nCurrency USD Port of Entry Savannah, Georgia, USA\nCommercial Line Items\nLine SKU Description HTSUS Qty (PCS) Unit Value Entered Value\n1 ACT-TRAY-18 Acacia solid-wood serving trays, rectangular, food-service grade 4419.90.9000 420 $45.00 $18,900.00\n2 RUB-CB-32 Rubberwood kitchen cutting boards with juice groove 4419.90.8000 600 $29.60 $17,760.00\n3 TEK-SRV-04 Teak salad-server pairs, hand-finished, two-piece sets 4421.99.9880 250 $44.80 $11,200.00\n$47,860.00\nManufacturer ID (MID): VNMKHOM123HCM\nCountry of manufacture: Vietnam. Country of harvest may differ by botanical line; see Botanical Declaration."
+      }
+    },
+    {
+      "filename": "02_Bill_of_Lading.pdf",
+      "expected_type": "BILL_OF_LADING",
+      "pages": {
+        "1": "SYNTHETIC TEST DOCUMENT - NOT FOR COMMERCIAL OR CUSTOMS USE Shipment LT-TEST-2026-0912-A | Page 1\nOCEAN BILL OF LADING\nSynthetic carrier document with parties, container and ETA\nShipper Consignee Notify / Importer\nMekong Homewares Co., Ltd.\n28 Nguyen Van Linh Export Zone\nDistrict 7, Ho Chi Minh City 700000\nVietnam\nAtlantic Home Goods Distribution Inc.\n825 Portside Logistics Pkwy.\nPooler, GA 31322\nUnited States\nNorthstar Kitchen Imports LLC\n104 Harbor Commerce Blvd.\nSavannah, GA 31401\nUnited States\nOcean Bill of Lading OOLU-TEST-260912-01 Container No. TLLU4827315\nVessel / Voyage MV Pacific Meridian / PM0926E ETA Savannah October 3, 2026\nPort of Loading Cat Lai, Ho Chi Minh City, Vietnam Port of Discharge Savannah, GA, USA\nCargo Description\nMarks & Nos. Packages Description of Goods Gross Wt.\nMHW / LT-TEST-2026-0912-A 64 CARTONS 3 PALLETS WOODEN KITCHENWARE AND HOUSEHOLD ARTICLES\nAcacia serving trays; rubberwood cutting boards; teak salad-server pairs.\nCommercial Invoice MHW-INV-260915-77\n1,118 KG\nFreight: PREPAID\nPlace of delivery: Atlantic Home Goods Distribution Inc., Pooler, Georgia."
+      }
+    },
+    {
+      "filename": "03_Entry_Worksheet.pdf",
+      "expected_type": "ENTRY_WORKSHEET",
+      "pages": {
+        "1": "SYNTHETIC TEST DOCUMENT - NOT FOR COMMERCIAL OR CUSTOMS USE Shipment LT-TEST-2026-0912-A | Page 1\nU.S. ENTRY WORKSHEET\nSynthetic broker worksheet / entry-preparation record\nEntry / Filing Reference 123-4567890-1 Estimated Arrival 10/03/2026\nImporter Number 88-7654321 Manufacturer ID VNMKHOM123HCM\nBill of Lading OOLU-TEST-260912-01 Container TLLU4827315\nImporter of Record\nNorthstar Kitchen Imports LLC\n104 Harbor Commerce Blvd.\nSavannah, GA 31401\nUnited States\nConsignee\nAtlantic Home Goods Distribution Inc.\n825 Portside Logistics Pkwy.\nPooler, GA 31322\nUnited States\nEntry Summary Lines\nLine HTSUS Commercial Description Entered Value USD Origin\n1 4419.90.9000 Acacia solid-wood serving trays, rectangular, food-service grade 18,900.00 VN\n2 4419.90.8000 Rubberwood kitchen cutting boards with juice groove 17,760.00 VN\n3 4421.99.9880 Teak salad-server pairs, hand-finished, two-piece sets 11,200.00 VN\nTOTAL 47,860.00\nBroker note: Botanical harvest origin is controlled by the botanical declaration and may not match customs country of origin for every component."
+      }
+    },
+    {
+      "filename": "04_Botanical_Declaration.pdf",
+      "expected_type": "BOTANICAL_DECLARATION",
+      "pages": {
+        "1": "SYNTHETIC TEST DOCUMENT - NOT FOR COMMERCIAL OR CUSTOMS USE Shipment LT-TEST-2026-0912-A | Page 1\nBOTANICAL / LACEY SUPPORTING DECLARATION\nSynthetic scientific-name and harvest-origin statement\nDeclaration Scope\nThis declaration covers shipment LT-TEST-2026-0912-A, invoice MHW-INV-260915-77, B/L OOLU-TEST-260912-01. Each row is a separate botanical merchandise line and must not be merged with another HTS code or species.\nSKU Article / Component Genus Species Country of Harvest Plant Quantity Metric Unit Source Lot\nACT-TRAY-18 Serving tray / solid wood Acacia mangium Vietnam 315 KG VN-AC-2608-17\nRUB-CB-32 Cutting board / solid wood Hevea brasiliensis Vietnam 510 KG VN-HB-2608-41\nTEK-SRV-04 Salad servers / solid wood Tectona grandis Indonesia 145 KG ID-TG-2607-09\nSupplier certification: the scientific names above identify the plant material used in the imported articles. Packaging materials, pallets, cartons and auxiliary dunnage are excluded from this botanical declaration.\nAuthorized signatory: Nguyen Thi Lan - Compliance Manager\nSigned: September 15, 2026"
+      }
+    },
+    {
+      "filename": "05_Packing_List_with_Noise.pdf",
+      "expected_type": "PACKING_LIST",
+      "pages": {
+        "1": "SYNTHETIC TEST DOCUMENT - NOT FOR COMMERCIAL OR CUSTOMS USE Shipment LT-TEST-2026-0912-A | Page 1\nPACKING LIST\nSynthetic stress-test document containing packaging and row-header noise\nPacking List MHW-PL-260915-77 Container TLLU4827315\nInvoice MHW-INV-260915-77 Shipment Ref. LT-TEST-2026-0912-A\nPackage Detail\nRow Code Description / Packaging Text Cartons Pieces Net Wt. KG Gross Wt. KG\n1. ACT-TRAY-18 Acacia solid-wood serving trays 20 420 315 338\nPAL PAL PAL - heat-treated export pallet - - - 18\n2 RUB-CB-32 Rubberwood kitchen cutting boards 30 600 510 548\nAUX AUX-02 AUX - corner protectors / dunnage - - - 4\n3. TEK-SRV-04 Teak salad-server pairs 14 250 145 169\nCART ON BOX CARTON / BOX packaging only 64 - - 41\nTotals: 64 cartons, 1,270 saleable pieces, 970 KG net product weight, 1,118 KG gross shipment weight.\nIMPORTANT: Rows labeled PAL, AUX, CARTON, BOX and numerical row headers are packaging/administrative lines and are not merchandise descriptions."
+      }
+    },
+    {
+      "filename": "06_Supplier_Origin_Statement.pdf",
+      "expected_type": "SUPPLIER_ORIGIN",
+      "pages": {
+        "1": "SYNTHETIC TEST DOCUMENT - NOT FOR COMMERCIAL OR CUSTOMS USE Shipment LT-TEST-2026-0912-A | Page 1\nSUPPLIER MATERIAL ORIGIN STATEMENT\nSynthetic corroborating origin evidence\nStatement of Material Origin\nWe, Mekong Homewares Co., Ltd., certify the material origins for shipment LT-TEST-2026-0912-A and manufacturer ID VNMKHOM123HCM.\nLot SKU Material Scientific Name Harvest Country Mill / Supplier Reference\nVN-AC-2608-17 ACT-TRAY-18 Serving tray / solid wood Acacia mangium Vietnam SUP-VN-AC-2608-17\nVN-HB-2608-41 RUB-CB-32 Cutting board / solid wood Hevea brasiliensis Vietnam SUP-VN-HB-2608-41\nID-TG-2607-09 TEK-SRV-04 Salad servers / solid wood Tectona grandis Indonesia SUP-ID-TG-2607-09\nThe teak component identified as Tectona grandis was harvested in Indonesia and subsequently processed in Vietnam. Customs country of origin for the finished article remains Vietnam; harvest country is Indonesia.\nAll other listed plant material was harvested and processed in Vietnam.\nSigned: Tran Minh Khoa, Materials Compliance Officer - September 14, 2026"
+      }
+    },
+    {
+      "filename": "07_Arrival_Notice.pdf",
+      "expected_type": "ARRIVAL_NOTICE",
+      "pages": {
+        "1": "SYNTHETIC TEST DOCUMENT - NOT FOR COMMERCIAL OR CUSTOMS USE Shipment LT-TEST-2026-0912-A | Page 1\nARRIVAL NOTICE\nSynthetic carrier arrival notice\nCarrier Reference OOLU-TEST-260912-01 Container TLLU4827315\nVessel / Voyage MV Pacific Meridian / PM0926E ETA October 3, 2026\nDischarge Port Savannah, GA Availability Subject to customs release\nConsignee\nAtlantic Home Goods Distribution Inc.\n825 Portside Logistics Pkwy.\nPooler, GA 31322\nUnited States\nNotify Party / Importer\nNorthstar Kitchen Imports LLC\n104 Harbor Commerce Blvd.\nSavannah, GA 31401\nUnited States\nCargo\n64 cartons wooden kitchenware and household articles. Commercial invoice: MHW-INV-260915-77. Entry reference: 123-4567890-1."
+      }
+    }
+  ]
+}

@@ -5,9 +5,6 @@ from litoral_trace.db.models.lote import Lote
 from litoral_trace.db.models.audit_log import AuditLog
 from litoral_trace.db.models.api_key import ApiKey
 from litoral_trace.db.models.license import License
-from litoral_trace.db.models.satellite_job import SatelliteJob
-from litoral_trace.db.models.satellite_job_result import SatelliteJobResult
-from litoral_trace.db.models.satellite_ndvi import SatelliteNdviObservation
 from litoral_trace.db.models.user_session import UserSession
 from litoral_trace.db.models.vault_document import VaultDocument
 from litoral_trace.db.models.batch_import import BatchImport
@@ -28,6 +25,63 @@ from litoral_trace.db.models.shipment_export_case import ShipmentExportCase
 from litoral_trace.db.models.shipment_phytosanitary_case import ShipmentPhytosanitaryCase
 from litoral_trace.db.models.eudr_dds_candidate import EudrDdsCandidate
 from litoral_trace.db.models.eudr_acceptance_attempt import EudrAcceptanceAttempt
+from litoral_trace.db.models.us_lacey import (
+    UsLaceyFieldCandidate,
+    UsLaceyEngineDocumentRun,
+    UsLaceyEngineShipmentRun,
+    UsLaceyOperation,
+    UsLaceyOperationDocument,
+    UsLaceySourceSetRevision,
+    UsLaceySourceSetMember,
+    UsLaceyOperationField,
+    UsLaceyOrganizationProfile,
+    UsLaceyPpqPlantLine,
+    UsLaceyPpqShipment,
+    UsLaceyPlantDeclaration,
+)
+from litoral_trace.db.models.us_lacey_evidence_snapshot import (
+    UsLaceyEvidenceSnapshot,
+    UsLaceyEvidenceSnapshotDocument,
+)
+from litoral_trace.db.models.us_lacey_product_intelligence import (
+    UsLaceyProductIntelligenceSnapshot,
+)
+from litoral_trace.db.models.us_lacey_regulatory_assessment import (
+    UsLaceyRegulatoryAssessmentSnapshot,
+)
+from litoral_trace.db.models.us_lacey_reusable_evidence import (
+    UsLaceyEvidenceClaim,
+    UsLaceySupplier,
+    UsLaceySupplierEvidence,
+    UsLaceySupplierProduct,
+)
+from litoral_trace.db.models.document_text import (
+    DocumentTextSpan,
+    DocumentTextTranslation,
+)
+from litoral_trace.db.models.semantic_evidence import (
+    SemanticEvidenceEdge,
+    SemanticEvidenceNode,
+    SemanticSnapshotNode,
+)
+from litoral_trace.db.models.us_lacey_commercial import (
+    UsLaceyPayment,
+    UsLaceyProcessingJob,
+    UsLaceySubscription,
+    UsLaceyTermsAcceptance,
+)
+from litoral_trace.db.models.us_lacey_payment_event import UsLaceyPaymentEvent
+from litoral_trace.db.models.us_lacey_telemetry import (
+    TelemetryFieldAction,
+    TelemetryRun,
+)
+from litoral_trace.db.models.us_lacey_pilot_reliability import (
+    PilotIncidentSeverity,
+    PilotIncidentStatus,
+    PilotQualityTrigger,
+    UsLaceyPilotIncident,
+    UsLaceyPilotQualitySnapshot,
+)
 from litoral_trace.db.models.integration import (
     ExternalEntity,
     ExternalEntityVersion,
@@ -53,9 +107,6 @@ __all__ = [
     "AuditLog",
     "ApiKey",
     "License",
-    "SatelliteJob",
-    "SatelliteJobResult",
-    "SatelliteNdviObservation",
     "UserSession",
     "VaultDocument",
     "BatchImport",
@@ -74,6 +125,41 @@ __all__ = [
     "ShipmentPhytosanitaryCase",
     "EudrDdsCandidate",
     "EudrAcceptanceAttempt",
+    "UsLaceyOrganizationProfile",
+    "UsLaceyFieldCandidate",
+    "UsLaceyEngineDocumentRun",
+    "UsLaceyEngineShipmentRun",
+    "UsLaceyOperation",
+    "UsLaceyOperationDocument",
+    "UsLaceyOperationField",
+    "UsLaceyPpqPlantLine",
+    "UsLaceyPpqShipment",
+    "UsLaceyPlantDeclaration",
+    "UsLaceyEvidenceSnapshot",
+    "UsLaceyEvidenceSnapshotDocument",
+    "UsLaceyProductIntelligenceSnapshot",
+    "UsLaceyRegulatoryAssessmentSnapshot",
+    "UsLaceySupplier",
+    "UsLaceySupplierProduct",
+    "UsLaceySupplierEvidence",
+    "UsLaceyEvidenceClaim",
+    "DocumentTextSpan",
+    "DocumentTextTranslation",
+    "SemanticEvidenceNode",
+    "SemanticSnapshotNode",
+    "SemanticEvidenceEdge",
+    "UsLaceySubscription",
+    "UsLaceyPayment",
+    "UsLaceyPaymentEvent",
+    "TelemetryRun",
+    "TelemetryFieldAction",
+    "PilotQualityTrigger",
+    "PilotIncidentSeverity",
+    "PilotIncidentStatus",
+    "UsLaceyPilotQualitySnapshot",
+    "UsLaceyPilotIncident",
+    "UsLaceyTermsAcceptance",
+    "UsLaceyProcessingJob",
     "TraceabilityBatch",
     "TraceabilityEvent",
     "TraceabilityEventInput",
