@@ -276,6 +276,12 @@ def upgrade() -> None:
             "organization_id",
             name="uq_us_lacey_evidence_claim_id_org",
         ),
+        sa.UniqueConstraint(
+            "organization_id",
+            "evidence_id",
+            "field_name",
+            name="uq_us_lacey_evidence_claim_field",
+        ),
     )
     op.create_index(
         "ix_us_lacey_evidence_claim_org_evidence_field",
