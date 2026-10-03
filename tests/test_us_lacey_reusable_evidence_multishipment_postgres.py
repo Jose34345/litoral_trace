@@ -130,7 +130,7 @@ def _add_supplier_link(
                 entity_type="SUPPLIER",
                 entity_reference=f"supplier:{supplier.public_id}",
                 link_confidence=1.0,
-                link_method="EXACT_CUIT",
+                link_method="EXACT_IDENTIFIER",
                 human_confirmed=False,
             )
         )
