@@ -43,12 +43,12 @@ class _Engine:
         return _Connection(self._value, self.statements)
 
 
-def test_required_schema_revision_is_paddle_billing_contract() -> None:
-    assert schema_compatibility.required_us_lacey_schema_revision() == "070_us_lacey_paddle_billing"
+def test_required_schema_revision_is_reusable_evidence_contract() -> None:
+    assert schema_compatibility.required_us_lacey_schema_revision() == "071_us_lacey_reusable_supplier_evidence"
 
 
-def test_schema_probe_is_ready_on_required_paddle_revision(monkeypatch) -> None:
-    engine = _Engine("070_us_lacey_paddle_billing")
+def test_schema_probe_is_ready_on_required_reusable_evidence_revision(monkeypatch) -> None:
+    engine = _Engine("071_us_lacey_reusable_supplier_evidence")
     monkeypatch.setattr(schema_compatibility, "get_us_lacey_engine", lambda: engine)
 
     assert schema_compatibility.probe_us_lacey_schema_compatibility() is True
