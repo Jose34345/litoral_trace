@@ -645,6 +645,7 @@ jobs:
           set -o pipefail
           python -m pytest -q -rs \
             tests/test_us_lacey_reusable_evidence_postgres.py \
+            tests/test_us_lacey_reusable_evidence_multishipment_postgres.py \
             | tee /tmp/reusable-evidence-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/reusable-evidence-postgres.txt; then
             echo "Reusable evidence PostgreSQL acceptance must not skip in CI."
