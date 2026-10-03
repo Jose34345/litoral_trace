@@ -254,6 +254,12 @@ class UsLaceyEvidenceClaim(Base):
             "organization_id",
             name="uq_us_lacey_evidence_claim_id_org",
         ),
+        UniqueConstraint(
+            "organization_id",
+            "evidence_id",
+            "field_name",
+            name="uq_us_lacey_evidence_claim_field",
+        ),
         Index(
             "ix_us_lacey_evidence_claim_org_evidence_field",
             "organization_id",
