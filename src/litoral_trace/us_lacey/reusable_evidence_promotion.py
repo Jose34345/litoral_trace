@@ -38,6 +38,8 @@ from litoral_trace.db.models import (
     VaultDocument,
 )
 from litoral_trace.us_lacey.reusable_evidence import REUSABLE_FIELD_NAMES
+from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
 
 PROMOTED_EVIDENCE_TYPE = "HUMAN_VERIFIED_SUPPLIER_DOCUMENT"
@@ -544,3 +546,45 @@ def discover_operation_reusable_products(
         seen_lines.add(line_reference)
         identities.append(identity)
     return tuple(identities)
+
+
+
+def apply_reusable_evidence_for_operation(
+    *,
+    organization_id: int,
+    operation_id: int,
+    session_factory=None,
+) -> int:
+    """Discover exact current identities and inject reusable evidence into gaps.
+
+    This is the operation-level seam used by the worker after Product Intelligence
+    has materialized the current source-set bridge.
+    """
+    factory = session_factory or get_us_lacey_db_session
+    org_id = int(organization_id)
+    session = factory()
+    try:
+        set_tenant_db_context(session, org_id)
+        identities = discover_operation_reusable_products(
+            session,
+            organization_id=org_id,
+            operation_id=int(operation_id),
+        )
+    finally:
+        session.close()
+
+    # Local import avoids making the base resolver depend on this identity module.
+    from litoral_trace.us_lacey.reusable_evidence import ReusableEvidenceService
+
+    service = ReusableEvidenceService(session_factory=factory)
+    reused_count = 0
+    for identity in identities:
+        result = service.apply_to_operation_line(
+            organization_id=org_id,
+            operation_id=int(operation_id),
+            supplier_key=identity.supplier_key,
+            product_key=identity.product_key,
+            line_reference=identity.line_reference,
+        )
+        reused_count += int(result.reused_evidence_count)
+    return reused_count
