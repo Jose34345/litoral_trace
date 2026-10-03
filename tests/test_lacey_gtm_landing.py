@@ -32,7 +32,7 @@ def test_lacey_landing_leads_with_compliance_infrastructure_positioning():
     assert "Built for import compliance teams" in html
     assert "Run a sample shipment" in html
     assert "Analyze my documents" in html
-    assert "No documents required for the sample." in html
+    assert "Synthetic data. No upload required." in html
     assert "7" in html
     assert "31" in html
     assert "24" in html
@@ -97,8 +97,8 @@ def test_lacey_landing_routes_evaluation_to_sample_before_document_upload():
     assert sample_index < upload_index
     assert html.count('href="/demo"') >= 2
     assert html.count('href="/sandbox/start"') >= 2
-    assert "See the system before sharing a document." in html
-    assert "Run the synthetic shipment first." in html
+    assert "See Litoral Trace analyze a sample shipment." in html
+    assert "Synthetic data. No upload required." in html
     assert 'id="lacey-beta-form"' not in html
     assert "Early Access" not in html
     assert "Private Beta" not in html
