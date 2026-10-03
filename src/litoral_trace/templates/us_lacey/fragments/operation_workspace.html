@@ -150,6 +150,13 @@
     <div class="max-w-4xl">
       <h2 id="quality-output-title" class="text-2xl font-bold tracking-tight text-slate-950">Review shipment</h2>
       <p class="mt-2 text-sm leading-6 text-slate-600">Litoral Trace has already reconciled consistent evidence. Review only the remaining missing or conflicting fields.</p>
+      <div class="mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-700" data-provenance-summary>
+        <span class="font-semibold text-slate-950" data-current-shipment-count>{{ provenance_summary.current_shipment_count }} from this shipment</span>
+        <span class="text-slate-500" aria-hidden="true">·</span>
+        <span class="font-semibold text-emerald-700" data-reused-evidence-count>{{ provenance_summary.reused_evidence_count }} reused</span>
+        <span class="text-slate-500" aria-hidden="true">·</span>
+        <span class="font-semibold text-amber-900" data-review-required-provenance-count>{{ provenance_summary.review_required_count }} need attention</span>
+      </div>
       {% if attention_fields %}
       <div class="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900" data-attention-callout>
         <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
@@ -234,7 +241,7 @@
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 class="text-lg font-bold text-slate-950">Auto-Resolved Data</h2>
-          <p class="mt-1 text-sm text-slate-600">Consistent information extracted with high confidence. Expand any item to inspect its evidence.</p>
+          <p class="mt-1 text-sm text-slate-600">Consistent information resolved from current documents or verified reusable supplier evidence. Expand any item to inspect its evidence.</p>
         </div>
         {% if auto_supported_fields %}
         <form
@@ -259,13 +266,20 @@
               <p class="text-xs font-semibold text-slate-500">{% if field.scope == "SHIPMENT" %}Shipment{% else %}Plant line {{ field.line_reference }}{% endif %}</p>
               <h3 class="mt-1 font-bold text-slate-950">{{ field.label }}</h3>
               <p class="mt-2 text-sm text-slate-800">{{ field.proposed_value }}</p>
+              {% if field.provenance == "reused_evidence" %}
+              <p class="mt-2 text-xs font-semibold text-emerald-700" data-reused-evidence-label>Reused from verified supplier evidence</p>
+              {% endif %}
             </div>
             <span class="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">{{ (field.confidence * 100)|round(1) }}%</span>
           </div>
           <details class="mt-3 overflow-hidden rounded-lg border border-slate-100">
             <summary class="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900">View evidence</summary>
             <div class="border-t border-slate-100 bg-slate-50 px-3 py-3">
+              {% if field.provenance == "reused_evidence" %}
+              <p class="text-xs font-medium text-slate-700">Source: Verified supplier evidence from a prior shipment</p>
+              {% else %}
               <p class="text-xs font-medium text-slate-700">Source: Document evidence{% if field.source_page %} · Page{% if ',' in (field.source_page|string) %}s{% endif %} {{ field.source_page }}{% endif %}</p>
+              {% endif %}
             </div>
           </details>
         </article>
@@ -322,6 +336,9 @@
               <p class="text-xs font-semibold text-slate-500">{% if field.scope == "SHIPMENT" %}Shipment{% else %}Plant line {{ field.line_reference }}{% endif %}</p>
               <h3 class="mt-1 font-bold text-slate-950">{{ field.label }}</h3>
               {% if field.effective_value %}<p class="mt-2 text-sm text-slate-800">{{ field.effective_value }}</p>{% endif %}
+              {% if field.provenance == "reused_evidence" %}
+              <p class="mt-2 text-xs font-semibold text-emerald-700">Reused from verified supplier evidence</p>
+              {% endif %}
             </div>
             <span class="rounded-md bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700 ring-1 ring-inset ring-slate-200">{{ friendly_status(field.status) }}</span>
           </div>
