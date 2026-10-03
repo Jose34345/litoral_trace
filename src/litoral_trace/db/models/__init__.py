@@ -49,6 +49,12 @@ from litoral_trace.db.models.us_lacey_product_intelligence import (
 from litoral_trace.db.models.us_lacey_regulatory_assessment import (
     UsLaceyRegulatoryAssessmentSnapshot,
 )
+from litoral_trace.db.models.us_lacey_reusable_evidence import (
+    UsLaceyEvidenceClaim,
+    UsLaceySupplier,
+    UsLaceySupplierEvidence,
+    UsLaceySupplierProduct,
+)
 from litoral_trace.db.models.document_text import (
     DocumentTextSpan,
     DocumentTextTranslation,
@@ -133,6 +139,10 @@ __all__ = [
     "UsLaceyEvidenceSnapshotDocument",
     "UsLaceyProductIntelligenceSnapshot",
     "UsLaceyRegulatoryAssessmentSnapshot",
+    "UsLaceySupplier",
+    "UsLaceySupplierProduct",
+    "UsLaceySupplierEvidence",
+    "UsLaceyEvidenceClaim",
     "DocumentTextSpan",
     "DocumentTextTranslation",
     "SemanticEvidenceNode",
