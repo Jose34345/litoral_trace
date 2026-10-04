@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 
 import litoral_trace.us_lacey.ingestion as ingestion_module
 import litoral_trace.us_lacey.operation_lock as operation_lock_module
+import litoral_trace.us_lacey.regulatory_assessment_snapshot as regulatory_snapshot_module
 import litoral_trace.us_lacey.worker as worker_module
 from litoral_trace.storage import (
     ObjectDeleteResult,
@@ -184,6 +185,22 @@ def _csv_bytes() -> bytes:
     ).encode("utf-8")
 
 
+def _regulatory_contract_with_supported_inputs(original_builder):
+    def build(**kwargs):
+        contract = original_builder(**kwargs)
+        for subject in contract.get("subjects", ()):
+            inputs = subject.get("inputs")
+            if not isinstance(inputs, dict):
+                continue
+            inputs["plant_mass_per_unit_kg"] = {"status": "SUPPORTED", "value": "0.010", "reason": "E2E_FIXTURE"}
+            inputs["total_unit_mass_kg"] = {"status": "SUPPORTED", "value": "1.000", "reason": "E2E_FIXTURE"}
+            inputs["entry_same_hts_plant_mass_kg"] = {"status": "SUPPORTED", "value": "1.000", "reason": "E2E_FIXTURE"}
+            inputs["protected_status"] = {"status": "SUPPORTED", "value": "CLEAR", "reason": "E2E_FIXTURE"}
+        return contract
+
+    return build
+
+
 _REQUIRED_REVIEW_VALUES = {
     "estimated_arrival_date": "2026-09-15",
     "filing_entry_reference": "123-4567890-1",
@@ -202,6 +219,12 @@ _REQUIRED_REVIEW_VALUES = {
 def test_active_customer_operations_upload_review_complete_exports_and_history(monkeypatch: pytest.MonkeyPatch):
     """ACTIVE browser journey proves lazy workspace loading without a page refresh."""
     _configure(monkeypatch)
+    original_contract_builder = regulatory_snapshot_module.build_regulatory_input_contract
+    monkeypatch.setattr(
+        regulatory_snapshot_module,
+        "build_regulatory_input_contract",
+        _regulatory_contract_with_supported_inputs(original_contract_builder),
+    )
     reset_us_lacey_engine_state()
     reset_us_lacey_worker_engine_state()
     storage = MemoryObjectStorage()
@@ -384,9 +407,45 @@ def test_active_customer_operations_upload_review_complete_exports_and_history(m
             for field in ready_detail.fields
             if field.status in {"MISSING", "CONFLICT", "SUPPORTED"}
         ] == []
-        assert ready_detail.status == "READY_FOR_REVIEW"
+        assert ready_detail.status == "REVIEW_REQUIRED"
+        assert ready_detail.review_result == "NEEDS_REGULATORY_INFORMATION"
 
         workspace = client.get(workspace_path)
+        assert workspace.status_code == 200
+        assert "HTS Schedule Coverage" in workspace.text
+        assert "Provide HTS" in workspace.text
+
+        hts_field = next(
+            field for field in ready_detail.fields if field.field_name == "hts_code"
+        )
+        session_token = client.cookies.get("us_lacey_session")
+        assert session_token
+        hts_review_action = f"{operation_path}/review/fields/{hts_field.id}"
+        hts_reviewed = client.post(
+            hts_review_action,
+            data={
+                "csrf_token": portal_module.us_lacey_csrf_token(
+                    session_token=session_token,
+                    purpose=f"review:{operation_public_id}:{hts_field.id}",
+                ),
+                "action": "edit",
+                "value": "4407110000",
+            },
+        )
+        assert hts_reviewed.status_code == 303
+        assert hts_reviewed.headers["location"] == operation_path
+
+        corrected_detail = operation_service.get_detail(
+            organization_id=organization_id,
+            operation_public_id=operation_public_id,
+        )
+        assert corrected_detail.status == "READY_FOR_REVIEW"
+        assert corrected_detail.review_result == "READY_FOR_HUMAN_CONFIRMATION"
+
+        workspace = client.get(workspace_path)
+        assert workspace.status_code == 200
+        assert "HTS Schedule Coverage" in workspace.text
+        assert "Check passed" in workspace.text
         complete_action = f"{operation_path}/complete"
         assert f'action="{complete_action}"' in workspace.text
         completed = client.post(

@@ -210,7 +210,9 @@ def test_exception_first_ui_polish_uses_quiet_enterprise_surfaces():
     assert "semantically equivalent source observations were reconciled" not in workspace
 
     assert "U.S. Lacey ruleset" not in regulatory
-    assert "border border-slate-200 border-l-4" in regulatory
+    assert "lt-data-table" in regulatory
+    assert "data-regulatory-matrix" in regulatory
+    assert "border-l-4" not in regulatory
     assert "bg-amber-50/80" not in regulatory
     assert "bg-rose-50/80" not in regulatory
     assert "ring-amber-600/20" in regulatory

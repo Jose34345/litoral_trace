@@ -20,6 +20,8 @@ from litoral_trace.db.models import (
     UsLaceyPpqShipment,
     UsLaceyPlantDeclaration,
     UsLaceyProcessingJob,
+    UsLaceyRegulatoryAssessmentSnapshot,
+    UsLaceySourceSetRevision,
     UsLaceySubscription,
     VaultDocument,
 )
@@ -29,6 +31,10 @@ from litoral_trace.us_lacey.domain import (
     US_LACEY_REVIEW_FIELDS,
     UsLaceyFieldStatus,
     UsLaceyOperationStatus,
+)
+from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
+    RULESET_VERSION,
+    blocking_regulatory_assessments,
 )
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
@@ -599,6 +605,35 @@ class UsLaceyOperationService:
                     .group_by(UsLaceyOperationField.operation_id)
                 ).all()
             }
+            regulatory_blocker_counts = {
+                int(operation_id): len(
+                    blocking_regulatory_assessments(dict(payload or {}))
+                )
+                for operation_id, payload in session.execute(
+                    select(
+                        UsLaceyRegulatoryAssessmentSnapshot.operation_id,
+                        UsLaceyRegulatoryAssessmentSnapshot.payload_json,
+                    )
+                    .join(
+                        UsLaceySourceSetRevision,
+                        (
+                            UsLaceySourceSetRevision.id
+                            == UsLaceyRegulatoryAssessmentSnapshot.source_set_revision_id
+                        )
+                        & (
+                            UsLaceySourceSetRevision.organization_id
+                            == UsLaceyRegulatoryAssessmentSnapshot.organization_id
+                        ),
+                    )
+                    .where(
+                        UsLaceyRegulatoryAssessmentSnapshot.organization_id == org_id,
+                        UsLaceyRegulatoryAssessmentSnapshot.operation_id.in_(operation_ids),
+                        UsLaceyRegulatoryAssessmentSnapshot.status == "CURRENT",
+                        UsLaceyRegulatoryAssessmentSnapshot.ruleset_version == RULESET_VERSION,
+                        UsLaceySourceSetRevision.is_current.is_(True),
+                    )
+                ).all()
+            }
 
             reference_fields = session.scalars(
                 select(UsLaceyOperationField)
@@ -645,10 +680,17 @@ class UsLaceyOperationService:
                             or None
                         ),
                         operation_date=row.operation_date,
-                        status=row.status,
+                        status=(
+                            "REVIEW_REQUIRED"
+                            if regulatory_blocker_counts.get(int(row.id), 0)
+                            else row.status
+                        ),
                         document_count=int(row.document_count),
                         merchandise_line_count=int(row.merchandise_line_count),
-                        exception_count=exception_counts.get(int(row.id), 0),
+                        exception_count=(
+                            exception_counts.get(int(row.id), 0)
+                            + regulatory_blocker_counts.get(int(row.id), 0)
+                        ),
                         created_at=row.created_at,
                         updated_at=row.updated_at,
                     )
