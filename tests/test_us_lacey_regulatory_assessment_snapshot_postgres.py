@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from litoral_trace.config.settings import normalize_database_url
 from litoral_trace.db.models import (
+    UsLaceyOperation,
     UsLaceyProductIntelligenceSnapshot,
     UsLaceyRegulatoryAssessmentSnapshot,
     UsLaceySourceSetRevision,
@@ -18,6 +19,7 @@ from litoral_trace.us_lacey.regulatory.rules import RULESET_VERSION
 from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
     build_regulatory_assessment_snapshot,
     mark_regulatory_assessment_snapshots_stale,
+    refresh_current_regulatory_assessment_view,
 )
 from litoral_trace.us_lacey.source_sets import SourceSetClaim, seal_current_source_set
 from tests.us_lacey_engine2_postgres import (
@@ -394,4 +396,44 @@ def test_new_source_set_generation_marks_prior_regulatory_assessment_stale(
         )
     ).all()
     assert [revision.id for revision in current_revisions] == [second_revision.id]
+    session.close()
+
+
+def test_lazy_rebuild_syncs_clean_operation_to_ready_for_review(
+    engine2_postgres_engine,
+    engine2_postgres_session_factory,
+):
+    _require_schema(engine2_postgres_engine)
+    org, operation_id, _, _, _, _ = create_test_graph(
+        engine2_postgres_session_factory,
+        content=b"reg-lazy-status-sync",
+    )
+    seal_current_source_set(
+        organization_id=org,
+        operation_id=operation_id,
+        session_factory=engine2_postgres_session_factory,
+    )
+
+    session = tenant_session(engine2_postgres_session_factory, org)
+    operation = session.get(UsLaceyOperation, operation_id)
+    operation.status = "REVIEW_REQUIRED"
+    operation.review_result = "NEEDS_REGULATORY_INFORMATION"
+    public_id = operation.public_id
+    session.commit()
+    session.close()
+
+    view = refresh_current_regulatory_assessment_view(
+        organization_id=org,
+        operation_public_id=public_id,
+        session_factory=engine2_postgres_session_factory,
+    )
+
+    assert view is not None
+    assert view.ruleset_version == RULESET_VERSION
+    assert view.indeterminate_count == 0
+
+    session = tenant_session(engine2_postgres_session_factory, org)
+    persisted = session.get(UsLaceyOperation, operation_id)
+    assert persisted.status == "READY_FOR_REVIEW"
+    assert persisted.review_result == "READY_FOR_HUMAN_CONFIRMATION"
     session.close()
