@@ -850,6 +850,20 @@ def refresh_current_regulatory_assessment_view(
             session.rollback()
             return None
 
+        # A lazy ruleset rebuild can clear the last regulatory blockers without
+        # touching any preparation fields. Re-derive the durable parent state in
+        # the same transaction so dashboards and downstream queries do not retain
+        # REVIEW_REQUIRED / NEEDS_REGULATORY_INFORMATION after the snapshot is clean.
+        # Import locally to avoid a module-level cycle: projection owns the canonical
+        # operation-state derivation and already consumes regulatory snapshots.
+        from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
+
+        refresh_us_lacey_operation_status(
+            session,
+            organization_id=organization_id,
+            operation=operation,
+        )
+
         session.commit()
         set_tenant_db_context(session, organization_id)
         session.refresh(snapshot)
