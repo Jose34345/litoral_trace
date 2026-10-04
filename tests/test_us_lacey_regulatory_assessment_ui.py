@@ -48,7 +48,7 @@ def _view() -> RegulatoryAssessmentView:
         status="CURRENT",
         generation=2,
         source_set_fingerprint="f" * 64,
-        ruleset_version="us-lacey-regulatory-rules-v3",
+        ruleset_version="us-lacey-regulatory-rules-v4",
         input_fingerprint="a" * 64,
         assessment_count=2,
         indeterminate_count=0,
@@ -299,3 +299,49 @@ def test_workspace_summary_uses_combined_regulatory_action_count(monkeypatch):
     assert "data-action-required-count>1<" in html
     assert "Provide HTS" in html
     assert "Provide quantity / mass evidence" not in html
+
+
+def test_regulatory_detail_lazily_rebuilds_when_active_ruleset_snapshot_is_missing(monkeypatch):
+    refreshed = _view()
+    monkeypatch.setattr(
+        operational_views,
+        "get_current_regulatory_assessment_view",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        operational_views,
+        "refresh_current_regulatory_assessment_view",
+        lambda **_kwargs: refreshed,
+    )
+
+    result = operational_views._regulatory_assessment_for_detail(
+        SimpleNamespace(organization_id=7),
+        _detail(),
+    )
+
+    assert result is refreshed
+
+
+def test_regulatory_detail_does_not_rebuild_when_active_ruleset_snapshot_exists(monkeypatch):
+    current = _view()
+    monkeypatch.setattr(
+        operational_views,
+        "get_current_regulatory_assessment_view",
+        lambda **_kwargs: current,
+    )
+
+    def _unexpected_refresh(**_kwargs):
+        raise AssertionError("active ruleset snapshot should be reused")
+
+    monkeypatch.setattr(
+        operational_views,
+        "refresh_current_regulatory_assessment_view",
+        _unexpected_refresh,
+    )
+
+    result = operational_views._regulatory_assessment_for_detail(
+        SimpleNamespace(organization_id=7),
+        _detail(),
+    )
+
+    assert result is current
