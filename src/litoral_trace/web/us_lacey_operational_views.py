@@ -21,6 +21,7 @@ from litoral_trace.us_lacey.product_intelligence_snapshot import (
     get_current_product_intelligence_view,
 )
 from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
+    blocking_regulatory_assessments,
     get_current_regulatory_assessment_view,
 )
 from litoral_trace.us_lacey.semantic_evidence_read import (
@@ -210,6 +211,46 @@ _REGULATORY_STATUS_LABELS = {
     "NOT_APPLICABLE": "Not applicable",
 }
 
+_REGULATORY_REASON_LABELS = {
+    "HTS10_MISSING": "HTS missing",
+    "HTS10_INVALID": "HTS invalid",
+    "HTS_NOT_IN_PARTIAL_CATALOG": "HTS coverage unavailable",
+    "MISSING_REQUIRED_INPUTS": "Required quantity or mass inputs are missing",
+    "INVALID_HTS10": "HTS invalid",
+    "INVALID_PLANT_UNIT_MASS": "Plant mass per unit is invalid",
+    "INVALID_TOTAL_UNIT_MASS": "Total unit mass is invalid",
+    "INVALID_ENTRY_PLANT_MASS": "Entry plant mass is invalid",
+    "PROTECTED_STATUS_UNKNOWN": "Protected-plant status is unknown",
+}
+
+_REGULATORY_ACTION_LABELS = {
+    "HTS_APPLICABILITY": "Provide HTS",
+    "DE_MINIMIS": "Provide quantity / mass evidence",
+    "SPECIAL_COMPOSITE": "Provide composition evidence",
+    "SPECIAL_RECYCLED": "Provide recycled-content evidence",
+}
+
+_REGULATORY_ACTION_FIELDS = {
+    "HTS_APPLICABILITY": "hts_code",
+    "SPECIAL_COMPOSITE": "article_component",
+    "SPECIAL_RECYCLED": "percent_recycled",
+}
+
+_REGULATORY_BLOCK_MESSAGES = {
+    "HTS_APPLICABILITY": (
+        "Missing or invalid HTS Code. Required to determine APHIS schedule coverage."
+    ),
+    "DE_MINIMIS": (
+        "Missing quantity or mass information. Required to evaluate the De Minimis pathway."
+    ),
+    "SPECIAL_COMPOSITE": (
+        "Missing product-composition evidence. Required to evaluate the special composite wood pathway."
+    ),
+    "SPECIAL_RECYCLED": (
+        "Missing recycled-content evidence. Required to evaluate the recycled-material exception."
+    ),
+}
+
 _REGULATORY_ACTION_GUIDANCE = {
     "HTS_APPLICABILITY": (
         "To evaluate APHIS Lacey schedule coverage, add or correct the 10-digit "
@@ -235,7 +276,11 @@ def _regulatory_customer_message(assessment: Mapping[str, object]) -> str:
     rule_id = str(assessment.get("rule_id") or "").upper()
     status = str(assessment.get("status") or "").upper()
     explanation = str(assessment.get("explanation") or "").strip()
+    review_required = bool(assessment.get("review_required"))
 
+    if status == "INDETERMINATE" and not review_required:
+        base = explanation or "This optional check cannot be evaluated with the current evidence."
+        return f"{base} Does not block the current preparation package."
     if status == "INDETERMINATE":
         return _REGULATORY_ACTION_GUIDANCE.get(
             rule_id,
@@ -255,28 +300,107 @@ def _present_regulatory_assessment(view):
         return None
     payload = dict(getattr(view, "payload", {}) or {})
     presented_assessments: list[dict[str, object]] = []
-    for raw in payload.get("assessments", ()):
+    for index, raw in enumerate(payload.get("assessments", ()), start=1):
         if not isinstance(raw, Mapping):
             continue
         item = dict(raw)
-        rule_id = str(item.get("rule_id") or "")
-        status = str(item.get("status") or "")
+        rule_id = str(item.get("rule_id") or "").upper()
+        status = str(item.get("status") or "").upper()
         subject_ref = str(item.get("subject_ref") or "").strip()
+        review_required = bool(item.get("review_required"))
+        reason_codes = tuple(str(code or "") for code in item.get("reason_codes", ()) or ())
+
         item["display_title"] = _REGULATORY_RULE_TITLES.get(
             rule_id,
             rule_id.replace("_", " ").title() or "Regulatory check",
         )
-        item["display_status"] = _REGULATORY_STATUS_LABELS.get(
-            status,
-            status.replace("_", " ").title() or "Review",
+        item["display_status"] = (
+            "Not evaluated"
+            if status == "INDETERMINATE" and not review_required
+            else _REGULATORY_STATUS_LABELS.get(
+                status,
+                status.replace("_", " ").title() or "Review",
+            )
         )
+        item["display_reason"] = "; ".join(
+            _REGULATORY_REASON_LABELS.get(
+                code,
+                code.replace("_", " ").capitalize(),
+            )
+            for code in reason_codes
+            if code
+        ) or "No additional reason provided"
         item["display_subject"] = (
             f"Plant line {subject_ref}" if subject_ref else "Shipment"
         )
         item["customer_message"] = _regulatory_customer_message(item)
+        item["blocks_package"] = review_required
+        item["action_label"] = _REGULATORY_ACTION_LABELS.get(
+            rule_id,
+            "Provide information",
+        )
+        item["action_field_name"] = _REGULATORY_ACTION_FIELDS.get(rule_id)
+        item["blocking_message"] = _REGULATORY_BLOCK_MESSAGES.get(
+            rule_id,
+            "Additional supported information is required before the preparation package can be finalized.",
+        )
+        item["action_id"] = (
+            f"{rule_id.lower() or 'rule'}-{subject_ref or 'shipment'}-{index}"
+        )
         presented_assessments.append(item)
     payload["assessments"] = presented_assessments
     return replace(view, payload=payload)
+
+
+def _regulatory_action_items(regulatory_assessment, *, attention_fields=()):
+    """Project blocking regulatory checks into the Action Required workflow."""
+    if regulatory_assessment is None:
+        return ()
+
+    attention = tuple(attention_fields or ())
+    items: list[dict[str, object]] = []
+    for index, assessment in enumerate(
+        regulatory_assessment.payload.get("assessments", ()),
+        start=1,
+    ):
+        if not isinstance(assessment, Mapping) or not bool(
+            assessment.get("blocks_package")
+        ):
+            continue
+        item = dict(assessment)
+        line_reference = str(item.get("subject_ref") or "").strip()
+        target_field_name = str(item.get("action_field_name") or "").strip()
+        target_field = next(
+            (
+                field
+                for field in attention
+                if target_field_name
+                and str(getattr(field, "field_name", "") or "") == target_field_name
+                and (
+                    not line_reference
+                    or str(getattr(field, "line_reference", "") or "") == line_reference
+                )
+            ),
+            None,
+        )
+        item["action_id"] = str(
+            item.get("action_id")
+            or (
+                f"{str(item.get('rule_id') or 'rule').lower()}-"
+                f"{line_reference or 'shipment'}-{index}"
+            )
+        )
+        item["line_reference"] = line_reference
+        item["target_field_id"] = (
+            None if target_field is None else int(getattr(target_field, "id"))
+        )
+        item["request_guidance"] = str(
+            item.get("blocking_message")
+            or item.get("customer_message")
+            or "Provide supporting information for this regulatory check."
+        )
+        items.append(item)
+    return tuple(items)
 
 
 
@@ -692,7 +816,14 @@ def _business_title(detail) -> str:
     return f"{reference} · {supplier} · {date_label}"
 
 
-def _readiness_summary(detail, *, attention_fields, processing):
+def _readiness_summary(
+    detail,
+    *,
+    attention_fields,
+    processing,
+    regulatory_action_items=(),
+):
+    """Derive the single customer-facing preparation readiness invariant."""
     def field_state(field_name: str) -> str:
         matches = [
             field for field in getattr(detail, "fields", ())
@@ -703,7 +834,7 @@ def _readiness_summary(detail, *, attention_fields, processing):
         if any(
             getattr(field, "effective_value", None)
             and str(getattr(field, "status", "")).upper()
-            not in {"MISSING", "REVIEW", "CONFLICT"}
+            not in {"MISSING", "REVIEW", "REVIEW_REQUIRED", "CONFLICT"}
             for field in matches
         ):
             return "VERIFIED"
@@ -711,17 +842,36 @@ def _readiness_summary(detail, *, attention_fields, processing):
             return "CONFLICT"
         return "REVIEW REQUIRED"
 
-    if getattr(detail, "status", "") == "COMPLETED":
-        overall = "PACKAGE READY"
-    elif not attention_fields and getattr(processing, "terminal", False):
-        overall = "READY FOR EXPORT"
-    elif getattr(processing, "failed", False):
+    field_exception_count = len(tuple(attention_fields or ()))
+    regulatory_exception_count = len(tuple(regulatory_action_items or ()))
+    exception_count = field_exception_count + regulatory_exception_count
+    processing_failed = bool(getattr(processing, "failed", False))
+    processing_terminal = bool(getattr(processing, "terminal", False))
+    completed = str(getattr(detail, "status", "") or "").upper() == "COMPLETED"
+    package_ready = (
+        completed
+        and processing_terminal
+        and not processing_failed
+        and exception_count == 0
+    )
+
+    if processing_failed:
         overall = "PROCESSING FAILED"
+    elif exception_count:
+        overall = "NOT READY"
+    elif package_ready:
+        overall = "PACKAGE READY"
+    elif processing_terminal:
+        overall = "READY FOR FINAL CONFIRMATION"
     else:
         overall = "IN PREPARATION"
+
     return {
         "overall": overall,
-        "exception_count": len(attention_fields),
+        "package_ready": package_ready,
+        "exception_count": exception_count,
+        "field_exception_count": field_exception_count,
+        "regulatory_exception_count": regulatory_exception_count,
         "species": field_state("species"),
         "country_of_harvest": field_state("country_of_harvest"),
     }
@@ -803,10 +953,15 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
     regulatory_assessment = _present_regulatory_assessment(
         _regulatory_assessment_for_detail(identity, detail, regulatory_assessment)
     )
+    regulatory_action_items = _regulatory_action_items(
+        regulatory_assessment,
+        attention_fields=attention_fields,
+    )
     readiness_summary = _readiness_summary(
         detail,
         attention_fields=attention_fields,
         processing=progress,
+        regulatory_action_items=regulatory_action_items,
     )
     reused_evidence_summary = _reuse_summary(identity, detail)
     return _render(
@@ -817,6 +972,7 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
         engine2_dossier=engine2_dossier,
         product_intelligence=product_intelligence,
         regulatory_assessment=regulatory_assessment,
+        regulatory_action_items=regulatory_action_items,
         upload_csrf=upload_csrf,
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
@@ -879,6 +1035,13 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         is_oob_update = str(getattr(request, "method", "GET")).upper() == "POST"
 
     progress = processing_view(detail)
+    regulatory_assessment = _present_regulatory_assessment(
+        _regulatory_assessment_for_detail(identity, detail)
+    )
+    regulatory_action_items = _regulatory_action_items(
+        regulatory_assessment,
+        attention_fields=attention_fields,
+    )
     return _render(
         request,
         "fragments/operation_workspace",
@@ -886,9 +1049,8 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         detail=detail,
         engine2_dossier=engine2_dossier,
         product_intelligence=_product_intelligence_for_detail(identity, detail),
-        regulatory_assessment=_present_regulatory_assessment(
-            _regulatory_assessment_for_detail(identity, detail)
-        ),
+        regulatory_assessment=regulatory_assessment,
+        regulatory_action_items=regulatory_action_items,
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
         field_errors=dict(field_errors or {}),
@@ -902,6 +1064,7 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
             detail,
             attention_fields=attention_fields,
             processing=progress,
+            regulatory_action_items=regulatory_action_items,
         ),
         business_reference=_business_reference(detail),
         business_supplier_name=_business_supplier_name(detail),

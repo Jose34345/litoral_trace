@@ -4,6 +4,8 @@
 {% set engine2_downstream_annotations = engine2_downstream_annotations|default({}) %}
 {% set field_errors = field_errors|default({}) %}
 {% set field_input_values = field_input_values|default({}) %}
+{% set regulatory_action_items = regulatory_action_items|default(()) %}
+{% set combined_action_count = (attention_fields|length) + (regulatory_action_items|length) %}
 {% macro friendly_status(value) %}{% set labels = {"MISSING":"Missing information", "CONFLICT":"Conflicting information", "SUPPORTED":"Auto-resolved", "SUPPORTED MULTIPLE":"Auto-resolved", "SUPPORTED_MULTIPLE":"Auto-resolved", "FOUND":"Auto-resolved", "MATCHED":"Confirmed", "NOT_REQUIRED":"Not required", "REVIEW":"Needs review"} %}{{ labels.get(value, value|replace("_", " ")|title) }}{% endmacro %}
 {% macro review_telemetry_inputs() %}<input type="hidden" name="review_started_at" data-review-started-at><input type="hidden" name="review_elapsed_seconds" data-review-elapsed-seconds><input type="hidden" name="review_modified_field_ids" data-review-modified-field-ids>{% endmacro %}
 
@@ -151,10 +153,10 @@
         <span class="text-slate-500" aria-hidden="true">·</span>
         <span class="font-semibold text-amber-900" data-review-required-provenance-count>{{ provenance_summary.review_required_count }} need attention</span>
       </div>
-      {% if attention_fields %}
+      {% if combined_action_count > 0 %}
       <div class="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900" data-attention-callout>
         <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
-        <span><strong data-attention-callout-count>{{ attention_fields|length }}</strong> item{{ '' if attention_fields|length == 1 else 's' }} need attention before generating the declaration package.</span>
+        <span><strong data-attention-callout-count>{{ combined_action_count }}</strong> item{{ '' if combined_action_count == 1 else 's' }} need attention before generating the declaration package.</span>
       </div>
       {% else %}
       <div class="mt-4 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900" data-attention-callout>
@@ -166,7 +168,7 @@
 
     <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-review-kpis>
       <div class="lt-enterprise-stat border-amber-200 bg-amber-50" data-review-kpi="action">
-        <p class="text-2xl font-bold text-amber-700" data-action-required-count>{{ attention_fields|length }}</p>
+        <p class="text-2xl font-bold text-amber-700" data-action-required-count>{{ combined_action_count }}</p>
         <p class="mt-1 text-xs font-bold uppercase tracking-wide text-amber-900">Action Required</p>
         <p class="mt-1 text-xs text-amber-800">Work pending</p>
       </div>
@@ -188,9 +190,9 @@
     </div>
   </section>
 
-  {% set default_review_tab = "action" if attention_fields else ("resolved" if auto_supported_fields else "confirmed") %}
+  {% set default_review_tab = "action" if combined_action_count > 0 else ("resolved" if auto_supported_fields else "confirmed") %}
   <section class="lt-card overflow-hidden">
-    {% if not attention_fields %}
+    {% if combined_action_count == 0 %}
     <div class="lt-empty-state-transition flex flex-wrap items-center justify-between gap-4 border-b border-emerald-200 bg-emerald-50 px-5 py-4" data-no-action-required>
       <div class="flex items-start gap-3">
         <i class="fa-solid fa-circle-check mt-0.5 text-emerald-700" aria-hidden="true"></i>
@@ -205,7 +207,7 @@
 
     <nav class="flex overflow-x-auto border-b border-slate-200 px-4" role="tablist" aria-label="Shipment review">
       <button id="review-tab-action" type="button" role="tab" aria-selected="{{ 'true' if default_review_tab == 'action' else 'false' }}" aria-controls="review-panel-action" tabindex="{{ '0' if default_review_tab == 'action' else '-1' }}" data-review-tab-button="action" class="border-b-2 px-4 py-3 text-xs {% if default_review_tab == 'action' %}border-emerald-600 font-bold text-emerald-700{% else %}border-transparent font-semibold text-slate-500{% endif %}">
-        Exceptions <span class="ml-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20" data-action-tab-count>{{ attention_fields|length }}</span>
+        Exceptions <span class="ml-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20" data-action-tab-count>{{ combined_action_count }}</span>
       </button>
       <button id="review-tab-resolved" type="button" role="tab" aria-selected="{{ 'true' if default_review_tab == 'resolved' else 'false' }}" aria-controls="review-panel-resolved" tabindex="{{ '0' if default_review_tab == 'resolved' else '-1' }}" data-review-tab-button="resolved" class="border-b-2 px-4 py-3 text-xs {% if default_review_tab == 'resolved' %}border-emerald-600 font-bold text-emerald-700{% else %}border-transparent font-semibold text-slate-500{% endif %}">
         Auto-Resolved <span class="ml-1 text-[10px]">{{ auto_supported_fields|length }}</span>
@@ -219,10 +221,10 @@
     </nav>
 
     <div id="review-panel-action" role="tabpanel" aria-labelledby="review-tab-action" data-review-tab-panel="action" class="{% if default_review_tab != 'action' %}hidden {% endif %}p-5">
-      {% if attention_fields %}
+      {% if combined_action_count > 0 %}
       <div class="mb-4">
         <h2 class="text-base font-bold text-slate-950">Exception work queue</h2>
-        <p class="mt-1 text-xs text-slate-600">Only missing information, review-required evidence, or genuinely conflicting evidence appears here. Conflicts represent genuinely different supported values and remain explicit until a human decision is recorded. Every decision remains auditable.</p>
+        <p class="mt-1 text-xs text-slate-600">Only missing information, review-required evidence, or genuinely conflicting evidence appears here. Blocking regulatory information requirements are mirrored into the same queue. Conflicts represent genuinely different supported values and remain explicit until a human decision is recorded. Every resolution remains auditable.</p>
       </div>
       <div id="action-required-fields" class="grid gap-5" data-action-required-list>
         {% for line_reference, fields in attention_fields|groupby("line_reference") %}
@@ -249,6 +251,59 @@
           </div>
         </section>
         {% endfor %}
+
+        {% if regulatory_action_items %}
+        <section data-regulatory-action-required-group>
+          <div class="mb-2 flex items-center justify-between gap-3">
+            <h3 class="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-600">Regulatory information requirements</h3>
+            <span class="text-[11px] font-semibold text-slate-400">{{ regulatory_action_items|length }} blocker{{ '' if regulatory_action_items|length == 1 else 's' }}</span>
+          </div>
+          <div class="overflow-x-auto rounded-xl border border-slate-200">
+            <table class="min-w-[62rem] w-full text-left">
+              <thead class="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                <tr>
+                  <th class="px-4 py-2.5">Line</th>
+                  <th class="px-4 py-2.5">Action required</th>
+                  <th class="px-4 py-2.5">Reason</th>
+                  <th class="px-4 py-2.5">Status</th>
+                  <th class="px-4 py-2.5">Resolution</th>
+                </tr>
+              </thead>
+              <tbody class="bg-white">
+                {% for item in regulatory_action_items %}
+                <tr
+                  id="regulatory-action-{{ item.get('action_id') }}"
+                  class="border-b border-slate-100 align-top last:border-b-0"
+                  data-regulatory-action-required
+                  data-regulatory-action-id="{{ item.get('action_id') }}"
+                >
+                  <td class="px-4 py-3 text-xs font-semibold text-slate-700">{{ item.get('display_subject', 'Shipment') }}</td>
+                  <td class="px-4 py-3">
+                    <p class="text-xs font-bold text-slate-950">ACTION REQUIRED: {{ item.get('blocking_message') }}</p>
+                    <p class="mt-1 text-[11px] text-slate-500">{{ item.get('display_title', 'Regulatory check') }}</p>
+                  </td>
+                  <td class="px-4 py-3 text-xs leading-5 text-slate-700">{{ item.get('display_reason', 'Additional supported information is required') }}</td>
+                  <td class="px-4 py-3">{{ lt_badge("REVIEW REQUIRED", item.get('display_status', 'Needs information')) }}</td>
+                  <td class="px-4 py-3">
+                    {% if item.get('target_field_id') %}
+                    <a href="#review-field-{{ item.get('target_field_id') }}" class="lt-btn lt-btn--secondary">{{ item.get('action_label', 'Provide information') }}</a>
+                    {% else %}
+                    <button
+                      type="button"
+                      class="lt-btn lt-btn--secondary"
+                      data-request-evidence
+                      data-field-label="{{ item.get('display_title', 'Regulatory requirement') }}"
+                      data-field-guidance="{{ item.get('request_guidance', '') }}"
+                    >{{ item.get('action_label', 'Provide information') }}</button>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+        {% endif %}
       </div>
       {% else %}
       <div class="py-4 text-xs text-slate-500">The exception queue is clear. Use the active review tab above or continue to the Preparation Package.</div>
@@ -450,9 +505,9 @@
     <div class="flex min-w-0 flex-1 items-center gap-3">
       <span class="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 sm:flex" aria-hidden="true"><i class="fa-solid fa-bolt"></i></span>
       <div class="min-w-0">
-        {% if attention_fields %}
-        <p class="text-sm font-bold text-slate-950">{{ attention_fields|length }} item{{ '' if attention_fields|length == 1 else 's' }} still need attention</p>
-        <p class="text-xs text-slate-500">Resolve the remaining exceptions to continue.</p>
+        {% if combined_action_count > 0 %}
+        <p class="text-sm font-bold text-slate-950">{{ combined_action_count }} item{{ '' if combined_action_count == 1 else 's' }} still need attention</p>
+        <p class="text-xs text-slate-500">Resolve field and regulatory blockers to continue.</p>
         {% elif auto_supported_fields %}
         <p class="text-sm font-bold text-slate-950">Exceptions resolved</p>
         <p class="text-xs text-slate-500">Confirm the auto-resolved evidence before final preparation.</p>
@@ -466,10 +521,16 @@
       </div>
     </div>
     <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
-      {% if attention_fields %}
-      <a href="#review-field-{{ attention_fields[0].id }}" class="lt-btn lt-btn--primary" data-focus-next-required>
-        <i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span>Review next item</span>
-      </a>
+      {% if combined_action_count > 0 %}
+        {% if attention_fields %}
+        <a href="#review-field-{{ attention_fields[0].id }}" class="lt-btn lt-btn--primary" data-focus-next-required>
+          <i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span>Review next item</span>
+        </a>
+        {% else %}
+        <a href="#regulatory-action-{{ regulatory_action_items[0].get('action_id') }}" class="lt-btn lt-btn--primary" data-focus-next-required>
+          <i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span>Review regulatory item</span>
+        </a>
+        {% endif %}
       {% elif auto_supported_fields %}
       <form
         method="post"
@@ -585,7 +646,7 @@
 
   function refreshActionCount(root) {
     const unresolved = root.querySelectorAll(
-      '[data-action-required-list] [data-review-field]'
+      '[data-action-required-list] [data-review-field], [data-action-required-list] [data-regulatory-action-required]'
     ).length;
 
     root.querySelectorAll(
@@ -624,6 +685,12 @@
     const initiallySelected = root.querySelector('[data-review-tab-button][aria-selected="true"]');
     activateTab(root, initiallySelected?.dataset.reviewTabButton || "action");
     refreshActionCount(root);
+
+    root.querySelectorAll("[data-regulatory-action-jump]").forEach((link) => {
+      link.addEventListener("click", () => {
+        activateTab(root, "action");
+      });
+    });
 
     const requestDialog = root.querySelector("#request-evidence-dialog");
     root.querySelectorAll("[data-request-evidence]").forEach((button) => {

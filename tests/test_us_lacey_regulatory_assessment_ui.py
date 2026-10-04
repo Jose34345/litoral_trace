@@ -6,7 +6,10 @@ from uuid import uuid4
 from starlette.requests import Request
 from starlette.routing import Mount, Router
 
-from litoral_trace.us_lacey.regulatory_assessment_snapshot import RegulatoryAssessmentView
+from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
+    RegulatoryAssessmentView,
+    blocking_regulatory_assessments,
+)
 from litoral_trace.web import us_lacey_operational_views as operational_views
 
 
@@ -98,20 +101,28 @@ def test_terminal_workspace_hydrates_rule_scoped_regulatory_panel(monkeypatch):
     )
 
     assert 'data-regulatory-assessment-status="CURRENT"' in html
+    assert 'data-regulatory-matrix' in html
     assert "Regulatory Analysis" in html
     assert "De Minimis Exemption Assessment" in html
     assert "Needs information" in html
     assert "HTS Schedule Coverage" in html
     assert "Check passed" in html
-    assert "<strong>2</strong> compliance checks" in html
+    assert ">Line<" in html
+    assert ">Check<" in html
+    assert ">Status<" in html
+    assert ">Reason<" in html
+    assert ">Action<" in html
+    assert "2 checks" in html
+    assert "1 need information" in html
+    assert "Required quantity or mass inputs are missing" in html
+    assert "Provide quantity / mass evidence" in html
+    assert "ACTION REQUIRED: Missing quantity or mass information." in html
+    assert 'data-action-required-count>1<' in html
+    assert 'data-action-tab-count>1<' in html
     assert "does not represent an overall legal compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
-    assert "Reason:" not in html
     assert "MISSING_REQUIRED_INPUTS" not in html
     assert "U.S. Lacey ruleset" not in html
-    assert "border-l-amber-500" in html
-    assert "ring-amber-600/20" in html
-    assert "provide the missing quantities or values in the Action Required tab" in html
 
 
 def test_direct_workspace_renders_same_noncanonical_regulatory_panel(monkeypatch):
@@ -134,8 +145,86 @@ def test_direct_workspace_renders_same_noncanonical_regulatory_panel(monkeypatch
     )
 
     assert 'data-regulatory-assessment-status="CURRENT"' in html
+    assert 'data-regulatory-matrix' in html
     assert "De Minimis Exemption Assessment" in html
     assert "HTS Schedule Coverage" in html
-    assert "<strong>2</strong> compliance checks" in html
+    assert "2 checks" in html
+    assert 'data-action-required-count>1<' in html
     assert "does not represent an overall legal compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
+
+
+def test_blocking_helper_uses_review_required_not_raw_rule_status():
+    payload = {
+        "assessments": [
+            {"rule_id": "BLOCK", "status": "INDETERMINATE", "review_required": True},
+            {"rule_id": "OPTIONAL", "status": "INDETERMINATE", "review_required": False},
+            {"rule_id": "FAIL_NONBLOCKING", "status": "FAIL", "review_required": False},
+        ]
+    }
+
+    blockers = blocking_regulatory_assessments(payload)
+
+    assert [item["rule_id"] for item in blockers] == ["BLOCK"]
+
+
+def test_optional_indeterminate_is_not_evaluated_and_does_not_block():
+    view = _view()
+    payload = dict(view.payload)
+    payload["assessments"] = [
+        {
+            "rule_id": "SPECIAL_COMPOSITE",
+            "subject_ref": "LT-LINE-1",
+            "status": "INDETERMINATE",
+            "reason_codes": ["MISSING_REQUIRED_INPUTS"],
+            "explanation": "Optional enrichment is unavailable.",
+            "calculation_trace": {},
+            "evidence_refs": [],
+            "review_required": False,
+        }
+    ]
+    optional_view = RegulatoryAssessmentView(
+        status=view.status,
+        generation=view.generation,
+        source_set_fingerprint=view.source_set_fingerprint,
+        ruleset_version=view.ruleset_version,
+        input_fingerprint=view.input_fingerprint,
+        assessment_count=1,
+        indeterminate_count=1,
+        payload=payload,
+    )
+
+    presented = operational_views._present_regulatory_assessment(optional_view)
+    [assessment] = presented.payload["assessments"]
+
+    assert assessment["display_status"] == "Not evaluated"
+    assert assessment["blocks_package"] is False
+    assert "Does not block the current preparation package." in assessment["customer_message"]
+
+
+def test_readiness_is_not_ready_when_only_regulatory_blockers_remain():
+    detail = SimpleNamespace(
+        status="COMPLETED",
+        fields=(),
+    )
+    processing = SimpleNamespace(terminal=True, failed=False)
+
+    blocked = operational_views._readiness_summary(
+        detail,
+        attention_fields=(),
+        processing=processing,
+        regulatory_action_items=({"action_id": "de-minimis-line-1"},),
+    )
+    ready = operational_views._readiness_summary(
+        detail,
+        attention_fields=(),
+        processing=processing,
+        regulatory_action_items=(),
+    )
+
+    assert blocked["overall"] == "NOT READY"
+    assert blocked["package_ready"] is False
+    assert blocked["exception_count"] == 1
+    assert blocked["regulatory_exception_count"] == 1
+    assert ready["overall"] == "PACKAGE READY"
+    assert ready["package_ready"] is True

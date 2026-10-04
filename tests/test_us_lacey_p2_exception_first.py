@@ -131,15 +131,18 @@ def test_exception_first_workspace_exposes_tabs_and_bulk_confirmation():
     assert '{% include "us_lacey/fragments/export_declaration_package.html" %}' in template
 
 
-def test_regulatory_fail_and_indeterminate_are_expanded_while_neutral_states_collapse():
+def test_regulatory_analysis_uses_dense_enterprise_matrix_with_resolution_actions():
     template = REGULATORY_TEMPLATE.read_text(encoding="utf-8")
 
-    assert "data-regulatory-exceptions" in template
-    assert "failed + indeterminate" in template
-    assert "data-regulatory-passed" in template
-    assert "data-regulatory-not-applicable" in template
-    assert "Not applicable" in template
-    assert "<details" in template
+    assert "lt-data-table" in template
+    assert "data-regulatory-matrix" in template
+    for column in ("Line", "Check", "Status", "Reason", "Action"):
+        assert f">{column}<" in template
+    assert 'lt_badge("READY"' in template
+    assert 'lt_badge("REVIEW REQUIRED"' in template
+    assert 'lt_badge("NOT EVALUATED"' in template
+    assert "Does not block the current preparation package." in template
+    assert "data-regulatory-action-jump" in template
     assert "not an overall legal compliance determination" in template
 
 

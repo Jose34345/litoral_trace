@@ -26,6 +26,8 @@ from litoral_trace.db.models import (
     UsLaceyPlantDeclaration,
     UsLaceyPpqPlantLine,
     UsLaceyProcessingJob,
+    UsLaceyRegulatoryAssessmentSnapshot,
+    UsLaceySourceSetRevision,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.candidate_normalization import (
@@ -46,6 +48,10 @@ from litoral_trace.us_lacey.ppq505 import (
 from litoral_trace.us_lacey.reconciliation_invariants import (
     reconcile_entered_value_invariant,
     upsert_shipment_total_entered_value,
+)
+from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
+    RULESET_VERSION,
+    blocking_regulatory_assessments,
 )
 from litoral_trace.us_lacey.regulatory.applicability.domain import (
     ApplicabilityDecision,
@@ -1221,9 +1227,41 @@ def refresh_us_lacey_operation_status(
             ReconciliationIssue.status == "OPEN",
         )
     ) or 0
-    if int(unresolved) or int(open_conflicts):
+    regulatory_payload = session.scalar(
+        select(UsLaceyRegulatoryAssessmentSnapshot.payload_json)
+        .join(
+            UsLaceySourceSetRevision,
+            (
+                UsLaceySourceSetRevision.id
+                == UsLaceyRegulatoryAssessmentSnapshot.source_set_revision_id
+            )
+            & (
+                UsLaceySourceSetRevision.organization_id
+                == UsLaceyRegulatoryAssessmentSnapshot.organization_id
+            ),
+        )
+        .where(
+            UsLaceyRegulatoryAssessmentSnapshot.organization_id == organization_id,
+            UsLaceyRegulatoryAssessmentSnapshot.operation_id == operation.id,
+            UsLaceyRegulatoryAssessmentSnapshot.status == "CURRENT",
+            UsLaceyRegulatoryAssessmentSnapshot.ruleset_version == RULESET_VERSION,
+            UsLaceySourceSetRevision.is_current.is_(True),
+        )
+        .order_by(UsLaceyRegulatoryAssessmentSnapshot.id.desc())
+        .limit(1)
+    )
+    regulatory_blocker_count = len(
+        blocking_regulatory_assessments(
+            None if regulatory_payload is None else dict(regulatory_payload or {})
+        )
+    )
+    if int(unresolved) or int(open_conflicts) or regulatory_blocker_count:
         operation.status = "REVIEW_REQUIRED"
-        operation.review_result = "NEEDS_HUMAN_REVIEW"
+        operation.review_result = (
+            "NEEDS_REGULATORY_INFORMATION"
+            if regulatory_blocker_count and not int(unresolved) and not int(open_conflicts)
+            else "NEEDS_HUMAN_REVIEW"
+        )
     elif int(operation.document_count) > 0:
         operation.status = "READY_FOR_REVIEW"
         operation.review_result = "READY_FOR_HUMAN_CONFIRMATION"

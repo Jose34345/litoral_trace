@@ -33,6 +33,10 @@ from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.domain import US_LACEY_REVIEW_FIELDS
 from litoral_trace.us_lacey.operations import UsLaceyOperationNotFound
 from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
+from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
+    blocking_regulatory_assessments,
+    refresh_regulatory_assessment_snapshot_for_review,
+)
 from litoral_trace.us_lacey.reconciliation_invariants import reconcile_entered_value_invariant
 from litoral_trace.us_lacey.reusable_evidence_promotion import promote_reviewed_field
 from litoral_trace.us_lacey.review_telemetry import ReviewTelemetry
@@ -316,6 +320,11 @@ def review_us_lacey_field(
             organization_id=org_id,
             operation=operation,
         )
+        refresh_regulatory_assessment_snapshot_for_review(
+            session,
+            organization_id=org_id,
+            operation=operation,
+        )
         operation_status = refresh_us_lacey_operation_status(
             session,
             organization_id=org_id,
@@ -466,6 +475,11 @@ def accept_supported_us_lacey_fields(
             organization_id=org_id,
             operation=operation,
         )
+        refresh_regulatory_assessment_snapshot_for_review(
+            session,
+            organization_id=org_id,
+            operation=operation,
+        )
         operation_status = refresh_us_lacey_operation_status(
             session,
             organization_id=org_id,
@@ -607,6 +621,22 @@ def finalize_us_lacey_review(
                 "Resolve every missing field, review item and contradiction before completing review."
             )
 
+        regulatory_snapshot = refresh_regulatory_assessment_snapshot_for_review(
+            session,
+            organization_id=org_id,
+            operation=operation,
+        )
+        regulatory_blockers = blocking_regulatory_assessments(
+            None
+            if regulatory_snapshot is None
+            else dict(regulatory_snapshot.payload_json or {})
+        )
+        if regulatory_blockers:
+            raise UsLaceyReviewError(
+                "Cannot complete preparation while regulatory checks still need information. "
+                "Resolve the Regulatory Analysis items shown in Action Required first."
+            )
+
         modified_review_fields: list[dict[str, object]] = []
         if telemetry is not None and telemetry.modified_field_ids:
             rows = session.scalars(
@@ -682,6 +712,19 @@ def _export_rows(*, organization_id: int, operation_public_id: UUID | str):
             organization_id=org_id,
             operation_public_id=operation_public_id,
         )
+        regulatory_snapshot = refresh_regulatory_assessment_snapshot_for_review(
+            session,
+            organization_id=org_id,
+            operation=operation,
+        )
+        if blocking_regulatory_assessments(
+            None
+            if regulatory_snapshot is None
+            else dict(regulatory_snapshot.payload_json or {})
+        ):
+            raise UsLaceyReviewError(
+                "Preparation package is not ready: regulatory checks still need information."
+            )
         fields = session.scalars(
             select(UsLaceyOperationField)
             .where(

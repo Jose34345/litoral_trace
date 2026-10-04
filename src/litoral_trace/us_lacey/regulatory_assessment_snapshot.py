@@ -69,6 +69,38 @@ class RegulatoryAssessmentView:
     payload: dict[str, Any]
 
 
+def blocking_regulatory_assessments(
+    payload_or_view: Mapping[str, Any] | RegulatoryAssessmentView | None,
+) -> tuple[dict[str, Any], ...]:
+    """Return only rule results that block package readiness.
+
+    review_required is the canonical blocking signal. This deliberately does
+    not treat every FAIL/INDETERMINATE result as blocking: a deterministic FAIL
+    can be a valid rule outcome, and a future optional INDETERMINATE check may
+    be presented as NOT EVALUATED without preventing package generation.
+    """
+    if payload_or_view is None:
+        return ()
+    payload = (
+        payload_or_view.payload
+        if isinstance(payload_or_view, RegulatoryAssessmentView)
+        else payload_or_view
+    )
+    assessments = payload.get("assessments", ())
+    return tuple(
+        dict(item)
+        for item in assessments
+        if isinstance(item, Mapping) and bool(item.get("review_required"))
+    )
+
+
+def regulatory_package_ready(
+    payload_or_view: Mapping[str, Any] | RegulatoryAssessmentView | None,
+) -> bool:
+    """Whether the regulatory layer has no blocking information requirements."""
+    return not blocking_regulatory_assessments(payload_or_view)
+
+
 def fingerprint_rule_inputs(payload: Mapping[str, Any]) -> str:
     """Return the stable SHA-256 identity of exact rule-relevant inputs."""
     encoded = json.dumps(
@@ -501,6 +533,127 @@ def mark_regulatory_assessment_snapshots_stale(
     return int(result.rowcount or 0)
 
 
+def refresh_regulatory_assessment_snapshot_for_review(
+    session: Session,
+    *,
+    organization_id: int,
+    operation: UsLaceyOperation,
+) -> UsLaceyRegulatoryAssessmentSnapshot | None:
+    """Re-evaluate the current source set after authoritative human review.
+
+    Human review changes rule inputs without changing the document source-set
+    identity. Keep the one current snapshot for that source set/ruleset aligned
+    with those reviewed values so readiness cannot remain stuck on stale rule
+    output.
+    """
+    organization_id = int(organization_id)
+    revision = session.scalar(
+        select(UsLaceySourceSetRevision).where(
+            UsLaceySourceSetRevision.organization_id == organization_id,
+            UsLaceySourceSetRevision.operation_id == int(operation.id),
+            UsLaceySourceSetRevision.is_current.is_(True),
+        )
+    )
+    if revision is None:
+        return None
+
+    product_snapshot = session.scalar(
+        select(UsLaceyProductIntelligenceSnapshot).where(
+            UsLaceyProductIntelligenceSnapshot.organization_id == organization_id,
+            UsLaceyProductIntelligenceSnapshot.operation_id == int(operation.id),
+            UsLaceyProductIntelligenceSnapshot.source_set_revision_id == int(revision.id),
+            UsLaceyProductIntelligenceSnapshot.status != "STALE",
+        )
+    )
+    product_payload = (
+        enrich_product_intelligence_taxonomy(dict(product_snapshot.payload_json or {}))
+        if product_snapshot is not None
+        else {}
+    )
+    operation_fields = tuple(
+        session.scalars(
+            select(UsLaceyOperationField).where(
+                UsLaceyOperationField.organization_id == organization_id,
+                UsLaceyOperationField.operation_id == int(operation.id),
+            )
+        ).all()
+    )
+    plant_line_references = tuple(
+        str(value)
+        for value in session.scalars(
+            select(UsLaceyPpqPlantLine.line_reference)
+            .where(
+                UsLaceyPpqPlantLine.organization_id == organization_id,
+                UsLaceyPpqPlantLine.operation_id == int(operation.id),
+            )
+            .order_by(UsLaceyPpqPlantLine.ordinal.asc(), UsLaceyPpqPlantLine.id.asc())
+        ).all()
+    )
+    regulatory_input_contract = build_regulatory_input_contract(
+        product_intelligence_payload=product_payload,
+        operation_fields=operation_fields,
+        plant_line_references=plant_line_references,
+    )
+    source_set = {
+        "revision_id": int(revision.id),
+        "generation": int(revision.generation),
+        "fingerprint": str(revision.source_set_fingerprint),
+    }
+    payload = build_regulatory_assessment_payload(
+        product_intelligence_payload=product_payload,
+        source_set=source_set,
+        operation_fields=operation_fields,
+        plant_line_references=plant_line_references,
+        regulatory_input_contract=regulatory_input_contract,
+    )
+    input_fingerprint = fingerprint_rule_inputs(
+        {
+            "ruleset_version": RULESET_VERSION,
+            "source_set": source_set,
+            "plant_line_references": list(plant_line_references),
+            "operation_fields": _operation_field_fingerprint_payload(operation_fields),
+            "product_intelligence": product_payload,
+            "regulatory_input_contract": regulatory_input_contract,
+        }
+    )
+    summary = payload["summary"]
+    snapshot = session.scalar(
+        select(UsLaceyRegulatoryAssessmentSnapshot).where(
+            UsLaceyRegulatoryAssessmentSnapshot.organization_id == organization_id,
+            UsLaceyRegulatoryAssessmentSnapshot.source_set_revision_id == int(revision.id),
+            UsLaceyRegulatoryAssessmentSnapshot.ruleset_version == RULESET_VERSION,
+        )
+    )
+    if snapshot is None:
+        snapshot = UsLaceyRegulatoryAssessmentSnapshot(
+            organization_id=organization_id,
+            operation_id=int(operation.id),
+            source_set_revision_id=int(revision.id),
+            generation=int(revision.generation),
+            source_set_fingerprint=str(revision.source_set_fingerprint),
+            ruleset_version=RULESET_VERSION,
+            input_fingerprint=input_fingerprint,
+            status="CURRENT",
+            assessment_count=int(summary["assessment_count"]),
+            indeterminate_count=int(summary["indeterminate_count"]),
+            payload_json=payload,
+            finalized_at=datetime.now(timezone.utc),
+        )
+        session.add(snapshot)
+    else:
+        snapshot.generation = int(revision.generation)
+        snapshot.source_set_fingerprint = str(revision.source_set_fingerprint)
+        snapshot.input_fingerprint = input_fingerprint
+        snapshot.status = "CURRENT"
+        snapshot.assessment_count = int(summary["assessment_count"])
+        snapshot.indeterminate_count = int(summary["indeterminate_count"])
+        snapshot.payload_json = payload
+        snapshot.finalized_at = datetime.now(timezone.utc)
+
+    session.flush()
+    return snapshot
+
+
 def build_regulatory_assessment_snapshot(
     *,
     organization_id: int,
@@ -723,4 +876,7 @@ __all__ = [
     "fingerprint_rule_inputs",
     "get_current_regulatory_assessment_view",
     "mark_regulatory_assessment_snapshots_stale",
+    "blocking_regulatory_assessments",
+    "regulatory_package_ready",
+    "refresh_regulatory_assessment_snapshot_for_review",
 ]

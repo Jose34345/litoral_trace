@@ -1,12 +1,13 @@
-{% set export_ready = detail.status == "COMPLETED" %}
-{% set action_count = attention_fields|default(())|length %}
+{% set has_readiness_summary = readiness_summary is defined %}
+{% set export_ready = readiness_summary.package_ready if has_readiness_summary else (detail.status == "COMPLETED") %}
+{% set action_count = readiness_summary.exception_count if has_readiness_summary else (attention_fields|default(())|length) %}
 {% set auto_count = auto_supported_fields|default(())|length %}
 {% if export_ready %}
   {% set export_block_reason = "" %}
 {% elif arithmetic_blocked|default(false) %}
   {% set export_block_reason = "Resolve the Entered Value reconciliation inconsistency and complete document preparation to unlock exports." %}
 {% elif action_count > 0 %}
-  {% set export_block_reason = "Resolve the remaining Action Required items, then complete preparation to unlock the declaration package." %}
+  {% set export_block_reason = "Resolve every field and regulatory Action Required item, then complete preparation to unlock the declaration package." %}
 {% elif auto_count > 0 %}
   {% set export_block_reason = "Confirm the auto-resolved fields, then complete preparation to unlock the declaration package." %}
 {% else %}
@@ -45,7 +46,7 @@
         <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700" aria-hidden="true"><i class="fa-solid fa-lock-open"></i></span>
         <div>
           <h3 class="font-bold text-slate-950">Unlock your declaration package</h3>
-          <p class="mt-1 text-sm leading-6 text-slate-600">You are almost done. Resolve the <strong>{{ action_count }}</strong> item{{ '' if action_count == 1 else 's' }} in the Action Required tab to generate your review-ready LAWGS XML and audit summary. Litoral Trace has already auto-resolved <strong>{{ auto_count }}</strong> field{{ '' if auto_count == 1 else 's' }} for you.</p>
+          <p class="mt-1 text-sm leading-6 text-slate-600">You are almost done. Resolve the <strong>{{ action_count }}</strong> item{{ '' if action_count == 1 else 's' }} in the Action Required tab to generate your review-ready LAWGS XML and audit summary. This count includes field exceptions and blocking regulatory information requirements. Litoral Trace has already auto-resolved <strong>{{ auto_count }}</strong> field{{ '' if auto_count == 1 else 's' }} for you.</p>
         </div>
       </div>
     </div>
