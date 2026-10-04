@@ -121,7 +121,7 @@ def test_assessment_uses_primary_plant_line_without_product_intelligence():
         plant_line_references=("LT-LINE-1",),
     )
 
-    assert payload["ruleset_version"] == "us-lacey-regulatory-rules-v3"
+    assert payload["ruleset_version"] == "us-lacey-regulatory-rules-v4"
     assert payload["summary"]["subject_count"] == 1
     assert payload["summary"]["assessment_count"] == 4
 

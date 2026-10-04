@@ -811,6 +811,65 @@ def build_regulatory_assessment_snapshot(
         session.close()
 
 
+def refresh_current_regulatory_assessment_view(
+    *,
+    organization_id: int,
+    operation_public_id: UUID | str,
+    session_factory: SessionFactory | None = None,
+) -> RegulatoryAssessmentView | None:
+    """Rebuild the current operation against the active ruleset and persist it."""
+    factory = session_factory or get_us_lacey_db_session
+    organization_id = int(organization_id)
+    try:
+        public_id = (
+            operation_public_id
+            if isinstance(operation_public_id, UUID)
+            else UUID(str(operation_public_id))
+        )
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+    session = factory()
+    try:
+        set_tenant_db_context(session, organization_id)
+        operation = session.scalar(
+            select(UsLaceyOperation).where(
+                UsLaceyOperation.organization_id == organization_id,
+                UsLaceyOperation.public_id == public_id,
+            )
+        )
+        if operation is None:
+            return None
+
+        snapshot = refresh_regulatory_assessment_snapshot_for_review(
+            session,
+            organization_id=organization_id,
+            operation=operation,
+        )
+        if snapshot is None:
+            session.rollback()
+            return None
+
+        session.commit()
+        set_tenant_db_context(session, organization_id)
+        session.refresh(snapshot)
+        return RegulatoryAssessmentView(
+            status=snapshot.status,
+            generation=snapshot.generation,
+            source_set_fingerprint=snapshot.source_set_fingerprint,
+            ruleset_version=snapshot.ruleset_version,
+            input_fingerprint=snapshot.input_fingerprint,
+            assessment_count=snapshot.assessment_count,
+            indeterminate_count=snapshot.indeterminate_count,
+            payload=dict(snapshot.payload_json or {}),
+        )
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
 def get_current_regulatory_assessment_view(
     *,
     organization_id: int,
@@ -878,6 +937,7 @@ __all__ = [
     "build_regulatory_assessment_snapshot",
     "fingerprint_rule_inputs",
     "get_current_regulatory_assessment_view",
+    "refresh_current_regulatory_assessment_view",
     "mark_regulatory_assessment_snapshots_stale",
     "blocking_regulatory_assessments",
     "regulatory_package_ready",

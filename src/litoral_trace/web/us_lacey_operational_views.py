@@ -23,6 +23,7 @@ from litoral_trace.us_lacey.product_intelligence_snapshot import (
 from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
     blocking_regulatory_assessments,
     get_current_regulatory_assessment_view,
+    refresh_current_regulatory_assessment_view,
 )
 from litoral_trace.us_lacey.semantic_evidence_read import (
     EvidenceTextView,
@@ -747,7 +748,13 @@ def _regulatory_assessment_for_detail(identity, detail, explicit_view=None):
     if not organization_id or operation_public_id is None:
         return None
     try:
-        return get_current_regulatory_assessment_view(
+        current = get_current_regulatory_assessment_view(
+            organization_id=int(organization_id),
+            operation_public_id=operation_public_id,
+        )
+        if current is not None:
+            return current
+        return refresh_current_regulatory_assessment_view(
             organization_id=int(organization_id),
             operation_public_id=operation_public_id,
         )

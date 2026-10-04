@@ -85,7 +85,7 @@ def test_payload_evaluates_plant_line_without_bom_and_never_returns_zero_assessm
     )
 
     assert payload["schema_version"] == "regulatory-assessment-snapshot-v3"
-    assert payload["ruleset_version"] == "us-lacey-regulatory-rules-v3"
+    assert payload["ruleset_version"] == "us-lacey-regulatory-rules-v4"
     assert payload["summary"]["subject_count"] == 1
     assert payload["summary"]["assessment_count"] == 4
 
