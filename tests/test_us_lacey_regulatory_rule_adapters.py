@@ -41,7 +41,7 @@ def test_de_minimis_adapter_delegates_typed_input_to_existing_evaluator():
     assert result.calculation_trace["subject_ref"] == "LINE-1"
 
 
-def test_de_minimis_adapter_without_weight_inputs_is_indeterminate():
+def test_de_minimis_adapter_without_explicit_claim_is_not_evaluated():
     subject = RegulatorySubject(
         subject_ref="LINE-1",
         line_reference="LINE-1",
@@ -50,8 +50,13 @@ def test_de_minimis_adapter_without_weight_inputs_is_indeterminate():
 
     result = DeMinimisRule().evaluate(subject=subject, context=_context(subject))
 
-    assert result.status is RuleStatus.INDETERMINATE
-    assert "MISSING_REQUIRED_INPUTS" in result.reason_codes
+    assert result.status is RuleStatus.NOT_EVALUATED
+    assert result.review_required is False
+    assert result.reason_codes == ("EXEMPTION_NOT_CLAIMED",)
+    assert result.explanation == (
+        "De Minimis exemption was not claimed. "
+        "Does not block the declaration package."
+    )
 
 
 def test_special_composite_adapter_uses_material_enrichment_but_not_due_care_guessing():

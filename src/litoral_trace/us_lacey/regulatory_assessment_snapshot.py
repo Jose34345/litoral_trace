@@ -90,7 +90,8 @@ def blocking_regulatory_assessments(
     return tuple(
         dict(item)
         for item in assessments
-        if isinstance(item, Mapping) and bool(item.get("review_required"))
+        if isinstance(item, Mapping)
+        and bool(item.get("is_blocking", item.get("review_required")))
     )
 
 
@@ -134,6 +135,7 @@ def _serialize_assessment(
             for ref in assessment.evidence_refs
         ],
         "review_required": bool(assessment.review_required),
+        "is_blocking": bool(assessment.review_required),
     }
 
 
@@ -389,6 +391,7 @@ def _build_regulatory_subjects(
         unit = _field_value(line_fields.get("metric_unit"))
 
         de_minimis_inputs = {
+            "claimed": False,
             "hts10": hts10,
             "plant_mass_per_unit_kg": _supported_contract_value(
                 contract_inputs,

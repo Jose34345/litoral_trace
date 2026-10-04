@@ -54,13 +54,15 @@
                 {{ lt_badge("REVIEW REQUIRED", assessment.get('display_status', 'Needs information')) }}
               {% elif status == 'INDETERMINATE' %}
                 {{ lt_badge("NOT EVALUATED", assessment.get('display_status', 'Not evaluated')) }}
+              {% elif status == 'NOT_EVALUATED' %}
+                {{ lt_badge("NOT EVALUATED", assessment.get('display_status', 'Not evaluated')) }}
               {% else %}
                 {{ lt_badge("NOT APPLICABLE", assessment.get('display_status', 'Not applicable')) }}
               {% endif %}
             </td>
             <td class="lt-data-table__cell">
               <p class="max-w-md text-xs leading-5 text-slate-700">{{ assessment.get('display_reason', 'No additional reason provided') }}</p>
-              {% if status == 'INDETERMINATE' and not blocks %}
+              {% if (status == 'INDETERMINATE' and not blocks) or status == 'NOT_EVALUATED' %}
               <p class="mt-1 text-[11px] font-medium text-slate-500">Does not block the current preparation package.</p>
               {% endif %}
             </td>

@@ -51,10 +51,10 @@ def _view() -> RegulatoryAssessmentView:
         ruleset_version="us-lacey-regulatory-rules-v3",
         input_fingerprint="a" * 64,
         assessment_count=2,
-        indeterminate_count=1,
+        indeterminate_count=0,
         payload={
             "schema_version": "regulatory-assessment-snapshot-v3",
-            "summary": {"subject_count": 1, "assessment_count": 2, "indeterminate_count": 1},
+            "summary": {"subject_count": 1, "assessment_count": 2, "indeterminate_count": 0},
             "assessments": [
                 {
                     "rule_id": "HTS_APPLICABILITY",
@@ -69,12 +69,16 @@ def _view() -> RegulatoryAssessmentView:
                 {
                     "rule_id": "DE_MINIMIS",
                     "subject_ref": "LT-LINE-1",
-                    "status": "INDETERMINATE",
-                    "reason_codes": ["MISSING_REQUIRED_INPUTS"],
-                    "explanation": "Required de minimis inputs are missing or invalid; review is required.",
+                    "status": "NOT_EVALUATED",
+                    "reason_codes": ["EXEMPTION_NOT_CLAIMED"],
+                    "explanation": (
+                        "De Minimis exemption was not claimed. "
+                        "Does not block the declaration package."
+                    ),
                     "calculation_trace": {},
                     "evidence_refs": [],
-                    "review_required": True,
+                    "review_required": False,
+                    "is_blocking": False,
                 },
             ],
         },
@@ -104,7 +108,7 @@ def test_terminal_workspace_hydrates_rule_scoped_regulatory_panel(monkeypatch):
     assert 'data-regulatory-matrix' in html
     assert "Regulatory Analysis" in html
     assert "De Minimis Exemption Assessment" in html
-    assert "Needs information" in html
+    assert "Not evaluated" in html
     assert "HTS Schedule Coverage" in html
     assert "Check passed" in html
     assert ">Line<" in html
@@ -113,15 +117,20 @@ def test_terminal_workspace_hydrates_rule_scoped_regulatory_panel(monkeypatch):
     assert ">Reason<" in html
     assert ">Action<" in html
     assert "2 checks" in html
-    assert "1 need information" in html
-    assert "Required quantity or mass inputs are missing" in html
-    assert "Provide quantity / mass evidence" in html
-    assert "ACTION REQUIRED: Missing quantity or mass information." in html
-    assert 'data-action-required-count>1<' in html
-    assert 'data-action-tab-count>1<' in html
+    assert "need information" not in html
+    assert "De Minimis exemption was not claimed. Does not block the declaration package." in html
+    assert "Provide quantity / mass evidence" not in html
+    assert "ACTION REQUIRED: Missing quantity or mass information." not in html
+    assert 'data-action-required-count>0<' in html
+    assert 'data-action-tab-count>0<' in html
+    assert 'id="workflow-stepper"' in html
+    assert 'id="shipment-readiness-card"' in html
+    assert 'id="species-status"' in html
+    assert 'id="country-status"' in html
+    assert html.count('hx-swap-oob="true"') >= 4
     assert "does not represent an overall legal compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
-    assert "MISSING_REQUIRED_INPUTS" not in html
+    assert "EXEMPTION_NOT_CLAIMED" not in html
     assert "U.S. Lacey ruleset" not in html
 
 
@@ -149,7 +158,8 @@ def test_direct_workspace_renders_same_noncanonical_regulatory_panel(monkeypatch
     assert "De Minimis Exemption Assessment" in html
     assert "HTS Schedule Coverage" in html
     assert "2 checks" in html
-    assert 'data-action-required-count>1<' in html
+    assert 'data-action-required-count>0<' in html
+    assert "De Minimis exemption was not claimed. Does not block the declaration package." in html
     assert "does not represent an overall legal compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
 
@@ -160,6 +170,12 @@ def test_blocking_helper_uses_review_required_not_raw_rule_status():
             {"rule_id": "BLOCK", "status": "INDETERMINATE", "review_required": True},
             {"rule_id": "OPTIONAL", "status": "INDETERMINATE", "review_required": False},
             {"rule_id": "FAIL_NONBLOCKING", "status": "FAIL", "review_required": False},
+            {
+                "rule_id": "EXPLICIT_NONBLOCKING",
+                "status": "INDETERMINATE",
+                "review_required": True,
+                "is_blocking": False,
+            },
         ]
     }
 
@@ -228,3 +244,58 @@ def test_readiness_is_not_ready_when_only_regulatory_blockers_remain():
     assert blocked["regulatory_exception_count"] == 1
     assert ready["overall"] == "PACKAGE READY"
     assert ready["package_ready"] is True
+
+
+def test_workspace_summary_uses_combined_regulatory_action_count(monkeypatch):
+    view = _view()
+    payload = dict(view.payload)
+    payload["assessments"] = [
+        {
+            "rule_id": "HTS_APPLICABILITY",
+            "subject_ref": "LT-LINE-1",
+            "status": "INDETERMINATE",
+            "reason_codes": ["HTS10_MISSING"],
+            "explanation": "A valid 10-digit HTS code is required.",
+            "calculation_trace": {},
+            "evidence_refs": [],
+            "review_required": True,
+            "is_blocking": True,
+        },
+        view.payload["assessments"][1],
+    ]
+    blocking_view = RegulatoryAssessmentView(
+        status=view.status,
+        generation=view.generation,
+        source_set_fingerprint=view.source_set_fingerprint,
+        ruleset_version=view.ruleset_version,
+        input_fingerprint=view.input_fingerprint,
+        assessment_count=2,
+        indeterminate_count=1,
+        payload=payload,
+    )
+    monkeypatch.setattr(operational_views, "_semantic_evidence_for_detail", lambda *_: {})
+    monkeypatch.setattr(
+        operational_views,
+        "_product_intelligence_for_detail",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        operational_views,
+        "_regulatory_assessment_for_detail",
+        lambda *_args, **_kwargs: blocking_view,
+        raising=False,
+    )
+
+    html = operational_views.render_operation_workspace(
+        request=_request(),
+        identity=SimpleNamespace(organization_id=7),
+        detail=_detail(),
+        engine2_dossier=_engine2(),
+        complete_csrf="complete",
+        review_csrf={},
+    )
+
+    assert "data-review-required-provenance-count>1 need attention<" in html
+    assert "data-action-required-count>1<" in html
+    assert "Provide HTS" in html
+    assert "Provide quantity / mass evidence" not in html

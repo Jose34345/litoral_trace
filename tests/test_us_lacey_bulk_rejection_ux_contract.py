@@ -7,15 +7,16 @@ from jinja2 import Environment
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "src" / "litoral_trace" / "templates" / "us_lacey" / "operation_detail.html"
-PROCESSING_FRAGMENT = (
+FRAGMENTS = (
     ROOT
     / "src"
     / "litoral_trace"
     / "templates"
     / "us_lacey"
     / "fragments"
-    / "processing_fragment.html"
 )
+PROCESSING_FRAGMENT = FRAGMENTS / "processing_fragment.html"
+WORKFLOW_STEPPER = FRAGMENTS / "workflow_stepper_shell.html"
 
 
 def test_bulk_rejection_is_customer_guidance_not_internal_error_ui():
@@ -41,10 +42,14 @@ def test_bulk_rejection_is_customer_guidance_not_internal_error_ui():
 def test_bulk_rejection_does_not_mix_request_feedback_with_stale_analysis_ui():
     source = TEMPLATE.read_text(encoding="utf-8")
 
+    stepper = WORKFLOW_STEPPER.read_text(encoding="utf-8")
+
     assert '{% set empty_bulk_rejection = bulk_upload_rejection and not detail.documents %}' in source
-    assert '("Documents", "complete" if detail.documents else "current", "#documents")' in source
-    assert '{% set processing_step_state = "pending" if empty_bulk_rejection else ("current" if processing.failed or not processing.terminal else "complete") %}' in source
-    assert '("Processing", processing_step_state, "#processing-status")' in source
+    assert '{% set shell_empty_bulk_rejection = empty_bulk_rejection %}' in source
+    assert 'workflow_stepper_shell.html' in source
+    assert '("Documents", "complete" if detail.documents else "current", "#documents")' in stepper
+    assert '"pending" if shell_empty_bulk_rejection|default(false)' in stepper
+    assert '("Processing", workflow_processing_state, "#processing-status")' in stepper
 
     # On the response to a rejected multi-shipment upload, do not show an old
     # Engine 2 placeholder or a processing failure that belongs to a previously
@@ -59,9 +64,9 @@ def test_bulk_rejection_does_not_mix_request_feedback_with_stale_analysis_ui():
 
 
 def test_failed_processing_is_not_marked_complete_in_progress_steps():
-    source = TEMPLATE.read_text(encoding="utf-8")
+    stepper = WORKFLOW_STEPPER.read_text(encoding="utf-8")
 
-    assert '"current" if processing.failed or not processing.terminal else "complete"' in source
+    assert '"current" if processing.failed or not processing.terminal else "complete"' in stepper
 
 
 def test_generic_errors_remain_distinct_from_expected_bulk_guidance():

@@ -94,7 +94,12 @@ def test_payload_evaluates_plant_line_without_bom_and_never_returns_zero_assessm
         for item in payload["assessments"]
     }
     assert by_rule["HTS_APPLICABILITY"]["status"] == "PASS"
-    assert by_rule["DE_MINIMIS"]["status"] == "INDETERMINATE"
+    assert by_rule["DE_MINIMIS"]["status"] == "NOT_EVALUATED"
+    assert by_rule["DE_MINIMIS"]["is_blocking"] is False
+    assert by_rule["DE_MINIMIS"]["explanation"] == (
+        "De Minimis exemption was not claimed. "
+        "Does not block the declaration package."
+    )
     assert by_rule["SPECIAL_COMPOSITE"]["status"] == "INDETERMINATE"
     assert by_rule["SPECIAL_RECYCLED"]["status"] == "NOT_APPLICABLE"
     assert all(item["subject_ref"] == "LT-LINE-1" for item in payload["assessments"])

@@ -53,11 +53,12 @@ def test_engine_orchestrates_all_initial_rules_fail_closed_without_bom():
     }
 
     assert by_rule["HTS_APPLICABILITY"].status is RuleStatus.PASS
-    assert by_rule["DE_MINIMIS"].status is RuleStatus.INDETERMINATE
+    assert by_rule["DE_MINIMIS"].status is RuleStatus.NOT_EVALUATED
     assert by_rule["SPECIAL_COMPOSITE"].status is RuleStatus.INDETERMINATE
     assert by_rule["SPECIAL_RECYCLED"].status is RuleStatus.NOT_APPLICABLE
 
-    assert by_rule["DE_MINIMIS"].review_required is True
+    assert by_rule["DE_MINIMIS"].review_required is False
+    assert by_rule["DE_MINIMIS"].reason_codes == ("EXEMPTION_NOT_CLAIMED",)
     assert by_rule["SPECIAL_COMPOSITE"].review_required is True
     assert by_rule["SPECIAL_RECYCLED"].reason_codes == (
         "NO_RECYCLED_MATERIAL_EVIDENCE",

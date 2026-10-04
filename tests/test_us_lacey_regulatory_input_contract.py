@@ -64,6 +64,7 @@ def _field(
     value="9401692010",
     reviewed=True,
     validation_status="VALID",
+    field_status="FOUND",
 ):
     return SimpleNamespace(
         merchandise_line_reference=line_reference,
@@ -74,6 +75,7 @@ def _field(
         human_value=value if reviewed else None,
         reviewed_at=datetime.now(timezone.utc) if reviewed else None,
         validation_status=validation_status,
+        field_status=field_status,
         source_assurance_document_id=11,
         source_page=3,
         source_locator="entry:line:1",
@@ -112,10 +114,22 @@ def test_contract_creates_subject_without_any_bom_or_product_intelligence():
     assert item["inputs"]["hts10"]["status"] == InputStatus.SUPPORTED.value
 
 
-def test_unreviewed_hts10_remains_review_required_not_supported():
+def test_unreviewed_found_hts10_is_supported_for_regulatory_evaluation():
     contract = build_regulatory_input_contract(
         product_intelligence_payload=_pi_payload(),
-        operation_fields=(_field(reviewed=False),),
+        operation_fields=(_field(reviewed=False, field_status="FOUND"),),
+    )
+
+    hts = contract["subjects"][0]["inputs"]["hts10"]
+    assert hts["status"] == InputStatus.SUPPORTED.value
+    assert hts["value"] == "9401692010"
+    assert hts["reason"] == "VALID_HTS10_FROM_SUPPORTED_EVIDENCE"
+
+
+def test_unreviewed_review_status_hts10_still_requires_human_confirmation():
+    contract = build_regulatory_input_contract(
+        product_intelligence_payload=_pi_payload(),
+        operation_fields=(_field(reviewed=False, field_status="REVIEW"),),
     )
 
     hts = contract["subjects"][0]["inputs"]["hts10"]
@@ -172,7 +186,7 @@ def test_unlinked_product_does_not_control_subject_inventory_or_line_hts():
 def test_contract_summary_counts_supported_missing_review_and_unsafe_inputs():
     contract = build_regulatory_input_contract(
         product_intelligence_payload=_pi_payload(),
-        operation_fields=(_field(reviewed=False),),
+        operation_fields=(_field(reviewed=False, field_status="REVIEW"),),
     )
 
     summary = contract["summary"]
