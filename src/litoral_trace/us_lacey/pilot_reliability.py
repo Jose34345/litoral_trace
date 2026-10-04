@@ -782,11 +782,24 @@ def capture_completed_pilot_quality(
     *,
     organization_id: int,
     operation_id: int,
-) -> PilotReliabilityCapture:
-    """Capture a successful finalization without letting WATCHDOG alter run semantics."""
+) -> PilotReliabilityCapture | None:
+    """Capture completed Engine 2 work; legacy/non-Engine-2 jobs are not pilot signals."""
     writer = get_us_lacey_worker_db_session()
     reader = get_us_lacey_db_session()
     try:
+        set_tenant_db_context(reader, int(organization_id))
+        engine_run_id = reader.scalar(
+            select(UsLaceyEngineShipmentRun.id)
+            .where(
+                UsLaceyEngineShipmentRun.organization_id == int(organization_id),
+                UsLaceyEngineShipmentRun.operation_id == int(operation_id),
+            )
+            .order_by(UsLaceyEngineShipmentRun.id.desc())
+            .limit(1)
+        )
+        if engine_run_id is None:
+            return None
+
         trigger = _processing_quality_trigger(
             writer,
             organization_id=int(organization_id),
@@ -797,7 +810,6 @@ def capture_completed_pilot_quality(
             organization_id=int(organization_id),
             operation_id=int(operation_id),
         )
-        set_tenant_db_context(reader, int(organization_id))
         capture = _capture_with_sessions(
             read_session=reader,
             write_session=writer,
