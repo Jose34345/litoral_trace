@@ -22,20 +22,25 @@
 {% endblock %}
 
 {% block content %}
-<section class="bg-slate-950 px-4 py-12 text-white sm:px-6 lg:px-8 lg:py-14">
-  <div class="mx-auto grid max-w-7xl items-start gap-10 lg:grid-cols-[1.03fr_0.97fr]">
+<section class="bg-slate-950 px-4 py-14 text-white sm:px-6 lg:px-8 lg:py-16">
+  <div class="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.02fr_0.98fr]">
     <div class="max-w-3xl">
       <span class="lt-badge lt-badge--positive">Built for import compliance teams</span>
       <h1 class="mt-5 text-4xl font-bold tracking-tight text-white sm:text-5xl">U.S. Lacey Act Compliance Infrastructure</h1>
       <p class="mt-5 max-w-2xl text-xl font-semibold leading-8 text-slate-200">Turn supplier evidence, BOM data and shipment documents into review-ready Lacey data.</p>
-      <p class="mt-4 max-w-xl text-base leading-7 text-slate-400">Resolve species, harvest country and quantities. Reconcile source documents. Surface only missing evidence and conflicts that require human review.</p>
-      <div class="mt-7 flex flex-wrap gap-3">
+      <p class="mt-4 max-w-xl text-base leading-7 text-slate-400">Reconcile species, country of harvest, quantities and supporting evidence. Surface only the missing facts and conflicts that require human review.</p>
+      <div class="mt-8 flex flex-wrap gap-3">
         <a href="/demo" class="lt-btn lt-btn--primary lacey-demo-link" aria-label="Run a synthetic U.S. Lacey sample shipment"><i class="fa-solid fa-play" aria-hidden="true"></i><span>Run a sample shipment</span></a>
         {{ button("Analyze my documents", "/sandbox/start", "secondary", "fa-file-import", extra_classes="lacey-sandbox-link", aria_label="Analyze my documents in the four-hour sandbox") }}
       </div>
+      <div class="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-xs font-semibold text-slate-400">
+        <span><i class="fa-solid fa-check mr-2 text-emerald-400" aria-hidden="true"></i>Source-linked evidence</span>
+        <span><i class="fa-solid fa-check mr-2 text-emerald-400" aria-hidden="true"></i>Human review gates</span>
+        <span><i class="fa-solid fa-check mr-2 text-emerald-400" aria-hidden="true"></i>Exception-first workflow</span>
+      </div>
     </div>
 
-    <section class="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-xl lg:mt-8" aria-label="Illustrative Lacey readiness dashboard">
+    <section class="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl" aria-label="Illustrative Lacey readiness pipeline">
       <header class="flex items-center justify-between gap-4 border-b border-slate-700 p-5">
         <div>
           <h2 class="text-sm font-bold text-white">Lacey readiness pipeline</h2>
@@ -44,7 +49,7 @@
         {{ status_badge("REVIEW") }}
       </header>
       <div class="p-5">
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div class="grid gap-3 sm:grid-cols-5">
           {% for value, label in [("7", "documents"), ("31", "fields"), ("24", "resolved"), ("4", "exceptions"), ("3", "missing evidence")] %}
           <article class="rounded-xl border border-slate-700 bg-slate-950 p-4">
             <p class="text-3xl font-bold text-white">{{ value }}</p>
@@ -65,120 +70,133 @@
   </div>
 </section>
 
-<section id="workflow" class="bg-white px-4 py-14 sm:px-6 lg:px-8">
+<section id="trust" class="border-b border-slate-200 bg-white px-4 py-10 sm:px-6 lg:px-8">
   <div class="mx-auto max-w-7xl">
-    <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">What compliance teams need</p>
-    <h2 class="mt-3 max-w-4xl text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">One workflow from evidence to filing-ready review.</h2>
-    <p class="mt-4 max-w-2xl text-base leading-7 text-slate-600">The recurring Lacey workload, in one review path.</p>
+    <div class="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
+      <div>
+        <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Built for U.S. Lacey Act preparation</p>
+        <h2 class="mt-3 text-2xl font-bold tracking-tight text-slate-950">Operational evidence, not black-box answers.</h2>
+        <p class="mt-3 text-sm leading-6 text-slate-600">Every preparation decision stays tied to evidence, review state, and the shipment record that produced it.</p>
+      </div>
+      <div class="grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+        {% for icon, title, copy in [
+          ("fa-layer-group", "Multi-document reconciliation", "Invoice, transport, customs and supplier records resolved together."),
+          ("fa-leaf", "Taxonomy normalization", "Commercial species terms normalized into reviewable botanical data."),
+          ("fa-triangle-exclamation", "Exception-first review", "Missing facts and conflicts are isolated instead of buried in complete records."),
+          ("fa-link", "Source-linked evidence", "Resolved values remain traceable to documents and evidence provenance."),
+          ("fa-user-check", "Human verification gates", "Material outputs remain reviewable before downstream use."),
+          ("fa-file-code", "Structured export", "Generate review-ready LAWGS XML work products after preparation is complete.")
+        ] %}
+        <article class="border-l-2 border-slate-200 pl-4">
+          <div class="flex items-center gap-2 text-sm font-bold text-slate-950"><i class="fa-solid {{ icon }} text-emerald-700" aria-hidden="true"></i><span>{{ title }}</span></div>
+          <p class="mt-2 text-xs leading-5 text-slate-500">{{ copy }}</p>
+        </article>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
 
-    <div class="mt-8 grid gap-5 lg:grid-cols-3">
-      {% for number, title, copy, result in [
-        ("01", "Collect evidence", "Supplier records, BOM data and shipment documents.", "Source set preserved"),
-        ("02", "Resolve regulatory data", "Species, harvest country, quantities and supporting evidence.", "Sources reconciled"),
-        ("03", "Review what matters", "Conflicts, missing evidence and filing readiness.", "Exceptions isolated")
+<section id="workflow" class="bg-slate-50 px-4 py-14 sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-7xl">
+    <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Evidence to review-ready data</p>
+    <h2 class="mt-3 max-w-4xl text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">One controlled workflow for recurring Lacey preparation.</h2>
+    <p class="mt-4 max-w-2xl text-base leading-7 text-slate-600">Keep the source set intact, reconcile regulatory data, resolve exceptions and export only after review.</p>
+
+    <div class="mt-9 grid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:grid-cols-5">
+      {% for number, title, copy in [
+        ("01", "Upload", "Shipment and supplier evidence"),
+        ("02", "Reconcile", "Cross-document values"),
+        ("03", "Resolve", "Taxonomy and structured fields"),
+        ("04", "Review", "Exceptions and missing evidence"),
+        ("05", "Export", "Review-ready declaration package")
       ] %}
-      <article class="rounded-2xl bg-slate-50 p-6">
-        <p class="text-sm font-bold text-emerald-700">{{ number }}</p>
-        <h3 class="mt-4 text-xl font-bold text-slate-950">{{ title }}</h3>
-        <p class="mt-3 text-base leading-7 text-slate-700">{{ copy }}</p>
-        <p class="mt-5 flex items-center gap-2 text-sm font-semibold text-slate-500"><i class="fa-solid fa-check text-emerald-700" aria-hidden="true"></i><span>{{ result }}</span></p>
+      <article class="relative border-b border-slate-200 p-5 last:border-0 md:border-b-0 md:border-r">
+        <p class="text-xs font-black tracking-[0.14em] text-emerald-700">{{ number }}</p>
+        <h3 class="mt-4 text-base font-bold text-slate-950">{{ title }}</h3>
+        <p class="mt-2 text-xs leading-5 text-slate-500">{{ copy }}</p>
+        {% if not loop.last %}<i class="fa-solid fa-arrow-right absolute right-[-0.55rem] top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-slate-200 bg-white p-1.5 text-[10px] text-slate-400 md:block" aria-hidden="true"></i>{% endif %}
       </article>
       {% endfor %}
     </div>
   </div>
 </section>
 
-<section id="evidence" class="bg-slate-50 px-4 py-14 sm:px-6 lg:px-8">
+<section id="evidence" class="bg-white px-4 py-14 sm:px-6 lg:px-8">
   <div class="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[0.9fr_1.1fr]">
     <section class="lt-card h-full p-8">
       <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Supplier evidence</p>
       <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950">Know what is missing before filing.</h2>
       <p class="mt-4 max-w-xl text-base leading-7 text-slate-600">One shipment-level view of the evidence state, with every ready value still tied to its source.</p>
-
       <div class="mt-7 grid gap-5">
         {% for icon, title, copy in [
           ("fa-circle-check", "Complete evidence", "Ready values stay traceable to source."),
           ("fa-triangle-exclamation", "Conflicting evidence", "Differences are sent to review."),
           ("fa-circle-xmark", "Missing evidence", "Gaps are visible before downstream filing work.")
         ] %}
-        <div class="flex gap-3">
-          <span class="mt-1 text-emerald-700" aria-hidden="true"><i class="fa-solid {{ icon }}"></i></span>
-          <div>
-            <p class="text-sm font-bold text-slate-950">{{ title }}</p>
-            <p class="mt-1 text-sm leading-6 text-slate-600">{{ copy }}</p>
-          </div>
-        </div>
+        <div class="flex gap-3"><span class="mt-1 text-emerald-700" aria-hidden="true"><i class="fa-solid {{ icon }}"></i></span><div><p class="text-sm font-bold text-slate-950">{{ title }}</p><p class="mt-1 text-sm leading-6 text-slate-600">{{ copy }}</p></div></div>
         {% endfor %}
       </div>
-
       <p class="mt-7 text-sm font-semibold text-slate-700">Review gaps, not complete records.</p>
     </section>
 
     <section class="lt-card h-full p-6" aria-label="Illustrative supplier evidence checklist">
       <div class="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h3 class="text-lg font-bold text-slate-950">Sample shipment · Evidence status</h3>
-          <p class="mt-1 text-xs text-slate-500">One view of what is ready, what needs review and what is still missing.</p>
-        </div>
+        <div><h3 class="text-lg font-bold text-slate-950">Sample shipment · Evidence status</h3><p class="mt-1 text-xs text-slate-500">One view of what is ready, what needs review and what is still missing.</p></div>
         <p class="text-xs font-semibold text-slate-500">5 ready · 1 review · 1 missing</p>
       </div>
-
       <div class="mt-5 grid gap-2">
-        {% for label, state in [
-          ("Commercial invoice", "READY"),
-          ("Packing list", "READY"),
-          ("Bill of lading", "READY"),
-          ("Species declaration", "READY"),
-          ("Harvest affidavit", "REVIEW"),
-          ("Country-of-harvest evidence", "MISSING"),
-          ("Supplier questionnaire", "READY")
-        ] %}
-        <div class="flex items-center justify-between gap-4 py-2">
-          <span class="text-sm font-semibold text-slate-700">{{ label }}</span>
-          {{ status_badge(state) }}
-        </div>
+        {% for label, state in [("Commercial invoice", "READY"), ("Packing list", "READY"), ("Bill of lading", "READY"), ("Species declaration", "READY"), ("Harvest affidavit", "REVIEW"), ("Country-of-harvest evidence", "MISSING"), ("Supplier questionnaire", "READY")] %}
+        <div class="flex items-center justify-between gap-4 py-2"><span class="text-sm font-semibold text-slate-700">{{ label }}</span>{{ status_badge(state) }}</div>
         {% endfor %}
       </div>
     </section>
   </div>
 </section>
 
-<section id="taxonomy" class="bg-white px-4 py-14 sm:px-6 lg:px-8">
+<section id="taxonomy" class="bg-slate-50 px-4 py-14 sm:px-6 lg:px-8">
   <div class="mx-auto max-w-7xl">
     <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Taxonomy and conflicts</p>
     <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Resolve species. Preserve the evidence.</h2>
-
     <div class="mt-8 grid gap-5 lg:grid-cols-2">
       <section class="lt-card h-full p-6">
         <p class="text-sm font-bold text-slate-950">Taxonomy resolution</p>
         <div class="mt-6 grid gap-6 sm:grid-cols-2">
-          <div>
-            <p class="text-sm font-medium text-slate-500">Supplier term</p>
-            <p class="mt-2 text-2xl font-bold text-slate-950">White Oak</p>
-          </div>
-          <div>
-            <p class="text-sm font-medium text-slate-500">Resolved taxonomy</p>
-            <p class="mt-2 text-2xl font-bold text-slate-950">Quercus alba</p>
-          </div>
+          <div><p class="text-sm font-medium text-slate-500">Supplier term</p><p class="mt-2 text-2xl font-bold text-slate-950">White Oak</p></div>
+          <div><p class="text-sm font-medium text-slate-500">Resolved taxonomy</p><p class="mt-2 text-2xl font-bold text-slate-950">Quercus alba</p></div>
         </div>
         <p class="mt-7 text-sm text-slate-500">Evidence source <span class="font-semibold text-slate-700">supplier_species.xlsx · row 18</span></p>
       </section>
-
       <section class="lt-card h-full p-6">
-        <div class="flex items-center justify-between gap-4">
-          <p class="text-sm font-bold text-slate-950">Conflict handling</p>
-          {{ badge("REVIEW REQUIRED", "warning") }}
-        </div>
+        <div class="flex items-center justify-between gap-4"><p class="text-sm font-bold text-slate-950">Conflict handling</p>{{ badge("REVIEW REQUIRED", "warning") }}</div>
         <p class="mt-3 max-w-xl text-base leading-7 text-slate-600">When sources disagree, both values remain visible for human review.</p>
         <div class="mt-6 grid gap-6 sm:grid-cols-2">
-          <div>
-            <p class="text-sm font-medium text-slate-500">Supplier species sheet</p>
-            <p class="mt-2 text-xl font-bold text-slate-950">Quercus alba</p>
-          </div>
-          <div>
-            <p class="text-sm font-medium text-slate-500">Product specification</p>
-            <p class="mt-2 text-xl font-bold text-slate-950">Quercus rubra</p>
-          </div>
+          <div><p class="text-sm font-medium text-slate-500">Supplier species sheet</p><p class="mt-2 text-xl font-bold text-slate-950">Quercus alba</p></div>
+          <div><p class="text-sm font-medium text-slate-500">Product specification</p><p class="mt-2 text-xl font-bold text-slate-950">Quercus rubra</p></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" class="bg-white px-4 py-14 sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-7xl">
+    <div class="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+      <div>
+        <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Professional plan</p>
+        <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950">Operational compliance infrastructure without enterprise procurement friction.</h2>
+        <p class="mt-4 max-w-xl text-base leading-7 text-slate-600">Start with a production workspace, secure Paddle billing, and a clear monthly operation allowance.</p>
+      </div>
+      <section class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-xl">
+        <div class="grid gap-6 p-7 sm:grid-cols-[1fr_auto] sm:items-end">
+          <div><p class="text-xs font-bold uppercase tracking-[0.14em] text-emerald-400">Litoral Trace Professional</p><p class="mt-3 text-4xl font-bold">USD 149<span class="text-base font-medium text-slate-400">/month</span></p><p class="mt-2 text-sm text-slate-400">Up to 100 Lacey operations per month.</p></div>
+          <a href="/signup" class="lt-btn lt-btn--primary justify-center"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span>Create account</span></a>
+        </div>
+        <div class="grid gap-2 border-t border-slate-800 px-7 py-5 text-xs text-slate-300 sm:grid-cols-2">
+          <span><i class="fa-solid fa-check mr-2 text-emerald-400"></i>Document intelligence and reconciliation</span>
+          <span><i class="fa-solid fa-check mr-2 text-emerald-400"></i>Exception-first human review</span>
+          <span><i class="fa-solid fa-check mr-2 text-emerald-400"></i>Supplier evidence reuse</span>
+          <span><i class="fa-solid fa-check mr-2 text-emerald-400"></i>LAWGS XML preparation work product</span>
         </div>
       </section>
     </div>

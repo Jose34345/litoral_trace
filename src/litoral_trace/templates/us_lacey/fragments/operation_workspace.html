@@ -1,4 +1,5 @@
 {% from "components/ui.html" import button, empty_state %}
+{% from "us_lacey/_components.html" import lt_badge %}
 {% from "us_lacey/fragments/review_field_macros.html" import action_status %}
 {% set engine2_downstream_annotations = engine2_downstream_annotations|default({}) %}
 {% set field_errors = field_errors|default({}) %}
@@ -133,7 +134,7 @@
 
 <div
   id="operation-workspace"
-  class="space-y-6"
+  class="lt-enterprise-review space-y-5"
   tabindex="-1"
   data-operation-id="{{ detail.public_id }}"
   data-review-tabs
@@ -170,23 +171,23 @@
       {% endif %}
     </div>
 
-    <div class="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-review-kpis>
-      <div class="rounded-xl border border-amber-200 bg-amber-50 p-4" data-review-kpi="action">
+    <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-review-kpis>
+      <div class="lt-enterprise-stat border-amber-200 bg-amber-50" data-review-kpi="action">
         <p class="text-2xl font-bold text-amber-700" data-action-required-count>{{ attention_fields|length }}</p>
         <p class="mt-1 text-xs font-bold uppercase tracking-wide text-amber-900">Action required</p>
         <p class="mt-1 text-xs text-amber-800">Work pending</p>
       </div>
-      <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4" data-review-kpi="resolved">
+      <div class="lt-enterprise-stat border-emerald-200 bg-emerald-50" data-review-kpi="resolved">
         <p class="text-2xl font-bold text-emerald-700" data-auto-resolved-count>{{ auto_supported_fields|length }}</p>
         <p class="mt-1 text-xs font-bold uppercase tracking-wide text-emerald-900">Auto-resolved</p>
         <p class="mt-1 text-xs text-emerald-800">Resolved by Litoral Trace</p>
       </div>
-      <div class="rounded-xl border border-slate-200 bg-white p-4" data-review-kpi="confirmed">
+      <div class="lt-enterprise-stat" data-review-kpi="confirmed">
         <p class="text-2xl font-bold text-slate-950">{{ settled_fields|length }}</p>
         <p class="mt-1 text-xs font-bold uppercase tracking-wide text-slate-700">Confirmed</p>
         <p class="mt-1 text-xs text-slate-500">Settled review fields</p>
       </div>
-      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4" data-review-kpi="documents">
+      <div class="lt-enterprise-stat bg-slate-50" data-review-kpi="documents">
         <p class="text-2xl font-bold text-slate-950">{{ detail.document_count }}</p>
         <p class="mt-1 text-xs font-bold uppercase tracking-wide text-slate-700">Documents</p>
         <p class="mt-1 text-xs text-slate-500">Shipment evidence</p>
@@ -267,7 +268,7 @@
               <h3 class="mt-1 font-bold text-slate-950">{{ field.label }}</h3>
               <p class="mt-2 text-sm text-slate-800">{{ field.proposed_value }}</p>
               {% if field.provenance == "reused_evidence" %}
-              <p class="mt-2 text-xs font-semibold text-emerald-700" data-reused-evidence-label>Reused from verified supplier evidence</p>
+              <div data-reused-evidence-label>{{ lt_badge("AUTO-RESOLVED", "Reused from verified supplier evidence", "mt-2") }}</div>
               {% endif %}
             </div>
             <span class="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">{{ (field.confidence * 100)|round(1) }}%</span>
@@ -337,7 +338,7 @@
               <h3 class="mt-1 font-bold text-slate-950">{{ field.label }}</h3>
               {% if field.effective_value %}<p class="mt-2 text-sm text-slate-800">{{ field.effective_value }}</p>{% endif %}
               {% if field.provenance == "reused_evidence" %}
-              <p class="mt-2 text-xs font-semibold text-emerald-700">Reused from verified supplier evidence</p>
+              <div>{{ lt_badge("AUTO-RESOLVED", "Reused from verified supplier evidence", "mt-2") }}</div>
               {% endif %}
             </div>
             <span class="rounded-md bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700 ring-1 ring-inset ring-slate-200">{{ friendly_status(field.status) }}</span>

@@ -39,8 +39,9 @@ def test_lacey_landing_leads_with_compliance_infrastructure_positioning():
     assert "4" in html
     assert "3" in html
     assert "Professional Plan — USD 149/month" not in html
-    assert "Includes up to 100 Lacey operations/month." not in html
-    assert "USD 149/month" not in html
+    assert "USD 149" in html
+    assert "/month" in html
+    assert 'id="pricing"' in html
     assert "USD 99/month" not in html
     assert "USD 199" not in html
     assert "25 operations" not in html
@@ -54,12 +55,14 @@ def test_lacey_landing_leads_with_compliance_infrastructure_positioning():
 def test_lacey_landing_surfaces_full_compliance_workflow():
     html = client.get("/lacey").text
 
-    assert "What compliance teams need" in html
-    assert "One workflow from evidence to filing-ready review." in html
+    assert "Evidence to review-ready data" in html
+    assert "One controlled workflow for recurring Lacey preparation." in html
     for step in (
-        "Collect evidence",
-        "Resolve regulatory data",
-        "Review what matters",
+        "Upload",
+        "Reconcile",
+        "Resolve",
+        "Review",
+        "Export",
     ):
         assert step in html
 
@@ -82,9 +85,11 @@ def test_lacey_landing_surfaces_full_compliance_workflow():
     assert "supplier_species.xlsx · row 18" in html
 
     for flow_stage in (
-        "Supplier records, BOM data and shipment documents.",
-        "Species, harvest country, quantities and supporting evidence.",
-        "Conflicts, missing evidence and filing readiness.",
+        "Shipment and supplier evidence",
+        "Cross-document values",
+        "Taxonomy and structured fields",
+        "Exceptions and missing evidence",
+        "Review-ready declaration package",
     ):
         assert flow_stage in html
 
@@ -134,7 +139,7 @@ def test_lacey_landing_contains_responsive_and_accessibility_contracts():
     assert 'href="#main-content"' in landing
     assert 'aria-label="Run a synthetic U.S. Lacey sample shipment"' in landing
     assert 'aria-label="Analyze my documents in the four-hour sandbox"' in landing
-    assert 'aria-label="Illustrative Lacey readiness dashboard"' in landing
+    assert 'aria-label="Illustrative Lacey readiness pipeline"' in landing
     assert 'aria-label="Illustrative supplier evidence checklist"' in landing
     assert 'href="#main-content"' in demo
     assert 'aria-live="polite"' in demo
