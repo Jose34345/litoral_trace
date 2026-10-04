@@ -9,7 +9,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import (
-    User,
     UsLaceyEvidenceClaim,
     UsLaceySupplier,
     UsLaceySupplierEvidence,
@@ -140,26 +139,6 @@ class UsLaceyEvidenceCatalogService:
                 .order_by(UsLaceyEvidenceClaim.evidence_id.asc(), UsLaceyEvidenceClaim.id.asc())
             ).all()
 
-            user_ids = {
-                int(row.verified_by_user_id)
-                for row in evidence
-                if row.verified_by_user_id is not None
-            }
-            users = (
-                session.scalars(
-                    select(User).where(
-                        User.organization_id == org_id,
-                        User.id.in_(tuple(user_ids)),
-                    )
-                ).all()
-                if user_ids
-                else []
-            )
-            user_names = {
-                int(user.id): (user.full_name or user.email or user.username)
-                for user in users
-            }
-
             claims_by_evidence: dict[int, list[EvidenceClaimView]] = {}
             for claim in claims:
                 claims_by_evidence.setdefault(int(claim.evidence_id), []).append(
@@ -179,11 +158,7 @@ class UsLaceyEvidenceCatalogService:
                         valid_from=row.valid_from,
                         valid_until=row.valid_until,
                         verified_at=row.verified_at,
-                        verified_by=(
-                            user_names.get(int(row.verified_by_user_id), "Verified reviewer")
-                            if row.verified_by_user_id is not None
-                            else "Verified reviewer"
-                        ),
+                        verified_by="Verified reviewer",
                         status=str(row.status),
                         claims=tuple(claims_by_evidence.get(int(row.id), ())),
                     )

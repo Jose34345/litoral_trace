@@ -21,7 +21,6 @@ from litoral_trace.db.models import (
     UsLaceyPlantDeclaration,
     UsLaceyProcessingJob,
     UsLaceySubscription,
-    User,
     VaultDocument,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
@@ -123,7 +122,6 @@ class OperationFieldView:
     not_required_reason_code: str | None
     candidates: tuple["FieldCandidateView", ...]
     provenance: str = "current_shipment"
-    reviewed_by_name: str | None = None
     source_filename: str | None = None
 
 
@@ -775,24 +773,6 @@ class UsLaceyOperationService:
                     UsLaceyOperationField.id.asc(),
                 )
             ).all()
-            reviewer_ids = {
-                int(row.reviewed_by_user_id)
-                for row in field_rows
-                if row.reviewed_by_user_id is not None
-            }
-            reviewer_names: dict[int, str] = {}
-            if reviewer_ids:
-                reviewer_rows = session.scalars(
-                    select(User).where(
-                        User.organization_id == org_id,
-                        User.id.in_(tuple(reviewer_ids)),
-                    )
-                ).all()
-                reviewer_names = {
-                    int(user.id): str(user.full_name or user.email or user.username)
-                    for user in reviewer_rows
-                }
-
             candidate_rows = session.scalars(
                 select(UsLaceyFieldCandidate).where(
                     UsLaceyFieldCandidate.organization_id == org_id,
@@ -837,11 +817,6 @@ class UsLaceyOperationService:
                     extractor=row.extractor,
                     extractor_version=row.extractor_version,
                     reviewed_by_user_id=row.reviewed_by_user_id,
-                    reviewed_by_name=(
-                        reviewer_names.get(int(row.reviewed_by_user_id))
-                        if row.reviewed_by_user_id is not None
-                        else None
-                    ),
                     reviewed_at=row.reviewed_at,
                     validation_status=row.validation_status,
                     validation_error=row.validation_error,

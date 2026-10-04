@@ -414,7 +414,7 @@
               <td class="px-4 py-3">
                 {% if field.reviewed_at %}
                 <p class="max-w-sm text-[11px] leading-5 text-slate-500">
-                  Resolved by {{ field.reviewed_by_name or "Authorized reviewer" }}
+                  Resolved by {% if field.reviewed_by_user_id == identity.user_id %}{{ identity.full_name or identity.email }}{% else %}Authorized reviewer{% endif %}
                   · {{ field.reviewed_at.strftime("%b %d, %Y %H:%M") }}
                   · Source: {% if field.provenance == "reused_evidence" %}verified supplier evidence{% elif field.source_filename %}{{ field.source_filename }}{% if field.source_page %} p.{{ field.source_page }}{% endif %}{% elif field.source_page %}shipment document p.{{ field.source_page }}{% else %}reviewed preparation record{% endif %}
                 </p>
