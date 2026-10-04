@@ -723,6 +723,7 @@ class UsLaceyOperationService:
                 .order_by(UsLaceyOperationDocument.id.asc())
             ).all()
             documents: list[OperationDocumentView] = []
+            document_filename_by_assurance_id: dict[int, str] = {}
             for link in links:
                 assurance = session.scalar(
                     select(AssuranceDocument).where(
