@@ -1,65 +1,116 @@
 {% extends "us_lacey/base.html" %}
 {% set authenticated = true %}
+{% from "components/ui.html" import empty_state %}
+{% from "us_lacey/_components.html" import lt_badge, lt_button, lt_data_table %}
 {% block lacey_title %}Operations{% endblock %}
 {% block lacey_content %}
-{{ page_header("Operations", "Workspace", "Start with the most complete shipment pack available. Litoral Trace will reconcile the evidence and surface only what still needs review.", icon="fa-briefcase") }}
+{% set metrics = namespace(active=0, review=0, ready=0) %}
+{% for item in operations %}
+  {% if item.status in ['NEW', 'PROCESSING', 'REVIEW_REQUIRED', 'READY_FOR_REVIEW'] %}{% set metrics.active = metrics.active + 1 %}{% endif %}
+  {% if item.status == 'REVIEW_REQUIRED' %}{% set metrics.review = metrics.review + 1 %}{% endif %}
+  {% if item.status in ['READY_FOR_REVIEW', 'COMPLETED'] %}{% set metrics.ready = metrics.ready + 1 %}{% endif %}
+{% endfor %}
 
-<section id="new-shipment" class="lt-card p-6">
-  <div class="flex flex-wrap items-start justify-between gap-4">
-    <div class="max-w-2xl">
-      <p class="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Start here</p>
-      <h2 class="mt-2 text-2xl font-bold tracking-tight text-slate-950">Upload shipment documents</h2>
-      <p class="mt-2 text-sm leading-6 text-slate-600">No shipment metadata is required up front. Litoral Trace extracts supported values from the evidence; additional documents can be added later if the shipment record changes.</p>
-    </div>
-    <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-      <p class="font-semibold text-slate-900">{{ identity.legal_name }}</p>
-      <p class="mt-1 text-xs text-slate-500">{{ entitlement.remaining_operations }} remaining · {{ entitlement.used_operations }} of {{ entitlement.monthly_operation_limit }} used</p>
-    </div>
+<header class="lt-page-header">
+  <div class="lt-page-header__copy">
+    <p class="lt-page-header__eyebrow">Compliance operations</p>
+    <h1 class="lt-page-header__title">Operations</h1>
+    <p class="lt-page-header__description">Prepare and review Lacey declaration evidence. Track shipment readiness, resolve exceptions, and preserve the source trail from one workspace.</p>
   </div>
+</header>
 
-  {% if entitlement.remaining_operations > 0 %}
-  <form id="document-intake-form" class="mt-6" action="/operations/intake" method="post" enctype="multipart/form-data" data-upload-first-intake data-file-staging-form>
-    <label for="intake-documents" class="block cursor-pointer rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/40 p-8 text-center transition hover:border-emerald-300 hover:bg-emerald-50" data-file-dropzone role="button" tabindex="0">
-      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white" aria-hidden="true"><i class="fa-solid fa-cloud-arrow-up"></i></span>
-      <span class="mt-4 block text-lg font-bold text-slate-950">Choose your shipment files</span>
-      <span class="mt-2 block text-sm font-medium text-slate-700">Best practice: upload all available shipment documents before the first processing run. You can add more files later and reprocess.</span>
-      <span class="mt-1 block text-xs text-slate-500">PDF, XLSX, XLS or CSV · select several files at once. Commercial invoice, packing list, bill of lading, supplier/species declarations and supporting certificates can all be uploaded together.</span>
+<section class="lt-enterprise-stat-grid" aria-label="Operations overview">
+  <article class="lt-enterprise-stat">
+    <p class="lt-enterprise-stat__label">Active operations</p>
+    <p class="lt-enterprise-stat__value">{{ metrics.active }}</p>
+    <p class="lt-enterprise-stat__meta">In intake, processing or review</p>
+  </article>
+  <article class="lt-enterprise-stat">
+    <p class="lt-enterprise-stat__label">Review required</p>
+    <p class="lt-enterprise-stat__value">{{ metrics.review }}</p>
+    <p class="lt-enterprise-stat__meta">Exception-first work queue</p>
+  </article>
+  <article class="lt-enterprise-stat">
+    <p class="lt-enterprise-stat__label">Ready / completed</p>
+    <p class="lt-enterprise-stat__value">{{ metrics.ready }}</p>
+    <p class="lt-enterprise-stat__meta">Prepared for final workflow</p>
+  </article>
+  <article class="lt-enterprise-stat">
+    <p class="lt-enterprise-stat__label">Plan usage</p>
+    <p class="lt-enterprise-stat__value">{{ entitlement.used_operations }} / {{ entitlement.monthly_operation_limit }}</p>
+    <p class="lt-enterprise-stat__meta">{{ entitlement.remaining_operations }} operations remaining</p>
+  </article>
+</section>
+
+{% if entitlement.remaining_operations > 0 %}
+<details id="new-operation-panel" class="lt-compact-uploader">
+  <summary class="flex cursor-pointer items-center justify-between gap-4">
+    <div>
+      <p class="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Secure intake</p>
+      <p class="mt-1 text-sm font-bold text-slate-950">Start a new shipment operation</p>
+    </div>
+    <span class="lt-btn lt-btn--primary"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>New operation</span></span>
+  </summary>
+  <form id="document-intake-form" class="mt-4 border-t border-slate-200 pt-4" action="/operations/intake" method="post" enctype="multipart/form-data" data-upload-first-intake data-file-staging-form>
+    <label for="intake-documents" class="lt-compact-uploader__dropzone" data-file-dropzone role="button" tabindex="0">
+      <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-white" aria-hidden="true"><i class="fa-solid fa-file-arrow-up"></i></span>
+      <span class="min-w-0">
+        <span class="block text-sm font-bold text-slate-950">Choose shipment evidence</span>
+        <span class="mt-1 block text-xs leading-5 text-slate-500">PDF, XLSX, XLS or CSV · commercial invoice, packing list, bill of lading and supplier evidence can be uploaded together.</span>
+        <span class="mt-1 block text-[11px] leading-5 text-slate-500">Best practice: upload all available shipment documents before the first processing run. You can add more files later and reprocess.</span>
+      </span>
     </label>
     <input id="intake-documents" hidden name="documents" type="file" accept=".pdf,.xlsx,.xls,.csv" multiple required data-file-dropzone-input aria-describedby="intake-file-summary">
-    <div id="intake-file-summary" class="mt-3 text-sm text-slate-600" aria-live="polite" data-file-empty-state>No files selected.</div>
+    <div id="intake-file-summary" class="mt-2 text-xs text-slate-500" aria-live="polite" data-file-empty-state>No files selected.</div>
     <div class="lt-upload-staging" hidden data-file-staging>
       <div class="lt-upload-staging__header"><span>Ready to upload</span><span data-file-count></span></div>
       <ul class="lt-upload-staging__list" data-file-staging-list></ul>
     </div>
-    <div class="mt-5 flex flex-wrap items-center gap-3">
-      {{ button("Upload and analyze", variant="primary", button_type="submit", icon="fa-wand-magic-sparkles") }}
-      <span id="intake-status" class="text-sm text-slate-600" aria-live="polite"></span>
+    <div class="mt-4 flex flex-wrap items-center gap-3">
+      {{ lt_button("primary", "Upload and analyze", "fa-wand-magic-sparkles", button_type="submit") }}
+      <span id="intake-status" class="text-xs text-slate-500" aria-live="polite"></span>
     </div>
-    <p class="mt-4 text-xs leading-5 text-slate-500">We preserve the original files as evidence. Extracted or AI-suggested values are not silently treated as final: conflicts remain flagged and the final preparation record still requires human confirmation.</p>
+    <p class="mt-3 text-[11px] leading-5 text-slate-500">Original files remain preserved as evidence. Extracted values remain reviewable and conflicts are never silently overwritten.</p>
   </form>
-  <noscript><p class="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">JavaScript is required for the zero-entry multi-file intake. You can use the legacy <a class="font-semibold underline" href="/operations/new">new operation form</a> instead.</p></noscript>
-  {% else %}
-  <div class="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">The current operation limit has been reached. Existing operations remain available for uploads, review and export.</div>
-  {% endif %}
-</section>
+</details>
+{% else %}
+<section class="lt-alert lt-alert--warning"><i class="fa-solid fa-triangle-exclamation lt-alert__icon" aria-hidden="true"></i><div><p class="lt-alert__title">Operation limit reached</p><p class="lt-alert__message">Existing operations remain available for evidence review and export.</p></div></section>
+{% endif %}
 
-<section class="lt-card p-6">
-  <div class="flex flex-wrap items-center justify-between gap-3">
+<section class="lt-operations-panel">
+  <header class="lt-operations-panel__header">
     <div>
-      <h2 class="text-lg font-bold text-slate-950">Recent operations</h2>
-      <p class="mt-1 text-sm text-slate-600">Open a shipment to add documents, review suggestions or export a completed preparation package.</p>
+      <h2 class="text-sm font-bold text-slate-950">Recent operations</h2>
+      <p class="mt-1 text-xs text-slate-500">Shipment-level preparation records ordered by most recently created.</p>
     </div>
-    {{ button("Billing", "/billing", "secondary", "fa-receipt") }}
-  </div>
+    <span class="text-xs font-semibold text-slate-500">{{ operations|length }} operation{{ '' if operations|length == 1 else 's' }}</span>
+  </header>
+
   {% if operations %}
-  <div class="mt-4 overflow-x-auto">
-    <table class="w-full min-w-[42rem] text-left text-sm">
-      <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500"><tr><th class="p-3">Reference</th><th class="p-3">Status</th><th class="p-3">Documents</th><th class="p-3">Lines</th><th class="p-3">Created</th></tr></thead>
-      <tbody>{% for item in operations %}<tr class="border-b border-slate-100"><td class="p-3"><a class="font-bold text-emerald-700 hover:text-emerald-900" href="/operations/{{ item.public_id }}">{% if item.client_reference.startswith('INTAKE-') %}Uploaded shipment{% else %}{{ item.client_reference }}{% endif %}</a></td><td class="p-3">{{ status_badge(item.status|replace("_", " ")) }}</td><td class="p-3">{{ item.document_count }}</td><td class="p-3">{{ item.merchandise_line_count }}</td><td class="p-3">{{ item.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>{% endfor %}</tbody>
-    </table>
-  </div>
+    {% call lt_data_table(["Reference", "Supplier", "Documents", "Readiness", "Updated"], "Recent U.S. Lacey operations", "58rem") %}
+      {% for item in operations %}
+      {% set readiness = {
+        'COMPLETED': 'READY',
+        'READY_FOR_REVIEW': 'READY',
+        'REVIEW_REQUIRED': 'REVIEW REQUIRED',
+        'FAILED': 'CONFLICT',
+        'PROCESSING': 'REVIEW',
+        'NEW': 'REVIEW'
+      }.get(item.status, item.status|replace('_', ' ')) %}
+      <tr class="lt-data-table__row" data-state="{{ 'attention' if item.status in ['REVIEW_REQUIRED', 'FAILED'] else '' }}">
+        <td class="lt-data-table__cell lt-data-table__cell--primary">
+          <a class="lt-data-table__primary text-emerald-700 hover:text-emerald-900" href="/operations/{{ item.public_id }}">{% if item.client_reference.startswith('INTAKE-') %}Uploaded shipment{% else %}{{ item.client_reference }}{% endif %}</a>
+          <span class="lt-data-table__secondary">ID {{ item.public_id|string|truncate(18, True, '…') }}</span>
+        </td>
+        <td class="lt-data-table__cell"><span class="text-xs font-semibold text-slate-700">{{ item.supplier_name or '—' }}</span></td>
+        <td class="lt-data-table__cell lt-data-table__cell--numeric">{{ item.document_count }}</td>
+        <td class="lt-data-table__cell">{{ lt_badge(readiness) }}</td>
+        <td class="lt-data-table__cell"><span class="text-xs text-slate-600">{{ item.updated_at.strftime("%Y-%m-%d %H:%M") }}</span></td>
+      </tr>
+      {% endfor %}
+    {% endcall %}
   {% else %}
-    {{ empty_state("No shipments analyzed yet", "Upload the first shipment documents above. You do not need to create the metadata manually.", "fa-folder-open") }}
+  <div class="p-5">{{ empty_state("No operations yet", "Use New operation to upload a complete shipment evidence pack.", "fa-folder-open") }}</div>
   {% endif %}
 </section>
 
@@ -75,11 +126,7 @@
 
   input.addEventListener('change', () => {
     const files = Array.from(input.files || []);
-    if (!files.length) {
-      summary.textContent = 'No files selected.';
-      return;
-    }
-    summary.textContent = files.length === 1 ? files[0].name : `${files.length} files selected · ${files.map(file => file.name).join(', ')}`;
+    summary.textContent = !files.length ? 'No files selected.' : (files.length === 1 ? files[0].name : String(files.length) + ' files selected');
   });
 
   form.addEventListener('submit', async (event) => {
@@ -89,8 +136,6 @@
     submit.disabled = true;
     status.textContent = 'Preparing secure intake…';
     try {
-      // The existing certified operation-create page owns the CSRF contract. Fetch
-      // its token just-in-time so the customer never has to see or complete that form.
       const tokenResponse = await fetch('/operations/new', {credentials: 'same-origin', headers: {'Accept': 'text/html'}});
       if (!tokenResponse.ok) throw new Error('Could not start a new operation.');
       const tokenHtml = await tokenResponse.text();
@@ -101,13 +146,8 @@
       const body = new FormData();
       body.append('csrf_token', token);
       files.forEach(file => body.append('documents', file, file.name));
-      status.textContent = `Uploading ${files.length} file${files.length === 1 ? '' : 's'}…`;
-      const response = await fetch('/operations/intake', {
-        method: 'POST',
-        body,
-        credentials: 'same-origin',
-        redirect: 'follow'
-      });
+      status.textContent = 'Uploading ' + String(files.length) + ' file' + (files.length === 1 ? '' : 's') + '…';
+      const response = await fetch('/operations/intake', {method: 'POST', body, credentials: 'same-origin', redirect: 'follow'});
       if (!response.ok) {
         const message = await response.text();
         throw new Error(message.includes('operation limit') ? 'The current operation limit has been reached.' : 'The shipment could not be started.');

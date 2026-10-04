@@ -68,10 +68,12 @@ class OperationSnapshot:
 class OperationListItem:
     public_id: UUID
     client_reference: str
+    supplier_name: str | None
     status: str
     document_count: int
     merchandise_line_count: int
     created_at: datetime
+    updated_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -577,10 +579,12 @@ class UsLaceyOperationService:
                 OperationListItem(
                     public_id=row.public_id,
                     client_reference=row.client_reference,
+                    supplier_name=row.supplier_name,
                     status=row.status,
                     document_count=int(row.document_count),
                     merchandise_line_count=int(row.merchandise_line_count),
                     created_at=row.created_at,
+                    updated_at=row.updated_at,
                 )
                 for row in rows
             )
