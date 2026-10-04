@@ -40,7 +40,7 @@ def test_operation_alias_is_editable_in_place_without_changing_identity():
     core = OPS_CORE.read_text(encoding="utf-8")
 
     assert 'include "us_lacey/fragments/operation_alias.html"' in detail
-    assert "Operation ID · {{ detail.public_id }}" in detail
+    assert "Immutable operation ID · {{ detail.public_id }}" in detail
     assert "data-operation-alias-edit" in alias
     assert "data-operation-alias-form" in alias
     assert 'hx-post="/operations/{{ detail.public_id }}/alias"' in alias
@@ -134,16 +134,16 @@ def test_sticky_master_action_bar_keeps_primary_workflow_actions_visible():
     assert "backdrop-filter: blur(14px)" in styles
 
 
-def test_exception_cards_have_clear_blocking_and_confirmation_severity():
+def test_exception_matrix_has_clear_blocking_and_confirmation_severity():
     workspace = WORKSPACE.read_text(encoding="utf-8")
-    styles = DESIGN.read_text(encoding="utf-8")
 
-    assert "lt-review-card--blocking" in workspace
-    assert "lt-review-card--confirmation" in workspace
+    assert "Exception work queue" in workspace
+    assert "Proposed value" in workspace
+    assert "Decision" in workspace
     assert "lt-review-status--blocking" in workspace
     assert "lt-review-status--confirmation" in workspace
-    assert "border-left-color: #dc2626" in styles
-    assert "border-left-color: #f59e0b" in styles
+    assert "Request evidence" in workspace
+    assert "Override" in workspace
 
 
 def test_motion_respects_reduced_motion_and_htmx_swap_states():

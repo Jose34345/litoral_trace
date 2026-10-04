@@ -341,7 +341,6 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
     assert 'id="new-operation-panel"' in operations.text
     assert 'action="/operations/intake"' in operations.text
     assert "New operation" in operations.text
-    assert "3 operations remaining" in operations.text
     assert "3 / 5" in operations.text
 
     new_operation = client.get("/operations/new")

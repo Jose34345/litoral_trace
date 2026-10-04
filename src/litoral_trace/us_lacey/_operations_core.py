@@ -21,6 +21,7 @@ from litoral_trace.db.models import (
     UsLaceyPlantDeclaration,
     UsLaceyProcessingJob,
     UsLaceySubscription,
+    User,
     VaultDocument,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
@@ -68,10 +69,13 @@ class OperationSnapshot:
 class OperationListItem:
     public_id: UUID
     client_reference: str
+    business_reference: str
     supplier_name: str | None
+    operation_date: date | None
     status: str
     document_count: int
     merchandise_line_count: int
+    exception_count: int
     created_at: datetime
     updated_at: datetime
 
@@ -119,6 +123,8 @@ class OperationFieldView:
     not_required_reason_code: str | None
     candidates: tuple["FieldCandidateView", ...]
     provenance: str = "current_shipment"
+    reviewed_by_name: str | None = None
+    source_filename: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,6 +192,7 @@ class OperationDetail:
     fields: tuple[OperationFieldView, ...]
     plant_declarations: tuple[PlantDeclarationView, ...]
     conflicts: tuple[ConflictView, ...]
+    updated_at: datetime | None = None
 
 
 _FIELD_LABELS = dict(US_LACEY_REVIEW_FIELDS)
@@ -575,19 +582,80 @@ class UsLaceyOperationService:
                 .order_by(UsLaceyOperation.created_at.desc(), UsLaceyOperation.id.desc())
                 .limit(safe_limit)
             ).all()
-            return tuple(
-                OperationListItem(
-                    public_id=row.public_id,
-                    client_reference=row.client_reference,
-                    supplier_name=row.supplier_name,
-                    status=row.status,
-                    document_count=int(row.document_count),
-                    merchandise_line_count=int(row.merchandise_line_count),
-                    created_at=row.created_at,
-                    updated_at=row.updated_at,
+            if not rows:
+                return ()
+
+            operation_ids = tuple(int(row.id) for row in rows)
+            exception_counts = {
+                int(operation_id): int(count)
+                for operation_id, count in session.execute(
+                    select(
+                        UsLaceyOperationField.operation_id,
+                        func.count(UsLaceyOperationField.id),
+                    )
+                    .where(
+                        UsLaceyOperationField.organization_id == org_id,
+                        UsLaceyOperationField.operation_id.in_(operation_ids),
+                        UsLaceyOperationField.field_status.in_(("MISSING", "REVIEW", "CONFLICT")),
+                    )
+                    .group_by(UsLaceyOperationField.operation_id)
+                ).all()
+            }
+
+            reference_fields = session.scalars(
+                select(UsLaceyOperationField)
+                .where(
+                    UsLaceyOperationField.organization_id == org_id,
+                    UsLaceyOperationField.operation_id.in_(operation_ids),
+                    UsLaceyOperationField.field_name.in_(
+                        ("filing_entry_reference", "bill_of_lading", "supplier_name")
+                    ),
                 )
-                for row in rows
-            )
+                .order_by(UsLaceyOperationField.id.asc())
+            ).all()
+            references_by_operation: dict[int, dict[str, str]] = {}
+            for field in reference_fields:
+                value = field.human_value or field.normalized_value or field.original_value
+                cleaned = str(value or "").strip()
+                if not cleaned:
+                    continue
+                references_by_operation.setdefault(int(field.operation_id), {}).setdefault(
+                    str(field.field_name), cleaned
+                )
+
+            items: list[OperationListItem] = []
+            for row in rows:
+                derived = references_by_operation.get(int(row.id), {})
+                client_reference = str(row.client_reference or "").strip()
+                if client_reference and not client_reference.upper().startswith("INTAKE-"):
+                    business_reference = client_reference
+                elif derived.get("filing_entry_reference"):
+                    business_reference = f"Entry {derived['filing_entry_reference']}"
+                elif derived.get("bill_of_lading"):
+                    business_reference = f"B/L {derived['bill_of_lading']}"
+                else:
+                    business_reference = f"Shipment {str(row.public_id).split('-')[0].upper()}"
+
+                items.append(
+                    OperationListItem(
+                        public_id=row.public_id,
+                        client_reference=row.client_reference,
+                        business_reference=business_reference,
+                        supplier_name=(
+                            row.supplier_name
+                            or derived.get("supplier_name")
+                            or None
+                        ),
+                        operation_date=row.operation_date,
+                        status=row.status,
+                        document_count=int(row.document_count),
+                        merchandise_line_count=int(row.merchandise_line_count),
+                        exception_count=exception_counts.get(int(row.id), 0),
+                        created_at=row.created_at,
+                        updated_at=row.updated_at,
+                    )
+                )
+            return tuple(items)
         finally:
             session.close()
 
@@ -672,6 +740,7 @@ class UsLaceyOperationService:
                 )
                 if vault is None:
                     continue
+                document_filename_by_assurance_id[int(assurance.id)] = str(vault.original_filename)
                 job = session.scalar(
                     select(UsLaceyProcessingJob)
                     .where(
@@ -705,6 +774,24 @@ class UsLaceyOperationService:
                     UsLaceyOperationField.id.asc(),
                 )
             ).all()
+            reviewer_ids = {
+                int(row.reviewed_by_user_id)
+                for row in field_rows
+                if row.reviewed_by_user_id is not None
+            }
+            reviewer_names: dict[int, str] = {}
+            if reviewer_ids:
+                reviewer_rows = session.scalars(
+                    select(User).where(
+                        User.organization_id == org_id,
+                        User.id.in_(tuple(reviewer_ids)),
+                    )
+                ).all()
+                reviewer_names = {
+                    int(user.id): str(user.full_name or user.email or user.username)
+                    for user in reviewer_rows
+                }
+
             candidate_rows = session.scalars(
                 select(UsLaceyFieldCandidate).where(
                     UsLaceyFieldCandidate.organization_id == org_id,
@@ -749,6 +836,11 @@ class UsLaceyOperationService:
                     extractor=row.extractor,
                     extractor_version=row.extractor_version,
                     reviewed_by_user_id=row.reviewed_by_user_id,
+                    reviewed_by_name=(
+                        reviewer_names.get(int(row.reviewed_by_user_id))
+                        if row.reviewed_by_user_id is not None
+                        else None
+                    ),
                     reviewed_at=row.reviewed_at,
                     validation_status=row.validation_status,
                     validation_error=row.validation_error,
@@ -762,6 +854,11 @@ class UsLaceyOperationService:
                             if row.field_status in {"MISSING", "REVIEW", "CONFLICT"}
                             else "current_shipment"
                         )
+                    ),
+                    source_filename=(
+                        document_filename_by_assurance_id.get(int(row.source_assurance_document_id))
+                        if row.source_assurance_document_id is not None
+                        else None
                     ),
                 )
                 for row in field_rows
@@ -836,6 +933,7 @@ class UsLaceyOperationService:
                 merchandise_line_count=int(operation.merchandise_line_count),
                 review_result=operation.review_result,
                 created_at=operation.created_at,
+                updated_at=operation.updated_at,
                 documents=tuple(documents),
                 fields=fields,
                 plant_declarations=declarations,

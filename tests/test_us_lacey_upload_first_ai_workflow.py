@@ -72,7 +72,7 @@ def test_workspace_offers_safe_bulk_confirmation_but_keeps_conflicts_explicit():
     assert "Action Required" in source
     assert "Auto-Resolved Data" in source
     assert "genuinely different supported values" in source.lower()
-    assert 'field.status == "CONFLICT"' in source
+    assert "field.status in ['MISSING', 'CONFLICT']" in source
     assert "Regulatory Analysis" in source
 
 

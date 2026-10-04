@@ -3,10 +3,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 import logging
 
 from markupsafe import Markup, escape
 
+from litoral_trace.us_lacey.evidence_catalog import UsLaceyEvidenceCatalogService
 from litoral_trace.us_lacey.candidate_normalization import (
     TaxonomicComparisonContext,
     group_candidate_evidence,
@@ -626,8 +628,168 @@ def _regulatory_assessment_for_detail(identity, detail, explicit_view=None):
         return None
 
 
+def _relative_time(value: datetime | None, *, now: datetime | None = None) -> str:
+    if value is None:
+        return "—"
+    current = now or datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    delta = current - value.astimezone(timezone.utc)
+    seconds = max(0, int(delta.total_seconds()))
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        minutes = seconds // 60
+        return f"{minutes} min ago"
+    if seconds < 86400:
+        hours = seconds // 3600
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    if seconds < 7 * 86400:
+        days = seconds // 86400
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    return value.strftime("%b %d, %Y")
+
+
+def _business_reference(detail) -> str:
+    client_reference = str(getattr(detail, "client_reference", "") or "").strip()
+    if client_reference and not client_reference.upper().startswith("INTAKE-"):
+        return client_reference
+    fields = tuple(getattr(detail, "fields", ()) or ())
+    by_name = {}
+    for field in fields:
+        value = getattr(field, "effective_value", None)
+        cleaned = str(value or "").strip()
+        if cleaned:
+            by_name.setdefault(str(getattr(field, "field_name", "")), cleaned)
+    if by_name.get("filing_entry_reference"):
+        return f"Entry {by_name['filing_entry_reference']}"
+    if by_name.get("bill_of_lading"):
+        return f"B/L {by_name['bill_of_lading']}"
+    return f"Shipment {str(getattr(detail, 'public_id', '')).split('-')[0].upper()}"
+
+
+def _business_supplier_name(detail) -> str | None:
+    direct = str(getattr(detail, "supplier_name", "") or "").strip()
+    if direct:
+        return direct
+    for field in tuple(getattr(detail, "fields", ()) or ()):
+        if str(getattr(field, "field_name", "")) != "supplier_name":
+            continue
+        value = str(getattr(field, "effective_value", "") or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _business_title(detail) -> str:
+    reference = _business_reference(detail)
+    supplier = _business_supplier_name(detail) or "Supplier unresolved"
+    business_date = getattr(detail, "operation_date", None)
+    if business_date is None:
+        created_at = getattr(detail, "created_at", None)
+        business_date = created_at.date() if created_at is not None else None
+    date_label = business_date.strftime("%b %d") if business_date is not None else "Date pending"
+    return f"{reference} · {supplier} · {date_label}"
+
+
+def _readiness_summary(detail, *, attention_fields, processing):
+    def field_state(field_name: str) -> str:
+        matches = [
+            field for field in getattr(detail, "fields", ())
+            if str(getattr(field, "field_name", "")) == field_name
+        ]
+        if not matches:
+            return "MISSING"
+        if any(
+            getattr(field, "effective_value", None)
+            and str(getattr(field, "status", "")).upper()
+            not in {"MISSING", "REVIEW", "CONFLICT"}
+            for field in matches
+        ):
+            return "VERIFIED"
+        if any(str(getattr(field, "status", "")).upper() == "CONFLICT" for field in matches):
+            return "CONFLICT"
+        return "REVIEW REQUIRED"
+
+    if getattr(detail, "status", "") == "COMPLETED":
+        overall = "PACKAGE READY"
+    elif not attention_fields and getattr(processing, "terminal", False):
+        overall = "READY FOR EXPORT"
+    elif getattr(processing, "failed", False):
+        overall = "PROCESSING FAILED"
+    else:
+        overall = "IN PREPARATION"
+    return {
+        "overall": overall,
+        "exception_count": len(attention_fields),
+        "species": field_state("species"),
+        "country_of_harvest": field_state("country_of_harvest"),
+    }
+
+
+def _reuse_summary(identity, detail):
+    fields = tuple(getattr(detail, "fields", ()) or ())
+    if not any(getattr(field, "provenance", "") == "reused_evidence" for field in fields):
+        return None
+    try:
+        return UsLaceyEvidenceCatalogService().reuse_summary(
+            organization_id=int(identity.organization_id),
+            fields=fields,
+        )
+    except Exception:
+        LOGGER.exception(
+            "us_lacey_reused_evidence_summary_read_failed",
+            extra={"organization_id": int(identity.organization_id)},
+        )
+        return None
+
+
 def render_operations(*, request, identity, operations: Sequence, entitlement) -> str:
-    return _render(request, "operations", identity=identity, operations=operations, entitlement=entitlement)
+    now = datetime.now(timezone.utc)
+    open_count = sum(
+        item.status in {"NEW", "PROCESSING", "REVIEW_REQUIRED", "READY_FOR_REVIEW"}
+        for item in operations
+    )
+    needs_review = sum(
+        item.exception_count > 0 or item.status == "REVIEW_REQUIRED"
+        for item in operations
+    )
+    ready_to_export = sum(
+        item.status == "READY_FOR_REVIEW" and item.exception_count == 0
+        for item in operations
+    )
+    completed_this_month = sum(
+        item.status == "COMPLETED"
+        and item.updated_at.year == now.year
+        and item.updated_at.month == now.month
+        for item in operations
+    )
+    metrics = {
+        "open": open_count,
+        "needs_review": needs_review,
+        "ready_to_export": ready_to_export,
+        "completed_this_month": completed_this_month,
+    }
+    return _render(
+        request,
+        "operations",
+        identity=identity,
+        operations=operations,
+        entitlement=entitlement,
+        metrics=metrics,
+        relative_time=_relative_time,
+    )
+
+
+def render_evidence_catalog(*, request, identity, entitlement, catalog) -> str:
+    return _render(
+        request,
+        "evidence",
+        identity=identity,
+        entitlement=entitlement,
+        catalog=catalog,
+        relative_time=_relative_time,
+    )
 
 
 def render_new_operation(*, request, identity, entitlement, csrf_token: str, error: str | None = None) -> str:
@@ -641,6 +803,12 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
     regulatory_assessment = _present_regulatory_assessment(
         _regulatory_assessment_for_detail(identity, detail, regulatory_assessment)
     )
+    readiness_summary = _readiness_summary(
+        detail,
+        attention_fields=attention_fields,
+        processing=progress,
+    )
+    reused_evidence_summary = _reuse_summary(identity, detail)
     return _render(
         request,
         "operation_detail",
@@ -660,6 +828,12 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
         auto_supported_fields=auto_supported_fields,
         settled_fields=settled_fields,
         provenance_summary=_review_provenance_summary(detail),
+        reused_evidence_summary=reused_evidence_summary,
+        readiness_summary=readiness_summary,
+        business_reference=_business_reference(detail),
+        business_supplier_name=_business_supplier_name(detail),
+        business_title=_business_title(detail),
+        relative_time=_relative_time,
         engine2_downstream_annotations=_engine2_downstream_annotations(detail),
         processing=progress,
         error=error,
@@ -684,6 +858,8 @@ def render_operation_alias(
         alias_error=alias_error,
         alias_input_value=alias_input_value,
         alias_saved=alias_saved,
+        business_reference=_business_reference(detail),
+        business_title=_business_title(detail),
     )
 
 
@@ -702,6 +878,7 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
     if is_oob_update is None:
         is_oob_update = str(getattr(request, "method", "GET")).upper() == "POST"
 
+    progress = processing_view(detail)
     return _render(
         request,
         "fragments/operation_workspace",
@@ -720,7 +897,18 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         auto_supported_fields=auto_supported_fields,
         settled_fields=settled_fields,
         provenance_summary=_review_provenance_summary(detail),
+        reused_evidence_summary=_reuse_summary(identity, detail),
+        readiness_summary=_readiness_summary(
+            detail,
+            attention_fields=attention_fields,
+            processing=progress,
+        ),
+        business_reference=_business_reference(detail),
+        business_supplier_name=_business_supplier_name(detail),
+        business_title=_business_title(detail),
+        relative_time=_relative_time,
         engine2_downstream_annotations=_engine2_downstream_annotations(detail),
         error=error,
         is_oob_update=is_oob_update,
+        processing=progress,
     )

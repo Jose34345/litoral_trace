@@ -33,11 +33,11 @@ def test_lacey_landing_leads_with_compliance_infrastructure_positioning():
     assert "Run a sample shipment" in html
     assert "Analyze my documents" in html
     assert "Synthetic data. No upload required." in html
-    assert "7" in html
-    assert "31" in html
-    assert "24" in html
-    assert "4" in html
-    assert "3" in html
+    assert "Operations Command Center" in html
+    assert "SYSTEM OF RECORD" in html
+    assert "10" in html
+    assert "needs review" in html
+    assert "ready to export" in html
     assert "Professional Plan — USD 149/month" not in html
     assert "USD 149" in html
     assert "/month" in html
@@ -139,7 +139,7 @@ def test_lacey_landing_contains_responsive_and_accessibility_contracts():
     assert 'href="#main-content"' in landing
     assert 'aria-label="Run a synthetic U.S. Lacey sample shipment"' in landing
     assert 'aria-label="Analyze my documents in the four-hour sandbox"' in landing
-    assert 'aria-label="Illustrative Lacey readiness pipeline"' in landing
+    assert 'aria-label="Illustrative Operations Command Center"' in landing
     assert 'aria-label="Illustrative supplier evidence checklist"' in landing
     assert 'href="#main-content"' in demo
     assert 'aria-live="polite"' in demo

@@ -32,6 +32,7 @@ from litoral_trace.us_lacey.csrf import (
     verify_us_lacey_csrf,
 )
 from litoral_trace.us_lacey.growth_attribution import safe_record_outreach_event
+from litoral_trace.us_lacey.evidence_catalog import UsLaceyEvidenceCatalogService
 from litoral_trace.us_lacey.email_delivery import (
     UsLaceyEmailConfigurationError,
     load_us_lacey_email_config,
@@ -89,6 +90,7 @@ from litoral_trace.us_lacey.workflow import (
 )
 from litoral_trace.us_lacey.worker_wakeup import wake_us_lacey_worker
 from litoral_trace.web.us_lacey_operational_views import (
+    render_evidence_catalog,
     render_new_operation,
     render_operation_alias,
     render_operation_detail,
@@ -522,6 +524,30 @@ def operations_page(
     except UsLaceyOperationalAccessError:
         return RedirectResponse("/billing", status_code=303)
     return _html(render_operations(request=request, identity=identity, operations=items, entitlement=entitlement))
+
+
+@app.get("/evidence", response_class=HTMLResponse)
+def evidence_page(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        catalog = UsLaceyEvidenceCatalogService().catalog(
+            organization_id=identity.organization_id
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    return _html(
+        render_evidence_catalog(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+            catalog=catalog,
+        )
+    )
 
 
 @app.get("/operations/new", response_class=HTMLResponse)

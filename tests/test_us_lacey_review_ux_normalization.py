@@ -172,7 +172,8 @@ def test_review_workspace_vanilla_js_updates_tabs_and_action_counts_after_htmx()
     assert 'data-action-required-count' in template
     assert 'data-action-tab-count' in template
     assert 'refreshActionCount(root)' in template
-    assert 'activateTab(root, "action")' in template
+    assert "initiallySelected" in template
+    assert "initiallySelected?.dataset.reviewTabButton" in template
     assert 'data-review-resolved="true"' in template
 
 
@@ -195,17 +196,17 @@ def test_exception_first_ui_polish_uses_quiet_enterprise_surfaces():
         "src/litoral_trace/templates/us_lacey/fragments/regulatory_assessment_card.html"
     ).read_text(encoding="utf-8")
 
-    assert "lt-review-card--blocking" in workspace
-    assert "lt-review-card--confirmation" in workspace
+    assert "Exception work queue" in workspace
+    assert "<table" in workspace
+    assert "lt-review-status--blocking" in workspace
+    assert "lt-review-status--confirmation" in workspace
     assert "bg-emerald-50/40" not in workspace
     assert "border-emerald-200 bg-emerald-50/40" not in workspace
     assert "ring-emerald-600/20" in workspace
     assert "ring-amber-600/20" in workspace
-    assert "focus:ring-2 focus:ring-emerald-600" in workspace
-    assert 'button("Save", variant="secondary"' in workspace
-    assert 'border border-slate-200 bg-white p-4 shadow-sm' in workspace
+    assert "Save override" in workspace
+    assert "Inspect evidence" in workspace
     assert "Source: Document evidence" in workspace
-    assert "border-t border-slate-100 bg-slate-50 px-3 py-3" in workspace
     assert "semantically equivalent source observations were reconciled" not in workspace
 
     assert "U.S. Lacey ruleset" not in regulatory
