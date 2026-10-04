@@ -151,7 +151,7 @@
         <span class="text-slate-500" aria-hidden="true">·</span>
         <span class="font-semibold text-emerald-700" data-reused-evidence-count>{{ provenance_summary.reused_evidence_count }} reused</span>
         <span class="text-slate-500" aria-hidden="true">·</span>
-        <span class="font-semibold text-amber-900" data-review-required-provenance-count>{{ provenance_summary.review_required_count }} need attention</span>
+        <span class="font-semibold text-amber-900" data-review-required-provenance-count>{{ combined_action_count }} need attention</span>
       </div>
       {% if combined_action_count > 0 %}
       <div class="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900" data-attention-callout>
@@ -753,3 +753,10 @@
   }
 })();
 </script>
+
+
+{% set shell_oob = true %}
+{% include "us_lacey/fragments/workflow_stepper_shell.html" %}
+{% include "us_lacey/fragments/shipment_readiness_status.html" %}
+{% include "us_lacey/fragments/species_status.html" %}
+{% include "us_lacey/fragments/country_status.html" %}

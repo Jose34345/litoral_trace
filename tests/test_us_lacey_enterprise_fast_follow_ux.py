@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_ROOT = ROOT / "src" / "litoral_trace" / "templates" / "us_lacey"
 STATIC_ROOT = ROOT / "src" / "litoral_trace" / "static" / "src"
 WORKSPACE = TEMPLATE_ROOT / "fragments" / "operation_workspace.html"
+WORKFLOW_STEPPER = TEMPLATE_ROOT / "fragments" / "workflow_stepper_shell.html"
 DETAIL = TEMPLATE_ROOT / "operation_detail.html"
 ALIAS = TEMPLATE_ROOT / "fragments" / "operation_alias.html"
 EXPORT = TEMPLATE_ROOT / "fragments" / "export_declaration_package.html"
@@ -113,12 +114,15 @@ def test_toasts_replace_success_banners_and_auto_expire():
 
 def test_workflow_stepper_is_navigable():
     detail = DETAIL.read_text(encoding="utf-8")
+    stepper = WORKFLOW_STEPPER.read_text(encoding="utf-8")
     styles = PROGRESS.read_text(encoding="utf-8")
 
+    assert "workflow_stepper_shell.html" in detail
     for target in ("#documents", "#processing-status", "#review-summary", "#declaration-package"):
-        assert target in detail
-    assert "data-workflow-step-link" in detail
-    assert 'aria-current="step"' in detail
+        assert target in stepper
+    assert "data-workflow-step-link" in stepper
+    assert 'aria-current="step"' in stepper
+    assert 'id="workflow-stepper"' in stepper
     assert ".lt-progress-step__link" in styles
 
 

@@ -14,6 +14,7 @@ class RuleStatus(StrEnum):
     PASS = "PASS"
     FAIL = "FAIL"
     INDETERMINATE = "INDETERMINATE"
+    NOT_EVALUATED = "NOT_EVALUATED"
     NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
@@ -60,6 +61,7 @@ class DeMinimisInput:
     total_unit_mass_kg: Decimal | None
     entry_same_hts_plant_mass_kg: Decimal | None
     protected_status: ProtectedPlantStatus
+    claimed: bool = True
     evidence_refs: tuple[EvidenceRef, ...] = ()
 
 

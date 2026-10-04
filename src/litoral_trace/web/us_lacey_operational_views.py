@@ -208,6 +208,7 @@ _REGULATORY_STATUS_LABELS = {
     "PASS": "Check passed",
     "FAIL": "Needs review",
     "INDETERMINATE": "Needs information",
+    "NOT_EVALUATED": "Not evaluated",
     "NOT_APPLICABLE": "Not applicable",
 }
 
@@ -221,6 +222,12 @@ _REGULATORY_REASON_LABELS = {
     "INVALID_TOTAL_UNIT_MASS": "Total unit mass is invalid",
     "INVALID_ENTRY_PLANT_MASS": "Entry plant mass is invalid",
     "PROTECTED_STATUS_UNKNOWN": "Protected-plant status is unknown",
+    "EXEMPTION_NOT_CLAIMED": (
+        "De Minimis exemption was not claimed. Does not block the declaration package."
+    ),
+    "MISSING_OPTIONAL_EXEMPTION_INPUTS": (
+        "De Minimis exemption was not claimed. Does not block the declaration package."
+    ),
 }
 
 _REGULATORY_ACTION_LABELS = {

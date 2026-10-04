@@ -48,7 +48,18 @@ def _assessment(
 
 
 def evaluate_de_minimis(inputs: DeMinimisInput) -> RuleAssessment:
-    """Evaluate only supported facts; missing or invalid facts never become PASS."""
+    """Evaluate the optional exemption only when it is explicitly claimed and supported."""
+    if not inputs.claimed:
+        return _assessment(
+            inputs,
+            status=RuleStatus.NOT_EVALUATED,
+            reasons=("EXEMPTION_NOT_CLAIMED",),
+            explanation=(
+                "De Minimis exemption was not claimed. "
+                "Does not block the declaration package."
+            ),
+        )
+
     reasons: list[str] = []
     required = (
         inputs.hts10,
@@ -57,7 +68,15 @@ def evaluate_de_minimis(inputs: DeMinimisInput) -> RuleAssessment:
         inputs.entry_same_hts_plant_mass_kg,
     )
     if any(value is None for value in required):
-        reasons.append("MISSING_REQUIRED_INPUTS")
+        return _assessment(
+            inputs,
+            status=RuleStatus.NOT_EVALUATED,
+            reasons=("MISSING_OPTIONAL_EXEMPTION_INPUTS",),
+            explanation=(
+                "De Minimis exemption was not claimed. "
+                "Does not block the declaration package."
+            ),
+        )
 
     if inputs.hts10 is not None and not _HTS10.fullmatch(str(inputs.hts10)):
         reasons.append("INVALID_HTS10")
@@ -177,6 +196,7 @@ class DeMinimisRule:
                 total_unit_mass_kg=configured.total_unit_mass_kg,
                 entry_same_hts_plant_mass_kg=configured.entry_same_hts_plant_mass_kg,
                 protected_status=configured.protected_status,
+                claimed=configured.claimed,
                 evidence_refs=configured.evidence_refs or subject.evidence_refs,
             )
             return evaluate_de_minimis(inputs)
@@ -204,6 +224,7 @@ class DeMinimisRule:
             protected_status=_protected_status_from_rule_input(
                 values.get("protected_status")
             ),
+            claimed=bool(values.get("claimed", False)),
             evidence_refs=subject.evidence_refs,
         )
         return evaluate_de_minimis(inputs)

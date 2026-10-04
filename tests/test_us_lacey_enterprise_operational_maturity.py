@@ -46,11 +46,15 @@ def test_operations_command_center_exposes_business_semantics() -> None:
 
 def test_shipment_workspace_is_readiness_first_and_upload_is_modal() -> None:
     template = (TEMPLATES / "us_lacey" / "operation_detail.html").read_text(encoding="utf-8")
+    fragments = TEMPLATES / "us_lacey" / "fragments"
+    readiness = (fragments / "shipment_readiness_status.html").read_text(encoding="utf-8")
+    country = (fragments / "country_status.html").read_text(encoding="utf-8")
     assert "Shipment system of record" in template
     assert "Last processed" in template
-    assert "Shipment readiness" in template
-    assert "Exceptions:" in template
-    assert "Country of harvest" in template
+    assert "shipment_readiness_status.html" in template
+    assert "Shipment readiness" in readiness
+    assert "Exceptions:" in readiness
+    assert "Country of harvest" in country
     assert "reused from verified supplier evidence" in template
     assert "Inspect source" in template
     assert "Add evidence" in template

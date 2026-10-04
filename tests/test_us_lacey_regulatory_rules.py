@@ -79,7 +79,7 @@ def test_de_minimis_unknown_protected_status_is_indeterminate():
     assert "PROTECTED_STATUS_UNKNOWN" in result.reason_codes
 
 
-def test_de_minimis_missing_inputs_are_indeterminate_not_safe():
+def test_de_minimis_missing_optional_inputs_are_not_evaluated_and_non_blocking():
     rules = _rules()
     result = rules.evaluate_de_minimis(
         _de_minimis_input(
@@ -92,9 +92,13 @@ def test_de_minimis_missing_inputs_are_indeterminate_not_safe():
         )
     )
 
-    assert result.status is rules.RuleStatus.INDETERMINATE
-    assert result.review_required is True
-    assert "MISSING_REQUIRED_INPUTS" in result.reason_codes
+    assert result.status is rules.RuleStatus.NOT_EVALUATED
+    assert result.review_required is False
+    assert result.reason_codes == ("MISSING_OPTIONAL_EXEMPTION_INPUTS",)
+    assert result.explanation == (
+        "De Minimis exemption was not claimed. "
+        "Does not block the declaration package."
+    )
 
 
 def test_de_minimis_malformed_hts10_and_zero_total_mass_are_indeterminate():

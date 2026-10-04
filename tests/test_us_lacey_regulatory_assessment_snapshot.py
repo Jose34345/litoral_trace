@@ -129,8 +129,13 @@ def test_assessment_uses_primary_plant_line_without_product_intelligence():
     assert by_rule["HTS_APPLICABILITY"]["status"] == "PASS"
 
     de_minimis = by_rule["DE_MINIMIS"]
-    assert de_minimis["status"] == "INDETERMINATE"
-    assert "MISSING_REQUIRED_INPUTS" in de_minimis["reason_codes"]
+    assert de_minimis["status"] == "NOT_EVALUATED"
+    assert de_minimis["is_blocking"] is False
+    assert de_minimis["reason_codes"] == ["EXEMPTION_NOT_CLAIMED"]
+    assert de_minimis["explanation"] == (
+        "De Minimis exemption was not claimed. "
+        "Does not block the declaration package."
+    )
     assert de_minimis["evidence_refs"] == [
         {
             "source_type": "REVIEWED_HTS10",
@@ -187,8 +192,9 @@ def test_assessment_never_uses_unsafe_bom_weight_as_de_minimis_mass():
         for item in payload["assessments"]
         if item["rule_id"] == "DE_MINIMIS"
     )
-    assert de_minimis["status"] == "INDETERMINATE"
-    assert "MISSING_REQUIRED_INPUTS" in de_minimis["reason_codes"]
+    assert de_minimis["status"] == "NOT_EVALUATED"
+    assert de_minimis["is_blocking"] is False
+    assert de_minimis["reason_codes"] == ["EXEMPTION_NOT_CLAIMED"]
     assert "0.5" not in str(de_minimis["calculation_trace"])
 
     contract_mass = payload["regulatory_input_contract"]["subjects"][0][

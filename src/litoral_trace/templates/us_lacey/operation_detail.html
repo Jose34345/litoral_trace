@@ -46,47 +46,15 @@
 {% endif %}
 {% if notice %}<span hidden data-toast-bootstrap="{{ notice }}" data-toast-tone="success"></span>{% endif %}
 
-{% set processing_step_state = "pending" if empty_bulk_rejection else ("current" if processing.failed or not processing.terminal else "complete") %}
-<ol class="lt-progress-steps mb-6 border-b border-slate-200 pb-4 sm:grid sm:grid-cols-5" aria-label="Preparation workflow">
-{% for title,state,href in [
-  ("Documents", "complete" if detail.documents else "current", "#documents"),
-  ("Processing", processing_step_state, "#processing-status"),
-  ("Review", "current" if processing.state == "READY_FOR_REVIEW" else "pending", "#review-summary"),
-  ("Final confirmation", "current" if detail.status == "COMPLETED" else "pending", "#declaration-package"),
-  ("Preparation package", "complete" if detail.status == "COMPLETED" else "pending", "#declaration-package")
-] %}
-<li class="lt-progress-step" data-state="{{ state }}">
-  <a class="lt-progress-step__link" href="{{ href }}" data-workflow-step-link{% if state == "current" %} aria-current="step"{% endif %}>
-    <span class="lt-progress-step__marker" aria-hidden="true">{% if state == "complete" %}✓{% else %}{{ loop.index }}{% endif %}</span>
-    <span class="lt-progress-step__title">{{ title }}</span>
-  </a>
-</li>
-{% endfor %}</ol>
+{% set shell_oob = false %}
+{% set shell_empty_bulk_rejection = empty_bulk_rejection %}
+{% include "us_lacey/fragments/workflow_stepper_shell.html" %}
 
 <section class="lt-card overflow-hidden border border-slate-200 bg-white shadow-sm" data-readiness-summary>
   <div class="grid gap-0 lg:grid-cols-[1.2fr_repeat(3,minmax(0,0.8fr))]">
-    <div class="border-b border-slate-200 p-5 lg:border-b-0 lg:border-r">
-      <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Shipment readiness</p>
-      <div class="mt-2 flex flex-wrap items-center gap-3">
-        {% if readiness_summary.overall in ["READY FOR EXPORT", "PACKAGE READY"] %}
-        {{ lt_badge("READY", readiness_summary.overall) }}
-        {% elif readiness_summary.overall == "PROCESSING FAILED" %}
-        {{ lt_badge("CONFLICT", readiness_summary.overall) }}
-        {% else %}
-        {{ lt_badge("REVIEW REQUIRED", readiness_summary.overall) }}
-        {% endif %}
-        <span class="text-xs font-semibold text-slate-600">Exceptions: {{ readiness_summary.exception_count }}</span>
-      </div>
-      <p class="mt-2 text-xs leading-5 text-slate-500">Readiness is derived from the current human-review state and durable processing checkpoints.</p>
-    </div>
-    <div class="border-b border-slate-200 p-5 lg:border-b-0 lg:border-r">
-      <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Species</p>
-      <div class="mt-2">{{ lt_badge("READY" if readiness_summary.species == "VERIFIED" else readiness_summary.species, readiness_summary.species) }}</div>
-    </div>
-    <div class="border-b border-slate-200 p-5 lg:border-b-0 lg:border-r">
-      <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Country of harvest</p>
-      <div class="mt-2">{{ lt_badge("READY" if readiness_summary.country_of_harvest == "VERIFIED" else readiness_summary.country_of_harvest, readiness_summary.country_of_harvest) }}</div>
-    </div>
+    {% include "us_lacey/fragments/shipment_readiness_status.html" %}
+    {% include "us_lacey/fragments/species_status.html" %}
+    {% include "us_lacey/fragments/country_status.html" %}
     <div class="p-5">
       <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Evidence set</p>
       <p class="mt-2 text-lg font-bold text-slate-950">{{ detail.document_count }} docs</p>

@@ -1,0 +1,19 @@
+{% set workflow_oob = shell_oob|default(false) %}
+{% set workflow_processing_state = "pending" if shell_empty_bulk_rejection|default(false) else ("current" if processing.failed or not processing.terminal else "complete") %}
+{% set workflow_review_state = "current" if processing.terminal and detail.status != "COMPLETED" else ("complete" if detail.status == "COMPLETED" else "pending") %}
+<ol id="workflow-stepper" class="lt-progress-steps mb-6 border-b border-slate-200 pb-4 sm:grid sm:grid-cols-5" aria-label="Preparation workflow"{% if workflow_oob %} hx-swap-oob="true"{% endif %}>
+{% for title,state,href in [
+  ("Documents", "complete" if detail.documents else "current", "#documents"),
+  ("Processing", workflow_processing_state, "#processing-status"),
+  ("Review", workflow_review_state, "#review-summary"),
+  ("Final confirmation", "complete" if detail.status == "COMPLETED" else "pending", "#declaration-package"),
+  ("Preparation package", "complete" if detail.status == "COMPLETED" else "pending", "#declaration-package")
+] %}
+<li class="lt-progress-step" data-state="{{ state }}">
+  <a class="lt-progress-step__link" href="{{ href }}" data-workflow-step-link{% if state == "current" %} aria-current="step"{% endif %}>
+    <span class="lt-progress-step__marker" aria-hidden="true">{% if state == "complete" %}✓{% else %}{{ loop.index }}{% endif %}</span>
+    <span class="lt-progress-step__title">{{ title }}</span>
+  </a>
+</li>
+{% endfor %}
+</ol>

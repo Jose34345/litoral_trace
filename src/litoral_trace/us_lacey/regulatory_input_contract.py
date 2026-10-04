@@ -104,17 +104,30 @@ def _hts_input(
         getattr(field, "reviewed_at", None) is not None
         or bool(str(getattr(field, "human_value", None) or "").strip())
     )
+    field_status = str(getattr(field, "field_status", "") or "").upper()
+    supported_by_reconciliation = field_status in {
+        "FOUND",
+        "MATCHED",
+        "SUPPORTED",
+        "SUPPORTED MULTIPLE",
+        "SUPPORTED_MULTIPLE",
+    }
+    supported = reviewed or supported_by_reconciliation
     return {
         "status": (
             InputStatus.SUPPORTED.value
-            if reviewed
+            if supported
             else InputStatus.REVIEW_REQUIRED.value
         ),
         "value": value,
         "reason": (
             "REVIEWED_VALID_HTS10"
             if reviewed
-            else "VALID_HTS10_AWAITS_HUMAN_CONFIRMATION"
+            else (
+                "VALID_HTS10_FROM_SUPPORTED_EVIDENCE"
+                if supported_by_reconciliation
+                else "VALID_HTS10_AWAITS_HUMAN_CONFIRMATION"
+            )
         ),
         "evidence": _evidence(field),
     }
