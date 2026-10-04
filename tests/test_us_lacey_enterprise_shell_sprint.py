@@ -6,17 +6,17 @@ TEMPLATES = ROOT / "src" / "litoral_trace" / "templates"
 STATIC = ROOT / "src" / "litoral_trace" / "static"
 
 
-def test_enterprise_shell_exposes_real_navigation_and_no_fake_routes() -> None:
+def test_enterprise_shell_exposes_only_real_navigation() -> None:
     source = (TEMPLATES / "us_lacey" / "base.html").read_text(encoding="utf-8")
     assert 'class="lt-sidebar' in source
     assert 'class="lt-topbar' in source
     assert 'href="/operations"' in source
+    assert 'href="/evidence"' in source
     assert 'href="/billing"' in source
     assert 'href="/legal/product-use-terms"' in source
     assert ">Evidence<" in source
-    assert ">Settings<" in source
-    assert 'aria-disabled="true"' in source
-    assert 'href="/evidence"' not in source
+    assert ">Settings<" not in source
+    assert "Planned" not in source
     assert 'href="/settings"' not in source
     assert "⌘K" in source
 
@@ -40,35 +40,52 @@ def test_enterprise_semantic_tokens_and_jinja_primitives_exist() -> None:
         assert state in components
 
 
-def test_operations_is_dashboard_first_and_upload_is_compact() -> None:
+def test_operations_is_command_center_and_upload_is_compact() -> None:
     source = (TEMPLATES / "us_lacey" / "operations.html").read_text(encoding="utf-8")
     assert "Prepare and review Lacey declaration evidence." in source
-    for metric in ("Active operations", "Review required", "Ready / completed", "Plan usage"):
+    for metric in ("Open", "Needs review", "Ready to export", "Completed this month"):
         assert metric in source
-    for column in ("Reference", "Supplier", "Documents", "Readiness", "Updated"):
+    for column in ("Reference", "Supplier", "Documents", "Exceptions", "Readiness", "Updated"):
         assert column in source
+    assert "Supplier unresolved" in source
+    assert "relative_time(item.updated_at)" in source
     assert 'id="new-operation-panel"' in source
     assert "lt-compact-uploader" in source
     assert 'action="/operations/intake"' in source
+    assert 'href="/operations/new"' in source
 
 
-def test_review_workspace_uses_enterprise_density_and_reuse_badge() -> None:
+def test_review_workspace_uses_matrix_auditability_and_reuse_memory() -> None:
     source = (
         TEMPLATES / "us_lacey" / "fragments" / "operation_workspace.html"
     ).read_text(encoding="utf-8")
     assert "lt-enterprise-review" in source
-    assert "lt-enterprise-stat" in source
-    assert 'lt_badge("AUTO-RESOLVED", "Reused from verified supplier evidence"' in source
+    assert "Exception work queue" in source
+    for column in ("Proposed value", "Evidence", "Status", "Decision"):
+        assert column in source
+    for action in ("Accept", "Override", "Request evidence", "Mark not applicable"):
+        assert action in source
+    assert "Resolved by Litoral Trace" in source
+    assert "Authorized reviewer" in source
+    assert "Preparation Package" in source
+    assert "default_review_tab" in source
 
 
-def test_marketing_has_trust_pipeline_workflow_and_separate_pricing() -> None:
+def test_marketing_has_command_center_security_lawgs_and_separate_pricing() -> None:
     source = (TEMPLATES / "public" / "lacey.html").read_text(encoding="utf-8")
     assert "U.S. Lacey Act Compliance Infrastructure" in source
     assert "Built for U.S. Lacey Act preparation" in source
-    for value in ('("7", "documents")', '("31", "fields")', '("24", "resolved")', '("4", "exceptions")', '("3", "missing evidence")'):
-        assert value in source
+    assert "Operations Command Center" in source
+    assert "SYSTEM OF RECORD" in source
     for stage in ('("01", "Upload"', '("02", "Reconcile"', '("03", "Resolve"', '("04", "Review"', '("05", "Export"'):
         assert stage in source
+    assert 'id="security"' in source
+    assert "Tenant isolation" in source
+    assert "Protected transport & storage" in source
+    assert "Ephemeral evaluation sandbox" in source
+    assert "No customer-document training pipeline" in source
+    assert 'id="lawgs-output"' in source
+    assert "&lt;LaceyDeclaration&gt;" in source
     assert 'id="pricing"' in source
     hero = source.split('<section id="trust"', 1)[0]
     assert "USD 149" not in hero

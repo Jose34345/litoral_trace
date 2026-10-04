@@ -69,7 +69,8 @@ def test_review_workspace_is_exception_first():
     assert "need attention before generating the declaration package." in source
     assert "Only missing information, review-required evidence, or genuinely conflicting evidence appears here." in source
     assert "Auto-Resolved Data" in source
-    assert 'activateTab(root, "action")' in source
+    assert "default_review_tab" in source
+    assert "initiallySelected?.dataset.reviewTabButton" in source
 
 
 def test_review_kpis_and_tabs_follow_operational_priority():
@@ -101,7 +102,7 @@ def test_document_intake_teaches_complete_pack_and_reprocessing():
     assert best_practice in detail
     assert best_practice in new_operation
     assert "Need to add more documents?" in detail
-    assert "Add documents &amp; reprocess" in detail
+    assert "Add evidence & reprocess" in detail
     assert "Reprocessing may update auto-resolved fields, evidence, and remaining exceptions." in detail
 
 

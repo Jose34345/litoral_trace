@@ -4,13 +4,6 @@
 {% from "us_lacey/_components.html" import lt_badge, lt_button, lt_data_table %}
 {% block lacey_title %}Operations{% endblock %}
 {% block lacey_content %}
-{% set metrics = namespace(active=0, review=0, ready=0) %}
-{% for item in operations %}
-  {% if item.status in ['NEW', 'PROCESSING', 'REVIEW_REQUIRED', 'READY_FOR_REVIEW'] %}{% set metrics.active = metrics.active + 1 %}{% endif %}
-  {% if item.status == 'REVIEW_REQUIRED' %}{% set metrics.review = metrics.review + 1 %}{% endif %}
-  {% if item.status in ['READY_FOR_REVIEW', 'COMPLETED'] %}{% set metrics.ready = metrics.ready + 1 %}{% endif %}
-{% endfor %}
-
 <header class="lt-page-header">
   <div class="lt-page-header__copy">
     <p class="lt-page-header__eyebrow">Compliance operations</p>
@@ -21,24 +14,24 @@
 
 <section class="lt-enterprise-stat-grid" aria-label="Operations overview">
   <article class="lt-enterprise-stat">
-    <p class="lt-enterprise-stat__label">Active operations</p>
-    <p class="lt-enterprise-stat__value">{{ metrics.active }}</p>
-    <p class="lt-enterprise-stat__meta">In intake, processing or review</p>
+    <p class="lt-enterprise-stat__label">Open</p>
+    <p class="lt-enterprise-stat__value">{{ metrics.open }}</p>
+    <p class="lt-enterprise-stat__meta">Current preparation workload</p>
   </article>
   <article class="lt-enterprise-stat">
-    <p class="lt-enterprise-stat__label">Review required</p>
-    <p class="lt-enterprise-stat__value">{{ metrics.review }}</p>
-    <p class="lt-enterprise-stat__meta">Exception-first work queue</p>
+    <p class="lt-enterprise-stat__label">Needs review</p>
+    <p class="lt-enterprise-stat__value">{{ metrics.needs_review }}</p>
+    <p class="lt-enterprise-stat__meta">Operations with unresolved exceptions</p>
   </article>
   <article class="lt-enterprise-stat">
-    <p class="lt-enterprise-stat__label">Ready / completed</p>
-    <p class="lt-enterprise-stat__value">{{ metrics.ready }}</p>
-    <p class="lt-enterprise-stat__meta">Prepared for final workflow</p>
+    <p class="lt-enterprise-stat__label">Ready to export</p>
+    <p class="lt-enterprise-stat__value">{{ metrics.ready_to_export }}</p>
+    <p class="lt-enterprise-stat__meta">No blocking exceptions remain</p>
   </article>
   <article class="lt-enterprise-stat">
-    <p class="lt-enterprise-stat__label">Plan usage</p>
-    <p class="lt-enterprise-stat__value">{{ entitlement.used_operations }} / {{ entitlement.monthly_operation_limit }}</p>
-    <p class="lt-enterprise-stat__meta">{{ entitlement.remaining_operations }} operations remaining</p>
+    <p class="lt-enterprise-stat__label">Completed this month</p>
+    <p class="lt-enterprise-stat__value">{{ metrics.completed_this_month }}</p>
+    <p class="lt-enterprise-stat__meta">{{ entitlement.remaining_operations }} of {{ entitlement.monthly_operation_limit }} plan operations remaining</p>
   </article>
 </section>
 
@@ -88,7 +81,7 @@
   </header>
 
   {% if operations %}
-    {% call lt_data_table(["Reference", "Supplier", "Documents", "Readiness", "Updated"], "Recent U.S. Lacey operations", "58rem") %}
+    {% call lt_data_table(["Reference", "Supplier", "Documents", "Exceptions", "Readiness", "Updated"], "Recent U.S. Lacey operations", "64rem") %}
       {% for item in operations %}
       {% set readiness = {
         'COMPLETED': 'READY',
@@ -100,13 +93,26 @@
       }.get(item.status, item.status|replace('_', ' ')) %}
       <tr class="lt-data-table__row" data-state="{{ 'attention' if item.status in ['REVIEW_REQUIRED', 'FAILED'] else '' }}">
         <td class="lt-data-table__cell lt-data-table__cell--primary">
-          <a class="lt-data-table__primary text-emerald-700 hover:text-emerald-900" href="/operations/{{ item.public_id }}">{% if item.client_reference.startswith('INTAKE-') %}Uploaded shipment{% else %}{{ item.client_reference }}{% endif %}</a>
-          <span class="lt-data-table__secondary">ID {{ item.public_id|string|truncate(18, True, '…') }}</span>
+          <a class="lt-data-table__primary text-emerald-700 hover:text-emerald-900" href="/operations/{{ item.public_id }}">{{ item.business_reference }}</a>
+          <span class="lt-data-table__secondary">{{ (item.operation_date or item.created_at.date()).strftime("%b %d, %Y") }} · ID {{ item.public_id|string|truncate(14, True, '…') }}</span>
         </td>
-        <td class="lt-data-table__cell"><span class="text-xs font-semibold text-slate-700">{{ item.supplier_name or '—' }}</span></td>
+        <td class="lt-data-table__cell">
+          {% if item.supplier_name %}
+          <span class="text-xs font-semibold text-slate-700">{{ item.supplier_name }}</span>
+          {% else %}
+          {{ lt_badge("REVIEW REQUIRED", "Supplier unresolved") }}
+          {% endif %}
+        </td>
         <td class="lt-data-table__cell lt-data-table__cell--numeric">{{ item.document_count }}</td>
+        <td class="lt-data-table__cell">
+          {% if item.exception_count %}
+          <span class="font-bold text-amber-800">{{ item.exception_count }}</span>
+          {% else %}
+          <span class="font-semibold text-slate-400">0</span>
+          {% endif %}
+        </td>
         <td class="lt-data-table__cell">{{ lt_badge(readiness) }}</td>
-        <td class="lt-data-table__cell"><span class="text-xs text-slate-600">{{ item.updated_at.strftime("%Y-%m-%d %H:%M") }}</span></td>
+        <td class="lt-data-table__cell"><span class="text-xs font-semibold text-slate-600">{{ relative_time(item.updated_at) }}</span></td>
       </tr>
       {% endfor %}
     {% endcall %}

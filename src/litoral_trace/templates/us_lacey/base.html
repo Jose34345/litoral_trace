@@ -27,11 +27,10 @@
         <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Workspace</p>
         <div class="space-y-1">
           <a href="/operations" {% if current_path.startswith('/operations') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-briefcase" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Operations</span></a>
-          {# No href until the customer-facing supplier-evidence browser has a route. #}
-          <span class="lt-nav-link flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium opacity-60" aria-disabled="true" title="Evidence browser is being prepared">
+          <a href="/evidence" {% if current_path.startswith('/evidence') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
             <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-folder-open" aria-hidden="true"></i></span>
-            <span class="min-w-0 flex-1 truncate">Evidence</span><span class="text-[9px] font-bold uppercase tracking-wide text-slate-500">Planned</span>
-          </span>
+            <span class="min-w-0 flex-1 truncate">Evidence</span>
+          </a>
         </div>
       </section>
       <section class="lt-nav-section mb-5">
@@ -44,11 +43,7 @@
         <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Organization</p>
         <div class="space-y-1">
           <a href="/billing" {% if current_path == '/billing' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-receipt" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Billing</span></a>
-          {# No href until a customer settings route exists. #}
-          <span class="lt-nav-link flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium opacity-60" aria-disabled="true" title="Workspace settings are being prepared">
-            <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-sliders" aria-hidden="true"></i></span>
-            <span class="min-w-0 flex-1 truncate">Settings</span><span class="text-[9px] font-bold uppercase tracking-wide text-slate-500">Planned</span>
-          </span>
+          {# Settings remains hidden until a real customer settings route exists. #}
         </div>
       </section>
     </nav>
@@ -82,7 +77,6 @@
           <label class="relative block"><span class="sr-only">Jump to workspace section</span><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i><input id="lt-command-search" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-14 text-xs text-slate-800 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20" placeholder="Jump to operations, billing, terms…" autocomplete="off" aria-label="Workspace quick navigation"><span class="lt-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2">⌘K</span></label>
         </div>
         <div class="ml-auto flex items-center gap-2">
-          <button type="button" class="relative flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500" aria-label="No new alerts" title="No new alerts"><i class="fa-regular fa-bell" aria-hidden="true"></i></button>
           <details class="relative">
             <summary class="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white" aria-label="Account menu">{{ (identity.full_name[:1] if identity is defined and identity.full_name else 'L')|upper }}</summary>
             <div class="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-xl"><div class="border-b border-slate-100 px-3 py-2"><p class="truncate text-xs font-bold text-slate-900">{{ identity.full_name if identity is defined else 'Account' }}</p><p class="mt-0.5 truncate text-[11px] text-slate-500">{{ identity.email if identity is defined else '' }}</p></div><a class="mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" href="/billing"><i class="fa-solid fa-receipt" aria-hidden="true"></i> Billing</a><form method="post" action="/logout"><button class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" type="submit"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Sign out</button></form></div>
