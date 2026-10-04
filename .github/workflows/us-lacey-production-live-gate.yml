@@ -141,8 +141,8 @@ jobs:
           for attempt in $(seq 1 60); do
             code="$(curl -sS -o /tmp/login.html -w '%{http_code}' --max-time 20 "$ORIGIN/login" || true)"
             if [ "$code" = "200" ] \
-              && grep -Fq 'U.S. Lacey Act workspace' /tmp/login.html \
-              && grep -Fq 'Litoral Trace · U.S. Lacey Act Compliance' /tmp/login.html \
+              && grep -Fq 'U.S. Lacey Act compliance' /tmp/login.html \
+              && grep -Fq 'Product Use Terms' /tmp/login.html \
               && grep -Fq 'lang="en"' /tmp/login.html; then
               break
             fi
@@ -150,8 +150,8 @@ jobs:
             sleep 5
           done
           test "${code:-}" = "200"
-          grep -Fq 'U.S. Lacey Act workspace' /tmp/login.html
-          grep -Fq 'Litoral Trace · U.S. Lacey Act Compliance' /tmp/login.html
+          grep -Fq 'U.S. Lacey Act compliance' /tmp/login.html
+          grep -Fq 'Product Use Terms' /tmp/login.html
           grep -Fq 'lang="en"' /tmp/login.html
           grep -Fq 'Skip to main content' /tmp/login.html
 
@@ -172,7 +172,7 @@ jobs:
           for path in /login /signup /legal/terms /legal/privacy /legal/refunds /legal/product-use-terms; do
             code="$(curl -sS -o /tmp/portal.html -w '%{http_code}' --max-time 20 "$ORIGIN$path")"
             test "$code" = "200"
-            grep -Fq 'U.S. Lacey Act workspace' /tmp/portal.html
+            grep -Fq 'U.S. Lacey Act compliance' /tmp/portal.html
             grep -Fq 'lang="en"' /tmp/portal.html
             for phrase in "${banned[@]}"; do
               if grep -Fq "$phrase" /tmp/portal.html; then
