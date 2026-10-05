@@ -406,7 +406,8 @@ implementation = [
 migrations = [
   "alembic/versions/052_add_us_lacey_ephemeral_sandbox.py",
   "alembic/versions/053_sandbox_purge_queue.py",
-  "alembic/versions/056_us_lacey_sandbox_growth_attribution.py"
+  "alembic/versions/056_us_lacey_sandbox_growth_attribution.py",
+  "alembic/versions/072_fix_sandbox_purge_fk_order.py"
 ]
 tests = [
   "tests/test_us_lacey_sandbox_cleanup.py",
