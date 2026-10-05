@@ -26,6 +26,10 @@ from litoral_trace.us_lacey.pilot_watchdog import (
     run_lacey_pilot_watchdog,
 )
 from litoral_trace.us_lacey.worker_once import EXIT_NO_JOB, EXIT_OK
+from litoral_trace.workers.sandbox_cleanup import (
+    recover_stale_sandbox_purge_jobs,
+    run_sandbox_cleanup_once,
+)
 
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.worker_runner")
@@ -162,12 +166,23 @@ def run_supervisor(
     pilot_watchdog_every = _int_env(
         "US_LACEY_PILOT_WATCHDOG_SECONDS", 60, minimum=30, maximum=3600
     )
+    sandbox_cleanup_every = _int_env(
+        "US_LACEY_SANDBOX_CLEANUP_SECONDS", 10, minimum=1, maximum=300
+    )
+    sandbox_cleanup_stale_after = _int_env(
+        "US_LACEY_SANDBOX_CLEANUP_STALE_AFTER_SECONDS",
+        900,
+        minimum=60,
+        maximum=86400,
+    )
     child_grace_seconds = _float_env(
         "US_LACEY_WORKER_CHILD_GRACE_SECONDS", 15.0, minimum=1.0, maximum=120.0
     )
     supervisor_id = f"supervisor-{socket.gethostname()}-{uuid4().hex[:10]}"
+    sandbox_cleanup_worker_id = f"{supervisor_id}-sandbox-cleanup"
     next_recovery = 0.0
     next_pilot_watchdog = 0.0
+    next_sandbox_cleanup = 0.0
 
     _LOG.info(
         "us_lacey_worker_supervisor_started supervisor_id=%s stale_after_seconds=%s",
@@ -176,6 +191,29 @@ def run_supervisor(
     )
     while not stop.is_set():
         now = time.monotonic()
+        if now >= next_sandbox_cleanup:
+            try:
+                recovered = recover_stale_sandbox_purge_jobs(
+                    stale_after_seconds=sandbox_cleanup_stale_after
+                )
+                if recovered:
+                    _LOG.warning(
+                        "stale_sandbox_purge_jobs_recovered count=%s",
+                        recovered,
+                    )
+                processed = run_sandbox_cleanup_once(
+                    worker_id=sandbox_cleanup_worker_id
+                )
+                if processed:
+                    _LOG.info(
+                        "sandbox_cleanup_job_attempted worker_id=%s",
+                        sandbox_cleanup_worker_id,
+                    )
+                _notify(on_healthy_iteration)
+            except Exception:
+                _LOG.exception("sandbox_cleanup_cycle_failed")
+            next_sandbox_cleanup = now + sandbox_cleanup_every
+
         if now >= next_pilot_watchdog:
             try:
                 watchdog = run_lacey_pilot_watchdog(

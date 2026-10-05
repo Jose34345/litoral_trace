@@ -18,7 +18,8 @@ def test_enterprise_shell_exposes_only_real_navigation() -> None:
     assert ">Settings<" not in source
     assert "Planned" not in source
     assert 'href="/settings"' not in source
-    assert "⌘K" in source
+    assert ">Ctrl K</span>" in source
+    assert "isApplePlatform ? '⌘ K' : 'Ctrl K'" in source
 
 
 def test_enterprise_semantic_tokens_and_jinja_primitives_exist() -> None:
