@@ -32,7 +32,12 @@ from litoral_trace.us_lacey.csrf import (
     verify_us_lacey_csrf,
 )
 from litoral_trace.us_lacey.growth_attribution import safe_record_outreach_event
-from litoral_trace.us_lacey.audit_trail import list_operation_events
+from litoral_trace.us_lacey.audit_trail import (
+    AUDIT_DATE_RANGE_OPTIONS,
+    AUDIT_EVENT_FILTER_OPTIONS,
+    list_operation_events,
+    list_organization_audit_events,
+)
 from litoral_trace.us_lacey.evidence_catalog import UsLaceyEvidenceCatalogService
 from litoral_trace.us_lacey.email_delivery import (
     UsLaceyEmailConfigurationError,
@@ -104,6 +109,7 @@ from litoral_trace.web.us_lacey_operational_views import (
     render_operations,
     render_processing_fragment,
 )
+from litoral_trace.web.us_lacey_audit_views import render_audit_log_list
 from litoral_trace.web.us_lacey_supplier_views import (
     render_supplier_detail,
     render_suppliers_list,
@@ -560,6 +566,55 @@ def evidence_page(
     )
 
 
+@app.get("/audit-log", response_class=HTMLResponse)
+def audit_log_page(
+    request: Request,
+    operation_id: str = "",
+    actor: str = "",
+    event_type: str = "",
+    date_range: str = "30d",
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        normalized_range = str(date_range or "30d").strip().lower()
+        allowed_ranges = {value for value, _label in AUDIT_DATE_RANGE_OPTIONS}
+        if normalized_range not in allowed_ranges:
+            normalized_range = "30d"
+        normalized_event = str(event_type or "").strip().upper()
+        allowed_events = {value for value, _label in AUDIT_EVENT_FILTER_OPTIONS}
+        if normalized_event not in allowed_events:
+            normalized_event = ""
+        events = list_organization_audit_events(
+            organization_id=identity.organization_id,
+            operation_query=operation_id,
+            actor_query=actor,
+            event_type=normalized_event,
+            date_range=normalized_range,
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+
+    return _html(
+        render_audit_log_list(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+            events=events,
+            filters={
+                "operation_id": str(operation_id or "").strip(),
+                "actor": str(actor or "").strip(),
+                "event_type": normalized_event,
+                "date_range": normalized_range,
+            },
+            event_type_options=AUDIT_EVENT_FILTER_OPTIONS,
+            date_range_options=AUDIT_DATE_RANGE_OPTIONS,
+        )
+    )
+
+
 @app.get("/suppliers", response_class=HTMLResponse)
 def suppliers_page(
     request: Request,
@@ -837,6 +892,7 @@ def operation_activity_fragment(
         audit_events = list_operation_events(
             organization_id=identity.organization_id,
             operation_public_id=detail.public_id,
+            limit=5,
         )
         return _html(
             render_operation_audit_log(

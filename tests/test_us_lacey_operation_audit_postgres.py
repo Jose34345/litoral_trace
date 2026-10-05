@@ -75,6 +75,28 @@ def fixture():
                     "tax_id": f"AUDIT-{label.upper()}-{suffix}",
                 },
             )
+            user_id = int(
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO users (
+                            organization_id, email, username, password_hash,
+                            role, full_name, is_active
+                        ) VALUES (
+                            :org, :email, :username, 'not-used',
+                            'cliente', :full_name, true
+                        )
+                        RETURNING id
+                        """
+                    ),
+                    {
+                        "org": org_id,
+                        "email": f"audit-{label}-{suffix}@example.com",
+                        "username": f"audit-{label}-{suffix}",
+                        "full_name": f"Audit User {label.upper()}",
+                    },
+                ).scalar_one()
+            )
             operation_id = int(
                 conn.execute(
                     text(
@@ -92,6 +114,7 @@ def fixture():
                 ).scalar_one()
             )
             values[f"org_{label}"] = org_id
+            values[f"user_{label}"] = user_id
             values[f"operation_{label}"] = operation_id
 
     with runtime.begin() as conn:
@@ -222,3 +245,59 @@ def test_operation_audit_is_tenant_scoped_and_append_only(fixture):
         ).mappings().one()
     assert privileges["can_update"] is False
     assert privileges["can_delete"] is False
+
+
+def test_audit_identity_projection_is_tenant_scoped_without_users_select(fixture):
+    with fixture["runtime"].begin() as conn:
+        _tenant(conn, fixture["org_a"])
+        own = conn.execute(
+            text(
+                """
+                SELECT user_id, display_identity
+                FROM public.us_lacey_audit_user_identity(:user_id)
+                """
+            ),
+            {"user_id": fixture["user_a"]},
+        ).mappings().one()
+        assert own["user_id"] == fixture["user_a"]
+        assert own["display_identity"] == "Audit User A"
+
+        other = conn.execute(
+            text(
+                """
+                SELECT user_id, display_identity
+                FROM public.us_lacey_audit_user_identity(:user_id)
+                """
+            ),
+            {"user_id": fixture["user_b"]},
+        ).mappings().one_or_none()
+        assert other is None
+
+    with pytest.raises(DBAPIError):
+        with fixture["runtime"].begin() as conn:
+            _tenant(conn, fixture["org_a"])
+            conn.execute(
+                text("SELECT id, email FROM public.users WHERE organization_id=:org"),
+                {"org": fixture["org_a"]},
+            )
+
+    with fixture["owner"].connect() as conn:
+        privileges = conn.execute(
+            text(
+                """
+                SELECT
+                    has_table_privilege(
+                        'litoral_trace_app',
+                        'public.users',
+                        'SELECT'
+                    ) AS can_select_users,
+                    has_function_privilege(
+                        'litoral_trace_app',
+                        'public.us_lacey_audit_user_identity(integer)',
+                        'EXECUTE'
+                    ) AS can_resolve_identity
+                """
+            )
+        ).mappings().one()
+    assert privileges["can_select_users"] is False
+    assert privileges["can_resolve_identity"] is True

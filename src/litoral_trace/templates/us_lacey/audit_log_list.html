@@ -1,0 +1,113 @@
+{% extends "us_lacey/base.html" %}
+{% set authenticated = true %}
+{% from "components/ui.html" import empty_state %}
+{% from "us_lacey/_components.html" import lt_data_table, lt_button %}
+{% block lacey_title %}Audit Log{% endblock %}
+{% block lacey_content %}
+<header class="lt-page-header">
+  <div class="lt-page-header__copy">
+    <p class="lt-page-header__eyebrow">System of record</p>
+    <h1 class="lt-page-header__title">Audit Log</h1>
+    <p class="lt-page-header__description">Organization-wide, immutable activity history for shipment operations. Review automated processing, evidence reuse, human decisions, uploads, and package generation from one workspace.</p>
+  </div>
+</header>
+
+<section class="lt-operations-panel">
+  <header class="lt-operations-panel__header">
+    <div>
+      <h2 class="text-sm font-bold text-slate-950">Activity filters</h2>
+      <p class="mt-1 text-xs text-slate-500">Filter the tenant-scoped system of record without modifying historical events.</p>
+    </div>
+    <span class="text-xs font-semibold text-slate-500">{{ events|length }} result{{ '' if events|length == 1 else 's' }}</span>
+  </header>
+
+  <form method="get" action="/audit-log" class="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-4">
+    <label class="block">
+      <span class="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">Search / Operation</span>
+      <div class="relative">
+        <i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i>
+        <input type="search" name="operation_id" value="{{ filters.operation_id }}" placeholder="Reference or operation ID" class="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs font-medium text-slate-800 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20">
+      </div>
+    </label>
+
+    <label class="block">
+      <span class="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">Actor</span>
+      <div class="relative">
+        <i class="fa-solid fa-user pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i>
+        <input type="search" name="actor" value="{{ filters.actor }}" placeholder="Name or email" class="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs font-medium text-slate-800 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20">
+      </div>
+    </label>
+
+    <label class="block">
+      <span class="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">Event Type</span>
+      <select name="event_type" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20">
+        <option value="">All events</option>
+        {% for value, label in event_type_options %}
+        <option value="{{ value }}" {% if filters.event_type == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="block">
+      <span class="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">Date range</span>
+      <select name="date_range" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20">
+        {% for value, label in date_range_options %}
+        <option value="{{ value }}" {% if filters.date_range == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <div class="flex items-center gap-2 md:col-span-2 xl:col-span-4">
+      {{ lt_button("primary", "Apply filters", "fa-filter", button_type="submit") }}
+      {{ lt_button("ghost", "Clear", "fa-xmark", href="/audit-log") }}
+    </div>
+  </form>
+</section>
+
+<section class="lt-operations-panel">
+  <header class="lt-operations-panel__header">
+    <div>
+      <h2 class="text-sm font-bold text-slate-950">Organization activity</h2>
+      <p class="mt-1 text-xs text-slate-500">Newest activity appears first. User identities are resolved to workspace names or email addresses; internal database IDs are never displayed.</p>
+    </div>
+  </header>
+
+  {% if events %}
+    {% call lt_data_table(["Time", "Operation", "Actor", "Event", "Details"], "Organization audit activity", "76rem") %}
+      {% for event in events %}
+      <tr class="lt-data-table__row">
+        <td class="lt-data-table__cell">
+          <time class="whitespace-nowrap text-xs font-semibold text-slate-600" datetime="{{ event.timestamp.isoformat() }}">{{ event.timestamp.strftime("%b %d, %Y") }}</time>
+          <span class="lt-data-table__secondary">{{ event.timestamp.strftime("%H:%M UTC") }}</span>
+        </td>
+        <td class="lt-data-table__cell lt-data-table__cell--primary">
+          <a class="lt-data-table__primary text-emerald-700 hover:text-emerald-900" href="/operations/{{ event.operation_public_id }}">{{ event.operation_reference }}</a>
+          <span class="lt-data-table__secondary">Open shipment record</span>
+        </td>
+        <td class="lt-data-table__cell">
+          <div class="flex items-center gap-2">
+            {% if event.actor_type == "USER" %}
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-user text-[10px]"></i></span>
+            {% else %}
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600" aria-hidden="true"><i class="fa-solid fa-robot text-[10px]"></i></span>
+            {% endif %}
+            <span class="text-xs font-semibold text-slate-800">{{ event.actor_identity }}</span>
+          </div>
+        </td>
+        <td class="lt-data-table__cell">
+          <span class="text-xs font-semibold text-slate-800">{{ event.action_label }}</span>
+          <span class="lt-data-table__secondary">{{ "Human action" if event.actor_type == "USER" else "Automated event" }}</span>
+        </td>
+        <td class="lt-data-table__cell">
+          <p class="max-w-xl text-xs leading-5 text-slate-600">{{ event.detail_text }}</p>
+        </td>
+      </tr>
+      {% endfor %}
+    {% endcall %}
+  {% else %}
+  <div class="p-6">
+    {{ empty_state("No matching audit activity", "Adjust the filters or clear them to view the organization-wide immutable activity history.", "fa-clock-rotate-left") }}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
