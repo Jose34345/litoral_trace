@@ -14,6 +14,10 @@ branch_labels = None
 depends_on = None
 
 PLATFORM_ROLE = "litoral_trace_platform_definer"
+_PURGE_CHILD_TABLES = (
+    "us_lacey_evidence_snapshot_documents",
+    "us_lacey_source_set_members",
+)
 
 _EFFECTIVE_DEADLINE = """
 CASE
@@ -35,6 +39,30 @@ def _revoke_temp_platform_set() -> None:
     op.execute(
         f"REVOKE {PLATFORM_ROLE} FROM CURRENT_USER GRANTED BY CURRENT_USER"
     )
+
+
+def _grant_child_cleanup_capabilities() -> None:
+    for table in _PURGE_CHILD_TABLES:
+        op.execute(
+            f"GRANT SELECT, DELETE ON TABLE public.{table} TO {PLATFORM_ROLE}"
+        )
+        for command in ("SELECT", "DELETE"):
+            policy = f"{table}_platform_{command.lower()}_072"
+            op.execute(f"DROP POLICY IF EXISTS {policy} ON public.{table}")
+            op.execute(
+                f"CREATE POLICY {policy} ON public.{table} "
+                f"FOR {command} TO {PLATFORM_ROLE} USING (true)"
+            )
+
+
+def _revoke_child_cleanup_capabilities() -> None:
+    for table in _PURGE_CHILD_TABLES:
+        for command in ("SELECT", "DELETE"):
+            policy = f"{table}_platform_{command.lower()}_072"
+            op.execute(f"DROP POLICY IF EXISTS {policy} ON public.{table}")
+        op.execute(
+            f"REVOKE SELECT, DELETE ON TABLE public.{table} FROM {PLATFORM_ROLE}"
+        )
 
 
 def _replace_purge_function(*, delete_post_053_children: bool) -> None:
@@ -180,8 +208,10 @@ def _run_with_platform_owner(*, delete_post_053_children: bool) -> None:
 
 
 def upgrade() -> None:
+    _grant_child_cleanup_capabilities()
     _run_with_platform_owner(delete_post_053_children=True)
 
 
 def downgrade() -> None:
     _run_with_platform_owner(delete_post_053_children=False)
+    _revoke_child_cleanup_capabilities()
