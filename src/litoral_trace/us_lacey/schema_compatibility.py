@@ -19,9 +19,9 @@ from litoral_trace.us_lacey.db import get_us_lacey_engine
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.schema_compatibility")
 
-# 071 adds the reusable supplier-evidence tables required by the
-# customer-facing cross-shipment reconciliation contract.
-_REQUIRED_US_LACEY_SCHEMA_REVISION = "071_us_lacey_reusable_supplier_evidence"
+# 072 fixes the storage-first sandbox purge for source-set/evidence-link
+# foreign keys introduced after the original purge function was deployed.
+_REQUIRED_US_LACEY_SCHEMA_REVISION = "072_fix_sandbox_purge_fk_order"
 
 
 @lru_cache(maxsize=1)

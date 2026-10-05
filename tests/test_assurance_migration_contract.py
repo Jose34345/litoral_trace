@@ -382,7 +382,7 @@ def test_us_lacey_reusable_evidence_follows_paddle_billing():
 
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "071_us_lacey_reusable_supplier_evidence (head)" in text
+    assert "072_fix_sandbox_purge_fk_order (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():

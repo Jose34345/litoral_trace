@@ -109,6 +109,101 @@ def _insert_vault_document(connection, *, organization_id: int, suffix: str) -> 
     ).scalar_one()
 
 
+def _insert_source_set_fixture(
+    connection, *, organization_id: int, vault_document_id: int, suffix: str
+) -> int:
+    assurance_id = connection.execute(
+        text(
+            """
+            INSERT INTO public.assurance_documents (
+                organization_id, vault_document_id, semantic_document_type,
+                type_confidence, processing_status, source_system
+            ) VALUES (
+                :organization_id, :vault_document_id, 'CUSTOMS_DOCUMENT',
+                1.0, 'EXTRACTED', 'sandbox-cleanup-gate'
+            )
+            RETURNING id
+            """
+        ),
+        {
+            "organization_id": organization_id,
+            "vault_document_id": vault_document_id,
+        },
+    ).scalar_one()
+    operation_id = connection.execute(
+        text(
+            """
+            INSERT INTO public.us_lacey_operations (
+                organization_id, client_reference, status
+            ) VALUES (:organization_id, :client_reference, 'READY_FOR_REVIEW')
+            RETURNING id
+            """
+        ),
+        {
+            "organization_id": organization_id,
+            "client_reference": f"cleanup-{suffix}",
+        },
+    ).scalar_one()
+    operation_document_id = connection.execute(
+        text(
+            """
+            INSERT INTO public.us_lacey_operation_documents (
+                organization_id, operation_id, assurance_document_id,
+                document_role
+            ) VALUES (
+                :organization_id, :operation_id, :assurance_document_id,
+                'UNKNOWN'
+            )
+            RETURNING id
+            """
+        ),
+        {
+            "organization_id": organization_id,
+            "operation_id": operation_id,
+            "assurance_document_id": assurance_id,
+        },
+    ).scalar_one()
+    revision_id = connection.execute(
+        text(
+            """
+            INSERT INTO public.us_lacey_source_set_revisions (
+                organization_id, operation_id, generation,
+                source_set_fingerprint, document_count, status, is_current
+            ) VALUES (
+                :organization_id, :operation_id, 1, :fingerprint,
+                1, 'FINALIZED', true
+            )
+            RETURNING id
+            """
+        ),
+        {
+            "organization_id": organization_id,
+            "operation_id": operation_id,
+            "fingerprint": "c" * 64,
+        },
+    ).scalar_one()
+    return connection.execute(
+        text(
+            """
+            INSERT INTO public.us_lacey_source_set_members (
+                organization_id, source_set_revision_id,
+                operation_document_id, assurance_document_id
+            ) VALUES (
+                :organization_id, :revision_id,
+                :operation_document_id, :assurance_document_id
+            )
+            RETURNING id
+            """
+        ),
+        {
+            "organization_id": organization_id,
+            "revision_id": revision_id,
+            "operation_document_id": operation_document_id,
+            "assurance_document_id": assurance_id,
+        },
+    ).scalar_one()
+
+
 def test_purge_tombstone_survives_organization_deletion():
     reset_us_lacey_worker_engine_state()
     root = _root_engine()
@@ -162,6 +257,72 @@ def test_purge_tombstone_survives_organization_deletion():
         assert tombstone["organization_id"] == org_id
         assert tombstone["state"] == "COMPLETED"
         assert tombstone["completed_at"] is not None
+    finally:
+        root.dispose()
+        reset_us_lacey_worker_engine_state()
+
+
+def test_purge_removes_source_set_members_before_operation_cascade():
+    reset_us_lacey_worker_engine_state()
+    root = _root_engine()
+    suffix = uuid4().hex[:12]
+    worker_id = f"cleanup-source-set-{suffix}"
+
+    try:
+        with root.begin() as connection:
+            org_id = _create_expired_sandbox(connection, suffix=suffix)
+            vault_id = _insert_vault_document(
+                connection,
+                organization_id=org_id,
+                suffix=f"{suffix}-a",
+            )
+            member_id = _insert_source_set_fixture(
+                connection,
+                organization_id=org_id,
+                vault_document_id=vault_id,
+                suffix=suffix,
+            )
+
+        claimed = claim_next_sandbox_purge_job(worker_id=worker_id)
+        assert claimed is not None
+        assert claimed.organization_id == org_id
+        manifest = _load_manifest(job=claimed, worker_id=worker_id)
+        assert [item.id for item in manifest] == [vault_id]
+
+        _transition_to_db_deleting(job_id=claimed.id, worker_id=worker_id)
+        _delete_database_metadata(
+            job=claimed,
+            worker_id=worker_id,
+            expected_manifest=manifest,
+        )
+
+        with root.connect() as connection:
+            assert connection.execute(
+                text("SELECT count(*) FROM public.organizations WHERE id=:id"),
+                {"id": org_id},
+            ).scalar_one() == 0
+            assert connection.execute(
+                text(
+                    """
+                    SELECT count(*)
+                    FROM public.us_lacey_source_set_members
+                    WHERE id=:member_id
+                    """
+                ),
+                {"member_id": member_id},
+            ).scalar_one() == 0
+            state = connection.execute(
+                text(
+                    """
+                    SELECT state
+                    FROM public.us_lacey_sandbox_purge_jobs
+                    WHERE id=:job_id
+                    """
+                ),
+                {"job_id": claimed.id},
+            ).scalar_one()
+
+        assert state == "COMPLETED"
     finally:
         root.dispose()
         reset_us_lacey_worker_engine_state()
