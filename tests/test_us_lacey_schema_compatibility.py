@@ -43,12 +43,12 @@ class _Engine:
         return _Connection(self._value, self.statements)
 
 
-def test_required_schema_revision_is_sandbox_purge_contract() -> None:
-    assert schema_compatibility.required_us_lacey_schema_revision() == "072_fix_sandbox_purge_fk_order"
+def test_required_schema_revision_is_operation_audit_contract() -> None:
+    assert schema_compatibility.required_us_lacey_schema_revision() == "073_us_lacey_operation_audit_trail"
 
 
-def test_schema_probe_is_ready_on_required_sandbox_purge_revision(monkeypatch) -> None:
-    engine = _Engine("072_fix_sandbox_purge_fk_order")
+def test_schema_probe_is_ready_on_required_operation_audit_revision(monkeypatch) -> None:
+    engine = _Engine("073_us_lacey_operation_audit_trail")
     monkeypatch.setattr(schema_compatibility, "get_us_lacey_engine", lambda: engine)
 
     assert schema_compatibility.probe_us_lacey_schema_compatibility() is True

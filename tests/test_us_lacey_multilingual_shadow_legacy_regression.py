@@ -51,6 +51,7 @@ def _run_authoritative_path(monkeypatch, *, shadow_enabled: bool):
     monkeypatch.setattr(worker, "us_lacey_operation_projection_lock", lambda **_: nullcontext())
     monkeypatch.setattr(worker, "_claim_source_set_finalization", lambda **_: SimpleNamespace(claimed=True, fingerprint="test"))
     monkeypatch.setattr(worker, "finalize_claim", lambda **_: True)
+    monkeypatch.setattr(worker, "record_operation_event", lambda **_: 1)
 
     def project(**_: object):
         legacy_calls.append("project")

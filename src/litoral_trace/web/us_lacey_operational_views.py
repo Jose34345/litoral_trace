@@ -25,6 +25,7 @@ from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
     get_current_regulatory_assessment_view,
     refresh_current_regulatory_assessment_view,
 )
+from litoral_trace.us_lacey.audit_trail import list_operation_events
 from litoral_trace.us_lacey.semantic_evidence_read import (
     EvidenceTextView,
     SemanticEvidenceReadService,
@@ -978,6 +979,10 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
         regulatory_action_items=regulatory_action_items,
     )
     reused_evidence_summary = _reuse_summary(identity, detail)
+    audit_events = list_operation_events(
+        organization_id=identity.organization_id,
+        operation_public_id=detail.public_id,
+    )
     return _render(
         request,
         "operation_detail",
@@ -999,6 +1004,7 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
         settled_fields=settled_fields,
         provenance_summary=_review_provenance_summary(detail),
         reused_evidence_summary=reused_evidence_summary,
+        audit_events=audit_events,
         readiness_summary=readiness_summary,
         business_reference=_business_reference(detail),
         business_supplier_name=_business_supplier_name(detail),
@@ -1040,6 +1046,15 @@ def render_processing_fragment(*, request, detail, retry_csrf: str = "") -> str:
         detail=detail,
         processing=processing_view(detail),
         retry_csrf=retry_csrf,
+    )
+
+
+def render_operation_audit_log(*, request, detail, audit_events) -> str:
+    return _render(
+        request,
+        "fragments/activity_audit_log",
+        detail=detail,
+        audit_events=audit_events,
     )
 
 

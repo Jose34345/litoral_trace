@@ -42,6 +42,7 @@ def _configure(monkeypatch, calls: list[str]) -> SourceSetClaim:
     monkeypatch.setattr(worker, "_build_product_intelligence_snapshot", lambda **_: calls.append("pi"))
     monkeypatch.setattr(worker, "_shadow_multilingual_evidence_snapshot", lambda **_: calls.append("multilingual"))
     monkeypatch.setattr(worker, "finalize_claim", lambda **_: calls.append("finalize") or True)
+    monkeypatch.setattr(worker, "record_operation_event", lambda **_: 1)
     monkeypatch.setattr(worker, "complete_us_lacey_job", lambda **_: calls.append("complete") or True)
     monkeypatch.setattr(worker, "_refresh_operation", lambda **_: calls.append("refresh") or "READY_FOR_REVIEW")
     monkeypatch.setattr(worker, "_run_ai_review_recommendations", lambda **_: calls.append("review"))

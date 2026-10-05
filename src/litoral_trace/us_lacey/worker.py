@@ -26,6 +26,11 @@ from litoral_trace.lacey_engine.errors import UnsupportedDocumentDomainError
 from litoral_trace.services.vault import VaultService
 from litoral_trace.us_lacey import specialized_shadow
 from litoral_trace.us_lacey.ai_review import recommend_open_reconciliation_issues
+from litoral_trace.us_lacey.audit_trail import (
+    OperationActorType,
+    OperationEventType,
+    record_operation_event,
+)
 from litoral_trace.us_lacey.ai_suggestions import project_verified_ai_suggestions
 from litoral_trace.us_lacey.batch_hardening import (
     ShipmentBatchRejected,
@@ -955,6 +960,7 @@ def process_one_us_lacey_job(
                 conflict_count=0,
             )
 
+        reused_evidence_count = 0
         projection_guard = (
             us_lacey_operation_projection_lock(
                 organization_id=job.organization_id,
@@ -1066,7 +1072,7 @@ def process_one_us_lacey_job(
                         worker_id=worker_id,
                         source_set_fingerprint=source_set_fingerprint,
                     ):
-                        _apply_reusable_supplier_evidence(
+                        reused_evidence_count = _apply_reusable_supplier_evidence(
                             organization_id=job.organization_id,
                             operation_id=job.operation_id,
                         )
@@ -1112,6 +1118,31 @@ def process_one_us_lacey_job(
                     "Lacey source-set finalization superseded before publication",
                     extra={"organization_id": job.organization_id, "operation_id": job.operation_id, "job_id": job.id, "stage": "source_set_finalization", "source_set_fingerprint": source_set_claim.fingerprint},
                 )
+            else:
+                audit_source_key = str(source_set_fingerprint or f"job:{job.id}")
+                record_operation_event(
+                    organization_id=job.organization_id,
+                    operation_id=job.operation_id,
+                    actor_type=OperationActorType.SYSTEM,
+                    actor_identity="Litoral Trace",
+                    event_type=OperationEventType.EXTRACTED,
+                    event_key=f"source-set:{audit_source_key}:extracted",
+                    details={
+                        "projected_field_count": projection.projected_count,
+                        "conflict_count": projection.conflict_count,
+                        "document_status": document_status,
+                    },
+                )
+                if reused_evidence_count:
+                    record_operation_event(
+                        organization_id=job.organization_id,
+                        operation_id=job.operation_id,
+                        actor_type=OperationActorType.SYSTEM,
+                        actor_identity="Litoral Trace",
+                        event_type=OperationEventType.EVIDENCE_REUSED,
+                        event_key=f"source-set:{audit_source_key}:evidence-reused",
+                        details={"claim_count": int(reused_evidence_count)},
+                    )
 
         with _timed_worker_stage(job=job, stage="queue_complete", worker_id=worker_id):
             completed = complete_us_lacey_job(job_id=job.id, worker_id=worker_id)

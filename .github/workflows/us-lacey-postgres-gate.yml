@@ -41,6 +41,7 @@ on:
       - "alembic/versions/070_us_lacey_paddle_billing.py"
       - "alembic/versions/071_us_lacey_reusable_supplier_evidence.py"
       - "alembic/versions/072_fix_sandbox_purge_fk_order.py"
+      - "alembic/versions/073_us_lacey_operation_audit_trail.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
@@ -636,7 +637,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "072_fix_sandbox_purge_fk_order (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "073_us_lacey_operation_audit_trail (head)" /tmp/alembic-reupgraded.txt
       - name: Prove reusable supplier evidence persistence and tenant isolation
         env:
           DATABASE_URL: ""
@@ -1151,3 +1152,5 @@ jobs:
           tests/test_us_lacey_active_portal_postgres_e2e.py
       - name: Prove tenant A/B isolation
         run: python -m pytest -q -rs tests/test_us_lacey_rls_postgres_integration.py
+      - name: Prove immutable operation audit trail RLS
+        run: python -m pytest -q -rs tests/test_us_lacey_operation_audit_postgres.py
