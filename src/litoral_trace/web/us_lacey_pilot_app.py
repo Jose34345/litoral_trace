@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import logging
 import threading
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import BackgroundTasks, Cookie, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -75,6 +75,10 @@ from litoral_trace.us_lacey.review import (
     review_us_lacey_field,
 )
 from litoral_trace.us_lacey.review_telemetry import parse_review_telemetry
+from litoral_trace.us_lacey.supplier_intelligence import (
+    UsLaceySupplierIntelligenceService,
+    UsLaceySupplierNotFound,
+)
 from litoral_trace.us_lacey.self_service import (
     UsLaceySelfServiceError,
     get_us_lacey_billing_summary,
@@ -97,6 +101,10 @@ from litoral_trace.web.us_lacey_operational_views import (
     render_operation_workspace,
     render_operations,
     render_processing_fragment,
+)
+from litoral_trace.web.us_lacey_supplier_views import (
+    render_supplier_detail,
+    render_suppliers_list,
 )
 from litoral_trace.web.us_lacey_portal_views import (
     render_billing,
@@ -546,6 +554,72 @@ def evidence_page(
             identity=identity,
             entitlement=entitlement,
             catalog=catalog,
+        )
+    )
+
+
+@app.get("/suppliers", response_class=HTMLResponse)
+def suppliers_page(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        directory = UsLaceySupplierIntelligenceService().directory(
+            organization_id=identity.organization_id
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    return _html(
+        render_suppliers_list(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+            directory=directory,
+        )
+    )
+
+
+@app.get("/suppliers/{supplier_id}", response_class=HTMLResponse)
+def supplier_detail_page(
+    supplier_id: str,
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        try:
+            supplier_public_id = UUID(str(supplier_id))
+        except (TypeError, ValueError) as exc:
+            raise UsLaceySupplierNotFound("Supplier not found.") from exc
+        supplier = UsLaceySupplierIntelligenceService().detail(
+            organization_id=identity.organization_id,
+            supplier_public_id=supplier_public_id,
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except UsLaceySupplierNotFound:
+        return _html(
+            render_message_page(
+                request=request,
+                title="Supplier unavailable.",
+                message="This supplier could not be found in the current workspace.",
+                authenticated=True,
+                action_href="/suppliers",
+                action_label="Return to suppliers",
+            ),
+            status_code=404,
+        )
+    return _html(
+        render_supplier_detail(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+            supplier=supplier,
         )
     )
 

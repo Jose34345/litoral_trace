@@ -12,6 +12,8 @@ def test_enterprise_shell_exposes_only_real_navigation() -> None:
     assert 'class="lt-topbar' in source
     assert 'href="/operations"' in source
     assert 'href="/evidence"' in source
+    assert 'href="/suppliers"' in source
+    assert ">Suppliers<" in source
     assert 'href="/billing"' in source
     assert 'href="/legal/product-use-terms"' in source
     assert ">Evidence<" in source
