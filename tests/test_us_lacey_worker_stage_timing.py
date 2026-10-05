@@ -63,6 +63,7 @@ def test_worker_emits_structured_stage_durations_for_finalizing_job(monkeypatch,
     monkeypatch.setattr(worker, "_shadow_multilingual_evidence_snapshot", lambda **_: None)
     monkeypatch.setattr(worker, "finalize_claim", lambda **_: True)
     monkeypatch.setattr(worker, "complete_us_lacey_job", lambda **_: True)
+    monkeypatch.setattr(worker, "record_operation_event", lambda **_: 1)
     monkeypatch.setattr(worker, "_refresh_operation", lambda **_: "READY_FOR_REVIEW")
     monkeypatch.setattr(
         worker,

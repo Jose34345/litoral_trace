@@ -12,8 +12,13 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 
-from litoral_trace.db.models import AssuranceDocument, UsLaceyOperationDocument
+from litoral_trace.db.models import AssuranceDocument, UsLaceyOperationDocument, VaultDocument
 from litoral_trace.us_lacey._operations_core import *  # noqa: F403
+from litoral_trace.us_lacey.audit_trail import (
+    OperationActorType,
+    OperationEventType,
+    append_operation_event,
+)
 from litoral_trace.us_lacey._operations_core import (
     UsLaceyOperationNotFound,
     UsLaceyOperationService as _CoreUsLaceyOperationService,
@@ -95,6 +100,12 @@ class UsLaceyOperationService(_CoreUsLaceyOperationService):
             )
             if assurance_document is None:
                 raise UsLaceyOperationNotFound("Document not found for this company.")
+            vault_document = session.scalar(
+                select(VaultDocument).where(
+                    VaultDocument.organization_id == org_id,
+                    VaultDocument.id == assurance_document.vault_document_id,
+                )
+            )
 
             # Exact evidence attachment is idempotent regardless of whether an
             # explicit semantic successor has since become current.
@@ -147,6 +158,35 @@ class UsLaceyOperationService(_CoreUsLaceyOperationService):
                     )
                 )
                 or 0
+            )
+            append_operation_event(
+                session,
+                organization_id=org_id,
+                operation_id=operation.id,
+                actor_type=(
+                    OperationActorType.USER
+                    if vault_document is not None
+                    and vault_document.created_by_user_id is not None
+                    else OperationActorType.SYSTEM
+                ),
+                actor_identity=(
+                    f"user:{int(vault_document.created_by_user_id)}"
+                    if vault_document is not None
+                    and vault_document.created_by_user_id is not None
+                    else "Litoral Trace"
+                ),
+                event_type=OperationEventType.DOCUMENT_UPLOADED,
+                event_key=f"document:{link.id}:uploaded",
+                details={
+                    "filename": (
+                        str(vault_document.original_filename)[:255]
+                        if vault_document is not None
+                        else "Shipment document"
+                    ),
+                    "document_role": role,
+                    "version_number": version,
+                    "document_count": operation.document_count,
+                },
             )
             session.commit()
             return int(link.id)

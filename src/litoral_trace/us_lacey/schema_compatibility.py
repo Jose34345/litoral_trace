@@ -19,9 +19,9 @@ from litoral_trace.us_lacey.db import get_us_lacey_engine
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.schema_compatibility")
 
-# 072 fixes the storage-first sandbox purge for source-set/evidence-link
-# foreign keys introduced after the original purge function was deployed.
-_REQUIRED_US_LACEY_SCHEMA_REVISION = "072_fix_sandbox_purge_fk_order"
+# 073 adds the append-only tenant-scoped operation audit trail required by
+# the enterprise System-of-Record workspace contract.
+_REQUIRED_US_LACEY_SCHEMA_REVISION = "073_us_lacey_operation_audit_trail"
 
 
 @lru_cache(maxsize=1)

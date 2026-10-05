@@ -67,6 +67,7 @@ def _stub_success_path(monkeypatch, calls: list[str]) -> None:
     monkeypatch.setattr(worker, "_project_engine2_suggestions", engine2_suggestions)
     monkeypatch.setattr(worker, "_project_verified_ai_suggestions", ai_suggestions)
     monkeypatch.setattr(worker, "_run_ai_review_recommendations", lambda **_: calls.append("ai_review"))
+    monkeypatch.setattr(worker, "record_operation_event", lambda **_: 1)
 
 
 def test_worker_marks_customer_visible_completion_before_non_authoritative_ai_review(monkeypatch) -> None:

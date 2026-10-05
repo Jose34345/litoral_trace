@@ -29,6 +29,11 @@ from litoral_trace.services.audit import (
     AuditOutcome,
     record_audit_event,
 )
+from litoral_trace.us_lacey.audit_trail import (
+    OperationActorType,
+    OperationEventType,
+    append_operation_event,
+)
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.domain import US_LACEY_REVIEW_FIELDS
 from litoral_trace.us_lacey.operations import UsLaceyOperationNotFound
@@ -369,6 +374,28 @@ def review_us_lacey_field(
             },
             detail="U.S. document-preparation field reviewed by a customer user.",
         )
+        append_operation_event(
+            session,
+            organization_id=org_id,
+            operation_id=operation.id,
+            actor_type=OperationActorType.USER,
+            actor_identity=str(user_email or "").strip() or f"user:{int(user_id)}",
+            event_type=OperationEventType.HUMAN_REVIEW,
+            event_key=f"field:{field.id}:review:{field.reviewed_at.isoformat()}",
+            details={
+                "action": normalized_action,
+                "field_name": field.field_name,
+                "line_reference": field.merchandise_line_reference,
+                "before_value": before.get("effective_value"),
+                "after_value": field.human_value or proposed,
+                "source_label": (
+                    "Verified supplier evidence"
+                    if str(field.source_locator or "").startswith("reused_evidence:")
+                    else "Source document"
+                ),
+                "source_page": field.source_page,
+            },
+        )
         session.commit()
         return UsLaceyReviewResult(
             field_id=field.id,
@@ -519,6 +546,20 @@ def accept_supported_us_lacey_fields(
                     "operation_status": operation_status,
                 },
                 detail="Auto-resolved U.S. preparation fields confirmed in bulk.",
+            )
+            append_operation_event(
+                session,
+                organization_id=org_id,
+                operation_id=operation.id,
+                actor_type=OperationActorType.USER,
+                actor_identity=str(user_email or "").strip() or f"user:{int(user_id)}",
+                event_type=OperationEventType.HUMAN_REVIEW,
+                event_key=f"bulk-review:{reviewed_at.isoformat()}",
+                details={
+                    "action": "accept_supported",
+                    "accepted_field_count": len(accepted_ids),
+                    "reusable_evidence_promoted_count": len(promoted_field_ids),
+                },
             )
 
         session.commit()
@@ -686,6 +727,19 @@ def finalize_us_lacey_review(
             detail=(
                 "Human document review completed. This is not a legal compliance determination."
             ),
+        )
+        append_operation_event(
+            session,
+            organization_id=org_id,
+            operation_id=operation.id,
+            actor_type=OperationActorType.USER,
+            actor_identity=str(user_email or "").strip() or f"user:{int(user_id)}",
+            event_type=OperationEventType.HUMAN_REVIEW,
+            event_key="review:completed",
+            details={
+                "action": "review_completed",
+                "modified_review_required_count": len(modified_review_fields),
+            },
         )
         session.commit()
         return UsLaceyFinalizeResult(

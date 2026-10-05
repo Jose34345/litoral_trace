@@ -32,6 +32,7 @@ from litoral_trace.us_lacey.csrf import (
     verify_us_lacey_csrf,
 )
 from litoral_trace.us_lacey.growth_attribution import safe_record_outreach_event
+from litoral_trace.us_lacey.audit_trail import list_operation_events
 from litoral_trace.us_lacey.evidence_catalog import UsLaceyEvidenceCatalogService
 from litoral_trace.us_lacey.email_delivery import (
     UsLaceyEmailConfigurationError,
@@ -97,6 +98,7 @@ from litoral_trace.web.us_lacey_operational_views import (
     render_evidence_catalog,
     render_new_operation,
     render_operation_alias,
+    render_operation_audit_log,
     render_operation_detail,
     render_operation_workspace,
     render_operations,
@@ -809,6 +811,38 @@ def operation_processing_fragment(
                     session_token=us_session or "",
                     purpose=f"retry:{detail.public_id}",
                 ),
+            )
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except UsLaceyOperationNotFound:
+        return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.get("/operations/{operation_public_id}/activity", response_class=HTMLResponse)
+def operation_activity_fragment(
+    operation_public_id: str,
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Tenant-scoped HTMX fragment for the immutable operation timeline."""
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        detail = UsLaceyOperationService().get_detail(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+        )
+        audit_events = list_operation_events(
+            organization_id=identity.organization_id,
+            operation_public_id=detail.public_id,
+        )
+        return _html(
+            render_operation_audit_log(
+                request=request,
+                detail=detail,
+                audit_events=audit_events,
             )
         )
     except UsLaceyPortalAuthError:

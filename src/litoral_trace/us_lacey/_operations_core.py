@@ -26,6 +26,11 @@ from litoral_trace.db.models import (
     VaultDocument,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.us_lacey.audit_trail import (
+    OperationActorType,
+    OperationEventType,
+    append_operation_event,
+)
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.domain import (
     US_LACEY_REVIEW_FIELDS,
@@ -372,6 +377,27 @@ class UsLaceyOperationService:
                     )
             if subscription is not None:
                 subscription.used_operations = int(subscription.used_operations) + 1
+            append_operation_event(
+                session,
+                organization_id=org_id,
+                operation_id=operation.id,
+                actor_type=(
+                    OperationActorType.USER
+                    if created_by_user_id is not None
+                    else OperationActorType.SYSTEM
+                ),
+                actor_identity=(
+                    f"user:{int(created_by_user_id)}"
+                    if created_by_user_id is not None
+                    else "Litoral Trace"
+                ),
+                event_type=OperationEventType.CREATED,
+                event_key="operation:created",
+                details={
+                    "client_reference": reference,
+                    "merchandise_line_count": len(lines),
+                },
+            )
             session.commit()
             return self.get_operation(
                 organization_id=org_id,
@@ -1030,6 +1056,12 @@ class UsLaceyOperationService:
             )
             if assurance_document is None:
                 raise UsLaceyOperationNotFound("Document not found for this company.")
+            vault_document = session.scalar(
+                select(VaultDocument).where(
+                    VaultDocument.organization_id == org_id,
+                    VaultDocument.id == assurance_document.vault_document_id,
+                )
+            )
 
             current = session.scalar(
                 select(UsLaceyOperationDocument)
@@ -1067,6 +1099,35 @@ class UsLaceyOperationService:
                     )
                 )
                 or 0
+            )
+            append_operation_event(
+                session,
+                organization_id=org_id,
+                operation_id=operation.id,
+                actor_type=(
+                    OperationActorType.USER
+                    if vault_document is not None
+                    and vault_document.created_by_user_id is not None
+                    else OperationActorType.SYSTEM
+                ),
+                actor_identity=(
+                    f"user:{int(vault_document.created_by_user_id)}"
+                    if vault_document is not None
+                    and vault_document.created_by_user_id is not None
+                    else "Litoral Trace"
+                ),
+                event_type=OperationEventType.DOCUMENT_UPLOADED,
+                event_key=f"document:{link.id}:uploaded",
+                details={
+                    "filename": (
+                        str(vault_document.original_filename)[:255]
+                        if vault_document is not None
+                        else "Shipment document"
+                    ),
+                    "document_role": role,
+                    "version_number": version,
+                    "document_count": operation.document_count,
+                },
             )
             session.commit()
             return link.id

@@ -82,6 +82,7 @@ def test_worker_holds_operation_lock_across_projection_postprocessors_and_final_
         "complete_us_lacey_job",
         lambda **_kwargs: events.append("complete") or True,
     )
+    monkeypatch.setattr(worker, "record_operation_event", lambda **_kwargs: 1)
     monkeypatch.setattr(
         worker,
         "_refresh_operation",

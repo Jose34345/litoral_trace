@@ -6,6 +6,11 @@ from io import BytesIO
 from fastapi import APIRouter, Cookie, HTTPException, status
 from fastapi.responses import Response, StreamingResponse
 
+from litoral_trace.us_lacey.audit_trail import (
+    OperationActorType,
+    OperationEventType,
+    record_operation_event,
+)
 from litoral_trace.us_lacey.access import (
     UsLaceyOperationalAccessError,
     require_us_lacey_operational_access,
@@ -85,6 +90,30 @@ def export_lawgs_xml(
 ) -> Response:
     snapshot = _export_snapshot(operation_id=operation_id, us_session=us_session)
     xml_data = build_lawgs_xml(snapshot)
+    # In the real authenticated route, _export_snapshot has already validated the
+    # same session. The explicit guard keeps isolated exporter tests backwards
+    # compatible when they replace _export_snapshot with a pure fixture.
+    if us_session:
+        identity = _identity_for_export(us_session)
+        internal_operation_id = UsLaceyOperationService().get_internal_id(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_id,
+        )
+        record_operation_event(
+            organization_id=identity.organization_id,
+            operation_id=internal_operation_id,
+            actor_type=OperationActorType.USER,
+            actor_identity=(
+                str(identity.full_name or "").strip()
+                or str(identity.email or "").strip()
+                or f"user:{int(identity.user_id)}"
+            ),
+            event_type=OperationEventType.PACKAGE_GENERATED,
+            details={
+                "package_type": "LAWGS XML",
+                "operation_public_id": str(operation_id),
+            },
+        )
     response = Response(content=xml_data, media_type="application/xml")
     response.headers["Content-Disposition"] = (
         f'attachment; filename="lawgs_declaration_{snapshot.operation_id}.xml"'

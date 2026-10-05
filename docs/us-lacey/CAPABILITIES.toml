@@ -420,3 +420,28 @@ workflows = [
   ".github/workflows/us-lacey-postgres-gate.yml"
 ]
 notes = "Expired sandbox tenants are purged storage-first and then database metadata is deleted only after physical object absence is verified. The dedicated worker supervisor continuously consumes purge jobs and recovers stale cleanup leases. Worker health fails closed after a startup grace period if any non-completed purge remains materially past its retention deadline."
+
+
+[capabilities.operation_audit_trail]
+status = "ACTIVE"
+owner = "us_lacey operation lifecycle + review + exports"
+authority = "immutable system_of_record"
+implementation = [
+  "src/litoral_trace/db/models/us_lacey_audit_trail.py",
+  "src/litoral_trace/us_lacey/audit_trail.py",
+  "src/litoral_trace/us_lacey/_operations_core.py",
+  "src/litoral_trace/us_lacey/worker.py",
+  "src/litoral_trace/us_lacey/review.py",
+  "src/litoral_trace/routers/operations.py",
+  "src/litoral_trace/templates/us_lacey/fragments/activity_audit_log.html"
+]
+migrations = ["alembic/versions/073_us_lacey_operation_audit_trail.py"]
+tests = [
+  "tests/test_us_lacey_operation_audit.py",
+  "tests/test_us_lacey_operation_audit_postgres.py"
+]
+workflows = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/us-lacey-postgres-gate.yml"
+]
+notes = "Operation activity is tenant-scoped under FORCE RLS. The runtime role receives SELECT/INSERT only: historical events cannot be updated or deleted while an operation exists. Sandbox/tenant deletion may cascade the record under the established retention lifecycle. Retryable system hooks use deterministic event keys; event details contain structured compliance context, never source-document bytes or full raw document text."
