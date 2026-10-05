@@ -40,6 +40,7 @@ on:
       - "alembic/versions/069_remove_postgis_geometry.py"
       - "alembic/versions/070_us_lacey_paddle_billing.py"
       - "alembic/versions/071_us_lacey_reusable_supplier_evidence.py"
+      - "alembic/versions/072_fix_sandbox_purge_fk_order.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
@@ -635,7 +636,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "071_us_lacey_reusable_supplier_evidence (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "072_fix_sandbox_purge_fk_order (head)" /tmp/alembic-reupgraded.txt
       - name: Prove reusable supplier evidence persistence and tenant isolation
         env:
           DATABASE_URL: ""
