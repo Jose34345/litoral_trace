@@ -14,9 +14,11 @@ from fastapi import FastAPI, Response, status
 
 from litoral_trace.us_lacey.worker_db import get_us_lacey_worker_database_url
 from litoral_trace.us_lacey.worker_runner import run_supervisor
+from litoral_trace.workers.sandbox_cleanup import has_overdue_sandbox_purge_backlog
 
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.dedicated_worker")
+_SANDBOX_CLEANUP_HEALTH_GRACE_SECONDS = 600
 
 
 def _mark_healthy(app: FastAPI) -> None:
@@ -51,6 +53,7 @@ async def lifespan(app: FastAPI):
     app.state.stop = stop
     app.state.thread = thread
     app.state.last_worker_success = 0.0
+    app.state.started_monotonic = time.monotonic()
     thread.start()
     try:
         yield
@@ -78,4 +81,39 @@ def health(response: Response) -> dict[str, str]:
     if last_success <= 0.0:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "starting", "service": "us-lacey-worker"}
-    return {"status": "healthy", "service": "us-lacey-worker"}
+
+    started = float(getattr(app.state, "started_monotonic", time.monotonic()))
+    uptime_seconds = max(0.0, time.monotonic() - started)
+    if uptime_seconds < _SANDBOX_CLEANUP_HEALTH_GRACE_SECONDS:
+        return {
+            "status": "healthy",
+            "service": "us-lacey-worker",
+            "sandbox_cleanup": "warming_up",
+        }
+
+    try:
+        cleanup_overdue = has_overdue_sandbox_purge_backlog(
+            grace_seconds=_SANDBOX_CLEANUP_HEALTH_GRACE_SECONDS
+        )
+    except Exception:
+        _LOG.exception("sandbox_cleanup_health_probe_failed")
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {
+            "status": "not_ready",
+            "service": "us-lacey-worker",
+            "sandbox_cleanup": "unknown",
+        }
+
+    if cleanup_overdue:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {
+            "status": "not_ready",
+            "service": "us-lacey-worker",
+            "sandbox_cleanup": "overdue",
+        }
+
+    return {
+        "status": "healthy",
+        "service": "us-lacey-worker",
+        "sandbox_cleanup": "healthy",
+    }

@@ -55,6 +55,23 @@ def test_supervisor_spawns_one_child_only_when_queue_is_claimable(monkeypatch) -
     process = _ImmediateProcess(returncode=worker_once.EXIT_OK)
 
     monkeypatch.setattr(worker_runner, "recover_stale_us_lacey_jobs", lambda **_: (0, 0))
+    cleanup_calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(
+        worker_runner,
+        "recover_stale_sandbox_purge_jobs",
+        lambda **kwargs: (
+            cleanup_calls.append(("recover", kwargs["stale_after_seconds"])),
+            0,
+        )[1],
+    )
+    monkeypatch.setattr(
+        worker_runner,
+        "run_sandbox_cleanup_once",
+        lambda **kwargs: (
+            cleanup_calls.append(("run", kwargs["worker_id"])),
+            False,
+        )[1],
+    )
     watchdog_calls: list[int] = []
     monkeypatch.setattr(
         worker_runner,
@@ -91,6 +108,9 @@ def test_supervisor_spawns_one_child_only_when_queue_is_claimable(monkeypatch) -
     assert len(spawned) == 1
     assert process.wait_calls >= 1
     assert watchdog_calls == [600]
+    assert cleanup_calls[0] == ("recover", 900)
+    assert cleanup_calls[1][0] == "run"
+    assert str(cleanup_calls[1][1]).endswith("-sandbox-cleanup")
 
 
 def test_supervisor_does_not_spawn_child_for_idle_queue(monkeypatch) -> None:
@@ -98,6 +118,23 @@ def test_supervisor_does_not_spawn_child_for_idle_queue(monkeypatch) -> None:
     spawned = False
 
     monkeypatch.setattr(worker_runner, "recover_stale_us_lacey_jobs", lambda **_: (0, 0))
+    cleanup_calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(
+        worker_runner,
+        "recover_stale_sandbox_purge_jobs",
+        lambda **kwargs: (
+            cleanup_calls.append(("recover", kwargs["stale_after_seconds"])),
+            0,
+        )[1],
+    )
+    monkeypatch.setattr(
+        worker_runner,
+        "run_sandbox_cleanup_once",
+        lambda **kwargs: (
+            cleanup_calls.append(("run", kwargs["worker_id"])),
+            False,
+        )[1],
+    )
     watchdog_calls: list[int] = []
     monkeypatch.setattr(
         worker_runner,
@@ -130,6 +167,9 @@ def test_supervisor_does_not_spawn_child_for_idle_queue(monkeypatch) -> None:
 
     assert spawned is False
     assert watchdog_calls == [600]
+    assert cleanup_calls[0] == ("recover", 900)
+    assert cleanup_calls[1][0] == "run"
+    assert str(cleanup_calls[1][1]).endswith("-sandbox-cleanup")
 
 
 def test_terminate_child_reaps_after_graceful_signal(monkeypatch) -> None:

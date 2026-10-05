@@ -604,6 +604,38 @@ def recover_stale_sandbox_purge_jobs(
         session.close()
 
 
+def has_overdue_sandbox_purge_backlog(*, grace_seconds: int = 600) -> bool:
+    """Return whether sandbox retention is materially behind its deadline."""
+    if grace_seconds < 60 or grace_seconds > 86400:
+        raise SandboxCleanupError("grace_seconds is out of range.")
+
+    session = get_us_lacey_worker_db_session()
+    try:
+        return bool(
+            session.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM public.us_lacey_sandbox_purge_jobs AS job
+                        WHERE job.state <> 'COMPLETED'
+                          AND job.expires_at <=
+                              now() - make_interval(secs => :grace_seconds)
+                    )
+                    """
+                ),
+                {"grace_seconds": int(grace_seconds)},
+            ).scalar_one()
+        )
+    except Exception as exc:
+        session.rollback()
+        raise SandboxCleanupDatabaseError(
+            "Unable to inspect sandbox purge backlog."
+        ) from exc
+    finally:
+        session.close()
+
+
 def process_sandbox_purge_job(
     *,
     job: SandboxPurgeJob,

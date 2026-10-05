@@ -74,7 +74,7 @@
         <button type="button" data-app-drawer-open class="lt-drawer-trigger flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden" aria-label="Open navigation" aria-controls="app-navigation" aria-expanded="false"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
         <div class="min-w-0"><p class="truncate text-sm font-bold text-slate-950">{{ identity.legal_name if identity is defined else 'Litoral Trace' }}</p><p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey Act workspace · Declaration preparation · Human review required</p></div>
         <div class="mx-auto hidden w-full max-w-xl md:block">
-          <label class="relative block"><span class="sr-only">Jump to workspace section</span><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i><input id="lt-command-search" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-14 text-xs text-slate-800 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20" placeholder="Jump to operations, billing, terms…" autocomplete="off" aria-label="Workspace quick navigation"><span class="lt-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2">⌘K</span></label>
+          <label class="relative block"><span class="sr-only">Jump to workspace section</span><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i><input id="lt-command-search" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-20 text-xs text-slate-800 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20" placeholder="Jump to operations, billing, terms…" autocomplete="off" aria-label="Workspace quick navigation"><span id="lt-command-shortcut" class="lt-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" aria-hidden="true">Ctrl K</span></label>
         </div>
         <div class="ml-auto flex items-center gap-2">
           <details class="relative">
@@ -107,6 +107,10 @@
 (() => {
   const search = document.getElementById('lt-command-search');
   if (!search) return;
+  const shortcut = document.getElementById('lt-command-shortcut');
+  const platform = navigator.userAgentData?.platform || navigator.platform || '';
+  const isApplePlatform = /Mac|iPhone|iPad|iPod/i.test(platform);
+  if (shortcut) shortcut.textContent = isApplePlatform ? '⌘ K' : 'Ctrl K';
   const destinations = [
     {terms: ['operations', 'shipment', 'workspace'], href: '/operations'},
     {terms: ['billing', 'subscription', 'payment'], href: '/billing'},

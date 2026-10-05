@@ -392,3 +392,30 @@ workflows = [
 ]
 notes = "First-party commercial attribution for opt-in outreach links. It records anonymous funnel events and binds a referral session to an ephemeral sandbox tenant without copying document bytes, extracted field values, email addresses or IP addresses into the growth plane. Attribution is non-canonical, fail-open for customer workflows, and has no regulatory or filing authority. Runtime table access remains capability-mediated through SECURITY DEFINER functions; cross-tenant reporting remains platform-admin only."
 
+
+[capabilities.sandbox_retention_cleanup]
+status = "ACTIVE"
+owner = "us_lacey worker + sandbox lifecycle"
+authority = "deterministic operational control"
+implementation = [
+  "src/litoral_trace/us_lacey/sandbox.py",
+  "src/litoral_trace/workers/sandbox_cleanup.py",
+  "src/litoral_trace/us_lacey/worker_runner.py",
+  "src/litoral_trace/web/us_lacey_worker_app.py"
+]
+migrations = [
+  "alembic/versions/052_add_us_lacey_ephemeral_sandbox.py",
+  "alembic/versions/053_sandbox_purge_queue.py",
+  "alembic/versions/056_us_lacey_sandbox_growth_attribution.py"
+]
+tests = [
+  "tests/test_us_lacey_sandbox_cleanup.py",
+  "tests/test_us_lacey_sandbox_cleanup_postgres.py",
+  "tests/test_us_lacey_worker_supervisor.py",
+  "tests/test_us_lacey_worker_health.py"
+]
+workflows = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/us-lacey-postgres-gate.yml"
+]
+notes = "Expired sandbox tenants are purged storage-first and then database metadata is deleted only after physical object absence is verified. The dedicated worker supervisor continuously consumes purge jobs and recovers stale cleanup leases. Worker health fails closed after a startup grace period if any non-completed purge remains materially past its retention deadline."
