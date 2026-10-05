@@ -982,6 +982,7 @@ def render_operation_detail(*, request, identity, detail, engine2_dossier, uploa
     audit_events = list_operation_events(
         organization_id=identity.organization_id,
         operation_public_id=detail.public_id,
+        limit=5,
     )
     return _render(
         request,

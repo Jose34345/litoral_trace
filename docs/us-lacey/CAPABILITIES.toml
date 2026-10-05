@@ -433,9 +433,14 @@ implementation = [
   "src/litoral_trace/us_lacey/worker.py",
   "src/litoral_trace/us_lacey/review.py",
   "src/litoral_trace/routers/operations.py",
+  "src/litoral_trace/web/us_lacey_audit_views.py",
+  "src/litoral_trace/templates/us_lacey/audit_log_list.html",
   "src/litoral_trace/templates/us_lacey/fragments/activity_audit_log.html"
 ]
-migrations = ["alembic/versions/073_us_lacey_operation_audit_trail.py"]
+migrations = [
+  "alembic/versions/073_us_lacey_operation_audit_trail.py",
+  "alembic/versions/074_us_lacey_audit_identity_projection.py"
+]
 tests = [
   "tests/test_us_lacey_operation_audit.py",
   "tests/test_us_lacey_operation_audit_postgres.py"
@@ -444,4 +449,4 @@ workflows = [
   ".github/workflows/ci.yml",
   ".github/workflows/us-lacey-postgres-gate.yml"
 ]
-notes = "Operation activity is tenant-scoped under FORCE RLS. The runtime role receives SELECT/INSERT only: historical events cannot be updated or deleted while an operation exists. Sandbox/tenant deletion may cascade the record under the established retention lifecycle. Retryable system hooks use deterministic event keys; event details contain structured compliance context, never source-document bytes or full raw document text."
+notes = "Operation activity is tenant-scoped under FORCE RLS. The runtime role receives SELECT/INSERT only: historical events cannot be updated or deleted while an operation exists. Human actor names are resolved through a narrow tenant-scoped SECURITY DEFINER identity projection; the runtime role does not receive direct SELECT on users. Sandbox/tenant deletion may cascade the record under the established retention lifecycle. Retryable system hooks use deterministic event keys; event details contain structured compliance context, never source-document bytes or full raw document text."

@@ -19,9 +19,9 @@ from litoral_trace.us_lacey.db import get_us_lacey_engine
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.schema_compatibility")
 
-# 073 adds the append-only tenant-scoped operation audit trail required by
-# the enterprise System-of-Record workspace contract.
-_REQUIRED_US_LACEY_SCHEMA_REVISION = "073_us_lacey_operation_audit_trail"
+# 074 adds the tenant-scoped identity projection required to render
+# human-readable actors without granting the runtime role direct users access.
+_REQUIRED_US_LACEY_SCHEMA_REVISION = "074_us_lacey_audit_identity_projection"
 
 
 @lru_cache(maxsize=1)
