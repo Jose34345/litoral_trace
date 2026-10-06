@@ -99,6 +99,39 @@ def test_provision_sandbox_persists_only_token_hash_and_returns_raw_token(monkey
     assert fake.closed is True
 
 
+def test_provision_sandbox_recognizes_wrapped_postgres_rate_limit(monkeypatch):
+    class WrappedRateLimit(Exception):
+        def __init__(self):
+            super().__init__("wrapped database error")
+            self.orig = SimpleNamespace(sqlstate="P4290")
+
+    class FailingSession:
+        def __init__(self):
+            self.rolled_back = False
+            self.closed = False
+
+        def execute(self, _statement, _params=None):
+            raise WrappedRateLimit()
+
+        def rollback(self):
+            self.rolled_back = True
+
+        def close(self):
+            self.closed = True
+
+    fake = FailingSession()
+    monkeypatch.setattr(sandbox_service, "get_us_lacey_db_session", lambda: fake)
+    monkeypatch.setattr(sandbox_service, "hash_password", lambda _value: "$2b$12$" + ("x" * 53))
+
+    with pytest.raises(UsLaceySandboxError) as exc_info:
+        provision_us_lacey_sandbox(client_ip="203.0.113.10", user_agent="pytest")
+
+    assert exc_info.value.code == "rate_limited"
+    assert "Too many sandbox sessions" in str(exc_info.value)
+    assert fake.rolled_back is True
+    assert fake.closed is True
+
+
 def test_learning_consent_is_explicit_token_bound_and_late(monkeypatch):
     fake = _ProvisionSession(True)
     monkeypatch.setattr(sandbox_service, "get_us_lacey_db_session", lambda: fake)

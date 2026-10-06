@@ -158,7 +158,10 @@ def provision_us_lacey_sandbox(
         )
     except Exception as exc:
         session.rollback()
-        if getattr(exc, "sqlstate", None) == "P4290":
+        sqlstate = getattr(exc, "sqlstate", None) or getattr(
+            getattr(exc, "orig", None), "sqlstate", None
+        )
+        if sqlstate == "P4290":
             raise UsLaceySandboxError(
                 "Too many sandbox sessions were started from this network. Try again later.",
                 code="rate_limited",
