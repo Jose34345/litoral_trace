@@ -448,9 +448,12 @@ def upgrade() -> None:
         f"TO {PLATFORM_ROLE}"
     )
     op.execute(
-        "GRANT SELECT ON TABLE public.us_lacey_operations, "
-        "public.vault_documents TO "
-        f"{PLATFORM_ROLE}"
+        "GRANT SELECT (id, organization_id, status) "
+        f"ON TABLE public.us_lacey_operations TO {PLATFORM_ROLE}"
+    )
+    op.execute(
+        "GRANT SELECT ON TABLE public.vault_documents "
+        f"TO {PLATFORM_ROLE}"
     )
     op.execute(
         "GRANT TRIGGER ON TABLE public.organizations, "
