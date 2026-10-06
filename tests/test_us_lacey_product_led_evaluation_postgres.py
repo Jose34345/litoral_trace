@@ -22,9 +22,13 @@ OWNER_URL = (
     or os.environ.get("MIGRATION_DATABASE_URL")
 )
 WORKER_URL = os.environ.get("US_LACEY_WORKER_DATABASE_URL")
+SUPERUSER_URL = os.environ.get("US_LACEY_POSTGRES_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(
-    not (ENABLED and RUNTIME_URL and OWNER_URL and WORKER_URL),
-    reason="Five-shipment evaluation acceptance requires runtime/owner/worker PostgreSQL URLs.",
+    not (ENABLED and RUNTIME_URL and OWNER_URL and WORKER_URL and SUPERUSER_URL),
+    reason=(
+        "Five-shipment evaluation acceptance requires "
+        "runtime/owner/worker/superuser PostgreSQL URLs."
+    ),
 )
 
 
@@ -48,9 +52,12 @@ def evaluation_fixture():
     owner = _engine(OWNER_URL)
     runtime = _engine(RUNTIME_URL)
     worker = _engine(WORKER_URL)
+    admin = _engine(SUPERUSER_URL)
     values: dict[str, object] = {}
 
-    with owner.begin() as conn:
+    # Fixture creation uses the CI-only superuser. The assertions below still
+    # exercise the least-privilege runtime, worker and migration-owner roles.
+    with admin.begin() as conn:
         for label in ("a", "b"):
             org_id = int(
                 conn.execute(
@@ -145,9 +152,15 @@ def evaluation_fixture():
             operation_ids.append(operation_id)
         values["operation_ids"] = tuple(operation_ids)
 
-    yield {**values, "owner": owner, "runtime": runtime, "worker": worker}
+    yield {
+        **values,
+        "owner": owner,
+        "runtime": runtime,
+        "worker": worker,
+        "admin": admin,
+    }
 
-    with owner.begin() as conn:
+    with admin.begin() as conn:
         conn.execute(
             text(
                 "DELETE FROM us_lacey_operations "
@@ -162,6 +175,7 @@ def evaluation_fixture():
             ),
             {"org_a": values["org_a"], "org_b": values["org_b"]},
         )
+    admin.dispose()
     worker.dispose()
     runtime.dispose()
     owner.dispose()
@@ -272,7 +286,7 @@ def test_only_successful_distinct_operations_consume_five_shipment_evaluation(
 ):
     org_id = int(evaluation_fixture["org_a"])
     operation_ids = tuple(int(v) for v in evaluation_fixture["operation_ids"])
-    owner = evaluation_fixture["owner"]
+    admin = evaluation_fixture["admin"]
 
     def state(conn):
         return conn.execute(
@@ -286,7 +300,7 @@ def test_only_successful_distinct_operations_consume_five_shipment_evaluation(
             {"org": org_id},
         ).mappings().one()
 
-    with owner.begin() as conn:
+    with admin.begin() as conn:
         # A failure is explicitly free.
         conn.execute(
             text(
