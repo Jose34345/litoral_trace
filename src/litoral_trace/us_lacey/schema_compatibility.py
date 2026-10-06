@@ -19,9 +19,9 @@ from litoral_trace.us_lacey.db import get_us_lacey_engine
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.schema_compatibility")
 
-# 074 adds the tenant-scoped identity projection required to render
-# human-readable actors without granting the runtime role direct users access.
-_REQUIRED_US_LACEY_SCHEMA_REVISION = "074_us_lacey_audit_identity_projection"
+# 075 adds the U.S. supplier-identifier and explicit operation/product
+# identity graph required for safe cross-shipment compliance-memory reuse.
+_REQUIRED_US_LACEY_SCHEMA_REVISION = "075_us_lacey_identity_and_product_bridge"
 
 
 @lru_cache(maxsize=1)

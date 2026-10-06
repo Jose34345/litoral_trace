@@ -10,6 +10,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -43,7 +44,7 @@ class UsLaceySupplier(Base):
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="ACTIVE", server_default="ACTIVE"
+        String(24), nullable=False, default="ACTIVE", server_default="ACTIVE"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -64,7 +65,7 @@ class UsLaceySupplier(Base):
             name="uq_us_lacey_supplier_org_key",
         ),
         CheckConstraint(
-            "status IN ('ACTIVE','INACTIVE','NEEDS_REVIEW')",
+            "status IN ('ACTIVE','VERIFIED','DISCOVERED','NEEDS_VERIFICATION','INACTIVE','NEEDS_REVIEW')",
             name="ck_us_lacey_supplier_status",
         ),
         Index("ix_us_lacey_supplier_org", "organization_id"),
@@ -90,7 +91,7 @@ class UsLaceySupplierProduct(Base):
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     normalized_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="ACTIVE", server_default="ACTIVE"
+        String(24), nullable=False, default="ACTIVE", server_default="ACTIVE"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -124,7 +125,7 @@ class UsLaceySupplierProduct(Base):
             name="uq_us_lacey_supplier_product_identity",
         ),
         CheckConstraint(
-            "status IN ('ACTIVE','INACTIVE','NEEDS_REVIEW')",
+            "status IN ('ACTIVE','VERIFIED','DISCOVERED','NEEDS_VERIFICATION','INACTIVE','NEEDS_REVIEW')",
             name="ck_us_lacey_supplier_product_status",
         ),
         Index(
@@ -270,5 +271,149 @@ class UsLaceyEvidenceClaim(Base):
             "ix_us_lacey_evidence_claim_org_field",
             "organization_id",
             "field_name",
+        ),
+    )
+
+
+class UsLaceySupplierIdentifier(Base):
+    """Exact tenant-scoped identifier for a reusable U.S. Lacey supplier."""
+
+    __tablename__ = "us_lacey_supplier_identifier"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    supplier_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    identifier_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    normalized_value: Mapped[str] = mapped_column(String(512), nullable=False)
+    display_value: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    source_assurance_document_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    human_confirmed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["supplier_id", "organization_id"],
+            ["us_lacey_supplier.id", "us_lacey_supplier.organization_id"],
+            name="fk_us_lacey_supplier_identifier_supplier_tenant",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["source_assurance_document_id", "organization_id"],
+            ["assurance_documents.id", "assurance_documents.organization_id"],
+            name="fk_us_lacey_supplier_identifier_document_tenant",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_us_lacey_supplier_identifier_id_org",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "identifier_type",
+            "normalized_value",
+            name="uq_us_lacey_supplier_identifier_value",
+        ),
+        CheckConstraint(
+            "identifier_type IN ('MID','VENDOR_CODE','NAME_ADDRESS','MANUAL')",
+            name="ck_us_lacey_supplier_identifier_type",
+        ),
+        Index(
+            "ix_us_lacey_supplier_identifier_org_supplier",
+            "organization_id",
+            "supplier_id",
+        ),
+        Index(
+            "ix_us_lacey_supplier_identifier_org_lookup",
+            "organization_id",
+            "identifier_type",
+            "normalized_value",
+        ),
+    )
+
+
+class UsLaceyOperationProductLink(Base):
+    """Explicit source-set-scoped shipment-line to supplier-product binding."""
+
+    __tablename__ = "us_lacey_operation_product_link"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    public_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), default=uuid4, nullable=False
+    )
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    operation_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_set_revision_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    line_reference: Mapped[str] = mapped_column(String(100), nullable=False)
+    supplier_product_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    link_method: Mapped[str] = mapped_column(String(24), nullable=False)
+    confirmed_by_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["operation_id", "organization_id"],
+            ["us_lacey_operations.id", "us_lacey_operations.organization_id"],
+            name="fk_us_lacey_operation_product_link_operation_tenant",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["supplier_product_id", "organization_id"],
+            ["us_lacey_supplier_product.id", "us_lacey_supplier_product.organization_id"],
+            name="fk_us_lacey_operation_product_link_product_tenant",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["source_set_revision_id", "organization_id"],
+            ["us_lacey_source_set_revisions.id", "us_lacey_source_set_revisions.organization_id"],
+            name="fk_us_lacey_operation_product_link_revision_tenant",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "public_id",
+            name="uq_us_lacey_operation_product_link_public_id",
+        ),
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_us_lacey_operation_product_link_id_org",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "source_set_revision_id",
+            "line_reference",
+            name="uq_us_lacey_operation_product_link_revision_line",
+        ),
+        CheckConstraint(
+            "link_method IN ('EXACT_SKU','HUMAN_CONFIRMED')",
+            name="ck_us_lacey_operation_product_link_method",
+        ),
+        CheckConstraint(
+            "(link_method = 'EXACT_SKU' AND confirmed_by_user_id IS NULL) OR "
+            "(link_method = 'HUMAN_CONFIRMED' AND confirmed_by_user_id IS NOT NULL)",
+            name="ck_us_lacey_operation_product_link_confirmation",
+        ),
+        Index(
+            "ix_us_lacey_operation_product_link_org_operation",
+            "organization_id",
+            "operation_id",
+        ),
+        Index(
+            "ix_us_lacey_operation_product_link_org_product",
+            "organization_id",
+            "supplier_product_id",
         ),
     )

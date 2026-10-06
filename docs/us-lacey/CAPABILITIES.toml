@@ -252,7 +252,38 @@ workflows = [
   ".github/workflows/ci.yml",
   ".github/workflows/us-lacey-postgres-gate.yml"
 ]
-notes = "Explicit CSV/XLS/XLSX BOM composition is persisted as a tenant-scoped, source-set-versioned snapshot with READY/PARTIAL/FAILED/NOT_APPLICABLE/STALE lifecycle. The worker builds it after canonical publication and before regulatory assessment, multilingual shadow and source-set finalization. Reads expose only the current non-stale source-set generation. It remains non-canonical and has no PPQ505/LAWGS or regulatory filing authority."
+notes = "Explicit CSV/XLS/XLSX BOM composition is persisted as a tenant-scoped, source-set-versioned snapshot with READY/PARTIAL/FAILED/NOT_APPLICABLE/STALE lifecycle. The worker builds it after canonical publication and before reusable evidence, regulatory assessment, multilingual shadow and source-set finalization. Reads expose only the current non-stale source-set generation. It remains non-canonical and has no PPQ505/LAWGS or regulatory filing authority."
+
+[capabilities.identity_memory_reuse]
+status = "ACTIVE"
+owner = "us_lacey identity_memory + reusable_evidence"
+authority = "deterministic + human_confirmed"
+implementation = [
+  "src/litoral_trace/us_lacey/identity_memory.py",
+  "src/litoral_trace/us_lacey/shipment_product_bridge.py",
+  "src/litoral_trace/us_lacey/reusable_evidence.py",
+  "src/litoral_trace/us_lacey/reusable_evidence_promotion.py",
+  "src/litoral_trace/us_lacey/product_intelligence_snapshot.py",
+  "src/litoral_trace/db/models/us_lacey_reusable_evidence.py",
+  "scripts/backfill_us_lacey_identities.py"
+]
+migrations = [
+  "alembic/versions/071_us_lacey_reusable_supplier_evidence.py",
+  "alembic/versions/075_us_lacey_identity_and_product_bridge.py"
+]
+tests = [
+  "tests/test_us_lacey_identity_memory.py",
+  "tests/test_us_lacey_identity_memory_postgres.py",
+  "tests/test_us_lacey_shipment_product_bridge.py",
+  "tests/test_us_lacey_true_reuse_e2e.py",
+  "tests/test_us_lacey_reusable_evidence.py",
+  "tests/test_us_lacey_reusable_evidence_multishipment_postgres.py"
+]
+workflows = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/us-lacey-postgres-gate.yml"
+]
+notes = "Supplier identity is independent of the legacy AssuranceSupplier/CUIT contract. Automatic identity uses only exact MID, vendor code or normalized name+address identifiers; fuzzy supplier matching is forbidden. Supplier-product identity is exact supplier+SKU. Shipment line and SKU remain separate identities connected by a persisted source-set-scoped link using EXACT_SKU or HUMAN_CONFIRMED. Only ACTIVE/VERIFIED identities are eligible for cross-shipment reuse. Human-reviewed genus/species/country-of-harvest may be promoted to bounded VERIFIED evidence; current-shipment evidence always wins, conflicting/expired/revoked memory fails closed. Historical backfill creates DISCOVERED identity only and never promotes evidence."
 
 [capabilities.taxonomy_resolver]
 status = "ACTIVE"

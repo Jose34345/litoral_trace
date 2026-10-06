@@ -123,9 +123,9 @@ class ReusableEvidenceService:
             .where(
                 UsLaceySupplierProduct.organization_id == int(organization_id),
                 UsLaceySupplierProduct.product_key == normalized_product_key,
-                UsLaceySupplierProduct.status == "ACTIVE",
+                UsLaceySupplierProduct.status.in_(("ACTIVE", "VERIFIED")),
                 UsLaceySupplier.supplier_key == normalized_supplier_key,
-                UsLaceySupplier.status == "ACTIVE",
+                UsLaceySupplier.status.in_(("ACTIVE", "VERIFIED")),
             )
         )
 
