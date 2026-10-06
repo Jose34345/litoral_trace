@@ -108,13 +108,13 @@ class _ScalarSession:
         self.closed = True
 
 
-def test_sandbox_document_cap_allows_third_document_and_rejects_fourth(monkeypatch):
+def test_sandbox_document_cap_allows_tenth_document_and_rejects_eleventh(monkeypatch):
     expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
     allowed = _ScalarSession(
         [
             SimpleNamespace(plan_code="SANDBOX", renews_at=expires_at),
-            SimpleNamespace(document_count=2),
+            SimpleNamespace(document_count=9),
         ]
     )
     monkeypatch.setattr(sandbox_service, "get_us_lacey_db_session", lambda: allowed)
@@ -130,19 +130,38 @@ def test_sandbox_document_cap_allows_third_document_and_rejects_fourth(monkeypat
     blocked = _ScalarSession(
         [
             SimpleNamespace(plan_code="SANDBOX", renews_at=expires_at),
-            SimpleNamespace(document_count=2),
+            SimpleNamespace(document_count=9),
         ]
     )
     monkeypatch.setattr(sandbox_service, "get_us_lacey_db_session", lambda: blocked)
 
-    with pytest.raises(UsLaceySandboxError, match="up to 3 documents"):
+    with pytest.raises(UsLaceySandboxError, match="up to 10 documents"):
         enforce_sandbox_document_capacity(
             organization_id=10,
             operation_id=20,
             incoming_document_count=2,
         )
 
-    assert SANDBOX_MAX_DOCUMENTS_PER_OPERATION == 3
+    assert SANDBOX_MAX_DOCUMENTS_PER_OPERATION == 10
+
+
+def test_claimed_evaluation_keeps_ten_document_per_operation_cap(monkeypatch):
+    expires_at = datetime.now(timezone.utc) + timedelta(days=2)
+    blocked = _ScalarSession(
+        [
+            SimpleNamespace(plan_code="EVALUATION", renews_at=expires_at),
+            SimpleNamespace(document_count=10),
+        ]
+    )
+    monkeypatch.setattr(sandbox_service, "get_us_lacey_db_session", lambda: blocked)
+    monkeypatch.setattr(sandbox_service, "set_tenant_db_context", lambda *_args: None)
+
+    with pytest.raises(UsLaceySandboxError, match="up to 10 documents"):
+        enforce_sandbox_document_capacity(
+            organization_id=10,
+            operation_id=20,
+            incoming_document_count=1,
+        )
 
 
 def test_paid_tenant_is_not_subject_to_sandbox_document_cap(monkeypatch):
@@ -187,28 +206,20 @@ def test_public_sandbox_get_is_side_effect_free(monkeypatch):
     response = client.get("/sandbox/start", follow_redirects=False)
 
     assert response.status_code == 200
-    assert "U.S. Lacey Act Sandbox" in response.text
-    assert "Start Document Analysis" in response.text
-    assert "Test the compliance engine with your own shipment documents." in response.text
-    assert (
-        "By default, this ephemeral workspace and all uploaded files are"
-        in response.text
-    )
-    assert "permanently destroyed after 4 hours" in response.text
-    assert "permanently destroyed no later than 72 hours after consent" in response.text
+    assert "See the workflow before you upload anything" in response.text
+    assert "I’m an Importer" in response.text
+    assert "I’m a Customs Broker" in response.text
+    assert "Use my own documents" in response.text
+    assert "5-shipment evaluation" in response.text
+    assert "No account and no credit card are required." in response.text
+    assert "Raw documents are permanently deleted after 4 hours." in response.text
     assert 'method="post"' in response.text
     assert 'action="/sandbox/start"' in response.text
     assert 'name="consent"' in response.text
     assert 'name="learning_consent"' in response.text
-    assert 'name="support_debug_consent"' in response.text
+    assert 'name="support_debug_consent"' not in response.text
     assert "Help improve Litoral Trace" in response.text
-    assert "Support debugging (optional)" in response.text
-    assert (
-        "Share this test with Litoral Trace support for debugging in case of "
-        "processing errors (72-hour retention)."
-        in response.text
-    )
-    assert "de-identified excerpts from corrected fields" in response.text
+    assert "72-hour retention" not in response.text
     assert 'value="accepted"' in response.text
     assert "/static/dist/app.css" in response.text
     assert "set-cookie" not in response.headers
@@ -255,7 +266,7 @@ def test_public_sandbox_post_sets_opaque_cookie_and_redirects_to_new_operation(m
     assert response.headers["cache-control"] == "no-store, max-age=0"
     assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
     assert provision_calls[0]["learning_opt_in"] is True
-    assert provision_calls[0]["support_debug_opt_in"] is True
+    assert provision_calls[0]["support_debug_opt_in"] is False
 
 
 def test_debug_consent_is_independent_from_learning_consent(monkeypatch):
@@ -288,7 +299,7 @@ def test_debug_consent_is_independent_from_learning_consent(monkeypatch):
 
     assert response.status_code == 303
     assert provision_calls[0]["learning_opt_in"] is False
-    assert provision_calls[0]["support_debug_opt_in"] is True
+    assert provision_calls[0]["support_debug_opt_in"] is False
 
 
 def test_provision_debug_opt_in_uses_separate_definer_call(monkeypatch):

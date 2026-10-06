@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 
-from litoral_trace.db.models import UsLaceyOrganizationProfile, UsLaceySubscription
+from litoral_trace.db.models import UsLaceyEvaluation, UsLaceyOrganizationProfile, UsLaceySubscription
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
@@ -21,16 +21,36 @@ class UsLaceyOperationalEntitlement:
     subscription_status: str
     monthly_operation_limit: int
     used_operations: int
+    evaluation_status: str | None = None
+    evaluation_work_email: str | None = None
+    evaluation_expires_at: object | None = None
 
     @property
     def remaining_operations(self) -> int:
         return max(0, self.monthly_operation_limit - self.used_operations)
+
+    @property
+    def is_evaluation(self) -> bool:
+        return self.evaluation_status is not None
+
+    @property
+    def evaluation_claimed(self) -> bool:
+        return self.evaluation_status in {"ACTIVE", "EXHAUSTED"}
+
+    @property
+    def evaluation_read_only(self) -> bool:
+        return self.evaluation_status in {"EXHAUSTED", "EXPIRED"}
+
+    @property
+    def evaluation_can_claim(self) -> bool:
+        return self.evaluation_status == "ANONYMOUS" and self.used_operations >= 1
 
 
 def require_us_lacey_operational_access(
     *,
     organization_id: int,
     require_operation_slot: bool = False,
+    require_mutation_access: bool = False,
 ) -> UsLaceyOperationalEntitlement:
     """Verify paid/pilot entitlement and optionally require a new-operation slot.
 
@@ -61,6 +81,11 @@ def require_us_lacey_operational_access(
                 UsLaceySubscription.organization_id == org_id
             )
         )
+        evaluation = session.scalar(
+            select(UsLaceyEvaluation).where(
+                UsLaceyEvaluation.organization_id == org_id
+            )
+        )
         if profile is None or subscription is None:
             raise UsLaceyOperationalAccessError(
                 "This workspace is not ready for document processing."
@@ -77,6 +102,13 @@ def require_us_lacey_operational_access(
 
         limit = int(subscription.monthly_operation_limit)
         used = int(subscription.used_operations)
+        evaluation_status = (
+            str(evaluation.status) if evaluation is not None else None
+        )
+        if require_mutation_access and evaluation_status in {"EXHAUSTED", "EXPIRED"}:
+            raise UsLaceyOperationalAccessError(
+                "This evaluation is read-only. Continue with Litoral Trace to make changes."
+            )
         if require_operation_slot and used >= limit:
             raise UsLaceyOperationalAccessError(
                 "This workspace has reached its current operation limit."
@@ -88,6 +120,15 @@ def require_us_lacey_operational_access(
             subscription_status=subscription_status,
             monthly_operation_limit=limit,
             used_operations=used,
+            evaluation_status=evaluation_status,
+            evaluation_work_email=(
+                str(evaluation.work_email)
+                if evaluation is not None and evaluation.work_email
+                else None
+            ),
+            evaluation_expires_at=(
+                evaluation.inactive_expires_at if evaluation is not None else None
+            ),
         )
     except UsLaceyOperationalAccessError:
         raise

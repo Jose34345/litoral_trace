@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>{{ sample.label }} Sample | Litoral Trace</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/img/logo.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/dist/app.css') }}">
+</head>
+<body class="min-h-full bg-slate-50 font-sans text-slate-900 antialiased">
+  <main class="mx-auto min-h-screen max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+    <header class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5">
+      <div>
+        <p class="text-sm font-bold text-slate-950">Litoral Trace</p>
+        <p class="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">{{ sample.label }} sample · read-only</p>
+      </div>
+      <a href="/sandbox/start" class="text-xs font-bold text-slate-600 hover:text-slate-950">Back to evaluation</a>
+    </header>
+
+    <section class="py-8">
+      <div class="max-w-3xl">
+        <p class="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Instant product sample</p>
+        <h1 class="mt-2 text-3xl font-bold tracking-tight text-slate-950">{{ sample.title }}</h1>
+        <p class="mt-3 text-sm leading-6 text-slate-600">{{ sample.description }}</p>
+        <p class="mt-3 text-xs font-semibold text-slate-500">No account · No email · No credit card · Synthetic data only</p>
+      </div>
+
+      {% set shipment = sample.first if step == 1 else sample.second %}
+      <div class="mt-8 grid gap-5 lg:grid-cols-[1.5fr_1fr]">
+        <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <header class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+            <div>
+              <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Shipment {{ step }} of 2</p>
+              <h2 class="mt-1 text-base font-bold text-slate-950">{{ shipment.reference }}</h2>
+            </div>
+            <span class="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-800">Processed sample</span>
+          </header>
+
+          <div class="grid gap-px bg-slate-200 sm:grid-cols-3">
+            <div class="bg-white p-4"><p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Documents</p><p class="mt-1 text-2xl font-bold text-slate-950">{{ shipment.documents }}</p></div>
+            <div class="bg-white p-4"><p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Fields reconciled</p><p class="mt-1 text-2xl font-bold text-slate-950">{{ shipment.fields }}</p></div>
+            <div class="bg-white p-4"><p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Need attention</p><p class="mt-1 text-2xl font-bold text-slate-950">{{ shipment.exceptions }}</p></div>
+          </div>
+
+          <div class="p-5">
+            {% if step == 1 %}
+            <h3 class="text-sm font-bold text-slate-950">Evidence-backed reconciliation</h3>
+            <div class="mt-4 overflow-hidden rounded-lg border border-slate-200">
+              <div class="grid grid-cols-[1fr_1fr_auto] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                <span>Field</span><span>Resolved value</span><span>Status</span>
+              </div>
+              <div class="grid grid-cols-[1fr_1fr_auto] gap-3 border-b border-slate-100 px-4 py-3 text-xs"><span class="font-semibold text-slate-700">Botanical species</span><span class="font-bold text-slate-950">{{ shipment.species }}</span><span class="font-bold text-emerald-700">Verified</span></div>
+              <div class="grid grid-cols-[1fr_1fr_auto] gap-3 px-4 py-3 text-xs"><span class="font-semibold text-slate-700">Country of harvest</span><span class="font-bold text-slate-950">{{ shipment.harvest }}</span><span class="font-bold text-emerald-700">Verified</span></div>
+            </div>
+            <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <p class="text-xs font-bold text-slate-950">{{ shipment.payoff }}</p>
+              <p class="mt-1 text-xs leading-5 text-slate-600">Only unresolved or conflicting evidence remains in Action Required. Verified supplier/product claims become reusable compliance memory.</p>
+            </div>
+            {% else %}
+            <h3 class="text-sm font-bold text-slate-950">The second-shipment payoff</h3>
+            <div class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+              <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-emerald-700">Reusable supplier evidence</p>
+              <p class="mt-2 text-2xl font-bold text-slate-950">{{ shipment.reused }} fields reused automatically</p>
+              <p class="mt-2 text-xs leading-5 text-slate-700">{{ shipment.payoff }}. Those fields do not need to be reviewed from scratch.</p>
+            </div>
+            <div class="mt-4 grid gap-3 sm:grid-cols-2">
+              <div class="rounded-lg border border-slate-200 p-4"><p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Supplier memory</p><p class="mt-1 text-sm font-bold text-slate-950">Verified claims carried forward</p></div>
+              <div class="rounded-lg border border-slate-200 p-4"><p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Human review</p><p class="mt-1 text-sm font-bold text-slate-950">Focused on {{ shipment.exceptions }} remaining exception</p></div>
+            </div>
+            {% endif %}
+          </div>
+        </section>
+
+        <aside class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Evaluation path</p>
+          <ol class="mt-4 space-y-4 text-xs">
+            <li class="flex gap-3"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-600 font-bold text-white">1</span><div><p class="font-bold text-slate-950">First shipment</p><p class="mt-1 leading-5 text-slate-600">Reconcile evidence and isolate exceptions.</p></div></li>
+            <li class="flex gap-3"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full {{ 'bg-emerald-600 text-white' if step == 2 else 'bg-slate-100 text-slate-600' }} font-bold">2</span><div><p class="font-bold text-slate-950">Repeat shipment</p><p class="mt-1 leading-5 text-slate-600">See verified supplier evidence reused automatically.</p></div></li>
+            <li class="flex gap-3"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 font-bold text-slate-600">3</span><div><p class="font-bold text-slate-950">Your documents</p><p class="mt-1 leading-5 text-slate-600">Try one real shipment privately. Raw files are deleted after 4 hours.</p></div></li>
+          </ol>
+
+          {% if step == 1 %}
+          <a href="/try/{{ persona }}?step=2" class="mt-6 flex w-full items-center justify-center rounded-lg bg-slate-950 px-4 py-3 text-sm font-bold text-white hover:bg-slate-800">See the repeat shipment →</a>
+          {% else %}
+          <a href="/sandbox/start?mode=own" class="mt-6 flex w-full items-center justify-center rounded-lg bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-800">Try my own shipment →</a>
+          <p class="mt-3 text-center text-[11px] leading-4 text-slate-500">Your first real shipment requires no signup or card.</p>
+          {% endif %}
+        </aside>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

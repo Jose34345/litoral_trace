@@ -74,6 +74,11 @@ from litoral_trace.db.models.us_lacey_commercial import (
 )
 from litoral_trace.db.models.us_lacey_payment_event import UsLaceyPaymentEvent
 from litoral_trace.db.models.us_lacey_audit_trail import UsLaceyOperationEvent
+from litoral_trace.db.models.us_lacey_evaluation import (
+    UsLaceyEvaluation,
+    UsLaceyEvaluationOperation,
+    UsLaceyEvaluationRawPurgeJob,
+)
 from litoral_trace.db.models.us_lacey_telemetry import (
     TelemetryFieldAction,
     TelemetryRun,
@@ -157,6 +162,9 @@ __all__ = [
     "UsLaceyPayment",
     "UsLaceyPaymentEvent",
     "UsLaceyOperationEvent",
+    "UsLaceyEvaluation",
+    "UsLaceyEvaluationOperation",
+    "UsLaceyEvaluationRawPurgeJob",
     "TelemetryRun",
     "TelemetryFieldAction",
     "PilotQualityTrigger",

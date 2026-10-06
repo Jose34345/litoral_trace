@@ -44,6 +44,7 @@ on:
       - "alembic/versions/073_us_lacey_operation_audit_trail.py"
       - "alembic/versions/074_us_lacey_audit_identity_projection.py"
       - "alembic/versions/075_us_lacey_identity_and_product_bridge.py"
+      - "alembic/versions/076_us_lacey_product_led_evaluation.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "scripts/backfill_us_lacey_identities.py"
       - "src/litoral_trace/us_lacey/**"
@@ -640,7 +641,19 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "075_us_lacey_identity_and_product_bridge (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "076_us_lacey_product_led_evaluation (head)" /tmp/alembic-reupgraded.txt
+      - name: Prove five-shipment product-led evaluation contracts
+        env:
+          DATABASE_URL: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs tests/test_us_lacey_product_led_evaluation_postgres.py             | tee /tmp/product-led-evaluation-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/product-led-evaluation-postgres.txt; then
+            echo "Product-led evaluation PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
       - name: Prove reusable supplier evidence persistence and tenant isolation
         env:
           DATABASE_URL: ""

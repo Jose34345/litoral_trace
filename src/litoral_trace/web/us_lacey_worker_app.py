@@ -14,6 +14,9 @@ from fastapi import FastAPI, Response, status
 
 from litoral_trace.us_lacey.worker_db import get_us_lacey_worker_database_url
 from litoral_trace.us_lacey.worker_runner import run_supervisor
+from litoral_trace.workers.evaluation_raw_cleanup import (
+    has_overdue_evaluation_raw_purge_backlog,
+)
 from litoral_trace.workers.sandbox_cleanup import has_overdue_sandbox_purge_backlog
 
 
@@ -112,8 +115,32 @@ def health(response: Response) -> dict[str, str]:
             "sandbox_cleanup": "overdue",
         }
 
+    try:
+        raw_cleanup_overdue = has_overdue_evaluation_raw_purge_backlog(
+            grace_seconds=_SANDBOX_CLEANUP_HEALTH_GRACE_SECONDS
+        )
+    except Exception:
+        _LOG.exception("evaluation_raw_cleanup_health_probe_failed")
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {
+            "status": "not_ready",
+            "service": "us-lacey-worker",
+            "sandbox_cleanup": "healthy",
+            "evaluation_raw_cleanup": "unknown",
+        }
+
+    if raw_cleanup_overdue:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {
+            "status": "not_ready",
+            "service": "us-lacey-worker",
+            "sandbox_cleanup": "healthy",
+            "evaluation_raw_cleanup": "overdue",
+        }
+
     return {
         "status": "healthy",
         "service": "us-lacey-worker",
         "sandbox_cleanup": "healthy",
+        "evaluation_raw_cleanup": "healthy",
     }

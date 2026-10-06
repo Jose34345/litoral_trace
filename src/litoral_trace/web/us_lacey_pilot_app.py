@@ -38,6 +38,11 @@ from litoral_trace.us_lacey.audit_trail import (
     list_operation_events,
     list_organization_audit_events,
 )
+from litoral_trace.us_lacey.evaluation import (
+    UsLaceyEvaluationError,
+    claim_evaluation,
+    touch_evaluation_activity,
+)
 from litoral_trace.us_lacey.evidence_catalog import UsLaceyEvidenceCatalogService
 from litoral_trace.us_lacey.email_delivery import (
     UsLaceyEmailConfigurationError,
@@ -110,6 +115,10 @@ from litoral_trace.web.us_lacey_operational_views import (
     render_processing_fragment,
 )
 from litoral_trace.web.us_lacey_audit_views import render_audit_log_list
+from litoral_trace.web.us_lacey_evaluation_views import (
+    render_evaluation_claim,
+    render_evaluation_upgrade,
+)
 from litoral_trace.web.us_lacey_supplier_views import (
     render_supplier_detail,
     render_suppliers_list,
@@ -185,13 +194,40 @@ def _login_redirect(*, clear_cookie: bool = False):
     return response
 
 
-def _operational_context(us_session: str | None):
+def _operational_context(
+    us_session: str | None,
+    *,
+    require_mutation_access: bool = False,
+):
     if not us_session:
         raise UsLaceyPortalAuthError("Sign in to continue.", code="session_invalid")
     identity = resolve_us_lacey_session(us_session)
     entitlement = require_us_lacey_operational_access(
-        organization_id=identity.organization_id
+        organization_id=identity.organization_id,
+        require_mutation_access=require_mutation_access,
     )
+    if bool(getattr(entitlement, "evaluation_claimed", False)):
+        try:
+            touch_evaluation_activity(
+                session_token=us_session,
+                organization_id=identity.organization_id,
+            )
+        except UsLaceyEvaluationError as exc:
+            raise UsLaceyOperationalAccessError(str(exc)) from exc
+        entitlement = require_us_lacey_operational_access(
+            organization_id=identity.organization_id,
+            require_mutation_access=require_mutation_access,
+        )
+    return identity, entitlement
+
+
+def _operational_mutation_context(us_session: str | None):
+    """Resolve the normal workspace context, then block read-only evaluations."""
+    identity, entitlement = _operational_context(us_session)
+    if bool(getattr(entitlement, "evaluation_read_only", False)):
+        raise UsLaceyOperationalAccessError(
+            "This evaluation is read-only. Continue with Litoral Trace to make changes."
+        )
     return identity, entitlement
 
 
@@ -206,6 +242,9 @@ def _generated_customer_operation_reference() -> str:
 
 
 def _detail_page(*, request: Request, identity, operation_public_id: str, us_session: str, error: str | None = None, notice: str | None = None, field_errors: dict[int, str] | None = None, field_input_values: dict[int, str] | None = None, status_code: int = 200):
+    entitlement = require_us_lacey_operational_access(
+        organization_id=identity.organization_id
+    )
     service = UsLaceyOperationService()
     detail = service.get_detail(
         organization_id=identity.organization_id,
@@ -216,7 +255,7 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
     except Exception:
         dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
     tokens = {field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}") for field in detail.fields if field.status in {"MISSING", "CONFLICT", "SUPPORTED", "REVIEW", "FOUND"}}
-    return _html(render_operation_detail(request=request, identity=identity, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, alias_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"alias:{detail.public_id}"), retry_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"retry:{detail.public_id}"), error=error, notice=notice, field_errors=field_errors, field_input_values=field_input_values), status_code=status_code)
+    return _html(render_operation_detail(request=request, identity=identity, entitlement=entitlement, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, alias_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"alias:{detail.public_id}"), retry_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"retry:{detail.public_id}"), error=error, notice=notice, field_errors=field_errors, field_input_values=field_input_values), status_code=status_code)
 
 
 def _workspace_fragment(
@@ -240,6 +279,13 @@ def _workspace_fragment(
         organization_id=identity.organization_id,
         event_name="REVIEW_REACHED",
         event_key=str(detail.public_id),
+    )
+    safe_record_outreach_event(
+        session_token=us_session,
+        organization_id=identity.organization_id,
+        event_name="PQL_QUALIFIED",
+        event_key="review-reached",
+        metadata={"reason": "review_reached"},
     )
     try:
         engine2_dossier = UsLaceyEngineDossierService().get_dossier(
@@ -492,6 +538,29 @@ def billing_page(
         return RedirectResponse("/login", status_code=303)
     try:
         identity = resolve_us_lacey_session(us_session)
+        try:
+            entitlement = require_us_lacey_operational_access(
+                organization_id=identity.organization_id
+            )
+        except UsLaceyOperationalAccessError:
+            entitlement = None
+        if entitlement is not None and bool(getattr(entitlement, "evaluation_can_claim", False)):
+            return RedirectResponse("/evaluation/save", status_code=303)
+        if entitlement is not None and bool(getattr(entitlement, "is_evaluation", False)):
+            if bool(getattr(entitlement, "evaluation_read_only", False)):
+                safe_record_outreach_event(
+                    session_token=us_session,
+                    organization_id=identity.organization_id,
+                    event_name="UPGRADE_STARTED",
+                    event_key="evaluation-complete",
+                )
+            return _html(
+                render_evaluation_upgrade(
+                    request=request,
+                    identity=identity,
+                    entitlement=entitlement,
+                )
+            )
         billing = get_us_lacey_billing_summary(organization_id=identity.organization_id)
         commercial = load_us_lacey_commercial_config()
         paddle = (
@@ -681,6 +750,105 @@ def supplier_detail_page(
     )
 
 
+@app.get("/evaluation/save", response_class=HTMLResponse)
+def evaluation_save_page(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+
+    if bool(getattr(entitlement, "evaluation_claimed", False)):
+        return RedirectResponse("/operations", status_code=303)
+    if not bool(getattr(entitlement, "evaluation_can_claim", False)):
+        return RedirectResponse("/operations/new", status_code=303)
+    return _html(
+        render_evaluation_claim(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+            csrf_token=us_lacey_csrf_token(
+                session_token=us_session or "",
+                purpose="evaluation:claim",
+            ),
+        )
+    )
+
+
+@app.post("/evaluation/claim", response_class=HTMLResponse)
+def evaluation_claim_submit(
+    request: Request,
+    work_email: str = Form(...),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose="evaluation:claim",
+            submitted_token=csrf_token,
+        )
+        result = claim_evaluation(
+            session_token=us_session or "",
+            work_email=work_email,
+        )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=result.organization_id,
+            event_name="EVALUATION_CLAIMED",
+            event_key="five-shipment-evaluation",
+            metadata={
+                "successful_operations_used": result.successful_operations_used,
+                "operation_limit": result.operation_limit,
+            },
+        )
+        portal = load_us_lacey_portal_config()
+        response = RedirectResponse("/operations", status_code=303)
+        max_age = max(
+            1,
+            int(
+                (
+                    result.inactive_expires_at
+                    - datetime.now(timezone.utc)
+                ).total_seconds()
+            ),
+        )
+        response.set_cookie(
+            key=US_LACEY_SESSION_COOKIE,
+            value=us_session or "",
+            max_age=max_age,
+            httponly=True,
+            secure=portal.session_cookie_secure,
+            samesite="lax",
+            path="/",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except (UsLaceyCsrfError, UsLaceyEvaluationError) as exc:
+        return _html(
+            render_evaluation_claim(
+                request=request,
+                identity=identity,
+                entitlement=entitlement,
+                csrf_token=us_lacey_csrf_token(
+                    session_token=us_session or "",
+                    purpose="evaluation:claim",
+                ),
+                error=str(exc),
+            ),
+            status_code=400,
+        )
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+
+
 @app.get("/operations/new", response_class=HTMLResponse)
 def new_operation_page(
     request: Request,
@@ -692,6 +860,10 @@ def new_operation_page(
         return _login_redirect(clear_cookie=bool(us_session))
     except UsLaceyOperationalAccessError:
         return RedirectResponse("/billing", status_code=303)
+    if bool(getattr(entitlement, "evaluation_can_claim", False)):
+        return RedirectResponse("/evaluation/save", status_code=303)
+    if bool(getattr(entitlement, "evaluation_read_only", False)):
+        return RedirectResponse("/billing?evaluation=complete", status_code=303)
     if entitlement.remaining_operations <= 0:
         return _operation_error_page(request, "This workspace has reached its current operation limit.", status_code=409)
     return _html(
@@ -712,7 +884,7 @@ def new_operation_submit(
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
-        identity, entitlement = _operational_context(us_session)
+        identity, entitlement = _operational_mutation_context(us_session)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose="operation:create",
@@ -781,7 +953,7 @@ def operation_alias_submit(
 ):
     """Rename the customer-facing operation label without changing operation identity."""
     try:
-        identity, _entitlement = _operational_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"alias:{operation_public_id}",
@@ -918,7 +1090,7 @@ def operation_retry_processing(
 ):
     """Requeue failed durable jobs without duplicating operation/document rows."""
     try:
-        identity, _entitlement = _operational_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"retry:{operation_public_id}",
@@ -992,7 +1164,7 @@ async def operation_upload_submit(
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
-        identity, _entitlement = _operational_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"upload:{operation_public_id}",
@@ -1067,7 +1239,7 @@ def operation_review_submit(
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
-        identity, _entitlement = _operational_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"review:{operation_public_id}:{field_id}",
@@ -1121,7 +1293,7 @@ def operation_review_action_fragment(
 ):
     """HTMX mutation endpoint that returns only the authoritative workspace."""
     try:
-        identity, _entitlement = _operational_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"review:{operation_public_id}:{field_id}",
@@ -1174,7 +1346,7 @@ def operation_review_accept_supported(
 ):
     """Non-HTMX fallback for one-click confirmation of supported evidence."""
     try:
-        identity, _entitlement = _operational_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"complete:{operation_public_id}",
@@ -1223,7 +1395,7 @@ def operation_review_accept_supported_fragment(
 ):
     """HTMX bulk mutation endpoint; returns one complete workspace replacement."""
     try:
-        identity, _entitlement = _operational_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"complete:{operation_public_id}",
@@ -1278,7 +1450,7 @@ def operation_complete_submit(
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
-        identity, _entitlement = _operational_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"complete:{operation_public_id}",
@@ -1301,6 +1473,13 @@ def operation_complete_submit(
             organization_id=identity.organization_id,
             event_name="REVIEW_COMPLETED",
             event_key=operation_public_id,
+        )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="PQL_QUALIFIED",
+            event_key="review-completed",
+            metadata={"reason": "review_completed"},
         )
         return RedirectResponse(f"/operations/{operation_public_id}?completed=1", status_code=303)
     except UsLaceyPortalAuthError:
@@ -1352,6 +1531,13 @@ def _export_response(*, request: Request, operation_public_id: str, us_session: 
             event_name="EXPORT_DOWNLOADED",
             event_key=f"{operation_public_id}:{kind}",
             metadata={"kind": kind},
+        )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="PQL_QUALIFIED",
+            event_key="export-downloaded",
+            metadata={"reason": "export_downloaded", "kind": kind},
         )
         response = Response(content=payload, media_type=media_type)
         response.headers["Content-Disposition"] = f'attachment; filename="lacey-preparation-{detail.public_id}.{kind}"'

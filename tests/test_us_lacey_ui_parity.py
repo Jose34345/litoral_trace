@@ -76,11 +76,10 @@ def test_us_lacey_templates_use_shared_design_system_with_isolated_english_shell
             # requiring a second full-page base would make the fragment invalid.
             assert "{% extends " not in source
             continue
-        if path.name == "sandbox_start.html":
-            # The public zero-touch entry intentionally uses an isolated,
-            # script-free shell while still consuming the canonical Tailwind
-            # build. The support shell above is the only authenticated visual
-            # exception, and it still inherits the shared root design system.
+        if path.name in {"sandbox_start.html", "evaluation_sample.html"}:
+            # Public zero-touch entry/sample surfaces intentionally use an
+            # isolated, script-free shell while still consuming the canonical
+            # Tailwind build. They create no account/session before value.
             assert "url_for('static'" in source
             assert "path='/dist/app.css'" in source
             assert "<style" not in source

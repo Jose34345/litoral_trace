@@ -18,6 +18,10 @@ from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.access import require_us_lacey_operational_access
 from litoral_trace.us_lacey.batch_hardening import ShipmentBatchRejected, enforce_shipment_document_budget
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
+from litoral_trace.us_lacey.evaluation import (
+    UsLaceyEvaluationError,
+    require_evaluation_creation_capacity,
+)
 from litoral_trace.us_lacey.ingestion import UsLaceyIngestionResult, UsLaceyIngestionService
 from litoral_trace.us_lacey.jobs import UsLaceyJob, enqueue_us_lacey_document_job
 from litoral_trace.us_lacey.operation_lock import us_lacey_operation_projection_lock
@@ -54,9 +58,14 @@ def create_us_lacey_customer_operation(
     operations: UsLaceyOperationService | None = None,
 ) -> OperationSnapshot:
     """Create one billable operation after server-side entitlement verification."""
+    try:
+        require_evaluation_creation_capacity(organization_id=organization_id)
+    except UsLaceyEvaluationError as exc:
+        raise UsLaceyWorkflowError(str(exc)) from exc
     require_us_lacey_operational_access(
         organization_id=organization_id,
         require_operation_slot=True,
+        require_mutation_access=True,
     )
     service = operations or UsLaceyOperationService()
     return service.create_operation(
@@ -118,6 +127,7 @@ def upload_and_enqueue_us_lacey_document(
     require_us_lacey_operational_access(
         organization_id=organization_id,
         require_operation_slot=False,
+        require_mutation_access=True,
     )
     # Fail before Vault writes and before queue creation when a spreadsheet is a
     # bulk/multi-shipment dataset. Such datasets belong to the benchmark importer.

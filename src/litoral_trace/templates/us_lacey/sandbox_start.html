@@ -1,132 +1,67 @@
 <!DOCTYPE html>
 <html lang="en" class="h-full bg-slate-50">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="robots" content="noindex,nofollow,noarchive">
-
-    <title>U.S. Lacey Act Sandbox | Litoral Trace</title>
-
-    <link rel="icon" href="{{ url_for('static', path='/favicon.ico') }}" sizes="any">
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/img/logo.svg') }}">
-    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', path='/apple-touch-icon.png') }}">
-    <meta name="theme-color" content="#020617">
-
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', path='/dist/app.css') }}"
-    >
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>Evaluate Litoral Trace</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/img/logo.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/dist/app.css') }}">
 </head>
-
 <body class="min-h-full bg-slate-50 font-sans text-slate-900 antialiased">
-    <main class="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
-        <section
-            class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
-            aria-labelledby="sandbox-title"
-        >
-            <header class="text-center">
-                <div
-                    class="mx-auto mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200"
-                    aria-hidden="true"
-                >
-                    <svg
-                        viewBox="0 0 512 512"
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="h-8 w-8 shrink-0"
-                        aria-hidden="true"
-                        focusable="false"
-                    >
-                        <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-                            <path
-                                d="M360 92 C286 49 188 61 126 126 C64 191 58 292 111 363 C164 434 261 458 340 422"
-                                stroke="#059669"
-                                stroke-width="30"
-                            />
-                            <path
-                                d="M329 142 C274 111 204 119 159 163 C112 208 105 282 142 336 C179 390 250 410 310 385"
-                                stroke="#059669"
-                                stroke-width="30"
-                            />
-                            <path d="M254 168 V344" stroke="#020617" stroke-width="30" />
-                            <path d="M254 211 H330 L374 167" stroke="#020617" stroke-width="28" />
-                            <path d="M254 256 H390" stroke="#020617" stroke-width="28" />
-                            <path d="M254 301 H330 L374 345" stroke="#020617" stroke-width="28" />
-                        </g>
-                        <circle cx="254" cy="256" r="24" fill="#059669" />
-                        <circle cx="382" cy="159" r="19" fill="#059669" stroke="#020617" stroke-width="12" />
-                        <circle cx="402" cy="256" r="19" fill="#059669" stroke="#020617" stroke-width="12" />
-                        <circle cx="382" cy="353" r="19" fill="#059669" stroke="#020617" stroke-width="12" />
-                    </svg>
-                </div>
+  <main class="mx-auto min-h-screen max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+    <header class="mx-auto max-w-3xl text-center">
+      <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200" aria-hidden="true">
+        <img src="{{ url_for('static', path='/img/logo.svg') }}" alt="" class="h-9 w-9">
+      </div>
+      <p class="mt-4 text-sm font-bold text-slate-950">Litoral Trace</p>
+      <h1 class="mt-3 text-3xl font-bold tracking-tight text-slate-950">See the workflow before you upload anything</h1>
+      <p class="mt-3 text-sm leading-6 text-slate-600">Start with a read-only sample in minutes, or test one real shipment privately. No account and no credit card are required.</p>
+    </header>
 
-                <p class="text-sm font-semibold tracking-tight text-slate-900">
-                    Litoral Trace
-                </p>
+    <section class="mt-8 grid gap-5 lg:grid-cols-3">
+      <a href="/try/importer" class="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-emerald-300 hover:shadow-md">
+        <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-emerald-700">Read-only sample</p>
+        <h2 class="mt-2 text-lg font-bold text-slate-950">I’m an Importer</h2>
+        <p class="mt-2 text-xs leading-5 text-slate-600">See supplier documents reconciled, Lacey exceptions isolated and verified supplier evidence reused on a repeat shipment.</p>
+        <p class="mt-5 text-xs font-bold text-emerald-700">Open importer sample →</p>
+      </a>
 
-                <h1
-                    id="sandbox-title"
-                    class="mt-4 text-2xl font-semibold tracking-tight text-slate-900"
-                >
-                    U.S. Lacey Act Sandbox
-                </h1>
+      <a href="/try/broker" class="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-emerald-300 hover:shadow-md">
+        <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-emerald-700">Read-only sample</p>
+        <h2 class="mt-2 text-lg font-bold text-slate-950">I’m a Customs Broker</h2>
+        <p class="mt-2 text-xs leading-5 text-slate-600">See an exception-first client file, missing evidence surfaced and a LAWGS-ready preparation workflow.</p>
+        <p class="mt-5 text-xs font-bold text-emerald-700">Open broker sample →</p>
+      </a>
 
-                <p class="mt-2 text-sm leading-6 text-slate-600">
-                    Test the compliance engine with your own shipment documents.
-                </p>
-            </header>
+      <section class="rounded-xl border border-slate-300 bg-slate-950 p-5 text-white shadow-sm" id="own-shipment">
+        <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-emerald-300">Private evaluation</p>
+        <h2 class="mt-2 text-lg font-bold">Use my own documents</h2>
+        <p class="mt-2 text-xs leading-5 text-slate-300">Process one real shipment before signup. Raw documents are permanently deleted after 4 hours.</p>
 
-            <form method="post" action="/sandbox/start" class="mt-8">
-                <input type="hidden" name="consent" value="accepted">
+        <form method="post" action="/sandbox/start" class="mt-5">
+          <input type="hidden" name="consent" value="accepted">
+          <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-700 bg-slate-900 p-3 text-left">
+            <input type="checkbox" name="learning_consent" value="accepted" class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-500 text-emerald-600 focus:ring-emerald-600">
+            <span>
+              <span class="block text-xs font-bold text-white">Help improve Litoral Trace (optional)</span>
+              <span class="mt-1 block text-[11px] leading-4 text-slate-400">Allow de-identified corrected-field excerpts to improve extraction quality. Raw documents are still deleted after 4 hours.</span>
+            </span>
+          </label>
+          <button type="submit" class="mt-4 flex w-full items-center justify-center rounded-lg bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700">Try my shipment →</button>
+        </form>
+      </section>
+    </section>
 
-                <label
-                    class="mb-5 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-left"
-                >
-                    <input
-                        type="checkbox"
-                        name="learning_consent"
-                        value="accepted"
-                        class="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-600"
-                    >
-                    <span>
-                        <span class="block text-sm font-semibold text-slate-900">Help improve Litoral Trace</span>
-                        <span class="mt-1 block text-xs leading-5 text-slate-600">
-                            Allow Litoral Trace to retain de-identified excerpts from corrected fields for product improvement.
-                        </span>
-                    </span>
-                </label>
+    <section class="mx-auto mt-8 max-w-4xl rounded-xl border border-slate-200 bg-white p-5">
+      <div class="grid gap-5 text-xs sm:grid-cols-3">
+        <div><p class="font-bold text-slate-950">No signup before value</p><p class="mt-1 leading-5 text-slate-600">Your first real shipment can be processed anonymously.</p></div>
+        <div><p class="font-bold text-slate-950">4-hour raw retention</p><p class="mt-1 leading-5 text-slate-600">Uploaded source files are removed after four hours, including during evaluation.</p></div>
+        <div><p class="font-bold text-slate-950">5-shipment evaluation</p><p class="mt-1 leading-5 text-slate-600">After your first successful shipment, save the workspace with a work email and test four more.</p></div>
+      </div>
+    </section>
 
-                <label
-                    class="mb-5 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 text-left"
-                >
-                    <input
-                        type="checkbox"
-                        name="support_debug_consent"
-                        value="accepted"
-                        class="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-600"
-                    >
-                    <span>
-                        <span class="block text-sm font-semibold text-slate-900">Support debugging (optional)</span>
-                        <span class="mt-1 block text-xs leading-5 text-slate-600">
-                            Share this test with Litoral Trace support for debugging in case of processing errors (72-hour retention).
-                        </span>
-                    </span>
-                </label>
-
-                <button
-                    type="submit"
-                    class="flex w-full items-center justify-center rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-800"
-                >
-                    Start Document Analysis
-                </button>
-            </form>
-
-            <p class="mt-6 text-center text-xs leading-5 text-slate-500">
-                By default, this ephemeral workspace and all uploaded files are
-                permanently destroyed after 4 hours. If you explicitly opt in to
-                support debugging, uploaded files are isolated for support and
-                permanently destroyed no later than 72 hours after consent.
-            </p>
-        </section>
-    </main>
+    <p class="mt-6 text-center text-[11px] leading-5 text-slate-500">Samples use synthetic data and never consume an evaluation operation.</p>
+  </main>
 </body>
 </html>
