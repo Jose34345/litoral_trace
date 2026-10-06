@@ -11,6 +11,7 @@ Use this as a routing guide. Exact test names evolve; search existing tests befo
 | Product Intelligence parser/domain | `tests/product_intelligence/` | general CI pytest + existing Assurance parser regressions |
 | Product Intelligence snapshot/read path | `tests/test_us_lacey_product_intelligence_snapshot.py` + UI tests | general CI + U.S. Lacey PostgreSQL Gate |
 | Product Intelligence worker ordering/idempotency | `tests/test_us_lacey_product_intelligence_worker.py` | general CI + U.S. Lacey PostgreSQL Gate |
+| Supplier identity / explicit product binding / cross-shipment memory | `tests/test_us_lacey_identity_memory.py` + `tests/test_us_lacey_shipment_product_bridge.py` + `tests/test_us_lacey_true_reuse_e2e.py` | general CI + U.S. Lacey PostgreSQL Gate; PostgreSQL true-reuse case must not skip in CI |
 | Product Intelligence RLS/supersession | `tests/test_us_lacey_product_intelligence_snapshot_postgres.py` | U.S. Lacey PostgreSQL Gate, no skip allowed for targeted Product Intelligence PostgreSQL acceptance |
 | Taxonomy Resolver | `tests/test_us_lacey_taxonomy_resolver.py` + `tests/test_us_lacey_product_intelligence_taxonomy.py` | general CI + U.S. Lacey PostgreSQL Gate |
 | P1-01 taxonomic candidate equivalence | `tests/test_us_lacey_taxonomic_candidate_equivalence.py` + `tests/lacey_engine/test_semantic_normalization.py` + fusion/shipment worker regressions | general CI + U.S. Lacey PostgreSQL Gate |
@@ -54,7 +55,7 @@ The current general CI config uses Python 3.11, installs `requirements.txt`, `py
 python -m pytest -q -rs
 ```
 
-The canonical U.S. Lacey Alembic head is `074_us_lacey_audit_identity_projection`.
+The canonical U.S. Lacey Alembic head is `075_us_lacey_identity_and_product_bridge`.
 
 ## Product Intelligence / BOM contract
 The active BOM capability is protected by:

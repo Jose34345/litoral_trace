@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import PurePath
@@ -42,6 +43,7 @@ from litoral_trace.product_intelligence.domain import (
 )
 from litoral_trace.services.vault import VaultError, VaultService
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
+from litoral_trace.us_lacey.identity_memory import resolve_operation_identity_memory
 from litoral_trace.us_lacey.regulatory.taxonomy import resolve_taxonomy
 from litoral_trace.us_lacey.shipment_product_bridge import (
     build_shipment_product_bridge,
@@ -51,6 +53,7 @@ from litoral_trace.us_lacey.storage import build_us_lacey_storage_settings, get_
 SNAPSHOT_SCHEMA_VERSION = "product-intelligence-snapshot-v2"
 _ELIGIBLE_EXTENSIONS = frozenset({".csv", ".xls", ".xlsx", ".pdf"})
 SessionFactory = Callable[[], Session]
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -525,11 +528,6 @@ def build_product_intelligence_snapshot(
         "generation": int(claim.generation),
         "fingerprint": str(claim.fingerprint),
     }
-    payload["shipment_product_bridge"] = build_shipment_product_bridge(
-        payload,
-        line_references=plant_line_references,
-    )
-
     session = factory()
     try:
         set_tenant_db_context(session, organization_id)
@@ -551,6 +549,54 @@ def build_product_intelligence_snapshot(
         )
         if existing is not None:
             return existing
+
+        explicit_links: tuple[dict[str, object], ...] = ()
+        identity_summary = {
+            "supplier_count": 0,
+            "product_count": 0,
+            "link_count": 0,
+            "ambiguous_supplier_count": 0,
+        }
+        try:
+            # Identity memory is additive and non-canonical. A savepoint keeps
+            # identity-resolution failure from invalidating Product Intelligence.
+            with session.begin_nested():
+                identity = resolve_operation_identity_memory(
+                    session,
+                    organization_id=organization_id,
+                    operation_id=operation_id,
+                    product_payload=payload,
+                    source_set_revision_id=revision_id,
+                    discovery_status="ACTIVE",
+                )
+            explicit_links = tuple(
+                item.as_bridge_dict() for item in identity.explicit_links
+            )
+            identity_summary = {
+                "supplier_count": int(identity.supplier_count),
+                "product_count": int(identity.product_count),
+                "link_count": int(identity.link_count),
+                "ambiguous_supplier_count": int(
+                    identity.ambiguous_supplier_count
+                ),
+            }
+        except Exception:
+            LOGGER.exception(
+                "U.S. Lacey identity memory resolution failed closed",
+                extra={
+                    "organization_id": organization_id,
+                    "operation_id": operation_id,
+                    "source_set_revision_id": revision_id,
+                },
+            )
+
+        payload["identity_memory"] = identity_summary
+        payload["shipment_product_bridge"] = build_shipment_product_bridge(
+            payload,
+            line_references=plant_line_references,
+            explicit_links=explicit_links,
+        )
+
         snapshot = UsLaceyProductIntelligenceSnapshot(
             organization_id=organization_id,
             operation_id=operation_id,

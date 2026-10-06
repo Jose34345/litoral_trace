@@ -21,6 +21,10 @@ customer upload
   -> canonical publication support
   -> canonical shipment truth
   -> Product Intelligence snapshot (non-canonical)
+      -> exact U.S. supplier identity (MID / vendor code / exact name+address)
+      -> supplier + SKU product identity
+      -> explicit shipment-line -> supplier-product binding
+  -> reusable verified evidence application (exact supplier/product only)
   -> Regulatory Assessment snapshot (non-canonical, rule-scoped)
   -> multilingual shadow snapshot
   -> source-set finalize
@@ -48,7 +52,7 @@ CSV/XLS/XLSX bytes
   -> taxonomy enrichment / regulatory assessment inputs
 ```
 
-The worker invokes Product Intelligence only when it owns source-set finalization, after canonical publication for that source set and before the regulatory assessment, multilingual shadow and source-set finalization. A Product Intelligence snapshot is evidence about product composition, not canonical Lacey declaration truth.
+The worker invokes Product Intelligence only when it owns source-set finalization, after canonical publication for that source set and before reusable evidence, regulatory assessment, multilingual shadow and source-set finalization. During Product Intelligence publication, U.S. supplier identity is resolved only from exact tenant-scoped identifiers and line/SKU binding is persisted explicitly; literal equality between a shipment line reference and SKU is never treated as identity evidence. Reusable evidence is then applied only for active exact supplier/product identities. A Product Intelligence snapshot is evidence about product composition, not canonical Lacey declaration truth.
 
 ## Regulatory Assessment path
 The active deterministic rules path consumes supported Product Intelligence facts and produces a separate source-set/ruleset-versioned work product:

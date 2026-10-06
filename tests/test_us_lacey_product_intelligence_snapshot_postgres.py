@@ -453,7 +453,7 @@ def test_new_source_set_generation_marks_prior_product_intelligence_snapshot_sta
     session.close()
 
 
-def test_builder_persists_deterministic_shipment_product_bridge(
+def test_builder_does_not_bind_product_without_explicit_identity_relation(
     engine2_postgres_engine,
     engine2_postgres_session_factory,
 ):
@@ -507,8 +507,9 @@ def test_builder_persists_deterministic_shipment_product_bridge(
 
     assert snapshot is not None
     bridge = snapshot.payload_json["shipment_product_bridge"]
-    assert bridge["linked_count"] == 1
-    assert bridge["review_count"] == 0
-    assert bridge["links"][0]["status"] == "LINKED"
-    assert bridge["links"][0]["shipment_line_reference"] == generated_line
+    assert bridge["linked_count"] == 0
+    assert bridge["review_count"] == 1
+    assert bridge["links"][0]["status"] == "UNLINKED_REVIEW"
+    assert bridge["links"][0]["shipment_line_reference"] is None
+    assert bridge["links"][0]["candidate_line_references"] == []
     assert bridge["links"][0]["product"]["sku"] == "CHAIR-001"

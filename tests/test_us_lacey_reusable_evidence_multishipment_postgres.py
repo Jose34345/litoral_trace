@@ -9,14 +9,16 @@ import pytest
 from sqlalchemy import inspect, select
 
 from litoral_trace.db.models import (
-    AssuranceSupplier,
     DocumentEntityLink,
     UsLaceyEvidenceClaim,
     UsLaceyOperation,
     UsLaceyOperationField,
     UsLaceyPpqPlantLine,
+    UsLaceyOperationProductLink,
     UsLaceyProductIntelligenceSnapshot,
+    UsLaceySupplier,
     UsLaceySupplierEvidence,
+    UsLaceySupplierProduct,
     User,
 )
 from litoral_trace.us_lacey.operations import UsLaceyOperationService
@@ -51,6 +53,7 @@ def _seed_product_snapshot(
     operation_id: int,
     line_reference: str = LINE,
     sku: str = SKU,
+    supplier_product_id: int,
 ) -> None:
     revision = seal_current_source_set(
         organization_id=organization_id,
@@ -59,6 +62,16 @@ def _seed_product_snapshot(
     )
     session = tenant_session(factory, organization_id)
     try:
+        session.add(
+            UsLaceyOperationProductLink(
+                organization_id=organization_id,
+                operation_id=operation_id,
+                source_set_revision_id=revision.id,
+                line_reference=line_reference,
+                supplier_product_id=supplier_product_id,
+                link_method="EXACT_SKU",
+            )
+        )
         session.add(
             UsLaceyProductIntelligenceSnapshot(
                 organization_id=organization_id,
@@ -119,7 +132,7 @@ def _add_supplier_link(
     *,
     organization_id: int,
     assurance_document_id: int,
-    supplier: AssuranceSupplier,
+    supplier: UsLaceySupplier,
 ) -> None:
     session = tenant_session(factory, organization_id)
     try:
@@ -128,7 +141,7 @@ def _add_supplier_link(
                 organization_id=organization_id,
                 assurance_document_id=assurance_document_id,
                 entity_type="SUPPLIER",
-                entity_reference=f"supplier:{supplier.public_id}",
+                entity_reference=f"us_lacey_supplier:{supplier.public_id}",
                 link_confidence=1.0,
                 link_method="EXACT_IDENTIFIER",
                 human_confirmed=False,
@@ -192,8 +205,12 @@ def test_shipment_one_review_promotes_and_shipment_two_reuses(
     engine2_postgres_engine,
     engine2_postgres_session_factory,
 ):
-    if "us_lacey_supplier_evidence" not in inspect(engine2_postgres_engine).get_table_names():
-        pytest.skip("POSTGRES_SCHEMA_NOT_MIGRATED_TO_071")
+    required_tables = {
+        "us_lacey_supplier_evidence",
+        "us_lacey_operation_product_link",
+    }
+    if not required_tables.issubset(inspect(engine2_postgres_engine).get_table_names()):
+        pytest.skip("POSTGRES_SCHEMA_NOT_MIGRATED_TO_075")
 
     factory = engine2_postgres_session_factory
 
@@ -215,24 +232,35 @@ def test_shipment_one_review_promotes_and_shipment_two_reuses(
             is_active=True,
         )
         session.add(user)
-        supplier = AssuranceSupplier(
+        supplier = UsLaceySupplier(
             organization_id=org_id,
-            cuit="30712345678",
+            supplier_key="MID:USNORTHWOODSGOLDEN",
             display_name="Northwoods Supplier LLC",
             normalized_name="northwoods supplier llc",
-            status="AUTO_CREATED",
-            source_assurance_document_id=assurance_1_id,
+            status="ACTIVE",
         )
         session.add(supplier)
+        session.flush()
+        product = UsLaceySupplierProduct(
+            organization_id=org_id,
+            supplier_id=supplier.id,
+            product_key=f"SKU:{SKU}",
+            sku=SKU,
+            display_name="White Oak Chair",
+            normalized_name="white oak chair",
+            status="ACTIVE",
+        )
+        session.add(product)
         session.commit()
         user_id = int(user.id)
         supplier_id = int(supplier.id)
+        supplier_product_id = int(product.id)
     finally:
         session.close()
 
     session = tenant_session(factory, org_id)
     try:
-        supplier = session.get(AssuranceSupplier, supplier_id)
+        supplier = session.get(UsLaceySupplier, supplier_id)
         supplier_public_id = supplier.public_id
     finally:
         session.close()
@@ -253,6 +281,7 @@ def test_shipment_one_review_promotes_and_shipment_two_reuses(
         factory,
         organization_id=org_id,
         operation_id=operation_1_id,
+        supplier_product_id=supplier_product_id,
     )
 
     session = tenant_session(factory, org_id)
@@ -330,9 +359,9 @@ def test_shipment_one_review_promotes_and_shipment_two_reuses(
     session = tenant_session(factory, org_id)
     try:
         supplier = session.scalar(
-            select(AssuranceSupplier).where(
-                AssuranceSupplier.organization_id == org_id,
-                AssuranceSupplier.public_id == supplier_public_id,
+            select(UsLaceySupplier).where(
+                UsLaceySupplier.organization_id == org_id,
+                UsLaceySupplier.public_id == supplier_public_id,
             )
         )
     finally:
@@ -354,6 +383,7 @@ def test_shipment_one_review_promotes_and_shipment_two_reuses(
         factory,
         organization_id=org_id,
         operation_id=operation_2_id,
+        supplier_product_id=supplier_product_id,
     )
 
     reused_count = apply_reusable_evidence_for_operation(

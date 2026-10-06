@@ -51,7 +51,9 @@ from litoral_trace.db.models.us_lacey_regulatory_assessment import (
 )
 from litoral_trace.db.models.us_lacey_reusable_evidence import (
     UsLaceyEvidenceClaim,
+    UsLaceyOperationProductLink,
     UsLaceySupplier,
+    UsLaceySupplierIdentifier,
     UsLaceySupplierEvidence,
     UsLaceySupplierProduct,
 )
@@ -141,7 +143,9 @@ __all__ = [
     "UsLaceyProductIntelligenceSnapshot",
     "UsLaceyRegulatoryAssessmentSnapshot",
     "UsLaceySupplier",
+    "UsLaceySupplierIdentifier",
     "UsLaceySupplierProduct",
+    "UsLaceyOperationProductLink",
     "UsLaceySupplierEvidence",
     "UsLaceyEvidenceClaim",
     "DocumentTextSpan",

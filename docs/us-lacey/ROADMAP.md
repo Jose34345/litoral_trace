@@ -59,6 +59,19 @@ Current safety boundary:
 - regulatory assessment snapshots do not write to canonical shipment truth, PPQ505, LAWGS or ACE;
 - human review remains required where the rule result says so.
 
+## DELIVERED — Identity -> Memory -> Reuse P0
+The U.S. Lacey identity graph now makes extracted intelligence reusable without depending on the legacy Argentine CUIT supplier model:
+- tenant-scoped supplier identifiers support exact MID, vendor code, normalized name+address and explicit manual identity;
+- fuzzy supplier writes are prohibited;
+- supplier-product identity is exact supplier + SKU;
+- shipment line identity is independent from SKU and is connected through a source-set-scoped explicit product link;
+- literal equality between line reference and SKU is not binding evidence;
+- only ACTIVE/VERIFIED identities can participate in automatic reuse;
+- stable genus/species/country-of-harvest claims become VERIFIED reusable evidence only after explicit human review;
+- current shipment evidence wins and conflicting, expired or revoked historical evidence fails closed;
+- historical backfill materializes DISCOVERED identities only and never upgrades extraction into VERIFIED evidence;
+- the true multishipment golden path covers a U.S./international supplier without CUIT and a line reference different from its commercial SKU.
+
 ## NEXT — build the work-reduction product
 
 ### 1. Exception-first Human Review

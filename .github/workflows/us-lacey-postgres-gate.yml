@@ -43,7 +43,9 @@ on:
       - "alembic/versions/072_fix_sandbox_purge_fk_order.py"
       - "alembic/versions/073_us_lacey_operation_audit_trail.py"
       - "alembic/versions/074_us_lacey_audit_identity_projection.py"
+      - "alembic/versions/075_us_lacey_identity_and_product_bridge.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
+      - "scripts/backfill_us_lacey_identities.py"
       - "src/litoral_trace/us_lacey/**"
       - "src/litoral_trace/product_intelligence/**"
       - "src/litoral_trace/web/us_lacey_*"
@@ -638,7 +640,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "074_us_lacey_audit_identity_projection (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "075_us_lacey_identity_and_product_bridge (head)" /tmp/alembic-reupgraded.txt
       - name: Prove reusable supplier evidence persistence and tenant isolation
         env:
           DATABASE_URL: ""
@@ -648,7 +650,9 @@ jobs:
           set -o pipefail
           python -m pytest -q -rs \
             tests/test_us_lacey_reusable_evidence_postgres.py \
+            tests/test_us_lacey_identity_memory_postgres.py \
             tests/test_us_lacey_reusable_evidence_multishipment_postgres.py \
+            tests/test_us_lacey_true_reuse_e2e.py \
             | tee /tmp/reusable-evidence-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/reusable-evidence-postgres.txt; then
             echo "Reusable evidence PostgreSQL acceptance must not skip in CI."
