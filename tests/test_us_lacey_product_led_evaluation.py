@@ -116,7 +116,8 @@ def test_public_samples_are_ungated_read_only_and_do_not_create_session_cookie()
     assert importer.status_code == 200
     assert broker.status_code == 200
     assert reuse.status_code == 200
-    assert "sample · read-only" in importer.text
+    assert "Read-only sample" in importer.text
+    assert "Synthetic data · Read-only" in importer.text
     assert "Importer" in importer.text
     assert "Customs Broker" in broker.text
     assert "verified supplier evidence" in reuse.text.lower()
@@ -128,6 +129,14 @@ def test_public_samples_are_ungated_read_only_and_do_not_create_session_cookie()
     assert "/sandbox/start?mode=own" in reuse.text
     assert "/static/img/logo.svg" in importer.text
     assert "/static/img/logo.svg" in broker.text
+    assert 'aria-label="Sample workspace navigation"' in importer.text
+    assert "Synthetic product sample" in importer.text
+    assert "Evidence reused" in importer.text
+    assert ">0</p>" in importer.text
+    assert "4 fields reused automatically" in reuse.text
+    assert "4 fields avoid being re-reviewed from scratch" in reuse.text
+    assert "Product boundary" in importer.text
+    assert "does not file declarations on your behalf" in importer.text
     assert "credit card" in importer.text.lower()
 
 
@@ -203,7 +212,7 @@ def test_evaluation_ui_exposes_five_shipment_and_read_only_contract() -> None:
     assert "Raw documents are permanently deleted after 4 hours" in sandbox
     assert "Private processing" in sandbox
     assert "Tenant isolated" in sandbox
-    assert "Model improvement is off by default" in sandbox
+    assert "Product quality improvement is off by default" in sandbox
     assert 'name="learning_consent"' not in sandbox
     assert "Evaluation progress" in base
     assert "evaluation_completed_operations" in base
