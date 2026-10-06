@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from litoral_trace.db.models import (
     AssuranceDocument,
     ReconciliationIssue,
+    UsLaceyEvaluation,
     UsLaceyFieldCandidate,
     UsLaceyOperation,
     UsLaceyOperationDocument,
@@ -292,6 +293,47 @@ class UsLaceyOperationService:
                         "This workspace has reached its current operation limit."
                     )
 
+                if str(subscription.plan_code) in {"SANDBOX", "EVALUATION"}:
+                    evaluation = session.scalar(
+                        select(UsLaceyEvaluation)
+                        .where(UsLaceyEvaluation.organization_id == org_id)
+                        .with_for_update()
+                    )
+                    if evaluation is None:
+                        raise UsLaceyOperationConflict(
+                            "Evaluation state is not available."
+                        )
+                    evaluation_status = str(evaluation.status)
+                    if evaluation_status in {"EXHAUSTED", "EXPIRED"}:
+                        raise UsLaceyOperationConflict(
+                            "This evaluation is read-only."
+                        )
+                    evaluation_limit = (
+                        1
+                        if evaluation_status == "ANONYMOUS"
+                        else int(evaluation.operation_limit)
+                    )
+                    active_operation_count = int(
+                        session.scalar(
+                            select(func.count(UsLaceyOperation.id)).where(
+                                UsLaceyOperation.organization_id == org_id,
+                                UsLaceyOperation.status != "FAILED",
+                            )
+                        )
+                        or 0
+                    )
+                    if active_operation_count >= evaluation_limit:
+                        if (
+                            evaluation_status == "ANONYMOUS"
+                            and int(evaluation.successful_operations_used) >= 1
+                        ):
+                            raise UsLaceyOperationConflict(
+                                "Save this evaluation to test 4 more shipments."
+                            )
+                        raise UsLaceyOperationConflict(
+                            "This evaluation has no available shipment slots right now."
+                        )
+
             operation = UsLaceyOperation(
                 organization_id=org_id,
                 created_by_user_id=created_by_user_id,
@@ -375,7 +417,10 @@ class UsLaceyOperationService:
                             confidence=0.0,
                         )
                     )
-            if subscription is not None:
+            if (
+                subscription is not None
+                and str(subscription.plan_code) not in {"SANDBOX", "EVALUATION"}
+            ):
                 subscription.used_operations = int(subscription.used_operations) + 1
             append_operation_event(
                 session,

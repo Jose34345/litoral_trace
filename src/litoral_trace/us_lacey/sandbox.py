@@ -23,7 +23,7 @@ from litoral_trace.us_lacey.db import get_us_lacey_db_session
 SANDBOX_TTL_HOURS = 4
 SUPPORT_DEBUG_RETENTION_HOURS = 72
 SANDBOX_MAX_OPERATIONS = 1
-SANDBOX_MAX_DOCUMENTS_PER_OPERATION = 3
+SANDBOX_MAX_DOCUMENTS_PER_OPERATION = 10
 
 
 class UsLaceySandboxError(RuntimeError):
@@ -279,7 +279,8 @@ def enforce_sandbox_document_capacity(
         )
         if subscription is None:
             raise UsLaceySandboxError("Workspace is unavailable.")
-        if str(subscription.plan_code) != "SANDBOX":
+        plan_code = str(subscription.plan_code)
+        if plan_code not in {"SANDBOX", "EVALUATION"}:
             return
 
         expires_at = (
@@ -289,7 +290,7 @@ def enforce_sandbox_document_capacity(
         )
         if expires_at is None or expires_at <= current_time:
             raise UsLaceySandboxError(
-                "This sandbox has expired. Start a new sandbox to continue."
+                "This evaluation has expired. Start a new evaluation to continue."
             )
 
         operation = session.scalar(
@@ -304,7 +305,7 @@ def enforce_sandbox_document_capacity(
         projected = int(operation.document_count) + incoming
         if projected > SANDBOX_MAX_DOCUMENTS_PER_OPERATION:
             raise UsLaceySandboxError(
-                "Sandbox limit reached: up to 3 documents are allowed per operation."
+                "Evaluation limit reached: up to 10 documents are allowed per operation."
             )
     except UsLaceySandboxError:
         raise

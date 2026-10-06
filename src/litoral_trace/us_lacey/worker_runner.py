@@ -26,6 +26,9 @@ from litoral_trace.us_lacey.pilot_watchdog import (
     run_lacey_pilot_watchdog,
 )
 from litoral_trace.us_lacey.worker_once import EXIT_NO_JOB, EXIT_OK
+from litoral_trace.workers.evaluation_raw_cleanup import (
+    run_evaluation_raw_cleanup_once,
+)
 from litoral_trace.workers.sandbox_cleanup import (
     recover_stale_sandbox_purge_jobs,
     run_sandbox_cleanup_once,
@@ -180,6 +183,9 @@ def run_supervisor(
     )
     supervisor_id = f"supervisor-{socket.gethostname()}-{uuid4().hex[:10]}"
     sandbox_cleanup_worker_id = f"{supervisor_id}-sandbox-cleanup"
+    evaluation_raw_cleanup_worker_id = (
+        f"{supervisor_id}-evaluation-raw-cleanup"
+    )
     next_recovery = 0.0
     next_pilot_watchdog = 0.0
     next_sandbox_cleanup = 0.0
@@ -208,6 +214,14 @@ def run_supervisor(
                     _LOG.info(
                         "sandbox_cleanup_job_attempted worker_id=%s",
                         sandbox_cleanup_worker_id,
+                    )
+                raw_processed = run_evaluation_raw_cleanup_once(
+                    worker_id=evaluation_raw_cleanup_worker_id
+                )
+                if raw_processed:
+                    _LOG.info(
+                        "evaluation_raw_cleanup_job_attempted worker_id=%s",
+                        evaluation_raw_cleanup_worker_id,
                     )
                 _notify(on_healthy_iteration)
             except Exception:

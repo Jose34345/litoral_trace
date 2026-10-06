@@ -19,9 +19,9 @@ from litoral_trace.us_lacey.db import get_us_lacey_engine
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.schema_compatibility")
 
-# 075 adds the U.S. supplier-identifier and explicit operation/product
-# identity graph required for safe cross-shipment compliance-memory reuse.
-_REQUIRED_US_LACEY_SCHEMA_REVISION = "075_us_lacey_identity_and_product_bridge"
+# 076 adds the product-led five-shipment evaluation, raw-document
+# four-hour retention jobs, and activation funnel contracts.
+_REQUIRED_US_LACEY_SCHEMA_REVISION = "076_us_lacey_product_led_evaluation"
 
 
 @lru_cache(maxsize=1)

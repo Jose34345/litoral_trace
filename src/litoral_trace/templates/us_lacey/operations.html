@@ -31,7 +31,7 @@
   <article class="lt-enterprise-stat">
     <p class="lt-enterprise-stat__label">Completed this month</p>
     <p class="lt-enterprise-stat__value">{{ metrics.completed_this_month }}</p>
-    <p class="lt-enterprise-stat__meta">{{ entitlement.remaining_operations }} of {{ entitlement.monthly_operation_limit }} plan operations remaining</p>
+    <p class="lt-enterprise-stat__meta">{{ entitlement.remaining_operations }} of {{ entitlement.monthly_operation_limit }} {{ "evaluation shipments" if entitlement.is_evaluation else "plan operations" }} remaining</p>
   </article>
 </section>
 
@@ -68,7 +68,7 @@
   </form>
 </details>
 {% else %}
-<section class="lt-alert lt-alert--warning"><i class="fa-solid fa-triangle-exclamation lt-alert__icon" aria-hidden="true"></i><div><p class="lt-alert__title">Operation limit reached</p><p class="lt-alert__message">Existing operations remain available for evidence review and export.</p></div></section>
+<section class="lt-alert lt-alert--warning"><i class="fa-solid fa-triangle-exclamation lt-alert__icon" aria-hidden="true"></i><div><p class="lt-alert__title">{{ "Evaluation complete" if entitlement.evaluation_read_only else "Operation limit reached" }}</p><p class="lt-alert__message">{% if entitlement.evaluation_can_claim %}Save your evaluation to unlock four more real shipments.{% elif entitlement.evaluation_read_only %}Existing Operations, Evidence, Suppliers and Audit Log remain available read-only.{% else %}Existing operations remain available for evidence review and export.{% endif %}</p></div></section>
 {% endif %}
 
 <section class="lt-operations-panel">

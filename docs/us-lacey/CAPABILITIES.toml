@@ -481,3 +481,35 @@ workflows = [
   ".github/workflows/us-lacey-postgres-gate.yml"
 ]
 notes = "Operation activity is tenant-scoped under FORCE RLS. The runtime role receives SELECT/INSERT only: historical events cannot be updated or deleted while an operation exists. Human actor names are resolved through a narrow tenant-scoped SECURITY DEFINER identity projection; the runtime role does not receive direct SELECT on users. Sandbox/tenant deletion may cascade the record under the established retention lifecycle. Retryable system hooks use deterministic event keys; event details contain structured compliance context, never source-document bytes or full raw document text."
+
+
+[capabilities.product_led_evaluation]
+status = "ACTIVE"
+owner = "us_lacey sandbox + evaluation lifecycle + growth attribution"
+authority = "commercial activation"
+implementation = [
+  "src/litoral_trace/db/models/us_lacey_evaluation.py",
+  "src/litoral_trace/us_lacey/evaluation.py",
+  "src/litoral_trace/us_lacey/access.py",
+  "src/litoral_trace/us_lacey/workflow.py",
+  "src/litoral_trace/us_lacey/growth_attribution.py",
+  "src/litoral_trace/web/us_lacey_sandbox.py",
+  "src/litoral_trace/web/us_lacey_pilot_app.py",
+  "src/litoral_trace/workers/evaluation_raw_cleanup.py",
+  "src/litoral_trace/templates/us_lacey/sandbox_start.html",
+  "src/litoral_trace/templates/us_lacey/evaluation_sample.html",
+  "src/litoral_trace/templates/us_lacey/evaluation_claim.html",
+  "src/litoral_trace/templates/us_lacey/evaluation_upgrade.html"
+]
+migrations = ["alembic/versions/076_us_lacey_product_led_evaluation.py"]
+tests = [
+  "tests/test_us_lacey_product_led_evaluation.py",
+  "tests/test_us_lacey_product_led_evaluation_postgres.py",
+  "tests/test_us_lacey_sandbox.py",
+  "tests/test_us_lacey_worker_health.py"
+]
+workflows = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/us-lacey-postgres-gate.yml"
+]
+notes = "Ungated synthetic importer/broker samples never create a tenant or consume quota. The first real shipment is anonymous and card-free. After one successfully processed shipment, a work-email-only claim promotes the same tenant into a five-successful-shipment evaluation. FAILED processing never consumes quota and a distinct operation is counted at most once, so reprocessing is free. Claimed evaluations use a sliding seven-day inactivity window; after five successful shipments they become read-only rather than being immediately deleted. Raw Vault object bytes are independently scheduled for physical deletion four hours after each upload, while derived operation/review/supplier/audit state remains available for the active evaluation. Growth attribution records product-qualified signals without storing customer document content."

@@ -43,12 +43,12 @@ class _Engine:
         return _Connection(self._value, self.statements)
 
 
-def test_required_schema_revision_is_identity_memory_contract() -> None:
-    assert schema_compatibility.required_us_lacey_schema_revision() == "075_us_lacey_identity_and_product_bridge"
+def test_required_schema_revision_is_activation_evaluation_contract() -> None:
+    assert schema_compatibility.required_us_lacey_schema_revision() == "076_us_lacey_product_led_evaluation"
 
 
-def test_schema_probe_is_ready_on_required_identity_memory_revision(monkeypatch) -> None:
-    engine = _Engine("075_us_lacey_identity_and_product_bridge")
+def test_schema_probe_is_ready_on_required_activation_evaluation_revision(monkeypatch) -> None:
+    engine = _Engine("076_us_lacey_product_led_evaluation")
     monkeypatch.setattr(schema_compatibility, "get_us_lacey_engine", lambda: engine)
 
     assert schema_compatibility.probe_us_lacey_schema_compatibility() is True

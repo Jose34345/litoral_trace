@@ -59,8 +59,14 @@
     <div class="lt-sidebar__footer shrink-0 border-t p-3">
       {% if entitlement is defined and entitlement %}
       <div class="mb-3 rounded-xl border border-slate-700 bg-slate-900/80 p-3" aria-label="Operation allowance">
-        <div class="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-300"><span>Operations remaining</span><span>{{ entitlement.remaining_operations }} / {{ entitlement.monthly_operation_limit }}</span></div>
-        <progress class="lt-usage-progress mt-2" max="{{ entitlement.monthly_operation_limit }}" value="{{ entitlement.used_operations }}" aria-label="Monthly operation usage"></progress>
+        <div class="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-300">
+          <span>{{ "Evaluation shipments remaining" if entitlement.is_evaluation else "Operations remaining" }}</span>
+          <span>{{ entitlement.remaining_operations }} / {{ entitlement.monthly_operation_limit }}</span>
+        </div>
+        <progress class="lt-usage-progress mt-2" max="{{ entitlement.monthly_operation_limit }}" value="{{ entitlement.used_operations }}" aria-label="{{ 'Evaluation shipment usage' if entitlement.is_evaluation else 'Monthly operation usage' }}"></progress>
+        {% if entitlement.is_evaluation %}
+        <p class="mt-2 text-[10px] leading-4 text-slate-500">{{ "Read-only evaluation" if entitlement.evaluation_read_only else "No credit card · reprocessing is free" }}</p>
+        {% endif %}
       </div>
       {% elif billing is defined and billing %}
       <div class="mb-3 rounded-xl border border-slate-700 bg-slate-900/80 p-3" aria-label="Operation allowance">
@@ -104,6 +110,25 @@
   <main id="main-content" tabindex="-1"><section class="bg-slate-50 px-4 py-8 sm:px-6 lg:px-8"><div class="mx-auto max-w-6xl"><div class="lt-page">
 {% endif %}
 
+{% if authenticated|default(false) and entitlement is defined and entitlement %}
+  {% if entitlement.evaluation_can_claim %}
+  <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+    <div>
+      <p class="text-xs font-bold text-slate-950">Your first real shipment is ready.</p>
+      <p class="mt-0.5 text-[11px] leading-5 text-slate-600">Save this evaluation with a work email to test four more shipments. No credit card.</p>
+    </div>
+    <a href="/evaluation/save" class="inline-flex items-center rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-800">Save evaluation →</a>
+  </div>
+  {% elif entitlement.evaluation_read_only %}
+  <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+    <div>
+      <p class="text-xs font-bold text-slate-950">Five-shipment evaluation complete.</p>
+      <p class="mt-0.5 text-[11px] leading-5 text-slate-600">Your results remain available read-only. Continue with Litoral Trace to create or modify shipments.</p>
+    </div>
+    <a href="/billing?evaluation=complete" class="inline-flex items-center rounded-lg border border-amber-300 bg-white px-3.5 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100">Continue with Litoral Trace →</a>
+  </div>
+  {% endif %}
+{% endif %}
 {% block lacey_content %}{% endblock %}
 
 {% if authenticated|default(false) %}

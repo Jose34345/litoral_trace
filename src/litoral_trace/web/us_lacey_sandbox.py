@@ -13,6 +13,8 @@ from litoral_trace.us_lacey.growth_attribution import (
     UsLaceyOutreachError,
     bind_outreach_to_sandbox,
     open_outreach_link,
+    safe_record_outreach_event,
+    safe_record_pre_sandbox_outreach_event,
 )
 from litoral_trace.us_lacey.portal_auth import (
     US_LACEY_SESSION_COOKIE,
@@ -32,6 +34,60 @@ from litoral_trace.web.templates import render_template
 
 router = APIRouter(tags=["U.S. Lacey Sandbox"])
 LOGGER = logging.getLogger(__name__)
+
+
+_SAMPLE_PERSONAS = {
+    "importer": {
+        "label": "Importer",
+        "title": "See a wood import reconciled before uploading anything",
+        "description": (
+            "A synthetic shipment shows how Litoral Trace reconciles normal supplier "
+            "documents, isolates exceptions and reuses verified supplier evidence."
+        ),
+        "first": {
+            "reference": "LT-SAMPLE-IMP-001",
+            "documents": 7,
+            "fields": 22,
+            "exceptions": 4,
+            "species": "Quercus alba",
+            "harvest": "United States",
+            "payoff": "Supplier evidence verified for future shipments",
+        },
+        "second": {
+            "reference": "LT-SAMPLE-IMP-002",
+            "documents": 5,
+            "fields": 20,
+            "exceptions": 1,
+            "reused": 4,
+            "payoff": "4 fields resolved from previously verified supplier evidence",
+        },
+    },
+    "broker": {
+        "label": "Customs Broker",
+        "title": "See the exception-first broker workflow",
+        "description": (
+            "A synthetic client file shows how Litoral Trace reconciles import "
+            "documents, surfaces only unresolved Lacey items and prepares LAWGS-ready output."
+        ),
+        "first": {
+            "reference": "LT-SAMPLE-BROKER-001",
+            "documents": 8,
+            "fields": 24,
+            "exceptions": 5,
+            "species": "Swietenia macrophylla",
+            "harvest": "Brazil",
+            "payoff": "Missing client evidence isolated before filing",
+        },
+        "second": {
+            "reference": "LT-SAMPLE-BROKER-002",
+            "documents": 6,
+            "fields": 23,
+            "exceptions": 1,
+            "reused": 3,
+            "payoff": "3 supplier claims reused; only one client exception remains",
+        },
+    },
+}
 
 
 def _harden_public_response(response):
@@ -85,6 +141,53 @@ def sandbox_outreach_referral(slug: str):
         secure=portal.session_cookie_secure,
         samesite="lax",
         path="/",
+    )
+    return _harden_public_response(response)
+
+
+@router.get("/try/{persona}", include_in_schema=False)
+def evaluation_sample_view(
+    persona: str,
+    request: Request,
+    step: int = 1,
+    outreach_attribution: str | None = Cookie(
+        None,
+        alias=OUTREACH_ATTRIBUTION_COOKIE,
+    ),
+):
+    normalized = str(persona or "").strip().lower()
+    sample = _SAMPLE_PERSONAS.get(normalized)
+    if sample is None:
+        return _harden_public_response(
+            PlainTextResponse(
+                "Sample is unavailable.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        )
+    current_step = 2 if int(step) >= 2 else 1
+    if outreach_attribution:
+        safe_record_pre_sandbox_outreach_event(
+            attribution_session_id=outreach_attribution,
+            event_name="SAMPLE_STARTED" if current_step == 1 else "SAMPLE_REUSE_REACHED",
+            event_key=normalized,
+            metadata={"persona": normalized, "step": current_step},
+        )
+        if current_step == 2:
+            safe_record_pre_sandbox_outreach_event(
+                attribution_session_id=outreach_attribution,
+                event_name="SAMPLE_COMPLETED",
+                event_key=normalized,
+                metadata={"persona": normalized},
+            )
+    response = render_template(
+        request,
+        "us_lacey/evaluation_sample.html",
+        {
+            "persona": normalized,
+            "sample": sample,
+            "step": current_step,
+        },
+        status_code=status.HTTP_200_OK,
     )
     return _harden_public_response(response)
 
@@ -161,7 +264,7 @@ def sandbox_start_provision(
             client_ip=client_ip,
             user_agent=user_agent,
             learning_opt_in=learning_consent == "accepted",
-            support_debug_opt_in=support_debug_consent == "accepted",
+            support_debug_opt_in=False,
         )
     except UsLaceySandboxError as exc:
         response_status = (
@@ -185,6 +288,13 @@ def sandbox_start_provision(
             LOGGER.exception(
                 "us_lacey_outreach_bind_failed",
                 extra={"organization_id": sandbox.organization_id},
+            )
+        else:
+            safe_record_outreach_event(
+                session_token=sandbox.session_token,
+                organization_id=sandbox.organization_id,
+                event_name="OWN_SHIPMENT_STARTED",
+                event_key="first-own-shipment",
             )
 
     response = RedirectResponse(

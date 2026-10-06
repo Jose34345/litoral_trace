@@ -25,12 +25,27 @@ OUTREACH_ATTRIBUTION_COOKIE_MAX_AGE = 7 * 24 * 60 * 60
 _OUTREACH_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{2,95}$")
 _ALLOWED_EVENTS = frozenset(
     {
+        "OWN_SHIPMENT_STARTED",
         "OPERATION_CREATED",
         "DOCUMENTS_UPLOADED",
+        "OWN_SHIPMENT_PROCESSED",
+        "EVALUATION_CLAIMED",
+        "EVALUATION_OPERATION_2",
+        "EVIDENCE_REUSED",
         "REVIEW_REACHED",
         "AUTO_RESOLVED_CONFIRMED",
         "REVIEW_COMPLETED",
         "EXPORT_DOWNLOADED",
+        "EVALUATION_EXHAUSTED",
+        "UPGRADE_STARTED",
+        "PQL_QUALIFIED",
+    }
+)
+_PRE_SANDBOX_EVENTS = frozenset(
+    {
+        "SAMPLE_STARTED",
+        "SAMPLE_REUSE_REACHED",
+        "SAMPLE_COMPLETED",
     }
 )
 
@@ -175,6 +190,70 @@ def record_outreach_event(
         raise UsLaceyOutreachError("Unable to record outreach event.") from exc
     finally:
         db.close()
+
+
+def record_pre_sandbox_outreach_event(
+    *,
+    attribution_session_id: UUID | str,
+    event_name: str,
+    event_key: str = "",
+    metadata: dict[str, object] | None = None,
+) -> bool:
+    """Record an ungated sample event before a sandbox tenant exists."""
+    try:
+        attribution_id = UUID(str(attribution_session_id))
+    except (TypeError, ValueError) as exc:
+        raise UsLaceyOutreachError("Outreach session is invalid.") from exc
+
+    normalized_event = str(event_name or "").strip().upper()
+    if normalized_event not in _PRE_SANDBOX_EVENTS:
+        raise UsLaceyOutreachError("Outreach event is invalid.")
+
+    safe_metadata = metadata or {}
+    serialized = json.dumps(safe_metadata, separators=(",", ":"), sort_keys=True)
+    if len(serialized) > 4096:
+        raise UsLaceyOutreachError("Outreach event metadata is too large.")
+
+    db = get_us_lacey_db_session()
+    try:
+        result = db.execute(
+            text(
+                """
+                SELECT public.us_lacey_outreach_record_pre_sandbox_event(
+                    :attribution_session_id,
+                    :event_name,
+                    :event_key,
+                    CAST(:event_metadata AS jsonb)
+                )
+                """
+            ),
+            {
+                "attribution_session_id": attribution_id,
+                "event_name": normalized_event,
+                "event_key": str(event_key or "")[:128],
+                "event_metadata": serialized,
+            },
+        ).scalar_one()
+        db.commit()
+        return bool(result)
+    except Exception as exc:
+        db.rollback()
+        raise UsLaceyOutreachError(
+            "Unable to record pre-sandbox outreach event."
+        ) from exc
+    finally:
+        db.close()
+
+
+def safe_record_pre_sandbox_outreach_event(**kwargs: object) -> bool:
+    try:
+        return record_pre_sandbox_outreach_event(**kwargs)
+    except Exception:
+        LOGGER.exception(
+            "us_lacey_pre_sandbox_outreach_event_failed",
+            extra={"event_name": kwargs.get("event_name")},
+        )
+        return False
 
 
 def safe_record_outreach_event(**kwargs: object) -> bool:

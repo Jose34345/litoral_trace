@@ -69,6 +69,11 @@ def test_worker_health_reports_healthy_cleanup_after_grace(monkeypatch) -> None:
         "has_overdue_sandbox_purge_backlog",
         lambda **_kwargs: False,
     )
+    monkeypatch.setattr(
+        worker_app,
+        "has_overdue_evaluation_raw_purge_backlog",
+        lambda **_kwargs: False,
+    )
 
     response = Response()
     payload = worker_app.health(response)
@@ -78,4 +83,32 @@ def test_worker_health_reports_healthy_cleanup_after_grace(monkeypatch) -> None:
         "status": "healthy",
         "service": "us-lacey-worker",
         "sandbox_cleanup": "healthy",
+        "evaluation_raw_cleanup": "healthy",
+    }
+
+
+def test_worker_health_fails_when_evaluation_raw_cleanup_is_overdue(monkeypatch) -> None:
+    _prime_worker_state(
+        uptime_seconds=worker_app._SANDBOX_CLEANUP_HEALTH_GRACE_SECONDS + 5
+    )
+    monkeypatch.setattr(
+        worker_app,
+        "has_overdue_sandbox_purge_backlog",
+        lambda **_kwargs: False,
+    )
+    monkeypatch.setattr(
+        worker_app,
+        "has_overdue_evaluation_raw_purge_backlog",
+        lambda **_kwargs: True,
+    )
+
+    response = Response()
+    payload = worker_app.health(response)
+
+    assert response.status_code == 503
+    assert payload == {
+        "status": "not_ready",
+        "service": "us-lacey-worker",
+        "sandbox_cleanup": "healthy",
+        "evaluation_raw_cleanup": "overdue",
     }
