@@ -95,12 +95,16 @@ def test_us_lacey_templates_use_shared_design_system_with_isolated_english_shell
         assert '{% extends "public/base_public.html" %}' not in source
 
 
-def test_us_lacey_new_operation_is_document_first_zero_data_entry() -> None:
+def test_us_lacey_new_shipment_is_document_first_with_optional_direct_upload() -> None:
     source = (TEMPLATES / "new_operation.html").read_text(encoding="utf-8")
     assert 'name="client_reference"' in source
-    assert "Create workspace & upload documents" in source
+    assert 'name="documents"' in source
+    assert 'multiple' in source
+    assert 'enctype="multipart/form-data"' in source
+    assert "Create shipment & upload documents" in source
+    assert "Audit trail enabled" in source
     assert "Founding Broker" in source
-    assert "Leave this blank and Litoral Trace will create an internal reference automatically." in source
+    assert "Leave blank and Litoral Trace creates an internal shipment reference automatically." in source
     for removed_field in (
         "importer_name",
         "supplier_name",

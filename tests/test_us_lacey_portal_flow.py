@@ -349,7 +349,16 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
     assert 'name="csrf_token"' in new_operation.text
     assert 'name="client_reference"' in new_operation.text
     assert "Founding Broker" in new_operation.text
-    assert "Create workspace &amp; upload documents" in new_operation.text
+    assert "Create shipment &amp; upload documents" in new_operation.text
+    assert 'name="documents"' in new_operation.text
+    assert "Audit trail enabled" in new_operation.text
+    regulatory = client.get("/regulatory")
+    assert regulatory.status_code == 200
+    assert "Regulatory Analysis" in regulatory.text
+    assert "us-lacey-regulatory-rules-v4" in regulatory.text
+    assert "aphis-phase-vii-2024" in regulatory.text
+    assert "Audit trail enabled" in regulatory.text
+
     for removed_field in (
         "importer_name",
         "supplier_name",
@@ -430,6 +439,69 @@ def test_new_operation_submit_uses_zero_data_entry_defaults(monkeypatch):
         "operation_date",
     ):
         assert legacy_field not in observed
+
+
+def test_new_shipment_submit_can_upload_documents_immediately(monkeypatch):
+    _portal_env(monkeypatch)
+    identity = UsLaceyPortalIdentity(
+        user_id=9,
+        organization_id=43,
+        email="importer@example.com",
+        full_name="Importer User",
+        legal_name="Importer LLC",
+        business_type="IMPORTER",
+        account_status="PILOT",
+    )
+    entitlement = SimpleNamespace(
+        used_operations=0,
+        monthly_operation_limit=100,
+        remaining_operations=100,
+    )
+    uploaded: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.resolve_us_lacey_session",
+        lambda _token: identity,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.require_us_lacey_operational_access",
+        lambda **_kwargs: entitlement,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.verify_us_lacey_csrf",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.create_us_lacey_customer_operation",
+        lambda **_kwargs: SimpleNamespace(public_id="OP-DIRECT-UPLOAD"),
+    )
+
+    def fake_upload_batch(**kwargs):
+        uploaded.update(kwargs)
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.upload_and_enqueue_us_lacey_document_batch",
+        fake_upload_batch,
+    )
+
+    client = TestClient(app, follow_redirects=False)
+    client.cookies.set(US_LACEY_SESSION_COOKIE, "opaque-us-session-token")
+    response = client.post(
+        "/operations/new",
+        data={"client_reference": "SHIP-43", "csrf_token": "test-token"},
+        files=[
+            ("documents", ("invoice.pdf", b"invoice-bytes", "application/pdf")),
+            ("documents", ("packing.pdf", b"packing-bytes", "application/pdf")),
+        ],
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/operations/OP-DIRECT-UPLOAD?uploaded=1"
+    assert uploaded["organization_id"] == 43
+    assert uploaded["operation_public_id"] == "OP-DIRECT-UPLOAD"
+    assert len(uploaded["documents"]) == 2
+    assert uploaded["documents"][0][0] == "invoice.pdf"
+    assert uploaded["documents"][0][3] == "UNKNOWN"
 
 
 def test_new_operation_submit_preserves_optional_customer_reference(monkeypatch):

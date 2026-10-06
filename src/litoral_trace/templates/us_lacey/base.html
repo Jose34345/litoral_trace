@@ -27,32 +27,38 @@
       <section class="lt-nav-section mb-5">
         <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Workspace</p>
         <div class="space-y-1">
-          <a href="/operations" {% if current_path.startswith('/operations') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-briefcase" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Operations</span></a>
+          <a href="/operations" {% if current_path.startswith('/operations') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-briefcase" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Operations</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{{ entitlement.evaluation_completed_operations ~ '/' ~ entitlement.evaluation_total_operations if evaluation_mode else 'Queue' }}</span></a>
           <a href="/evidence" {% if current_path.startswith('/evidence') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
             <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-folder-open" aria-hidden="true"></i></span>
-            <span class="min-w-0 flex-1 truncate">Evidence</span>
+            <span class="min-w-0 flex-1 truncate">Evidence</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Source</span>
           </a>
           <a href="/suppliers" {% if current_path.startswith('/suppliers') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
             <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-building-circle-check" aria-hidden="true"></i></span>
-            <span class="min-w-0 flex-1 truncate">Suppliers</span>
+            <span class="min-w-0 flex-1 truncate">Suppliers</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Memory</span>
           </a>
           <a href="/audit-log" {% if current_path.startswith('/audit-log') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
             <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i></span>
-            <span class="min-w-0 flex-1 truncate">Audit Log</span>
+            <span class="min-w-0 flex-1 truncate">Audit Log</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-400">Enabled</span>
           </a>
         </div>
       </section>
       <section class="lt-nav-section mb-5">
-        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Compliance</p>
+        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Regulatory</p>
         <div class="space-y-1">
-          <a href="/legal/product-use-terms" {% if current_path == '/legal/product-use-terms' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Product Use</span></a>
+          <a href="/regulatory" {% if current_path == '/regulatory' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Regulatory Analysis</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Rules v4</span></a>
+          <a href="/legal/product-use-terms" {% if current_path == '/legal/product-use-terms' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-file-contract" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Product Use Terms</span></a>
         </div>
       </section>
       {% if evaluation_mode %}
       <section class="lt-nav-section">
         <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Evaluation</p>
-        <div class="px-3 py-2.5 text-xs font-medium text-slate-400">
-          <span class="inline-flex items-center gap-2"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Private workspace</span>
+        <div class="space-y-1">
+          <div class="px-3 py-2.5 text-xs font-medium text-slate-400">
+            <span class="inline-flex items-center gap-2"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Private workspace</span>
+          </div>
+          {% if entitlement.evaluation_claimed %}
+          <a href="/billing" class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Upgrade</span></a>
+          {% endif %}
         </div>
       </section>
       {% else %}
@@ -124,14 +130,14 @@
         <div class="min-w-0">
           {% if evaluation_mode %}
           <p class="truncate text-sm font-bold text-slate-950">{{ 'Evaluation workspace' if entitlement.evaluation_claimed else 'Private evaluation' }}</p>
-          <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey Act evaluation · Raw source retention {{ entitlement.evaluation_raw_retention_hours or 4 }}h · Human review required</p>
+          <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey evaluation · Regulatory ruleset active · Raw retention {{ entitlement.evaluation_raw_retention_hours or 4 }}h · Human review required</p>
           {% else %}
           <p class="truncate text-sm font-bold text-slate-950">{{ identity.legal_name if identity is defined else 'Litoral Trace' }}</p>
-          <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey Act workspace · Declaration preparation · Human review required</p>
+          <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey Act workspace · Regulatory ruleset active · Declaration preparation · Human review required</p>
           {% endif %}
         </div>
         <div class="mx-auto hidden w-full max-w-xl md:block">
-          <label class="relative block"><span class="sr-only">Jump to workspace section</span><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i><input id="lt-command-search" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-20 text-xs text-slate-800 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20" placeholder="Jump to operations, suppliers, audit log…" autocomplete="off" aria-label="Workspace quick navigation"><span id="lt-command-shortcut" class="lt-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" aria-hidden="true">Ctrl K</span></label>
+          <label class="relative block"><span class="sr-only">Jump to workspace section</span><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i><input id="lt-command-search" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-20 text-xs text-slate-800 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20" placeholder="Jump to shipments, suppliers, regulatory, audit…" autocomplete="off" aria-label="Workspace quick navigation"><span id="lt-command-shortcut" class="lt-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" aria-hidden="true">Ctrl K</span></label>
         </div>
         <div class="ml-auto flex items-center gap-2">
           <details class="relative">
