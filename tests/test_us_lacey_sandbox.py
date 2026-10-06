@@ -230,12 +230,18 @@ def test_public_sandbox_get_is_side_effect_free(monkeypatch):
     response = client.get("/sandbox/start", follow_redirects=False)
 
     assert response.status_code == 200
-    assert "See the workflow before you upload anything" in response.text
-    assert "I’m an Importer" in response.text
-    assert "I’m a Customs Broker" in response.text
+    assert "See how shipment documents become review-ready Lacey data" in response.text
+    assert "Built for U.S. Lacey workflows" in response.text
+    assert "Recommended first step" in response.text
+    assert "4 → 1 exceptions · 4 fields reused" in response.text
+    assert "5 → 1 exceptions · 3 claims reused" in response.text
+    assert "What Litoral Trace does" in response.text
+    assert "does not file declarations on your behalf" in response.text
+    assert "Importer workflow" in response.text
+    assert "Customs broker workflow" in response.text
     assert "Use my own documents" in response.text
     assert "5-shipment evaluation" in response.text
-    assert "No account and no credit card are required." in response.text
+    assert "No upload, account or card." in response.text
     assert "Raw documents are permanently deleted after 4 hours." in response.text
     assert 'method="post"' in response.text
     assert 'action="/sandbox/start"' in response.text
@@ -243,7 +249,7 @@ def test_public_sandbox_get_is_side_effect_free(monkeypatch):
     assert 'name="learning_consent"' not in response.text
     assert 'name="support_debug_consent"' not in response.text
     assert "Help improve Litoral Trace" not in response.text
-    assert "Model improvement is off by default" in response.text
+    assert "Product quality improvement is off by default" in response.text
     assert "Private processing" in response.text
     assert "Tenant isolated" in response.text
     assert "4-hour source retention" in response.text
