@@ -117,6 +117,7 @@ from litoral_trace.web.us_lacey_operational_views import (
     render_operation_workspace,
     render_operations,
     render_processing_fragment,
+    render_regulatory_overview,
 )
 from litoral_trace.web.us_lacey_audit_views import render_audit_log_list
 from litoral_trace.web.us_lacey_evaluation_views import (
@@ -592,6 +593,26 @@ def billing_page(
     )
 
 
+@app.get("/regulatory", response_class=HTMLResponse)
+def regulatory_overview_page(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    return _html(
+        render_regulatory_overview(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+        )
+    )
+
+
 @app.get("/operations", response_class=HTMLResponse)
 def operations_page(
     request: Request,
@@ -881,12 +902,15 @@ def new_operation_page(
 
 
 @app.post("/operations/new", response_class=HTMLResponse)
-def new_operation_submit(
+async def new_operation_submit(
     request: Request,
     client_reference: str = Form(""),
+    documents: list[UploadFile] | None = File(None),
+    document_role: str = Form("UNKNOWN"),
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
+    created_public_id: str | None = None
     try:
         identity, entitlement = _operational_mutation_context(us_session)
         verify_us_lacey_csrf(
@@ -901,18 +925,62 @@ def new_operation_submit(
             client_reference=reference,
             line_references=("1",),
         )
+        created_public_id = str(created.public_id)
         safe_record_outreach_event(
             session_token=us_session or "",
             organization_id=identity.organization_id,
             event_name="OPERATION_CREATED",
-            event_key=str(created.public_id),
+            event_key=created_public_id,
         )
-        return RedirectResponse(f"/operations/{created.public_id}", status_code=303)
+
+        uploads = [upload for upload in (documents or ()) if upload.filename]
+        if uploads:
+            payloads: list[tuple[str, str, bytes, str]] = []
+            for upload in uploads:
+                content = await upload.read()
+                if not content:
+                    raise UsLaceyWorkflowError("The uploaded document is empty.")
+                payloads.append((
+                    upload.filename or "document",
+                    upload.content_type or "application/octet-stream",
+                    content,
+                    document_role,
+                ))
+            upload_and_enqueue_us_lacey_document_batch(
+                organization_id=identity.organization_id,
+                user_id=identity.user_id,
+                operation_public_id=created_public_id,
+                documents=tuple(payloads),
+            )
+            safe_record_outreach_event(
+                session_token=us_session or "",
+                organization_id=identity.organization_id,
+                event_name="DOCUMENTS_UPLOADED",
+                event_key=created_public_id,
+                metadata={"document_count": len(payloads)},
+            )
+            return RedirectResponse(
+                f"/operations/{created_public_id}?uploaded=1",
+                status_code=303,
+            )
+        return RedirectResponse(f"/operations/{created_public_id}", status_code=303)
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
     except UsLaceyOperationalAccessError:
         return RedirectResponse("/billing", status_code=303)
-    except (UsLaceyCsrfError, UsLaceyOperationError, ValueError) as exc:
+    except (UsLaceyCsrfError, UsLaceyWorkflowError, UsLaceyOperationError, ValueError) as exc:
+        if created_public_id:
+            try:
+                return _detail_page(
+                    request=request,
+                    identity=identity,
+                    operation_public_id=created_public_id,
+                    us_session=us_session or "",
+                    error=str(exc),
+                    status_code=400,
+                )
+            except UsLaceyOperationNotFound:
+                pass
         return _html(
             render_new_operation(
                 request=request,

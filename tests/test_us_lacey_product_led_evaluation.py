@@ -228,8 +228,8 @@ def test_evaluation_ui_exposes_five_shipment_and_read_only_contract() -> None:
     assert "evaluation_total_operations" in new_operation
     assert "After this shipment" in new_operation
     assert "save with a work email after processing to continue" in new_operation
-    assert "Evaluation shipments remaining" in new_operation
-    assert "Reprocessing does not consume another shipment" in new_operation
+    assert "remaining" in new_operation
+    assert "Reprocessing the same evaluation shipment does not consume another shipment" in new_operation
     assert "Model improvement is off by default" in operation_detail
     assert 'name="learning_consent"' in operation_detail
     assert "Raw file deletion scheduled for" in operation_detail

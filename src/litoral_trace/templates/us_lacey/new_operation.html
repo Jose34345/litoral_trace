@@ -1,53 +1,52 @@
 {% extends "us_lacey/base.html" %}
 {% set authenticated = true %}
 
-{% block lacey_title %}New operation{% endblock %}
+{% block lacey_title %}New shipment{% endblock %}
 
 {% block lacey_content %}
 {{ page_header(
-    "New operation",
-    "Workspace",
+    "New shipment",
+    "Operations",
     "Best practice: upload all available shipment documents before the first processing run. You can add more files later and reprocess.",
     icon="fa-plus"
 ) }}
 
 {% if error %}
-    {{ alert("Operation could not be created", error, "danger") }}
+    {{ alert("Shipment could not be created", error, "danger") }}
 {% endif %}
 
-<section class="lt-card p-6">
-    <dl class="mb-6 grid gap-4 sm:grid-cols-2">
+<section class="lt-card overflow-hidden">
+    <div class="grid gap-px border-b border-slate-200 bg-slate-200 sm:grid-cols-3">
         {% if entitlement.is_evaluation %}
-        <div class="rounded-xl border border-slate-200 p-4">
-            <dt class="text-xs text-slate-500">Evaluation shipment</dt>
-            <dd class="mt-1 text-xl font-bold text-slate-950">{{ entitlement.evaluation_next_operation_number }} of {{ entitlement.evaluation_total_operations }}</dd>
-            <p class="mt-1 text-[11px] text-slate-500">Reprocessing does not consume another shipment.</p>
+        <div class="bg-white px-4 py-3">
+            <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Evaluation shipment</p>
+            <p class="mt-1 text-lg font-bold text-slate-950">{{ entitlement.evaluation_next_operation_number }} of {{ entitlement.evaluation_total_operations }}</p>
         </div>
-        <div class="rounded-xl border border-slate-200 p-4">
-            {% if entitlement.evaluation_status == 'ANONYMOUS' %}
-            <dt class="text-xs text-slate-500">After this shipment</dt>
-            <dd class="mt-1 text-xl font-bold text-slate-950">{{ entitlement.evaluation_total_operations - 1 }} more</dd>
-            <p class="mt-1 text-[11px] text-slate-500">First shipment is anonymous · save with a work email after processing to continue.</p>
-            {% else %}
-            <dt class="text-xs text-slate-500">Evaluation shipments remaining</dt>
-            <dd class="mt-1 text-xl font-bold text-slate-950">{{ entitlement.evaluation_remaining_operations }} of {{ entitlement.evaluation_total_operations }}</dd>
-            <p class="mt-1 text-[11px] text-slate-500">No card required · raw files delete after {{ entitlement.evaluation_raw_retention_hours or 4 }} hours.</p>
-            {% endif %}
+        <div class="bg-white px-4 py-3">
+            <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">After this shipment</p>
+            <p class="mt-1 text-lg font-bold text-slate-950">{{ entitlement.evaluation_total_operations - 1 if entitlement.evaluation_status == 'ANONYMOUS' else entitlement.evaluation_remaining_operations }} remaining</p>
+            {% if entitlement.evaluation_status == 'ANONYMOUS' %}<p class="mt-0.5 text-[10px] text-slate-500">First shipment anonymous · save with a work email after processing to continue.</p>{% endif %}
         </div>
         {% else %}
-        <div class="rounded-xl border border-slate-200 p-4">
-            <dt class="text-xs text-slate-500">Operations remaining</dt>
-            <dd class="mt-1 text-xl font-bold text-slate-950">{{ entitlement.remaining_operations }} / {{ entitlement.monthly_operation_limit }}</dd>
+        <div class="bg-white px-4 py-3">
+            <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Operations remaining</p>
+            <p class="mt-1 text-lg font-bold text-slate-950">{{ entitlement.remaining_operations }} / {{ entitlement.monthly_operation_limit }}</p>
         </div>
-        <div class="rounded-xl border border-slate-200 p-4">
-            <dt class="text-xs text-slate-500">Plan</dt>
-            <dd class="mt-1 text-xl font-bold text-slate-950">Founding Broker</dd>
+        <div class="bg-white px-4 py-3">
+            <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Plan</p>
+            <p class="mt-1 text-lg font-bold text-slate-950">Founding Broker</p>
         </div>
         {% endif %}
-    </dl>
+        <div class="bg-white px-4 py-3">
+            <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">System of record</p>
+            <p class="mt-1 text-sm font-bold text-emerald-700">Audit trail enabled</p>
+            <p class="mt-0.5 text-[10px] text-slate-500">Ruleset {{ us_lacey_ruleset_version }} · {{ us_lacey_hts_catalog_version }}</p>
+        </div>
+    </div>
 
-    <form method="post" action="/operations/new" class="lt-form space-y-5">
+    <form method="post" action="/operations/new" enctype="multipart/form-data" class="lt-form space-y-5 p-5">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="document_role" value="UNKNOWN">
 
         <label class="lt-field">
             <span class="lt-field__label">Shipment / client reference <span class="text-slate-500">(optional)</span></span>
@@ -56,22 +55,34 @@
                 class="lt-control"
                 name="client_reference"
                 maxlength="255"
-                placeholder="Entry, job, PO or shipment number"
+                placeholder="Entry, job, PO, B/L or shipment number"
                 aria-describedby="client_reference_hint"
             >
-            <span id="client_reference_hint" class="text-xs text-slate-500">
-                Leave this blank and Litoral Trace will create an internal reference automatically.
-            </span>
+            <span id="client_reference_hint" class="text-xs text-slate-500">Leave blank and Litoral Trace creates an internal shipment reference automatically.</span>
         </label>
 
-        <p class="text-sm text-slate-500">
-            Litoral Trace will extract importer, supplier, consignee, broker, shipment dates and merchandise lines whenever supported by the evidence. Start with the most complete shipment pack available; you can add more source files later and reprocess the operation.
-        </p>
+        <label class="block cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 transition hover:border-emerald-400 hover:bg-emerald-50/30">
+            <span class="flex items-start gap-3">
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-emerald-700 ring-1 ring-slate-200" aria-hidden="true"><i class="fa-solid fa-cloud-arrow-up"></i></span>
+                <span class="min-w-0">
+                    <span class="block text-sm font-bold text-slate-950">Add the shipment pack now <span class="font-normal text-slate-500">(optional)</span></span>
+                    <span class="mt-1 block text-xs leading-5 text-slate-600">Select invoice, packing list, B/L and available supplier evidence together. Multiple files are supported; document type is detected during processing.</span>
+                    {% if entitlement.is_evaluation %}<span class="mt-1 block text-[11px] font-semibold text-emerald-700">Raw source files are automatically deleted after {{ entitlement.evaluation_raw_retention_hours or 4 }} hours.</span>{% endif %}
+                </span>
+            </span>
+            <input class="mt-4 block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-slate-800" type="file" name="documents" multiple accept=".pdf,.csv,.xlsx,.xls,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+        </label>
+
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p class="text-xs leading-5 text-slate-600"><strong class="text-slate-900">Next:</strong> Create shipment → process documents → review only unresolved evidence → prepare declaration data.</p>
+            <a href="/regulatory" class="text-xs font-bold text-emerald-700 hover:text-emerald-800">View active regulatory baseline</a>
+        </div>
 
         <div class="lt-form__actions">
-            {{ button("Create workspace & upload documents", variant="primary", button_type="submit") }}
+            {{ button("Create shipment & upload documents", variant="primary", button_type="submit") }}
             {{ button("Cancel", "/operations", "secondary") }}
         </div>
+        <p class="text-[11px] leading-5 text-slate-500">You can create the shipment without files and add evidence later. Reprocessing the same evaluation shipment does not consume another shipment.</p>
     </form>
 </section>
 {% endblock %}

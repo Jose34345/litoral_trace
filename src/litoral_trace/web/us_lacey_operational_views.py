@@ -1106,3 +1106,14 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         is_oob_update=is_oob_update,
         processing=progress,
     )
+
+
+def render_regulatory_overview(*, request, identity, entitlement) -> str:
+    """Render the tenant-safe regulatory orientation surface."""
+    return _render(
+        request,
+        "regulatory_overview",
+        authenticated=True,
+        identity=identity,
+        entitlement=entitlement,
+    )
