@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from litoral_trace.us_lacey import evaluation
+from litoral_trace.us_lacey.access import UsLaceyOperationalEntitlement
 from litoral_trace.us_lacey.evaluation import (
     EVALUATION_INACTIVITY_DAYS,
     EVALUATION_OPERATION_LIMIT,
@@ -23,6 +24,65 @@ def test_evaluation_product_contract_constants() -> None:
     assert EVALUATION_OPERATION_LIMIT == 5
     assert EVALUATION_INACTIVITY_DAYS == 7
     assert EVALUATION_RAW_RETENTION_HOURS == 4
+
+
+def test_anonymous_entitlement_displays_full_five_shipment_evaluation() -> None:
+    entitlement = UsLaceyOperationalEntitlement(
+        organization_id=501,
+        account_status="PILOT",
+        subscription_status="ACTIVE",
+        monthly_operation_limit=1,
+        used_operations=0,
+        evaluation_status="ANONYMOUS",
+        evaluation_operation_limit=5,
+        evaluation_successful_operations_used=0,
+    )
+
+    # The anonymous technical gate stays at one operation, but customer-facing
+    # evaluation semantics must always describe the complete five-shipment path.
+    assert entitlement.monthly_operation_limit == 1
+    assert entitlement.remaining_operations == 1
+    assert entitlement.evaluation_total_operations == 5
+    assert entitlement.evaluation_completed_operations == 0
+    assert entitlement.evaluation_remaining_operations == 5
+    assert entitlement.evaluation_next_operation_number == 1
+    assert entitlement.evaluation_can_claim is False
+
+
+def test_successful_anonymous_shipment_unlocks_claim_without_collapsing_to_one() -> None:
+    entitlement = UsLaceyOperationalEntitlement(
+        organization_id=501,
+        account_status="PILOT",
+        subscription_status="ACTIVE",
+        monthly_operation_limit=1,
+        used_operations=1,
+        evaluation_status="ANONYMOUS",
+        evaluation_operation_limit=5,
+        evaluation_successful_operations_used=1,
+    )
+
+    assert entitlement.evaluation_can_claim is True
+    assert entitlement.evaluation_completed_operations == 1
+    assert entitlement.evaluation_remaining_operations == 4
+    assert entitlement.evaluation_total_operations == 5
+
+
+def test_claimed_entitlement_continues_same_five_shipment_progress() -> None:
+    entitlement = UsLaceyOperationalEntitlement(
+        organization_id=501,
+        account_status="PILOT",
+        subscription_status="ACTIVE",
+        monthly_operation_limit=5,
+        used_operations=1,
+        evaluation_status="ACTIVE",
+        evaluation_operation_limit=5,
+        evaluation_successful_operations_used=1,
+    )
+
+    assert entitlement.evaluation_total_operations == 5
+    assert entitlement.evaluation_completed_operations == 1
+    assert entitlement.evaluation_remaining_operations == 4
+    assert entitlement.evaluation_next_operation_number == 2
 
 
 @pytest.mark.parametrize(
@@ -66,6 +126,8 @@ def test_public_samples_are_ungated_read_only_and_do_not_create_session_cookie()
     assert "set-cookie" not in reuse.headers
     assert "/try/importer?step=2" in importer.text
     assert "/sandbox/start?mode=own" in reuse.text
+    assert "/static/img/logo.svg" in importer.text
+    assert "/static/img/logo.svg" in broker.text
     assert "credit card" in importer.text.lower()
 
 
@@ -144,10 +206,19 @@ def test_evaluation_ui_exposes_five_shipment_and_read_only_contract() -> None:
     assert "Model improvement is off by default" in sandbox
     assert 'name="learning_consent"' not in sandbox
     assert "Evaluation progress" in base
+    assert "evaluation_completed_operations" in base
+    assert "evaluation_total_operations" in base
+    assert "First shipment anonymous" in base
+    assert "Save evaluation to continue" in base
     assert "Private evaluation" in base
     assert "Anonymous workspace" in base
     assert "data-evaluation-privacy-banner" in base
     assert "No card required" in base
+    assert "Evaluation shipment" in new_operation
+    assert "evaluation_next_operation_number" in new_operation
+    assert "evaluation_total_operations" in new_operation
+    assert "After this shipment" in new_operation
+    assert "save with a work email after processing to continue" in new_operation
     assert "Evaluation shipments remaining" in new_operation
     assert "Reprocessing does not consume another shipment" in new_operation
     assert "Model improvement is off by default" in operation_detail

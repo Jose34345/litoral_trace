@@ -20,13 +20,19 @@
         {% if entitlement.is_evaluation %}
         <div class="rounded-xl border border-slate-200 p-4">
             <dt class="text-xs text-slate-500">Evaluation shipment</dt>
-            <dd class="mt-1 text-xl font-bold text-slate-950">{{ entitlement.used_operations + 1 }} of {{ entitlement.monthly_operation_limit }}</dd>
+            <dd class="mt-1 text-xl font-bold text-slate-950">{{ entitlement.evaluation_next_operation_number }} of {{ entitlement.evaluation_total_operations }}</dd>
             <p class="mt-1 text-[11px] text-slate-500">Reprocessing does not consume another shipment.</p>
         </div>
         <div class="rounded-xl border border-slate-200 p-4">
+            {% if entitlement.evaluation_status == 'ANONYMOUS' %}
+            <dt class="text-xs text-slate-500">After this shipment</dt>
+            <dd class="mt-1 text-xl font-bold text-slate-950">{{ entitlement.evaluation_total_operations - 1 }} more</dd>
+            <p class="mt-1 text-[11px] text-slate-500">First shipment is anonymous · save with a work email after processing to continue.</p>
+            {% else %}
             <dt class="text-xs text-slate-500">Evaluation shipments remaining</dt>
-            <dd class="mt-1 text-xl font-bold text-slate-950">{{ entitlement.remaining_operations }} of {{ entitlement.monthly_operation_limit }}</dd>
+            <dd class="mt-1 text-xl font-bold text-slate-950">{{ entitlement.evaluation_remaining_operations }} of {{ entitlement.evaluation_total_operations }}</dd>
             <p class="mt-1 text-[11px] text-slate-500">No card required · raw files delete after {{ entitlement.evaluation_raw_retention_hours or 4 }} hours.</p>
+            {% endif %}
         </div>
         {% else %}
         <div class="rounded-xl border border-slate-200 p-4">

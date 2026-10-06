@@ -11,9 +11,12 @@
 <body class="min-h-full bg-slate-50 font-sans text-slate-900 antialiased">
   <main class="mx-auto min-h-screen max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
     <header class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5">
-      <div>
-        <p class="text-sm font-bold text-slate-950">Litoral Trace</p>
-        <p class="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">{{ sample.label }} sample · read-only</p>
+      <div class="flex items-center gap-3">
+        <img src="{{ url_for('static', path='/img/logo.svg') }}" alt="" class="h-9 w-9" width="36" height="36">
+        <div>
+          <p class="text-sm font-bold text-slate-950">Litoral Trace</p>
+          <p class="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">{{ sample.label }} sample · read-only</p>
+        </div>
       </div>
       <a href="/sandbox/start" class="text-xs font-bold text-slate-600 hover:text-slate-950">Back to evaluation</a>
     </header>

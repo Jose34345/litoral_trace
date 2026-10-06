@@ -25,10 +25,38 @@ class UsLaceyOperationalEntitlement:
     evaluation_work_email: str | None = None
     evaluation_expires_at: object | None = None
     evaluation_raw_retention_hours: int | None = None
+    evaluation_operation_limit: int | None = None
+    evaluation_successful_operations_used: int | None = None
 
     @property
     def remaining_operations(self) -> int:
         return max(0, self.monthly_operation_limit - self.used_operations)
+
+    @property
+    def evaluation_total_operations(self) -> int:
+        if not self.is_evaluation:
+            return self.monthly_operation_limit
+        return max(1, int(self.evaluation_operation_limit or 5))
+
+    @property
+    def evaluation_completed_operations(self) -> int:
+        if not self.is_evaluation:
+            return self.used_operations
+        return max(0, int(self.evaluation_successful_operations_used or 0))
+
+    @property
+    def evaluation_remaining_operations(self) -> int:
+        return max(
+            0,
+            self.evaluation_total_operations - self.evaluation_completed_operations,
+        )
+
+    @property
+    def evaluation_next_operation_number(self) -> int:
+        return min(
+            self.evaluation_total_operations,
+            self.evaluation_completed_operations + 1,
+        )
 
     @property
     def is_evaluation(self) -> bool:
@@ -44,7 +72,10 @@ class UsLaceyOperationalEntitlement:
 
     @property
     def evaluation_can_claim(self) -> bool:
-        return self.evaluation_status == "ANONYMOUS" and self.used_operations >= 1
+        return (
+            self.evaluation_status == "ANONYMOUS"
+            and self.evaluation_completed_operations >= 1
+        )
 
 
 def require_us_lacey_operational_access(
@@ -132,6 +163,16 @@ def require_us_lacey_operational_access(
             ),
             evaluation_raw_retention_hours=(
                 int(evaluation.raw_retention_hours)
+                if evaluation is not None
+                else None
+            ),
+            evaluation_operation_limit=(
+                int(evaluation.operation_limit)
+                if evaluation is not None
+                else None
+            ),
+            evaluation_successful_operations_used=(
+                int(evaluation.successful_operations_used)
                 if evaluation is not None
                 else None
             ),

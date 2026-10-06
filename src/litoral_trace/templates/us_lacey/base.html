@@ -72,11 +72,19 @@
         {% if entitlement.is_evaluation %}
         <div class="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-300">
           <span>Evaluation progress</span>
-          <span>{{ entitlement.used_operations }} / {{ entitlement.monthly_operation_limit }} completed</span>
+          <span>{{ entitlement.evaluation_completed_operations }} / {{ entitlement.evaluation_total_operations }} completed</span>
         </div>
-        <progress class="lt-usage-progress mt-2" max="{{ entitlement.monthly_operation_limit }}" value="{{ entitlement.used_operations }}" aria-label="Evaluation shipment usage"></progress>
+        <progress class="lt-usage-progress mt-2" max="{{ entitlement.evaluation_total_operations }}" value="{{ entitlement.evaluation_completed_operations }}" aria-label="Evaluation shipment usage"></progress>
         <p class="mt-2 text-[10px] leading-4 text-slate-400">
-          {% if entitlement.evaluation_read_only %}Read-only evaluation{% else %}{{ entitlement.remaining_operations }} shipment{{ '' if entitlement.remaining_operations == 1 else 's' }} remaining · No card required{% endif %}
+          {% if entitlement.evaluation_read_only %}
+            Read-only evaluation
+          {% elif entitlement.evaluation_can_claim %}
+            {{ entitlement.evaluation_remaining_operations }} shipments remaining · Save evaluation to continue
+          {% elif entitlement.evaluation_status == 'ANONYMOUS' %}
+            First shipment anonymous · {{ entitlement.evaluation_total_operations - 1 }} more after processing
+          {% else %}
+            {{ entitlement.evaluation_remaining_operations }} shipment{{ '' if entitlement.evaluation_remaining_operations == 1 else 's' }} remaining · No card required
+          {% endif %}
         </p>
         {% else %}
         <div class="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-300">
