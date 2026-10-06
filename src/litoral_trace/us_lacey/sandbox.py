@@ -171,6 +171,53 @@ def provision_us_lacey_sandbox(
         session.close()
 
 
+def set_us_lacey_sandbox_learning_consent(
+    *,
+    session_token: str,
+    organization_id: int,
+    enabled: bool = True,
+) -> bool:
+    """Persist an explicit learning opt-in after the visitor reaches upload.
+
+    The capability is token-bound and fail-closed in PostgreSQL. Callers should
+    never infer consent from product use; this function runs only after an
+    explicit checkbox selection.
+    """
+
+    token = str(session_token or "").strip()
+    org_id = int(organization_id)
+    if not token or org_id <= 0:
+        raise UsLaceySandboxError("Learning consent could not be updated.")
+
+    session = get_us_lacey_db_session()
+    try:
+        result = session.execute(
+            text(
+                """
+                SELECT public.us_lacey_sandbox_set_learning_consent(
+                    :token_hash,
+                    :organization_id,
+                    :enabled
+                )
+                """
+            ),
+            {
+                "token_hash": _token_hash(token),
+                "organization_id": org_id,
+                "enabled": bool(enabled),
+            },
+        ).scalar_one()
+        session.commit()
+        return bool(result)
+    except Exception as exc:
+        session.rollback()
+        raise UsLaceySandboxError(
+            "Learning consent could not be updated. Your workspace remains opted out."
+        ) from exc
+    finally:
+        session.close()
+
+
 def get_us_lacey_sandbox_policy(
     *,
     organization_id: int,

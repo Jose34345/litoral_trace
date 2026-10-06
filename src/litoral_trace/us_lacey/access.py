@@ -24,6 +24,7 @@ class UsLaceyOperationalEntitlement:
     evaluation_status: str | None = None
     evaluation_work_email: str | None = None
     evaluation_expires_at: object | None = None
+    evaluation_raw_retention_hours: int | None = None
 
     @property
     def remaining_operations(self) -> int:
@@ -128,6 +129,11 @@ def require_us_lacey_operational_access(
             ),
             evaluation_expires_at=(
                 evaluation.inactive_expires_at if evaluation is not None else None
+            ),
+            evaluation_raw_retention_hours=(
+                int(evaluation.raw_retention_hours)
+                if evaluation is not None
+                else None
             ),
         )
     except UsLaceyOperationalAccessError:

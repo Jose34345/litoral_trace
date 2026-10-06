@@ -112,6 +112,22 @@ def test_evaluation_ui_exposes_five_shipment_and_read_only_contract() -> None:
         / "us_lacey"
         / "base.html"
     ).read_text(encoding="utf-8")
+    new_operation = (
+        ROOT
+        / "src"
+        / "litoral_trace"
+        / "templates"
+        / "us_lacey"
+        / "new_operation.html"
+    ).read_text(encoding="utf-8")
+    operation_detail = (
+        ROOT
+        / "src"
+        / "litoral_trace"
+        / "templates"
+        / "us_lacey"
+        / "operation_detail.html"
+    ).read_text(encoding="utf-8")
     upgrade = (
         ROOT
         / "src"
@@ -123,8 +139,21 @@ def test_evaluation_ui_exposes_five_shipment_and_read_only_contract() -> None:
 
     assert "5-shipment evaluation" in sandbox
     assert "Raw documents are permanently deleted after 4 hours" in sandbox
-    assert "Evaluation shipments remaining" in base
-    assert "reprocessing is free" in base
+    assert "Private processing" in sandbox
+    assert "Tenant isolated" in sandbox
+    assert "Model improvement is off by default" in sandbox
+    assert 'name="learning_consent"' not in sandbox
+    assert "Evaluation progress" in base
+    assert "Private evaluation" in base
+    assert "Anonymous workspace" in base
+    assert "data-evaluation-privacy-banner" in base
+    assert "No card required" in base
+    assert "Evaluation shipments remaining" in new_operation
+    assert "Reprocessing does not consume another shipment" in new_operation
+    assert "Model improvement is off by default" in operation_detail
+    assert 'name="learning_consent"' in operation_detail
+    assert "Raw file deletion scheduled for" in operation_detail
+    assert "Raw source documents are never used for model improvement" in operation_detail
     assert "Five-shipment evaluation complete" in base
     assert "read-only" in upgrade.lower()
     assert "results remain available" in upgrade.lower()

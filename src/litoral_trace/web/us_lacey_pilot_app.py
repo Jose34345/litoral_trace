@@ -86,6 +86,10 @@ from litoral_trace.us_lacey.review import (
     review_us_lacey_field,
 )
 from litoral_trace.us_lacey.review_telemetry import parse_review_telemetry
+from litoral_trace.us_lacey.sandbox import (
+    UsLaceySandboxError,
+    set_us_lacey_sandbox_learning_consent,
+)
 from litoral_trace.us_lacey.supplier_intelligence import (
     UsLaceySupplierIntelligenceService,
     UsLaceySupplierNotFound,
@@ -1160,16 +1164,35 @@ async def operation_upload_submit(
     documents: list[UploadFile] | None = File(None),
     document: UploadFile | None = File(None),
     document_role: str = Form("UNKNOWN"),
+    learning_consent: str | None = Form(None),
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
-        identity, _entitlement = _operational_mutation_context(us_session)
+        identity, entitlement = _operational_mutation_context(us_session)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"upload:{operation_public_id}",
             submitted_token=csrf_token,
         )
+        if (
+            learning_consent == "accepted"
+            and entitlement.evaluation_status == "ANONYMOUS"
+        ):
+            try:
+                set_us_lacey_sandbox_learning_consent(
+                    session_token=us_session or "",
+                    organization_id=identity.organization_id,
+                    enabled=True,
+                )
+            except UsLaceySandboxError:
+                # Optional learning consent must never block the customer's
+                # shipment. Failure remains fail-closed: the workspace stays
+                # opted out and the upload proceeds normally.
+                LOGGER.warning(
+                    "us_lacey_evaluation_learning_consent_not_saved",
+                    extra={"organization_id": identity.organization_id},
+                )
         uploads = list(documents or ())
         if document is not None:
             uploads.append(document)

@@ -99,6 +99,7 @@ def _harden_public_response(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; "
+        "img-src 'self' data:; "
         "style-src 'self'; "
         "form-action 'self'; "
         "base-uri 'none'; "
@@ -209,7 +210,6 @@ def sandbox_start_view(request: Request):
 def sandbox_start_provision(
     request: Request,
     consent: str | None = Form(default=None),
-    learning_consent: str | None = Form(default=None),
     support_debug_consent: str | None = Form(default=None),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
     outreach_attribution: str | None = Cookie(
@@ -263,7 +263,7 @@ def sandbox_start_provision(
         sandbox = provision_us_lacey_sandbox(
             client_ip=client_ip,
             user_agent=user_agent,
-            learning_opt_in=learning_consent == "accepted",
+            learning_opt_in=False,
             support_debug_opt_in=False,
         )
     except UsLaceySandboxError as exc:

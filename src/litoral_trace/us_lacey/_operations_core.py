@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -101,6 +101,8 @@ class OperationDocumentView:
     processing_status: str
     job_status: str | None
     last_error_code: str | None
+    raw_expires_at: datetime | None = None
+    raw_deleted_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -872,6 +874,12 @@ class UsLaceyOperationService:
                         processing_status=assurance.processing_status,
                         job_status=None if job is None else job.status,
                         last_error_code=assurance.last_error_code,
+                        raw_expires_at=(
+                            vault.created_at + timedelta(hours=4)
+                            if vault.created_at is not None
+                            else None
+                        ),
+                        raw_deleted_at=vault.deleted_at,
                     )
                 )
 
