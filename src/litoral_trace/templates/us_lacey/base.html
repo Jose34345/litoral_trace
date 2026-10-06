@@ -11,6 +11,7 @@
 
 {% if authenticated|default(false) %}
 {% set current_path = request.url.path %}
+{% set evaluation_mode = entitlement is defined and entitlement and entitlement.is_evaluation %}
 <div class="lt-app-shell min-h-screen bg-app">
   <div data-app-drawer-overlay data-open="false" class="lt-app-overlay fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm lg:hidden" aria-hidden="true"></div>
   <aside id="app-navigation" data-app-drawer data-open="false" class="lt-sidebar fixed inset-y-0 left-0 z-50 flex w-72 -translate-x-full flex-col border-r border-slate-800 text-slate-200 transition-transform duration-200 ease-out lg:translate-x-0">
@@ -47,6 +48,14 @@
           <a href="/legal/product-use-terms" {% if current_path == '/legal/product-use-terms' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Product Use</span></a>
         </div>
       </section>
+      {% if evaluation_mode %}
+      <section class="lt-nav-section">
+        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Evaluation</p>
+        <div class="px-3 py-2.5 text-xs font-medium text-slate-400">
+          <span class="inline-flex items-center gap-2"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Private workspace</span>
+        </div>
+      </section>
+      {% else %}
       <section class="lt-nav-section">
         <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Organization</p>
         <div class="space-y-1">
@@ -54,18 +63,27 @@
           {# Settings remains hidden until a real customer settings route exists. #}
         </div>
       </section>
+      {% endif %}
     </nav>
 
     <div class="lt-sidebar__footer shrink-0 border-t p-3">
       {% if entitlement is defined and entitlement %}
-      <div class="mb-3 rounded-xl border border-slate-700 bg-slate-900/80 p-3" aria-label="Operation allowance">
+      <div class="mb-3 rounded-xl border border-slate-700 bg-slate-900/80 p-3" aria-label="{{ 'Evaluation usage' if entitlement.is_evaluation else 'Operation allowance' }}">
+        {% if entitlement.is_evaluation %}
         <div class="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-300">
-          <span>{{ "Evaluation shipments remaining" if entitlement.is_evaluation else "Operations remaining" }}</span>
+          <span>Evaluation progress</span>
+          <span>{{ entitlement.used_operations }} / {{ entitlement.monthly_operation_limit }} completed</span>
+        </div>
+        <progress class="lt-usage-progress mt-2" max="{{ entitlement.monthly_operation_limit }}" value="{{ entitlement.used_operations }}" aria-label="Evaluation shipment usage"></progress>
+        <p class="mt-2 text-[10px] leading-4 text-slate-400">
+          {% if entitlement.evaluation_read_only %}Read-only evaluation{% else %}{{ entitlement.remaining_operations }} shipment{{ '' if entitlement.remaining_operations == 1 else 's' }} remaining · No card required{% endif %}
+        </p>
+        {% else %}
+        <div class="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-300">
+          <span>Operations remaining</span>
           <span>{{ entitlement.remaining_operations }} / {{ entitlement.monthly_operation_limit }}</span>
         </div>
-        <progress class="lt-usage-progress mt-2" max="{{ entitlement.monthly_operation_limit }}" value="{{ entitlement.used_operations }}" aria-label="{{ 'Evaluation shipment usage' if entitlement.is_evaluation else 'Monthly operation usage' }}"></progress>
-        {% if entitlement.is_evaluation %}
-        <p class="mt-2 text-[10px] leading-4 text-slate-500">{{ "Read-only evaluation" if entitlement.evaluation_read_only else "No credit card · reprocessing is free" }}</p>
+        <progress class="lt-usage-progress mt-2" max="{{ entitlement.monthly_operation_limit }}" value="{{ entitlement.used_operations }}" aria-label="Monthly operation usage"></progress>
         {% endif %}
       </div>
       {% elif billing is defined and billing %}
@@ -75,9 +93,18 @@
       </div>
       {% endif %}
       <div class="lt-org-card flex items-center gap-2 rounded-xl border p-2.5">
+        {% if evaluation_mode %}
+        <span class="lt-org-card__icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" aria-hidden="true"><i class="fa-solid fa-shield-halved"></i></span>
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-xs font-semibold text-slate-100">{{ 'Evaluation workspace' if entitlement.evaluation_claimed else 'Private evaluation' }}</p>
+          <p class="mt-0.5 truncate text-[10px] font-medium uppercase tracking-wide text-slate-500">{{ entitlement.evaluation_work_email if entitlement.evaluation_claimed and entitlement.evaluation_work_email else 'Anonymous workspace' }}</p>
+        </div>
+        <form method="post" action="/logout" class="shrink-0"><button type="submit" class="lt-session-action flex h-8 w-8 items-center justify-center rounded-lg border text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="End evaluation session" title="End evaluation session"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i></button></form>
+        {% else %}
         <span class="lt-org-card__icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" aria-hidden="true"><i class="fa-solid fa-building"></i></span>
         <div class="min-w-0 flex-1"><p class="truncate text-xs font-semibold text-slate-100">{{ identity.legal_name if identity is defined else 'Litoral Trace' }}</p><p class="mt-0.5 truncate text-[10px] font-medium uppercase tracking-wide text-slate-500">{{ identity.email if identity is defined else 'Workspace' }}</p></div>
         <form method="post" action="/logout" class="shrink-0"><button type="submit" class="lt-session-action flex h-8 w-8 items-center justify-center rounded-lg border text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Sign out" title="Sign out"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i></button></form>
+        {% endif %}
       </div>
     </div>
   </aside>
@@ -86,14 +113,31 @@
     <header class="lt-topbar sticky top-0 z-30 border-b">
       <div class="lt-topbar__inner flex h-16 items-center gap-3 px-4 sm:px-6 lg:px-8">
         <button type="button" data-app-drawer-open class="lt-drawer-trigger flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden" aria-label="Open navigation" aria-controls="app-navigation" aria-expanded="false"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
-        <div class="min-w-0"><p class="truncate text-sm font-bold text-slate-950">{{ identity.legal_name if identity is defined else 'Litoral Trace' }}</p><p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey Act workspace · Declaration preparation · Human review required</p></div>
+        <div class="min-w-0">
+          {% if evaluation_mode %}
+          <p class="truncate text-sm font-bold text-slate-950">{{ 'Evaluation workspace' if entitlement.evaluation_claimed else 'Private evaluation' }}</p>
+          <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey Act evaluation · Raw source retention {{ entitlement.evaluation_raw_retention_hours or 4 }}h · Human review required</p>
+          {% else %}
+          <p class="truncate text-sm font-bold text-slate-950">{{ identity.legal_name if identity is defined else 'Litoral Trace' }}</p>
+          <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey Act workspace · Declaration preparation · Human review required</p>
+          {% endif %}
+        </div>
         <div class="mx-auto hidden w-full max-w-xl md:block">
           <label class="relative block"><span class="sr-only">Jump to workspace section</span><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i><input id="lt-command-search" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-20 text-xs text-slate-800 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20" placeholder="Jump to operations, suppliers, audit log…" autocomplete="off" aria-label="Workspace quick navigation"><span id="lt-command-shortcut" class="lt-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" aria-hidden="true">Ctrl K</span></label>
         </div>
         <div class="ml-auto flex items-center gap-2">
           <details class="relative">
+            {% if evaluation_mode %}
+            <summary class="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white" aria-label="Evaluation menu"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i></summary>
+            <div class="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+              <div class="border-b border-slate-100 px-3 py-2"><p class="truncate text-xs font-bold text-slate-900">{{ 'Evaluation workspace' if entitlement.evaluation_claimed else 'Private evaluation' }}</p><p class="mt-0.5 truncate text-[11px] text-slate-500">{{ entitlement.evaluation_work_email if entitlement.evaluation_claimed and entitlement.evaluation_work_email else 'Anonymous workspace' }}</p></div>
+              {% if entitlement.evaluation_claimed %}<a class="mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" href="/billing"><i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i> Upgrade</a>{% endif %}
+              <form method="post" action="/logout"><button class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" type="submit"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> End evaluation session</button></form>
+            </div>
+            {% else %}
             <summary class="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white" aria-label="Account menu">{{ (identity.full_name[:1] if identity is defined and identity.full_name else 'L')|upper }}</summary>
             <div class="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-xl"><div class="border-b border-slate-100 px-3 py-2"><p class="truncate text-xs font-bold text-slate-900">{{ identity.full_name if identity is defined else 'Account' }}</p><p class="mt-0.5 truncate text-[11px] text-slate-500">{{ identity.email if identity is defined else '' }}</p></div><a class="mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" href="/billing"><i class="fa-solid fa-receipt" aria-hidden="true"></i> Billing</a><form method="post" action="/logout"><button class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" type="submit"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Sign out</button></form></div>
+            {% endif %}
           </details>
         </div>
       </div>
@@ -108,6 +152,22 @@
     </div>
   </header>
   <main id="main-content" tabindex="-1"><section class="bg-slate-50 px-4 py-8 sm:px-6 lg:px-8"><div class="mx-auto max-w-6xl"><div class="lt-page">
+{% endif %}
+
+{% if authenticated|default(false) and evaluation_mode|default(false) %}
+  <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-sm" data-evaluation-privacy-banner>
+    <div class="flex min-w-0 items-start gap-3">
+      <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-shield-halved"></i></span>
+      <div>
+        <p class="text-xs font-bold text-slate-950">Private evaluation</p>
+        <p class="mt-0.5 text-[11px] leading-5 text-slate-600">Raw source documents are automatically deleted {{ entitlement.evaluation_raw_retention_hours or 4 }} hours after each upload. Derived evaluation results remain available under the evaluation policy.</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+      {% if not entitlement.evaluation_claimed %}<span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Anonymous workspace</span>{% endif %}
+      <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">No card required</span>
+    </div>
+  </div>
 {% endif %}
 
 {% if authenticated|default(false) and entitlement is defined and entitlement %}

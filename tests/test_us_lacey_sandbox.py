@@ -34,6 +34,9 @@ class _Result:
     def mappings(self):
         return _Mappings(self.row)
 
+    def scalar_one(self):
+        return self.row
+
 
 class _ProvisionSession:
     def __init__(self, row):
@@ -92,6 +95,27 @@ def test_provision_sandbox_persists_only_token_hash_and_returns_raw_token(monkey
     assert fake.params["token_hash"] != result.session_token
     assert len(fake.params["token_hash"]) == 64
     assert fake.params["client_ip"] == "203.0.113.10"
+    assert fake.committed is True
+    assert fake.closed is True
+
+
+def test_learning_consent_is_explicit_token_bound_and_late(monkeypatch):
+    fake = _ProvisionSession(True)
+    monkeypatch.setattr(sandbox_service, "get_us_lacey_db_session", lambda: fake)
+
+    result = sandbox_service.set_us_lacey_sandbox_learning_consent(
+        session_token="late-explicit-opt-in",
+        organization_id=501,
+        enabled=True,
+    )
+
+    assert result is True
+    statement, params = fake.calls[0]
+    assert "us_lacey_sandbox_set_learning_consent" in statement
+    assert params["organization_id"] == 501
+    assert params["enabled"] is True
+    assert params["token_hash"] != "late-explicit-opt-in"
+    assert len(params["token_hash"]) == 64
     assert fake.committed is True
     assert fake.closed is True
 
@@ -216,15 +240,22 @@ def test_public_sandbox_get_is_side_effect_free(monkeypatch):
     assert 'method="post"' in response.text
     assert 'action="/sandbox/start"' in response.text
     assert 'name="consent"' in response.text
-    assert 'name="learning_consent"' in response.text
+    assert 'name="learning_consent"' not in response.text
     assert 'name="support_debug_consent"' not in response.text
-    assert "Help improve Litoral Trace" in response.text
+    assert "Help improve Litoral Trace" not in response.text
+    assert "Model improvement is off by default" in response.text
+    assert "Private processing" in response.text
+    assert "Tenant isolated" in response.text
+    assert "4-hour source retention" in response.text
+    assert "No card required" in response.text
+    assert "Synthetic samples available" in response.text
     assert "72-hour retention" not in response.text
     assert 'value="accepted"' in response.text
     assert "/static/dist/app.css" in response.text
     assert "set-cookie" not in response.headers
     assert response.headers["cache-control"] == "no-store, max-age=0"
     assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
+    assert "img-src 'self' data:" in response.headers["content-security-policy"]
     assert "style-src 'self'" in response.headers["content-security-policy"]
 
 
@@ -265,7 +296,9 @@ def test_public_sandbox_post_sets_opaque_cookie_and_redirects_to_new_operation(m
     assert "SameSite=lax" in cookie
     assert response.headers["cache-control"] == "no-store, max-age=0"
     assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
-    assert provision_calls[0]["learning_opt_in"] is True
+    # First-contact product use can never imply learning consent, even if a
+    # legacy/crafted form submits the old field. Opt-in happens later at upload.
+    assert provision_calls[0]["learning_opt_in"] is False
     assert provision_calls[0]["support_debug_opt_in"] is False
 
 
