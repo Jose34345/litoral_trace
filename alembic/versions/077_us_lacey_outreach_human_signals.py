@@ -432,9 +432,6 @@ def upgrade() -> None:
                     )::bigint AS human_visits,
                     count(DISTINCT event.session_id) FILTER (
                         WHERE event.event_name IN (
-                            'SAMPLE_STARTED',
-                            'SAMPLE_REUSE_REACHED',
-                            'SAMPLE_COMPLETED',
                             'SANDBOX_STARTED',
                             'SANDBOX_ENGAGED',
                             'OPERATION_CREATED',
@@ -442,6 +439,19 @@ def upgrade() -> None:
                             'REVIEW_REACHED',
                             'REVIEW_COMPLETED',
                             'EXPORT_DOWNLOADED'
+                        )
+                        OR (
+                            event.event_name IN (
+                                'SAMPLE_STARTED',
+                                'SAMPLE_REUSE_REACHED',
+                                'SAMPLE_COMPLETED'
+                            )
+                            AND EXISTS (
+                                SELECT 1
+                                FROM public.us_lacey_outreach_events AS human_event
+                                WHERE human_event.session_id = event.session_id
+                                  AND human_event.event_name = 'HUMAN_VISIT'
+                            )
                         )
                     )::bigint AS product_engaged,
                     count(DISTINCT event.session_id) FILTER (
