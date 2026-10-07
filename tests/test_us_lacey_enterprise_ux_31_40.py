@@ -11,6 +11,7 @@ def test_enterprise_ux_31_40_contract() -> None:
 
     # 31-33: one direct multi-file dropzone with visible format/limit guidance.
     assert 'data-dropzone' in intake
+    assert 'data-file-dropzone-input' in intake
     assert 'multiple' in intake
     assert "Drop shipment documents here" in intake
     assert "Select documents" in intake
