@@ -311,19 +311,118 @@ def learning_plane_metrics_superadmin(
     }
 
 
+def _outreach_engagement_capability_available() -> bool:
+    """Return whether migration 077's richer outreach capability is installed."""
+
+    db = get_us_lacey_db_session()
+    try:
+        return bool(
+            db.execute(
+                text(
+                    "SELECT to_regprocedure("
+                    "'public.platform_admin_outreach_engagement(text,integer)'"
+                    ") IS NOT NULL"
+                )
+            ).scalar_one()
+        )
+    except DBAPIError:
+        db.rollback()
+        logger.warning(
+            "us_lacey_outreach_engagement_capability_probe_failed",
+            exc_info=True,
+        )
+        return False
+    finally:
+        db.close()
+
+
+def _normalize_legacy_outreach_rows(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Project migration-059 funnel rows into the migration-077 admin contract."""
+
+    normalized: list[dict[str, Any]] = []
+    for row in rows:
+        raw_hits = int(row.get("click_count") or 0)
+        attributed_sessions = int(row.get("attributed_sessions") or 0)
+        sandbox_engaged = int(row.get("sandbox_started") or 0)
+        operations_created = int(row.get("operations_created") or 0)
+        document_uploads = int(row.get("document_uploads") or 0)
+        review_reached = int(row.get("review_reached") or 0)
+        review_completed = int(row.get("review_completed") or 0)
+        exports_downloaded = int(row.get("exports_downloaded") or 0)
+
+        has_confirmed_product_engagement = any(
+            (
+                sandbox_engaged,
+                operations_created,
+                document_uploads,
+                review_reached,
+                review_completed,
+                exports_downloaded,
+            )
+        )
+        if has_confirmed_product_engagement:
+            engagement_state = "PRODUCT_ENGAGED"
+        elif raw_hits > 0:
+            engagement_state = "LIKELY_AUTOMATED"
+        else:
+            engagement_state = "NO_ACTIVITY"
+
+        normalized.append(
+            {
+                "outreach_link_id": row.get("outreach_link_id"),
+                "slug": row.get("slug"),
+                "prospect_label": row.get("prospect_label"),
+                "campaign_code": row.get("campaign_code"),
+                "source": row.get("source"),
+                "active": bool(row.get("active")),
+                "created_at": row.get("created_at"),
+                "raw_hits": raw_hits,
+                "attributed_sessions": attributed_sessions,
+                # Pre-077 data cannot reliably distinguish a human browser from
+                # an email-security scanner, so never manufacture a human signal.
+                "link_scans": attributed_sessions,
+                "human_visits": 0,
+                "product_engaged": sandbox_engaged,
+                "sandbox_engaged": sandbox_engaged,
+                "operations_created": operations_created,
+                "document_uploads": document_uploads,
+                "review_reached": review_reached,
+                "review_completed": review_completed,
+                "exports_downloaded": exports_downloaded,
+                "last_event_at": row.get("last_event_at"),
+                "engagement_state": engagement_state,
+            }
+        )
+    return normalized
+
+
 def list_outreach_funnel_superadmin(
     *,
     refresh_token: str,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    return _control_plane_call(
+    requested_limit = int(limit)
+    if _outreach_engagement_capability_available():
+        return _control_plane_call(
+            refresh_token=refresh_token,
+            statement=(
+                "SELECT * FROM public.platform_admin_outreach_engagement("
+                ":actor_refresh_token_hash, :requested_limit)"
+            ),
+            values={"requested_limit": requested_limit},
+        )
+
+    legacy_rows = _control_plane_call(
         refresh_token=refresh_token,
         statement=(
-            "SELECT * FROM public.platform_admin_outreach_engagement("
+            "SELECT * FROM public.platform_admin_outreach_funnel("
             ":actor_refresh_token_hash, :requested_limit)"
         ),
-        values={"requested_limit": int(limit)},
+        values={"requested_limit": requested_limit},
     )
+    return _normalize_legacy_outreach_rows(legacy_rows)
 
 
 def pilot_watch_metrics_superadmin(
