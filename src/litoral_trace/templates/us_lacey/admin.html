@@ -89,6 +89,26 @@
       </form>
     </div>
 
+    <div class="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4" aria-label="Outreach totals">
+      <div class="rounded-xl border border-emerald-100 bg-white p-3">
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Prospect links</p>
+        <p class="mt-1 text-xl font-bold text-slate-950">{{ outreach_links|length }}</p>
+      </div>
+      <div class="rounded-xl border border-emerald-100 bg-white p-3">
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Raw hits</p>
+        <p class="mt-1 text-xl font-bold text-slate-950">{{ outreach_links|sum(attribute='raw_hits') }}</p>
+      </div>
+      <div class="rounded-xl border border-emerald-100 bg-white p-3">
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Human signals</p>
+        <p class="mt-1 text-xl font-bold text-sky-700">{{ outreach_links|sum(attribute='human_visits') }}</p>
+      </div>
+      <div class="rounded-xl border border-emerald-100 bg-white p-3">
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Sandbox starts</p>
+        <p class="mt-1 text-xl font-bold text-emerald-700">{{ outreach_links|sum(attribute='sandbox_engaged') }}</p>
+      </div>
+    </div>
+    <p class="mt-2 text-[10px] leading-4 text-slate-500">Historical opens recorded before human-signal classification remain visible as raw hits/scan sessions; they are not retroactively labeled human.</p>
+
     <div class="mt-5 overflow-x-auto rounded-xl border border-emerald-100 bg-white">
       <table class="w-full min-w-[53rem] text-left text-xs">
         <thead class="bg-slate-50 uppercase text-slate-600">
