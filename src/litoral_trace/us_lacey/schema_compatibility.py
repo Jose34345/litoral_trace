@@ -19,9 +19,9 @@ from litoral_trace.us_lacey.db import get_us_lacey_engine
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.schema_compatibility")
 
-# 076 adds the product-led five-shipment evaluation, raw-document
-# four-hour retention jobs, and activation funnel contracts.
-_REQUIRED_US_LACEY_SCHEMA_REVISION = "076_us_lacey_product_led_evaluation"
+# 077 separates automated link scans from likely-human visits and confirmed
+# sandbox engagement while consolidating those signals into the admin control plane.
+_REQUIRED_US_LACEY_SCHEMA_REVISION = "077_us_lacey_outreach_human_signals"
 
 
 @lru_cache(maxsize=1)
