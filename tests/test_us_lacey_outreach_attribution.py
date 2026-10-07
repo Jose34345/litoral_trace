@@ -102,6 +102,7 @@ def test_attributed_sandbox_start_loads_human_visit_signal(monkeypatch):
     assert response.status_code == 200
     assert "/static/js/us_lacey_outreach_human_visit.js" in response.text
     assert "script-src 'self'" in response.headers["content-security-policy"]
+    assert "connect-src 'self'" in response.headers["content-security-policy"]
 
 
 def test_unattributed_sandbox_start_does_not_load_human_visit_signal():
