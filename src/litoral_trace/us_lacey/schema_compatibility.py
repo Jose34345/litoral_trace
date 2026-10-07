@@ -19,9 +19,11 @@ from litoral_trace.us_lacey.db import get_us_lacey_engine
 
 _LOG = logging.getLogger("litoral_trace.us_lacey.schema_compatibility")
 
-# 077 separates automated link scans from likely-human visits and confirmed
-# sandbox engagement while consolidating those signals into the admin control plane.
-_REQUIRED_US_LACEY_SCHEMA_REVISION = "077_us_lacey_outreach_human_signals"
+# 076 remains the minimum runtime-compatible schema during the two-phase
+# rollout of 077. Outreach human-signal telemetry is capability-detected and
+# safely falls back to the legacy funnel until the controlled Alembic release
+# applies 077 in production.
+_REQUIRED_US_LACEY_SCHEMA_REVISION = "076_us_lacey_product_led_evaluation"
 
 
 @lru_cache(maxsize=1)
