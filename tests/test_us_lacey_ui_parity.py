@@ -101,7 +101,10 @@ def test_us_lacey_new_shipment_is_document_first_with_optional_direct_upload() -
     assert 'name="documents"' in source
     assert 'multiple' in source
     assert 'enctype="multipart/form-data"' in source
-    assert "Create shipment & upload documents" in source
+    assert "Create shipment" in source
+    assert "Create shipment & process documents" in source
+    assert "Drop shipment documents here" in source
+    assert "Select documents" in source
     assert "Audit trail enabled" in source
     assert "Founding Broker" in source
     assert "Leave blank and Litoral Trace creates an internal shipment reference automatically." in source

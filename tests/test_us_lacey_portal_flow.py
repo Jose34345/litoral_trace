@@ -349,8 +349,11 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
     assert 'name="csrf_token"' in new_operation.text
     assert 'name="client_reference"' in new_operation.text
     assert "Founding Broker" in new_operation.text
-    assert "Create shipment &amp; upload documents" in new_operation.text
+    assert "Create shipment" in new_operation.text
+    assert "Create shipment & process documents" in new_operation.text
     assert 'name="documents"' in new_operation.text
+    assert 'data-dropzone' in new_operation.text
+    assert "Select documents" in new_operation.text
     assert "Audit trail enabled" in new_operation.text
     regulatory = client.get("/regulatory")
     assert regulatory.status_code == 200
