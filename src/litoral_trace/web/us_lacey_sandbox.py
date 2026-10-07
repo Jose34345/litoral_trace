@@ -4,8 +4,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import logging
 
-from fastapi import APIRouter, Cookie, Form, Request, status
-from fastapi.responses import PlainTextResponse, RedirectResponse, Response
+from fastapi import APIRouter, Cookie, Form, Request, Response, status
+from fastapi.responses import PlainTextResponse, RedirectResponse
 
 from litoral_trace.us_lacey.growth_attribution import (
     OUTREACH_ATTRIBUTION_COOKIE,
@@ -104,6 +104,7 @@ def _harden_public_response(response):
         "img-src 'self' data:; "
         "style-src 'self'; "
         "script-src 'self'; "
+        "connect-src 'self'; "
         "form-action 'self'; "
         "base-uri 'none'; "
         "frame-ancestors 'none'"
