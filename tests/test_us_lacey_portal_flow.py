@@ -381,6 +381,127 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
     assert 'action="/operations/OP-DEMO/complete"' not in operation.text
 
 
+def test_anonymous_new_operation_page_resumes_existing_incomplete_shipment(monkeypatch):
+    _portal_env(monkeypatch)
+    identity = UsLaceyPortalIdentity(
+        user_id=21,
+        organization_id=122,
+        email="sandbox@example.invalid",
+        full_name="Evaluation User",
+        legal_name="Litoral Trace Sandbox",
+        business_type="IMPORTER",
+        account_status="PILOT",
+    )
+    entitlement = SimpleNamespace(
+        used_operations=0,
+        monthly_operation_limit=1,
+        remaining_operations=1,
+        evaluation_status="ANONYMOUS",
+        evaluation_successful_operations_used=0,
+        evaluation_can_claim=False,
+        evaluation_read_only=False,
+    )
+
+    class FakeOperations:
+        def list_operations(self, **_kwargs):
+            return [SimpleNamespace(public_id="OP-IN-PROGRESS", status="NEW")]
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.resolve_us_lacey_session",
+        lambda _token: identity,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.require_us_lacey_operational_access",
+        lambda **_kwargs: entitlement,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.UsLaceyOperationService",
+        FakeOperations,
+    )
+
+    client = TestClient(app, follow_redirects=False)
+    client.cookies.set(US_LACEY_SESSION_COOKIE, "opaque-us-session-token")
+    response = client.get("/operations/new")
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/operations/OP-IN-PROGRESS"
+
+
+def test_anonymous_stale_new_operation_post_uploads_into_existing_shipment(monkeypatch):
+    _portal_env(monkeypatch)
+    identity = UsLaceyPortalIdentity(
+        user_id=21,
+        organization_id=122,
+        email="sandbox@example.invalid",
+        full_name="Evaluation User",
+        legal_name="Litoral Trace Sandbox",
+        business_type="IMPORTER",
+        account_status="PILOT",
+    )
+    entitlement = SimpleNamespace(
+        used_operations=0,
+        monthly_operation_limit=1,
+        remaining_operations=1,
+        evaluation_status="ANONYMOUS",
+        evaluation_successful_operations_used=0,
+        evaluation_can_claim=False,
+        evaluation_read_only=False,
+    )
+    uploaded: dict[str, object] = {}
+    created: list[dict[str, object]] = []
+
+    class FakeOperations:
+        def list_operations(self, **_kwargs):
+            return [SimpleNamespace(public_id="OP-IN-PROGRESS", status="NEW")]
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.resolve_us_lacey_session",
+        lambda _token: identity,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.require_us_lacey_operational_access",
+        lambda **_kwargs: entitlement,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.verify_us_lacey_csrf",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.UsLaceyOperationService",
+        FakeOperations,
+    )
+
+    def fake_create(**kwargs):
+        created.append(kwargs)
+        return SimpleNamespace(public_id="OP-UNEXPECTED-NEW")
+
+    def fake_upload_batch(**kwargs):
+        uploaded.update(kwargs)
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.create_us_lacey_customer_operation",
+        fake_create,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.upload_and_enqueue_us_lacey_document_batch",
+        fake_upload_batch,
+    )
+
+    client = TestClient(app, follow_redirects=False)
+    client.cookies.set(US_LACEY_SESSION_COOKIE, "opaque-us-session-token")
+    response = client.post(
+        "/operations/new",
+        data={"client_reference": "", "csrf_token": "test-token"},
+        files=[("documents", ("invoice.pdf", b"invoice-bytes", "application/pdf"))],
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/operations/OP-IN-PROGRESS?uploaded=1"
+    assert created == []
+    assert uploaded["operation_public_id"] == "OP-IN-PROGRESS"
+    assert len(uploaded["documents"]) == 1
+
+
 def test_new_operation_submit_uses_zero_data_entry_defaults(monkeypatch):
     _portal_env(monkeypatch)
     identity = UsLaceyPortalIdentity(

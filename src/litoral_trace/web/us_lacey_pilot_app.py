@@ -874,6 +874,25 @@ def evaluation_claim_submit(
         return RedirectResponse("/billing", status_code=303)
 
 
+def _anonymous_resumable_operation(*, identity, entitlement):
+    if str(getattr(entitlement, "evaluation_status", "") or "") != "ANONYMOUS":
+        return None
+    if int(getattr(entitlement, "evaluation_successful_operations_used", 0) or 0) != 0:
+        return None
+    for item in UsLaceyOperationService().list_operations(
+        organization_id=identity.organization_id,
+        limit=10,
+    ):
+        if str(item.status or "").upper() in {
+            "NEW",
+            "PROCESSING",
+            "REVIEW_REQUIRED",
+            "READY_FOR_REVIEW",
+        }:
+            return item
+    return None
+
+
 @app.get("/operations/new", response_class=HTMLResponse)
 def new_operation_page(
     request: Request,
@@ -889,6 +908,9 @@ def new_operation_page(
         return RedirectResponse("/evaluation/save", status_code=303)
     if bool(getattr(entitlement, "evaluation_read_only", False)):
         return RedirectResponse("/billing?evaluation=complete", status_code=303)
+    resumable = _anonymous_resumable_operation(identity=identity, entitlement=entitlement)
+    if resumable is not None:
+        return RedirectResponse(f"/operations/{resumable.public_id}", status_code=303)
     if entitlement.remaining_operations <= 0:
         return _operation_error_page(request, "This workspace has reached its current operation limit.", status_code=409)
     return _html(
@@ -918,20 +940,34 @@ async def new_operation_submit(
             purpose="operation:create",
             submitted_token=csrf_token,
         )
-        reference = client_reference.strip() or _generated_customer_operation_reference()
-        created = create_us_lacey_customer_operation(
-            organization_id=identity.organization_id,
-            user_id=identity.user_id,
-            client_reference=reference,
-            line_references=("1",),
+        resumable = _anonymous_resumable_operation(
+            identity=identity,
+            entitlement=entitlement,
         )
-        created_public_id = str(created.public_id)
-        safe_record_outreach_event(
-            session_token=us_session or "",
-            organization_id=identity.organization_id,
-            event_name="OPERATION_CREATED",
-            event_key=created_public_id,
-        )
+        if resumable is not None:
+            created_public_id = str(resumable.public_id)
+            reference = client_reference.strip()
+            if reference:
+                UsLaceyOperationService().update_client_reference(
+                    organization_id=identity.organization_id,
+                    operation_public_id=created_public_id,
+                    client_reference=reference,
+                )
+        else:
+            reference = client_reference.strip() or _generated_customer_operation_reference()
+            created = create_us_lacey_customer_operation(
+                organization_id=identity.organization_id,
+                user_id=identity.user_id,
+                client_reference=reference,
+                line_references=("1",),
+            )
+            created_public_id = str(created.public_id)
+            safe_record_outreach_event(
+                session_token=us_session or "",
+                organization_id=identity.organization_id,
+                event_name="OPERATION_CREATED",
+                event_key=created_public_id,
+            )
 
         uploads = [upload for upload in (documents or ()) if upload.filename]
         if uploads:
