@@ -1,12 +1,12 @@
 {% extends "us_lacey/base.html" %}
 {% set authenticated = true %}
-{% block lacey_title %}Save evaluation{% endblock %}
+{% block lacey_title %}Keep this workspace{% endblock %}
 {% block lacey_content %}
 <header class="lt-page-header">
   <div class="lt-page-header__copy">
     <p class="lt-page-header__eyebrow">Five-shipment evaluation</p>
-    <h1 class="lt-page-header__title">Keep evaluating Litoral Trace</h1>
-    <p class="lt-page-header__description">You already proved the workflow on a real shipment. Save this workspace with your work email and test four more real shipments — no credit card.</p>
+    <h1 class="lt-page-header__title">Keep this workspace</h1>
+    <p class="lt-page-header__description">You already proved the workflow on a real shipment. Add your work email to keep these results and test four more real shipments — no credit card.</p>
   </div>
 </header>
 
@@ -27,7 +27,7 @@
       <span class="mb-1.5 block text-xs font-bold text-slate-700">Work email</span>
       <input type="email" name="work_email" required autocomplete="email" placeholder="you@company.com" class="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20">
     </label>
-    <button type="submit" class="mt-4 flex w-full items-center justify-center rounded-lg bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-800">Save evaluation and unlock 4 more shipments</button>
+    <button type="submit" class="mt-4 flex w-full items-center justify-center rounded-lg bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-800">Keep this workspace and unlock 4 more shipments</button>
   </form>
 
   <div class="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600">

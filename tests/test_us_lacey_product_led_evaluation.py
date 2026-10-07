@@ -218,7 +218,9 @@ def test_evaluation_ui_exposes_five_shipment_and_read_only_contract() -> None:
     assert "evaluation_completed_operations" in base
     assert "evaluation_total_operations" in base
     assert "First shipment anonymous" in base
-    assert "Save evaluation to continue" in base
+    assert "Keep this workspace to continue" in base
+    assert "Temporary workspace" in base
+    assert "7 days after your last activity" in base
     assert "Private evaluation" in base
     assert "Anonymous workspace" in base
     assert "data-evaluation-privacy-banner" in base
@@ -227,7 +229,7 @@ def test_evaluation_ui_exposes_five_shipment_and_read_only_contract() -> None:
     assert "evaluation_next_operation_number" in new_operation
     assert "evaluation_total_operations" in new_operation
     assert "After this shipment" in new_operation
-    assert "save with a work email after processing to continue" in new_operation
+    assert "keep this workspace with a work email after processing to continue" in new_operation
     assert "remaining" in new_operation
     assert "Reprocessing the same evaluation shipment does not consume another shipment" in new_operation
     assert "Model improvement is off by default" in operation_detail

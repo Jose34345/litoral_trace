@@ -23,8 +23,8 @@
       <button type="button" data-app-drawer-close class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden" aria-label="Close navigation"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
     </div>
 
-    <nav class="lt-sidebar__nav min-h-0 flex-1 overflow-y-auto px-3 py-4" aria-label="U.S. Lacey workspace navigation">
-      <section class="lt-nav-section mb-5">
+    <nav class="lt-sidebar__nav min-h-0 flex-1 overflow-y-auto px-3 py-3" aria-label="U.S. Lacey workspace navigation">
+      <section class="lt-nav-section mb-3">
         <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Workspace</p>
         <div class="space-y-1">
           <a href="/operations" {% if current_path.startswith('/operations') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-briefcase" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Operations</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{{ entitlement.evaluation_completed_operations ~ '/' ~ entitlement.evaluation_total_operations if evaluation_mode else 'Queue' }}</span></a>
@@ -42,7 +42,7 @@
           </a>
         </div>
       </section>
-      <section class="lt-nav-section mb-5">
+      <section class="lt-nav-section mb-3">
         <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Regulatory</p>
         <div class="space-y-1">
           <a href="/regulatory" {% if current_path == '/regulatory' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Regulatory Analysis</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Rules v4</span></a>
@@ -53,8 +53,10 @@
       <section class="lt-nav-section">
         <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Evaluation</p>
         <div class="space-y-1">
-          <div class="px-3 py-2.5 text-xs font-medium text-slate-400">
-            <span class="inline-flex items-center gap-2"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Private workspace</span>
+          <div class="flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-medium text-slate-400">
+            <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid {{ 'fa-shield-halved' if entitlement.evaluation_claimed else 'fa-hourglass-half' }}" aria-hidden="true"></i></span>
+            <span class="min-w-0 flex-1 truncate">{{ 'Saved evaluation' if entitlement.evaluation_claimed else 'Temporary workspace' }}</span>
+            <span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{{ '7d idle' if entitlement.evaluation_claimed else '4h raw' }}</span>
           </div>
           {% if entitlement.evaluation_claimed %}
           <a href="/billing" class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Upgrade</span></a>
@@ -85,13 +87,18 @@
           {% if entitlement.evaluation_read_only %}
             Read-only evaluation
           {% elif entitlement.evaluation_can_claim %}
-            {{ entitlement.evaluation_remaining_operations }} shipments remaining · Save evaluation to continue
+            {{ entitlement.evaluation_remaining_operations }} shipments remaining · Keep this workspace to continue
           {% elif entitlement.evaluation_status == 'ANONYMOUS' %}
             First shipment anonymous · {{ entitlement.evaluation_total_operations - 1 }} more after processing
           {% else %}
             {{ entitlement.evaluation_remaining_operations }} shipment{{ '' if entitlement.evaluation_remaining_operations == 1 else 's' }} remaining · No card required
           {% endif %}
         </p>
+        {% if entitlement.evaluation_claimed and entitlement.evaluation_expires_at %}
+        <p class="mt-1 text-[10px] leading-4 text-slate-500">Active until {{ entitlement.evaluation_expires_at.strftime('%b %d, %Y') }} unless activity extends it.</p>
+        {% elif entitlement.evaluation_status == 'ANONYMOUS' %}
+        <p class="mt-1 text-[10px] leading-4 text-slate-500">After you keep it, expiry is 7 days after your last activity.</p>
+        {% endif %}
         {% else %}
         <div class="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-300">
           <span>Operations remaining</span>
@@ -108,10 +115,10 @@
       {% endif %}
       <div class="lt-org-card flex items-center gap-2 rounded-xl border p-2.5">
         {% if evaluation_mode %}
-        <span class="lt-org-card__icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" aria-hidden="true"><i class="fa-solid fa-shield-halved"></i></span>
+        <span class="lt-org-card__icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" aria-hidden="true"><i class="fa-solid {{ 'fa-shield-halved' if entitlement.evaluation_claimed else 'fa-hourglass-half' }}"></i></span>
         <div class="min-w-0 flex-1">
-          <p class="truncate text-xs font-semibold text-slate-100">{{ 'Evaluation workspace' if entitlement.evaluation_claimed else 'Private evaluation' }}</p>
-          <p class="mt-0.5 truncate text-[10px] font-medium uppercase tracking-wide text-slate-500">{{ entitlement.evaluation_work_email if entitlement.evaluation_claimed and entitlement.evaluation_work_email else 'Anonymous workspace' }}</p>
+          <p class="truncate text-xs font-semibold text-slate-100">{{ 'Evaluation workspace' if entitlement.evaluation_claimed else 'Temporary workspace' }}</p>
+          <p class="mt-0.5 truncate text-[10px] font-medium uppercase tracking-wide text-slate-500">{{ entitlement.evaluation_work_email if entitlement.evaluation_claimed and entitlement.evaluation_work_email else 'Anonymous · private' }}</p>
         </div>
         <form method="post" action="/logout" class="shrink-0"><button type="submit" class="lt-session-action flex h-8 w-8 items-center justify-center rounded-lg border text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="End evaluation session" title="End evaluation session"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i></button></form>
         {% else %}
@@ -129,10 +136,16 @@
         <button type="button" data-app-drawer-open class="lt-drawer-trigger flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden" aria-label="Open navigation" aria-controls="app-navigation" aria-expanded="false"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
         <div class="min-w-0">
           {% if evaluation_mode %}
-          <p class="truncate text-sm font-bold text-slate-950">{{ 'Evaluation workspace' if entitlement.evaluation_claimed else 'Private evaluation' }}</p>
-          <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey evaluation · Regulatory ruleset active · Raw retention {{ entitlement.evaluation_raw_retention_hours or 4 }}h · Human review required</p>
+          <div class="flex min-w-0 items-center gap-2">
+            <p class="truncate text-sm font-bold text-slate-950">{{ 'Evaluation workspace' if entitlement.evaluation_claimed else 'Temporary evaluation workspace' }}</p>
+            <span class="hidden rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500 sm:inline-flex">Evaluation</span>
+          </div>
+          <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey · Regulatory ruleset active · Raw retention {{ entitlement.evaluation_raw_retention_hours or 4 }}h · Human review required</p>
           {% else %}
-          <p class="truncate text-sm font-bold text-slate-950">{{ identity.legal_name if identity is defined else 'Litoral Trace' }}</p>
+          <div class="flex min-w-0 items-center gap-2">
+            <p class="truncate text-sm font-bold text-slate-950">{{ identity.legal_name if identity is defined else 'Litoral Trace' }}</p>
+            <span class="hidden rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-800 sm:inline-flex">Production</span>
+          </div>
           <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey Act workspace · Regulatory ruleset active · Declaration preparation · Human review required</p>
           {% endif %}
         </div>
@@ -189,9 +202,9 @@
   <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
     <div>
       <p class="text-xs font-bold text-slate-950">Your first real shipment is ready.</p>
-      <p class="mt-0.5 text-[11px] leading-5 text-slate-600">Save this evaluation with a work email to test four more shipments. No credit card.</p>
+      <p class="mt-0.5 text-[11px] leading-5 text-slate-600">Keep this workspace with a work email to test four more shipments. No credit card.</p>
     </div>
-    <a href="/evaluation/save" class="inline-flex items-center rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-800">Save evaluation →</a>
+    <a href="/evaluation/save" class="inline-flex items-center rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-800">Keep this workspace</a>
   </div>
   {% elif entitlement.evaluation_read_only %}
   <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
@@ -199,7 +212,7 @@
       <p class="text-xs font-bold text-slate-950">Five-shipment evaluation complete.</p>
       <p class="mt-0.5 text-[11px] leading-5 text-slate-600">Your results remain available read-only. Continue with Litoral Trace to create or modify shipments.</p>
     </div>
-    <a href="/billing?evaluation=complete" class="inline-flex items-center rounded-lg border border-amber-300 bg-white px-3.5 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100">Continue with Litoral Trace →</a>
+    <a href="/billing?evaluation=complete" class="inline-flex items-center rounded-lg border border-amber-300 bg-white px-3.5 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100">Continue with Litoral Trace</a>
   </div>
   {% endif %}
 {% endif %}
@@ -223,6 +236,7 @@
     {terms: ['evidence', 'documents', 'source'], href: '/evidence'},
     {terms: ['suppliers', 'supplier', 'vendor', 'reusable evidence'], href: '/suppliers'},
     {terms: ['audit log', 'audit', 'activity', 'system of record', 'history'], href: '/audit-log'},
+    {terms: ['regulatory', 'regulatory analysis', 'ruleset', 'hts', 'aphis'], href: '/regulatory'},
     {terms: ['billing', 'subscription', 'payment'], href: '/billing'},
     {terms: ['product use', 'terms', 'compliance'], href: '/legal/product-use-terms'},
     {terms: ['refund', 'refunds'], href: '/legal/refunds'},

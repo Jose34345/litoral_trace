@@ -25,7 +25,7 @@
         <div class="bg-white px-4 py-3">
             <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">After this shipment</p>
             <p class="mt-1 text-lg font-bold text-slate-950">{{ entitlement.evaluation_total_operations - 1 if entitlement.evaluation_status == 'ANONYMOUS' else entitlement.evaluation_remaining_operations }} remaining</p>
-            {% if entitlement.evaluation_status == 'ANONYMOUS' %}<p class="mt-0.5 text-[10px] text-slate-500">First shipment anonymous · save with a work email after processing to continue.</p>{% endif %}
+            {% if entitlement.evaluation_status == 'ANONYMOUS' %}<p class="mt-0.5 text-[10px] text-slate-500">First shipment anonymous · keep this workspace with a work email after processing to continue.</p>{% endif %}
         </div>
         {% else %}
         <div class="bg-white px-4 py-3">
@@ -44,7 +44,7 @@
         </div>
     </div>
 
-    <form method="post" action="/operations/new" enctype="multipart/form-data" class="lt-form space-y-5 p-5">
+    <form method="post" action="/operations/new" enctype="multipart/form-data" class="lt-form space-y-5 p-5" data-shipment-intake>
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="document_role" value="UNKNOWN">
 
@@ -61,28 +61,181 @@
             <span id="client_reference_hint" class="text-xs text-slate-500">Leave blank and Litoral Trace creates an internal shipment reference automatically.</span>
         </label>
 
-        <label class="block cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 transition hover:border-emerald-400 hover:bg-emerald-50/30">
-            <span class="flex items-start gap-3">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-emerald-700 ring-1 ring-slate-200" aria-hidden="true"><i class="fa-solid fa-cloud-arrow-up"></i></span>
-                <span class="min-w-0">
-                    <span class="block text-sm font-bold text-slate-950">Add the shipment pack now <span class="font-normal text-slate-500">(optional)</span></span>
-                    <span class="mt-1 block text-xs leading-5 text-slate-600">Select invoice, packing list, B/L and available supplier evidence together. Multiple files are supported; document type is detected during processing.</span>
-                    {% if entitlement.is_evaluation %}<span class="mt-1 block text-[11px] font-semibold text-emerald-700">Raw source files are automatically deleted after {{ entitlement.evaluation_raw_retention_hours or 4 }} hours.</span>{% endif %}
-                </span>
-            </span>
-            <input class="mt-4 block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-slate-800" type="file" name="documents" multiple accept=".pdf,.csv,.xlsx,.xls,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
-        </label>
+        <div
+            id="shipment-dropzone"
+            class="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 transition focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-600/15 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-600/15"
+            data-max-files="{{ 10 if entitlement.is_evaluation else 20 }}"
+            data-dropzone
+            role="button"
+            tabindex="0"
+            aria-label="Add shipment documents"
+        >
+            <input
+                id="shipment-documents"
+                class="sr-only"
+                type="file"
+                name="documents"
+                multiple
+                accept=".pdf,.csv,.xlsx,.xls,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                data-document-input
+            >
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex min-w-0 items-start gap-3">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-emerald-700 ring-1 ring-slate-200" aria-hidden="true"><i class="fa-solid fa-cloud-arrow-up"></i></span>
+                    <div class="min-w-0">
+                        <p class="text-sm font-bold text-slate-950">Drop shipment documents here</p>
+                        <p class="mt-1 text-xs leading-5 text-slate-600">Invoice, packing list, B/L and supplier evidence can be added together. Document type is detected during processing.</p>
+                        <p class="mt-1 text-[11px] font-semibold text-slate-500">PDF · CSV · XLS · XLSX{% if entitlement.is_evaluation %} · up to 10 documents per evaluation shipment{% endif %}</p>
+                        {% if entitlement.is_evaluation %}<p class="mt-1 text-[11px] font-semibold text-emerald-700">Raw source files are automatically deleted after {{ entitlement.evaluation_raw_retention_hours or 4 }} hours.</p>{% endif %}
+                    </div>
+                </div>
+                <label for="shipment-documents" class="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-900 shadow-sm hover:border-slate-400 hover:bg-slate-50">Select documents</label>
+            </div>
+            <div class="mt-4 hidden rounded-lg border border-slate-200 bg-white p-3" data-selected-files>
+                <div class="flex items-center justify-between gap-3">
+                    <p class="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500" data-file-count>Selected documents</p>
+                    <button type="button" class="text-[11px] font-bold text-slate-600 hover:text-slate-950" data-clear-files>Clear</button>
+                </div>
+                <ul class="mt-2 space-y-1 text-xs text-slate-700" data-file-list></ul>
+            </div>
+            <p class="mt-3 hidden text-xs font-semibold text-rose-700" role="alert" aria-live="polite" data-file-error></p>
+        </div>
 
-        <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p class="text-xs leading-5 text-slate-600"><strong class="text-slate-900">Next:</strong> Create shipment → process documents → review only unresolved evidence → prepare declaration data.</p>
-            <a href="/regulatory" class="text-xs font-bold text-emerald-700 hover:text-emerald-800">View active regulatory baseline</a>
+        <section class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" aria-label="Shipment workflow">
+            <div class="grid gap-3 sm:grid-cols-4">
+                {% for number, title, copy in [
+                    ('1', 'Upload', 'Evidence pack'),
+                    ('2', 'Extract', 'Reconcile fields'),
+                    ('3', 'Review', 'Resolve exceptions'),
+                    ('4', 'Package', 'Prepare declaration data')
+                ] %}
+                <div class="flex items-center gap-2.5">
+                    <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white">{{ number }}</span>
+                    <span class="min-w-0"><span class="block text-xs font-bold text-slate-900">{{ title }}</span><span class="block truncate text-[10px] text-slate-500">{{ copy }}</span></span>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-[11px] leading-5 text-slate-500">You can create the shipment without documents and add evidence later. Reprocessing the same evaluation shipment does not consume another shipment.</p>
+            <a href="/regulatory" class="text-xs font-bold text-emerald-700 hover:text-emerald-800">View regulatory baseline</a>
         </div>
 
         <div class="lt-form__actions">
-            {{ button("Create shipment & upload documents", variant="primary", button_type="submit") }}
+            <button id="shipment-submit" type="submit" class="inline-flex min-h-10 items-center justify-center rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-600/30" data-empty-label="Create shipment" data-files-label="Create shipment & process documents">Create shipment</button>
             {{ button("Cancel", "/operations", "secondary") }}
         </div>
-        <p class="text-[11px] leading-5 text-slate-500">You can create the shipment without files and add evidence later. Reprocessing the same evaluation shipment does not consume another shipment.</p>
     </form>
 </section>
+
+<script>
+(() => {
+  const form = document.querySelector('[data-shipment-intake]');
+  const dropzone = document.querySelector('[data-dropzone]');
+  const input = document.querySelector('[data-document-input]');
+  const selected = document.querySelector('[data-selected-files]');
+  const list = document.querySelector('[data-file-list]');
+  const count = document.querySelector('[data-file-count]');
+  const clear = document.querySelector('[data-clear-files]');
+  const error = document.querySelector('[data-file-error]');
+  const submit = document.getElementById('shipment-submit');
+  if (!form || !dropzone || !input || !selected || !list || !count || !clear || !error || !submit) return;
+
+  const maxFiles = Number.parseInt(dropzone.dataset.maxFiles || '10', 10);
+  let files = [];
+
+  const key = (file) => `${file.name}:${file.size}:${file.lastModified}`;
+  const formatBytes = (bytes) => {
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+  const syncInput = () => {
+    const transfer = new DataTransfer();
+    files.forEach((file) => transfer.items.add(file));
+    input.files = transfer.files;
+  };
+  const render = () => {
+    list.replaceChildren();
+    files.forEach((file) => {
+      const item = document.createElement('li');
+      item.className = 'flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2.5 py-1.5';
+      const name = document.createElement('span');
+      name.className = 'min-w-0 flex-1 truncate font-semibold text-slate-800';
+      name.textContent = file.name;
+      const size = document.createElement('span');
+      size.className = 'shrink-0 text-[10px] text-slate-500';
+      size.textContent = formatBytes(file.size);
+      item.append(name, size);
+      list.append(item);
+    });
+    selected.classList.toggle('hidden', files.length === 0);
+    count.textContent = files.length === 1 ? '1 document selected' : `${files.length} documents selected`;
+    const emptyLabel = submit.dataset.emptyLabel || 'Create shipment';
+    const filesLabel = submit.dataset.filesLabel || 'Create shipment & process documents';
+    submit.textContent = files.length ? `${filesLabel} (${files.length})` : emptyLabel;
+  };
+  const showError = (message) => {
+    error.textContent = message;
+    error.classList.toggle('hidden', !message);
+  };
+  const addFiles = (incoming) => {
+    const accepted = Array.from(incoming || []);
+    const allowed = /\.(pdf|csv|xlsx|xls)$/i;
+    const invalid = accepted.find((file) => !allowed.test(file.name));
+    if (invalid) {
+      showError('Supported formats are PDF, CSV, XLS and XLSX.');
+      return;
+    }
+    const merged = [...files];
+    const seen = new Set(merged.map(key));
+    accepted.forEach((file) => {
+      if (!seen.has(key(file))) {
+        merged.push(file);
+        seen.add(key(file));
+      }
+    });
+    if (merged.length > maxFiles) {
+      showError(`Select no more than ${maxFiles} documents for this shipment.`);
+      return;
+    }
+    files = merged;
+    showError('');
+    syncInput();
+    render();
+  };
+
+  input.addEventListener('change', () => {
+    addFiles(input.files);
+  });
+  clear.addEventListener('click', () => {
+    files = [];
+    input.value = '';
+    showError('');
+    render();
+  });
+  dropzone.addEventListener('click', (event) => {
+    if (event.target.closest('label, button, input, a')) return;
+    input.click();
+  });
+  dropzone.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    input.click();
+  });
+  ['dragenter', 'dragover'].forEach((eventName) => dropzone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    dropzone.classList.add('border-emerald-500', 'bg-emerald-50/40');
+  }));
+  ['dragleave', 'drop'].forEach((eventName) => dropzone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    dropzone.classList.remove('border-emerald-500', 'bg-emerald-50/40');
+  }));
+  dropzone.addEventListener('drop', (event) => addFiles(event.dataTransfer?.files));
+  form.addEventListener('submit', () => {
+    submit.disabled = true;
+    submit.textContent = files.length ? 'Creating shipment & starting processing…' : 'Creating shipment…';
+  });
+})();
+</script>
 {% endblock %}
