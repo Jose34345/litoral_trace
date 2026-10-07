@@ -56,7 +56,7 @@ The current general CI config uses Python 3.11, installs `requirements.txt`, `py
 python -m pytest -q -rs
 ```
 
-The canonical U.S. Lacey Alembic head is `076_us_lacey_product_led_evaluation`.
+The canonical U.S. Lacey Alembic head is `077_us_lacey_outreach_human_signals`.
 
 ## Product Intelligence / BOM contract
 The active BOM capability is protected by:

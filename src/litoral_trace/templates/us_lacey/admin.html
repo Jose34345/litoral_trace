@@ -13,7 +13,7 @@
         <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Cross-tenant account status, usage, users and processing failures. Mutations below use the audited capability-scoped PostgreSQL control plane.</p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <a href="/admin/pilot-watch" class="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-800 hover:bg-slate-50">Pilot Watch</a>
+        <a href="#pilot-watch" class="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-800 hover:bg-slate-50">Reliability live</a>
         <a href="/operations" class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Back to operations</a>
       </div>
     </div>
@@ -22,6 +22,20 @@
   {% if notice %}
   <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{{ notice }}</div>
   {% endif %}
+
+  <section id="pilot-watch" class="rounded-2xl border border-rose-200 bg-rose-50 p-5" aria-label="Pilot Watch">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <p class="text-xs font-bold uppercase tracking-[0.16em] text-rose-700">Reliability · Pilot Watch</p>
+        <h2 class="mt-1 text-lg font-bold text-slate-950">Live pilot and sandbox health</h2>
+        <p class="mt-1 max-w-3xl text-xs leading-5 text-slate-600">Operational quality, open P0/P1 incidents and recent pilot activity are now part of the owner console. This panel remains privacy-bounded and never exposes customer document contents.</p>
+      </div>
+      <span class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">20s refresh</span>
+    </div>
+    <div id="pilot-watch-live" class="mt-4" hx-get="/admin/pilot-watch/fragment" hx-trigger="load, every 20s" hx-swap="innerHTML" aria-live="polite">
+      <div class="rounded-xl border border-slate-200 bg-white p-6 text-center text-xs font-semibold text-slate-500">Loading reliability telemetry…</div>
+    </div>
+  </section>
 
   <section class="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4" aria-label="Learning Plane metrics">
     <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -54,8 +68,13 @@
     <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div>
         <p class="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">First-party outreach attribution</p>
-        <h2 class="mt-1 text-lg font-bold text-slate-950">Prospect sandbox funnel</h2>
-        <p class="mt-1 max-w-3xl text-xs leading-5 text-slate-600">Generate a zero-friction prospect link. Litoral Trace records only funnel metadata: link open, sandbox start, operation, upload, review, confirmation and export. Shipment documents and extracted values are not copied into this growth plane.</p>
+        <h2 class="mt-1 text-lg font-bold text-slate-950">Commercial engagement signals</h2>
+        <p class="mt-1 max-w-3xl text-xs leading-5 text-slate-600">Raw link hits are treated as scans, not people. A likely-human signal requires a visible browser with dwell or interaction; product engagement requires a sample or sandbox action. No IP address, raw User-Agent, document content or extracted customer values are stored here.</p>
+        <div class="mt-3 flex flex-wrap gap-2 text-[10px] font-bold">
+          <span class="rounded-full border border-slate-200 bg-white px-2 py-1 text-slate-600">Likely automated = scan only</span>
+          <span class="rounded-full border border-slate-200 bg-white px-2 py-1 text-sky-700">Likely human = browser signal</span>
+          <span class="rounded-full border border-emerald-200 bg-emerald-100 px-2 py-1 text-emerald-800">Product engaged = sample/sandbox action</span>
+        </div>
       </div>
       <form method="post" action="/admin/outreach-links" class="grid gap-2 rounded-xl border border-emerald-100 bg-white p-3 sm:grid-cols-2 lg:w-80">
         <input type="hidden" name="csrf_token" value="{{ outreach_create_csrf }}">
@@ -75,13 +94,14 @@
         <thead class="bg-slate-50 uppercase text-slate-600">
           <tr>
             <th class="p-3">Prospect / link</th>
-            <th class="p-3">Clicks</th>
+            <th class="p-3">Signal</th>
+            <th class="p-3">Raw hits</th>
+            <th class="p-3">Human</th>
+            <th class="p-3">Engaged</th>
             <th class="p-3">Sandbox</th>
             <th class="p-3">Operations</th>
             <th class="p-3">Uploads</th>
             <th class="p-3">Review</th>
-            <th class="p-3">Confirm all</th>
-            <th class="p-3">Completed</th>
             <th class="p-3">Exports</th>
           </tr>
         </thead>
@@ -93,17 +113,28 @@
               <div class="mt-1 text-[11px] text-slate-500">{{ link.campaign_code }} · {{ link.source }}</div>
               <input readonly value="https://lacey.litoraltrace.com/sandbox/ref/{{ link.slug }}" class="mt-2 w-full rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[10px] text-slate-700" aria-label="Attributed sandbox link for {{ link.prospect_label }}">
             </td>
-            <td class="p-3 font-bold">{{ link.click_count or 0 }}</td>
-            <td class="p-3">{{ link.sandbox_started or 0 }} / {{ link.attributed_sessions or 0 }}</td>
+            <td class="p-3">
+              {% if link.engagement_state == 'PRODUCT_ENGAGED' %}
+                <span class="rounded-full border border-emerald-200 bg-emerald-100 px-2 py-1 font-bold text-emerald-800">Product engaged</span>
+              {% elif link.engagement_state == 'LIKELY_HUMAN' %}
+                <span class="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 font-bold text-sky-700">Likely human</span>
+              {% elif link.engagement_state == 'LIKELY_AUTOMATED' %}
+                <span class="rounded-full border border-slate-200 bg-slate-100 px-2 py-1 font-bold text-slate-600">Likely automated</span>
+              {% else %}
+                <span class="rounded-full border border-slate-200 bg-white px-2 py-1 font-bold text-slate-400">No activity</span>
+              {% endif %}
+            </td>
+            <td class="p-3"><div class="font-bold">{{ link.raw_hits or 0 }}</div><div class="mt-1 text-[10px] text-slate-400">{{ link.link_scans or 0 }} scan session(s)</div></td>
+            <td class="p-3 font-bold text-sky-700">{{ link.human_visits or 0 }}</td>
+            <td class="p-3 font-bold text-emerald-700">{{ link.product_engaged or 0 }}</td>
+            <td class="p-3 font-bold">{{ link.sandbox_engaged or 0 }}</td>
             <td class="p-3">{{ link.operations_created or 0 }}</td>
             <td class="p-3">{{ link.document_uploads or 0 }}</td>
-            <td class="p-3">{{ link.review_reached or 0 }}</td>
-            <td class="p-3">{{ link.auto_resolved_confirmed or 0 }}</td>
-            <td class="p-3">{{ link.review_completed or 0 }}</td>
+            <td class="p-3">{{ link.review_reached or 0 }} / {{ link.review_completed or 0 }}</td>
             <td class="p-3">{{ link.exports_downloaded or 0 }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="9" class="p-6 text-center text-slate-500">No attributed outreach links yet.</td></tr>
+          <tr><td colspan="10" class="p-6 text-center text-slate-500">No attributed outreach links yet.</td></tr>
         {% endfor %}
         </tbody>
       </table>

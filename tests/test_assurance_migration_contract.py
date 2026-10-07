@@ -59,6 +59,9 @@ US_LACEY_SUPABASE_HARDENING_MIGRATION = Path(
 US_LACEY_REUSABLE_EVIDENCE_MIGRATION = Path(
     "alembic/versions/071_us_lacey_reusable_supplier_evidence.py"
 )
+US_LACEY_OUTREACH_HUMAN_SIGNALS_MIGRATION = Path(
+    "alembic/versions/077_us_lacey_outreach_human_signals.py"
+)
 
 
 def test_assurance_migration_has_expected_parent_and_tables():
@@ -380,9 +383,23 @@ def test_us_lacey_reusable_evidence_follows_paddle_billing():
     assert "LargeBinary" not in text
 
 
+def test_us_lacey_outreach_human_signals_follow_product_led_evaluation():
+    text = US_LACEY_OUTREACH_HUMAN_SIGNALS_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "077_us_lacey_outreach_human_signals"' in text
+    assert 'down_revision = "076_us_lacey_product_led_evaluation"' in text
+    for event_name in ("LINK_SCANNED", "HUMAN_VISIT", "SANDBOX_ENGAGED"):
+        assert event_name in text
+    assert "platform_admin_outreach_engagement" in text
+    assert "LIKELY_AUTOMATED" in text
+    assert "LIKELY_HUMAN" in text
+    assert "PRODUCT_ENGAGED" in text
+    assert "ip_address" not in text
+    assert "user_agent" not in text
+
+
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "076_us_lacey_product_led_evaluation (head)" in text
+    assert "077_us_lacey_outreach_human_signals (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():

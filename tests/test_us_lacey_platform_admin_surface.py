@@ -100,16 +100,19 @@ def _patch_admin_reads(monkeypatch, seen_tokens: list[str]):
                 "source": "direct_outreach",
                 "active": True,
                 "created_at": None,
-                "click_count": 2,
+                "raw_hits": 2,
                 "attributed_sessions": 2,
-                "sandbox_started": 1,
+                "link_scans": 2,
+                "human_visits": 1,
+                "product_engaged": 1,
+                "sandbox_engaged": 1,
                 "operations_created": 1,
                 "document_uploads": 1,
                 "review_reached": 1,
-                "auto_resolved_confirmed": 0,
                 "review_completed": 0,
                 "exports_downloaded": 0,
                 "last_event_at": None,
+                "engagement_state": "PRODUCT_ENGAGED",
             }
         ],
     )
@@ -156,12 +159,50 @@ def test_superadmin_page_reuses_same_us_session_for_control_plane(monkeypatch):
     assert "12.5%" in response.text
     assert "4.2s" in response.text
     assert "First-party outreach attribution" in response.text
+    assert "Commercial engagement signals" in response.text
+    assert 'id="pilot-watch"' in response.text
+    assert 'id="pilot-watch-live"' in response.text
+    assert "Product engaged" in response.text
     assert "Concannon Lumber" in response.text
     assert (
         "https://lacey.litoraltrace.com/sandbox/ref/concannon-sep26-a1b2c3"
         in response.text
     )
     assert seen_tokens == [SESSION]
+
+
+def test_legacy_pilot_watch_route_redirects_into_admin(monkeypatch):
+    monkeypatch.setattr(
+        admin_surface,
+        "resolve_us_lacey_session",
+        lambda token: _identity(),
+    )
+    monkeypatch.setattr(
+        admin_surface,
+        "_platform_admin_refresh_token",
+        lambda token: token,
+    )
+    monkeypatch.setattr(
+        admin_surface,
+        "pilot_watch_metrics_superadmin",
+        lambda *, refresh_token: {
+            "active_sandboxes": 1,
+            "tests_today": 2,
+            "open_p0": 0,
+            "open_p1": 0,
+            "exports_completed": 1,
+        },
+    )
+
+    client.cookies.set(US_LACEY_SESSION_COOKIE, SESSION)
+    try:
+        response = client.get("/admin/pilot-watch", follow_redirects=False)
+    finally:
+        client.cookies.delete(US_LACEY_SESSION_COOKIE)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin#pilot-watch"
+    assert response.headers["cache-control"] == "no-store, max-age=0"
 
 
 def test_admin_can_create_attributed_prospect_link(monkeypatch):

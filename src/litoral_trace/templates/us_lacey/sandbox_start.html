@@ -94,5 +94,8 @@
 
     <p class="mt-5 text-center text-[11px] leading-5 text-slate-500">Samples use synthetic data and never consume an evaluation shipment.</p>
   </main>
+  {% if track_outreach_human_visit %}
+  <script defer src="{{ url_for('static', path='/js/us_lacey_outreach_human_visit.js') }}"></script>
+  {% endif %}
 </body>
 </html>

@@ -319,7 +319,7 @@ def list_outreach_funnel_superadmin(
     return _control_plane_call(
         refresh_token=refresh_token,
         statement=(
-            "SELECT * FROM public.platform_admin_outreach_funnel("
+            "SELECT * FROM public.platform_admin_outreach_engagement("
             ":actor_refresh_token_hash, :requested_limit)"
         ),
         values={"requested_limit": int(limit)},
@@ -622,16 +622,11 @@ def platform_admin_pilot_watch_page(
     try:
         session_token = _require_us_session(us_session)
         refresh_token = _platform_admin_refresh_token(session_token)
-        # Capability invocation is the authorization boundary: the underlying
-        # SECURITY DEFINER function rejects every non-superadmin session.
+        # Keep the legacy URL as an authorization-checked compatibility route.
         pilot_watch_metrics_superadmin(refresh_token=refresh_token)
-        content = templates.get_template("us_lacey/pilot_watch.html").render(
-            request=request,
-            authenticated=True,
-        )
-        return HTMLResponse(
-            content=content,
-            status_code=status.HTTP_200_OK,
+        return RedirectResponse(
+            "/admin#pilot-watch",
+            status_code=status.HTTP_303_SEE_OTHER,
             headers={"Cache-Control": "no-store, max-age=0"},
         )
     except UsLaceyPortalAuthError:

@@ -44,11 +44,11 @@ class _Engine:
 
 
 def test_required_schema_revision_is_activation_evaluation_contract() -> None:
-    assert schema_compatibility.required_us_lacey_schema_revision() == "076_us_lacey_product_led_evaluation"
+    assert schema_compatibility.required_us_lacey_schema_revision() == "077_us_lacey_outreach_human_signals"
 
 
 def test_schema_probe_is_ready_on_required_activation_evaluation_revision(monkeypatch) -> None:
-    engine = _Engine("076_us_lacey_product_led_evaluation")
+    engine = _Engine("077_us_lacey_outreach_human_signals")
     monkeypatch.setattr(schema_compatibility, "get_us_lacey_engine", lambda: engine)
 
     assert schema_compatibility.probe_us_lacey_schema_compatibility() is True

@@ -110,6 +110,21 @@ def test_outreach_attribution_capabilities_are_runtime_safe_and_durable():
             {"slug": slug},
         ).mappings().one()
 
+        human_visit = connection.execute(
+            text(
+                """
+                SELECT public.us_lacey_outreach_record_pre_sandbox_event(
+                    :attribution_session_id,
+                    'HUMAN_VISIT',
+                    'browser-visible',
+                    '{}'::jsonb
+                )
+                """
+            ),
+            {"attribution_session_id": outreach["attribution_session_id"]},
+        ).scalar_one()
+        assert human_visit is True
+
         bound = connection.execute(
             text(
                 """
@@ -174,11 +189,17 @@ def test_outreach_attribution_capabilities_are_runtime_safe_and_durable():
                     session.sandbox_organization_id,
                     org.sandbox_attribution_session_id,
                     count(event.id) FILTER (
-                        WHERE event.event_name = 'LINK_OPENED'
-                    ) AS link_opened,
+                        WHERE event.event_name = 'LINK_SCANNED'
+                    ) AS link_scanned,
+                    count(event.id) FILTER (
+                        WHERE event.event_name = 'HUMAN_VISIT'
+                    ) AS human_visit,
                     count(event.id) FILTER (
                         WHERE event.event_name = 'SANDBOX_STARTED'
                     ) AS sandbox_started,
+                    count(event.id) FILTER (
+                        WHERE event.event_name = 'SANDBOX_ENGAGED'
+                    ) AS sandbox_engaged,
                     count(event.id) FILTER (
                         WHERE event.event_name = 'OPERATION_CREATED'
                     ) AS operations_created
@@ -204,8 +225,10 @@ def test_outreach_attribution_capabilities_are_runtime_safe_and_durable():
         assert stored["sandbox_attribution_session_id"] == outreach[
             "attribution_session_id"
         ]
-        assert stored["link_opened"] == 1
+        assert stored["link_scanned"] == 1
+        assert stored["human_visit"] == 1
         assert stored["sandbox_started"] == 1
+        assert stored["sandbox_engaged"] == 1
         assert stored["operations_created"] == 1
     finally:
         transaction.rollback()
@@ -322,6 +345,70 @@ def test_platform_admin_outreach_link_creation_writes_tenant_scoped_audit_log():
         assert audit["action"] == "OUTREACH_LINK_CREATED"
         assert audit["entity_type"] == "us_lacey_outreach_link"
         assert audit["entity_id"] == created["outreach_link_id"]
+
+        connection.execute(text("SET LOCAL ROLE litoral_trace_app"))
+        outreach = connection.execute(
+            text("SELECT * FROM public.us_lacey_outreach_open(:slug)"),
+            {"slug": slug},
+        ).mappings().one()
+
+        scan_only = connection.execute(
+            text(
+                """
+                SELECT *
+                FROM public.platform_admin_outreach_engagement(
+                    :token_hash,
+                    50
+                )
+                WHERE outreach_link_id = :outreach_link_id
+                """
+            ),
+            {
+                "token_hash": token_hash,
+                "outreach_link_id": created["outreach_link_id"],
+            },
+        ).mappings().one()
+        assert scan_only["raw_hits"] == 1
+        assert scan_only["link_scans"] == 1
+        assert scan_only["human_visits"] == 0
+        assert scan_only["product_engaged"] == 0
+        assert scan_only["engagement_state"] == "LIKELY_AUTOMATED"
+
+        recorded = connection.execute(
+            text(
+                """
+                SELECT public.us_lacey_outreach_record_pre_sandbox_event(
+                    :attribution_session_id,
+                    'HUMAN_VISIT',
+                    'browser-visible',
+                    '{}'::jsonb
+                )
+                """
+            ),
+            {"attribution_session_id": outreach["attribution_session_id"]},
+        ).scalar_one()
+        assert recorded is True
+
+        human = connection.execute(
+            text(
+                """
+                SELECT *
+                FROM public.platform_admin_outreach_engagement(
+                    :token_hash,
+                    50
+                )
+                WHERE outreach_link_id = :outreach_link_id
+                """
+            ),
+            {
+                "token_hash": token_hash,
+                "outreach_link_id": created["outreach_link_id"],
+            },
+        ).mappings().one()
+        assert human["human_visits"] == 1
+        assert human["product_engaged"] == 0
+        assert human["engagement_state"] == "LIKELY_HUMAN"
+        connection.execute(text("RESET ROLE"))
     finally:
         transaction.rollback()
         connection.close()

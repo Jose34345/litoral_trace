@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import logging
 
-from fastapi import APIRouter, Cookie, Form, Request, status
+from fastapi import APIRouter, Cookie, Form, Request, Response, status
 from fastapi.responses import PlainTextResponse, RedirectResponse
 
 from litoral_trace.us_lacey.growth_attribution import (
@@ -103,6 +103,8 @@ def _harden_public_response(response):
         "default-src 'none'; "
         "img-src 'self' data:; "
         "style-src 'self'; "
+        "script-src 'self'; "
+        "connect-src 'self'; "
         "form-action 'self'; "
         "base-uri 'none'; "
         "frame-ancestors 'none'"
@@ -146,6 +148,25 @@ def sandbox_outreach_referral(slug: str):
         path="/",
     )
     return _harden_public_response(response)
+
+
+@router.post("/sandbox/engagement/human-visit", include_in_schema=False)
+def sandbox_outreach_human_visit(
+    outreach_attribution: str | None = Cookie(
+        None,
+        alias=OUTREACH_ATTRIBUTION_COOKIE,
+    ),
+):
+    """Record a privacy-bounded browser signal after the landing page is visible."""
+
+    if outreach_attribution:
+        safe_record_pre_sandbox_outreach_event(
+            attribution_session_id=outreach_attribution,
+            event_name="HUMAN_VISIT",
+            event_key="browser-visible",
+        )
+
+    return _harden_public_response(Response(status_code=status.HTTP_204_NO_CONTENT))
 
 
 @router.get("/try/{persona}", include_in_schema=False)
@@ -196,13 +217,19 @@ def evaluation_sample_view(
 
 
 @router.get("/sandbox/start", include_in_schema=False)
-def sandbox_start_view(request: Request):
+def sandbox_start_view(
+    request: Request,
+    outreach_attribution: str | None = Cookie(
+        None,
+        alias=OUTREACH_ATTRIBUTION_COOKIE,
+    ),
+):
     """Render the consent screen without creating any tenant or browser state."""
 
     response = render_template(
         request,
         "us_lacey/sandbox_start.html",
-        {},
+        {"track_outreach_human_visit": bool(outreach_attribution)},
         status_code=status.HTTP_200_OK,
     )
     return _harden_public_response(response)

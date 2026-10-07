@@ -407,7 +407,9 @@ authority = "observation"
 implementation = [
   "src/litoral_trace/us_lacey/growth_attribution.py",
   "src/litoral_trace/web/us_lacey_sandbox.py",
+  "src/litoral_trace/web/us_lacey_platform_admin.py",
   "src/litoral_trace/web/us_lacey_pilot_app.py",
+  "src/litoral_trace/static/js/us_lacey_outreach_human_visit.js",
   "src/litoral_trace/web/us_lacey_platform_admin.py",
   "src/litoral_trace/templates/us_lacey/admin.html"
 ]
@@ -501,7 +503,10 @@ implementation = [
   "src/litoral_trace/templates/us_lacey/evaluation_claim.html",
   "src/litoral_trace/templates/us_lacey/evaluation_upgrade.html"
 ]
-migrations = ["alembic/versions/076_us_lacey_product_led_evaluation.py"]
+migrations = [
+  "alembic/versions/076_us_lacey_product_led_evaluation.py",
+  "alembic/versions/077_us_lacey_outreach_human_signals.py"
+]
 tests = [
   "tests/test_us_lacey_product_led_evaluation.py",
   "tests/test_us_lacey_product_led_evaluation_postgres.py",
@@ -512,4 +517,4 @@ workflows = [
   ".github/workflows/ci.yml",
   ".github/workflows/us-lacey-postgres-gate.yml"
 ]
-notes = "Ungated synthetic importer/broker samples never create a tenant or consume quota. The first real shipment is anonymous and card-free. After one successfully processed shipment, a work-email-only claim promotes the same tenant into a five-successful-shipment evaluation. FAILED processing never consumes quota and a distinct operation is counted at most once, so reprocessing is free. Claimed evaluations use a sliding seven-day inactivity window; after five successful shipments they become read-only rather than being immediately deleted. Raw Vault object bytes are independently scheduled for physical deletion four hours after each upload, while derived operation/review/supplier/audit state remains available for the active evaluation. Growth attribution records product-qualified signals without storing customer document content."
+notes = "Ungated synthetic importer/broker samples never create a tenant or consume quota. The first real shipment is anonymous and card-free. After one successfully processed shipment, a work-email-only claim promotes the same tenant into a five-successful-shipment evaluation. FAILED processing never consumes quota and a distinct operation is counted at most once, so reprocessing is free. Claimed evaluations use a sliding seven-day inactivity window; after five successful shipments they become read-only rather than being immediately deleted. Raw Vault object bytes are independently scheduled for physical deletion four hours after each upload, while derived operation/review/supplier/audit state remains available for the active evaluation. Growth attribution separates raw link scans from likely-human browser visits and confirmed product engagement without storing IP addresses, raw User-Agent values, customer document content, or extracted values. Pilot Watch is consolidated into the superadmin owner console."
