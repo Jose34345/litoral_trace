@@ -46,6 +46,7 @@ _PRE_SANDBOX_EVENTS = frozenset(
         "SAMPLE_STARTED",
         "SAMPLE_REUSE_REACHED",
         "SAMPLE_COMPLETED",
+        "HUMAN_VISIT",
     }
 )
 
