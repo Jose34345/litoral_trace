@@ -91,6 +91,71 @@ def test_outreach_referral_invalid_or_inactive_link_is_404(monkeypatch):
     )
 
 
+def test_attributed_sandbox_start_loads_human_visit_signal(monkeypatch):
+    client.cookies.clear()
+    client.cookies.set(OUTREACH_ATTRIBUTION_COOKIE, str(ATTRIBUTION_ID))
+    try:
+        response = client.get("/sandbox/start")
+    finally:
+        client.cookies.clear()
+
+    assert response.status_code == 200
+    assert "/static/js/us_lacey_outreach_human_visit.js" in response.text
+    assert "script-src 'self'" in response.headers["content-security-policy"]
+
+
+def test_unattributed_sandbox_start_does_not_load_human_visit_signal():
+    client.cookies.clear()
+    response = client.get("/sandbox/start")
+
+    assert response.status_code == 200
+    assert "/static/js/us_lacey_outreach_human_visit.js" not in response.text
+
+
+def test_human_visit_endpoint_records_only_attribution_signal(monkeypatch):
+    client.cookies.clear()
+    calls = []
+
+    def record(**kwargs):
+        calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        sandbox_web,
+        "safe_record_pre_sandbox_outreach_event",
+        record,
+    )
+    client.cookies.set(OUTREACH_ATTRIBUTION_COOKIE, str(ATTRIBUTION_ID))
+    try:
+        response = client.post("/sandbox/engagement/human-visit")
+    finally:
+        client.cookies.clear()
+
+    assert response.status_code == 204
+    assert calls == [
+        {
+            "attribution_session_id": str(ATTRIBUTION_ID),
+            "event_name": "HUMAN_VISIT",
+            "event_key": "browser-visible",
+        }
+    ]
+
+
+def test_human_visit_endpoint_without_attribution_is_noop(monkeypatch):
+    client.cookies.clear()
+    calls = []
+    monkeypatch.setattr(
+        sandbox_web,
+        "safe_record_pre_sandbox_outreach_event",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    response = client.post("/sandbox/engagement/human-visit")
+
+    assert response.status_code == 204
+    assert calls == []
+
+
 def test_attributed_sandbox_post_binds_tenant_and_clears_referral_cookie(monkeypatch):
     client.cookies.clear()
     monkeypatch.setattr(
