@@ -2,13 +2,23 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
+from litoral_trace.us_lacey._operations_core import UsLaceyOperationConflict
+from litoral_trace.us_lacey.evaluation import UsLaceyEvaluationError
 from litoral_trace.us_lacey.portal_auth import (
     US_LACEY_SESSION_COOKIE,
     UsLaceyPortalIdentity,
 )
+from litoral_trace.us_lacey.workflow import (
+    UsLaceyWorkflowError,
+    create_us_lacey_customer_operation,
+)
 from litoral_trace.web.us_lacey_pilot_app import app
+
+
+NO_SLOT = "This evaluation has no available shipment slots right now."
 
 
 def _portal_env(monkeypatch) -> None:
@@ -30,8 +40,116 @@ def _portal_env(monkeypatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
 
-def _identity() -> UsLaceyPortalIdentity:
-    return UsLaceyPortalIdentity(
+class _SingleExistingOperations:
+    def __init__(self) -> None:
+        self.create_calls: list[dict[str, object]] = []
+
+    def list_operations(self, **_kwargs):
+        return [SimpleNamespace(public_id="OP-IN-PROGRESS", status="NEW")]
+
+    def get_operation(self, **_kwargs):
+        return SimpleNamespace(public_id="OP-IN-PROGRESS", status="NEW")
+
+    def create_operation(self, **kwargs):
+        self.create_calls.append(kwargs)
+        return SimpleNamespace(public_id="OP-UNEXPECTED-NEW", status="NEW")
+
+
+class _FiveExistingOperations(_SingleExistingOperations):
+    def list_operations(self, **_kwargs):
+        return [
+            SimpleNamespace(public_id=f"OP-{index}", status="NEW")
+            for index in range(1, 6)
+        ]
+
+
+def test_no_slot_preflight_resumes_the_single_existing_evaluation_shipment(monkeypatch):
+    service = _SingleExistingOperations()
+    access_calls: list[dict[str, object]] = []
+
+    def no_capacity(**_kwargs):
+        raise UsLaceyEvaluationError(NO_SLOT)
+
+    monkeypatch.setattr(
+        "litoral_trace.us_lacey.workflow.require_evaluation_creation_capacity",
+        no_capacity,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.us_lacey.workflow.require_us_lacey_operational_access",
+        lambda **kwargs: access_calls.append(kwargs),
+    )
+
+    result = create_us_lacey_customer_operation(
+        organization_id=122,
+        user_id=21,
+        client_reference="LACEY-RETRY",
+        line_references=("1",),
+        operations=service,
+    )
+
+    assert result.public_id == "OP-IN-PROGRESS"
+    assert service.create_calls == []
+    assert access_calls == [
+        {
+            "organization_id": 122,
+            "require_operation_slot": False,
+            "require_mutation_access": True,
+        }
+    ]
+
+
+def test_no_slot_preflight_does_not_mask_a_full_multi_shipment_evaluation(monkeypatch):
+    service = _FiveExistingOperations()
+
+    def no_capacity(**_kwargs):
+        raise UsLaceyEvaluationError(NO_SLOT)
+
+    monkeypatch.setattr(
+        "litoral_trace.us_lacey.workflow.require_evaluation_creation_capacity",
+        no_capacity,
+    )
+
+    with pytest.raises(UsLaceyWorkflowError, match="no available shipment slots"):
+        create_us_lacey_customer_operation(
+            organization_id=122,
+            user_id=21,
+            client_reference="LACEY-SIXTH",
+            line_references=("1",),
+            operations=service,
+        )
+
+
+def test_concurrent_create_conflict_resumes_the_operation_that_won_the_race(monkeypatch):
+    service = _SingleExistingOperations()
+
+    monkeypatch.setattr(
+        "litoral_trace.us_lacey.workflow.require_evaluation_creation_capacity",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.us_lacey.workflow.require_us_lacey_operational_access",
+        lambda **_kwargs: None,
+    )
+
+    def conflict(**_kwargs):
+        raise UsLaceyOperationConflict(NO_SLOT)
+
+    service.create_operation = conflict
+
+    result = create_us_lacey_customer_operation(
+        organization_id=122,
+        user_id=21,
+        client_reference="LACEY-RACE",
+        line_references=("1",),
+        operations=service,
+    )
+
+    assert result.public_id == "OP-IN-PROGRESS"
+
+
+def test_stale_new_shipment_post_uploads_into_the_resumed_operation(monkeypatch):
+    _portal_env(monkeypatch)
+    identity = UsLaceyPortalIdentity(
         user_id=21,
         organization_id=122,
         email="sandbox@example.invalid",
@@ -40,10 +158,7 @@ def _identity() -> UsLaceyPortalIdentity:
         business_type="IMPORTER",
         account_status="PILOT",
     )
-
-
-def _anonymous_entitlement() -> SimpleNamespace:
-    return SimpleNamespace(
+    entitlement = SimpleNamespace(
         used_operations=0,
         monthly_operation_limit=1,
         remaining_operations=1,
@@ -52,69 +167,27 @@ def _anonymous_entitlement() -> SimpleNamespace:
         evaluation_can_claim=False,
         evaluation_read_only=False,
     )
+    uploaded: dict[str, object] = {}
 
-
-def _patch_context(monkeypatch) -> None:
     monkeypatch.setattr(
         "litoral_trace.web.us_lacey_pilot_app.resolve_us_lacey_session",
-        lambda _token: _identity(),
+        lambda _token: identity,
     )
     monkeypatch.setattr(
         "litoral_trace.web.us_lacey_pilot_app.require_us_lacey_operational_access",
-        lambda **_kwargs: _anonymous_entitlement(),
+        lambda **_kwargs: entitlement,
     )
-
-
-class _ExistingOperations:
-    def list_operations(self, **_kwargs):
-        return [SimpleNamespace(public_id="OP-IN-PROGRESS", status="NEW")]
-
-
-def test_get_new_shipment_resumes_existing_anonymous_incomplete_shipment(monkeypatch):
-    _portal_env(monkeypatch)
-    _patch_context(monkeypatch)
-    monkeypatch.setattr(
-        "litoral_trace.web.us_lacey_pilot_app.UsLaceyOperationService",
-        _ExistingOperations,
-    )
-
-    client = TestClient(app, follow_redirects=False)
-    client.cookies.set(US_LACEY_SESSION_COOKIE, "opaque-us-session-token")
-    response = client.get("/operations/new")
-
-    assert response.status_code == 303
-    assert response.headers["location"] == "/operations/OP-IN-PROGRESS"
-
-
-def test_stale_new_shipment_post_uploads_into_existing_anonymous_shipment(monkeypatch):
-    _portal_env(monkeypatch)
-    _patch_context(monkeypatch)
     monkeypatch.setattr(
         "litoral_trace.web.us_lacey_pilot_app.verify_us_lacey_csrf",
         lambda **_kwargs: None,
     )
     monkeypatch.setattr(
-        "litoral_trace.web.us_lacey_pilot_app.UsLaceyOperationService",
-        _ExistingOperations,
-    )
-
-    created: list[dict[str, object]] = []
-    uploaded: dict[str, object] = {}
-
-    def fake_create(**kwargs):
-        created.append(kwargs)
-        return SimpleNamespace(public_id="OP-UNEXPECTED-NEW")
-
-    def fake_upload_batch(**kwargs):
-        uploaded.update(kwargs)
-
-    monkeypatch.setattr(
         "litoral_trace.web.us_lacey_pilot_app.create_us_lacey_customer_operation",
-        fake_create,
+        lambda **_kwargs: SimpleNamespace(public_id="OP-IN-PROGRESS"),
     )
     monkeypatch.setattr(
         "litoral_trace.web.us_lacey_pilot_app.upload_and_enqueue_us_lacey_document_batch",
-        fake_upload_batch,
+        lambda **kwargs: uploaded.update(kwargs),
     )
     monkeypatch.setattr(
         "litoral_trace.web.us_lacey_pilot_app.safe_record_outreach_event",
@@ -131,6 +204,5 @@ def test_stale_new_shipment_post_uploads_into_existing_anonymous_shipment(monkey
 
     assert response.status_code == 303
     assert response.headers["location"] == "/operations/OP-IN-PROGRESS?uploaded=1"
-    assert created == []
     assert uploaded["operation_public_id"] == "OP-IN-PROGRESS"
     assert len(uploaded["documents"]) == 1
