@@ -296,10 +296,15 @@ class UsLaceyOperationService:
                     )
 
                 if str(subscription.plan_code) in {"SANDBOX", "EVALUATION"}:
+                    # The subscription row above is already locked FOR UPDATE and is
+                    # unique per organization, so it serializes concurrent operation
+                    # creation for this tenant. Do not lock the evaluation row here:
+                    # the runtime role is intentionally read-only on evaluation state,
+                    # and PostgreSQL requires UPDATE privilege for SELECT ... FOR UPDATE.
                     evaluation = session.scalar(
-                        select(UsLaceyEvaluation)
-                        .where(UsLaceyEvaluation.organization_id == org_id)
-                        .with_for_update()
+                        select(UsLaceyEvaluation).where(
+                            UsLaceyEvaluation.organization_id == org_id
+                        )
                     )
                     if evaluation is None:
                         raise UsLaceyOperationConflict(

@@ -241,6 +241,24 @@ def test_evaluation_ui_exposes_five_shipment_and_read_only_contract() -> None:
     assert "results remain available" in upgrade.lower()
 
 
+def test_evaluation_operation_creation_uses_subscription_lock_not_evaluation_write_lock() -> None:
+    source = (
+        ROOT
+        / "src"
+        / "litoral_trace"
+        / "us_lacey"
+        / "_operations_core.py"
+    ).read_text(encoding="utf-8")
+    start = source.index('if str(subscription.plan_code) in {"SANDBOX", "EVALUATION"}:')
+    end = source.index("            operation = UsLaceyOperation(", start)
+    evaluation_block = source[start:end]
+
+    assert "runtime role is intentionally read-only on evaluation state" in evaluation_block
+    assert "select(UsLaceyEvaluation).where(" in evaluation_block
+    assert "select(UsLaceyEvaluation)\n                        .where" not in evaluation_block
+    assert ".with_for_update()" not in evaluation_block
+
+
 def test_migration_encodes_success_only_exact_once_and_retention_contract() -> None:
     migration = (
         ROOT

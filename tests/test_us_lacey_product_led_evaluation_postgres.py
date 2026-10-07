@@ -212,6 +212,21 @@ def test_evaluation_rls_and_privileges_are_fail_closed(evaluation_fixture):
         ).scalar_one()
         assert hidden == 0
 
+    # Runtime evaluation state is deliberately read-only. PostgreSQL treats
+    # SELECT ... FOR UPDATE as a write-capable lock and therefore rejects it.
+    # Operation creation must serialize on the per-organization subscription
+    # row instead of depending on an evaluation-row lock.
+    with pytest.raises(DBAPIError):
+        with runtime.begin() as conn:
+            _tenant(conn, org_a)
+            conn.execute(
+                text(
+                    "SELECT id FROM public.us_lacey_evaluations "
+                    "WHERE organization_id=:org FOR UPDATE"
+                ),
+                {"org": org_a},
+            ).scalar_one()
+
     for statement in (
         "INSERT INTO public.us_lacey_evaluations "
         "(organization_id,status,operation_limit,successful_operations_used,"
