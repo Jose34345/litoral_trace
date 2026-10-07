@@ -110,6 +110,21 @@ def test_outreach_attribution_capabilities_are_runtime_safe_and_durable():
             {"slug": slug},
         ).mappings().one()
 
+        human_visit = connection.execute(
+            text(
+                """
+                SELECT public.us_lacey_outreach_record_pre_sandbox_event(
+                    :attribution_session_id,
+                    'HUMAN_VISIT',
+                    'browser-visible',
+                    '{}'::jsonb
+                )
+                """
+            ),
+            {"attribution_session_id": outreach["attribution_session_id"]},
+        ).scalar_one()
+        assert human_visit is True
+
         bound = connection.execute(
             text(
                 """
@@ -174,11 +189,17 @@ def test_outreach_attribution_capabilities_are_runtime_safe_and_durable():
                     session.sandbox_organization_id,
                     org.sandbox_attribution_session_id,
                     count(event.id) FILTER (
-                        WHERE event.event_name = 'LINK_OPENED'
-                    ) AS link_opened,
+                        WHERE event.event_name = 'LINK_SCANNED'
+                    ) AS link_scanned,
+                    count(event.id) FILTER (
+                        WHERE event.event_name = 'HUMAN_VISIT'
+                    ) AS human_visit,
                     count(event.id) FILTER (
                         WHERE event.event_name = 'SANDBOX_STARTED'
                     ) AS sandbox_started,
+                    count(event.id) FILTER (
+                        WHERE event.event_name = 'SANDBOX_ENGAGED'
+                    ) AS sandbox_engaged,
                     count(event.id) FILTER (
                         WHERE event.event_name = 'OPERATION_CREATED'
                     ) AS operations_created
@@ -204,8 +225,10 @@ def test_outreach_attribution_capabilities_are_runtime_safe_and_durable():
         assert stored["sandbox_attribution_session_id"] == outreach[
             "attribution_session_id"
         ]
-        assert stored["link_opened"] == 1
+        assert stored["link_scanned"] == 1
+        assert stored["human_visit"] == 1
         assert stored["sandbox_started"] == 1
+        assert stored["sandbox_engaged"] == 1
         assert stored["operations_created"] == 1
     finally:
         transaction.rollback()
