@@ -277,6 +277,10 @@ def test_superadmin_page_reuses_same_us_session_for_control_plane(monkeypatch):
     assert "4.2s" in response.text
     assert "First-party outreach attribution" in response.text
     assert "Commercial engagement signals" in response.text
+    assert "Prospect links" in response.text
+    assert "Raw hits" in response.text
+    assert "Sandbox starts" in response.text
+    assert "Historical opens recorded before human-signal classification" in response.text
     assert 'id="pilot-watch"' in response.text
     assert 'id="pilot-watch-live"' in response.text
     assert "Product engaged" in response.text
