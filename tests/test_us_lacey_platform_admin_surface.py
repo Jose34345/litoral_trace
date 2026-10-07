@@ -118,6 +118,123 @@ def _patch_admin_reads(monkeypatch, seen_tokens: list[str]):
     )
 
 
+def test_legacy_outreach_fallback_never_invents_human_engagement(monkeypatch):
+    monkeypatch.setattr(
+        admin_surface,
+        "_outreach_engagement_capability_available",
+        lambda: False,
+    )
+    calls = []
+
+    def legacy_call(**kwargs):
+        calls.append(kwargs)
+        return [
+            {
+                "outreach_link_id": 17,
+                "slug": "barnes-noble",
+                "prospect_label": "Barnes & Noble",
+                "campaign_code": "wave2",
+                "source": "direct_outreach",
+                "active": True,
+                "created_at": None,
+                "click_count": 5,
+                "attributed_sessions": 5,
+                "sandbox_started": 0,
+                "operations_created": 0,
+                "document_uploads": 0,
+                "review_reached": 0,
+                "auto_resolved_confirmed": 0,
+                "review_completed": 0,
+                "exports_downloaded": 0,
+                "last_event_at": None,
+            }
+        ]
+
+    monkeypatch.setattr(admin_surface, "_control_plane_call", legacy_call)
+
+    rows = admin_surface.list_outreach_funnel_superadmin(
+        refresh_token=SESSION,
+        limit=50,
+    )
+
+    assert len(calls) == 1
+    assert "platform_admin_outreach_funnel" in calls[0]["statement"]
+    assert rows[0]["raw_hits"] == 5
+    assert rows[0]["link_scans"] == 5
+    assert rows[0]["human_visits"] == 0
+    assert rows[0]["product_engaged"] == 0
+    assert rows[0]["engagement_state"] == "LIKELY_AUTOMATED"
+
+
+def test_legacy_outreach_fallback_promotes_only_confirmed_sandbox_engagement(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        admin_surface,
+        "_outreach_engagement_capability_available",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        admin_surface,
+        "_control_plane_call",
+        lambda **kwargs: [
+            {
+                "outreach_link_id": 18,
+                "slug": "states-industries",
+                "prospect_label": "States Industries",
+                "campaign_code": "wave2",
+                "source": "direct_outreach",
+                "active": True,
+                "created_at": None,
+                "click_count": 2,
+                "attributed_sessions": 2,
+                "sandbox_started": 1,
+                "operations_created": 1,
+                "document_uploads": 0,
+                "review_reached": 0,
+                "auto_resolved_confirmed": 0,
+                "review_completed": 0,
+                "exports_downloaded": 0,
+                "last_event_at": None,
+            }
+        ],
+    )
+
+    row = admin_surface.list_outreach_funnel_superadmin(
+        refresh_token=SESSION,
+        limit=50,
+    )[0]
+
+    assert row["human_visits"] == 0
+    assert row["sandbox_engaged"] == 1
+    assert row["product_engaged"] == 1
+    assert row["operations_created"] == 1
+    assert row["engagement_state"] == "PRODUCT_ENGAGED"
+
+
+def test_outreach_uses_077_capability_when_installed(monkeypatch):
+    monkeypatch.setattr(
+        admin_surface,
+        "_outreach_engagement_capability_available",
+        lambda: True,
+    )
+    calls = []
+    monkeypatch.setattr(
+        admin_surface,
+        "_control_plane_call",
+        lambda **kwargs: calls.append(kwargs) or [],
+    )
+
+    admin_surface.list_outreach_funnel_superadmin(
+        refresh_token=SESSION,
+        limit=25,
+    )
+
+    assert len(calls) == 1
+    assert "platform_admin_outreach_engagement" in calls[0]["statement"]
+    assert calls[0]["values"] == {"requested_limit": 25}
+
+
 def test_admin_without_us_session_redirects_to_portal_login():
     client.cookies.clear()
     response = client.get("/admin", follow_redirects=False)
@@ -160,6 +277,10 @@ def test_superadmin_page_reuses_same_us_session_for_control_plane(monkeypatch):
     assert "4.2s" in response.text
     assert "First-party outreach attribution" in response.text
     assert "Commercial engagement signals" in response.text
+    assert "Prospect links" in response.text
+    assert "Raw hits" in response.text
+    assert "Sandbox starts" in response.text
+    assert "Historical opens recorded before human-signal classification" in response.text
     assert 'id="pilot-watch"' in response.text
     assert 'id="pilot-watch-live"' in response.text
     assert "Product engaged" in response.text
