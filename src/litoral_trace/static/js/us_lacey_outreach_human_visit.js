@@ -2,6 +2,15 @@
   "use strict";
 
   const endpoint = "/sandbox/engagement/human-visit";
+  // Only first-party persona IDs are sent, never customer documents or values.
+  const samplePersona = document.body.dataset.outreachPersona;
+  const sampleStep = document.body.dataset.outreachStep;
+  const payload = new URLSearchParams();
+  if ((samplePersona === "importer" || samplePersona === "broker") &&
+      (sampleStep === "1" || sampleStep === "2")) {
+    payload.set("sample_persona", samplePersona);
+    payload.set("sample_step", sampleStep);
+  }
   let sent = false;
   let dwellTimer = null;
 
@@ -21,7 +30,7 @@
     }
 
     if (navigator.sendBeacon) {
-      const queued = navigator.sendBeacon(endpoint, new Blob([], { type: "text/plain" }));
+      const queued = navigator.sendBeacon(endpoint, payload);
       if (queued) {
         return;
       }
@@ -32,7 +41,8 @@
       credentials: "same-origin",
       cache: "no-store",
       keepalive: true,
-      headers: { "X-Litoral-Human-Signal": "browser-visible" },
+      body: payload,
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
     }).catch(() => undefined);
   };
 
