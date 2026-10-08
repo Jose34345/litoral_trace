@@ -142,4 +142,11 @@ _AUTHORITY = {
 
 
 def authority(field_key: str, document_type: DocumentType) -> float:
-    return float(_AUTHORITY.get(field_key, {}).get(document_type, 5))
+    # House/master B/L are scoped representations of the same carrier-backed
+    # identifier. Their authority must not silently drop to the default score.
+    canonical_field = (
+        "bill_of_lading"
+        if field_key in {"house_bill_of_lading", "master_bill_of_lading"}
+        else field_key
+    )
+    return float(_AUTHORITY.get(canonical_field, {}).get(document_type, 5))
