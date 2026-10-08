@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 from copy import deepcopy
+
+from litoral_trace.us_lacey.single_sku_recovery import bind_single_sku_evidence
 import re
 from typing import Mapping
 
@@ -793,6 +795,11 @@ def reconcile_cross_document_line_identity(payload: Mapping) -> dict:
         return rewritten
 
     _filter_typed_merchandise_rows(fields)
+    # PDFs without machine-readable table cells may still prove exactly one
+    # SKU through an invoice row plus independent supplier/entry declarations.
+    # Recover its missing associations before structural reconciliation; the
+    # recovery helper refuses multi-line or otherwise ambiguous source sets.
+    bind_single_sku_evidence(fields, rewritten.get("documents"))
 
     line_keys = tuple(
         sorted(

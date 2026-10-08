@@ -37,11 +37,12 @@ from litoral_trace.us_lacey.ppq505 import (
     PPQ505_PLANT_FIELDS,
     PPQ505_SHIPMENT_REFERENCE,
     PpqScope,
+    canonical_ppq_value_key,
     validate_ppq_value,
 )
 
 
-CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v6"
+CANONICAL_PUBLISHER_VERSION = "lacey_canonical_shipment_truth_v7"
 _CANONICAL_EXTRACTOR = "canonical-shipment-truth"
 _CANONICAL_CONFLICT_RESOLUTION = "Superseded by canonical shipment-line reconciliation."
 
@@ -196,8 +197,22 @@ def _evidence(row: Mapping, *, fallback_field: str) -> CanonicalEvidence:
     )
 
 
-def _distinct_values(rows: tuple[CanonicalEvidence, ...]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(row.normalized_value for row in rows if row.normalized_value))
+def _distinct_values(
+    rows: tuple[CanonicalEvidence, ...], *, target_key: str | None = None,
+) -> tuple[str, ...]:
+    # Preserve source spellings, but do not invent a conflict between CHINA and
+    # China, or equivalent normalized numeric values. Independent evidence and
+    # provenance are retained for audit while semantic comparison is scoped to
+    # the target PPQ field.
+    distinct: dict[str, str] = {}
+    for row in rows:
+        value = str(row.normalized_value or "").strip()
+        if not value:
+            continue
+        key = canonical_ppq_value_key(target_key, value) if target_key else value
+        if key:
+            distinct.setdefault(key, value)
+    return tuple(distinct.values())
 
 
 def _has_independent_valid_consensus(
@@ -207,7 +222,7 @@ def _has_independent_valid_consensus(
 ) -> bool:
     """Return True only for exact valid agreement across independent documents."""
 
-    values = _distinct_values(rows)
+    values = _distinct_values(rows, target_key=target_key)
     if len(values) != 1:
         return False
     documents = {
@@ -230,7 +245,7 @@ def _field_state(
 ) -> CanonicalTruthState:
     if not rows:
         return CanonicalTruthState.MISSING
-    values = _distinct_values(rows)
+    values = _distinct_values(rows, target_key=target_key)
     if len(values) > 1:
         return CanonicalTruthState.CONFLICT
 
@@ -264,7 +279,7 @@ def _field_truth(
             rows=rows,
             force_review=force_review,
         ),
-        values=_distinct_values(rows),
+        values=_distinct_values(rows, target_key=target_key),
         evidence=rows,
     )
 
