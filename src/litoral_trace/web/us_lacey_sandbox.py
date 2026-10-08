@@ -113,8 +113,12 @@ def _harden_public_response(response):
 
 
 @router.get("/sandbox/ref/{slug}", include_in_schema=False)
-def sandbox_outreach_referral(slug: str):
-    """Record a first-party outreach click, then enter the normal sandbox."""
+def sandbox_outreach_referral(slug: str, demo: str | None = None):
+    """Track an outreach visit; opt-in persona links bypass landing-page friction.
+
+    Existing links without a demo query keep their original destination.
+    Only known synthetic personas may become redirect targets.
+    """
 
     try:
         portal = load_us_lacey_portal_config()
@@ -134,8 +138,14 @@ def sandbox_outreach_referral(slug: str):
             )
         )
 
+    normalized_demo = str(demo or "").strip().lower()
+    destination = (
+        f"/try/{normalized_demo}"
+        if normalized_demo in _SAMPLE_PERSONAS
+        else "/sandbox/start"
+    )
     response = RedirectResponse(
-        "/sandbox/start",
+        destination,
         status_code=status.HTTP_303_SEE_OTHER,
     )
     response.set_cookie(
@@ -152,12 +162,18 @@ def sandbox_outreach_referral(slug: str):
 
 @router.post("/sandbox/engagement/human-visit", include_in_schema=False)
 def sandbox_outreach_human_visit(
+    sample_persona: str | None = Form(default=None),
+    sample_step: int | None = Form(default=None),
     outreach_attribution: str | None = Cookie(
         None,
         alias=OUTREACH_ATTRIBUTION_COOKIE,
     ),
 ):
-    """Record a privacy-bounded browser signal after the landing page is visible."""
+    """Count likely-human engagement after visible-browser dwell/interaction.
+
+    GET visits and link-preview robots must not count as product engagement.
+    Do not accept arbitrary event types, customer data or redirect destinations.
+    """
 
     if outreach_attribution:
         safe_record_pre_sandbox_outreach_event(
@@ -165,6 +181,24 @@ def sandbox_outreach_human_visit(
             event_name="HUMAN_VISIT",
             event_key="browser-visible",
         )
+        persona = str(sample_persona or "").strip().lower()
+        if persona in _SAMPLE_PERSONAS and sample_step in (1, 2):
+            sample_event = (
+                "SAMPLE_STARTED" if sample_step == 1 else "SAMPLE_REUSE_REACHED"
+            )
+            safe_record_pre_sandbox_outreach_event(
+                attribution_session_id=outreach_attribution,
+                event_name=sample_event,
+                event_key=persona,
+                metadata={"persona": persona, "step": sample_step},
+            )
+            if sample_step == 2:
+                safe_record_pre_sandbox_outreach_event(
+                    attribution_session_id=outreach_attribution,
+                    event_name="SAMPLE_COMPLETED",
+                    event_key=persona,
+                    metadata={"persona": persona},
+                )
 
     return _harden_public_response(Response(status_code=status.HTTP_204_NO_CONTENT))
 
@@ -189,20 +223,8 @@ def evaluation_sample_view(
             )
         )
     current_step = 2 if int(step) >= 2 else 1
-    if outreach_attribution:
-        safe_record_pre_sandbox_outreach_event(
-            attribution_session_id=outreach_attribution,
-            event_name="SAMPLE_STARTED" if current_step == 1 else "SAMPLE_REUSE_REACHED",
-            event_key=normalized,
-            metadata={"persona": normalized, "step": current_step},
-        )
-        if current_step == 2:
-            safe_record_pre_sandbox_outreach_event(
-                attribution_session_id=outreach_attribution,
-                event_name="SAMPLE_COMPLETED",
-                event_key=normalized,
-                metadata={"persona": normalized},
-            )
+    # Only a browser-interaction POST can establish a likely-human sample view.
+    # Automated GET previews still load the page without advancing the funnel.
     response = render_template(
         request,
         "us_lacey/evaluation_sample.html",
@@ -210,6 +232,7 @@ def evaluation_sample_view(
             "persona": normalized,
             "sample": sample,
             "step": current_step,
+            "track_outreach_human_visit": bool(outreach_attribution),
         },
         status_code=status.HTTP_200_OK,
     )

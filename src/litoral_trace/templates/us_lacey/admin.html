@@ -131,7 +131,15 @@
             <td class="p-3">
               <div class="font-bold text-slate-950">{{ link.prospect_label }}</div>
               <div class="mt-1 text-[11px] text-slate-500">{{ link.campaign_code }} · {{ link.source }}</div>
-              <input readonly value="https://lacey.litoraltrace.com/sandbox/ref/{{ link.slug }}" class="mt-2 w-full rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[10px] text-slate-700" aria-label="Attributed sandbox link for {{ link.prospect_label }}">
+              <label class="mt-2 block text-[10px] font-semibold text-slate-500">Existing sandbox link (unchanged)
+                <input readonly value="https://lacey.litoraltrace.com/sandbox/ref/{{ link.slug }}" class="mt-1 w-full rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[10px] text-slate-700" aria-label="Attributed sandbox link for {{ link.prospect_label }}">
+              </label>
+              <label class="mt-2 block text-[10px] font-semibold text-emerald-700">Importer demo · for tomorrow's outreach
+                <input readonly value="https://lacey.litoraltrace.com/sandbox/ref/{{ link.slug }}?demo=importer" class="mt-1 w-full rounded border border-emerald-200 bg-emerald-50 px-2 py-1 font-mono text-[10px] text-slate-700" aria-label="Importer demo link for {{ link.prospect_label }}">
+              </label>
+              <label class="mt-2 block text-[10px] font-semibold text-emerald-700">Broker demo · for tomorrow's outreach
+                <input readonly value="https://lacey.litoraltrace.com/sandbox/ref/{{ link.slug }}?demo=broker" class="mt-1 w-full rounded border border-emerald-200 bg-emerald-50 px-2 py-1 font-mono text-[10px] text-slate-700" aria-label="Broker demo link for {{ link.prospect_label }}">
+              </label>
             </td>
             <td class="p-3">
               {% if link.engagement_state == 'PRODUCT_ENGAGED' %}
