@@ -51,7 +51,18 @@
 {% set shell_empty_bulk_rejection = empty_bulk_rejection %}
 {% include "us_lacey/fragments/workflow_stepper_shell.html" %}
 
-<section class="lt-card overflow-hidden border border-slate-200 bg-white shadow-sm" data-readiness-summary>
+<nav class="sticky top-16 z-20 -mx-1 mb-5 overflow-x-auto rounded-xl border border-slate-200 bg-white/95 px-2 py-2 shadow-sm backdrop-blur" aria-label="Shipment workspace sections" data-shipment-section-nav>
+  <div class="flex min-w-max items-center gap-1">
+    <a href="#shipment-summary" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Summary</a>
+    <a href="#documents" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Documents <span class="ml-1 text-[10px] text-slate-400">{{ detail.document_count }}</span></a>
+    <a href="#operation-workspace" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Human review <span class="ml-1 text-[10px] {{ 'text-amber-700' if readiness_summary.exception_count else 'text-slate-400' }}">{{ readiness_summary.exception_count }}</span></a>
+    <a href="#operation-workspace" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100" data-open-regulatory-tab>Regulatory</a>
+    <a href="#declaration-package" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Package</a>
+    <a href="#activity-audit-log" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Audit trail</a>
+  </div>
+</nav>
+
+<section id="shipment-summary" class="lt-card scroll-mt-36 overflow-hidden border border-slate-200 bg-white shadow-sm" data-readiness-summary>
   <div class="grid gap-0 lg:grid-cols-[1.2fr_repeat(3,minmax(0,0.8fr))]">
     {% include "us_lacey/fragments/shipment_readiness_status.html" %}
     {% include "us_lacey/fragments/species_status.html" %}
@@ -61,6 +72,10 @@
       <p class="mt-2 text-lg font-bold text-slate-950">{{ detail.document_count }} docs</p>
       <p class="mt-1 text-xs text-slate-500">{{ provenance_summary.current_shipment_count }} current · {{ provenance_summary.reused_evidence_count }} reused</p>
     </div>
+  </div>
+  <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3 text-[11px] text-slate-600" data-human-filing-boundary>
+    <span><strong class="font-semibold text-slate-800">Preparation boundary:</strong> Litoral Trace reconciles, validates and packages declaration data; your authorized team remains responsible for final review and filing.</span>
+    <span class="font-semibold text-slate-500">No automatic ACE / LAWGS submission</span>
   </div>
 
   {% if reused_evidence_summary and reused_evidence_summary.claim_count %}
@@ -84,7 +99,7 @@
   {% endif %}
 </section>
 
-<section class="lt-card p-5" id="documents">
+<section class="lt-card scroll-mt-36 p-5" id="documents">
   <div class="flex flex-wrap items-center justify-between gap-4">
     <div>
       <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Evidence set</p>
@@ -210,6 +225,11 @@
   });
   dialog.querySelectorAll('[data-close-evidence-dialog]').forEach((button) => {
     button.addEventListener('click', () => dialog.close());
+  });
+  document.querySelectorAll('[data-open-regulatory-tab]').forEach((link) => {
+    link.addEventListener('click', () => {
+      window.setTimeout(() => document.querySelector('[data-review-tab-button="regulatory"]')?.click(), 0);
+    });
   });
 })();
 </script>

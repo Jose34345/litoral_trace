@@ -268,7 +268,7 @@ def test_global_audit_log_navigation_and_operation_summary_contract():
     assert ">Audit Log<" in base
     assert "fa-clock-rotate-left" in base
     assert '@app.get("/audit-log"' in app
-    for column in ("Time", "Operation", "Actor", "Event", "Details"):
+    for column in ("Time", "Shipment", "Actor", "Event", "Details"):
         assert column in template
     for field in ("operation_id", "actor", "event_type", "date_range"):
         assert f'name="{field}"' in template

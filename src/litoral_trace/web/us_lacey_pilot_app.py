@@ -118,6 +118,7 @@ from litoral_trace.web.us_lacey_operational_views import (
     render_operations,
     render_processing_fragment,
     render_regulatory_overview,
+    render_trust_center,
 )
 from litoral_trace.web.us_lacey_audit_views import render_audit_log_list
 from litoral_trace.web.us_lacey_evaluation_views import (
@@ -613,17 +614,43 @@ def regulatory_overview_page(
     )
 
 
-@app.get("/operations", response_class=HTMLResponse)
-def operations_page(
+@app.get("/trust", response_class=HTMLResponse)
+def trust_center_page(
     request: Request,
-    background_tasks: BackgroundTasks,
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
         identity, entitlement = _operational_context(us_session)
-        items = UsLaceyOperationService().list_operations(
-            organization_id=identity.organization_id,
-            limit=100,
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    return _html(
+        render_trust_center(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+        )
+    )
+
+
+@app.get("/operations", response_class=HTMLResponse)
+def operations_page(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    q: str = "",
+    state: str = "all",
+    sort: str = "updated_desc",
+    page: int = 1,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        all_items = tuple(
+            UsLaceyOperationService().list_operations(
+                organization_id=identity.organization_id,
+                limit=500,
+            )
         )
         _schedule_translation_backfill_once(
             background_tasks,
@@ -633,7 +660,91 @@ def operations_page(
         return _login_redirect(clear_cookie=bool(us_session))
     except UsLaceyOperationalAccessError:
         return RedirectResponse("/billing", status_code=303)
-    return _html(render_operations(request=request, identity=identity, operations=items, entitlement=entitlement))
+
+    normalized_q = str(q or "").strip()
+    normalized_state = str(state or "all").strip().lower()
+    if normalized_state not in {"all", "needs_review", "ready", "processing", "completed"}:
+        normalized_state = "all"
+    normalized_sort = str(sort or "updated_desc").strip().lower()
+    if normalized_sort not in {
+        "updated_desc",
+        "updated_asc",
+        "created_desc",
+        "reference_asc",
+        "exceptions_desc",
+    }:
+        normalized_sort = "updated_desc"
+
+    items = list(all_items)
+    if normalized_q:
+        needle = normalized_q.casefold()
+        items = [
+            item
+            for item in items
+            if any(
+                needle in str(value or "").casefold()
+                for value in (
+                    item.business_reference,
+                    item.client_reference,
+                    item.supplier_name,
+                    item.public_id,
+                )
+            )
+        ]
+
+    if normalized_state == "needs_review":
+        items = [
+            item
+            for item in items
+            if item.exception_count > 0 or item.status in {"REVIEW_REQUIRED", "FAILED"}
+        ]
+    elif normalized_state == "ready":
+        items = [
+            item
+            for item in items
+            if item.status == "READY_FOR_REVIEW" and item.exception_count == 0
+        ]
+    elif normalized_state == "processing":
+        items = [item for item in items if item.status in {"NEW", "PROCESSING"}]
+    elif normalized_state == "completed":
+        items = [item for item in items if item.status == "COMPLETED"]
+
+    if normalized_sort == "updated_asc":
+        items.sort(key=lambda item: (item.updated_at, item.created_at, str(item.public_id)))
+    elif normalized_sort == "created_desc":
+        items.sort(key=lambda item: (item.created_at, item.updated_at, str(item.public_id)), reverse=True)
+    elif normalized_sort == "reference_asc":
+        items.sort(key=lambda item: ((item.business_reference or "").casefold(), str(item.public_id)))
+    elif normalized_sort == "exceptions_desc":
+        items.sort(key=lambda item: (item.exception_count, item.updated_at), reverse=True)
+    else:
+        items.sort(key=lambda item: (item.updated_at, item.created_at, str(item.public_id)), reverse=True)
+
+    page_size = 25
+    total_results = len(items)
+    total_pages = max(1, (total_results + page_size - 1) // page_size)
+    safe_page = max(1, min(int(page or 1), total_pages))
+    start = (safe_page - 1) * page_size
+    page_items = tuple(items[start : start + page_size])
+
+    return _html(
+        render_operations(
+            request=request,
+            identity=identity,
+            operations=page_items,
+            all_operations=all_items,
+            entitlement=entitlement,
+            filters={"q": normalized_q, "state": normalized_state, "sort": normalized_sort},
+            pagination={
+                "page": safe_page,
+                "page_size": page_size,
+                "total_results": total_results,
+                "total_pages": total_pages,
+                "start": 0 if total_results == 0 else start + 1,
+                "end": min(start + page_size, total_results),
+            },
+        )
+    )
 
 
 @app.get("/evidence", response_class=HTMLResponse)
@@ -666,7 +777,9 @@ def audit_log_page(
     operation_id: str = "",
     actor: str = "",
     event_type: str = "",
+    actor_type: str = "all",
     date_range: str = "30d",
+    page: int = 1,
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
@@ -679,13 +792,27 @@ def audit_log_page(
         allowed_events = {value for value, _label in AUDIT_EVENT_FILTER_OPTIONS}
         if normalized_event not in allowed_events:
             normalized_event = ""
-        events = list_organization_audit_events(
+        normalized_actor_type = str(actor_type or "all").strip().upper()
+        if normalized_actor_type not in {"ALL", "USER", "SYSTEM"}:
+            normalized_actor_type = "ALL"
+        all_events = list_organization_audit_events(
             organization_id=identity.organization_id,
             operation_query=operation_id,
             actor_query=actor,
             event_type=normalized_event,
             date_range=normalized_range,
+            limit=500,
         )
+        if normalized_actor_type != "ALL":
+            all_events = tuple(
+                event for event in all_events if event.actor_type == normalized_actor_type
+            )
+        page_size = 50
+        total_results = len(all_events)
+        total_pages = max(1, (total_results + page_size - 1) // page_size)
+        safe_page = max(1, min(int(page or 1), total_pages))
+        start = (safe_page - 1) * page_size
+        events = tuple(all_events[start : start + page_size])
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
     except UsLaceyOperationalAccessError:
@@ -701,7 +828,16 @@ def audit_log_page(
                 "operation_id": str(operation_id or "").strip(),
                 "actor": str(actor or "").strip(),
                 "event_type": normalized_event,
+                "actor_type": normalized_actor_type,
                 "date_range": normalized_range,
+            },
+            pagination={
+                "page": safe_page,
+                "page_size": page_size,
+                "total_results": total_results,
+                "total_pages": total_pages,
+                "start": 0 if total_results == 0 else start + 1,
+                "end": min(start + page_size, total_results),
             },
             event_type_options=AUDIT_EVENT_FILTER_OPTIONS,
             date_range_options=AUDIT_DATE_RANGE_OPTIONS,
