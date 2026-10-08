@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/img/logo.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/dist/app.css') }}">
 </head>
-<body class="min-h-full bg-slate-100 font-sans text-slate-900 antialiased">
+<body class="min-h-full bg-slate-100 font-sans text-slate-900 antialiased" data-outreach-persona="{{ persona }}" data-outreach-step="{{ step }}">
   <div class="flex min-h-screen">
     <aside class="hidden w-64 shrink-0 flex-col bg-slate-950 text-slate-200 lg:flex" aria-label="Sample workspace navigation">
       <div class="border-b border-slate-800 px-5 py-5">
@@ -56,7 +56,7 @@
         <section class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-sm" aria-label="Sample status">
           <div>
             <p class="text-xs font-bold text-slate-950">Synthetic product sample</p>
-            <p class="mt-0.5 text-[11px] text-slate-600">This workspace mirrors the operational review flow without uploading customer documents.</p>
+            <p class="mt-0.5 text-[11px] text-slate-600">Explore a processed example without uploading documents or creating an account. All data is synthetic, not a customer compliance result.</p>
           </div>
           <div class="flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
             <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Read-only</span>
@@ -125,10 +125,15 @@
               </ol>
 
               {% if step == 1 %}
-              <a href="/try/{{ persona }}?step=2" class="mt-6 flex w-full items-center justify-center rounded-lg bg-slate-950 px-4 py-3 text-sm font-bold text-white hover:bg-slate-800">See the repeat shipment →</a>
+              <a href="/try/{{ persona }}?step=2" class="mt-6 flex w-full items-center justify-center rounded-lg bg-slate-950 px-4 py-3 text-sm font-bold text-white hover:bg-slate-800">See how the next shipment improves →</a>
               {% else %}
-              <a href="/sandbox/start?mode=own" class="mt-6 flex w-full items-center justify-center rounded-lg bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-800">Try my own shipment →</a>
-              <p class="mt-3 text-center text-[11px] leading-4 text-slate-500">Your first real shipment requires no signup or card.</p>
+              <p class="mt-5 text-[11px] font-semibold text-slate-700">Prefer a guided review before sharing business documents?</p>
+              {% endif %}
+              <a href="mailto:comercial@litoraltrace.com?subject=15-minute%20Lacey%20workflow%20review" class="mt-3 flex w-full items-center justify-center rounded-lg bg-emerald-600 px-4 py-3 text-center text-sm font-bold text-white hover:bg-emerald-700">Request a 15-minute workflow review</a>
+              <p class="mt-2 text-center text-[11px] leading-4 text-slate-500">Opens your email app. No documents, account or payment required.</p>
+              {% if step == 2 %}
+              <a href="/sandbox/start?mode=own" class="mt-4 flex w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-center text-sm font-bold text-slate-800 hover:bg-slate-50">Or try my own shipment →</a>
+              <p class="mt-2 text-center text-[11px] leading-4 text-slate-500">Your first real shipment requires no signup or card.</p>
               {% endif %}
 
               <div class="mt-5 border-t border-slate-200 pt-4">
@@ -141,5 +146,8 @@
       </main>
     </div>
   </div>
+  {% if track_outreach_human_visit %}
+  <script defer src="{{ url_for('static', path='/js/us_lacey_outreach_human_visit.js') }}?v=20261007"></script>
+  {% endif %}
 </body>
 </html>
