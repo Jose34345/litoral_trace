@@ -58,11 +58,11 @@ def test_persona_referral_keeps_cookie_and_uses_only_safe_routes(
     monkeypatch, demo, destination
 ):
     _mock_referral(monkeypatch)
-    with TestClient(app) as client:
-        response = client.get(
-            f"/sandbox/ref/known-prospect?demo={demo}",
-            follow_redirects=False,
-        )
+    client = TestClient(app)
+    response = client.get(
+        f"/sandbox/ref/known-prospect?demo={demo}",
+        follow_redirects=False,
+    )
     assert response.status_code == 303
     assert response.headers["location"] == destination
     cookie = response.headers["set-cookie"]
@@ -73,10 +73,10 @@ def test_persona_referral_keeps_cookie_and_uses_only_safe_routes(
 
 def test_old_referral_route_does_not_change(monkeypatch):
     _mock_referral(monkeypatch)
-    with TestClient(app) as client:
-        response = client.get(
-            "/sandbox/ref/known-prospect", follow_redirects=False
-        )
+    client = TestClient(app)
+    response = client.get(
+        "/sandbox/ref/known-prospect", follow_redirects=False
+    )
     assert response.status_code == 303
     assert response.headers["location"] == "/sandbox/start"
 
@@ -91,9 +91,9 @@ def test_public_sample_get_does_not_record_scanner_as_engaged(
         "safe_record_pre_sandbox_outreach_event",
         lambda **kwargs: recorded.append(kwargs),
     )
-    with TestClient(app) as client:
-        client.cookies.set(OUTREACH_ATTRIBUTION_COOKIE, str(ATTRIBUTION_ID))
-        response = client.get(f"/try/{persona}?step={step}")
+    client = TestClient(app)
+    client.cookies.set(OUTREACH_ATTRIBUTION_COOKIE, str(ATTRIBUTION_ID))
+    response = client.get(f"/try/{persona}?step={step}")
     assert response.status_code == 200
     assert recorded == []
     assert f'data-outreach-persona="{persona}"' in response.text
@@ -112,16 +112,16 @@ def test_browser_visible_sample_post_records_likely_human_and_sample_events(
         "safe_record_pre_sandbox_outreach_event",
         lambda **kwargs: calls.append(kwargs),
     )
-    with TestClient(app) as client:
-        client.cookies.set(OUTREACH_ATTRIBUTION_COOKIE, str(ATTRIBUTION_ID))
-        first = client.post(
-            "/sandbox/engagement/human-visit",
-            data={"sample_persona": "importer", "sample_step": "1"},
-        )
-        second = client.post(
-            "/sandbox/engagement/human-visit",
-            data={"sample_persona": "importer", "sample_step": "2"},
-        )
+    client = TestClient(app)
+    client.cookies.set(OUTREACH_ATTRIBUTION_COOKIE, str(ATTRIBUTION_ID))
+    first = client.post(
+        "/sandbox/engagement/human-visit",
+        data={"sample_persona": "importer", "sample_step": "1"},
+    )
+    second = client.post(
+        "/sandbox/engagement/human-visit",
+        data={"sample_persona": "importer", "sample_step": "2"},
+    )
     assert (first.status_code, second.status_code) == (204, 204)
     assert [call["event_name"] for call in calls] == [
         "HUMAN_VISIT", "SAMPLE_STARTED",
@@ -145,9 +145,9 @@ def test_invalid_sample_signal_cannot_create_product_engagement(monkeypatch, dat
         "safe_record_pre_sandbox_outreach_event",
         lambda **kwargs: calls.append(kwargs),
     )
-    with TestClient(app) as client:
-        client.cookies.set(OUTREACH_ATTRIBUTION_COOKIE, str(ATTRIBUTION_ID))
-        response = client.post("/sandbox/engagement/human-visit", data=data)
+    client = TestClient(app)
+    client.cookies.set(OUTREACH_ATTRIBUTION_COOKIE, str(ATTRIBUTION_ID))
+    response = client.post("/sandbox/engagement/human-visit", data=data)
     assert response.status_code == 204
     assert [call["event_name"] for call in calls] == ["HUMAN_VISIT"]
 
@@ -159,11 +159,11 @@ def test_unattributed_signal_does_not_create_any_commercial_event(monkeypatch):
         "safe_record_pre_sandbox_outreach_event",
         lambda **kwargs: calls.append(kwargs),
     )
-    with TestClient(app) as client:
-        response = client.post(
-            "/sandbox/engagement/human-visit",
-            data={"sample_persona": "importer", "sample_step": "1"},
-        )
+    client = TestClient(app)
+    response = client.post(
+        "/sandbox/engagement/human-visit",
+        data={"sample_persona": "importer", "sample_step": "1"},
+    )
     assert response.status_code == 204
     assert calls == []
 
