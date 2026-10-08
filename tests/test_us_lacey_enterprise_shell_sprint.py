@@ -54,10 +54,12 @@ def test_operations_is_command_center_and_upload_is_compact() -> None:
         assert column in source
     assert "Supplier unresolved" in source
     assert "relative_time(item.updated_at)" in source
-    assert 'id="new-operation-panel"' in source
-    assert "lt-compact-uploader" in source
-    assert 'action="/operations/intake"' in source
     assert 'href="/operations/new"' in source
+    intake = (TEMPLATES / "us_lacey" / "new_operation.html").read_text(encoding="utf-8")
+    assert 'action="/operations/new"' in intake
+    assert 'data-dropzone' in intake
+    assert 'data-file-dropzone-input' in intake
+    assert 'name="documents"' in intake
 
 
 def test_review_workspace_uses_matrix_auditability_and_reuse_memory() -> None:

@@ -909,30 +909,45 @@ def _reuse_summary(identity, detail):
         return None
 
 
-def render_operations(*, request, identity, operations: Sequence, entitlement) -> str:
+def render_operations(
+    *,
+    request,
+    identity,
+    operations: Sequence,
+    entitlement,
+    all_operations: Sequence | None = None,
+    filters: Mapping[str, object] | None = None,
+    pagination: Mapping[str, object] | None = None,
+) -> str:
     now = datetime.now(timezone.utc)
+    metric_source = tuple(all_operations if all_operations is not None else operations)
     open_count = sum(
         item.status in {"NEW", "PROCESSING", "REVIEW_REQUIRED", "READY_FOR_REVIEW"}
-        for item in operations
+        for item in metric_source
     )
     needs_review = sum(
-        item.exception_count > 0 or item.status == "REVIEW_REQUIRED"
-        for item in operations
+        item.exception_count > 0 or item.status in {"REVIEW_REQUIRED", "FAILED"}
+        for item in metric_source
     )
     ready_to_export = sum(
         item.status == "READY_FOR_REVIEW" and item.exception_count == 0
-        for item in operations
+        for item in metric_source
     )
+    processing = sum(item.status in {"NEW", "PROCESSING"} for item in metric_source)
+    completed = sum(item.status == "COMPLETED" for item in metric_source)
     completed_this_month = sum(
         item.status == "COMPLETED"
         and item.updated_at.year == now.year
         and item.updated_at.month == now.month
-        for item in operations
+        for item in metric_source
     )
     metrics = {
+        "all": len(metric_source),
         "open": open_count,
         "needs_review": needs_review,
         "ready_to_export": ready_to_export,
+        "processing": processing,
+        "completed": completed,
         "completed_this_month": completed_this_month,
     }
     return _render(
@@ -942,6 +957,18 @@ def render_operations(*, request, identity, operations: Sequence, entitlement) -
         operations=operations,
         entitlement=entitlement,
         metrics=metrics,
+        filters=dict(filters or {"q": "", "state": "all", "sort": "updated_desc"}),
+        pagination=dict(
+            pagination
+            or {
+                "page": 1,
+                "page_size": max(1, len(operations)),
+                "total_results": len(operations),
+                "total_pages": 1,
+                "start": 0 if not operations else 1,
+                "end": len(operations),
+            }
+        ),
         relative_time=_relative_time,
     )
 
@@ -954,6 +981,15 @@ def render_evidence_catalog(*, request, identity, entitlement, catalog) -> str:
         entitlement=entitlement,
         catalog=catalog,
         relative_time=_relative_time,
+    )
+
+
+def render_trust_center(*, request, identity, entitlement) -> str:
+    return _render(
+        request,
+        "trust_center",
+        identity=identity,
+        entitlement=entitlement,
     )
 
 

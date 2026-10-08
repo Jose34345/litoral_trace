@@ -98,7 +98,7 @@ def test_document_intake_teaches_complete_pack_and_reprocessing():
     detail = DETAIL_TEMPLATE.read_text(encoding="utf-8")
     new_operation = NEW_OPERATION_TEMPLATE.read_text(encoding="utf-8")
 
-    assert best_practice in operations
+    assert 'href="/operations/new"' in operations
     assert best_practice in detail
     assert best_practice in new_operation
     assert "Need to add more documents?" in detail

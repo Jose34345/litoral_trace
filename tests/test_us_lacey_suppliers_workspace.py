@@ -229,6 +229,6 @@ def test_supplier_navigation_and_routes_are_real_customer_surfaces() -> None:
 
     assert 'href="/suppliers"' in base
     assert ">Suppliers<" in base
-    assert "['suppliers', 'supplier', 'vendor', 'reusable evidence']" in base
+    assert "terms: ['suppliers', 'supplier', 'vendor', 'memory', 'reusable evidence']" in base
     assert '@app.get("/suppliers"' in app
     assert '@app.get("/suppliers/{supplier_id}"' in app

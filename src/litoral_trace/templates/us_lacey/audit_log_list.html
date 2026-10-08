@@ -18,15 +18,15 @@
       <h2 class="text-sm font-bold text-slate-950">Activity filters</h2>
       <p class="mt-1 text-xs text-slate-500">Filter the tenant-scoped system of record without modifying historical events.</p>
     </div>
-    <span class="text-xs font-semibold text-slate-500">{{ events|length }} result{{ '' if events|length == 1 else 's' }}</span>
+    <span class="text-xs font-semibold text-slate-500">{% if pagination.total_results %}{{ pagination.start }}–{{ pagination.end }} of {{ pagination.total_results }}{% else %}0 results{% endif %}</span>
   </header>
 
-  <form method="get" action="/audit-log" class="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-4">
+  <form method="get" action="/audit-log" class="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-5">
     <label class="block">
-      <span class="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">Search / Operation</span>
+      <span class="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">Search / Shipment</span>
       <div class="relative">
         <i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i>
-        <input type="search" name="operation_id" value="{{ filters.operation_id }}" placeholder="Reference or operation ID" class="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs font-medium text-slate-800 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20">
+        <input type="search" name="operation_id" value="{{ filters.operation_id }}" placeholder="Reference or shipment ID" class="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs font-medium text-slate-800 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20">
       </div>
     </label>
 
@@ -36,6 +36,15 @@
         <i class="fa-solid fa-user pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i>
         <input type="search" name="actor" value="{{ filters.actor }}" placeholder="Name or email" class="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs font-medium text-slate-800 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20">
       </div>
+    </label>
+
+    <label class="block">
+      <span class="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">Actor type</span>
+      <select name="actor_type" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20">
+        <option value="all" {% if filters.actor_type == 'ALL' %}selected{% endif %}>All actors</option>
+        <option value="USER" {% if filters.actor_type == 'USER' %}selected{% endif %}>Human actions</option>
+        <option value="SYSTEM" {% if filters.actor_type == 'SYSTEM' %}selected{% endif %}>Automated events</option>
+      </select>
     </label>
 
     <label class="block">
@@ -57,7 +66,7 @@
       </select>
     </label>
 
-    <div class="flex items-center gap-2 md:col-span-2 xl:col-span-4">
+    <div class="flex items-center gap-2 md:col-span-2 xl:col-span-5">
       {{ lt_button("primary", "Apply filters", "fa-filter", button_type="submit") }}
       {{ lt_button("ghost", "Clear", "fa-xmark", href="/audit-log") }}
     </div>
@@ -73,7 +82,7 @@
   </header>
 
   {% if events %}
-    {% call lt_data_table(["Time", "Operation", "Actor", "Event", "Details"], "Organization audit activity", "76rem") %}
+    {% call lt_data_table(["Time", "Shipment", "Actor", "Event", "Details"], "Organization audit activity", "76rem") %}
       {% for event in events %}
       <tr class="lt-data-table__row">
         <td class="lt-data-table__cell">
@@ -104,6 +113,16 @@
       </tr>
       {% endfor %}
     {% endcall %}
+    {% if pagination.total_pages > 1 %}
+    <nav class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4" aria-label="Audit log pages">
+      <p class="text-xs text-slate-500">Page {{ pagination.page }} of {{ pagination.total_pages }}</p>
+      <div class="flex items-center gap-2">
+        {% set audit_query = '&operation_id=' ~ (filters.operation_id|urlencode) ~ '&actor=' ~ (filters.actor|urlencode) ~ '&event_type=' ~ filters.event_type ~ '&actor_type=' ~ filters.actor_type ~ '&date_range=' ~ filters.date_range %}
+        {% if pagination.page > 1 %}<a class="lt-btn lt-btn--secondary" href="/audit-log?page={{ pagination.page - 1 }}{{ audit_query }}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i><span>Previous</span></a>{% endif %}
+        {% if pagination.page < pagination.total_pages %}<a class="lt-btn lt-btn--secondary" href="/audit-log?page={{ pagination.page + 1 }}{{ audit_query }}"><span>Next</span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>{% endif %}
+      </div>
+    </nav>
+    {% endif %}
   {% else %}
   <div class="p-6">
     {{ empty_state("No matching audit activity", "Adjust the filters or clear them to view the organization-wide immutable activity history.", "fa-clock-rotate-left") }}

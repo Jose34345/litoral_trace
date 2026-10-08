@@ -18,14 +18,16 @@ def _field(status: str, value=None):
 
 
 def test_operations_starts_with_multi_file_upload_and_no_manual_metadata_fields():
-    source = OPERATIONS_TEMPLATE.read_text(encoding="utf-8")
-    assert 'action="/operations/intake"' in source
+    queue = OPERATIONS_TEMPLATE.read_text(encoding="utf-8")
+    source = (ROOT / "src/litoral_trace/templates/us_lacey/new_operation.html").read_text(encoding="utf-8")
+    assert 'href="/operations/new"' in queue
+    assert 'action="/operations/new"' in source
     assert 'name="documents"' in source
-    assert "multiple required" in source
+    assert "multiple" in source
     assert "Best practice: upload all available shipment documents before the first processing run." in source
     assert "You can add more files later and reprocess." in source
+    assert 'name="client_reference"' in source  # Optional alias; no mandatory manual field entry
     for old_manual_name in (
-        'name="client_reference"',
         'name="importer_name"',
         'name="supplier_name"',
         'name="consignee_name"',
@@ -37,15 +39,16 @@ def test_operations_starts_with_multi_file_upload_and_no_manual_metadata_fields(
 
 
 def test_operations_hides_locale_dependent_native_file_picker_chrome():
-    source = OPERATIONS_TEMPLATE.read_text(encoding="utf-8")
-    assert '<label for="intake-documents"' in source
-    assert 'id="intake-documents" hidden name="documents" type="file"' in source
-    assert 'aria-describedby="intake-file-summary"' in source
-    assert "data-file-staging-form" in source
-    assert "data-file-dropzone" in source
-    assert "data-file-dropzone-input" in source
-    assert "data-file-staging-list" in source
-    assert ">No files selected.</div>" in source
+    source = (ROOT / "src/litoral_trace/templates/us_lacey/new_operation.html").read_text(encoding="utf-8")
+    assert 'for="shipment-documents"' in source
+    assert 'id="shipment-documents"' in source
+    assert 'class="sr-only"' in source
+    assert 'type="file"' in source
+    assert 'data-file-dropzone-input' in source
+    assert 'data-dropzone' in source
+    assert 'data-selected-files' in source
+    assert 'data-file-list' in source
+    assert "Select documents" in source
     assert 'style=' not in source
 
 

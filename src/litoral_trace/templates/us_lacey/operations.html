@@ -2,17 +2,22 @@
 {% set authenticated = true %}
 {% from "components/ui.html" import empty_state %}
 {% from "us_lacey/_components.html" import lt_badge, lt_button, lt_data_table %}
-{% block lacey_title %}Operations{% endblock %}
+{% block lacey_title %}Shipments{% endblock %}
 {% block lacey_content %}
 <header class="lt-page-header">
   <div class="lt-page-header__copy">
-    <p class="lt-page-header__eyebrow">Compliance operations</p>
-    <h1 class="lt-page-header__title">Operations</h1>
-    <p class="lt-page-header__description">Prepare and review Lacey declaration evidence. Track shipment readiness, resolve exceptions, and preserve the source trail from one workspace.</p>
+    <p class="lt-page-header__eyebrow">Compliance work queue</p>
+    <h1 class="lt-page-header__title">Shipments</h1>
+    <p class="lt-page-header__description">Prepare and review Lacey declaration evidence. Prioritize unresolved Lacey work, open review-ready shipments, and preserve evidence, decisions and outputs in one operational queue.</p>
   </div>
+  {% if entitlement.remaining_operations > 0 %}
+  <div class="lt-page-header__actions">
+    <a href="/operations/new" class="lt-btn lt-btn--primary"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>New shipment</span></a>
+  </div>
+  {% endif %}
 </header>
 
-<section class="lt-enterprise-stat-grid" aria-label="Operations overview">
+<section class="lt-enterprise-stat-grid" aria-label="Shipment work queue overview">
   <article class="lt-enterprise-stat">
     <p class="lt-enterprise-stat__label">Open</p>
     <p class="lt-enterprise-stat__value">{{ metrics.open }}</p>
@@ -21,7 +26,7 @@
   <article class="lt-enterprise-stat">
     <p class="lt-enterprise-stat__label">Needs review</p>
     <p class="lt-enterprise-stat__value">{{ metrics.needs_review }}</p>
-    <p class="lt-enterprise-stat__meta">Operations with unresolved exceptions</p>
+    <p class="lt-enterprise-stat__meta">Human decisions or evidence gaps</p>
   </article>
   <article class="lt-enterprise-stat">
     <p class="lt-enterprise-stat__label">Ready to export</p>
@@ -35,53 +40,60 @@
   </article>
 </section>
 
-{% if entitlement.remaining_operations > 0 %}
-<details id="new-operation-panel" class="lt-compact-uploader">
-  <noscript><a href="/operations/new" class="lt-btn lt-btn--primary">New operation</a></noscript>
-  <summary class="flex cursor-pointer items-center justify-between gap-4">
-    <div>
-      <p class="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Secure intake</p>
-      <p class="mt-1 text-sm font-bold text-slate-950">Start a new shipment operation</p>
-    </div>
-    <span class="lt-btn lt-btn--primary"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>New operation</span></span>
-  </summary>
-  <form id="document-intake-form" class="mt-4 border-t border-slate-200 pt-4" action="/operations/intake" method="post" enctype="multipart/form-data" data-upload-first-intake data-file-staging-form>
-    <label for="intake-documents" class="lt-compact-uploader__dropzone" data-file-dropzone role="button" tabindex="0">
-      <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-white" aria-hidden="true"><i class="fa-solid fa-file-arrow-up"></i></span>
-      <span class="min-w-0">
-        <span class="block text-sm font-bold text-slate-950">Choose shipment evidence</span>
-        <span class="mt-1 block text-xs leading-5 text-slate-500">PDF, XLSX, XLS or CSV · commercial invoice, packing list, bill of lading and supplier evidence can be uploaded together.</span>
-        <span class="mt-1 block text-[11px] leading-5 text-slate-500">Best practice: upload all available shipment documents before the first processing run. You can add more files later and reprocess.</span>
-      </span>
-    </label>
-    <input id="intake-documents" hidden name="documents" type="file" accept=".pdf,.xlsx,.xls,.csv" multiple required data-file-dropzone-input aria-describedby="intake-file-summary">
-    <div id="intake-file-summary" class="mt-2 text-xs text-slate-500" aria-live="polite" data-file-empty-state>No files selected.</div>
-    <div class="lt-upload-staging" hidden data-file-staging>
-      <div class="lt-upload-staging__header"><span>Ready to upload</span><span data-file-count></span></div>
-      <ul class="lt-upload-staging__list" data-file-staging-list></ul>
-    </div>
-    <div class="mt-4 flex flex-wrap items-center gap-3">
-      {{ lt_button("primary", "Upload and analyze", "fa-wand-magic-sparkles", button_type="submit") }}
-      <span id="intake-status" class="text-xs text-slate-500" aria-live="polite"></span>
-    </div>
-    <p class="mt-3 text-[11px] leading-5 text-slate-500">Original files remain preserved as evidence. Extracted values remain reviewable and conflicts are never silently overwritten.</p>
-  </form>
-</details>
-{% else %}
-<section class="lt-alert lt-alert--warning"><i class="fa-solid fa-triangle-exclamation lt-alert__icon" aria-hidden="true"></i><div><p class="lt-alert__title">{{ "Evaluation complete" if entitlement.evaluation_read_only else "Operation limit reached" }}</p><p class="lt-alert__message">{% if entitlement.evaluation_can_claim %}Save your evaluation to unlock four more real shipments.{% elif entitlement.evaluation_read_only %}Existing Operations, Evidence, Suppliers and Audit Log remain available read-only.{% else %}Existing operations remain available for evidence review and export.{% endif %}</p></div></section>
+{% if entitlement.remaining_operations <= 0 %}
+<section class="lt-alert lt-alert--warning"><i class="fa-solid fa-triangle-exclamation lt-alert__icon" aria-hidden="true"></i><div><p class="lt-alert__title">{{ "Evaluation complete" if entitlement.evaluation_read_only else "Operation limit reached" }}</p><p class="lt-alert__message">{% if entitlement.evaluation_can_claim %}Keep this workspace to unlock four more real shipments.{% elif entitlement.evaluation_read_only %}Existing Shipments, Evidence, Suppliers and Audit Log remain available read-only.{% else %}Existing shipments remain available for evidence review and export.{% endif %}</p></div></section>
 {% endif %}
 
-<section class="lt-operations-panel">
+<section class="lt-operations-panel" aria-labelledby="shipment-queue-heading">
   <header class="lt-operations-panel__header">
     <div>
-      <h2 class="text-sm font-bold text-slate-950">Recent operations</h2>
-      <p class="mt-1 text-xs text-slate-500">Shipment-level preparation records ordered by most recently created.</p>
+      <h2 id="shipment-queue-heading" class="text-sm font-bold text-slate-950">Shipment queue</h2>
+      <p class="mt-1 text-xs text-slate-500">Search by shipment reference, supplier or immutable ID. Filters operate on your tenant-scoped queue.</p>
     </div>
-    <span class="text-xs font-semibold text-slate-500">{{ operations|length }} operation{{ '' if operations|length == 1 else 's' }}</span>
+    <span class="text-xs font-semibold text-slate-500">{% if pagination.total_results %}{{ pagination.start }}–{{ pagination.end }} of {{ pagination.total_results }}{% else %}0 results{% endif %}</span>
   </header>
 
+  <div class="border-b border-slate-200 bg-slate-50/70 px-5 py-4">
+    <nav class="flex flex-wrap gap-2" aria-label="Shipment state filters">
+      {% for key, label, count in [
+        ('all','All',metrics.all),
+        ('needs_review','Needs review',metrics.needs_review),
+        ('ready','Ready',metrics.ready_to_export),
+        ('processing','Processing',metrics.processing),
+        ('completed','Completed',metrics.completed)
+      ] %}
+      <a href="/operations?state={{ key }}{% if filters.q %}&q={{ filters.q|urlencode }}{% endif %}&sort={{ filters.sort }}" class="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition {{ 'border-slate-900 bg-slate-900 text-white' if filters.state == key else 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950' }}" {% if filters.state == key %}aria-current="page"{% endif %}>
+        <span>{{ label }}</span><span class="rounded-full {{ 'bg-white/15 text-white' if filters.state == key else 'bg-slate-100 text-slate-500' }} px-1.5 py-0.5 text-[10px]">{{ count }}</span>
+      </a>
+      {% endfor %}
+    </nav>
+
+    <form method="get" action="/operations" class="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_14rem_auto]" data-shipment-queue-filters>
+      <input type="hidden" name="state" value="{{ filters.state }}">
+      <label class="relative block">
+        <span class="sr-only">Search shipments</span>
+        <i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i>
+        <input type="search" name="q" value="{{ filters.q }}" placeholder="Search reference, supplier or shipment ID" class="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs font-medium text-slate-800 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20">
+      </label>
+      <label>
+        <span class="sr-only">Sort shipments</span>
+        <select name="sort" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20">
+          <option value="updated_desc" {% if filters.sort == 'updated_desc' %}selected{% endif %}>Recently updated</option>
+          <option value="exceptions_desc" {% if filters.sort == 'exceptions_desc' %}selected{% endif %}>Most exceptions</option>
+          <option value="created_desc" {% if filters.sort == 'created_desc' %}selected{% endif %}>Newest created</option>
+          <option value="updated_asc" {% if filters.sort == 'updated_asc' %}selected{% endif %}>Oldest updated</option>
+          <option value="reference_asc" {% if filters.sort == 'reference_asc' %}selected{% endif %}>Reference A–Z</option>
+        </select>
+      </label>
+      <div class="flex items-center gap-2">
+        {{ lt_button("secondary", "Apply", "fa-filter", button_type="submit") }}
+        {% if filters.q or filters.state != 'all' or filters.sort != 'updated_desc' %}{{ lt_button("ghost", "Clear", "fa-xmark", href="/operations") }}{% endif %}
+      </div>
+    </form>
+  </div>
+
   {% if operations %}
-    {% call lt_data_table(["Reference", "Supplier", "Documents", "Exceptions", "Readiness", "Updated"], "Recent U.S. Lacey operations", "64rem") %}
+    {% call lt_data_table(["Priority", "Reference", "Supplier", "Documents", "Exceptions", "Readiness", "Updated"], "U.S. Lacey shipment work queue", "72rem") %}
       {% for item in operations %}
       {% set readiness = {
         'COMPLETED': 'READY',
@@ -91,82 +103,44 @@
         'PROCESSING': 'REVIEW',
         'NEW': 'REVIEW'
       }.get(item.status, item.status|replace('_', ' ')) %}
+      {% set priority = 'HIGH' if item.status == 'FAILED' or item.exception_count >= 5 else ('REVIEW' if item.exception_count or item.status == 'REVIEW_REQUIRED' else ('ACTIVE' if item.status in ['NEW','PROCESSING'] else 'NORMAL')) %}
       <tr class="lt-data-table__row" data-state="{{ 'attention' if item.status in ['REVIEW_REQUIRED', 'FAILED'] else '' }}">
+        <td class="lt-data-table__cell">
+          <span class="inline-flex rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] {{ 'bg-rose-50 text-rose-700' if priority == 'HIGH' else ('bg-amber-50 text-amber-700' if priority == 'REVIEW' else ('bg-sky-50 text-sky-700' if priority == 'ACTIVE' else 'bg-slate-100 text-slate-500')) }}">{{ priority|title }}</span>
+        </td>
         <td class="lt-data-table__cell lt-data-table__cell--primary">
           <a class="lt-data-table__primary text-emerald-700 hover:text-emerald-900" href="/operations/{{ item.public_id }}">{{ item.business_reference }}</a>
           <span class="lt-data-table__secondary">{{ (item.operation_date or item.created_at.date()).strftime("%b %d, %Y") }} · ID {{ item.public_id|string|truncate(14, True, '…') }}</span>
         </td>
         <td class="lt-data-table__cell">
-          {% if item.supplier_name %}
-          <span class="text-xs font-semibold text-slate-700">{{ item.supplier_name }}</span>
-          {% else %}
-          {{ lt_badge("REVIEW REQUIRED", "Supplier unresolved") }}
-          {% endif %}
+          {% if item.supplier_name %}<span class="text-xs font-semibold text-slate-700">{{ item.supplier_name }}</span>{% else %}{{ lt_badge("REVIEW REQUIRED", "Supplier unresolved") }}{% endif %}
         </td>
         <td class="lt-data-table__cell lt-data-table__cell--numeric">{{ item.document_count }}</td>
-        <td class="lt-data-table__cell">
-          {% if item.exception_count %}
-          <span class="font-bold text-amber-800">{{ item.exception_count }}</span>
-          {% else %}
-          <span class="font-semibold text-slate-400">0</span>
-          {% endif %}
-        </td>
+        <td class="lt-data-table__cell">{% if item.exception_count %}<span class="font-bold text-amber-800">{{ item.exception_count }}</span>{% else %}<span class="font-semibold text-slate-400">0</span>{% endif %}</td>
         <td class="lt-data-table__cell">{{ lt_badge(readiness) }}</td>
         <td class="lt-data-table__cell"><span class="text-xs font-semibold text-slate-600">{{ relative_time(item.updated_at) }}</span></td>
       </tr>
       {% endfor %}
     {% endcall %}
+
+    {% if pagination.total_pages > 1 %}
+    <nav class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4" aria-label="Shipment queue pages">
+      <p class="text-xs text-slate-500">Page {{ pagination.page }} of {{ pagination.total_pages }}</p>
+      <div class="flex items-center gap-2">
+        {% if pagination.page > 1 %}<a class="lt-btn lt-btn--secondary" href="/operations?state={{ filters.state }}&sort={{ filters.sort }}&page={{ pagination.page - 1 }}{% if filters.q %}&q={{ filters.q|urlencode }}{% endif %}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i><span>Previous</span></a>{% endif %}
+        {% if pagination.page < pagination.total_pages %}<a class="lt-btn lt-btn--secondary" href="/operations?state={{ filters.state }}&sort={{ filters.sort }}&page={{ pagination.page + 1 }}{% if filters.q %}&q={{ filters.q|urlencode }}{% endif %}"><span>Next</span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>{% endif %}
+      </div>
+    </nav>
+    {% endif %}
   {% else %}
-  <div class="p-5">{{ empty_state("No operations yet", "Use New operation to upload a complete shipment evidence pack.", "fa-folder-open") }}</div>
+  <div class="p-6">
+    {% if filters.q or filters.state != 'all' %}
+      {{ empty_state("No shipments match these filters", "Clear the current filters or search a different reference or supplier.", "fa-filter-circle-xmark") }}
+      <div class="mt-4 flex justify-center">{{ lt_button("secondary", "Clear filters", "fa-xmark", href="/operations") }}</div>
+    {% else %}
+      {{ empty_state("No shipments yet", "Create your first shipment and upload the available evidence pack.", "fa-folder-open") }}
+    {% endif %}
+  </div>
   {% endif %}
 </section>
-
-{% if entitlement.remaining_operations > 0 %}
-<script>
-(() => {
-  const form = document.querySelector('[data-upload-first-intake]');
-  if (!form) return;
-  const input = document.getElementById('intake-documents');
-  const summary = document.getElementById('intake-file-summary');
-  const status = document.getElementById('intake-status');
-  const submit = form.querySelector('button[type="submit"]');
-
-  input.addEventListener('change', () => {
-    const files = Array.from(input.files || []);
-    summary.textContent = !files.length ? 'No files selected.' : (files.length === 1 ? files[0].name : String(files.length) + ' files selected');
-  });
-
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const files = Array.from(input.files || []);
-    if (!files.length) return;
-    submit.disabled = true;
-    status.textContent = 'Preparing secure intake…';
-    try {
-      const tokenResponse = await fetch('/operations/new', {credentials: 'same-origin', headers: {'Accept': 'text/html'}});
-      if (!tokenResponse.ok) throw new Error('Could not start a new operation.');
-      const tokenHtml = await tokenResponse.text();
-      const tokenDocument = new DOMParser().parseFromString(tokenHtml, 'text/html');
-      const token = tokenDocument.querySelector('input[name="csrf_token"]')?.value;
-      if (!token) throw new Error('Secure intake token is unavailable.');
-
-      const body = new FormData();
-      body.append('csrf_token', token);
-      files.forEach(file => body.append('documents', file, file.name));
-      status.textContent = 'Uploading ' + String(files.length) + ' file' + (files.length === 1 ? '' : 's') + '…';
-      const response = await fetch('/operations/intake', {method: 'POST', body, credentials: 'same-origin', redirect: 'follow'});
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message.includes('operation limit') ? 'The current operation limit has been reached.' : 'The shipment could not be started.');
-      }
-      status.textContent = 'Files stored. Starting analysis…';
-      window.location.assign(response.url);
-    } catch (error) {
-      status.textContent = error instanceof Error ? error.message : 'The shipment could not be started.';
-      submit.disabled = false;
-    }
-  });
-})();
-</script>
-{% endif %}
 {% endblock %}

@@ -338,9 +338,11 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
 
     operations = client.get("/operations")
     assert operations.status_code == 200
-    assert 'id="new-operation-panel"' in operations.text
-    assert 'action="/operations/intake"' in operations.text
-    assert "New operation" in operations.text
+    assert "Shipment queue" in operations.text
+    assert "New shipment" in operations.text
+    assert 'name="q"' in operations.text
+    assert 'name="sort"' in operations.text
+    assert "Needs review" in operations.text
     assert "3 / 5" in operations.text
 
     new_operation = client.get("/operations/new")
@@ -361,6 +363,13 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
     assert "us-lacey-regulatory-rules-v4" in regulatory.text
     assert "aphis-phase-vii-2024" in regulatory.text
     assert "Audit trail enabled" in regulatory.text
+    trust = client.get("/trust")
+    assert trust.status_code == 200
+    assert "Trust &amp; Controls" in trust.text
+    assert "Workspace isolated" in trust.text
+    assert "Audit trail enabled" in trust.text
+    assert "us-lacey-regulatory-rules-v4" in trust.text
+    assert "aphis-phase-vii-2024" in trust.text
 
     for removed_field in (
         "importer_name",
@@ -379,6 +388,74 @@ def test_pilot_billing_and_operations_render_canonical_action_contracts(monkeypa
     assert 'name="documents"' in operation.text
     assert 'multiple required' in operation.text
     assert 'action="/operations/OP-DEMO/complete"' not in operation.text
+
+
+def test_shipment_queue_filters_search_and_readiness_server_side(monkeypatch):
+    _portal_env(monkeypatch)
+    identity = UsLaceyPortalIdentity(
+        user_id=7, organization_id=41, email="pilot@example.com",
+        full_name="Pilot User", legal_name="Pilot Imports LLC",
+        business_type="IMPORTER", account_status="PILOT",
+    )
+    entitlement = SimpleNamespace(
+        used_operations=0, monthly_operation_limit=5, remaining_operations=5,
+    )
+    now = datetime.now(timezone.utc)
+    def shipment(public_id, reference, supplier, status, exceptions):
+        return SimpleNamespace(
+            public_id=public_id, client_reference=reference,
+            business_reference=reference, supplier_name=supplier,
+            operation_date=None, created_at=now, updated_at=now,
+            status=status, exception_count=exceptions,
+            document_count=2, merchandise_line_count=1,
+        )
+    rows = (
+        shipment("SHIP-1", "Oak-PO", "Oak Supplier", "REVIEW_REQUIRED", 2),
+        shipment("SHIP-2", "Pine-PO", "Pine Supplier", "READY_FOR_REVIEW", 0),
+        shipment("SHIP-3", "Other-PO", None, "PROCESSING", 0),
+    )
+    class FakeOperations:
+        def list_operations(self, *, organization_id, limit):
+            assert organization_id == identity.organization_id
+            assert limit == 500
+            return rows
+
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.resolve_us_lacey_session",
+        lambda _token: identity,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.require_us_lacey_operational_access",
+        lambda **_kwargs: entitlement,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app.UsLaceyOperationService",
+        FakeOperations,
+    )
+    monkeypatch.setattr(
+        "litoral_trace.web.us_lacey_pilot_app._schedule_translation_backfill_once",
+        lambda *args, **kwargs: None,
+    )
+    client = TestClient(app)
+    client.cookies.set(US_LACEY_SESSION_COOKIE, "opaque-us-session-token")
+    filtered = client.get("/operations?state=needs_review&q=oak&sort=exceptions_desc")
+    assert filtered.status_code == 200
+    assert 'href="/operations/SHIP-1"' in filtered.text
+    assert 'href="/operations/SHIP-2"' not in filtered.text
+    assert 'href="/operations/SHIP-3"' not in filtered.text
+
+    ready = client.get("/operations?state=ready")
+    assert ready.status_code == 200
+    assert 'href="/operations/SHIP-2"' in ready.text
+    assert 'href="/operations/SHIP-1"' not in ready.text
+
+    processing = client.get("/operations?state=processing")
+    assert processing.status_code == 200
+    assert 'href="/operations/SHIP-3"' in processing.text
+
+    no_match = client.get("/operations?q=no-such-shipment")
+    assert no_match.status_code == 200
+    assert "No shipments match these filters" in no_match.text
 
 
 def test_anonymous_new_operation_page_resumes_existing_incomplete_shipment(monkeypatch):

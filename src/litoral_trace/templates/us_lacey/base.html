@@ -27,7 +27,7 @@
       <section class="lt-nav-section mb-3">
         <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Workspace</p>
         <div class="space-y-1">
-          <a href="/operations" {% if current_path.startswith('/operations') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-briefcase" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Operations</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{{ entitlement.evaluation_completed_operations ~ '/' ~ entitlement.evaluation_total_operations if evaluation_mode else 'Queue' }}</span></a>
+          <a href="/operations" {% if current_path.startswith('/operations') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-briefcase" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Shipments</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{{ entitlement.evaluation_completed_operations ~ '/' ~ entitlement.evaluation_total_operations if evaluation_mode else 'Queue' }}</span></a>
           <a href="/evidence" {% if current_path.startswith('/evidence') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
             <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-folder-open" aria-hidden="true"></i></span>
             <span class="min-w-0 flex-1 truncate">Evidence</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Source</span>
@@ -46,6 +46,7 @@
         <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Regulatory</p>
         <div class="space-y-1">
           <a href="/regulatory" {% if current_path == '/regulatory' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Regulatory Analysis</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Rules v4</span></a>
+          <a href="/trust" {% if current_path == '/trust' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Trust &amp; Controls</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-400">Active</span></a>
           <a href="/legal/product-use-terms" {% if current_path == '/legal/product-use-terms' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-file-contract" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Product Use Terms</span></a>
         </div>
       </section>
@@ -149,8 +150,9 @@
           <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey Act workspace · Regulatory ruleset active · Declaration preparation · Human review required</p>
           {% endif %}
         </div>
-        <div class="mx-auto hidden w-full max-w-xl md:block">
-          <label class="relative block"><span class="sr-only">Jump to workspace section</span><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i><input id="lt-command-search" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-20 text-xs text-slate-800 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20" placeholder="Jump to shipments, suppliers, regulatory, audit…" autocomplete="off" aria-label="Workspace quick navigation"><span id="lt-command-shortcut" class="lt-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" aria-hidden="true">Ctrl K</span></label>
+        <div class="relative mx-auto hidden w-full max-w-xl md:block" data-command-palette>
+          <label class="relative block"><span class="sr-only">Jump to workspace section</span><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i><input id="lt-command-search" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-20 text-xs text-slate-800 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20" placeholder="Jump to shipments, suppliers, regulatory, audit…" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="lt-command-results" aria-label="Workspace quick navigation"><span id="lt-command-shortcut" class="lt-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" aria-hidden="true">Ctrl K</span></label>
+          <div id="lt-command-results" class="absolute left-0 right-0 top-full z-50 mt-2 hidden overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl" role="listbox" aria-label="Workspace destinations" data-command-results></div>
         </div>
         <div class="ml-auto flex items-center gap-2">
           <details class="relative">
@@ -226,35 +228,126 @@
 <script>
 (() => {
   const search = document.getElementById('lt-command-search');
-  if (!search) return;
+  const results = document.getElementById('lt-command-results');
+  if (!search || !results) return;
   const shortcut = document.getElementById('lt-command-shortcut');
   const platform = navigator.userAgentData?.platform || navigator.platform || '';
   const isApplePlatform = /Mac|iPhone|iPad|iPod/i.test(platform);
   if (shortcut) shortcut.textContent = isApplePlatform ? '⌘ K' : 'Ctrl K';
+
   const destinations = [
-    {terms: ['operations', 'shipment', 'workspace'], href: '/operations'},
-    {terms: ['evidence', 'documents', 'source'], href: '/evidence'},
-    {terms: ['suppliers', 'supplier', 'vendor', 'reusable evidence'], href: '/suppliers'},
-    {terms: ['audit log', 'audit', 'activity', 'system of record', 'history'], href: '/audit-log'},
-    {terms: ['regulatory', 'regulatory analysis', 'ruleset', 'hts', 'aphis'], href: '/regulatory'},
-    {terms: ['billing', 'subscription', 'payment'], href: '/billing'},
-    {terms: ['product use', 'terms', 'compliance'], href: '/legal/product-use-terms'},
-    {terms: ['refund', 'refunds'], href: '/legal/refunds'},
-    {terms: ['privacy'], href: '/legal/privacy'}
+    {label: 'Shipments', description: 'Open the compliance work queue', terms: ['operations', 'shipment', 'shipments', 'queue', 'workspace'], href: '/operations', icon: 'fa-briefcase'},
+    {label: 'New shipment', description: 'Start a shipment evidence pack', terms: ['new', 'create', 'upload', 'shipment'], href: '/operations/new', icon: 'fa-plus'},
+    {label: 'Evidence', description: 'Inspect reusable supplier evidence', terms: ['evidence', 'documents', 'source', 'claims'], href: '/evidence', icon: 'fa-folder-open'},
+    {label: 'Suppliers', description: 'Open supplier compliance memory', terms: ['suppliers', 'supplier', 'vendor', 'memory', 'reusable evidence'], href: '/suppliers', icon: 'fa-building-circle-check'},
+    {label: 'Regulatory Analysis', description: 'Inspect active U.S. Lacey controls', terms: ['regulatory', 'regulatory analysis', 'ruleset', 'hts', 'aphis'], href: '/regulatory', icon: 'fa-scale-balanced'},
+    {label: 'Trust & Controls', description: 'Review data handling and workspace assurance', terms: ['trust', 'security', 'controls', 'privacy', 'retention', 'tenant'], href: '/trust', icon: 'fa-shield-halved'},
+    {label: 'Audit Log', description: 'Open the immutable activity history', terms: ['audit log', 'audit', 'activity', 'system of record', 'history'], href: '/audit-log', icon: 'fa-clock-rotate-left'},
+    {% if not evaluation_mode %}{label: 'Billing', description: 'Manage the production subscription', terms: ['billing', 'subscription', 'payment'], href: '/billing', icon: 'fa-receipt'},{% endif %}
+    {label: 'Product Use Terms', description: 'Review product and filing boundaries', terms: ['product use', 'terms', 'compliance'], href: '/legal/product-use-terms', icon: 'fa-file-contract'},
+    {label: 'Privacy', description: 'Review privacy terms', terms: ['privacy', 'data'], href: '/legal/privacy', icon: 'fa-shield-halved'}
   ];
+  let activeIndex = -1;
+  let visible = [];
+
+  const close = () => {
+    results.classList.add('hidden');
+    results.replaceChildren();
+    search.setAttribute('aria-expanded', 'false');
+    search.removeAttribute('aria-activedescendant');
+    activeIndex = -1;
+  };
+
+  const focusCommandOption = (index) => {
+    activeIndex = Math.max(0, Math.min(index, visible.length - 1));
+    results.querySelectorAll('[data-command-option]').forEach((option, optionIndex) => {
+      const selected = optionIndex === activeIndex;
+      option.setAttribute('aria-selected', selected ? 'true' : 'false');
+      option.classList.toggle('bg-slate-100', selected);
+      if (selected) {
+        search.setAttribute('aria-activedescendant', option.id);
+        option.scrollIntoView({block: 'nearest'});
+      }
+    });
+  };
+
+  const render = () => {
+    const query = search.value.trim().toLowerCase();
+    visible = destinations.filter((item) => !query || item.label.toLowerCase().includes(query) || item.terms.some((term) => term.includes(query) || query.includes(term))).slice(0, 7);
+    results.replaceChildren();
+    visible.forEach((item, index) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.id = `lt-command-option-${index}`;
+      option.dataset.commandOption = String(index);
+      option.className = 'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-slate-100';
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', 'false');
+
+      const icon = document.createElement('span');
+      icon.className = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600';
+      const iconGlyph = document.createElement('i');
+      iconGlyph.className = `fa-solid ${item.icon}`;
+      iconGlyph.setAttribute('aria-hidden', 'true');
+      icon.append(iconGlyph);
+
+      const copy = document.createElement('span');
+      copy.className = 'min-w-0 flex-1';
+      const label = document.createElement('span');
+      label.className = 'block text-xs font-bold text-slate-900';
+      label.textContent = item.label;
+      const description = document.createElement('span');
+      description.className = 'mt-0.5 block truncate text-[10px] text-slate-500';
+      description.textContent = item.description;
+      copy.append(label, description);
+      option.append(icon, copy);
+      option.addEventListener('click', () => window.location.assign(item.href));
+      option.addEventListener('mouseenter', () => focusCommandOption(index));
+      results.append(option);
+    });
+
+    if (!visible.length) {
+      const empty = document.createElement('p');
+      empty.className = 'px-3 py-3 text-xs text-slate-500';
+      empty.textContent = 'No workspace destination matches this search.';
+      results.append(empty);
+    }
+    results.classList.remove('hidden');
+    search.setAttribute('aria-expanded', 'true');
+    if (visible.length) focusCommandOption(0);
+  };
+
   document.addEventListener('keydown', (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();
       search.focus();
       search.select();
+      render();
     }
   });
+  search.addEventListener('focus', render);
+  search.addEventListener('input', render);
   search.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter') return;
-    const query = search.value.trim().toLowerCase();
-    if (!query) return;
-    const match = destinations.find(item => item.terms.some(term => term.includes(query) || query.includes(term)));
-    if (match) window.location.assign(match.href);
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      close();
+      search.blur();
+      return;
+    }
+    if (!visible.length) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      focusCommandOption(activeIndex + 1 >= visible.length ? 0 : activeIndex + 1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      focusCommandOption(activeIndex - 1 < 0 ? visible.length - 1 : activeIndex - 1);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      window.location.assign(visible[Math.max(0, activeIndex)].href);
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('[data-command-palette]')) close();
   });
 })();
 </script>

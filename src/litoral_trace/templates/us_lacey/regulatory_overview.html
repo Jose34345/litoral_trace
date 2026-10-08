@@ -1,5 +1,6 @@
 {% extends "us_lacey/base.html" %}
 {% set authenticated = true %}
+{% from "us_lacey/_components.html" import lt_badge %}
 
 {% block lacey_title %}Regulatory Analysis{% endblock %}
 
@@ -7,41 +8,78 @@
 {{ page_header(
     "Regulatory Analysis",
     "U.S. Lacey",
-    "Versioned regulatory checks run against each shipment's current evidence set. Detailed findings stay attached to the shipment and its audit trail.",
+    "Versioned regulatory controls run against each shipment's current evidence set. Detailed findings remain shipment-scoped and are preserved in the audit trail.",
     icon="fa-scale-balanced"
 ) }}
 
 <section class="grid gap-4 lg:grid-cols-3">
-  <article class="lt-card p-5 lg:col-span-2">
+  <article class="lt-card p-5 lg:col-span-2" data-regulatory-baseline>
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-emerald-700">Active regulatory baseline</p>
         <h2 class="mt-2 text-lg font-bold text-slate-950">U.S. Lacey shipment preparation</h2>
+        <p class="mt-1 text-xs leading-5 text-slate-600">Every shipment snapshot records the exact ruleset and HTS catalog used for the analysis.</p>
       </div>
       <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-emerald-800">Ruleset active</span>
     </div>
     <dl class="mt-5 grid gap-3 sm:grid-cols-2">
-      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><dt class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Regulatory ruleset</dt><dd class="mt-1 break-all text-sm font-bold text-slate-950">{{ us_lacey_ruleset_version }}</dd></div>
-      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><dt class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">APHIS HTS catalog</dt><dd class="mt-1 break-all text-sm font-bold text-slate-950">{{ us_lacey_hts_catalog_version }}</dd></div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><dt class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Regulatory ruleset</dt><dd class="mt-1 break-all text-sm font-bold text-slate-950">{{ us_lacey_ruleset_version }}</dd><p class="mt-1 text-[10px] text-slate-500">Versioned decision contract</p></div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><dt class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">APHIS HTS catalog</dt><dd class="mt-1 break-all text-sm font-bold text-slate-950">{{ us_lacey_hts_catalog_version }}</dd><p class="mt-1 text-[10px] text-slate-500">Schedule coverage baseline</p></div>
     </dl>
-    <div class="mt-5 grid gap-3 sm:grid-cols-2">
-      <div class="rounded-xl border border-slate-200 p-4"><p class="text-xs font-bold text-slate-950">Shipment-scoped analysis</p><p class="mt-1 text-xs leading-5 text-slate-600">HTS coverage, declaration applicability and rule-specific information gaps are evaluated against the evidence in each shipment.</p></div>
-      <div class="rounded-xl border border-slate-200 p-4"><p class="text-xs font-bold text-slate-950">Human review boundary</p><p class="mt-1 text-xs leading-5 text-slate-600">Litoral Trace prepares and validates declaration data. Your team remains responsible for review and filing.</p></div>
-    </div>
   </article>
 
-  <aside class="lt-card p-5">
+  <aside class="lt-card p-5" data-regulatory-system-record>
     <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">System of record</p>
     <h2 class="mt-2 text-base font-bold text-slate-950">Audit trail enabled</h2>
-    <p class="mt-2 text-xs leading-5 text-slate-600">Regulatory snapshots, review decisions and status changes are retained as operation events for traceable review.</p>
-    <a href="/audit-log" class="mt-5 inline-flex text-xs font-bold text-emerald-700 hover:text-emerald-800">Open Audit Log →</a>
+    <p class="mt-2 text-xs leading-5 text-slate-600">Regulatory snapshots, evidence changes, human review decisions and package generation are retained as operation events for traceable review.</p>
+    <a href="/audit-log" class="mt-5 inline-flex items-center gap-2 text-xs font-bold text-emerald-700 hover:text-emerald-800"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>Open Audit Log</span></a>
   </aside>
 </section>
 
-<section class="mt-5 lt-card p-5">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div><p class="text-sm font-bold text-slate-950">Open a shipment to see its Regulatory Analysis</p><p class="mt-1 text-xs text-slate-600">The detailed matrix is evidence-specific, so it lives inside each shipment review rather than on this overview page.</p></div>
-    <a href="/operations" class="rounded-lg bg-slate-950 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800">View shipments</a>
+<section class="mt-5 lt-card overflow-hidden" data-regulatory-control-catalog>
+  <header class="border-b border-slate-200 px-5 py-4">
+    <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Control catalog</p>
+    <h2 class="mt-1 text-base font-bold text-slate-950">What the active ruleset evaluates</h2>
+    <p class="mt-1 text-xs text-slate-600">The actual result is calculated per shipment and per applicable merchandise line. This page describes the control surface, not a shipment result.</p>
+  </header>
+  <div class="overflow-x-auto">
+    <table class="min-w-[58rem] w-full text-left text-xs">
+      <thead class="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+        <tr><th class="px-5 py-3">Control</th><th class="px-5 py-3">Evidence used</th><th class="px-5 py-3">When it blocks</th><th class="px-5 py-3">Outcome</th></tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        <tr><td class="px-5 py-3 font-bold text-slate-900">HTS schedule coverage</td><td class="px-5 py-3 text-slate-600">HTS classification and current APHIS catalog</td><td class="px-5 py-3 text-slate-600">Applicable classification cannot be supported</td><td class="px-5 py-3">{{ lt_badge("REVIEW REQUIRED", "Needs information") }}</td></tr>
+        <tr><td class="px-5 py-3 font-bold text-slate-900">Declaration applicability</td><td class="px-5 py-3 text-slate-600">HTS, merchandise and current ruleset</td><td class="px-5 py-3 text-slate-600">Applicability cannot be determined safely</td><td class="px-5 py-3">{{ lt_badge("REVIEW REQUIRED", "Needs information") }}</td></tr>
+        <tr><td class="px-5 py-3 font-bold text-slate-900">Botanical identity</td><td class="px-5 py-3 text-slate-600">Genus / species evidence for applicable plant lines</td><td class="px-5 py-3 text-slate-600">Required botanical information is unresolved or conflicting</td><td class="px-5 py-3">{{ lt_badge("READY", "Supported") }}</td></tr>
+        <tr><td class="px-5 py-3 font-bold text-slate-900">Country of harvest</td><td class="px-5 py-3 text-slate-600">Supplier, manufacturer and shipment evidence</td><td class="px-5 py-3 text-slate-600">Required harvest-country evidence is missing or conflicting</td><td class="px-5 py-3">{{ lt_badge("READY", "Supported") }}</td></tr>
+        <tr><td class="px-5 py-3 font-bold text-slate-900">Plant quantity and unit</td><td class="px-5 py-3 text-slate-600">Commercial and supplier evidence</td><td class="px-5 py-3 text-slate-600">An applicable line lacks supported quantity information</td><td class="px-5 py-3">{{ lt_badge("READY", "Supported") }}</td></tr>
+        <tr><td class="px-5 py-3 font-bold text-slate-900">Rule-specific exceptions</td><td class="px-5 py-3 text-slate-600">Current ruleset plus shipment evidence</td><td class="px-5 py-3 text-slate-600">Only when the active version marks the condition blocking</td><td class="px-5 py-3">{{ lt_badge("REVIEW", "Versioned") }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="mt-5 grid gap-4 lg:grid-cols-3">
+  <article class="lt-card p-5 lg:col-span-2" data-regulatory-status-semantics>
+    <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Status semantics</p>
+    <div class="mt-4 grid gap-3 sm:grid-cols-3">
+      <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">{{ lt_badge("READY", "Supported") }}<p class="mt-2 text-xs leading-5 text-emerald-900">Current evidence supports the control for the evaluated scope.</p></div>
+      <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">{{ lt_badge("REVIEW REQUIRED", "Needs information") }}<p class="mt-2 text-xs leading-5 text-amber-900">Additional supported information or a human decision is required before readiness.</p></div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">{{ lt_badge("NOT REQUIRED", "Not required") }}<p class="mt-2 text-xs leading-5 text-slate-700">The active ruleset does not require the control for the evaluated scope.</p></div>
+    </div>
+  </article>
+  <aside class="lt-card p-5" data-regulatory-boundary>
+    <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Human review boundary</p>
+    <h2 class="mt-2 text-base font-bold text-slate-950">Preparation, not automatic filing</h2>
+    <p class="mt-2 text-xs leading-5 text-slate-600">Litoral Trace prepares and validates declaration data and generates work products. Your authorized team remains responsible for final review and submission to the relevant filing system.</p>
+    <p class="mt-3 text-[11px] font-semibold text-slate-500">No automatic ACE / LAWGS submission.</p>
+  </aside>
+</section>
+
+<section class="mt-5 lt-card p-5" data-regulatory-next-actions>
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <div><p class="text-sm font-bold text-slate-950">Inspect the controls on a real shipment</p><p class="mt-1 text-xs text-slate-600">The detailed matrix is evidence-specific and lives inside each shipment review with its supporting evidence and audit history.</p></div>
+    <div class="flex flex-wrap gap-2"><a href="/operations?state=needs_review" class="lt-btn lt-btn--secondary"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span>Needs review</span></a><a href="/operations" class="lt-btn lt-btn--primary"><i class="fa-solid fa-box" aria-hidden="true"></i><span>View shipments</span></a></div>
   </div>
 </section>
 {% endblock %}

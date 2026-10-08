@@ -59,14 +59,15 @@ def test_review_projection_separates_action_supported_and_settled_states():
 
 
 def test_operations_intake_defends_against_cached_legacy_file_enhancer():
-    template = OPERATIONS_TEMPLATE.read_text(encoding="utf-8")
+    template = (ROOT / "src/litoral_trace/templates/us_lacey/new_operation.html").read_text(encoding="utf-8")
     base = BASE_TEMPLATE.read_text(encoding="utf-8")
-    css = FORM_CONTROLS_CSS.read_text(encoding="utf-8")
+    enhancer = FILE_INPUT_JS.read_text(encoding="utf-8")
 
-    assert "data-file-staging-form" in template
-    assert "data-file-dropzone-input" in template
-    assert "data-file-staging-list" in template
-    assert "[data-file-staging-form] .lt-file-input" in css
+    assert 'data-file-dropzone-input' in template
+    assert 'class="sr-only"' in template
+    assert 'data-selected-files' in template
+    assert 'data-file-list' in template
+    assert 'input.hasAttribute("data-file-dropzone-input")' in enhancer
     assert "?v=20260918-file-staging-2" in base
 
 
