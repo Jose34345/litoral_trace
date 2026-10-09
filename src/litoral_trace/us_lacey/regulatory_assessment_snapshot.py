@@ -627,6 +627,13 @@ def refresh_regulatory_assessment_snapshot_for_review(
             UsLaceyRegulatoryAssessmentSnapshot.ruleset_version == RULESET_VERSION,
         )
     )
+    if (
+        snapshot is not None
+        and snapshot.status == "CURRENT"
+        and snapshot.input_fingerprint == input_fingerprint
+    ):
+        # A read-time consistency check must be idempotent when no inputs changed.
+        return snapshot
     if snapshot is None:
         snapshot = UsLaceyRegulatoryAssessmentSnapshot(
             organization_id=organization_id,
@@ -690,10 +697,11 @@ def build_regulatory_assessment_snapshot(
                 UsLaceyRegulatoryAssessmentSnapshot.organization_id == organization_id,
                 UsLaceyRegulatoryAssessmentSnapshot.source_set_revision_id == revision_id,
                 UsLaceyRegulatoryAssessmentSnapshot.ruleset_version == RULESET_VERSION,
-            )
+            ).with_for_update()
         )
-        if existing is not None:
-            return existing
+        # The same source-set generation may first be assessed before Engine 2
+        # canonical fields are published. An existing row is NOT necessarily
+        # current for the newer, corroborated review-field inputs.
 
         product_snapshot = session.scalar(
             select(UsLaceyProductIntelligenceSnapshot).where(
@@ -774,21 +782,31 @@ def build_regulatory_assessment_snapshot(
             return None
 
         summary = payload["summary"]
-        snapshot = UsLaceyRegulatoryAssessmentSnapshot(
-            organization_id=organization_id,
-            operation_id=operation_id,
-            source_set_revision_id=revision_id,
-            generation=int(claim.generation),
-            source_set_fingerprint=str(claim.fingerprint),
-            ruleset_version=RULESET_VERSION,
-            input_fingerprint=input_fingerprint,
-            status="CURRENT",
-            assessment_count=int(summary["assessment_count"]),
-            indeterminate_count=int(summary["indeterminate_count"]),
-            payload_json=payload,
-            finalized_at=datetime.now(timezone.utc),
-        )
-        session.add(snapshot)
+        if (
+            existing is not None
+            and existing.input_fingerprint == input_fingerprint
+            and existing.status == "CURRENT"
+        ):
+            return existing
+
+        if existing is None:
+            snapshot = UsLaceyRegulatoryAssessmentSnapshot(
+                organization_id=organization_id,
+                operation_id=operation_id,
+                source_set_revision_id=revision_id,
+                ruleset_version=RULESET_VERSION,
+            )
+            session.add(snapshot)
+        else:
+            snapshot = existing
+        snapshot.generation = int(claim.generation)
+        snapshot.source_set_fingerprint = str(claim.fingerprint)
+        snapshot.input_fingerprint = input_fingerprint
+        snapshot.status = "CURRENT"
+        snapshot.assessment_count = int(summary["assessment_count"])
+        snapshot.indeterminate_count = int(summary["indeterminate_count"])
+        snapshot.payload_json = payload
+        snapshot.finalized_at = datetime.now(timezone.utc)
         try:
             session.commit()
         except IntegrityError:

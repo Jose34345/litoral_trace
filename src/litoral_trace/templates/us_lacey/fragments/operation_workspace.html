@@ -112,7 +112,7 @@
         </div>
       </details>
 
-      <button type="button" class="lt-btn lt-btn--ghost" data-request-evidence data-field-label="{{ field.label }}" data-field-guidance="{{ missing_guidance(field.field_name) }}">Request evidence</button>
+      <button type="button" class="lt-btn lt-btn--ghost" data-request-evidence data-field-name="{{ field.field_name }}" data-field-label="{{ field.label }}" data-field-guidance="{{ missing_guidance(field.field_name) }}">Request evidence</button>
 
       {% if field.field_name == "percent_recycled" %}
       <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="not-required">
@@ -321,9 +321,10 @@
         </div>
       </div>
       <div class="p-5">
-        <p class="text-xs leading-5 text-slate-600">Litoral Trace does not send supplier email on your behalf. Copy this request into your existing supplier communication workflow, then add the returned evidence to this shipment.</p>
+        <p class="text-xs leading-5 text-slate-600" data-request-evidence-guidance>Litoral Trace does not send supplier email on your behalf. Copy this request to your normal evidence workflow and attach the response when available. Closing this dialog leaves the field pending.</p>
         <textarea class="lt-control mt-4 min-h-32 resize-y text-xs" readonly data-request-evidence-copy></textarea>
         <div class="mt-4 flex flex-wrap justify-end gap-2">
+          <button type="button" class="lt-btn lt-btn--secondary" data-request-evidence-close><i class="fa-regular fa-clock" aria-hidden="true"></i><span>Keep pending</span></button>
           <button type="button" class="lt-btn lt-btn--secondary" data-request-evidence-copy-button><i class="fa-regular fa-copy" aria-hidden="true"></i><span>Copy request</span></button>
           <button type="button" class="lt-btn lt-btn--primary" data-request-evidence-add><i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i><span>Add evidence</span></button>
         </div>
@@ -700,6 +701,11 @@
         const copy = requestDialog.querySelector("[data-request-evidence-copy]");
         const fieldLabel = button.dataset.fieldLabel || "required Lacey field";
         const guidance = button.dataset.fieldGuidance || "Please provide supporting evidence.";
+        const guidanceText = requestDialog.querySelector("[data-request-evidence-guidance]");
+        const isEntryNumber = button.dataset.fieldName === "filing_entry_reference";
+        if (guidanceText) guidanceText.textContent = isEntryNumber
+          ? "This number is normally provided by the importer or customs broker after the customs entry is created. It is not in the uploaded documents. You can leave it pending without entering a made-up value; closing this dialog does not change the field. A final filing-ready package still needs a valid number."
+          : "Litoral Trace does not send messages on your behalf. Copy this request to your usual evidence workflow, then attach the response when it arrives. Closing this dialog leaves the field pending.";
         if (title) title.textContent = "Request evidence · " + fieldLabel;
         if (copy) {
           copy.value =
