@@ -1256,7 +1256,22 @@ def refresh_us_lacey_operation_status(
         )
     )
     if int(unresolved) or int(open_conflicts) or regulatory_blocker_count:
+        keep_pre_entry_review = (
+            operation.review_result == "DOCUMENT_REVIEW_COMPLETE_AWAITING_ENTRY"
+            and int(unresolved) == 1
+            and not int(open_conflicts)
+            and not regulatory_blocker_count
+            and session.scalar(
+                select(UsLaceyOperationField.field_name).where(
+                    UsLaceyOperationField.organization_id == organization_id,
+                    UsLaceyOperationField.operation_id == operation.id,
+                    UsLaceyOperationField.field_status.in_(("REVIEW", "MISSING", "CONFLICT")),
+                )
+            ) == "filing_entry_reference"
+        )
         operation.status = "REVIEW_REQUIRED"
+        if keep_pre_entry_review:
+            return operation.status
         operation.review_result = (
             "NEEDS_REGULATORY_INFORMATION"
             if regulatory_blocker_count and not int(unresolved) and not int(open_conflicts)

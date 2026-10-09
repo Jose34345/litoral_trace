@@ -16,6 +16,8 @@ from typing import Any, Iterable, Mapping
 from uuid import UUID
 
 from sqlalchemy import and_, or_, select
+
+from litoral_trace.us_lacey.pdf_documentary_identity import discover_single_product_pdf_identity
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -848,6 +850,25 @@ def resolve_operation_identity_memory(
         organization_id=org_id,
         operation_id=op_id,
     )
+    line_refs = tuple(
+        str(value)
+        for value in session.scalars(
+            select(UsLaceyPpqPlantLine.line_reference).where(
+                UsLaceyPpqPlantLine.organization_id == org_id,
+                UsLaceyPpqPlantLine.operation_id == op_id,
+            )
+        ).all()
+    )
+    documentary = (
+        discover_single_product_pdf_identity(fields, line_references=line_refs)
+        if not _product_compositions(product_payload)
+        and not _line_sku_observations(fields)
+        else None
+    )
+    # Preserve the absence of a BOM: these strictly corroborated PDF labels
+    # establish supplier/SKU identity only, NEVER botanical material claims.
+    if documentary is not None:
+        fields = (*fields, *documentary.virtual_fields)
     candidates = _supplier_candidates(fields)
 
     resolved_suppliers: dict[int, UsLaceySupplier] = {}
@@ -902,7 +923,10 @@ def resolve_operation_identity_memory(
         lines_by_sku.setdefault(sku, set()).add(line_reference)
 
     product_count = 0
-    for sku, product_name in _product_compositions(product_payload):
+    compositions = _product_compositions(product_payload)
+    if documentary is not None and not compositions:
+        compositions = ((documentary.sku, documentary.product_name),)
+    for sku, product_name in compositions:
         exact_lines = lines_by_sku.get(_normalize_sku(sku), set())
         exact_line = (
             next(iter(exact_lines))

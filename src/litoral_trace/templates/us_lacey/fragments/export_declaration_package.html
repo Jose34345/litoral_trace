@@ -79,6 +79,28 @@
     </div>
     {% endif %}
 
+    {% if has_readiness_summary and readiness_summary.pre_entry_eligible %}
+    <section class="mt-5 rounded-xl border border-slate-200 bg-white p-5" data-pre-entry-milestone>
+      <p class="text-[11px] font-bold uppercase tracking-[0.11em] text-slate-500">Document preparation milestone</p>
+      {% if readiness_summary.awaiting_entry_review %}
+        <h3 class="mt-2 text-base font-bold text-slate-950">Document review complete · Entry Number pending</h3>
+        <p class="mt-1 text-sm leading-6 text-slate-600">Your document review was recorded and audited. The CBP Entry Number remains required before a filing-ready package can be generated. No placeholder entry number or LAWGS XML was created.</p>
+        <a href="/operations/new" class="lt-btn lt-btn--primary mt-4">Continue to next shipment</a>
+      {% elif auto_count > 0 %}
+        <h3 class="mt-2 text-base font-bold text-slate-950">Confirm source-backed values to finish documentary review</h3>
+        <p class="mt-1 text-sm leading-6 text-slate-600">The only missing field is the CBP Entry Number. First review and confirm the {{ auto_count }} auto-resolved value{{ '' if auto_count == 1 else 's' }}. You can then record document preparation without an Entry Number; the filing package will remain locked.</p>
+        <a href="#review-panel-resolved" class="lt-btn lt-btn--secondary mt-4" data-pre-entry-review-confirm>Review auto-resolved data</a>
+      {% else %}
+        <h3 class="mt-2 text-base font-bold text-slate-950">Finish document review while Entry Number is pending</h3>
+        <p class="mt-1 text-sm leading-6 text-slate-600">All other fields and regulatory checks have been reviewed. Record this evidence-only milestone so you can continue with the next shipment. The CBP Entry Number remains unresolved and LAWGS XML stays locked.</p>
+        <form method="post" action="/operations/{{ detail.public_id }}/review/pre-entry" class="mt-4" data-pre-entry-review-form>
+          <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
+          {{ button("Finish document review · entry pending", variant="primary", button_type="submit") }}
+        </form>
+      {% endif %}
+    </section>
+    {% endif %}
+
     <div class="mt-6 grid gap-4 md:grid-cols-2" aria-label="Declaration export formats">
       {% if export_ready %}
       <div class="lt-export-action-group">

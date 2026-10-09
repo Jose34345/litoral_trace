@@ -885,9 +885,27 @@ def _readiness_summary(
     else:
         overall = "IN PREPARATION"
 
+    # Only the unissued CBP entry reference may remain. This is a documentary
+    # milestone, not a declaration-ready or regulatory-waived state.
+    field_exceptions = tuple(attention_fields or ())
+    pre_entry_eligible = (
+        processing_terminal and not processing_failed and not completed
+        and len(field_exceptions) == 1 and not regulatory_exception_count
+        and str(getattr(field_exceptions[0], "field_name", "")) == "filing_entry_reference"
+    )
+    awaiting_entry_review = (
+        pre_entry_eligible
+        and str(getattr(detail, "review_result", "") or "")
+        == "DOCUMENT_REVIEW_COMPLETE_AWAITING_ENTRY"
+    )
+    if awaiting_entry_review:
+        overall = "DOCUMENT REVIEW COMPLETE · ENTRY PENDING"
+
     return {
         "overall": overall,
         "package_ready": package_ready,
+        "pre_entry_eligible": pre_entry_eligible,
+        "awaiting_entry_review": awaiting_entry_review,
         "exception_count": exception_count,
         "field_exception_count": field_exception_count,
         "regulatory_exception_count": regulatory_exception_count,
