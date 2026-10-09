@@ -204,7 +204,7 @@ def test_exception_first_ui_polish_uses_quiet_enterprise_surfaces():
     assert "border-emerald-200 bg-emerald-50/40" not in workspace
     assert "ring-emerald-600/20" in workspace
     assert "ring-amber-600/20" in workspace
-    assert "Save override" in workspace
+    assert "Save verified value" in workspace
     assert "Inspect evidence" in workspace
     assert "Source: Document evidence" in workspace
     assert "semantically equivalent source observations were reconciled" not in workspace
