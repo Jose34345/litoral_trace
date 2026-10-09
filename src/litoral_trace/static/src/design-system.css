@@ -799,6 +799,65 @@ html {
   font-size: 0.875rem;
 }
 
+/* Native top-layer dialog, not a floating popover inside the scrollable review table. */
+.lt-review-override-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(38rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  max-height: min(85vh, 46rem);
+  overflow-y: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 1rem;
+  padding: 0;
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.25);
+}
+.lt-review-override-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.65);
+}
+.lt-review-override-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+.lt-review-override-body {
+  padding: 1.5rem;
+}
+.lt-review-override-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  color: #64748b;
+}
+.lt-review-override-close:hover,
+.lt-review-override-close:focus-visible {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.lt-review-override-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+@media (max-width: 480px) {
+  .lt-review-override-header,
+  .lt-review-override-body {
+    padding: 1rem;
+  }
+}
+
 .lt-enterprise-review .lt-review-card {
   padding: 0.875rem;
 }

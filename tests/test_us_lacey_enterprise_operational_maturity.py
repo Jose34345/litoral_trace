@@ -69,7 +69,7 @@ def test_exception_review_is_matrix_based_and_auditable() -> None:
     assert "Exception work queue" in template
     for column in ("Field", "Proposed value", "Evidence", "Status", "Decision"):
         assert column in template
-    for action in ("Accept", "Override", "Request evidence", "Mark not applicable"):
+    for action in ("Accept", "Enter verified value", "Request evidence", "Mark not applicable"):
         assert action in template
     assert "Resolved by Litoral Trace" in template
     assert "Authorized reviewer" in template
