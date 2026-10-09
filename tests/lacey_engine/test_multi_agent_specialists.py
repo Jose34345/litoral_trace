@@ -1,0 +1,216 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+from uuid import NAMESPACE_URL, uuid5
+
+from litoral_trace.lacey_engine.ai_shadow import AICandidate, AIExtractionResult, AI_SHADOW_SCHEMA_VERSION
+from litoral_trace.lacey_engine.domain import EvidenceClass
+from litoral_trace.lacey_engine.multi_agent.contracts import DocumentType, RoutedDocument, SpecialistRole
+from litoral_trace.lacey_engine.multi_agent.specialist_runtime import SpecialistInputDocument
+from litoral_trace.lacey_engine.multi_agent.specialists import (
+    BotanicalExtractor,
+    CommercialLineExtractor,
+    CustomsIdentityExtractor,
+    LogisticsExtractor,
+)
+
+
+class FakeScopedProvider:
+    name = "fake"
+    model = "fake-model"
+
+    def __init__(
+        self,
+        candidates: tuple[AICandidate, ...],
+        *,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        total_tokens: int | None = None,
+    ) -> None:
+        self.candidates = candidates
+        self.calls: list[dict[str, object]] = []
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.total_tokens = total_tokens
+
+    def extract_scoped(self, **kwargs) -> AIExtractionResult:
+        self.calls.append(kwargs)
+        return AIExtractionResult(
+            provider=self.name,
+            model=self.model,
+            schema_version=AI_SHADOW_SCHEMA_VERSION,
+            candidates=self.candidates,
+            page_count=len(kwargs["pages"]),
+            latency_ms=17,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            total_tokens=self.total_tokens,
+        )
+
+
+def _candidate(field_key: str, value: str, *, page: int = 1) -> AICandidate:
+    return AICandidate(
+        field_key=field_key,
+        value=value,
+        normalized_value=value,
+        evidence_class=EvidenceClass.EXPLICIT,
+        page=page,
+        source_text=f"ROW-1 SKU-1 {field_key} {value}",
+        confidence=0.9,
+        provider="fake",
+        model="fake-model",
+        evidence_verified=False,
+    )
+
+
+def _document(document_type: DocumentType = DocumentType.COMMERCIAL_INVOICE) -> SpecialistInputDocument:
+    routed = RoutedDocument(
+        document_id=uuid5(NAMESPACE_URL, document_type.value),
+        document_type=document_type,
+        pages=(1,),
+        confidence=0.98,
+        signals=("fixture",),
+    )
+    return SpecialistInputDocument(routed=routed, filename="fixture.pdf", content=b"%PDF-fixture")
+
+
+def test_specialist_allowed_fields_are_closed_and_domain_specific():
+    assert CustomsIdentityExtractor.allowed_fields == frozenset(
+        {
+            "importer_name",
+            "importer_address",
+            "consignee_name",
+            "consignee_address",
+            "filing_entry_reference",
+            "manufacturer_id",
+        }
+    )
+    assert LogisticsExtractor.allowed_fields == frozenset(
+        {"bill_of_lading", "container_number", "estimated_arrival_date"}
+    )
+    assert CommercialLineExtractor.allowed_fields == frozenset(
+        {"description", "article_component", "hts_code", "entered_value"}
+    )
+    assert BotanicalExtractor.allowed_fields == frozenset(
+        {"genus", "species", "country_of_harvest", "plant_quantity", "metric_unit"}
+    )
+
+
+def test_runtime_drops_provider_field_outside_specialist_scope_and_warns():
+    provider = FakeScopedProvider(
+        (
+            _candidate("hts_code", "4419.90.9000"),
+            _candidate("genus", "Acacia"),
+        )
+    )
+    specialist = CommercialLineExtractor(provider)
+
+    result = specialist.extract((_document(),))
+
+    assert result.role is SpecialistRole.COMMERCIAL_LINES
+    assert [item.candidate.field_key for item in result.candidates] == ["hts_code"]
+    assert result.candidates[0].line_item_key is None
+    assert result.candidates[0].source_span_id is None
+    assert provider.calls[0]["allowed_fields"] == CommercialLineExtractor.allowed_fields
+    assert "row" in str(provider.calls[0]["prompt"]).casefold()
+    assert result.warnings == ("OUT_OF_SCOPE_FIELD:genus:COMMERCIAL_INVOICE",)
+
+
+def test_runtime_carries_specialized_row_identity_without_mutating_legacy_candidate():
+    candidate = _candidate("hts_code", "4407110190")
+
+    class Provider:
+        name = "fake"
+        model = "fake-model"
+
+        def extract_scoped(self, **kwargs):
+            return SimpleNamespace(
+                candidates=(candidate,),
+                latency_ms=7,
+                input_tokens=None,
+                output_tokens=None,
+                total_tokens=None,
+                row_identities=(
+                    SimpleNamespace(
+                        line_key="PT-38",
+                        table_id="commercial-lines",
+                        row_index=0,
+                    ),
+                ),
+            )
+
+    result = CommercialLineExtractor(Provider()).extract((_document(),))
+
+    assert len(result.candidates) == 1
+    envelope = result.candidates[0]
+    assert envelope.source_line_key == "PT-38"
+    assert envelope.source_table_id == "commercial-lines"
+    assert envelope.source_row_index == 0
+    assert not hasattr(envelope.candidate, "source_line_key")
+
+
+def test_runtime_drops_candidate_from_page_outside_routed_page_set():
+    provider = FakeScopedProvider((_candidate("container_number", "TLLU4827315", page=2),))
+    specialist = LogisticsExtractor(provider)
+
+    result = specialist.extract((_document(DocumentType.BILL_OF_LADING),))
+
+    assert result.candidates == ()
+    assert result.warnings == ("OUT_OF_SCOPE_PAGE:2:BILL_OF_LADING",)
+
+
+def test_task_for_preserves_closed_allowed_fields():
+    provider = FakeScopedProvider(())
+    specialist = BotanicalExtractor(provider)
+    routed = _document(DocumentType.BOTANICAL_DECLARATION).routed
+
+    task = specialist.task_for((routed,))
+
+    assert task.role is SpecialistRole.BOTANICAL
+    assert task.documents == (routed,)
+    assert task.allowed_fields is BotanicalExtractor.allowed_fields
+
+
+def test_agent_run_id_is_shared_inside_one_specialist_run():
+    provider = FakeScopedProvider(
+        (
+            _candidate("importer_name", "Northstar Kitchen Imports LLC"),
+            _candidate("manufacturer_id", "VNMKHOM123HCM"),
+        )
+    )
+    specialist = CustomsIdentityExtractor(provider)
+
+    result = specialist.extract((_document(DocumentType.ENTRY_WORKSHEET),))
+
+    assert len(result.candidates) == 2
+    assert len({item.agent_run_id for item in result.candidates}) == 1
+    assert all(item.specialist is SpecialistRole.CUSTOMS_IDENTITY for item in result.candidates)
+    assert result.latency_ms == 17
+
+
+def test_specialist_result_carries_provider_reported_token_usage() -> None:
+    provider = FakeScopedProvider(
+        (_candidate("container_number", "TLLU4827315"),),
+        input_tokens=210,
+        output_tokens=24,
+        total_tokens=234,
+    )
+    specialist = LogisticsExtractor(provider)
+
+    result = specialist.extract((_document(DocumentType.BILL_OF_LADING),))
+
+    assert result.input_tokens == 210
+    assert result.output_tokens == 24
+    assert result.total_tokens == 234
+
+
+def test_specialist_result_does_not_estimate_missing_token_usage() -> None:
+    specialist = LogisticsExtractor(
+        FakeScopedProvider((_candidate("container_number", "TLLU4827315"),))
+    )
+
+    result = specialist.extract((_document(DocumentType.BILL_OF_LADING),))
+
+    assert result.input_tokens is None
+    assert result.output_tokens is None
+    assert result.total_tokens is None

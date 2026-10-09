@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>{{ sample.label }} Sample | Litoral Trace</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/img/logo.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/dist/app.css') }}">
+</head>
+<body class="min-h-full bg-slate-100 font-sans text-slate-900 antialiased" data-outreach-persona="{{ persona }}" data-outreach-step="{{ step }}">
+  <div class="flex min-h-screen">
+    <aside class="hidden w-64 shrink-0 flex-col bg-slate-950 text-slate-200 lg:flex" aria-label="Sample workspace navigation">
+      <div class="border-b border-slate-800 px-5 py-5">
+        <div class="flex items-center gap-3">
+          <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-white" aria-hidden="true"><img src="{{ url_for('static', path='/img/logo.svg') }}" alt="" class="h-8 w-8"></span>
+          <div>
+            <p class="text-sm font-bold text-white">Litoral Trace</p>
+            <p class="mt-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-emerald-300">Synthetic sample</p>
+          </div>
+        </div>
+      </div>
+
+      <nav class="flex-1 px-3 py-5">
+        <p class="px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Workspace</p>
+        <div class="mt-2 space-y-1 text-sm font-semibold">
+          <div class="rounded-xl border border-emerald-800 bg-emerald-950 px-3 py-2.5 text-white">Operations</div>
+          <div class="rounded-xl px-3 py-2.5 text-slate-400">Evidence</div>
+          <div class="rounded-xl px-3 py-2.5 text-slate-400">Suppliers</div>
+          <div class="rounded-xl px-3 py-2.5 text-slate-400">Audit Log</div>
+        </div>
+        <p class="mt-7 px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Compliance</p>
+        <div class="mt-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400">Product Use</div>
+      </nav>
+
+      <div class="border-t border-slate-800 p-4">
+        <div class="rounded-xl border border-slate-700 bg-slate-900 p-3">
+          <p class="text-[11px] font-bold text-white">Read-only sample</p>
+          <p class="mt-1 text-[10px] leading-4 text-slate-400">Synthetic data · no account · no credit card · does not consume an evaluation shipment.</p>
+        </div>
+      </div>
+    </aside>
+
+    <div class="min-w-0 flex-1">
+      <header class="border-b border-slate-200 bg-white px-5 py-4 sm:px-8">
+        <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4">
+          <div>
+            <p class="text-sm font-bold text-slate-950">{{ sample.label }} sample workspace</p>
+            <p class="mt-0.5 text-[11px] text-slate-500">U.S. Lacey workflow · Synthetic data · Read-only</p>
+          </div>
+          <a href="/sandbox/start" class="text-xs font-bold text-slate-600 hover:text-slate-950">Back to evaluation</a>
+        </div>
+      </header>
+
+      <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <section class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-sm" aria-label="Sample status">
+          <div>
+            <p class="text-xs font-bold text-slate-950">Synthetic product sample</p>
+            <p class="mt-0.5 text-[11px] text-slate-600">Explore a processed example without uploading documents or creating an account. All data is synthetic, not a customer compliance result.</p>
+          </div>
+          <div class="flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+            <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Read-only</span>
+            <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Synthetic data</span>
+          </div>
+        </section>
+
+        {% set shipment = sample.first if step == 1 else sample.second %}
+        <section class="mt-6">
+          <div class="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-emerald-700">Operation · Shipment {{ step }} of 2</p>
+              <h1 class="mt-1 text-3xl font-bold tracking-tight text-slate-950">{{ shipment.reference }}</h1>
+              <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{{ sample.description }}</p>
+            </div>
+            <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-800">Processed sample</span>
+          </div>
+
+          <div class="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(280px,0.8fr)]">
+            <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div class="grid gap-px bg-slate-200 sm:grid-cols-4">
+                <div class="bg-white p-4"><p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Documents</p><p class="mt-1 text-2xl font-bold text-slate-950">{{ shipment.documents }}</p></div>
+                <div class="bg-white p-4"><p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Fields reconciled</p><p class="mt-1 text-2xl font-bold text-slate-950">{{ shipment.fields }}</p></div>
+                <div class="bg-white p-4"><p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Need attention</p><p class="mt-1 text-2xl font-bold text-slate-950">{{ shipment.exceptions }}</p></div>
+                <div class="bg-white p-4"><p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Evidence reused</p><p class="mt-1 text-2xl font-bold {{ 'text-emerald-700' if shipment.reused else 'text-slate-950' }}">{{ shipment.reused }}</p></div>
+              </div>
+
+              <div class="p-5">
+                {% if step == 1 %}
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <h2 class="text-sm font-bold text-slate-950">Evidence-backed reconciliation</h2>
+                  <span class="text-[11px] font-semibold text-slate-500">First shipment establishes reusable evidence</span>
+                </div>
+                <div class="mt-4 overflow-hidden rounded-lg border border-slate-200">
+                  <div class="grid grid-cols-[1fr_1fr_auto] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                    <span>Field</span><span>Resolved value</span><span>Status</span>
+                  </div>
+                  <div class="grid grid-cols-[1fr_1fr_auto] gap-3 border-b border-slate-100 px-4 py-3 text-xs"><span class="font-semibold text-slate-700">Botanical species</span><span class="font-bold text-slate-950">{{ shipment.species }}</span><span class="font-bold text-emerald-700">Verified</span></div>
+                  <div class="grid grid-cols-[1fr_1fr_auto] gap-3 px-4 py-3 text-xs"><span class="font-semibold text-slate-700">Country of harvest</span><span class="font-bold text-slate-950">{{ shipment.harvest }}</span><span class="font-bold text-emerald-700">Verified</span></div>
+                </div>
+                <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p class="text-xs font-bold text-slate-950">{{ shipment.payoff }}</p>
+                  <p class="mt-1 text-xs leading-5 text-slate-600">Only unresolved or conflicting evidence remains in Action Required. Verified supplier/product claims become reusable compliance memory for later shipments.</p>
+                </div>
+                {% else %}
+                <h2 class="text-sm font-bold text-slate-950">Repeat-shipment review reduction</h2>
+                <div class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                  <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-emerald-700">Reusable supplier evidence</p>
+                  <p class="mt-2 text-2xl font-bold text-slate-950">{{ shipment.reused }} fields reused automatically</p>
+                  <p class="mt-2 text-xs leading-5 text-slate-700">{{ shipment.payoff }}. {{ shipment.reused }} fields avoid being re-reviewed from scratch.</p>
+                </div>
+                <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div class="rounded-lg border border-slate-200 p-4"><p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Supplier memory</p><p class="mt-1 text-sm font-bold text-slate-950">Verified claims carried forward</p></div>
+                  <div class="rounded-lg border border-slate-200 p-4"><p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Human review</p><p class="mt-1 text-sm font-bold text-slate-950">Focused on {{ shipment.exceptions }} remaining exception</p></div>
+                </div>
+                {% endif %}
+              </div>
+            </section>
+
+            <aside class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Evaluation path</p>
+              <ol class="mt-4 space-y-4 text-xs">
+                <li class="flex gap-3"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-600 font-bold text-white">1</span><div><p class="font-bold text-slate-950">Reconcile evidence</p><p class="mt-1 leading-5 text-slate-600">Normalize shipment documents and isolate unresolved Lacey data.</p></div></li>
+                <li class="flex gap-3"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full {{ 'bg-emerald-600 text-white' if step == 2 else 'bg-slate-100 text-slate-600' }} font-bold">2</span><div><p class="font-bold text-slate-950">Reuse verified evidence</p><p class="mt-1 leading-5 text-slate-600">Carry supplier claims into the repeat shipment automatically.</p></div></li>
+                <li class="flex gap-3"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 font-bold text-slate-600">3</span><div><p class="font-bold text-slate-950">Try your documents</p><p class="mt-1 leading-5 text-slate-600">Run one real shipment privately. Raw files delete after 4 hours.</p></div></li>
+              </ol>
+
+              {% if step == 1 %}
+              <a href="/try/{{ persona }}?step=2" class="mt-6 flex w-full items-center justify-center rounded-lg bg-slate-950 px-4 py-3 text-sm font-bold text-white hover:bg-slate-800">See how the next shipment improves →</a>
+              {% else %}
+              <p class="mt-5 text-[11px] font-semibold text-slate-700">Prefer a guided review before sharing business documents?</p>
+              {% endif %}
+              <a href="mailto:comercial@litoraltrace.com?subject=15-minute%20Lacey%20workflow%20review" class="mt-3 flex w-full items-center justify-center rounded-lg bg-emerald-600 px-4 py-3 text-center text-sm font-bold text-white hover:bg-emerald-700">Request a 15-minute workflow review</a>
+              <p class="mt-2 text-center text-[11px] leading-4 text-slate-500">Opens your email app. No documents, account or payment required.</p>
+              {% if step == 2 %}
+              <a href="/sandbox/start?mode=own" class="mt-4 flex w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-center text-sm font-bold text-slate-800 hover:bg-slate-50">Or try my own shipment →</a>
+              <p class="mt-2 text-center text-[11px] leading-4 text-slate-500">Your first real shipment requires no signup or card.</p>
+              {% endif %}
+
+              <div class="mt-5 border-t border-slate-200 pt-4">
+                <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Product boundary</p>
+                <p class="mt-1 text-[11px] leading-5 text-slate-600">Litoral Trace prepares and validates Lacey declaration data. It does not file declarations on your behalf.</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  {% if track_outreach_human_visit %}
+  <script defer src="{{ url_for('static', path='/js/us_lacey_outreach_human_visit.js') }}?v=20261007"></script>
+  {% endif %}
+</body>
+</html>

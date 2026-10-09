@@ -1,0 +1,214 @@
+"""Persistent content-addressed cache lookup for specialized Lacey inference.
+
+The cache stores/reuses computational output only. It never copies operation fields,
+human decisions, review timestamps, operation status, or any other administrative
+state. Tenant identity is part of the cache key and lookup boundary.
+"""
+from __future__ import annotations
+
+from collections import Counter, defaultdict
+import hashlib
+import json
+import logging
+import time
+from typing import Iterable, Mapping
+
+from sqlalchemy import select
+
+from litoral_trace.db.models import AssuranceDocument, UsLaceyEngineDocumentRun
+from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.us_lacey.db import get_us_lacey_db_session
+
+LOGGER = logging.getLogger(__name__)
+
+
+def specialized_computation_fingerprint(
+    *,
+    organization_id: int,
+    documents: Iterable[Mapping[str, object]],
+    engine_version: str,
+    provider: str,
+    model: str,
+    max_pages: int,
+    judge_mode: str,
+    projection_mode: str,
+    specialized_schema_version: str,
+    field_judge_version: str,
+    projection_version: str,
+    taxonomy_version: str = "",
+    line_binding_version: str = "",
+) -> str:
+    """Return the immutable computational identity for one specialized source set."""
+    source_descriptors = sorted(
+        (
+            {
+                "sha256": str(document.get("sha256") or ""),
+                "role_hint": str(document.get("role_hint") or ""),
+                "filename": str(document.get("filename") or ""),
+            }
+            for document in documents
+        ),
+        key=lambda item: (item["sha256"], item["role_hint"], item["filename"]),
+    )
+    payload = {
+        "organization_id": int(organization_id),
+        "documents": source_descriptors,
+        "engine_version": str(engine_version),
+        "provider": str(provider),
+        "model": str(model),
+        "max_pages": int(max_pages),
+        "specialized_schema_version": str(specialized_schema_version),
+        "field_judge_version": str(field_judge_version),
+        "judge_mode": str(judge_mode),
+        "projection_version": str(projection_version),
+        "projection_mode": str(projection_mode),
+        "taxonomy_version": str(taxonomy_version),
+        "line_binding_version": str(line_binding_version),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def cache_organization_id(documents: tuple[object, ...]) -> int | None:
+    if not documents:
+        return None
+    assurance_ids = [int(getattr(document, "assurance_document_id")) for document in documents]
+    session = get_us_lacey_db_session()
+    try:
+        organization_ids = set(
+            session.scalars(
+                select(AssuranceDocument.organization_id).where(
+                    AssuranceDocument.id.in_(assurance_ids)
+                )
+            ).all()
+        )
+        return int(next(iter(organization_ids))) if len(organization_ids) == 1 else None
+    finally:
+        session.close()
+
+
+def _descriptor_from_document(document: object) -> tuple[str, str, str]:
+    return (
+        str(getattr(document, "source_sha256", "") or ""),
+        str(getattr(document, "role_hint", "") or ""),
+        str(getattr(document, "filename", "") or ""),
+    )
+
+
+def _descriptor_from_payload(row: UsLaceyEngineDocumentRun) -> tuple[str, str, str] | None:
+    payload = row.resolution_json
+    if not isinstance(payload, Mapping):
+        return None
+    cached = payload.get("cache_document")
+    if not isinstance(cached, Mapping):
+        return None
+    return (
+        str(cached.get("sha256") or ""),
+        str(cached.get("role_hint") or ""),
+        str(cached.get("filename") or ""),
+    )
+
+
+def _log_cache_lookup(
+    *,
+    organization_id: int,
+    computation_fingerprint: str,
+    document_count: int,
+    cache_hit: bool,
+    miss_reason: str | None,
+    started_at: float,
+) -> None:
+    """Emit content-free telemetry proving whether external inference is avoidable."""
+    LOGGER.info(
+        "Lacey specialized inference cache lookup",
+        extra={
+            "event": "us_lacey_specialized_cache_lookup",
+            "organization_id": int(organization_id),
+            "computation_fingerprint": computation_fingerprint,
+            "document_count": int(document_count),
+            "cache_hit": bool(cache_hit),
+            "miss_reason": miss_reason,
+            # A complete cache hit returns before any provider is constructed.
+            "external_provider_call_count": 0 if cache_hit else None,
+            "duration_ms": float(max(0.0, (time.perf_counter() - started_at) * 1000.0)),
+        },
+    )
+
+
+def find_cached_specialized_payloads(
+    *,
+    organization_id: int,
+    documents: tuple[object, ...],
+    computation_fingerprint: str,
+    schema_version: str,
+) -> tuple[Mapping[str, object], ...] | None:
+    """Return one complete prior source-set snapshot, or ``None`` fail-closed."""
+    started_at = time.perf_counter()
+    if not documents:
+        _log_cache_lookup(
+            organization_id=organization_id,
+            computation_fingerprint=computation_fingerprint,
+            document_count=0,
+            cache_hit=False,
+            miss_reason="empty_source_set",
+            started_at=started_at,
+        )
+        return None
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, int(organization_id))
+        source_hashes = {str(getattr(document, "source_sha256", "")) for document in documents}
+        rows = session.scalars(
+            select(UsLaceyEngineDocumentRun)
+            .where(
+                UsLaceyEngineDocumentRun.organization_id == int(organization_id),
+                UsLaceyEngineDocumentRun.schema_version == schema_version,
+                UsLaceyEngineDocumentRun.status == "SUCCEEDED",
+                UsLaceyEngineDocumentRun.source_sha256.in_(source_hashes),
+            )
+            .order_by(UsLaceyEngineDocumentRun.id.desc())
+        ).all()
+        groups: dict[int, list[UsLaceyEngineDocumentRun]] = defaultdict(list)
+        for row in rows:
+            payload = row.resolution_json
+            if not isinstance(payload, Mapping):
+                continue
+            if str(payload.get("computation_fingerprint") or "") != computation_fingerprint:
+                continue
+            groups[int(row.operation_id)].append(row)
+
+        expected = Counter(_descriptor_from_document(document) for document in documents)
+        for _operation_id, group in sorted(groups.items(), reverse=True):
+            if len(group) != len(documents):
+                continue
+            descriptors = [_descriptor_from_payload(row) for row in group]
+            if any(descriptor is None for descriptor in descriptors):
+                continue
+            if Counter(descriptor for descriptor in descriptors if descriptor is not None) != expected:
+                continue
+            payloads = tuple(
+                row.resolution_json
+                for row in sorted(group, key=lambda item: item.id)
+                if isinstance(row.resolution_json, Mapping)
+            )
+            if len(payloads) == len(documents):
+                _log_cache_lookup(
+                    organization_id=organization_id,
+                    computation_fingerprint=computation_fingerprint,
+                    document_count=len(documents),
+                    cache_hit=True,
+                    miss_reason=None,
+                    started_at=started_at,
+                )
+                return payloads
+        _log_cache_lookup(
+            organization_id=organization_id,
+            computation_fingerprint=computation_fingerprint,
+            document_count=len(documents),
+            cache_hit=False,
+            miss_reason="no_complete_prior_source_set",
+            started_at=started_at,
+        )
+        return None
+    finally:
+        session.close()

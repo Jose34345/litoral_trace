@@ -1,0 +1,146 @@
+"""Architectural contracts preventing a second U.S. Lacey visual system."""
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+VIEWS = ROOT / "src" / "litoral_trace" / "web"
+TEMPLATES = ROOT / "src" / "litoral_trace" / "templates" / "us_lacey"
+PUBLIC_LACEY_TEMPLATES = (
+    ROOT / "src" / "litoral_trace" / "templates" / "public" / "lacey.html",
+    ROOT / "src" / "litoral_trace" / "templates" / "public" / "lacey_demo.html",
+)
+
+
+def test_us_lacey_views_delegate_html_to_shared_jinja_templates() -> None:
+    for name in ("us_lacey_portal_views.py", "us_lacey_operational_views.py"):
+        source = (VIEWS / name).read_text(encoding="utf-8")
+        assert 'templates.get_template(f"us_lacey/{name}.html")' in source
+        assert "<style" not in source
+        assert "style=" not in source
+        assert "background:#" not in source
+
+
+def test_us_lacey_templates_use_shared_design_system_with_isolated_english_shells() -> None:
+    private_base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
+    assert '{% extends "base.html" %}' in private_base
+    assert '{% extends "public/base_public.html" %}' not in private_base
+    assert '{% from "components/ui.html" import' in private_base
+    assert 'lang="en"' in private_base
+    assert "U.S. Lacey Act workspace" in private_base
+    assert "Declaration preparation" in private_base
+    assert "Trazabilidad de origen" not in private_base
+    assert "Debida diligencia" not in private_base
+
+    marketing_base = (TEMPLATES / "marketing_base.html").read_text(encoding="utf-8")
+    assert '{% extends "base.html" %}' in marketing_base
+    assert '{% extends "public/base_public.html" %}' not in marketing_base
+    assert 'lang="en-US"' in marketing_base
+    assert "U.S. Lacey Act compliance infrastructure" in marketing_base
+    assert "Lacey compliance infrastructure" in marketing_base
+    assert 'href="/demo"' in marketing_base
+    assert 'href="/sandbox/start"' in marketing_base
+    assert 'href="/login"' in marketing_base
+    assert "Trazabilidad de origen" not in marketing_base
+    assert "Debida diligencia" not in marketing_base
+
+    impersonation_base = (TEMPLATES / "impersonation_base.html").read_text(
+        encoding="utf-8"
+    )
+    assert '{% extends "base.html" %}' in impersonation_base
+    assert '{% from "components/ui.html" import' in impersonation_base
+    assert 'lang="en"' in impersonation_base
+    assert "READ-ONLY SUPPORT VIEW" in impersonation_base
+    assert "Modifying data is disabled by database policies." in impersonation_base
+    assert "<style" not in impersonation_base
+    assert "style=" not in impersonation_base
+
+    for name in (
+        "impersonation_operations.html",
+        "impersonation_operation_detail.html",
+    ):
+        support_source = (TEMPLATES / name).read_text(encoding="utf-8")
+        assert '{% extends "us_lacey/impersonation_base.html" %}' in support_source
+
+    for path in TEMPLATES.glob("*.html"):
+        if path.name in {
+            "base.html",
+            "marketing_base.html",
+            "impersonation_base.html",
+            "impersonation_operations.html",
+            "impersonation_operation_detail.html",
+        }:
+            continue
+        source = path.read_text(encoding="utf-8")
+        if path.name.startswith("_"):
+            # Jinja/HTMX fragments render inside an existing U.S. Lacey shell;
+            # requiring a second full-page base would make the fragment invalid.
+            assert "{% extends " not in source
+            continue
+        if path.name in {"sandbox_start.html", "evaluation_sample.html"}:
+            # Public zero-touch entry/sample surfaces intentionally use an
+            # isolated, script-free shell while still consuming the canonical
+            # Tailwind build. They create no account/session before value.
+            assert "url_for('static'" in source
+            assert "path='/dist/app.css'" in source
+            assert "<style" not in source
+            assert "style=" not in source
+            continue
+        assert '{% extends "us_lacey/base.html" %}' in source
+
+    # Public Lacey marketing/demo pages use the dedicated U.S. shell rather than
+    # inheriting the Argentina/regional public navigation.
+    for path in PUBLIC_LACEY_TEMPLATES:
+        source = path.read_text(encoding="utf-8")
+        assert '{% extends "us_lacey/marketing_base.html" %}' in source
+        assert '{% extends "public/base_public.html" %}' not in source
+
+
+def test_us_lacey_new_shipment_is_document_first_with_optional_direct_upload() -> None:
+    source = (TEMPLATES / "new_operation.html").read_text(encoding="utf-8")
+    assert 'name="client_reference"' in source
+    assert 'name="documents"' in source
+    assert 'multiple' in source
+    assert 'enctype="multipart/form-data"' in source
+    assert "Create shipment" in source
+    assert "Create shipment & process documents" in source
+    assert "Drop shipment documents here" in source
+    assert "Select documents" in source
+    assert "Audit trail enabled" in source
+    assert "Founding Broker" in source
+    assert "Leave blank and Litoral Trace creates an internal shipment reference automatically." in source
+    for removed_field in (
+        "importer_name",
+        "supplier_name",
+        "consignee_name",
+        "broker_name",
+        "operation_date",
+        "line_references",
+    ):
+        assert f'name="{removed_field}"' not in source
+
+
+def test_us_lacey_has_no_parallel_stylesheet_or_hardcoded_palette() -> None:
+    assert not (ROOT / "src" / "litoral_trace" / "static" / "css" / "us-lacey.css").exists()
+    assert not (ROOT / "src" / "litoral_trace" / "static" / "css" / "lacey_beta.css").exists()
+    for path in (*TEMPLATES.glob("*.html"), *PUBLIC_LACEY_TEMPLATES):
+        source = path.read_text(encoding="utf-8")
+        assert "<style" not in source
+        assert "style=" not in source
+        assert "--lacey-" not in source
+        assert "lacey_beta.css" not in source
+
+
+def test_python_lacey_views_do_not_reintroduce_an_html_shell() -> None:
+    for path in VIEWS.glob("*lacey*.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "<style" not in source
+        assert "<!doctype html" not in source.lower()
+        assert "--lacey-" not in source
+
+
+def test_us_lacey_templates_preserve_portal_actions_and_statuses() -> None:
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in TEMPLATES.glob("*.html"))
+    for value in ("/signup", "/login", "/billing", "/operations", "/logout", "PAYMENT_PENDING", "PILOT"):
+        assert value in combined
+    for field in ("legal_name", "admin_email", "accept_terms", "csrf_token", "documents"):
+        assert f'name=\"{field}\"' in combined

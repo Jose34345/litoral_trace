@@ -1,0 +1,1894 @@
+"""Standalone ASGI entrypoint for the private U.S. Lacey customer portal.
+
+The process is isolated from the Argentina application. Browser authentication
+uses U.S.-database opaque sessions rather than the generic Litoral Trace JWT.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import logging
+import threading
+from uuid import UUID, uuid4
+
+from fastapi import BackgroundTasks, Cookie, FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
+
+from litoral_trace.us_lacey.access import (
+    UsLaceyOperationalAccessError,
+    require_us_lacey_operational_access,
+)
+from litoral_trace.us_lacey.commercial import (
+    UsLaceyCommercialConfigurationError,
+    load_us_lacey_commercial_config,
+)
+from litoral_trace.us_lacey.config import (
+    UsLaceyConfigurationError,
+    load_us_lacey_runtime_config,
+)
+from litoral_trace.us_lacey.csrf import (
+    UsLaceyCsrfError,
+    us_lacey_csrf_token,
+    verify_us_lacey_csrf,
+)
+from litoral_trace.us_lacey.growth_attribution import safe_record_outreach_event
+from litoral_trace.us_lacey.audit_trail import (
+    AUDIT_DATE_RANGE_OPTIONS,
+    AUDIT_EVENT_FILTER_OPTIONS,
+    list_operation_events,
+    list_organization_audit_events,
+)
+from litoral_trace.us_lacey.evaluation import (
+    UsLaceyEvaluationError,
+    claim_evaluation,
+    touch_evaluation_activity,
+)
+from litoral_trace.us_lacey.evidence_catalog import UsLaceyEvidenceCatalogService
+from litoral_trace.us_lacey.email_delivery import (
+    UsLaceyEmailConfigurationError,
+    load_us_lacey_email_config,
+    send_us_lacey_verification_email,
+)
+from litoral_trace.us_lacey.operations import (
+    UsLaceyOperationError,
+    UsLaceyOperationNotFound,
+    UsLaceyOperationService,
+)
+from litoral_trace.us_lacey.lacey_engine_dossier import Engine2DossierAvailability, Engine2DossierView, UsLaceyEngineDossierService
+from litoral_trace.us_lacey.jobs import (
+    UsLaceyJobError,
+    retry_failed_us_lacey_operation,
+)
+from litoral_trace.us_lacey.paddle import (
+    UsLaceyPaddleConfigurationError,
+    load_us_lacey_paddle_config,
+)
+from litoral_trace.us_lacey.portal_auth import (
+    US_LACEY_SESSION_COOKIE,
+    UsLaceyPortalAuthError,
+    login_us_lacey_user,
+    logout_us_lacey_user,
+    resolve_us_lacey_session,
+)
+from litoral_trace.us_lacey.portal_config import (
+    UsLaceyPortalConfigurationError,
+    load_us_lacey_portal_config,
+)
+from litoral_trace.us_lacey.schema_compatibility import (
+    probe_us_lacey_schema_compatibility,
+)
+from litoral_trace.us_lacey.review import (
+    UsLaceyReviewError,
+    accept_supported_us_lacey_fields,
+    export_us_lacey_csv,
+    export_us_lacey_xlsx,
+    finalize_us_lacey_review,
+    finish_document_review_awaiting_entry,
+    review_us_lacey_field,
+)
+from litoral_trace.us_lacey.review_telemetry import parse_review_telemetry
+from litoral_trace.us_lacey.sandbox import (
+    UsLaceySandboxError,
+    set_us_lacey_sandbox_learning_consent,
+)
+from litoral_trace.us_lacey.supplier_intelligence import (
+    UsLaceySupplierIntelligenceService,
+    UsLaceySupplierNotFound,
+)
+from litoral_trace.us_lacey.self_service import (
+    UsLaceySelfServiceError,
+    get_us_lacey_billing_summary,
+    register_us_lacey_company,
+    verify_us_lacey_email,
+)
+from litoral_trace.us_lacey.translation_backfill import run_translation_backfill
+from litoral_trace.us_lacey.workflow import (
+    UsLaceyWorkflowError,
+    create_us_lacey_customer_operation,
+    upload_and_enqueue_us_lacey_document,
+    upload_and_enqueue_us_lacey_document_batch,
+)
+from litoral_trace.us_lacey.worker_wakeup import wake_us_lacey_worker
+from litoral_trace.web.us_lacey_operational_views import (
+    render_evidence_catalog,
+    render_new_operation,
+    render_operation_alias,
+    render_operation_audit_log,
+    render_operation_detail,
+    render_operation_workspace,
+    render_operations,
+    render_processing_fragment,
+    render_regulatory_overview,
+    render_trust_center,
+)
+from litoral_trace.web.us_lacey_audit_views import render_audit_log_list
+from litoral_trace.web.us_lacey_evaluation_views import (
+    render_evaluation_claim,
+    render_evaluation_upgrade,
+)
+from litoral_trace.web.us_lacey_supplier_views import (
+    render_supplier_detail,
+    render_suppliers_list,
+)
+from litoral_trace.web.us_lacey_portal_views import (
+    render_billing,
+    render_check_email,
+    render_login,
+    render_signup,
+    render_verification_error,
+    render_message_page,
+)
+from litoral_trace.web.templates import STATIC_DIR
+
+LOGGER = logging.getLogger(__name__)
+_TRANSLATION_BACKFILL_SCHEDULED_ORGANIZATIONS: set[int] = set()
+_TRANSLATION_BACKFILL_SCHEDULE_LOCK = threading.Lock()
+
+
+app = FastAPI(
+    title="Litoral Trace U.S. Lacey Pilot",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+def _schedule_translation_backfill_once(
+    background_tasks: BackgroundTasks,
+    organization_id: int,
+) -> bool:
+    """Schedule one best-effort tenant repair per organization and web process."""
+    tenant_id = int(organization_id)
+    if tenant_id <= 0:
+        raise ValueError("organization_id must be positive")
+    with _TRANSLATION_BACKFILL_SCHEDULE_LOCK:
+        if tenant_id in _TRANSLATION_BACKFILL_SCHEDULED_ORGANIZATIONS:
+            return False
+        _TRANSLATION_BACKFILL_SCHEDULED_ORGANIZATIONS.add(tenant_id)
+    background_tasks.add_task(run_translation_backfill, tenant_id)
+    return True
+
+
+def _html(content: str, *, status_code: int = 200) -> HTMLResponse:
+    response = HTMLResponse(content=content, status_code=status_code)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "same-origin"
+    return response
+
+
+def _configuration_error_page(request: Request) -> HTMLResponse:
+    return _html(render_message_page(request=request, title="Portal configuration incomplete.", message="The private U.S. portal is not ready for customer signup."), status_code=503)
+
+
+def _request_metadata(request: Request) -> tuple[str | None, str | None]:
+    client_ip = request.client.host if request.client is not None else None
+    user_agent = request.headers.get("user-agent")
+    return client_ip, user_agent
+
+
+def _load_customer_configuration():
+    return load_us_lacey_commercial_config(), load_us_lacey_portal_config()
+
+
+def _login_redirect(*, clear_cookie: bool = False):
+    response = RedirectResponse("/login", status_code=303)
+    if clear_cookie:
+        response.delete_cookie(US_LACEY_SESSION_COOKIE, path="/")
+    return response
+
+
+def _operational_context(
+    us_session: str | None,
+    *,
+    require_mutation_access: bool = False,
+):
+    if not us_session:
+        raise UsLaceyPortalAuthError("Sign in to continue.", code="session_invalid")
+    identity = resolve_us_lacey_session(us_session)
+    entitlement = require_us_lacey_operational_access(
+        organization_id=identity.organization_id,
+        require_mutation_access=require_mutation_access,
+    )
+    if bool(getattr(entitlement, "evaluation_claimed", False)):
+        try:
+            touch_evaluation_activity(
+                session_token=us_session,
+                organization_id=identity.organization_id,
+            )
+        except UsLaceyEvaluationError as exc:
+            raise UsLaceyOperationalAccessError(str(exc)) from exc
+        entitlement = require_us_lacey_operational_access(
+            organization_id=identity.organization_id,
+            require_mutation_access=require_mutation_access,
+        )
+    return identity, entitlement
+
+
+def _operational_mutation_context(us_session: str | None):
+    """Resolve the normal workspace context, then block read-only evaluations."""
+    identity, entitlement = _operational_context(us_session)
+    if bool(getattr(entitlement, "evaluation_read_only", False)):
+        raise UsLaceyOperationalAccessError(
+            "This evaluation is read-only. Continue with Litoral Trace to make changes."
+        )
+    return identity, entitlement
+
+
+def _operation_error_page(request: Request, message: str, *, status_code: int = 400) -> HTMLResponse:
+    return _html(render_message_page(request=request, title="Operation unavailable.", message=message, authenticated=True, action_href="/operations", action_label="Return to operations"), status_code=status_code)
+
+
+def _generated_customer_operation_reference() -> str:
+    """Create an opaque human-readable reference when the customer leaves it blank."""
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return f"LACEY-{stamp}-{uuid4().hex[:12].upper()}"
+
+
+def _detail_page(*, request: Request, identity, operation_public_id: str, us_session: str, error: str | None = None, notice: str | None = None, field_errors: dict[int, str] | None = None, field_input_values: dict[int, str] | None = None, status_code: int = 200):
+    entitlement = require_us_lacey_operational_access(
+        organization_id=identity.organization_id
+    )
+    service = UsLaceyOperationService()
+    detail = service.get_detail(
+        organization_id=identity.organization_id,
+        operation_public_id=operation_public_id,
+    )
+    try:
+        dossier = UsLaceyEngineDossierService().get_dossier(organization_id=identity.organization_id, operation_public_id=detail.public_id)
+    except Exception:
+        dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
+    tokens = {field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}") for field in detail.fields if field.status in {"MISSING", "CONFLICT", "SUPPORTED", "REVIEW", "FOUND"}}
+    return _html(render_operation_detail(request=request, identity=identity, entitlement=entitlement, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, alias_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"alias:{detail.public_id}"), retry_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"retry:{detail.public_id}"), error=error, notice=notice, field_errors=field_errors, field_input_values=field_input_values), status_code=status_code)
+
+
+def _workspace_fragment(
+    *,
+    request: Request,
+    identity,
+    operation_public_id: str,
+    us_session: str,
+    error: str | None = None,
+    field_errors: dict[int, str] | None = None,
+    field_input_values: dict[int, str] | None = None,
+) -> HTMLResponse:
+    """Render the heavier review UI only after the progress poll is terminal."""
+    service = UsLaceyOperationService()
+    detail = service.get_detail(
+        organization_id=identity.organization_id,
+        operation_public_id=operation_public_id,
+    )
+    safe_record_outreach_event(
+        session_token=us_session,
+        organization_id=identity.organization_id,
+        event_name="REVIEW_REACHED",
+        event_key=str(detail.public_id),
+    )
+    safe_record_outreach_event(
+        session_token=us_session,
+        organization_id=identity.organization_id,
+        event_name="PQL_QUALIFIED",
+        event_key="review-reached",
+        metadata={"reason": "review_reached"},
+    )
+    try:
+        engine2_dossier = UsLaceyEngineDossierService().get_dossier(
+            organization_id=identity.organization_id, operation_public_id=detail.public_id
+        )
+    except Exception:
+        LOGGER.exception("Engine 2 dossier preview failed", extra={"organization_id": identity.organization_id})
+        engine2_dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
+    review_tokens = {
+        field.id: us_lacey_csrf_token(
+            session_token=us_session,
+            purpose=f"review:{detail.public_id}:{field.id}",
+        )
+        for field in detail.fields
+        if field.status in {"MISSING", "CONFLICT", "SUPPORTED", "REVIEW", "FOUND"}
+    }
+    return _html(
+        render_operation_workspace(
+            request=request,
+            identity=identity,
+            detail=detail,
+            engine2_dossier=engine2_dossier,
+            complete_csrf=us_lacey_csrf_token(
+                session_token=us_session,
+                purpose=f"complete:{detail.public_id}",
+            ),
+            review_csrf=review_tokens,
+            error=error,
+            field_errors=field_errors,
+            field_input_values=field_input_values,
+        )
+    )
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    """Process liveness only; does not claim infrastructure readiness."""
+    return {"status": "healthy", "service": "us-lacey-pilot"}
+
+
+@app.get("/ready")
+def ready() -> dict[str, str]:
+    """Fail closed until isolated runtime, commercial, legal and email config exists."""
+    try:
+        config = load_us_lacey_runtime_config()
+        commercial = load_us_lacey_commercial_config()
+        if commercial.payment_provider == "PADDLE":
+            load_us_lacey_paddle_config()
+        load_us_lacey_portal_config()
+        load_us_lacey_email_config()
+    except (
+        UsLaceyConfigurationError,
+        UsLaceyCommercialConfigurationError,
+        UsLaceyPaddleConfigurationError,
+        UsLaceyPortalConfigurationError,
+        UsLaceyEmailConfigurationError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="U.S. Lacey pilot runtime is not safely configured.",
+        ) from exc
+
+    if not probe_us_lacey_schema_compatibility():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="U.S. Lacey pilot database schema is not compatible with this release.",
+        )
+
+    return {
+        "status": "ready",
+        "service": "us-lacey-pilot",
+        "environment": config.environment,
+        "hostname": config.app_hostname,
+    }
+
+
+@app.get("/", response_class=HTMLResponse)
+def portal_home(
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    if us_session:
+        try:
+            identity = resolve_us_lacey_session(us_session)
+            target = "/operations" if identity.account_status in {"ACTIVE", "PILOT"} else "/billing"
+            return RedirectResponse(target, status_code=303)
+        except UsLaceyPortalAuthError:
+            pass
+    return RedirectResponse("/login", status_code=303)
+
+
+@app.get("/signup", response_class=HTMLResponse)
+def signup_page(request: Request):
+    try:
+        commercial, portal = _load_customer_configuration()
+    except (
+        UsLaceyConfigurationError,
+        UsLaceyCommercialConfigurationError,
+        UsLaceyPortalConfigurationError,
+    ):
+        return _configuration_error_page(request)
+    return _html(render_signup(request=request, commercial=commercial, portal=portal))
+
+
+@app.post("/signup", response_class=HTMLResponse)
+def signup_submit(
+    request: Request,
+    legal_name: str = Form(...),
+    business_type: str = Form(...),
+    admin_name: str = Form(...),
+    admin_email: str = Form(...),
+    password: str = Form(...),
+    accept_terms: str | None = Form(None),
+    accept_privacy: str | None = Form(None),
+    accept_beta: str | None = Form(None),
+):
+    try:
+        commercial, portal = _load_customer_configuration()
+    except (
+        UsLaceyConfigurationError,
+        UsLaceyCommercialConfigurationError,
+        UsLaceyPortalConfigurationError,
+    ):
+        return _configuration_error_page(request)
+
+    if {accept_terms, accept_privacy, accept_beta} != {"yes"}:
+        return _html(
+            render_signup(
+                request=request,
+                commercial=commercial,
+                portal=portal,
+                error="You must accept all three legal documents to create an account.",
+            ),
+            status_code=400,
+        )
+
+    def deliver(recipient: str, company_name: str, token: str) -> None:
+        send_us_lacey_verification_email(
+            recipient=recipient,
+            company_name=company_name,
+            verification_token=token,
+            public_origin=portal.public_origin,
+        )
+
+    try:
+        register_us_lacey_company(
+            legal_name=legal_name,
+            business_type=business_type,
+            admin_name=admin_name,
+            admin_email=admin_email,
+            password=password,
+            commercial_config=commercial,
+            verification_delivery=deliver,
+        )
+    except (UsLaceySelfServiceError, UsLaceyEmailConfigurationError) as exc:
+        return _html(
+            render_signup(request=request, commercial=commercial, portal=portal, error=str(exc)),
+            status_code=400,
+        )
+
+    return _html(render_check_email(request=request, email=admin_email.strip().lower()), status_code=201)
+
+
+@app.get("/verify-email", response_class=HTMLResponse)
+def verify_email_page(request: Request, token: str = ""):
+    if not token.strip():
+        return _html(
+            render_verification_error(request=request, message="Verification token is missing."), status_code=400
+        )
+    try:
+        result = verify_us_lacey_email(token)
+    except UsLaceySelfServiceError as exc:
+        return _html(render_verification_error(request=request, message=str(exc)), status_code=400)
+    if result.account_status != "PAYMENT_PENDING":
+        return _html(
+            render_verification_error(request=request, message="Unexpected account state after verification."),
+            status_code=409,
+        )
+    return RedirectResponse("/login?verified=1", status_code=303)
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(
+    request: Request,
+    verified: str | None = None,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    if us_session:
+        try:
+            identity = resolve_us_lacey_session(us_session)
+            target = "/operations" if identity.account_status in {"ACTIVE", "PILOT"} else "/billing"
+            return RedirectResponse(target, status_code=303)
+        except UsLaceyPortalAuthError:
+            pass
+    return _html(render_login(request=request, verified=verified == "1"))
+
+
+@app.post("/login", response_class=HTMLResponse)
+def login_submit(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+):
+    try:
+        portal = load_us_lacey_portal_config()
+    except (UsLaceyConfigurationError, UsLaceyPortalConfigurationError):
+        return _configuration_error_page(request)
+
+    client_ip, user_agent = _request_metadata(request)
+    try:
+        login_result = login_us_lacey_user(
+            email=email,
+            password=password,
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
+    except UsLaceyPortalAuthError as exc:
+        response_code = 403 if exc.code in {
+            "email_unverified",
+            "account_suspended",
+            "account_disabled",
+            "account_unavailable",
+        } else 401
+        return _html(render_login(request=request, error=str(exc)), status_code=response_code)
+
+    target = "/operations" if login_result.identity.account_status in {"ACTIVE", "PILOT"} else "/billing"
+    response = RedirectResponse(target, status_code=303)
+    max_age = max(
+        1,
+        int((login_result.expires_at - datetime.now(timezone.utc)).total_seconds()),
+    )
+    response.set_cookie(
+        key=US_LACEY_SESSION_COOKIE,
+        value=login_result.session_token,
+        max_age=max_age,
+        httponly=True,
+        secure=portal.session_cookie_secure,
+        samesite="lax",
+        path="/",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/billing", response_class=HTMLResponse)
+def billing_page(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    if not us_session:
+        return RedirectResponse("/login", status_code=303)
+    try:
+        identity = resolve_us_lacey_session(us_session)
+        try:
+            entitlement = require_us_lacey_operational_access(
+                organization_id=identity.organization_id
+            )
+        except UsLaceyOperationalAccessError:
+            entitlement = None
+        if entitlement is not None and bool(getattr(entitlement, "evaluation_can_claim", False)):
+            return RedirectResponse("/evaluation/save", status_code=303)
+        if entitlement is not None and bool(getattr(entitlement, "is_evaluation", False)):
+            if bool(getattr(entitlement, "evaluation_read_only", False)):
+                safe_record_outreach_event(
+                    session_token=us_session,
+                    organization_id=identity.organization_id,
+                    event_name="UPGRADE_STARTED",
+                    event_key="evaluation-complete",
+                )
+            return _html(
+                render_evaluation_upgrade(
+                    request=request,
+                    identity=identity,
+                    entitlement=entitlement,
+                )
+            )
+        billing = get_us_lacey_billing_summary(organization_id=identity.organization_id)
+        commercial = load_us_lacey_commercial_config()
+        paddle = (
+            load_us_lacey_paddle_config()
+            if commercial.payment_provider == "PADDLE"
+            else None
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=True)
+    except (
+        UsLaceySelfServiceError,
+        UsLaceyCommercialConfigurationError,
+        UsLaceyPaddleConfigurationError,
+    ):
+        return _html(render_message_page(request=request, title="Billing temporarily unavailable.", message="We could not load this account's billing state.", authenticated=True, action_href="/billing", action_label="Try billing again"), status_code=503)
+
+    return _html(
+        render_billing(
+            request=request,
+            identity=identity,
+            billing=billing,
+            commercial=commercial,
+            paddle=paddle,
+        )
+    )
+
+
+@app.get("/regulatory", response_class=HTMLResponse)
+def regulatory_overview_page(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    return _html(
+        render_regulatory_overview(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+        )
+    )
+
+
+@app.get("/trust", response_class=HTMLResponse)
+def trust_center_page(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    return _html(
+        render_trust_center(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+        )
+    )
+
+
+@app.get("/operations", response_class=HTMLResponse)
+def operations_page(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    q: str = "",
+    state: str = "all",
+    sort: str = "updated_desc",
+    page: int = 1,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        all_items = tuple(
+            UsLaceyOperationService().list_operations(
+                organization_id=identity.organization_id,
+                limit=500,
+            )
+        )
+        _schedule_translation_backfill_once(
+            background_tasks,
+            identity.organization_id,
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+
+    normalized_q = str(q or "").strip()
+    normalized_state = str(state or "all").strip().lower()
+    if normalized_state not in {"all", "needs_review", "ready", "processing", "completed"}:
+        normalized_state = "all"
+    normalized_sort = str(sort or "updated_desc").strip().lower()
+    if normalized_sort not in {
+        "updated_desc",
+        "updated_asc",
+        "created_desc",
+        "reference_asc",
+        "exceptions_desc",
+    }:
+        normalized_sort = "updated_desc"
+
+    items = list(all_items)
+    if normalized_q:
+        needle = normalized_q.casefold()
+        items = [
+            item
+            for item in items
+            if any(
+                needle in str(value or "").casefold()
+                for value in (
+                    item.business_reference,
+                    item.client_reference,
+                    item.supplier_name,
+                    item.public_id,
+                )
+            )
+        ]
+
+    if normalized_state == "needs_review":
+        items = [
+            item
+            for item in items
+            if item.exception_count > 0 or item.status in {"REVIEW_REQUIRED", "FAILED"}
+        ]
+    elif normalized_state == "ready":
+        items = [
+            item
+            for item in items
+            if item.status == "READY_FOR_REVIEW" and item.exception_count == 0
+        ]
+    elif normalized_state == "processing":
+        items = [item for item in items if item.status in {"NEW", "PROCESSING"}]
+    elif normalized_state == "completed":
+        items = [item for item in items if item.status == "COMPLETED"]
+
+    if normalized_sort == "updated_asc":
+        items.sort(key=lambda item: (item.updated_at, item.created_at, str(item.public_id)))
+    elif normalized_sort == "created_desc":
+        items.sort(key=lambda item: (item.created_at, item.updated_at, str(item.public_id)), reverse=True)
+    elif normalized_sort == "reference_asc":
+        items.sort(key=lambda item: ((item.business_reference or "").casefold(), str(item.public_id)))
+    elif normalized_sort == "exceptions_desc":
+        items.sort(key=lambda item: (item.exception_count, item.updated_at), reverse=True)
+    else:
+        items.sort(key=lambda item: (item.updated_at, item.created_at, str(item.public_id)), reverse=True)
+
+    page_size = 25
+    total_results = len(items)
+    total_pages = max(1, (total_results + page_size - 1) // page_size)
+    safe_page = max(1, min(int(page or 1), total_pages))
+    start = (safe_page - 1) * page_size
+    page_items = tuple(items[start : start + page_size])
+
+    return _html(
+        render_operations(
+            request=request,
+            identity=identity,
+            operations=page_items,
+            all_operations=all_items,
+            entitlement=entitlement,
+            filters={"q": normalized_q, "state": normalized_state, "sort": normalized_sort},
+            pagination={
+                "page": safe_page,
+                "page_size": page_size,
+                "total_results": total_results,
+                "total_pages": total_pages,
+                "start": 0 if total_results == 0 else start + 1,
+                "end": min(start + page_size, total_results),
+            },
+        )
+    )
+
+
+@app.get("/evidence", response_class=HTMLResponse)
+def evidence_page(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        catalog = UsLaceyEvidenceCatalogService().catalog(
+            organization_id=identity.organization_id
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    return _html(
+        render_evidence_catalog(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+            catalog=catalog,
+        )
+    )
+
+
+@app.get("/audit-log", response_class=HTMLResponse)
+def audit_log_page(
+    request: Request,
+    operation_id: str = "",
+    actor: str = "",
+    event_type: str = "",
+    actor_type: str = "all",
+    date_range: str = "30d",
+    page: int = 1,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        normalized_range = str(date_range or "30d").strip().lower()
+        allowed_ranges = {value for value, _label in AUDIT_DATE_RANGE_OPTIONS}
+        if normalized_range not in allowed_ranges:
+            normalized_range = "30d"
+        normalized_event = str(event_type or "").strip().upper()
+        allowed_events = {value for value, _label in AUDIT_EVENT_FILTER_OPTIONS}
+        if normalized_event not in allowed_events:
+            normalized_event = ""
+        normalized_actor_type = str(actor_type or "all").strip().upper()
+        if normalized_actor_type not in {"ALL", "USER", "SYSTEM"}:
+            normalized_actor_type = "ALL"
+        all_events = list_organization_audit_events(
+            organization_id=identity.organization_id,
+            operation_query=operation_id,
+            actor_query=actor,
+            event_type=normalized_event,
+            date_range=normalized_range,
+            limit=500,
+        )
+        if normalized_actor_type != "ALL":
+            all_events = tuple(
+                event for event in all_events if event.actor_type == normalized_actor_type
+            )
+        page_size = 50
+        total_results = len(all_events)
+        total_pages = max(1, (total_results + page_size - 1) // page_size)
+        safe_page = max(1, min(int(page or 1), total_pages))
+        start = (safe_page - 1) * page_size
+        events = tuple(all_events[start : start + page_size])
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+
+    return _html(
+        render_audit_log_list(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+            events=events,
+            filters={
+                "operation_id": str(operation_id or "").strip(),
+                "actor": str(actor or "").strip(),
+                "event_type": normalized_event,
+                "actor_type": normalized_actor_type,
+                "date_range": normalized_range,
+            },
+            pagination={
+                "page": safe_page,
+                "page_size": page_size,
+                "total_results": total_results,
+                "total_pages": total_pages,
+                "start": 0 if total_results == 0 else start + 1,
+                "end": min(start + page_size, total_results),
+            },
+            event_type_options=AUDIT_EVENT_FILTER_OPTIONS,
+            date_range_options=AUDIT_DATE_RANGE_OPTIONS,
+        )
+    )
+
+
+@app.get("/suppliers", response_class=HTMLResponse)
+def suppliers_page(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        directory = UsLaceySupplierIntelligenceService().directory(
+            organization_id=identity.organization_id
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    return _html(
+        render_suppliers_list(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+            directory=directory,
+        )
+    )
+
+
+@app.get("/suppliers/{supplier_id}", response_class=HTMLResponse)
+def supplier_detail_page(
+    supplier_id: str,
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        try:
+            supplier_public_id = UUID(str(supplier_id))
+        except (TypeError, ValueError) as exc:
+            raise UsLaceySupplierNotFound("Supplier not found.") from exc
+        supplier = UsLaceySupplierIntelligenceService().detail(
+            organization_id=identity.organization_id,
+            supplier_public_id=supplier_public_id,
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except UsLaceySupplierNotFound:
+        return _html(
+            render_message_page(
+                request=request,
+                title="Supplier unavailable.",
+                message="This supplier could not be found in the current workspace.",
+                authenticated=True,
+                action_href="/suppliers",
+                action_label="Return to suppliers",
+            ),
+            status_code=404,
+        )
+    return _html(
+        render_supplier_detail(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+            supplier=supplier,
+        )
+    )
+
+
+@app.get("/evaluation/save", response_class=HTMLResponse)
+def evaluation_save_page(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+
+    if bool(getattr(entitlement, "evaluation_claimed", False)):
+        return RedirectResponse("/operations", status_code=303)
+    if not bool(getattr(entitlement, "evaluation_can_claim", False)):
+        return RedirectResponse("/operations/new", status_code=303)
+    return _html(
+        render_evaluation_claim(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+            csrf_token=us_lacey_csrf_token(
+                session_token=us_session or "",
+                purpose="evaluation:claim",
+            ),
+        )
+    )
+
+
+@app.post("/evaluation/claim", response_class=HTMLResponse)
+def evaluation_claim_submit(
+    request: Request,
+    work_email: str = Form(...),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose="evaluation:claim",
+            submitted_token=csrf_token,
+        )
+        result = claim_evaluation(
+            session_token=us_session or "",
+            work_email=work_email,
+        )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=result.organization_id,
+            event_name="EVALUATION_CLAIMED",
+            event_key="five-shipment-evaluation",
+            metadata={
+                "successful_operations_used": result.successful_operations_used,
+                "operation_limit": result.operation_limit,
+            },
+        )
+        portal = load_us_lacey_portal_config()
+        response = RedirectResponse("/operations", status_code=303)
+        max_age = max(
+            1,
+            int(
+                (
+                    result.inactive_expires_at
+                    - datetime.now(timezone.utc)
+                ).total_seconds()
+            ),
+        )
+        response.set_cookie(
+            key=US_LACEY_SESSION_COOKIE,
+            value=us_session or "",
+            max_age=max_age,
+            httponly=True,
+            secure=portal.session_cookie_secure,
+            samesite="lax",
+            path="/",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except (UsLaceyCsrfError, UsLaceyEvaluationError) as exc:
+        return _html(
+            render_evaluation_claim(
+                request=request,
+                identity=identity,
+                entitlement=entitlement,
+                csrf_token=us_lacey_csrf_token(
+                    session_token=us_session or "",
+                    purpose="evaluation:claim",
+                ),
+                error=str(exc),
+            ),
+            status_code=400,
+        )
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+
+
+def _anonymous_resumable_operation(*, identity, entitlement):
+    if str(getattr(entitlement, "evaluation_status", "") or "") != "ANONYMOUS":
+        return None
+    if int(getattr(entitlement, "evaluation_successful_operations_used", 0) or 0) != 0:
+        return None
+    for item in UsLaceyOperationService().list_operations(
+        organization_id=identity.organization_id,
+        limit=10,
+    ):
+        if str(item.status or "").upper() in {
+            "NEW",
+            "PROCESSING",
+            "REVIEW_REQUIRED",
+            "READY_FOR_REVIEW",
+        }:
+            return item
+    return None
+
+
+@app.get("/operations/new", response_class=HTMLResponse)
+def new_operation_page(
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    if bool(getattr(entitlement, "evaluation_can_claim", False)):
+        return RedirectResponse("/evaluation/save", status_code=303)
+    if bool(getattr(entitlement, "evaluation_read_only", False)):
+        return RedirectResponse("/billing?evaluation=complete", status_code=303)
+    resumable = _anonymous_resumable_operation(identity=identity, entitlement=entitlement)
+    if resumable is not None:
+        return RedirectResponse(f"/operations/{resumable.public_id}", status_code=303)
+    if entitlement.remaining_operations <= 0:
+        return _operation_error_page(request, "This workspace has reached its current operation limit.", status_code=409)
+    return _html(
+        render_new_operation(
+            request=request,
+            identity=identity,
+            entitlement=entitlement,
+            csrf_token=us_lacey_csrf_token(session_token=us_session or "", purpose="operation:create"),
+        )
+    )
+
+
+@app.post("/operations/new", response_class=HTMLResponse)
+async def new_operation_submit(
+    request: Request,
+    client_reference: str = Form(""),
+    documents: list[UploadFile] | None = File(None),
+    document_role: str = Form("UNKNOWN"),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    created_public_id: str | None = None
+    try:
+        identity, entitlement = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose="operation:create",
+            submitted_token=csrf_token,
+        )
+        resumable = _anonymous_resumable_operation(
+            identity=identity,
+            entitlement=entitlement,
+        )
+        if resumable is not None:
+            created_public_id = str(resumable.public_id)
+            reference = client_reference.strip()
+            if reference:
+                UsLaceyOperationService().update_client_reference(
+                    organization_id=identity.organization_id,
+                    operation_public_id=created_public_id,
+                    client_reference=reference,
+                )
+        else:
+            reference = client_reference.strip() or _generated_customer_operation_reference()
+            created = create_us_lacey_customer_operation(
+                organization_id=identity.organization_id,
+                user_id=identity.user_id,
+                client_reference=reference,
+                line_references=("1",),
+            )
+            created_public_id = str(created.public_id)
+            safe_record_outreach_event(
+                session_token=us_session or "",
+                organization_id=identity.organization_id,
+                event_name="OPERATION_CREATED",
+                event_key=created_public_id,
+            )
+
+        uploads = [upload for upload in (documents or ()) if upload.filename]
+        if uploads:
+            payloads: list[tuple[str, str, bytes, str]] = []
+            for upload in uploads:
+                content = await upload.read()
+                if not content:
+                    raise UsLaceyWorkflowError("The uploaded document is empty.")
+                payloads.append((
+                    upload.filename or "document",
+                    upload.content_type or "application/octet-stream",
+                    content,
+                    document_role,
+                ))
+            upload_and_enqueue_us_lacey_document_batch(
+                organization_id=identity.organization_id,
+                user_id=identity.user_id,
+                operation_public_id=created_public_id,
+                documents=tuple(payloads),
+            )
+            safe_record_outreach_event(
+                session_token=us_session or "",
+                organization_id=identity.organization_id,
+                event_name="DOCUMENTS_UPLOADED",
+                event_key=created_public_id,
+                metadata={"document_count": len(payloads)},
+            )
+            return RedirectResponse(
+                f"/operations/{created_public_id}?uploaded=1",
+                status_code=303,
+            )
+        return RedirectResponse(f"/operations/{created_public_id}", status_code=303)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyWorkflowError, UsLaceyOperationError, ValueError) as exc:
+        if created_public_id:
+            try:
+                return _detail_page(
+                    request=request,
+                    identity=identity,
+                    operation_public_id=created_public_id,
+                    us_session=us_session or "",
+                    error=str(exc),
+                    status_code=400,
+                )
+            except UsLaceyOperationNotFound:
+                pass
+        return _html(
+            render_new_operation(
+                request=request,
+                identity=identity,
+                entitlement=entitlement,
+                csrf_token=us_lacey_csrf_token(session_token=us_session or "", purpose="operation:create"),
+                error=str(exc),
+            ),
+            status_code=400,
+        )
+
+
+@app.get("/operations/{operation_public_id}", response_class=HTMLResponse)
+def operation_detail_page(
+    operation_public_id: str,
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        return _detail_page(
+            request=request,
+            identity=identity,
+            operation_public_id=operation_public_id,
+            us_session=us_session or "",
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except UsLaceyOperationNotFound:
+        return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.post("/operations/{operation_public_id}/alias", response_class=HTMLResponse)
+def operation_alias_submit(
+    operation_public_id: str,
+    request: Request,
+    client_reference: str = Form(...),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Rename the customer-facing operation label without changing operation identity."""
+    try:
+        identity, _entitlement = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"alias:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        service = UsLaceyOperationService()
+        service.update_client_reference(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            client_reference=client_reference,
+        )
+        detail = service.get_detail(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+        )
+        if request.headers.get("HX-Request", "").casefold() == "true":
+            return _html(
+                render_operation_alias(
+                    request=request,
+                    detail=detail,
+                    alias_csrf=us_lacey_csrf_token(
+                        session_token=us_session or "",
+                        purpose=f"alias:{detail.public_id}",
+                    ),
+                    alias_saved=True,
+                )
+            )
+        return RedirectResponse(f"/operations/{operation_public_id}", status_code=303)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyOperationError, ValueError) as exc:
+        try:
+            detail = UsLaceyOperationService().get_detail(
+                organization_id=identity.organization_id,
+                operation_public_id=operation_public_id,
+            )
+            if request.headers.get("HX-Request", "").casefold() == "true":
+                return _html(
+                    render_operation_alias(
+                        request=request,
+                        detail=detail,
+                        alias_csrf=us_lacey_csrf_token(
+                            session_token=us_session or "",
+                            purpose=f"alias:{detail.public_id}",
+                        ),
+                        alias_error=str(exc),
+                        alias_input_value=client_reference,
+                    )
+                )
+            return _detail_page(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                error=str(exc),
+                status_code=400,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.get("/operations/{operation_public_id}/processing-fragment", response_class=HTMLResponse)
+def operation_processing_fragment(
+    operation_public_id: str,
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Tenant-scoped, lightweight HTMX status fragment; it never creates work."""
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        detail = UsLaceyOperationService().get_processing_snapshot(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+        )
+        return _html(
+            render_processing_fragment(
+                request=request,
+                detail=detail,
+                retry_csrf=us_lacey_csrf_token(
+                    session_token=us_session or "",
+                    purpose=f"retry:{detail.public_id}",
+                ),
+            )
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except UsLaceyOperationNotFound:
+        return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.get("/operations/{operation_public_id}/activity", response_class=HTMLResponse)
+def operation_activity_fragment(
+    operation_public_id: str,
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Tenant-scoped HTMX fragment for the immutable operation timeline."""
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        detail = UsLaceyOperationService().get_detail(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+        )
+        audit_events = list_operation_events(
+            organization_id=identity.organization_id,
+            operation_public_id=detail.public_id,
+            limit=5,
+        )
+        return _html(
+            render_operation_audit_log(
+                request=request,
+                detail=detail,
+                audit_events=audit_events,
+            )
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except UsLaceyOperationNotFound:
+        return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.post("/operations/{operation_public_id}/actions/retry", response_class=HTMLResponse)
+def operation_retry_processing(
+    operation_public_id: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Requeue failed durable jobs without duplicating operation/document rows."""
+    try:
+        identity, _entitlement = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"retry:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        retry_failed_us_lacey_operation(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+        )
+        wake_us_lacey_worker()
+
+        redirect_to = f"/operations/{operation_public_id}"
+        if request.headers.get("HX-Request", "").casefold() == "true":
+            response = Response(status_code=200)
+            response.headers["HX-Redirect"] = redirect_to
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        return RedirectResponse(redirect_to, status_code=303)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyJobError, ValueError) as exc:
+        try:
+            return _detail_page(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                error=str(exc),
+                status_code=409,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(
+                request,
+                "Operation not found.",
+                status_code=404,
+            )
+
+
+@app.get("/operations/{operation_public_id}/workspace-fragment", response_class=HTMLResponse)
+def operation_workspace_fragment(
+    operation_public_id: str,
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        return _workspace_fragment(
+            request=request,
+            identity=identity,
+            operation_public_id=operation_public_id,
+            us_session=us_session or "",
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except UsLaceyOperationNotFound:
+        return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.post("/operations/{operation_public_id}/upload", response_class=HTMLResponse)
+async def operation_upload_submit(
+    operation_public_id: str,
+    request: Request,
+    documents: list[UploadFile] | None = File(None),
+    document: UploadFile | None = File(None),
+    document_role: str = Form("UNKNOWN"),
+    learning_consent: str | None = Form(None),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"upload:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        if (
+            learning_consent == "accepted"
+            and entitlement.evaluation_status == "ANONYMOUS"
+        ):
+            try:
+                set_us_lacey_sandbox_learning_consent(
+                    session_token=us_session or "",
+                    organization_id=identity.organization_id,
+                    enabled=True,
+                )
+            except UsLaceySandboxError:
+                # Optional learning consent must never block the customer's
+                # shipment. Failure remains fail-closed: the workspace stays
+                # opted out and the upload proceeds normally.
+                LOGGER.warning(
+                    "us_lacey_evaluation_learning_consent_not_saved",
+                    extra={"organization_id": identity.organization_id},
+                )
+        uploads = list(documents or ())
+        if document is not None:
+            uploads.append(document)
+        if not uploads:
+            raise UsLaceyWorkflowError("Choose at least one shipment or supplier document.")
+
+        payloads: list[tuple[str, str, bytes, str]] = []
+        for upload in uploads:
+            content = await upload.read()
+            if not content:
+                raise UsLaceyWorkflowError("The uploaded document is empty.")
+            payloads.append((
+                upload.filename or "document",
+                upload.content_type or "application/octet-stream",
+                content,
+                document_role,
+            ))
+
+        upload_and_enqueue_us_lacey_document_batch(
+            organization_id=identity.organization_id,
+            user_id=identity.user_id,
+            operation_public_id=operation_public_id,
+            documents=tuple(payloads),
+        )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="DOCUMENTS_UPLOADED",
+            event_key=operation_public_id,
+            metadata={"document_count": len(payloads)},
+        )
+        return RedirectResponse(
+            f"/operations/{operation_public_id}?uploaded=1",
+            status_code=303,
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyWorkflowError, UsLaceyOperationError, ValueError) as exc:
+        try:
+            return _detail_page(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                error=str(exc),
+                status_code=400,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.post(
+    "/operations/{operation_public_id}/review/fields/{field_id:int}",
+    response_class=HTMLResponse,
+)
+def operation_review_submit(
+    operation_public_id: str,
+    field_id: int,
+    request: Request,
+    action: str = Form(...),
+    value: str = Form(""),
+    candidate_id: int | None = Form(None),
+    reason_code: str = Form(""),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, _entitlement = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"review:{operation_public_id}:{field_id}",
+            submitted_token=csrf_token,
+        )
+        review_us_lacey_field(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            field_id=field_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+            action=action,
+            value=value or None,
+            candidate_id=candidate_id,
+            reason_code=reason_code or None,
+        )
+        return RedirectResponse(f"/operations/{operation_public_id}", status_code=303)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        try:
+            return _detail_page(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                field_errors={int(field_id): str(exc)},
+                field_input_values={int(field_id): value},
+                status_code=400,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.post(
+    "/operations/{operation_public_id}/review/actions/fields/{field_id:int}",
+    response_class=HTMLResponse,
+)
+def operation_review_action_fragment(
+    operation_public_id: str,
+    field_id: int,
+    request: Request,
+    action: str = Form(...),
+    value: str = Form(""),
+    candidate_id: int | None = Form(None),
+    reason_code: str = Form(""),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """HTMX mutation endpoint that returns only the authoritative workspace."""
+    try:
+        identity, _entitlement = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"review:{operation_public_id}:{field_id}",
+            submitted_token=csrf_token,
+        )
+        review_us_lacey_field(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            field_id=field_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+            action=action,
+            value=value or None,
+            candidate_id=candidate_id,
+            reason_code=reason_code or None,
+        )
+        return _workspace_fragment(
+            request=request,
+            identity=identity,
+            operation_public_id=operation_public_id,
+            us_session=us_session or "",
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        try:
+            return _workspace_fragment(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                field_errors={int(field_id): str(exc)},
+                field_input_values={int(field_id): value},
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.post(
+    "/operations/{operation_public_id}/review/accept-supported",
+    response_class=HTMLResponse,
+)
+def operation_review_accept_supported(
+    operation_public_id: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Non-HTMX fallback for one-click confirmation of supported evidence."""
+    try:
+        identity, _entitlement = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"complete:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        accept_supported_us_lacey_fields(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+        )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="AUTO_RESOLVED_CONFIRMED",
+            event_key=operation_public_id,
+        )
+        return RedirectResponse(f"/operations/{operation_public_id}", status_code=303)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        try:
+            return _detail_page(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                error=str(exc),
+                status_code=400,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.post(
+    "/operations/{operation_public_id}/review/actions/accept-supported",
+    response_class=HTMLResponse,
+)
+def operation_review_accept_supported_fragment(
+    operation_public_id: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """HTMX bulk mutation endpoint; returns one complete workspace replacement."""
+    try:
+        identity, _entitlement = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"complete:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        accept_supported_us_lacey_fields(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+        )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="AUTO_RESOLVED_CONFIRMED",
+            event_key=operation_public_id,
+        )
+        return _workspace_fragment(
+            request=request,
+            identity=identity,
+            operation_public_id=operation_public_id,
+            us_session=us_session or "",
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        try:
+            return _workspace_fragment(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                error=str(exc),
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+
+
+
+@app.post("/operations/{operation_public_id}/review/pre-entry", response_class=HTMLResponse)
+def operation_pre_entry_review_submit(
+    operation_public_id: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, _entitlement = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"complete:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        finish_document_review_awaiting_entry(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+        )
+        return RedirectResponse(f"/operations/{operation_public_id}?pre_entry=1", status_code=303)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        try:
+            return _detail_page(
+                request=request, identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "", error=str(exc), status_code=409,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.post("/operations/{operation_public_id}/complete", response_class=HTMLResponse)
+def operation_complete_submit(
+    operation_public_id: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    review_started_at: str = Form(""),
+    review_elapsed_seconds: str = Form(""),
+    review_modified_field_ids: str = Form(""),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, _entitlement = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"complete:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        telemetry = parse_review_telemetry(
+            started_at=review_started_at,
+            elapsed_seconds=review_elapsed_seconds,
+            modified_field_ids=review_modified_field_ids,
+        )
+        finalize_us_lacey_review(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+            telemetry=telemetry,
+        )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="REVIEW_COMPLETED",
+            event_key=operation_public_id,
+        )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="PQL_QUALIFIED",
+            event_key="review-completed",
+            metadata={"reason": "review_completed"},
+        )
+        return RedirectResponse(f"/operations/{operation_public_id}?completed=1", status_code=303)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        try:
+            return _detail_page(
+                request=request,
+                identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "",
+                error=str(exc),
+                status_code=409,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+def _export_response(*, request: Request, operation_public_id: str, us_session: str | None, kind: str):
+    try:
+        identity, _entitlement = _operational_context(us_session)
+        detail = UsLaceyOperationService().get_detail(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+        )
+        if detail.status != "COMPLETED":
+            return _operation_error_page(
+                request,
+                "Complete human review before exporting the preparation package.",
+                status_code=409,
+            )
+        if kind == "xlsx":
+            payload = export_us_lacey_xlsx(
+                organization_id=identity.organization_id,
+                operation_public_id=operation_public_id,
+            )
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        else:
+            payload = export_us_lacey_csv(
+                organization_id=identity.organization_id,
+                operation_public_id=operation_public_id,
+            )
+            media_type = "text/csv; charset=utf-8"
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="EXPORT_DOWNLOADED",
+            event_key=f"{operation_public_id}:{kind}",
+            metadata={"kind": kind},
+        )
+        safe_record_outreach_event(
+            session_token=us_session or "",
+            organization_id=identity.organization_id,
+            event_name="PQL_QUALIFIED",
+            event_key="export-downloaded",
+            metadata={"reason": "export_downloaded", "kind": kind},
+        )
+        response = Response(content=payload, media_type=media_type)
+        response.headers["Content-Disposition"] = f'attachment; filename="lacey-preparation-{detail.public_id}.{kind}"'
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except UsLaceyOperationNotFound:
+        return _operation_error_page(request, "Operation not found.", status_code=404)
+    except UsLaceyReviewError as exc:
+        return _operation_error_page(request, str(exc), status_code=400)
+
+
+@app.get("/operations/{operation_public_id}/export.xlsx")
+def operation_export_xlsx(
+    operation_public_id: str,
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    return _export_response(request=request, operation_public_id=operation_public_id, us_session=us_session, kind="xlsx")
+
+
+@app.get("/operations/{operation_public_id}/export.csv")
+def operation_export_csv(
+    operation_public_id: str,
+    request: Request,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    return _export_response(request=request, operation_public_id=operation_public_id, us_session=us_session, kind="csv")
+
+
+@app.post("/logout")
+def logout_submit(
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    if us_session:
+        logout_us_lacey_user(us_session)
+    response = RedirectResponse("/login", status_code=303)
+    try:
+        secure = load_us_lacey_portal_config().session_cookie_secure
+    except Exception:
+        secure = True
+    response.delete_cookie(
+        US_LACEY_SESSION_COOKIE,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response

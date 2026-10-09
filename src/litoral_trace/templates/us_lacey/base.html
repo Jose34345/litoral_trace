@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+{% from "components/ui.html" import button, badge, status_badge, alert, page_header, empty_state %}
+
+{% block html_open %}<html lang="en" class="h-full bg-app">{% endblock %}
+{% block title %}{% block lacey_title %}U.S. Lacey{% endblock %} | Litoral Trace{% endblock %}
+{% block head_extra %}<link rel="stylesheet" href="{{ url_for('static', path='/src/app-shell.css') }}">{% endblock %}
+{% block body_class %}min-h-screen bg-app font-sans text-slate-900 antialiased{% endblock %}
+
+{% block shell %}
+<a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-slate-950 focus:shadow-lg">Skip to main content</a>
+
+{% if authenticated|default(false) %}
+{% set current_path = request.url.path %}
+{% set evaluation_mode = entitlement is defined and entitlement and entitlement.is_evaluation %}
+<div class="lt-app-shell min-h-screen bg-app">
+  <div data-app-drawer-overlay data-open="false" class="lt-app-overlay fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm lg:hidden" aria-hidden="true"></div>
+  <aside id="app-navigation" data-app-drawer data-open="false" class="lt-sidebar fixed inset-y-0 left-0 z-50 flex w-72 -translate-x-full flex-col border-r border-slate-800 text-slate-200 transition-transform duration-200 ease-out lg:translate-x-0">
+    <div class="lt-sidebar__brandbar flex h-16 shrink-0 items-center gap-3 border-b px-4">
+      <a href="/operations" class="lt-brand-link flex min-w-0 flex-1 items-center gap-3" aria-label="Litoral Trace workspace">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm" aria-hidden="true"><img src="{{ url_for('static', path='/img/logo.svg') }}" alt="" class="h-8 w-8" width="32" height="32"></span>
+        <span class="min-w-0"><span class="lt-brand-name block truncate text-base font-bold text-white">Litoral Trace</span><span class="lt-brand-descriptor block truncate text-[10px] font-bold uppercase tracking-[0.14em]">Compliance infrastructure</span></span>
+      </a>
+      <button type="button" data-app-drawer-close class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden" aria-label="Close navigation"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    </div>
+
+    <nav class="lt-sidebar__nav min-h-0 flex-1 overflow-y-auto px-3 py-3" aria-label="U.S. Lacey workspace navigation">
+      <section class="lt-nav-section mb-3">
+        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Workspace</p>
+        <div class="space-y-1">
+          <a href="/operations" {% if current_path.startswith('/operations') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-briefcase" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Shipments</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{{ entitlement.evaluation_completed_operations ~ '/' ~ entitlement.evaluation_total_operations if evaluation_mode else 'Queue' }}</span></a>
+          <a href="/evidence" {% if current_path.startswith('/evidence') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
+            <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-folder-open" aria-hidden="true"></i></span>
+            <span class="min-w-0 flex-1 truncate">Evidence</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Source</span>
+          </a>
+          <a href="/suppliers" {% if current_path.startswith('/suppliers') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
+            <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-building-circle-check" aria-hidden="true"></i></span>
+            <span class="min-w-0 flex-1 truncate">Suppliers</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Memory</span>
+          </a>
+          <a href="/audit-log" {% if current_path.startswith('/audit-log') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
+            <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i></span>
+            <span class="min-w-0 flex-1 truncate">Audit Log</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-400">Enabled</span>
+          </a>
+        </div>
+      </section>
+      <section class="lt-nav-section mb-3">
+        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Regulatory</p>
+        <div class="space-y-1">
+          <a href="/regulatory" {% if current_path == '/regulatory' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Regulatory Analysis</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Rules v4</span></a>
+          <a href="/trust" {% if current_path == '/trust' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Trust &amp; Controls</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-400">Active</span></a>
+          <a href="/legal/product-use-terms" {% if current_path == '/legal/product-use-terms' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-file-contract" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Product Use Terms</span></a>
+        </div>
+      </section>
+      {% if evaluation_mode %}
+      <section class="lt-nav-section">
+        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Evaluation</p>
+        <div class="space-y-1">
+          <div class="flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-medium text-slate-400">
+            <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid {{ 'fa-shield-halved' if entitlement.evaluation_claimed else 'fa-hourglass-half' }}" aria-hidden="true"></i></span>
+            <span class="min-w-0 flex-1 truncate">{{ 'Saved evaluation' if entitlement.evaluation_claimed else 'Temporary workspace' }}</span>
+            <span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{{ '7d idle' if entitlement.evaluation_claimed else '4h raw' }}</span>
+          </div>
+          {% if entitlement.evaluation_claimed %}
+          <a href="/billing" class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Upgrade</span></a>
+          {% endif %}
+        </div>
+      </section>
+      {% else %}
+      <section class="lt-nav-section">
+        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Organization</p>
+        <div class="space-y-1">
+          <a href="/billing" {% if current_path == '/billing' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-receipt" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Billing</span></a>
+          {# Settings remains hidden until a real customer settings route exists. #}
+        </div>
+      </section>
+      {% endif %}
+    </nav>
+
+    <div class="lt-sidebar__footer shrink-0 border-t p-3">
+      {% if entitlement is defined and entitlement %}
+      <div class="mb-3 rounded-xl border border-slate-700 bg-slate-900/80 p-3" aria-label="{{ 'Evaluation usage' if entitlement.is_evaluation else 'Operation allowance' }}">
+        {% if entitlement.is_evaluation %}
+        <div class="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-300">
+          <span>Evaluation progress</span>
+          <span>{{ entitlement.evaluation_completed_operations }} / {{ entitlement.evaluation_total_operations }} completed</span>
+        </div>
+        <progress class="lt-usage-progress mt-2" max="{{ entitlement.evaluation_total_operations }}" value="{{ entitlement.evaluation_completed_operations }}" aria-label="Evaluation shipment usage"></progress>
+        <p class="mt-2 text-[10px] leading-4 text-slate-400">
+          {% if entitlement.evaluation_read_only %}
+            Read-only evaluation
+          {% elif entitlement.evaluation_can_claim %}
+            {{ entitlement.evaluation_remaining_operations }} shipments remaining · Keep this workspace to continue
+          {% elif entitlement.evaluation_status == 'ANONYMOUS' %}
+            First shipment anonymous · {{ entitlement.evaluation_total_operations - 1 }} more after processing
+          {% else %}
+            {{ entitlement.evaluation_remaining_operations }} shipment{{ '' if entitlement.evaluation_remaining_operations == 1 else 's' }} remaining · No card required
+          {% endif %}
+        </p>
+        {% if entitlement.evaluation_claimed and entitlement.evaluation_expires_at %}
+        <p class="mt-1 text-[10px] leading-4 text-slate-500">Active until {{ entitlement.evaluation_expires_at.strftime('%b %d, %Y') }} unless activity extends it.</p>
+        {% elif entitlement.evaluation_status == 'ANONYMOUS' %}
+        <p class="mt-1 text-[10px] leading-4 text-slate-500">After you keep it, expiry is 7 days after your last activity.</p>
+        {% endif %}
+        {% else %}
+        <div class="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-300">
+          <span>Operations remaining</span>
+          <span>{{ entitlement.remaining_operations }} / {{ entitlement.monthly_operation_limit }}</span>
+        </div>
+        <progress class="lt-usage-progress mt-2" max="{{ entitlement.monthly_operation_limit }}" value="{{ entitlement.used_operations }}" aria-label="Monthly operation usage"></progress>
+        {% endif %}
+      </div>
+      {% elif billing is defined and billing %}
+      <div class="mb-3 rounded-xl border border-slate-700 bg-slate-900/80 p-3" aria-label="Operation allowance">
+        <div class="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-300"><span>Monthly usage</span><span>{{ billing.used_operations }} / {{ billing.monthly_operation_limit }}</span></div>
+        <progress class="lt-usage-progress mt-2" max="{{ billing.monthly_operation_limit }}" value="{{ billing.used_operations }}" aria-label="Monthly operation usage"></progress>
+      </div>
+      {% endif %}
+      <div class="lt-org-card flex items-center gap-2 rounded-xl border p-2.5">
+        {% if evaluation_mode %}
+        <span class="lt-org-card__icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" aria-hidden="true"><i class="fa-solid {{ 'fa-shield-halved' if entitlement.evaluation_claimed else 'fa-hourglass-half' }}"></i></span>
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-xs font-semibold text-slate-100">{{ 'Evaluation workspace' if entitlement.evaluation_claimed else 'Temporary workspace' }}</p>
+          <p class="mt-0.5 truncate text-[10px] font-medium uppercase tracking-wide text-slate-500">{{ entitlement.evaluation_work_email if entitlement.evaluation_claimed and entitlement.evaluation_work_email else 'Anonymous · private' }}</p>
+        </div>
+        <form method="post" action="/logout" class="shrink-0"><button type="submit" class="lt-session-action flex h-8 w-8 items-center justify-center rounded-lg border text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="End evaluation session" title="End evaluation session"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i></button></form>
+        {% else %}
+        <span class="lt-org-card__icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" aria-hidden="true"><i class="fa-solid fa-building"></i></span>
+        <div class="min-w-0 flex-1"><p class="truncate text-xs font-semibold text-slate-100">{{ identity.legal_name if identity is defined else 'Litoral Trace' }}</p><p class="mt-0.5 truncate text-[10px] font-medium uppercase tracking-wide text-slate-500">{{ identity.email if identity is defined else 'Workspace' }}</p></div>
+        <form method="post" action="/logout" class="shrink-0"><button type="submit" class="lt-session-action flex h-8 w-8 items-center justify-center rounded-lg border text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Sign out" title="Sign out"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i></button></form>
+        {% endif %}
+      </div>
+    </div>
+  </aside>
+
+  <div class="lt-workspace min-h-screen lg:pl-72">
+    <header class="lt-topbar sticky top-0 z-30 border-b">
+      <div class="lt-topbar__inner flex h-16 items-center gap-3 px-4 sm:px-6 lg:px-8">
+        <button type="button" data-app-drawer-open class="lt-drawer-trigger flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden" aria-label="Open navigation" aria-controls="app-navigation" aria-expanded="false"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
+        <div class="min-w-0">
+          {% if evaluation_mode %}
+          <div class="flex min-w-0 items-center gap-2">
+            <p class="truncate text-sm font-bold text-slate-950">{{ 'Evaluation workspace' if entitlement.evaluation_claimed else 'Temporary evaluation workspace' }}</p>
+            <span class="hidden rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500 sm:inline-flex">Evaluation</span>
+          </div>
+          <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey · Regulatory ruleset active · Raw retention {{ entitlement.evaluation_raw_retention_hours or 4 }}h · Human review required</p>
+          {% else %}
+          <div class="flex min-w-0 items-center gap-2">
+            <p class="truncate text-sm font-bold text-slate-950">{{ identity.legal_name if identity is defined else 'Litoral Trace' }}</p>
+            <span class="hidden rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-800 sm:inline-flex">Production</span>
+          </div>
+          <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey Act workspace · Regulatory ruleset active · Declaration preparation · Human review required</p>
+          {% endif %}
+        </div>
+        <div class="relative mx-auto hidden w-full max-w-xl md:block" data-command-palette>
+          <label class="relative block"><span class="sr-only">Jump to workspace section</span><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i><input id="lt-command-search" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-20 text-xs text-slate-800 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20" placeholder="Jump to shipments, suppliers, regulatory, audit…" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="lt-command-results" aria-label="Workspace quick navigation"><span id="lt-command-shortcut" class="lt-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" aria-hidden="true">Ctrl K</span></label>
+          <div id="lt-command-results" class="absolute left-0 right-0 top-full z-50 mt-2 hidden overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl" role="listbox" aria-label="Workspace destinations" data-command-results></div>
+        </div>
+        <div class="ml-auto flex items-center gap-2">
+          <details class="relative">
+            {% if evaluation_mode %}
+            <summary class="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white" aria-label="Evaluation menu"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i></summary>
+            <div class="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+              <div class="border-b border-slate-100 px-3 py-2"><p class="truncate text-xs font-bold text-slate-900">{{ 'Evaluation workspace' if entitlement.evaluation_claimed else 'Private evaluation' }}</p><p class="mt-0.5 truncate text-[11px] text-slate-500">{{ entitlement.evaluation_work_email if entitlement.evaluation_claimed and entitlement.evaluation_work_email else 'Anonymous workspace' }}</p></div>
+              {% if entitlement.evaluation_claimed %}<a class="mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" href="/billing"><i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i> Upgrade</a>{% endif %}
+              <form method="post" action="/logout"><button class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" type="submit"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> End evaluation session</button></form>
+            </div>
+            {% else %}
+            <summary class="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white" aria-label="Account menu">{{ (identity.full_name[:1] if identity is defined and identity.full_name else 'L')|upper }}</summary>
+            <div class="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-xl"><div class="border-b border-slate-100 px-3 py-2"><p class="truncate text-xs font-bold text-slate-900">{{ identity.full_name if identity is defined else 'Account' }}</p><p class="mt-0.5 truncate text-[11px] text-slate-500">{{ identity.email if identity is defined else '' }}</p></div><a class="mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" href="/billing"><i class="fa-solid fa-receipt" aria-hidden="true"></i> Billing</a><form method="post" action="/logout"><button class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" type="submit"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Sign out</button></form></div>
+            {% endif %}
+          </details>
+        </div>
+      </div>
+    </header>
+    <main id="main-content" tabindex="-1" class="lt-main px-4 py-5 sm:px-6 lg:px-8"><div class="lt-content-frame mx-auto w-full max-w-[1536px]"><div class="lt-page">
+{% else %}
+<div class="min-h-full bg-white text-slate-900">
+  <header class="sticky top-0 z-50 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl">
+    <div class="mx-auto flex min-h-[4.5rem] max-w-7xl flex-wrap items-center gap-4 px-4 py-3 sm:px-6 lg:px-8">
+      <a href="/" class="flex shrink-0 items-center gap-3" aria-label="Litoral Trace U.S. Lacey home"><img src="{{ url_for('static', path='/img/logo.svg') }}" alt="" class="h-8 w-8" width="32" height="32"><span><span class="block text-base font-bold tracking-tight text-slate-950">Litoral Trace</span><span class="block text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">U.S. Lacey Act compliance</span></span></a>
+      <nav class="ml-auto flex flex-wrap items-center justify-end gap-2" aria-label="U.S. Lacey public navigation">{{ button("Terms", "/legal/terms", "ghost") }}{{ button("Privacy", "/legal/privacy", "ghost") }}{{ button("Product Use Terms", "/legal/product-use-terms", "ghost") }}{{ button("Sign in", "/login", "secondary") }}{{ button("Create account", "/signup", "primary") }}</nav>
+    </div>
+  </header>
+  <main id="main-content" tabindex="-1"><section class="bg-slate-50 px-4 py-8 sm:px-6 lg:px-8"><div class="mx-auto max-w-6xl"><div class="lt-page">
+{% endif %}
+
+{% if authenticated|default(false) and evaluation_mode|default(false) %}
+  <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-sm" data-evaluation-privacy-banner>
+    <div class="flex min-w-0 items-start gap-3">
+      <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-shield-halved"></i></span>
+      <div>
+        <p class="text-xs font-bold text-slate-950">Private evaluation</p>
+        <p class="mt-0.5 text-[11px] leading-5 text-slate-600">Raw source documents are automatically deleted {{ entitlement.evaluation_raw_retention_hours or 4 }} hours after each upload. Derived evaluation results remain available under the evaluation policy.</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+      {% if not entitlement.evaluation_claimed %}<span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Anonymous workspace</span>{% endif %}
+      <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">No card required</span>
+    </div>
+  </div>
+{% endif %}
+
+{% if authenticated|default(false) and entitlement is defined and entitlement %}
+  {% if entitlement.evaluation_can_claim %}
+  <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+    <div>
+      <p class="text-xs font-bold text-slate-950">Your first real shipment is ready.</p>
+      <p class="mt-0.5 text-[11px] leading-5 text-slate-600">Keep this workspace with a work email to test four more shipments. No credit card.</p>
+    </div>
+    <a href="/evaluation/save" class="inline-flex items-center rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-800">Keep this workspace</a>
+  </div>
+  {% elif entitlement.evaluation_read_only %}
+  <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+    <div>
+      <p class="text-xs font-bold text-slate-950">Five-shipment evaluation complete.</p>
+      <p class="mt-0.5 text-[11px] leading-5 text-slate-600">Your results remain available read-only. Continue with Litoral Trace to create or modify shipments.</p>
+    </div>
+    <a href="/billing?evaluation=complete" class="inline-flex items-center rounded-lg border border-amber-300 bg-white px-3.5 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100">Continue with Litoral Trace</a>
+  </div>
+  {% endif %}
+{% endif %}
+{% block lacey_content %}{% endblock %}
+
+{% if authenticated|default(false) %}
+      </div></div></main>
+  </div>
+</div>
+<div id="lt-toast-region" class="lt-toast-region" role="region" aria-label="Notifications" aria-live="polite" aria-relevant="additions"></div>
+<script>
+(() => {
+  const search = document.getElementById('lt-command-search');
+  const results = document.getElementById('lt-command-results');
+  if (!search || !results) return;
+  const shortcut = document.getElementById('lt-command-shortcut');
+  const platform = navigator.userAgentData?.platform || navigator.platform || '';
+  const isApplePlatform = /Mac|iPhone|iPad|iPod/i.test(platform);
+  if (shortcut) shortcut.textContent = isApplePlatform ? '⌘ K' : 'Ctrl K';
+
+  const destinations = [
+    {label: 'Shipments', description: 'Open the compliance work queue', terms: ['operations', 'shipment', 'shipments', 'queue', 'workspace'], href: '/operations', icon: 'fa-briefcase'},
+    {label: 'New shipment', description: 'Start a shipment evidence pack', terms: ['new', 'create', 'upload', 'shipment'], href: '/operations/new', icon: 'fa-plus'},
+    {label: 'Evidence', description: 'Inspect reusable supplier evidence', terms: ['evidence', 'documents', 'source', 'claims'], href: '/evidence', icon: 'fa-folder-open'},
+    {label: 'Suppliers', description: 'Open supplier compliance memory', terms: ['suppliers', 'supplier', 'vendor', 'memory', 'reusable evidence'], href: '/suppliers', icon: 'fa-building-circle-check'},
+    {label: 'Regulatory Analysis', description: 'Inspect active U.S. Lacey controls', terms: ['regulatory', 'regulatory analysis', 'ruleset', 'hts', 'aphis'], href: '/regulatory', icon: 'fa-scale-balanced'},
+    {label: 'Trust & Controls', description: 'Review data handling and workspace assurance', terms: ['trust', 'security', 'controls', 'privacy', 'retention', 'tenant'], href: '/trust', icon: 'fa-shield-halved'},
+    {label: 'Audit Log', description: 'Open the immutable activity history', terms: ['audit log', 'audit', 'activity', 'system of record', 'history'], href: '/audit-log', icon: 'fa-clock-rotate-left'},
+    {% if not evaluation_mode %}{label: 'Billing', description: 'Manage the production subscription', terms: ['billing', 'subscription', 'payment'], href: '/billing', icon: 'fa-receipt'},{% endif %}
+    {label: 'Product Use Terms', description: 'Review product and filing boundaries', terms: ['product use', 'terms', 'compliance'], href: '/legal/product-use-terms', icon: 'fa-file-contract'},
+    {label: 'Privacy', description: 'Review privacy terms', terms: ['privacy', 'data'], href: '/legal/privacy', icon: 'fa-shield-halved'}
+  ];
+  let activeIndex = -1;
+  let visible = [];
+
+  const close = () => {
+    results.classList.add('hidden');
+    results.replaceChildren();
+    search.setAttribute('aria-expanded', 'false');
+    search.removeAttribute('aria-activedescendant');
+    activeIndex = -1;
+  };
+
+  const focusCommandOption = (index) => {
+    activeIndex = Math.max(0, Math.min(index, visible.length - 1));
+    results.querySelectorAll('[data-command-option]').forEach((option, optionIndex) => {
+      const selected = optionIndex === activeIndex;
+      option.setAttribute('aria-selected', selected ? 'true' : 'false');
+      option.classList.toggle('bg-slate-100', selected);
+      if (selected) {
+        search.setAttribute('aria-activedescendant', option.id);
+        option.scrollIntoView({block: 'nearest'});
+      }
+    });
+  };
+
+  const render = () => {
+    const query = search.value.trim().toLowerCase();
+    visible = destinations.filter((item) => !query || item.label.toLowerCase().includes(query) || item.terms.some((term) => term.includes(query) || query.includes(term))).slice(0, 7);
+    results.replaceChildren();
+    visible.forEach((item, index) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.id = `lt-command-option-${index}`;
+      option.dataset.commandOption = String(index);
+      option.className = 'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-slate-100';
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', 'false');
+
+      const icon = document.createElement('span');
+      icon.className = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600';
+      const iconGlyph = document.createElement('i');
+      iconGlyph.className = `fa-solid ${item.icon}`;
+      iconGlyph.setAttribute('aria-hidden', 'true');
+      icon.append(iconGlyph);
+
+      const copy = document.createElement('span');
+      copy.className = 'min-w-0 flex-1';
+      const label = document.createElement('span');
+      label.className = 'block text-xs font-bold text-slate-900';
+      label.textContent = item.label;
+      const description = document.createElement('span');
+      description.className = 'mt-0.5 block truncate text-[10px] text-slate-500';
+      description.textContent = item.description;
+      copy.append(label, description);
+      option.append(icon, copy);
+      option.addEventListener('click', () => window.location.assign(item.href));
+      option.addEventListener('mouseenter', () => focusCommandOption(index));
+      results.append(option);
+    });
+
+    if (!visible.length) {
+      const empty = document.createElement('p');
+      empty.className = 'px-3 py-3 text-xs text-slate-500';
+      empty.textContent = 'No workspace destination matches this search.';
+      results.append(empty);
+    }
+    results.classList.remove('hidden');
+    search.setAttribute('aria-expanded', 'true');
+    if (visible.length) focusCommandOption(0);
+  };
+
+  document.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      search.focus();
+      search.select();
+      render();
+    }
+  });
+  search.addEventListener('focus', render);
+  search.addEventListener('input', render);
+  search.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      close();
+      search.blur();
+      return;
+    }
+    if (!visible.length) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      focusCommandOption(activeIndex + 1 >= visible.length ? 0 : activeIndex + 1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      focusCommandOption(activeIndex - 1 < 0 ? visible.length - 1 : activeIndex - 1);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      window.location.assign(visible[Math.max(0, activeIndex)].href);
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('[data-command-palette]')) close();
+  });
+})();
+</script>
+{% else %}
+  </div></div></section></main>
+  <footer class="border-t border-slate-800 bg-slate-950 text-slate-400"><div class="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-8 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8"><div><p class="font-bold text-white">Litoral Trace</p><p class="mt-1 text-xs text-slate-500">U.S. Lacey Act compliance infrastructure</p></div><div class="flex flex-wrap gap-4"><a href="/legal/terms" class="text-xs font-semibold hover:text-white">Terms</a><a href="/legal/privacy" class="text-xs font-semibold hover:text-white">Privacy</a><a href="/legal/refunds" class="text-xs font-semibold hover:text-white">Refunds</a><a href="/legal/product-use-terms" class="text-xs font-semibold hover:text-white">Product Use Terms</a></div></div></footer>
+</div>
+{% endif %}
+{% endblock %}

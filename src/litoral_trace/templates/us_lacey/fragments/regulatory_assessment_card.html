@@ -1,0 +1,91 @@
+{% from "us_lacey/_components.html" import lt_badge %}
+<section class="rounded-xl border border-slate-200 bg-white" data-regulatory-assessment-status="{{ regulatory_assessment.status }}" aria-labelledby="regulatory-assessment-title">
+  {% set assessments = regulatory_assessment.payload.get('assessments', []) %}
+  {% set blocking = assessments|selectattr('blocks_package', 'equalto', true)|list %}
+  <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+    <div>
+      <h3 id="regulatory-assessment-title" class="font-bold text-slate-950">Shipment compliance checks</h3>
+      <p class="mt-1 text-xs leading-5 text-slate-600">Dense rule matrix for preparation and audit. Blocking information requirements are mirrored into Action Required.</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <span class="rounded-md bg-slate-50 px-2.5 py-1 font-semibold text-slate-700 ring-1 ring-inset ring-slate-200">{{ regulatory_assessment.assessment_count }} checks</span>
+      {% if blocking %}
+      <span class="rounded-md bg-amber-50 px-2.5 py-1 font-semibold text-amber-800 ring-1 ring-inset ring-amber-600/20">{{ blocking|length }} need information</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if assessments %}
+  <div class="lt-data-table" data-regulatory-matrix>
+    <div class="lt-data-table__scroll">
+      <table class="lt-data-table__table min-w-[68rem] w-full text-left">
+        <thead class="lt-data-table__head">
+          <tr>
+            <th class="lt-data-table__th">Line</th>
+            <th class="lt-data-table__th">Check</th>
+            <th class="lt-data-table__th">Status</th>
+            <th class="lt-data-table__th">Reason</th>
+            <th class="lt-data-table__th">Action</th>
+          </tr>
+        </thead>
+        <tbody class="lt-data-table__body">
+          {% for assessment in assessments %}
+          {% set status = assessment.get('status', '') %}
+          {% set blocks = assessment.get('blocks_package', false) %}
+          <tr
+            class="lt-data-table__row"
+            data-state="{{ 'attention' if blocks else 'normal' }}"
+            data-regulatory-rule="{{ assessment.get('rule_id', '') }}"
+            data-regulatory-rule-status="{{ status }}"
+            {% if blocks %}data-regulatory-exception{% endif %}
+          >
+            <td class="lt-data-table__cell">
+              <span class="text-xs font-semibold text-slate-700">{{ assessment.get('display_subject', 'Shipment') }}</span>
+            </td>
+            <td class="lt-data-table__cell lt-data-table__cell--primary">
+              <span class="lt-data-table__primary">{{ assessment.get('display_title', 'Regulatory check') }}</span>
+            </td>
+            <td class="lt-data-table__cell">
+              {% if status == 'PASS' %}
+                {{ lt_badge("READY", assessment.get('display_status', 'Check passed')) }}
+              {% elif status == 'FAIL' %}
+                {{ lt_badge("REVIEW REQUIRED", assessment.get('display_status', 'Needs review')) }}
+              {% elif status == 'INDETERMINATE' and blocks %}
+                {{ lt_badge("REVIEW REQUIRED", assessment.get('display_status', 'Needs information')) }}
+              {% elif status == 'INDETERMINATE' %}
+                {{ lt_badge("NOT EVALUATED", assessment.get('display_status', 'Not evaluated')) }}
+              {% elif status == 'NOT_EVALUATED' %}
+                {{ lt_badge("NOT EVALUATED", assessment.get('display_status', 'Not evaluated')) }}
+              {% else %}
+                {{ lt_badge("NOT APPLICABLE", assessment.get('display_status', 'Not applicable')) }}
+              {% endif %}
+            </td>
+            <td class="lt-data-table__cell">
+              <p class="max-w-md text-xs leading-5 text-slate-700">{{ assessment.get('display_reason', 'No additional reason provided') }}</p>
+              {% if (status == 'INDETERMINATE' and not blocks) or status == 'NOT_EVALUATED' %}
+              <p class="mt-1 text-[11px] font-medium text-slate-500">Does not block the current preparation package.</p>
+              {% endif %}
+            </td>
+            <td class="lt-data-table__cell">
+              {% if blocks %}
+              <a
+                href="#regulatory-action-{{ assessment.get('action_id') }}"
+                class="lt-btn lt-btn--secondary"
+                data-regulatory-action-jump="{{ assessment.get('action_id') }}"
+              >{{ assessment.get('action_label', 'Provide information') }}</a>
+              {% else %}
+              <span class="text-xs text-slate-400">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <p class="px-5 py-5 text-sm text-slate-700">No regulatory checks were generated for this shipment.</p>
+  {% endif %}
+
+  <p class="border-t border-slate-200 px-5 py-3 text-[11px] leading-5 text-slate-500">Each result applies only to the individual check shown. It is a preparation aid, not an overall legal compliance determination.</p>
+</section>

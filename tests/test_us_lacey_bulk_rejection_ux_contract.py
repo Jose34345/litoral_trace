@@ -1,0 +1,78 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from jinja2 import Environment
+
+
+ROOT = Path(__file__).resolve().parents[1]
+TEMPLATE = ROOT / "src" / "litoral_trace" / "templates" / "us_lacey" / "operation_detail.html"
+FRAGMENTS = (
+    ROOT
+    / "src"
+    / "litoral_trace"
+    / "templates"
+    / "us_lacey"
+    / "fragments"
+)
+PROCESSING_FRAGMENT = FRAGMENTS / "processing_fragment.html"
+WORKFLOW_STEPPER = FRAGMENTS / "workflow_stepper_shell.html"
+
+
+def test_bulk_rejection_is_customer_guidance_not_internal_error_ui():
+    source = TEMPLATE.read_text(encoding="utf-8")
+    Environment().parse(source)
+
+    assert 'error.startswith("This file contains multiple shipments.")' in source
+    assert 'data-bulk-upload-rejection' in source
+    assert '>This file contains multiple shipments</p>' in source
+    assert (
+        "Litoral Trace processes one shipment per operation. Split this file so it contains only one shipment, "
+        "then upload that file to this operation."
+    ) in source
+    assert "Nothing was added to this operation." in source
+
+    lowered = source.lower()
+    assert "bulk benchmark" not in lowered
+    assert "benchmark importer" not in lowered
+    assert "try again" not in lowered
+    assert "contact support" not in lowered
+
+
+def test_bulk_rejection_does_not_mix_request_feedback_with_stale_analysis_ui():
+    source = TEMPLATE.read_text(encoding="utf-8")
+
+    stepper = WORKFLOW_STEPPER.read_text(encoding="utf-8")
+
+    assert '{% set empty_bulk_rejection = bulk_upload_rejection and not detail.documents %}' in source
+    assert '{% set shell_empty_bulk_rejection = empty_bulk_rejection %}' in source
+    assert 'workflow_stepper_shell.html' in source
+    assert '("Documents", "complete" if detail.documents else "current", "#documents")' in stepper
+    assert '"pending" if shell_empty_bulk_rejection|default(false)' in stepper
+    assert '("Processing", workflow_processing_state, "#processing-status")' in stepper
+
+    # On the response to a rejected multi-shipment upload, do not show an old
+    # Engine 2 placeholder or a processing failure that belongs to a previously
+    # stored document. The operation history remains untouched and is visible on
+    # the normal operation GET after the customer leaves this request-local state.
+    assert '{% if not bulk_upload_rejection %}' in source
+    assert '{% if not bulk_upload_rejection and not processing.terminal %}' in source
+    assert 'id="engine2-dossier"' in source
+    processing_fragment = PROCESSING_FRAGMENT.read_text(encoding="utf-8")
+    assert 'id="processing-panel"' in processing_fragment
+    assert 'hx-swap="outerHTML"' in processing_fragment
+
+
+def test_failed_processing_is_not_marked_complete_in_progress_steps():
+    stepper = WORKFLOW_STEPPER.read_text(encoding="utf-8")
+
+    assert '"current" if processing.failed or not processing.terminal else "complete"' in stepper
+
+
+def test_generic_errors_remain_distinct_from_expected_bulk_guidance():
+    source = TEMPLATE.read_text(encoding="utf-8")
+
+    assert '{% elif error %}' in source
+    assert '{{ alert("We could not complete that action", error, "danger") }}' in source
+    assert 'data-toast-bootstrap="{{ notice }}"' in source
+    assert 'data-toast-tone="success"' in source

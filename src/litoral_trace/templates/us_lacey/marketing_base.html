@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block html_open %}<html lang="en-US" class="h-full bg-white">{% endblock %}
+{% block title %}Litoral Trace | U.S. Lacey Act compliance infrastructure{% endblock %}
+
+{% block shell %}
+<a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-slate-950 focus:shadow-lg">
+    Skip to main content
+</a>
+
+<div class="min-h-full bg-white text-slate-900">
+    <header class="sticky top-0 z-50 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl">
+        <div class="mx-auto flex min-h-[4.5rem] max-w-7xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
+            <a href="/" class="flex shrink-0 items-center gap-3" aria-label="Litoral Trace U.S. Lacey home">
+                <img src="{{ url_for('static', path='/img/logo.svg') }}" alt="" class="h-8 w-8 shrink-0" width="32" height="32">
+                <span class="min-w-0">
+                    <span class="block text-base font-bold tracking-tight text-slate-950">Litoral Trace</span>
+                    <span class="block text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">U.S. Lacey Act compliance infrastructure</span>
+                </span>
+            </a>
+
+            <nav class="order-3 flex w-full flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 pt-3 text-sm font-medium text-slate-600 md:order-none md:ml-auto md:w-auto md:border-0 md:pt-0" aria-label="U.S. Lacey public navigation">
+                <a href="/lacey#workflow" class="transition-colors hover:text-slate-950">Workflow</a>
+                <a href="/lacey#trust" class="transition-colors hover:text-slate-950">Platform</a>
+                <a href="/demo" class="transition-colors hover:text-slate-950">Sample</a>
+                <a href="/lacey#pricing" class="transition-colors hover:text-slate-950">Pricing</a>
+                <a href="/sandbox/start" class="transition-colors hover:text-slate-950">Analyze documents</a>
+            </nav>
+
+            <div class="ml-auto flex items-center gap-2 md:ml-4">
+                <a href="/login" class="rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-950">Sign in</a>
+                <a href="/demo" class="rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800">Run sample</a>
+            </div>
+        </div>
+    </header>
+
+    <main id="main-content" tabindex="-1">{% block content %}{% endblock %}</main>
+
+    <footer class="bg-slate-900 text-slate-400">
+        <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+            <div class="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm" aria-hidden="true"><img src="{{ url_for('static', path='/img/logo.svg') }}" alt="" class="h-8 w-8 shrink-0" width="32" height="32"></span>
+                    <div>
+                        <p class="font-bold text-white">Litoral Trace</p>
+                        <p class="text-xs text-slate-400">U.S. Lacey compliance infrastructure</p>
+                    </div>
+                </div>
+
+                <nav class="flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold md:justify-end" aria-label="Footer navigation">
+                    <a href="/demo" class="text-emerald-400 hover:text-emerald-300">Run sample</a>
+                    <a href="/sandbox/start" class="text-slate-300 hover:text-white">Analyze documents</a>
+                    <a href="/legal/terms" class="text-slate-400 hover:text-white">Terms</a>
+                    <a href="/legal/privacy" class="text-slate-400 hover:text-white">Privacy</a>
+                    <a href="/legal/refunds" class="text-slate-400 hover:text-white">Refunds</a>
+                    <a href="/legal/product-use-terms" class="text-slate-400 hover:text-white">Product Use Terms</a>
+                    <a href="/login" class="text-slate-300 hover:text-white">Sign in</a>
+                    <a href="mailto:comercial@litoraltrace.com" class="text-emerald-400 hover:text-emerald-300">comercial@litoraltrace.com</a>
+                </nav>
+            </div>
+            <p class="mt-6 max-w-4xl text-xs leading-5 text-slate-500">Litoral Trace prepares review work products. It does not file declarations, provide legal advice, certify compliance, or guarantee acceptance by APHIS, CBP, ACE or LAWGS.</p>
+        </div>
+    </footer>
+</div>
+{% endblock %}

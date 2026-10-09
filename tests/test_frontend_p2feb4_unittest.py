@@ -47,7 +47,8 @@ def test_app_shell_has_enterprise_layout_contract():
     assert 'id="main-content"' in app
     assert 'tabindex="-1"' in app
 
-    assert "fa-solid fa-tree" in app
+    assert "path='/img/logo.svg'" in app
+    assert "fa-solid fa-tree" not in app
 
     assert (
         "Litoral Trace Compliance "

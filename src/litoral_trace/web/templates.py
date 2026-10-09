@@ -8,6 +8,11 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from litoral_trace.us_lacey.regulatory.catalogs.hts_schedule import (
+    APHIS_HTS_SCHEDULE_VERSION,
+)
+from litoral_trace.us_lacey.regulatory.rules import RULESET_VERSION
+
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 TEMPLATES_DIR = PACKAGE_DIR / "templates"
@@ -15,6 +20,10 @@ STATIC_DIR = PACKAGE_DIR / "static"
 
 templates = Jinja2Templates(
     directory=str(TEMPLATES_DIR)
+)
+templates.env.globals.update(
+    us_lacey_ruleset_version=RULESET_VERSION,
+    us_lacey_hts_catalog_version=APHIS_HTS_SCHEDULE_VERSION,
 )
 
 
