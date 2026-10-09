@@ -11,6 +11,8 @@ from sqlalchemy.orm import sessionmaker
 from litoral_trace.config.settings import normalize_database_url
 from litoral_trace.db.models import (
     UsLaceyOperation,
+    UsLaceyOperationField,
+    UsLaceyPpqPlantLine,
     UsLaceyProductIntelligenceSnapshot,
     UsLaceyRegulatoryAssessmentSnapshot,
     UsLaceySourceSetRevision,

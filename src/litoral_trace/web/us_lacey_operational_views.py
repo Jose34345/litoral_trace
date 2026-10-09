@@ -749,13 +749,17 @@ def _regulatory_assessment_for_detail(identity, detail, explicit_view=None):
     if not organization_id or operation_public_id is None:
         return None
     try:
-        current = get_current_regulatory_assessment_view(
-            organization_id=int(organization_id),
-            operation_public_id=operation_public_id,
-        )
-        if current is not None:
-            return current
-        return refresh_current_regulatory_assessment_view(
+        # A prior source-set snapshot may precede canonical publication within
+        # the same generation. Re-evaluate processed, unfinalized workspaces so the
+        # regulatory queue cannot contradict the current supported PPQ fields.
+        if str(getattr(detail, "status", "") or "").upper() in {
+            "REVIEW_REQUIRED", "READY_FOR_REVIEW",
+        }:
+            return refresh_current_regulatory_assessment_view(
+                organization_id=int(organization_id),
+                operation_public_id=operation_public_id,
+            )
+        return get_current_regulatory_assessment_view(
             organization_id=int(organization_id),
             operation_public_id=operation_public_id,
         )
