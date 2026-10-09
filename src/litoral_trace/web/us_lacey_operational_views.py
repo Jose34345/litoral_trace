@@ -750,10 +750,10 @@ def _regulatory_assessment_for_detail(identity, detail, explicit_view=None):
         return None
     try:
         # A prior source-set snapshot may precede canonical publication within
-        # the same generation. Re-evaluate completed workspaces on display so the
+        # the same generation. Re-evaluate processed, unfinalized workspaces so the
         # regulatory queue cannot contradict the current supported PPQ fields.
         if str(getattr(detail, "status", "") or "").upper() in {
-            "REVIEW_REQUIRED", "READY_FOR_REVIEW", "COMPLETED",
+            "REVIEW_REQUIRED", "READY_FOR_REVIEW",
         }:
             return refresh_current_regulatory_assessment_view(
                 organization_id=int(organization_id),

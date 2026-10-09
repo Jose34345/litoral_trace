@@ -345,3 +345,21 @@ def test_regulatory_detail_revalidates_terminal_snapshot_against_current_ppq_fie
     )
 
     assert result is refreshed
+
+def test_completed_operation_reuses_snapshot_without_reopening_review(monkeypatch):
+    current = _view()
+    monkeypatch.setattr(
+        operational_views, "get_current_regulatory_assessment_view",
+        lambda **_kwargs: current,
+    )
+    monkeypatch.setattr(
+        operational_views, "refresh_current_regulatory_assessment_view",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("viewing COMPLETED must never demote review status")
+        ),
+    )
+    detail = _detail()
+    detail.status = "COMPLETED"
+    assert operational_views._regulatory_assessment_for_detail(
+        SimpleNamespace(organization_id=7), detail
+    ) is current

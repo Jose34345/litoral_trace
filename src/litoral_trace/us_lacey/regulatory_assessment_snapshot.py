@@ -876,11 +876,15 @@ def refresh_current_regulatory_assessment_view(
         # operation-state derivation and already consumes regulatory snapshots.
         from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
 
-        refresh_us_lacey_operation_status(
-            session,
-            organization_id=organization_id,
-            operation=operation,
-        )
+        # Viewing regulatory analysis must never demote a customer-confirmed
+        # COMPLETED shipment back to review merely because the preparation
+        # status derivation is being re-run for display.
+        if str(operation.status or "").upper() != "COMPLETED":
+            refresh_us_lacey_operation_status(
+                session,
+                organization_id=organization_id,
+                operation=operation,
+            )
 
         session.commit()
         set_tenant_db_context(session, organization_id)
