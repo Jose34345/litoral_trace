@@ -48,6 +48,9 @@ def test_audited_pre_entry_milestone_still_blocks_filing_and_does_not_forge_entr
     assert "Continue to next shipment" in export
     assert "/review/pre-entry" in export
     assert "No placeholder entry number or LAWGS XML was created" in export
+    workspace=(TEMPLATES / "fragments" / "operation_workspace.html").read_text(encoding="utf-8")
+    assert '[data-pre-entry-review-confirm]' in workspace
+    assert 'activateTab(root, "resolved")' in workspace
     assert "if export_ready" in export
 
 

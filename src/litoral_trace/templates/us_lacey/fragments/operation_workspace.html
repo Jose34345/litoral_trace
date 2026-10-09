@@ -728,6 +728,11 @@
         activateTab(root, "action");
       });
     });
+    root.querySelectorAll("[data-pre-entry-review-confirm]").forEach((link) => {
+      link.addEventListener("click", () => {
+        activateTab(root, "resolved");
+      });
+    });
 
     // Verified values must be entered in a native modal (the browser top layer),
     // not in an absolutely positioned card clipped by the scrolling evidence table.
