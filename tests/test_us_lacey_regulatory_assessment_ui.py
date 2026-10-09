@@ -322,21 +322,21 @@ def test_regulatory_detail_lazily_rebuilds_when_active_ruleset_snapshot_is_missi
     assert result is refreshed
 
 
-def test_regulatory_detail_does_not_rebuild_when_active_ruleset_snapshot_exists(monkeypatch):
-    current = _view()
+def test_regulatory_detail_revalidates_terminal_snapshot_against_current_ppq_fields(monkeypatch):
+    # A CURRENT snapshot for a source-set revision may predate the canonical
+    # plant fields on the same revision; "CURRENT" alone is not fresh enough.
+    refreshed = _view()
     monkeypatch.setattr(
         operational_views,
         "get_current_regulatory_assessment_view",
-        lambda **_kwargs: current,
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("do not reuse a potentially stale terminal snapshot")
+        ),
     )
-
-    def _unexpected_refresh(**_kwargs):
-        raise AssertionError("active ruleset snapshot should be reused")
-
     monkeypatch.setattr(
         operational_views,
         "refresh_current_regulatory_assessment_view",
-        _unexpected_refresh,
+        lambda **_kwargs: refreshed,
     )
 
     result = operational_views._regulatory_assessment_for_detail(
@@ -344,4 +344,4 @@ def test_regulatory_detail_does_not_rebuild_when_active_ruleset_snapshot_exists(
         _detail(),
     )
 
-    assert result is current
+    assert result is refreshed
