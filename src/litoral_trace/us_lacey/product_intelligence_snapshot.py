@@ -596,6 +596,17 @@ def build_product_intelligence_snapshot(
             line_references=plant_line_references,
             explicit_links=explicit_links,
         )
+        # PDF-only products are identity bindings, not a fabricated BOM. Keep
+        # the original BOM component/composition counters at zero and expose
+        # the exact proof separately for the workspace and audit.
+        if explicit_links and not analysis.component_count:
+            payload["shipment_product_bridge"]["identity_only_links"] = [
+                item for item in explicit_links
+                if str(item.get("link_method") or "").startswith("EXACT")
+            ]
+            payload["shipment_product_bridge"]["identity_only_link_count"] = len(
+                payload["shipment_product_bridge"]["identity_only_links"]
+            )
 
         snapshot = UsLaceyProductIntelligenceSnapshot(
             organization_id=organization_id,

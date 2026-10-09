@@ -83,6 +83,7 @@ from litoral_trace.us_lacey.review import (
     export_us_lacey_csv,
     export_us_lacey_xlsx,
     finalize_us_lacey_review,
+    finish_document_review_awaiting_entry,
     review_us_lacey_field,
 )
 from litoral_trace.us_lacey.review_telemetry import parse_review_telemetry
@@ -1700,6 +1701,42 @@ def operation_review_accept_supported_fragment(
 
 
 
+
+
+@app.post("/operations/{operation_public_id}/review/pre-entry", response_class=HTMLResponse)
+def operation_pre_entry_review_submit(
+    operation_public_id: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, _entitlement = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"complete:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        finish_document_review_awaiting_entry(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+        )
+        return RedirectResponse(f"/operations/{operation_public_id}?pre_entry=1", status_code=303)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        try:
+            return _detail_page(
+                request=request, identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "", error=str(exc), status_code=409,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
 
 
 @app.post("/operations/{operation_public_id}/complete", response_class=HTMLResponse)

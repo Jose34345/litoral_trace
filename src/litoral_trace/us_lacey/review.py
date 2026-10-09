@@ -20,6 +20,7 @@ from litoral_trace.db.models import (
     UsLaceyPpqPlantLine,
     UsLaceyPlantDeclaration,
     UsLaceyProcessingJob,
+    UsLaceySourceSetRevision,
     VaultDocument,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
@@ -44,6 +45,7 @@ from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
 )
 from litoral_trace.us_lacey.reconciliation_invariants import reconcile_entered_value_invariant
 from litoral_trace.us_lacey.reusable_evidence_promotion import promote_reviewed_field
+from litoral_trace.us_lacey.identity_memory import resolve_operation_identity_memory
 from litoral_trace.us_lacey.review_telemetry import ReviewTelemetry
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS,
@@ -107,6 +109,30 @@ def _operation(session, *, organization_id: int, operation_public_id: UUID | str
     if operation is None:
         raise UsLaceyOperationNotFound("Operation not found.")
     return operation
+
+
+def _ensure_documentary_identity_for_review(session, *, organization_id: int, operation: UsLaceyOperation) -> int:
+    """Recover exact supplier/SKU linkage from already extracted source labels.
+
+    Never fabricates BOM material claims or weak name/line matches. Identity
+    discovery is an additive optimization and must not invalidate a legal review.
+    """
+    revision = session.scalar(select(UsLaceySourceSetRevision).where(
+        UsLaceySourceSetRevision.organization_id == organization_id,
+        UsLaceySourceSetRevision.operation_id == operation.id,
+        UsLaceySourceSetRevision.is_current.is_(True),
+    ))
+    if revision is None:
+        return 0
+    result = resolve_operation_identity_memory(
+        session,
+        organization_id=organization_id,
+        operation_id=operation.id,
+        product_payload={"sources": ()},
+        source_set_revision_id=int(revision.id),
+        discovery_status="ACTIVE",
+    )
+    return result.link_count
 
 
 def _counts(session, *, organization_id: int, operation: UsLaceyOperation) -> tuple[int, int, int]:
@@ -456,6 +482,20 @@ def accept_supported_us_lacey_fields(
         reviewed_at = _utc_now()
         accepted_ids: list[int] = []
         promoted_field_ids: list[int] = []
+        # In PDF-only shipments supplier/SKU identity was formerly discarded
+        # because no tabular BOM existed. Resolve independently corroborated
+        # labels before attempting field promotion, without changing canonical
+        # review facts if discovery cannot prove exact identities.
+        try:
+            with session.begin_nested():
+                _ensure_documentary_identity_for_review(
+                    session, organization_id=org_id, operation=operation,
+                )
+        except Exception:
+            LOGGER.exception(
+                "PDF documentary identity backfill failed closed before bulk review",
+                extra={"organization_id": org_id, "operation_id": operation.id},
+            )
         for field in fields:
             proposed = field.normalized_value or field.original_value
             if proposed is None or not str(proposed).strip():
@@ -578,6 +618,155 @@ def accept_supported_us_lacey_fields(
         raise UsLaceyReviewError(
             "Unable to confirm the auto-resolved fields."
         ) from exc
+    finally:
+        session.close()
+
+
+PRE_ENTRY_REVIEW_RESULT = "DOCUMENT_REVIEW_COMPLETE_AWAITING_ENTRY"
+
+
+def finish_document_review_awaiting_entry(
+    *,
+    organization_id: int,
+    operation_public_id: UUID | str,
+    user_id: int,
+    user_email: str,
+) -> UsLaceyFinalizeResult:
+    """Record finished document review, NEVER a filing-ready declaration.
+
+    A verified CBP entry number is still required. The existing hard export and
+    finalization gates intentionally remain closed while that field is pending.
+    """
+    org_id = int(organization_id)
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, org_id)
+        operation = _operation(
+            session, organization_id=org_id,
+            operation_public_id=operation_public_id,
+        )
+        if operation.review_result == PRE_ENTRY_REVIEW_RESULT:
+            return UsLaceyFinalizeResult(operation.status, operation.review_result)
+        if operation.status == "COMPLETED":
+            raise UsLaceyReviewError("This operation is already filing-ready.")
+        unresolved = session.scalars(select(UsLaceyOperationField).where(
+            UsLaceyOperationField.organization_id == org_id,
+            UsLaceyOperationField.operation_id == operation.id,
+            UsLaceyOperationField.field_status.in_(("MISSING", "REVIEW", "CONFLICT")),
+        )).all()
+        if (
+            len(unresolved) != 1
+            or unresolved[0].field_name != "filing_entry_reference"
+            or bool(unresolved[0].human_value or unresolved[0].normalized_value)
+        ):
+            raise UsLaceyReviewError(
+                "Document review can only finish with a genuinely unissued Entry Number as its sole remaining exception."
+            )
+        unconfirmed = session.scalar(select(func.count(UsLaceyOperationField.id)).where(
+            UsLaceyOperationField.organization_id == org_id,
+            UsLaceyOperationField.operation_id == operation.id,
+            UsLaceyOperationField.field_status.in_(("FOUND", "SUPPORTED", "SUPPORTED_MULTIPLE")),
+        )) or 0
+        if unconfirmed:
+            raise UsLaceyReviewError(
+                "Confirm the auto-resolved values first. No extracted facts are confirmed implicitly."
+            )
+        jobs_blocking = session.scalar(select(func.count(UsLaceyProcessingJob.id)).where(
+            UsLaceyProcessingJob.organization_id == org_id,
+            UsLaceyProcessingJob.operation_id == operation.id,
+            UsLaceyProcessingJob.status.in_(("QUEUED", "RUNNING", "RETRY", "FAILED")),
+        )) or 0
+        if jobs_blocking or int(operation.document_count) == 0:
+            raise UsLaceyReviewError("Document processing must finish successfully before review can be recorded.")
+        if (session.scalar(select(func.count(UsLaceyPlantDeclaration.id)).join(
+            UsLaceyPpqPlantLine, UsLaceyPpqPlantLine.id == UsLaceyPlantDeclaration.plant_line_id,
+        ).where(
+            UsLaceyPlantDeclaration.organization_id == org_id,
+            UsLaceyPpqPlantLine.operation_id == operation.id,
+        )) or 0) <= 0:
+            raise UsLaceyReviewError("A verified botanical plant line is required.")
+        arithmetic = reconcile_entered_value_invariant(
+            session, organization_id=org_id, operation=operation,
+        )
+        if arithmetic.evaluated and not arithmetic.reconciled:
+            raise UsLaceyReviewError("Entered Value reconciliation must be resolved first.")
+        review_count, missing_count, conflict_count = _counts(
+            session, organization_id=org_id, operation=operation,
+        )
+        if review_count + missing_count != 1 or conflict_count:
+            raise UsLaceyReviewError("Other unresolved review issues remain.")
+        regulatory = refresh_regulatory_assessment_snapshot_for_review(
+            session, organization_id=org_id, operation=operation,
+        )
+        if blocking_regulatory_assessments(
+            None if regulatory is None else dict(regulatory.payload_json or {})
+        ):
+            raise UsLaceyReviewError("Regulatory checks must be resolved first.")
+
+        # Backfill exact supplier/product identity for older PDF-only shipments,
+        # then promote only fields the human has actually confirmed.
+        promoted = 0
+        try:
+            with session.begin_nested():
+                _ensure_documentary_identity_for_review(
+                    session, organization_id=org_id, operation=operation,
+                )
+        except Exception:
+            LOGGER.exception("Pre-entry supplier identity discovery failed closed",
+                             extra={"organization_id":org_id,"operation_id":operation.id})
+        reviewed = session.scalars(select(UsLaceyOperationField).where(
+            UsLaceyOperationField.organization_id == org_id,
+            UsLaceyOperationField.operation_id == operation.id,
+            UsLaceyOperationField.field_status == "MATCHED",
+            UsLaceyOperationField.reviewed_at.is_not(None),
+        )).all()
+        for field in reviewed:
+            try:
+                with session.begin_nested():
+                    result = promote_reviewed_field(
+                        session, organization_id=org_id, operation=operation,
+                        field=field, user_id=int(user_id),
+                    )
+                promoted += int(result.promoted)
+            except Exception:
+                LOGGER.exception("Pre-entry reviewed field promotion failed closed",
+                                 extra={"organization_id":org_id,"operation_id":operation.id,
+                                        "field_id":field.id})
+
+        operation.status = "REVIEW_REQUIRED"
+        operation.review_result = PRE_ENTRY_REVIEW_RESULT
+        actor = AuditActor(
+            organization_id=org_id, user_id=int(user_id),
+            username=str(user_email or "").strip() or None,
+            role="us_lacey_customer",
+        )
+        record_audit_event(
+            session, actor=actor, action=AuditAction.ASSURANCE_REVIEW_APPROVE,
+            entity_type="us_lacey_operation", entity_id=operation.id,
+            outcome=AuditOutcome.SUCCESS,
+            metadata={"operation_public_id":str(operation.public_id),
+                      "action":"document_review_complete_awaiting_entry",
+                      "reusable_evidence_promoted_count":promoted},
+            after_data={"operation_status":"REVIEW_REQUIRED","review_result":PRE_ENTRY_REVIEW_RESULT},
+            detail="Document review complete; CBP entry number pending. Filing/export still blocked.",
+        )
+        append_operation_event(
+            session, organization_id=org_id, operation_id=operation.id,
+            actor_type=OperationActorType.USER,
+            actor_identity=str(user_email or "").strip() or f"user:{int(user_id)}",
+            event_type=OperationEventType.HUMAN_REVIEW,
+            event_key="review:awaiting-entry",
+            details={"action":"document_review_complete_awaiting_entry",
+                     "reusable_evidence_promoted_count":promoted},
+        )
+        session.commit()
+        return UsLaceyFinalizeResult(operation.status, operation.review_result)
+    except (UsLaceyReviewError, UsLaceyOperationNotFound):
+        session.rollback()
+        raise
+    except Exception as exc:
+        session.rollback()
+        raise UsLaceyReviewError("Unable to record documentary review.") from exc
     finally:
         session.close()
 
