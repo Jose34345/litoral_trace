@@ -74,6 +74,12 @@ from litoral_trace.db.models.us_lacey_commercial import (
 )
 from litoral_trace.db.models.us_lacey_payment_event import UsLaceyPaymentEvent
 from litoral_trace.db.models.us_lacey_audit_trail import UsLaceyOperationEvent
+from litoral_trace.db.models.us_lacey_assurance_v2 import (
+    AssuranceV2Decision,
+    AssuranceV2DecisionSource,
+    AssuranceV2MemoryLink,
+    AssuranceV2IdentityEvent,
+)
 from litoral_trace.db.models.us_lacey_evaluation import (
     UsLaceyEvaluation,
     UsLaceyEvaluationOperation,
@@ -162,6 +168,10 @@ __all__ = [
     "UsLaceyPayment",
     "UsLaceyPaymentEvent",
     "UsLaceyOperationEvent",
+    "AssuranceV2Decision",
+    "AssuranceV2DecisionSource",
+    "AssuranceV2MemoryLink",
+    "AssuranceV2IdentityEvent",
     "UsLaceyEvaluation",
     "UsLaceyEvaluationOperation",
     "UsLaceyEvaluationRawPurgeJob",
