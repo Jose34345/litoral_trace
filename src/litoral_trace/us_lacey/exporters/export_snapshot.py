@@ -50,7 +50,7 @@ class LaceyExportSnapshot:
 def _fallback_value(field: OperationFieldView | None) -> str:
     if field is None:
         return ""
-    return str(field.effective_value or field.proposed_value or "").strip()
+    return str(field.effective_value or "").strip()
 
 
 def _semantic_display_text(
@@ -63,6 +63,12 @@ def _semantic_display_text(
     a conservative fallback for older rows whose locator was not persisted.
     """
     if field is None:
+        return ""
+    # Semantic display text is presentation of an already-selected value; it
+    # must not grant authority to an unresolved extraction candidate.
+    if not _fallback_value(field) or str(getattr(field, "status", "") or "").upper() in {
+        "MISSING", "CONFLICT", "REVIEW", "REVIEW_REQUIRED", "REJECTED"
+    }:
         return ""
     candidates = tuple(evidence_snapshot.get(field.field_name, ()))
     if not candidates:

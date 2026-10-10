@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Assurance Case · Litoral Trace</title>
+<link rel="stylesheet" href="/static/css/assurance_v2_case.css">
+</head>
+<body>
+<main class="assurance-shell" data-assurance-case data-operation="{{ case.operation_id }}" data-csrf="{{ csrf_token }}">
+  <header class="assurance-header">
+    <div>
+      <div class="eyebrow">LITORAL TRACE / ASSURANCE V2 / US LACEY ACT</div>
+      <h1>Shipment assurance case</h1>
+      <p class="subtext">Evidence, identity, human decisions and preparation status — not a filing receipt.</p>
+    </div>
+    <div class="filing-state {{ 'ready' if gate.ready else 'blocked' }}" aria-live="polite">
+      <span class="state-label">{{ "Authorized preparation" if gate.ready else "Blocked for final export" }}</span>
+      <small>{{ "Eligible to generate an assurance package" if gate.ready else gate.blockers|length ~ " checks require attention" }}</small>
+    </div>
+  </header>
+  <div class="context-row">
+    <span>Operation <strong>{{ case.operation_id }}</strong></span>
+    <span>Source set <code>{{ case.source_set_fingerprint[:16] }}</code></span>
+    <span>Revision {{ case.source_set_revision }}</span>
+    <span>Ruleset {{ case.ruleset_version }}</span>
+  </div>
+  <div class="workspace">
+    <aside class="assurance-nav" aria-label="Case navigation">
+      <a href="#exceptions">Review queue <strong>{{ case.exceptions|length }}</strong></a>
+      <a href="#documents">Documents <strong>{{ case.documents|length }}</strong></a>
+      <a href="#claims">Claims <strong>{{ case.fields|length }}</strong></a>
+      <a href="#identities">Entities</a>
+      <a href="#decisions">Decisions</a>
+      <a href="#memory">Reusable evidence</a>
+      <a href="#rules">Regulatory rules</a>
+      <a href="#export">Export readiness</a>
+      <div class="nav-note">A candidate is not evidence. A rule PASS is not a shipment-level compliance verdict.</div>
+    </aside>
+    <div class="assurance-main">
+      <section class="panel" id="exceptions">
+        <div class="section-heading"><div><div class="eyebrow">01 / PRIORITY WORK QUEUE</div><h2>Exceptions requiring resolution</h2></div><span class="counter">{{ case.exceptions|length }} items</span></div>
+        {% if not case.exceptions %}<p class="empty">No exception records supplied by the authority service.</p>{% endif %}
+        {% for ex in case.exceptions %}
+        <article class="exception" id="exception-{{ ex.id }}">
+          <div class="exception-title">
+            <div><span class="field-label">{{ ex.field_name }}</span> <span class="muted">/ {{ ex.line_reference or 'shipment' }}</span>
+            <h3>{{ ex.reason or 'Review required' }}</h3></div>
+            <span class="tag {{ 'red' if ex.blocking else 'neutral' }}">{{ 'BLOCKING' if ex.blocking else ex.status }}</span>
+          </div>
+          <p class="muted">Entity: {{ ex.entity_ref or 'Identity not resolved' }}</p>
+          <div class="candidate-list">
+            {% for candidate in ex.candidates or [] %}
+            <div class="candidate">
+              <div><span class="tag amber">CANDIDATE · NOT CONFIRMED</span><strong>{{ candidate.value or 'Missing value' }}</strong></div>
+              <div class="muted">{{ candidate.document_name or candidate.document_id or 'Unknown document' }}{% if candidate.page %} · p. {{ candidate.page }}{% endif %}{% if candidate.locator %} · {{ candidate.locator }}{% endif %}</div>
+              {% if candidate.url %}<a class="source-link" href="{{ candidate.url }}" target="_blank" rel="noopener noreferrer">View original source ↗</a>{% else %}<span class="muted">Document link unavailable</span>{% endif %}
+              {% if candidate.evidence_id %}<div class="muted">Evidence ref <code>{{ candidate.evidence_id }}</code></div>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% if ex.historical_evidence %}<div class="historical-evidence"><span class="tag purple">HISTORICAL MEMORY · VERIFY STATUS</span> {{ ex.historical_evidence }}</div>{% endif %}
+          <form class="decision-form" data-exception="{{ ex.id }}">
+            <label>Review action
+              <select name="action" required>
+                <option value="PENDING">Keep pending</option>
+                <option value="ACCEPT">Accept supported candidate</option>
+                <option value="CORRECT">Correct value</option>
+                <option value="REJECT">Reject candidate</option>
+                <option value="REQUEST_EVIDENCE">Request evidence</option>
+              </select>
+            </label>
+            <label>Candidate reference<input name="candidate_id" placeholder="Exact candidate ID from evidence service"></label>
+            <label>Correction (only for Correct)<input name="value" placeholder="Reviewed value"></label>
+            <label>Reason / justification<input name="reason" placeholder="Reason and supporting evidence"></label>
+            <button type="submit">Send to review authority</button>
+            <div role="status" class="decision-result" aria-live="polite"></div>
+          </form>
+        </article>
+        {% endfor %}
+      </section>
+      <section class="panel" id="documents">
+        <div class="section-heading"><div><div class="eyebrow">02 / SOURCE MANIFEST</div><h2>Documents and versions</h2></div></div>
+        <div class="table-scroll"><table><thead><tr><th>Document</th><th>Version</th><th>SHA-256</th><th>Source</th></tr></thead><tbody>
+        {% for doc in case.documents %}<tr><td>{{ doc.name or doc.id }}<small>{{ doc.role or 'Unclassified' }}</small></td><td>{{ doc.version }}</td><td><code>{{ doc.sha256[:24] if doc.sha256 else 'Missing' }}…</code></td><td>{% if doc.url %}<a href="{{ doc.url }}" target="_blank" rel="noopener noreferrer">Open original ↗</a>{% else %}Unavailable{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+      </section>
+      <section class="panel" id="claims">
+        <div class="section-heading"><div><div class="eyebrow">03 / AUTHORITY LEDGER</div><h2>Field claims</h2></div></div>
+        <div class="table-scroll"><table><thead><tr><th>Entity / field</th><th>Value</th><th>Authority</th><th>Evidence</th></tr></thead><tbody>
+        {% for item in case.fields %}
+        <tr><td><strong>{{ item.name }}</strong><small>{{ item.line_reference }}</small></td><td>{{ item.value or '—' }}</td>
+          <td>{% if item.authority == 'SUPPORTED' %}<span class="tag blue">SOURCE SUPPORTED</span>
+          {% elif item.authority == 'HUMAN_CONFIRMED' %}<span class="tag green">HUMAN DECISION</span>
+          {% elif item.authority == 'VERIFIED_REUSE' %}<span class="tag purple">VERIFIED MEMORY</span>
+          {% else %}<span class="tag amber">CANDIDATE / UNRESOLVED</span>{% endif %}</td>
+          <td><code>{{ (item.evidence_ids or [])|join(', ') or 'No evidence ref' }}</code></td>
+        </tr>{% endfor %}
+        </tbody></table></div>
+      </section>
+      <section class="panel" id="identities">
+        <div class="section-heading"><div><div class="eyebrow">04 / IDENTITY</div><h2>Supplier / product / SKU binding</h2></div></div>
+        {% for identity in case.identities %}<div class="simple-row"><span>{{ identity.line_reference }} → {{ identity.supplier_id }} / {{ identity.product_id }}{% if identity.sku %} / {{ identity.sku }}{% endif %}</span><span class="tag neutral">{{ identity.status }}</span></div>{% endfor %}
+      </section>
+      <section class="panel" id="decisions">
+        <div class="section-heading"><div><div class="eyebrow">05 / HUMAN AUTHORITY</div><h2>Recorded decisions</h2></div></div>
+        {% for decision in case.decisions %}<div class="simple-row"><div><strong>{{ decision.action }}</strong> · {{ decision.field_name }} <small>{{ decision.actor_id }} · {{ decision.decided_at }} · {{ decision.id }}</small></div><span class="tag green">AUDITABLE DECISION</span></div>{% else %}<p class="empty">No human decisions recorded in this snapshot.</p>{% endfor %}
+      </section>
+      <section class="panel" id="memory">
+        <div class="section-heading"><div><div class="eyebrow">06 / LONGITUDINAL MEMORY</div><h2>Historical evidence reuse</h2></div></div>
+        {% for reuse in case.reuses %}<div class="simple-row"><div><strong>{{ reuse.evidence_id }}</strong><small>Valid until {{ reuse.valid_until }} · Verified by {{ reuse.verified_by }}</small></div><span class="tag purple">{{ reuse.status }}</span></div>{% else %}<p class="empty">No reused evidence included in this shipment.</p>{% endfor %}
+      </section>
+      <section class="panel" id="rules">
+        <div class="section-heading"><div><div class="eyebrow">07 / DETERMINISTIC ASSESSMENT</div><h2>Applicable regulatory rules</h2></div></div>
+        {% for rule in case.rules %}<div class="simple-row"><div><strong>{{ rule.id }}</strong><small>{{ rule.version }} · {{ rule.inputs_fingerprint }}</small></div><span class="tag {{ 'red' if rule.blocking and rule.status not in ['PASS','NOT_APPLICABLE'] else 'neutral' }}">{{ rule.status }}</span></div>{% else %}<p class="empty">Regulatory assessment unavailable.</p>{% endfor %}
+        <p class="muted footnote">Rules are scope-limited assessments. PASS does not establish overall customs compliance.</p>
+      </section>
+      <section class="panel" id="export">
+        <div class="section-heading"><div><div class="eyebrow">08 / EXPLICIT FINALIZATION GATE</div><h2>Preparation and package</h2></div></div>
+        {% if gate.ready %}
+        <p>All snapshot authority checks passed. Issuance persists an immutable package containing exact XML/XLSX bytes and a source manifest. No filing submission is performed.</p>
+        <button type="button" id="issue-package">Issue reproducible assurance package</button>
+        {% else %}
+        <p>Final XML is disabled. Resolve the following authority gaps first:</p>
+        <ul class="blocker-list">{% for b in gate.blockers %}<li><strong>{{ b.code }}</strong> · {{ b.subject }}</li>{% endfor %}</ul>
+        <a class="draft-link" href="/assurance-v2/operations/{{ case.operation_id }}/draft.xlsx">Export visibly marked incomplete draft (XLSX)</a>
+        {% endif %}
+        <div id="package-result" role="status" aria-live="polite"></div>
+      </section>
+    </div>
+  </div>
+</main>
+<script src="/static/js/assurance_v2_case.js" defer></script>
+</body></html>
