@@ -84,7 +84,7 @@ def create_assurance_v2_router(
         return templates.TemplateResponse(
             request=request, name="us_lacey/assurance_v2_case.html",
             context={"case": snapshot, "gate": gate, "csrf_token": principal.csrf_token,
-                     "actions": sorted(_ACTIONS)},
+                     "actions": sorted(_ACTIONS), "authenticated": True},
         )
 
     @router.post("/{operation_id}/decisions")
