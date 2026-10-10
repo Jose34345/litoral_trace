@@ -46,6 +46,9 @@ on:
       - "alembic/versions/075_us_lacey_identity_and_product_bridge.py"
       - "alembic/versions/076_us_lacey_product_led_evaluation.py"
       - "alembic/versions/077_us_lacey_outreach_human_signals.py"
+      - "alembic/versions/078_us_lacey_assurance_v2_authority.py"
+      - "src/litoral_trace/db/models/us_lacey_assurance_v2.py"
+      - "tests/test_assurance_v2_core_postgres.py"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "scripts/backfill_us_lacey_identities.py"
       - "src/litoral_trace/us_lacey/**"
@@ -643,6 +646,17 @@ jobs:
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
           grep -Fx "078_us_lacey_assurance_v2_authority (head)" /tmp/alembic-reupgraded.txt
+      - name: Prove Assurance V2 migration, append-only RLS and tenant isolation
+        env:
+          DATABASE_URL: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs tests/test_assurance_v2_core_postgres.py | tee /tmp/assurance-v2-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/assurance-v2-postgres.txt; then
+            echo "Assurance V2 PostgreSQL/RLS acceptance must run, not skip."
+            exit 1
+          fi
       - name: Prove five-shipment product-led evaluation contracts
         env:
           DATABASE_URL: ""
