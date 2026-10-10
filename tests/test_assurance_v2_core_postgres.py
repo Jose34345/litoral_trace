@@ -92,20 +92,29 @@ def pg_case():
                 ), {
                     "org": org_id, "op": operation_id, "fingerprint": (label * 64),
                 }).scalar_one())
+                values.update({
+                    f"org_{label}": org_id, f"user_{label}": user_id,
+                    f"op_{label}": operation_id, f"revision_{label}": revision_id,
+                })
+        # Operation events use FORCE RLS and deliberately permit INSERT only
+        # to the tenant-scoped application role. Do not bypass that authority
+        # boundary with the migration-owner fixture connection.
+        for label in ("a", "b"):
+            with runtime.begin() as conn:
+                org_id = values[f"org_{label}"]
+                _tenant(conn, org_id)
                 audit_id = int(conn.execute(text(
                     "INSERT INTO us_lacey_operation_events "
                     "(public_id,organization_id,operation_id,actor_type,actor_identity,event_type,event_key,details) "
                     "VALUES (CAST(:public_id AS UUID),:org,:op,'USER',:identity,"
                     "'HUMAN_REVIEW',:key,CAST('{}' AS JSONB)) RETURNING id"
                 ), {
-                    "public_id": str(uuid4()), "org": org_id, "op": operation_id,
-                    "identity": f"user:{user_id}", "key": f"v2fixture:{label}:{suffix}",
+                    "public_id": str(uuid4()), "org": org_id,
+                    "op": values[f"op_{label}"],
+                    "identity": f"user:{values[f'user_{label}']}",
+                    "key": f"v2fixture:{label}:{suffix}",
                 }).scalar_one())
-                values.update({
-                    f"org_{label}": org_id, f"user_{label}": user_id,
-                    f"op_{label}": operation_id, f"revision_{label}": revision_id,
-                    f"audit_{label}": audit_id,
-                })
+                values[f"audit_{label}"] = audit_id
         # Verify fixture runtime is unprivileged; a superuser would fake RLS green.
         with runtime.begin() as conn:
             runtime_identity = conn.execute(text(
