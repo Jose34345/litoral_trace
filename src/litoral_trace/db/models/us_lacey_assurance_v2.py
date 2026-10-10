@@ -157,5 +157,3 @@ class AssuranceV2IdentityEvent(Base):
         CheckConstraint("length(trim(reason)) > 0", name="ck_assurance_v2_identity_reason"),
         Index("ix_assurance_v2_identity_case", "organization_id", "entity_type", "source_supplier_id", "source_product_id"),
     )
-
-\n
