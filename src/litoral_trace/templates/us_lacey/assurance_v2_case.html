@@ -1,13 +1,11 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Assurance Case · Litoral Trace</title>
-<link rel="stylesheet" href="/static/css/assurance_v2_case.css">
-</head>
-<body>
-<main class="assurance-shell" data-assurance-case data-operation="{{ case.operation_id }}" data-csrf="{{ csrf_token }}">
+{% extends "us_lacey/base.html" %}
+{% block lacey_title %}Assurance Case{% endblock %}
+{% block head_extra %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/assurance_v2_case.css') }}">
+{% endblock %}
+{% block lacey_content %}
+<div class="assurance-shell" data-assurance-case data-operation="{{ case.operation_id }}" data-csrf="{{ csrf_token }}">
   <header class="assurance-header">
     <div>
       <div class="eyebrow">LITORAL TRACE / ASSURANCE V2 / US LACEY ACT</div>
@@ -129,6 +127,9 @@
       </section>
     </div>
   </div>
-</main>
-<script src="/static/js/assurance_v2_case.js" defer></script>
-</body></html>
+</div>
+{% endblock %}
+{% block body_scripts %}
+{{ super() }}
+<script src="{{ url_for('static', path='/js/assurance_v2_case.js') }}" defer></script>
+{% endblock %}
