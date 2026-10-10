@@ -3,6 +3,9 @@
 This directory is the current navigation/control plane for agents and engineers working on the U.S. Lacey product.
 
 ## Read order
+
+For the opt-in Assurance V2 authority work, read `ASSURANCE_V2_CONTRACT.md` and `ASSURANCE_V2_IMPLEMENTATION.md` alongside the canonical documentation below. V2 is not production-active without the PostgreSQL/RLS and integration gates.
+
 1. `ARCHITECTURE.md` — bounded contexts and ownership
 2. `CAPABILITIES.toml` — machine-readable capability map
 3. `INVARIANTS.md` — safety/authority rules that must survive changes
