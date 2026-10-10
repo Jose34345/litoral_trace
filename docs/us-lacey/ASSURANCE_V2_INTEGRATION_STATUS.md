@@ -28,9 +28,12 @@ on the production target commit `0f8398de`. This is **not a GA release**.
 2. Agent 2's decision journal is not wired transactionally to existing review
    and canonical publication. Agent 3's final export authorization must be
    committed atomically with current source-set and authority checks.
-3. The PDF original bytes from both production shipments must be recovered
-   from a legally permitted source or provided again as test fixtures.
-   Review-page PDF exports and generated synthetic documents do not qualify.
+3. The original synthetic seven-PDF Shipment 1 and six-PDF Shipment 2
+   ZIPs have been located in the owner's ChatGPT Library and inspected by
+   opening the PDF bytes directly. Those bytes are not yet present on the
+   remote CI runner or in the repository; an authorized, controlled fixture
+   transfer and unmodified PDF-to-worker E2E are still required. Tests built
+   from equivalent extracted source text are NOT byte-for-byte PDF acceptance.
 4. Golden integration must assert shipment 1 verified evidence is retained,
    shipment 2 supplier/SKU/line resolves independently of genus/species,
    controlled historical reuse occurs, UI shows accurate provenance and

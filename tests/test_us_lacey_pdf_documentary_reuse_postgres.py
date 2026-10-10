@@ -6,6 +6,9 @@ import json
 import os
 from uuid import uuid4
 from pathlib import Path
+from types import SimpleNamespace
+
+from litoral_trace.us_lacey.pdf_documentary_identity import discover_single_product_pdf_identity
 
 import pytest
 from sqlalchemy import inspect, select
@@ -34,9 +37,55 @@ def _documents():
     )
 
 
+def _shipment_two_documents():
+    """Use six independent source variants, never seven copies of Pack 1.
+
+    Equivalent split-column SKU/name/address layouts to the real synthetic
+    October 9 PDF pack; botanicals are deliberately absent for memory reuse.
+    """
+    docs = json.loads(json.dumps(_documents()[:5]))
+    for document in docs:
+        document["filename"] = document["filename"].replace("Shipment1", "Shipment2")
+        rewritten = []
+        for line in document["lines"]:
+            line = line.replace("LSBH-BATCH-26A", "LSBH-BATCH-26B")
+            # Pack 2 intentionally has NO botanical verification source.
+            # These exact review placeholders are not botanical assertions.
+            if line.startswith("Scientific genus "):
+                rewritten.extend(("Scientific genus", "TO BE FILLED FROM REVIEWED SUPPLIER MEMORY"))
+                continue
+            if line.startswith("Scientific species "):
+                rewritten.extend(("Scientific species", "TO BE FILLED FROM REVIEWED SUPPLIER MEMORY"))
+                continue
+            if line.startswith("Country of harvest "):
+                rewritten.extend(("Country of harvest", "TO BE CONFIRMED FROM VALID SUPPLIER EVIDENCE"))
+                continue
+            for header in (
+                "Supplier / manufacturer ", "Supplier address ",
+                "Manufacturer SKU ", "Product / SKU ",
+            ):
+                if line.startswith(header):
+                    rewritten.extend((header.strip(), line[len(header):]))
+                    break
+            else:
+                rewritten.append(line)
+        document["lines"] = rewritten
+    docs.append({
+        "filename": "06_Arrival_Notice_Shipment2.pdf",
+        "lines": [
+            "ARRIVAL NOTICE", "Merchandise / SKU",
+            "Bamboo coaster sets / BAM-COAST-04",
+            "Container number TGHU6042314",
+            "Supplier batch LSBH-BATCH-26B",
+        ],
+    })
+    return docs
+
+
 def _add_pdf_extractions(factory, *, organization_id, operation_id, omit_botanical=False):
     ids = {}
-    for index, doc in enumerate(_documents(), 1):
+    sources = _shipment_two_documents() if omit_botanical else _documents()
+    for index, doc in enumerate(sources, 1):
         lines = list(doc["lines"])
         if omit_botanical:
             lines = [
@@ -79,6 +128,25 @@ def _add_pdf_extractions(factory, *, organization_id, operation_id, omit_botanic
             session.close()
         ids[index] = doc_id
     return ids
+
+
+def test_second_pack_has_six_independent_sources_without_botanical_facts():
+    documents = _shipment_two_documents()
+    assert len(documents) == 6
+    assert len({doc["filename"] for doc in documents}) == 6
+    assert all("Shipment2" in doc["filename"] for doc in documents)
+    raw = "\n".join("\n".join(doc["lines"]) for doc in documents).lower()
+    assert "phyllostachys" not in raw and "species edulis" not in raw
+    assert "to be filled from reviewed supplier memory" in raw
+    fields = tuple(SimpleNamespace(
+        assurance_document_id=i, field_name="raw.document_text",
+        original_value="\n".join(doc["lines"]),
+    ) for i, doc in enumerate(documents, 1))
+    proof = discover_single_product_pdf_identity(fields, line_references=("1",))
+    assert proof is not None
+    assert proof.sku == "BAM-COAST-04"
+    assert proof.supplier_document_count >= 2
+    assert proof.corroborating_sku_document_count >= 2
 
 
 @pytest.mark.skipif(

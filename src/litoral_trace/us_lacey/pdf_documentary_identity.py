@@ -11,6 +11,8 @@ from dataclasses import dataclass
 import re
 from typing import Iterable
 
+from litoral_trace.us_lacey.single_sku_recovery import _explicit_document_skus
+
 _SKU = r"[A-Z][A-Z0-9]*[-_][A-Z0-9][A-Z0-9._-]{2,40}"
 _INVOICE_LINE = re.compile(rf"^\s*([1-9]\d*)\s*/\s*({_SKU})(?=\s|$)", re.I)
 _MANUFACTURER_SKU = re.compile(rf"^\s*Manufacturer\s+SKU\s+({_SKU})(?=\s|$)", re.I)
@@ -26,6 +28,52 @@ def _norm(value: str) -> str:
 def _clean_address(value: str) -> str:
     # Layout wrapping can split an explicit "(fictional address)" annotation.
     return re.sub(r"\s*\(fictional\s*(?:address)?\s*$", "", value, flags=re.I).strip()
+
+
+_NAME_LABELS = frozenset({
+    "SUPPLIER / MANUFACTURER", "SUPPLIER LEGAL NAME", "MANUFACTURER",
+})
+_ADDRESS_LABELS = frozenset({
+    "SUPPLIER ADDRESS", "MANUFACTURER ADDRESS", "MANUFACTURING SITE",
+})
+
+
+def _labeled_supplier_identity(lines: list[str]) -> tuple[set[str], set[str], set[str]]:
+    """Return source-literal supplier/name/address and product descriptions.
+
+    Labels may be on the same layout line or immediately precede the value.
+    This is bounded, document-local evidence reading, not fuzzy entity merging.
+    """
+    names: set[str] = set()
+    addresses: set[str] = set()
+    descriptions: set[str] = set()
+    for index, original_line in enumerate(lines):
+        line = str(original_line).strip()
+        next_line = str(lines[index + 1]).strip() if index + 1 < len(lines) else ""
+        name = _NAME.match(line)
+        address = _ADDRESS.match(line)
+        product = _DESCR.match(line)
+        if name:
+            names.add(name[1].strip())
+        if address:
+            addresses.add(_clean_address(address[1]))
+        if product:
+            descriptions.add(product[1].strip())
+        if line.upper() in _NAME_LABELS and next_line:
+            # A document may contain a table header sequence MANUFACTURER,
+            # SKU, PRODUCT. Never interpret the next column header as a
+            # supplier name or allow it to contradict the real legal name.
+            if line.upper() != "MANUFACTURER" or next_line.upper() not in {
+                "SKU", "PRODUCT", "DESCRIPTION", "QUANTITY", "QTY", "UNIT",
+            }:
+                names.add(next_line)
+        elif line.upper() in _ADDRESS_LABELS and next_line:
+            addresses.add(_clean_address(next_line))
+        elif line.upper() == "PRODUCT / SKU" and next_line:
+            tail = re.match(rf"^(.+?)\s*/\s*({_SKU})\s*$", next_line, re.I)
+            if tail is not None:
+                descriptions.add(tail[1].strip())
+    return names, addresses, descriptions
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,15 +131,13 @@ def discover_single_product_pdf_identity(
                 match = _INVOICE_LINE.match(line)
                 if match:
                     invoice_rows.append((int(match[1]), match[2].upper(), doc_id))
-        for line in text_lines:
-            if match := _MANUFACTURER_SKU.match(line):
-                sku_doc_ids.setdefault(match[1].upper(), set()).add(doc_id)
-            if match := _NAME.match(line):
-                doc_name.add(match[1].strip())
-            if match := _ADDRESS.match(line):
-                doc_address.add(_clean_address(match[1]))
-            if match := _DESCR.match(line):
-                descriptions.add(match[1].strip())
+        source_skus = _explicit_document_skus(tuple(text_lines))
+        if len(source_skus) > 1:
+            return None
+        for sku in source_skus:
+            sku_doc_ids.setdefault(sku, set()).add(doc_id)
+        doc_name, doc_address, doc_descriptions = _labeled_supplier_identity(text_lines)
+        descriptions.update(doc_descriptions)
         if len(doc_name) > 1 or len(doc_address) > 1:
             return None
         if doc_name and doc_address:

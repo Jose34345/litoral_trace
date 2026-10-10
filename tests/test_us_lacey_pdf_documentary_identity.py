@@ -36,8 +36,14 @@ def test_golden_pdf_proves_exact_supplier_sku_and_line_without_bom():
 
 def test_pdf_identity_denies_missing_sku_cross_document_proof():
     docs = _docs()
-    for doc in docs:
-        doc["lines"] = [line for line in doc["lines"] if not line.startswith("Manufacturer SKU")]
+    # All explicitly source-labeled SKU references outside the invoice must
+    # disappear. Removing just the words 'Manufacturer SKU' is no longer a
+    # valid negative case: packing lists/BOLs supply independent exact proof.
+    for doc in docs[1:]:
+        doc["lines"] = [
+            line for line in doc["lines"]
+            if "SKU" not in line.upper() and "BAM-COAST-04" not in line.upper()
+        ]
     assert discover_single_product_pdf_identity(_fields(docs), line_references=("1",)) is None
 
 
