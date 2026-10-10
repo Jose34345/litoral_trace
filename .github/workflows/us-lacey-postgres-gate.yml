@@ -642,7 +642,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "077_us_lacey_outreach_human_signals (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "078_us_lacey_assurance_v2_authority (head)" /tmp/alembic-reupgraded.txt
       - name: Prove five-shipment product-led evaluation contracts
         env:
           DATABASE_URL: ""
