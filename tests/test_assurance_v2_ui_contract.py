@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
+from fastapi.staticfiles import StaticFiles
 
 from litoral_trace.us_lacey.exporters.assurance_v2_package import MemoryPackageStore
 from litoral_trace.web.us_lacey_assurance_v2_views import (
@@ -18,6 +20,10 @@ def make_client(case=None):
     receipts: list[dict[str, str]] = []
     store = MemoryPackageStore()
     app = FastAPI()
+    # Production mounts the shared static app; the inherited Jinja shell
+    # resolves its CSS/favicon through url_for("static", ...).
+    static_dir = Path(__file__).resolve().parents[1] / "src/litoral_trace/static"
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     def principal(request: Request) -> WorkspacePrincipal:
         tenant = request.headers.get("X-Demo-Tenant")
