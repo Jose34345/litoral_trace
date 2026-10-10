@@ -153,6 +153,11 @@ app = FastAPI(
 )
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# Shadow-only, deny-by-default Assurance V2. OFF unless explicitly enabled in
+# staging. Never bypasses legacy portal sessions or creates export authority.
+from litoral_trace.web.us_lacey_assurance_v2_runtime import configure_assurance_v2_shadow
+configure_assurance_v2_shadow(app)
+
 
 def _schedule_translation_backfill_once(
     background_tasks: BackgroundTasks,
