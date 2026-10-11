@@ -47,6 +47,41 @@ def _is_line_bound(claim: dict) -> bool:
     return claim.get("association_status") in _LINE_BOUND_ASSOCIATION_STATUSES
 
 
+def _current_review_source_choices(
+    observations: tuple[dict, ...] | None, *, field_name: str,
+    line_reference: str, identities: tuple[dict, ...],
+) -> list[dict]:
+    """Show current PDF candidates but NEVER choose or authorize them here."""
+    valid_identities = tuple(
+        item for item in identities
+        if item["line_reference"] == line_reference
+        and item["status"] in {"VERIFIED", "HUMAN_CONFIRMED"}
+    )
+    results = []
+    for claim in observations or ():
+        if (claim.get("field_name") != field_name
+                or claim.get("support_status") != "SUPPORTED"
+                or claim.get("authority_status") != "CANDIDATE"
+                or not claim.get("normalized_value")):
+            continue
+        if line_reference == PPQ505_SHIPMENT_REFERENCE:
+            if claim.get("entity_type") != "SHIPMENT" or claim.get("association_status") != "UNBOUND":
+                continue
+        elif (len(valid_identities) != 1
+              or claim.get("association_status") != "DOCUMENT_EXACT_SINGLE_SKU"
+              or claim.get("line_reference") != line_reference
+              or claim.get("sku") != valid_identities[0]["sku"]):
+            continue
+        results.append({
+            "id": "source:" + str(claim["id"]),
+            "value": claim["normalized_value"],
+            "document_id": str(claim["assurance_document_id"]),
+            "page": (claim.get("source_locator") or {}).get("page"),
+            "locator": claim.get("source_locator"),
+        })
+    return results
+
+
 def read_tenant_assurance_case(
     *, organization_id: int, operation_public_id: str,
     session_factory=get_us_lacey_db_session,
@@ -503,13 +538,16 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
                 "field_name": field.field_name,
                 "reason": "Human V2 authority or source evidence is not yet verified.",
                 "status": "OPEN", "blocking": True,
-                "candidates": [{
+                "candidates": ([{
                     "id": f"legacy:{field.id}", "value": proposed,
                     "document_id": str(field.source_assurance_document_id)
                     if is_current_document else None,
                     "locator": field.source_locator,
                     "page": field.source_page,
-                }] if proposed else [],
+                }] if proposed else []) + _current_review_source_choices(
+                    source_observations, field_name=field.field_name,
+                    line_reference=line, identities=identities,
+                ),
             })
         if not chosen and source_observations:
             detected = [claim for claim in source_observations if (

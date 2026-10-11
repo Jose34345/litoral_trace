@@ -12,6 +12,7 @@ import re
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from litoral_trace.us_lacey.exporters.assurance_v2 import AssuranceCase, evaluate_filing_gate
+from litoral_trace.us_lacey.assurance_v2_evidence_checklist import required_evidence_summary
 from litoral_trace.us_lacey.exporters.assurance_v2_package import (
     ExportBlocked, PackageStore, draft_assurance_excel,
 )
@@ -125,7 +126,9 @@ def create_assurance_v2_router(
             ) if doc_id in documents else None
         return templates.TemplateResponse(
             request=request, name="us_lacey/assurance_v2_case.html",
-            context={"case": snapshot, "gate": gate, "csrf_token": principal.csrf_token,
+            context={"case": snapshot, "gate": gate,
+                     "required_evidence": required_evidence_summary(case),
+                     "csrf_token": principal.csrf_token,
                      "actions": sorted(_ACTIONS), "authenticated": True},
         )
 

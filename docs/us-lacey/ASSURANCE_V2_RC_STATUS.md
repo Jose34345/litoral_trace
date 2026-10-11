@@ -149,3 +149,52 @@ metric unit; it does not authorize final issuance. Full required-field review,
 authorized final dossier/export, concurrency, full-field ground truth and
 remote checks remain distinct release gates. No production deployment or
 `ENABLED` activation is part of this patch.
+
+## RC follow-up: source-backed human field review and issue idempotency
+
+**Change set:** PR #405 builds on the integrated #404, and the target remains
+`feat/assurance-v2-integration-rc`. This is a development-only improvement;
+it **does not change the NO-GO release decision**.
+
+### Implemented and exercised
+
+- The reviewer can select an exact, supported, **current** `SourceLinkedClaim`
+  from a required field's exception without copying opaque IDs. The backend
+  verifies tenant, source-set revision/generation/fingerprint, original document
+  version/SHA-256 and its text-span locator; product values require an
+  independently confirmed exact supplier/SKU/line.
+- Authentication, CSRF, operation locks, source field update, V2 human review
+  journal, and audit event share a transaction. A journal rejection rolls the
+  selection back rather than granting implicit AI/source authority.
+- The case UI now presents a **read-only required-evidence checklist**:
+  verified, reviewable current source, unconfirmed current value, or missing
+  evidence. It neither changes a regulatory state nor authorizes a package.
+- The original four-shipment HTTP/Vault/worker PostgreSQL Golden now verifies
+  one **human-confirmed `article_component`** source selection in Shipment 2,
+  in addition to the three verified historical botanical reuses and the two
+  adversarial anti-reuse cases.
+- The PostgreSQL issuer operation-lock test submits two concurrent requests
+  for an identical *synthetic, already-authorized* case and asserts **one
+  immutable package/event**. The issuer reloads that package after rechecking
+  the current fenced case, instead of issuing timestamp-dependent duplicates.
+  This isolated fixture does not prove concurrent source-document mutation
+  safety or the final original-PDF filing path.
+
+### Still blocking the production release
+
+The current original-PDF Shipment 2 still has no authenticated, source-backed,
+approved **filing entry reference** and **merchandise description**. The
+entered value (USD 11,250.00) and plant-material quantity (288.0 KG) are
+visible literally in the original synthetic invoice/entry worksheet PDFs,
+but are **not correctly projected into the current authoritative field ledger**;
+neither are they approved for final output. A literal text occurrence alone
+is not a reviewed PPQ field. Remaining required fields and exceptions must be
+resolved with exact current evidence, not invented/misassigned values.
+
+Before release: demonstrate the complete HTTP/worker source-backed packet,
+review all required fields, authorize and retrieve *actual* final dossier,
+Excel and LAWGS XML; test source replacement, revocation, expiration and
+concurrent mutation; establish full-field reviewed ground truth; require
+all latest remote checks green. Keep `US_LACEY_ASSURANCE_V2_MODE` OFF/SHADOW
+and federal submission disabled. No merge to production or deploy while a
+P0 remains.

@@ -178,6 +178,49 @@ class PostgresOperationEventPackageStore:
             UsLaceyOperation.public_id == oid,
         ))
 
+    def load_for_case_in_transaction(
+        self, session, *, organization_id: int, operation_id: str,
+        case_fingerprint: str,
+    ) -> AssurancePackage | None:
+        """Return already-issued immutable bytes for the same authorized case.
+
+        The issuer MUST hold the operation/source-set locks and revalidate
+        current authority first. A new source set, revoked evidence or changed
+        decision produces a different case fingerprint, never a stale replay.
+        """
+        from sqlalchemy import select
+        from litoral_trace.db.models import UsLaceyOperationEvent
+
+        if len(case_fingerprint) != 64 or any(
+            ch not in "0123456789abcdef" for ch in case_fingerprint
+        ):
+            raise ValueError("Invalid case authority fingerprint")
+        internal_id = self._operation(session, organization_id, operation_id)
+        if internal_id is None:
+            raise PermissionError("Operation not found within tenant")
+        records = session.scalars(select(UsLaceyOperationEvent).where(
+            UsLaceyOperationEvent.organization_id == organization_id,
+            UsLaceyOperationEvent.operation_id == internal_id,
+            UsLaceyOperationEvent.event_type == "PACKAGE_GENERATED",
+            UsLaceyOperationEvent.details["package"]["case_fingerprint"].as_string()
+            == case_fingerprint,
+        ).order_by(UsLaceyOperationEvent.id)).all()
+        if not records:
+            return None
+        if len(records) != 1:
+            raise ValueError("Duplicate issuance for one authorized case")
+        value = records[0].details.get("package")
+        if not isinstance(value, dict):
+            raise ValueError("Issued package is missing its immutable snapshot")
+        package = AssurancePackage(_fingerprint(value), dict(value))
+        package.verify()
+        if (package.snapshot.get("organization_id") != organization_id
+                or package.snapshot.get("operation_id") != operation_id
+                or package.snapshot.get("case_fingerprint") != case_fingerprint
+                or records[0].event_key != f"assurance_v2:{package.fingerprint}"):
+            raise ValueError("Issued package does not match authenticated case")
+        return package
+
     def save_in_transaction(self, session, *, organization_id: int,
                             operation_id: str, package: AssurancePackage) -> None:
         """Stage immutable issuance in the caller's tenant-scoped transaction.
