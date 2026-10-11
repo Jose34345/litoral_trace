@@ -211,4 +211,3 @@ def collect_source_claims(
         "claim_count": len(claims),
         "claims": claims,
     }
-
