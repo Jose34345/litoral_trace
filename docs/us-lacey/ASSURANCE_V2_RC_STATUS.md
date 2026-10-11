@@ -133,6 +133,16 @@ separate explicit approval after all gates and remote CI pass.
   The new expectation is exact documentary binding while the unpublished
   source claim remains blocking until actual human/regulatory authority exists.
 
+**Measured effect on the original fixture packets:** Pack 1 binds 12/47
+candidate observations (3 genus, 3 species, 3 country of harvest, HTS,
+article component, description); Pack 2 binds 2/39 (HTS and article
+component). Other shipment-level and unsupported observations are intentionally
+not assigned to a product line. The authenticated four-shipment PostgreSQL
+Golden passed, 36 focused local tests passed, the dedicated Pg/RLS/runtime
+group passed **15 tests / 0 skips**, and GitHub CI and PostgreSQL Gate for
+PR #404's initial head passed. No production quality metrics are inferred
+from this small synthetic corpus.
+
 **Release status remains NO-GO:** this bridge does not create missing filing
 entry reference, merchandise description, entered value, plant quantity or
 metric unit; it does not authorize final issuance. Full required-field review,
