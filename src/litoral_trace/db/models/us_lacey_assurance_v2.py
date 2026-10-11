@@ -22,6 +22,44 @@ def _json_type():
     return JSON().with_variant(JSONB(), "postgresql")
 
 
+class UsLaceyAssuranceV2ClaimSnapshot(Base):
+    """Immutable candidate claims for one exact tenant operation source revision."""
+
+    __tablename__ = "us_lacey_assurance_v2_claim_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    operation_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_set_revision_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_set_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    document_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    claim_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot_json: Mapped[dict] = mapped_column(_json_type(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(["operation_id", "organization_id"],
+                             ["us_lacey_operations.id", "us_lacey_operations.organization_id"],
+                             ondelete="CASCADE"),
+        ForeignKeyConstraint(["source_set_revision_id", "organization_id", "operation_id"],
+                             ["us_lacey_source_set_revisions.id", "us_lacey_source_set_revisions.organization_id",
+                              "us_lacey_source_set_revisions.operation_id"],
+                             ondelete="CASCADE"),
+        UniqueConstraint("id", "organization_id", name="uq_assurance_v2_claim_snapshot_tenant"),
+        UniqueConstraint("organization_id", "operation_id", "source_set_revision_id",
+                         "source_set_fingerprint", name="uq_assurance_v2_claim_snapshot_source"),
+        CheckConstraint("status IN ('CANDIDATE_ONLY','FAILED')", name="ck_assurance_v2_claim_snapshot_status"),
+        CheckConstraint("document_count > 0", name="ck_assurance_v2_claim_snapshot_documents"),
+        CheckConstraint("claim_count >= 0", name="ck_assurance_v2_claim_snapshot_claims"),
+        CheckConstraint("length(source_set_fingerprint) = 64", name="ck_assurance_v2_claim_snapshot_fingerprint"),
+        Index("ix_assurance_v2_claim_snapshot_case", "organization_id", "operation_id",
+              "source_set_revision_id"),
+    )
+
+
 class AssuranceV2Decision(Base):
     __tablename__ = "us_lacey_assurance_v2_decisions"
 

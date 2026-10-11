@@ -14,7 +14,8 @@ from copy import deepcopy
 from sqlalchemy import select
 
 from litoral_trace.db.models import (
-    AssuranceDocument, UsLaceyEngineShipmentRun, UsLaceyOperationDocument,
+    AssuranceDocument, UsLaceyAssuranceV2ClaimSnapshot,
+    UsLaceyEngineShipmentRun, UsLaceyOperationDocument,
     UsLaceyOperationField, UsLaceySourceSetMember, VaultDocument,
 )
 from litoral_trace.lacey_engine.pipeline import process_bundle
@@ -279,3 +280,38 @@ def test_incomplete_persisted_claim_fails_explicitly_before_workspace(session):
     assert not stale.candidate_observations
     assert any(item["id"] == "source:claims-unavailable" and item["blocking"]
                for item in stale.exceptions)
+
+
+def test_current_sidecar_precedes_legacy_run_and_invalid_sidecar_blocks_fallback(session):
+    org, _ = org_and_actor(session, "OriginalPdfSidecar")
+    _, product = supplier_product(session, org.id,
+                                  supplier_key="MID:LONGSHENG-SIDECAR", sku="BAM-COAST-04")
+    operation, revision, _, _ = _ingest_original_documents(session, org.id, product.id, "pack1")
+    run = session.scalar(select(UsLaceyEngineShipmentRun).where(
+        UsLaceyEngineShipmentRun.organization_id == org.id,
+        UsLaceyEngineShipmentRun.operation_id == operation.id,
+    ))
+    snapshot = deepcopy(run.resolution_json["assurance_v2_claim_snapshot"])
+    row = UsLaceyAssuranceV2ClaimSnapshot(
+        organization_id=org.id, operation_id=operation.id,
+        source_set_revision_id=revision.id,
+        source_set_fingerprint=revision.source_set_fingerprint,
+        status="CANDIDATE_ONLY", document_count=len(snapshot["documents"]),
+        claim_count=snapshot["claim_count"], snapshot_json=snapshot,
+    )
+    session.add(row)
+    legacy = deepcopy(run.resolution_json)
+    legacy["assurance_v2_claim_snapshot"]["documents"][0]["claims"][0].pop("entity_type")
+    run.resolution_json = legacy
+    session.flush()
+
+    current = _case(session, org.id, operation.public_id)
+    assert current and len(current.candidate_observations) >= 30
+
+    broken = deepcopy(row.snapshot_json)
+    broken["documents"][0]["claims"][0].pop("entity_type")
+    row.snapshot_json = broken
+    session.flush()
+    invalid = _case(session, org.id, operation.public_id)
+    assert invalid and not invalid.candidate_observations
+    assert any(item["reason"] == "SOURCE_CLAIMS_INVALID" for item in invalid.exceptions)

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import (
     AssuranceDocument, AssuranceV2Decision, AssuranceV2DecisionSource,
+    UsLaceyAssuranceV2ClaimSnapshot,
     UsLaceyEngineShipmentRun, UsLaceyOperation, UsLaceyOperationDocument, UsLaceyOperationField,
     UsLaceyPpqPlantLine, UsLaceyRegulatoryAssessmentSnapshot,
     UsLaceySourceSetMember, UsLaceySourceSetRevision,
@@ -65,13 +66,40 @@ def _source_claim_observations(
         (int(doc["operation_document_id"]), int(doc["id"])): doc
         for doc in documents
     }
-    runs = db.scalars(select(UsLaceyEngineShipmentRun).where(
-        UsLaceyEngineShipmentRun.organization_id == organization_id,
-        UsLaceyEngineShipmentRun.operation_id == operation_id,
-    ).order_by(UsLaceyEngineShipmentRun.id.desc()).limit(8)).all()
-    for run in runs:
-        raw = run.resolution_json if isinstance(run.resolution_json, dict) else {}
-        snapshot = raw.get("assurance_v2_claim_snapshot")
+    sidecars = db.scalars(select(UsLaceyAssuranceV2ClaimSnapshot).where(
+        UsLaceyAssuranceV2ClaimSnapshot.organization_id == organization_id,
+        UsLaceyAssuranceV2ClaimSnapshot.operation_id == operation_id,
+        UsLaceyAssuranceV2ClaimSnapshot.source_set_revision_id == revision.id,
+    )).all()
+    if sidecars:
+        # An explicitly persisted V2 result wins over a legacy Engine run.
+        # Ambiguous or failed sidecars must abstain rather than resurrecting
+        # stale claims from that older run.
+        if len(sidecars) != 1:
+            return None
+        sidecar = sidecars[0]
+        snapshot = sidecar.snapshot_json
+        if (
+            sidecar.source_set_fingerprint != revision.source_set_fingerprint
+            or sidecar.status != "CANDIDATE_ONLY"
+            or not isinstance(snapshot, dict)
+            or snapshot.get("status") != sidecar.status
+            or snapshot.get("document_count", len(snapshot.get("documents") or ())) != sidecar.document_count
+            or snapshot.get("claim_count") != sidecar.claim_count
+        ):
+            return None
+        snapshots = (snapshot,)
+    else:
+        runs = db.scalars(select(UsLaceyEngineShipmentRun).where(
+            UsLaceyEngineShipmentRun.organization_id == organization_id,
+            UsLaceyEngineShipmentRun.operation_id == operation_id,
+        ).order_by(UsLaceyEngineShipmentRun.id.desc()).limit(8)).all()
+        snapshots = tuple(
+            run.resolution_json.get("assurance_v2_claim_snapshot")
+            if isinstance(run.resolution_json, dict) else None
+            for run in runs
+        )
+    for snapshot in snapshots:
         if not isinstance(snapshot, dict) or snapshot.get("schema_version") != "assurance.claim.snapshot.v1":
             continue
         if (

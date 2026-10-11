@@ -25,6 +25,7 @@ pytestmark = pytest.mark.skipif(
     reason="Assurance V2 PostgreSQL/RLS gate requires isolated owner/runtime test URLs.",
 )
 TABLES = (
+    "us_lacey_assurance_v2_claim_snapshots",
     "us_lacey_assurance_v2_decisions",
     "us_lacey_assurance_v2_decision_sources",
     "us_lacey_assurance_v2_memory_links",
@@ -56,7 +57,7 @@ def pg_case():
                 "WHERE schemaname = 'public' AND tablename LIKE 'us_lacey_assurance_v2_%'"
             )).scalars().all())
         assert set(TABLES) <= names, (
-            "078 not applied to isolated PostgreSQL test DB: run alembic upgrade head first."
+            "079 not applied to isolated PostgreSQL test DB: run alembic upgrade head first."
         )
         with owner.begin() as conn:
             for label in ("a", "b"):
@@ -161,10 +162,10 @@ def test_assurance_v2_rls_force_and_append_only(pg_case):
             "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity "
             "FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace "
             "WHERE ns.nspname = 'public' AND c.relname IN "
-            "('us_lacey_assurance_v2_decisions', 'us_lacey_assurance_v2_decision_sources',"
+            "('us_lacey_assurance_v2_claim_snapshots', 'us_lacey_assurance_v2_decisions', 'us_lacey_assurance_v2_decision_sources',"
             "'us_lacey_assurance_v2_memory_links','us_lacey_assurance_v2_identity_events')"
         )).all()
-        assert len(entries) == 4
+        assert len(entries) == 5
         assert all(row[1] is True and row[2] is True for row in entries)
 
     with runtime.begin() as conn:
@@ -241,6 +242,54 @@ def test_tenant_context_required_for_reads(pg_case):
         assert conn.execute(text(
             "SELECT count(*) FROM us_lacey_assurance_v2_decisions"
         )).scalar_one() == 0
+
+
+def test_claim_snapshot_is_tenant_scoped_immutable_and_operation_bound(pg_case):
+    vals, _, runtime = pg_case
+    table = "us_lacey_assurance_v2_claim_snapshots"
+
+    def insert(conn, org, op, revision, fingerprint):
+        return conn.execute(text(
+            f"INSERT INTO {table} (organization_id, operation_id, "
+            "source_set_revision_id, source_set_fingerprint, status, "
+            "document_count, claim_count, snapshot_json) "
+            "VALUES (:org,:op,:revision,:fingerprint,'CANDIDATE_ONLY',1,0, "
+            "CAST(:snapshot AS JSONB)) RETURNING id"
+        ), {"org": org, "op": op, "revision": revision,
+            "fingerprint": fingerprint,
+            "snapshot": '{"schema_version":"assurance.claim.snapshot.v1","documents":[]}',
+            }).scalar_one()
+
+    with runtime.begin() as conn:
+        _tenant(conn, vals["org_a"])
+        snap_id = insert(conn, vals["org_a"], vals["op_a"], vals["revision_a"], "a" * 64)
+        assert conn.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 1
+    with runtime.begin() as conn:
+        _tenant(conn, vals["org_b"])
+        assert conn.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 0
+    with runtime.begin() as conn:
+        assert conn.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 0
+
+    with pytest.raises(DBAPIError):
+        with runtime.begin() as conn:
+            _tenant(conn, vals["org_a"])
+            insert(conn, vals["org_a"], vals["op_a"], vals["revision_a"], "a" * 64)
+    with pytest.raises(DBAPIError):
+        with runtime.begin() as conn:
+            _tenant(conn, vals["org_a"])
+            insert(conn, vals["org_a"], vals["op_b"], vals["revision_a"], "b" * 64)
+    with pytest.raises(DBAPIError):
+        with runtime.begin() as conn:
+            _tenant(conn, vals["org_a"])
+            insert(conn, vals["org_b"], vals["op_b"], vals["revision_b"], "b" * 64)
+    with pytest.raises(DBAPIError):
+        with runtime.begin() as conn:
+            _tenant(conn, vals["org_a"])
+            conn.execute(text(f"UPDATE {table} SET claim_count=7 WHERE id=:id"), {"id": snap_id})
+    with pytest.raises(DBAPIError):
+        with runtime.begin() as conn:
+            _tenant(conn, vals["org_a"])
+            conn.execute(text(f"DELETE FROM {table} WHERE id=:id"), {"id": snap_id})
 
 
 
