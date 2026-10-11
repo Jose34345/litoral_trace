@@ -118,6 +118,18 @@
         {% if gate.ready %}
         <p>All snapshot authority checks passed. Issuance persists an immutable package containing exact XML/XLSX bytes and a source manifest. No filing submission is performed.</p>
         <button type="button" id="issue-package">Issue reproducible assurance package</button>
+        {% elif gate.blockers|length == 1 and gate.blockers[0].code == "EXPORT_NOT_AUTHORIZED" %}
+        <p>Document, identity, decision, and regulatory checks passed. A signed-in reviewer must explicitly authorize this exact source-set and case fingerprint before a final package can be issued.</p>
+        <form id="authorize-export-form" class="export-authorization-form">
+          <label for="export-authorization-reason">Reason for issuing this specific evidence-backed package</label>
+          <textarea id="export-authorization-reason" name="reason" maxlength="1000" rows="3" required placeholder="I reviewed the evidence, identities, decisions and regulatory readiness for this shipment."></textarea>
+          <label for="export-authorization-confirm">
+            <input type="checkbox" id="export-authorization-confirm" name="explicit_confirmation" required>
+            I authorize preparation of this exact case. This is not a CBP/APHIS submission.
+          </label>
+          <button type="submit">Record explicit export authorization</button>
+          <div class="authorization-result" role="status" aria-live="polite"></div>
+        </form>
         {% else %}
         <p>Final XML is disabled. Resolve the following authority gaps first:</p>
         <ul class="blocker-list">{% for b in gate.blockers %}<li><strong>{{ b.code }}</strong> · {{ b.subject }}</li>{% endfor %}</ul>

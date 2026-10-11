@@ -37,6 +37,14 @@ class DecisionGateway(Protocol):
     def __call__(self, principal: WorkspacePrincipal, operation_id: str, command: dict[str, str]) -> dict[str, Any]: ...
 
 
+class AuthorizationGateway(Protocol):
+    """Only a tenant-authenticated, current-source-set-locked writer."""
+    def __call__(self, principal: WorkspacePrincipal, operation_id: str,
+                 expected_source_set_fingerprint: str,
+                 expected_case_fingerprint: str, reason: str,
+                 explicit_confirmation: bool) -> dict[str, Any]: ...
+
+
 class IssueGateway(Protocol):
     """Must acquire source-set/operation locks and persist within one transaction.
 
@@ -57,6 +65,7 @@ def create_assurance_v2_router(
     package_store: PackageStore,
     document_link_for: Callable[[WorkspacePrincipal, str, str, int | None], str | None],
     issue_gateway: IssueGateway | None = None,
+    authorization_gateway: AuthorizationGateway | None = None,
 ) -> APIRouter:
     """The web adapter cannot select/promote candidates or write canonical truth."""
     router = APIRouter(prefix="/assurance-v2/operations", tags=["Assurance V2"])
@@ -129,6 +138,31 @@ def create_assurance_v2_router(
         }
         receipt = decision_gateway(principal, operation_id, command)
         return JSONResponse(receipt, status_code=202)
+
+    @router.post("/{operation_id}/authorize-export")
+    async def authorize_export(request: Request, operation_id: str):
+        principal, case = context(request, operation_id)
+        body = await request.json()
+        if not isinstance(body, dict) or not csrf_verify(
+            principal, str(body.get("csrf_token") or "")
+        ):
+            raise HTTPException(403, "Invalid CSRF token")
+        reason = str(body.get("reason") or "").strip()
+        if body.get("explicit_confirmation") is not True or not reason or len(reason) > 1000:
+            raise HTTPException(422, "Explicit confirmation and reviewer reason are required")
+        gate = evaluate_filing_gate(case)
+        other_blockers = [
+            {"code": b.code, "subject": b.subject}
+            for b in gate.blockers if b.code != "EXPORT_NOT_AUTHORIZED"
+        ]
+        if other_blockers:
+            return JSONResponse({"status": "BLOCKED", "blockers": other_blockers}, status_code=409)
+        if authorization_gateway is None:
+            raise HTTPException(503, "Authenticated export authorization is not enabled")
+        return authorization_gateway(
+            principal, operation_id, case.source_set_fingerprint,
+            gate.case_fingerprint, reason, True,
+        )
 
     @router.post("/{operation_id}/issue")
     async def issue(request: Request, operation_id: str):

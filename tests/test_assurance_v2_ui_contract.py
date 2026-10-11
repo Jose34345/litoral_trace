@@ -15,7 +15,7 @@ from litoral_trace.web.us_lacey_assurance_v2_views import (
 from test_assurance_v2_outputs_core import OPERATION_ID, make_case, authorize
 
 
-def make_client(case=None, *, test_issue_enabled=True):
+def make_client(case=None, *, test_issue_enabled=True, test_authorization_enabled=False):
     case = case or make_case()
     receipts: list[dict[str, str]] = []
     store = MemoryPackageStore()
@@ -53,6 +53,20 @@ def make_client(case=None, *, test_issue_enabled=True):
         return {"status": "FILING_READY", "package_fingerprint": package.fingerprint,
                 "submitted_to_agency": False}
 
+    def fixture_authorize(principal: WorkspacePrincipal, operation_id: str,
+                          expected_source_set_fingerprint: str, expected_case_fingerprint: str,
+                          reason: str, explicit_confirmation: bool):
+        nonlocal case
+        # Synthetic fixture only; production authority persists a separately
+        # confirmed audit event and rechecks the same case under DB locks.
+        assert principal.organization_id == case.organization_id
+        assert operation_id == case.operation_id
+        assert expected_source_set_fingerprint == case.source_set_fingerprint
+        assert expected_case_fingerprint == case.authority_fingerprint()
+        assert explicit_confirmation is True and reason
+        case = authorize(case)
+        return case.export_authorization
+
     app.include_router(create_assurance_v2_router(
         principal_for=principal,
         case_for=read,
@@ -60,6 +74,7 @@ def make_client(case=None, *, test_issue_enabled=True):
         csrf_verify=lambda principal, token: token == principal.csrf_token,
         package_store=store,
         issue_gateway=fixture_issue if test_issue_enabled else None,
+        authorization_gateway=fixture_authorize if test_authorization_enabled else None,
         document_link_for=lambda principal, op, doc, page:
             f"/operations/{op}/documents/{doc}" + (f"?page={page}" if page else ""),
     ))
@@ -168,3 +183,67 @@ def test_production_router_cannot_issue_ready_case_without_atomic_gateway():
     )
     assert response.status_code == 503
     assert "Atomic Assurance V2 issuance is not enabled" in response.text
+
+
+
+def test_export_authorization_requires_authenticated_explicit_human_action():
+    case = make_case(approved=False)
+    client, _ = make_client(case, test_authorization_enabled=True)
+    base = f"/assurance-v2/operations/{OPERATION_ID}"
+    headers = {"X-Demo-Tenant": "11"}
+    html = client.get(base, headers=headers)
+    assert html.status_code == 200
+    assert 'id="authorize-export-form"' in html.text
+    assert 'name="explicit_confirmation"' in html.text
+    assert 'name="reason"' in html.text
+    assert client.post(base + "/authorize-export", json={
+        "csrf_token": "fixture-csrf", "reason": "Reviewed source documents",
+        "explicit_confirmation": True,
+    }).status_code == 401
+    assert client.post(base + "/authorize-export", json={
+        "csrf_token": "wrong", "reason": "Reviewed source documents",
+        "explicit_confirmation": True,
+    }, headers=headers).status_code == 403
+    assert client.post(base + "/authorize-export", json={
+        "csrf_token": "fixture-csrf", "reason": "Reviewed source documents",
+    }, headers=headers).status_code == 422
+    assert client.post(base + "/authorize-export", json={
+        "csrf_token": "fixture-csrf", "reason": "",
+        "explicit_confirmation": True,
+    }, headers=headers).status_code == 422
+    answer = client.post(base + "/authorize-export", json={
+        "csrf_token": "fixture-csrf", "reason": "Reviewed source documents",
+        "explicit_confirmation": True,
+    }, headers=headers)
+    assert answer.status_code == 200
+    assert answer.json()["status"] == "AUTHORIZED"
+    updated = client.get(base, headers=headers)
+    assert updated.status_code == 200
+    assert 'id="issue-package"' in updated.text
+    assert 'id="authorize-export-form"' not in updated.text
+
+
+def test_no_explicit_authorization_gateway_never_grants_export():
+    client, _ = make_client(make_case(approved=False))
+    headers = {"X-Demo-Tenant": "11"}
+    resp = client.post(f"/assurance-v2/operations/{OPERATION_ID}/authorize-export",
+                       json={"csrf_token": "fixture-csrf",
+                             "reason": "Review complete", "explicit_confirmation": True},
+                       headers=headers)
+    assert resp.status_code == 503
+    assert "not enabled" in resp.text
+
+
+def test_authorization_gateway_cannot_override_missing_required_review():
+    case = make_case(approved=False)
+    fields = list(case.fields)
+    fields[0] = {**fields[0], "authority": "CANDIDATE"}
+    client, _ = make_client(
+        replace(case, fields=tuple(fields)), test_authorization_enabled=True,
+    )
+    resp = client.post(f"/assurance-v2/operations/{OPERATION_ID}/authorize-export",
+                       json={"csrf_token": "fixture-csrf",
+                             "reason": "Review complete", "explicit_confirmation": True},
+                       headers={"X-Demo-Tenant": "11"})
+    assert resp.status_code == 409
+    assert any(b["code"] == "UNSUPPORTED_CLAIM" for b in resp.json()["blockers"])
