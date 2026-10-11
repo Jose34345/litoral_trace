@@ -118,6 +118,8 @@ def discover_single_product_pdf_identity(
     supplier_doc_ids: set[int] = set()
     sku_doc_ids: dict[str, set[int]] = {}
     recognized_pairs: set[tuple[str, str]] = set()
+    observed_names: set[str] = set()
+    observed_addresses: set[str] = set()
     result_fields: list[DocumentaryField] = []
     descriptions: set[str] = set()
     for doc_id, text in raw_by_doc.items():
@@ -140,6 +142,8 @@ def discover_single_product_pdf_identity(
         descriptions.update(doc_descriptions)
         if len(doc_name) > 1 or len(doc_address) > 1:
             return None
+        observed_names.update(_norm(name) for name in doc_name if name)
+        observed_addresses.update(_norm(address) for address in doc_address if address)
         if doc_name and doc_address:
             name, address = next(iter(doc_name)), next(iter(doc_address))
             if name and address:
@@ -153,7 +157,8 @@ def discover_single_product_pdf_identity(
     # Strictly no ambiguity: one invoice item, one supplier/site identity,
     # at least two source documents with that supplier identity, and at least
     # two OTHER documents identifying exactly the invoice SKU as manufacturer's.
-    if len(invoice_rows) != 1 or len(recognized_pairs) != 1:
+    if (len(invoice_rows) != 1 or len(recognized_pairs) != 1
+            or len(observed_names) != 1 or len(observed_addresses) != 1):
         return None
     ordinal, sku, invoice_doc = invoice_rows[0]
     if str(ordinal) != lines[0] or len(supplier_doc_ids) < 2:

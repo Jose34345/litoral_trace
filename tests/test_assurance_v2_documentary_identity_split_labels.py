@@ -86,3 +86,29 @@ def test_split_source_evidence_with_conflicting_supplier_fails_closed():
         field_name="raw.document_text", original_value=data,
     )
     assert discover_single_product_pdf_identity(fields, line_references=("1",)) is None
+
+
+def test_supplier_name_without_address_still_blocks_contradictory_identity():
+    fields = list(_fields())
+    # A transport document may state a supplier without repeating its address.
+    # It cannot be ignored merely because two other documents have full pairs.
+    fields[2] = SimpleNamespace(
+        assurance_document_id=fields[2].assurance_document_id,
+        field_name="raw.document_text",
+        original_value=(
+            fields[2].original_value + "\nSupplier legal name\nOTHER SUPPLIER INC."
+        ),
+    )
+    assert discover_single_product_pdf_identity(fields, line_references=("1",)) is None
+
+
+def test_supplier_address_without_name_still_blocks_contradictory_identity():
+    fields = list(_fields())
+    fields[2] = SimpleNamespace(
+        assurance_document_id=fields[2].assurance_document_id,
+        field_name="raw.document_text",
+        original_value=(
+            fields[2].original_value + "\nSupplier address\n44 Other Road, Shenzhen, China"
+        ),
+    )
+    assert discover_single_product_pdf_identity(fields, line_references=("1",)) is None
