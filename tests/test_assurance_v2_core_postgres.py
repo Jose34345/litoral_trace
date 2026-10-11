@@ -292,6 +292,42 @@ def test_claim_snapshot_is_tenant_scoped_immutable_and_operation_bound(pg_case):
             conn.execute(text(f"DELETE FROM {table} WHERE id=:id"), {"id": snap_id})
 
 
+def test_legacy_export_guard_blocks_v2_adopted_operation_only(pg_case):
+    from sqlalchemy.orm import Session
+    from litoral_trace.us_lacey.assurance_v2_legacy_export_gate import (
+        AssuranceV2LegacyExportBlocked, legacy_export_guard,
+    )
+
+    vals, _, runtime = pg_case
+    factory = lambda: Session(bind=runtime, expire_on_commit=False)
+    with runtime.connect() as conn:
+        _tenant(conn, vals["org_a"])
+        public_a = str(conn.execute(text(
+            "SELECT public_id FROM us_lacey_operations WHERE id=:op"
+        ), {"op": vals["op_a"]}).scalar_one())
+    with runtime.connect() as conn:
+        _tenant(conn, vals["org_b"])
+        public_b = str(conn.execute(text(
+            "SELECT public_id FROM us_lacey_operations WHERE id=:op"
+        ), {"op": vals["op_b"]}).scalar_one())
+
+    with legacy_export_guard(organization_id=vals["org_a"],
+                             operation_public_id=public_a, session_factory=factory):
+        pass  # Historical V1 operation remains available.
+    with runtime.begin() as conn:
+        _tenant(conn, vals["org_a"])
+        _insert_decision(conn, org_id=vals["org_a"], op_id=vals["op_a"],
+                         revision_id=vals["revision_a"], user_id=vals["user_a"],
+                         audit_id=vals["audit_a"], key="a:legacy-gate")
+    with pytest.raises(AssuranceV2LegacyExportBlocked):
+        with legacy_export_guard(organization_id=vals["org_a"],
+                                 operation_public_id=public_a, session_factory=factory):
+            raise AssertionError("V2 operation reached legacy export")
+    with legacy_export_guard(organization_id=vals["org_b"],
+                             operation_public_id=public_b, session_factory=factory):
+        pass  # Another tenant's V2 decision cannot affect this operation.
+
+
 
 def test_explicit_export_authorization_uses_runtime_postgres_rls(pg_case):
     """Real app-role PostgreSQL write/read. Only the CASE is synthetic.

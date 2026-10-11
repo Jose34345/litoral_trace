@@ -54,6 +54,9 @@ from litoral_trace.us_lacey.operations import (
     UsLaceyOperationNotFound,
     UsLaceyOperationService,
 )
+from litoral_trace.us_lacey.assurance_v2_legacy_export_gate import (
+    AssuranceV2LegacyExportBlocked, legacy_export_guard,
+)
 from litoral_trace.us_lacey.lacey_engine_dossier import Engine2DossierAvailability, Engine2DossierView, UsLaceyEngineDossierService
 from litoral_trace.us_lacey.jobs import (
     UsLaceyJobError,
@@ -1808,53 +1811,59 @@ def operation_complete_submit(
 def _export_response(*, request: Request, operation_public_id: str, us_session: str | None, kind: str):
     try:
         identity, _entitlement = _operational_context(us_session)
-        detail = UsLaceyOperationService().get_detail(
+        with legacy_export_guard(
             organization_id=identity.organization_id,
             operation_public_id=operation_public_id,
-        )
-        if detail.status != "COMPLETED":
-            return _operation_error_page(
-                request,
-                "Complete human review before exporting the preparation package.",
-                status_code=409,
-            )
-        if kind == "xlsx":
-            payload = export_us_lacey_xlsx(
+        ):
+            detail = UsLaceyOperationService().get_detail(
                 organization_id=identity.organization_id,
                 operation_public_id=operation_public_id,
             )
-            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        else:
-            payload = export_us_lacey_csv(
+            if detail.status != "COMPLETED":
+                return _operation_error_page(
+                    request,
+                    "Complete human review before exporting the preparation package.",
+                    status_code=409,
+                )
+            if kind == "xlsx":
+                payload = export_us_lacey_xlsx(
+                    organization_id=identity.organization_id,
+                    operation_public_id=operation_public_id,
+                )
+                media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            else:
+                payload = export_us_lacey_csv(
+                    organization_id=identity.organization_id,
+                    operation_public_id=operation_public_id,
+                )
+                media_type = "text/csv; charset=utf-8"
+            safe_record_outreach_event(
+                session_token=us_session or "",
                 organization_id=identity.organization_id,
-                operation_public_id=operation_public_id,
+                event_name="EXPORT_DOWNLOADED",
+                event_key=f"{operation_public_id}:{kind}",
+                metadata={"kind": kind},
             )
-            media_type = "text/csv; charset=utf-8"
-        safe_record_outreach_event(
-            session_token=us_session or "",
-            organization_id=identity.organization_id,
-            event_name="EXPORT_DOWNLOADED",
-            event_key=f"{operation_public_id}:{kind}",
-            metadata={"kind": kind},
-        )
-        safe_record_outreach_event(
-            session_token=us_session or "",
-            organization_id=identity.organization_id,
-            event_name="PQL_QUALIFIED",
-            event_key="export-downloaded",
-            metadata={"reason": "export_downloaded", "kind": kind},
-        )
-        response = Response(content=payload, media_type=media_type)
-        response.headers["Content-Disposition"] = f'attachment; filename="lacey-preparation-{detail.public_id}.{kind}"'
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        return response
+            safe_record_outreach_event(
+                session_token=us_session or "",
+                organization_id=identity.organization_id,
+                event_name="PQL_QUALIFIED",
+                event_key="export-downloaded",
+                metadata={"reason": "export_downloaded", "kind": kind},
+            )
+            response = Response(content=payload, media_type=media_type)
+            response.headers["Content-Disposition"] = f'attachment; filename="lacey-preparation-{detail.public_id}.{kind}"'
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            return response
     except UsLaceyPortalAuthError:
         return _login_redirect(clear_cookie=bool(us_session))
     except UsLaceyOperationalAccessError:
         return RedirectResponse("/billing", status_code=303)
     except UsLaceyOperationNotFound:
         return _operation_error_page(request, "Operation not found.", status_code=404)
+    except AssuranceV2LegacyExportBlocked as exc:
+        return _operation_error_page(request, str(exc), status_code=409)
     except UsLaceyReviewError as exc:
         return _operation_error_page(request, str(exc), status_code=400)
 
