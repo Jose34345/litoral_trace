@@ -77,6 +77,32 @@ Snapshot is a **read model**, not canonical publication. It is CURRENT only when
 
 **Fail closed:** no source / incomplete identity / competing values / revoked or missing original support / expired evidence / stale generation / cross-tenant refs → `REVIEW_REQUIRED` or `BLOCKED`, never automatic reuse.
 
+## Document-exact line binding (additive source context)
+
+For single-product PDF packets only, `DOCUMENT_EXACT_SINGLE_SKU` is a
+source-scoped *candidate association*, not a human decision, and not a
+permission to file. The bounded adapter `assurance_v2_documentary_claim_binding`
+reuses `discover_single_product_pdf_identity` over original Engine2 parsed
+`TEXT_LINE`/`OCR_LINE` blocks from the current fenced source-set revision.
+
+The packet must prove exactly one invoice ordinal and SKU, corroboration of
+the same manufacturer SKU from two independent other physical documents, and
+one supplier name/address identity in two documents. A product claim can be
+associated only when its **own** physical document contains the exact SKU,
+its literal value is source-anchored and supported, and its field belongs to
+the explicit product/plant allowlist. Shipment-level attributes stay UNBOUND;
+ambiguous, multi-line, multi-logical-document, conflicting supplier/SKU or
+incomplete packets abstain rather than guessing.
+
+The persisted `documentary_binding` carries source-set revision/fingerprint,
+tenant/operation, exact line/SKU, subject containing a source-normalized supplier
+identity digest, and witnesses containing the invoice, supplier and SKU
+document IDs and original SHA-256 hashes. The runtime bridge cross-checks
+all witness documents against the current tenant source set, including
+supersession. A missing/mismatched witness is an invalid snapshot, never
+proof of absent data. The source claim remains `CANDIDATE`, and existing
+human/filing gates remain authoritative.
+
 ## Integration and compatibility
 
 The runtime bridge consumes the persisted `assurance.claim.snapshot.v1` candidate
