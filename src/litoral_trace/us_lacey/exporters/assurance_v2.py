@@ -58,6 +58,8 @@ class AssuranceCase:
     documents: tuple[dict[str, Any], ...] = ()
     lines: tuple[str, ...] = ()
     fields: tuple[dict[str, Any], ...] = ()
+    # Source-linked extractions remain candidate-only; never export authority.
+    candidate_observations: tuple[dict[str, Any], ...] = ()
     exceptions: tuple[dict[str, Any], ...] = ()
     decisions: tuple[dict[str, Any], ...] = ()
     reuses: tuple[dict[str, Any], ...] = ()
@@ -92,6 +94,7 @@ def case_from_snapshot(payload: Mapping[str, Any]) -> AssuranceCase:
         documents=collection("documents"),
         lines=tuple(str(line) for line in payload.get("lines", ())),
         fields=collection("fields"),
+        candidate_observations=collection("candidate_observations"),
         exceptions=collection("exceptions"),
         decisions=collection("decisions"),
         reuses=collection("reuses"),
