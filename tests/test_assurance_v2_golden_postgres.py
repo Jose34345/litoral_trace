@@ -60,7 +60,7 @@ def _upload_pack(client: TestClient, operation_path: str, pack: str) -> None:
         assert uploaded.status_code == 303, uploaded.text
 
 
-def test_original_pack1_http_upload_to_postgres_claim_workspace(monkeypatch):
+def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(monkeypatch):
     _configure(monkeypatch)
     monkeypatch.setenv("US_LACEY_MONTHLY_OPERATION_LIMIT", "10")
     monkeypatch.setenv("US_LACEY_ENGINE2_MODE", "SHADOW")
