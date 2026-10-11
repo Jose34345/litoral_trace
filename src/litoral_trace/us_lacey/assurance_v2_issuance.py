@@ -207,12 +207,23 @@ def issue_locked_assurance_package(
         if export_actor not in {str(user_id), f"user:{user_id}"}:
             raise PermissionError("Package needs explicit authorization from this reviewer")
 
-        package = issue_assurance_package(case)
         store = package_store or PostgresOperationEventPackageStore(session_factory=session_factory)
-        store.save_in_transaction(
-            session, organization_id=org_id,
-            operation_id=str(public_id), package=package,
-        )
+        # The operation lock serializes two issuers of an identical authorized
+        # case. Reuse immutable bytes from the first issuance instead of
+        # creating a second timestamp-dependent package fingerprint.
+        if isinstance(store, PostgresOperationEventPackageStore):
+            package = store.load_for_case_in_transaction(
+                session, organization_id=org_id, operation_id=str(public_id),
+                case_fingerprint=case.authority_fingerprint(),
+            )
+        else:
+            package = None
+        if package is None:
+            package = issue_assurance_package(case)
+            store.save_in_transaction(
+                session, organization_id=org_id,
+                operation_id=str(public_id), package=package,
+            )
         session.commit()
         return {
             "status": "FILING_READY",
