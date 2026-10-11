@@ -506,7 +506,12 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
                         })
         chosen = (
             str(field.human_value or "").strip() if proven_decision
-            else verified_record["value"] if verified_record else proposed
+            else verified_record["value"] if verified_record
+            # A not-required conditional field must not leak an unreviewed
+            # parser/calculation artifact (e.g. 0% recycled) into the
+            # regulatory output, where any populated field requires evidence.
+            else "" if field.field_status == "NOT_REQUIRED"
+            else proposed
         )
         authority = (
             "HUMAN_CONFIRMED" if proven_decision else

@@ -155,7 +155,9 @@ def collect_source_claims(
         # authority. Each candidate preserves its literal page/block/subspan.
         # The existing V2 documentary identity bridge binds only when the
         # full packet proves one exact supplier/SKU/line.
-        for span in extract_explicit_field_spans(logical.resolution.layout):
+        for span in extract_explicit_field_spans(
+            logical.resolution.layout, document_type=logical.resolution.document_type,
+        ):
             raw = RawCandidate(
                 field_key=span.field_name,
                 raw_text=span.value, normalized_value=span.value,

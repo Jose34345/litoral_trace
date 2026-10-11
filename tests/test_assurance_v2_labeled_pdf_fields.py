@@ -7,7 +7,7 @@ from __future__ import annotations
 from hashlib import sha256
 from pathlib import Path
 
-from litoral_trace.lacey_engine.domain import LayoutBlock, ParsedLayout
+from litoral_trace.lacey_engine.domain import DocumentType, LayoutBlock, ParsedLayout
 from litoral_trace.lacey_engine.labeled_pdf_fields import extract_explicit_field_spans
 from litoral_trace.lacey_engine.pipeline import process_bundle
 from litoral_trace.us_lacey.assurance_v2_claim_ingestion import collect_source_claims
@@ -82,3 +82,65 @@ def test_original_worksheet_generates_three_source_supported_unapproved_claims()
     assert all(c["original_sha256"] == before for c in candidates)
     assert all(c["source_locator"]["kind"] == "TEXT_SPAN" for c in candidates)
     assert sha256(pdf.read_bytes()).hexdigest() == before
+
+
+def test_invoice_shipment_reference_never_masquerades_as_cbp_entry_number():
+    layout = _layout(
+        "Shipment reference HHI-IMP-2026-2083",
+        "Entry type (exercise) 01 - Formal commercial entry",
+        "Entry preparation worksheet REF HHI-IMP-2026-2083",
+        "Invoice number LSBH-CI-261102",
+        "B/L HBL-XMN-LAX-261120-083",
+    )
+    assert not extract_explicit_field_spans(layout)
+
+
+def test_exact_entry_number_is_only_candidate_with_source_span():
+    layout = _layout(
+        "SYNTHETIC TEST DATA - NOT VALID FOR CUSTOMS OR FILING",
+        "Entry number 999-9999999-9",
+    )
+    spans = extract_explicit_field_spans(layout)
+    assert [(s.field_name, s.value) for s in spans] == [
+        ("filing_entry_reference", "999-9999999-9"),
+    ]
+    assert layout.blocks[1].text[spans[0].start:spans[0].end] == spans[0].value
+
+
+def test_goods_description_requires_explicit_label_and_packing_list_context():
+    layout = _layout("Goods Retail boxed 4-piece solid bamboo coaster sets",
+                     "Gross weight 585.0 KG",
+                     "Description of merchandise Bamboo coaster sets")
+    packing = extract_explicit_field_spans(layout, document_type=DocumentType.PACKING_LIST)
+    assert [(s.field_name, s.value) for s in packing] == [
+        ("merchandise_description", "Retail boxed 4-piece solid bamboo coaster sets"),
+        ("merchandise_description", "Bamboo coaster sets"),
+    ]
+    invoice = extract_explicit_field_spans(layout, document_type=DocumentType.COMMERCIAL_INVOICE)
+    assert [(s.field_name,s.value) for s in invoice] == [
+        ("merchandise_description", "Bamboo coaster sets"),
+    ]
+
+
+def test_existing_pack2_source_goods_description_is_verbatim_not_derived():
+    document = PACK / "02_Packing_List_Shipment2.pdf"
+    bundle = process_bundle(filename=document.name, content=document.read_bytes())
+    layout = bundle.documents[0].resolution.layout
+    spans = extract_explicit_field_spans(
+        layout, document_type=bundle.documents[0].resolution.document_type,
+    )
+    assert [(s.field_name,s.value,s.block.block_id) for s in spans] == [
+        ("merchandise_description", "Retail boxed 4-piece solid bamboo coaster sets", "p1-l20"),
+    ]
+
+
+def test_alphanumeric_entry_reference_matches_ppq_contract():
+    from litoral_trace.us_lacey.ppq505 import validate_ppq_value
+    span = extract_explicit_field_spans(
+        _layout("Entry Number ABC-1234567-Z")
+    )
+    assert [(s.field_name, s.value) for s in span] == [
+        ("filing_entry_reference", "ABC-1234567-Z"),
+    ]
+    validation = validate_ppq_value("filing_entry_reference", span[0].value)
+    assert validation.normalized_value == "ABC-1234567-Z"

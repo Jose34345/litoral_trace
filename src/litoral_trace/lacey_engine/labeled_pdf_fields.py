@@ -9,13 +9,28 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
-from litoral_trace.lacey_engine.domain import LayoutBlock, ParsedLayout
+from litoral_trace.lacey_engine.domain import DocumentType, LayoutBlock, ParsedLayout
 
 EXTRACTOR_VERSION = "lacey.labeled_pdf_field.v1"
 
 # These labels are explicit vocabulary, not loose keyword proximity.
 _ENTERED = re.compile(
     r"^Entered value\s+(?P<value>USD\s+(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]{1,2})?)\s*$",
+    re.I,
+)
+# This is a *documented* entry number, not a shipment reference, invoice,
+# purchase order or entry TYPE. It still requires authenticated review.
+_ENTRY_REFERENCE = re.compile(
+    r"^Entry (?:number|no\.)\s*[:#-]?\s*(?P<reference>[A-Z0-9]{3}-[A-Z0-9]{7}-[A-Z0-9])\s*$",
+    re.I,
+)
+_DESCRIPTION = re.compile(
+    r"^(?:Description of merchandise|Merchandise description)\s*[:#-]?\s*(?P<value>[A-Za-z][^\r\n]{5,190})$",
+    re.I,
+)
+# Packing lists can explicitly label their goods, but not the shipping total.
+_PACKING_GOODS = re.compile(
+    r"^Goods\s+(?P<value>[A-Za-z][^\r\n]{5,190})$",
     re.I,
 )
 _PLANT = re.compile(
@@ -34,7 +49,9 @@ class LiteralFieldSpan:
     end: int
 
 
-def extract_explicit_field_spans(layout: ParsedLayout) -> tuple[LiteralFieldSpan, ...]:
+def extract_explicit_field_spans(
+    layout: ParsedLayout, *, document_type: DocumentType | None = None,
+) -> tuple[LiteralFieldSpan, ...]:
     """Match complete label/value rows, preserving exact literal subspans.
 
     This intentionally abstains on OCR ambiguity, unmatched units, multiple
@@ -47,13 +64,22 @@ def extract_explicit_field_spans(layout: ParsedLayout) -> tuple[LiteralFieldSpan
         raw = block.text
         entered = _ENTERED.fullmatch(raw.strip())
         quantity = _PLANT.fullmatch(raw.strip())
-        if not entered and not quantity:
+        entry_ref = _ENTRY_REFERENCE.fullmatch(raw.strip())
+        description = _DESCRIPTION.fullmatch(raw.strip())
+        if document_type is DocumentType.PACKING_LIST and not description:
+            description = _PACKING_GOODS.fullmatch(raw.strip())
+        if not any((entered, quantity, entry_ref, description)):
             continue
         trim_start = len(raw) - len(raw.lstrip())
-        source = entered if entered else quantity
-        keys = (("entered_value", "value"),) if entered else (
-            ("plant_quantity", "amount"), ("metric_unit", "unit"),
-        )
+        source = entered or quantity or entry_ref or description
+        if entered:
+            keys = (("entered_value", "value"),)
+        elif quantity:
+            keys = (("plant_quantity", "amount"), ("metric_unit", "unit"))
+        elif entry_ref:
+            keys = (("filing_entry_reference", "reference"),)
+        else:
+            keys = (("merchandise_description", "value"),)
         for field_name, group in keys:
             start, end = source.span(group)
             start += trim_start

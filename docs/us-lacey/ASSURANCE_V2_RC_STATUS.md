@@ -227,3 +227,45 @@ precision/recall or demonstrate concurrent source-replacement safety. A
 synthetic example is never a federal filing. Do not deploy V2, enable
 `US_LACEY_ASSURANCE_V2_MODE=ENABLED`, or merge the complete RC for release
 until all P0 checks and remote CI/PG gates are approved.
+
+
+## Filing-dossier Golden: explicitly source-supported final emission
+
+**Acceptance boundary:** the unmodified synthetic original Pack 1 and Pack 2
+PDFs have shipment/internal references, but neither proves a CBP **entry
+number**. They must never be treated as equivalent. The original four-shipment
+Golden still asserts final issuance 409 when a real required entry number is
+absent.
+
+The additional `tests/test_assurance_v2_filing_complete_postgres.py` scenario
+uploads the seven original synthetic Pack 1 PDFs **plus one separate PDF
+generated in-memory inside the test**. The eighth document is conspicuously
+labeled `SYNTHETIC TEST DATA - NOT VALID FOR CUSTOMS OR FILING` and
+`THIS IS NOT A CUSTOMS ENTRY OR A CONFIRMATION BY CBP`. Its entry identifier
+`999-9999999-9` is expressly fictitious. This verifies software mechanics;
+it is **not**, and cannot be used as, real documentary evidence of a customer
+entry or submission.
+
+The Engine2 V2 sidecar can now anchor an explicit **merchandise description**
+(`Goods ...` only in an independently typed packing list, or a direct
+`Description of merchandise ...` label), and an actual **Entry number ...**
+text span, refusing shipment numbers, invoices, bills of lading, entry types,
+gross-weight labels and unlabeled data. No claim is automatically verified.
+Only authenticated, source-fenced human decisions can raise field authority.
+The rule that **every populated output field** needs support remains intact.
+A `NOT_REQUIRED` conditional field's unreviewed legacy default (for example
+`percent_recycled = 0`) is intentionally not projected into final authority.
+
+The isolated PostgreSQL HTTP/Vault/worker Golden proves the full lifecycle:
+all source-present required and populated optional fields reviewed, explicit
+export authorization for the current case fingerprint, atomic issuance, and
+retrieval of the immutable LAWGS XML, preparation Excel, PPQ 505 JSON and
+manifest, including a duplicate issue call returning the same fingerprint.
+`submitted_to_agency=false` is mandatory.
+
+**NO-GO for production remains in effect** until review-quality ground truth
+has been measured, source supersession and revocation/concurrent mutation
+have passed together with issuer locking, real-customer documentation has been
+validated against required legal fields and release controls are green.
+A synthetic Golden never authorizes a federal filing, enables
+`US_LACEY_ASSURANCE_V2_MODE=ENABLED`, or permits a production merge by itself.
