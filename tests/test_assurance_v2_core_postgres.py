@@ -260,6 +260,7 @@ def test_explicit_export_authorization_uses_runtime_postgres_rls(pg_case):
 
     vals, owner, runtime = pg_case
     with owner.connect() as conn:
+        _tenant(conn, vals["org_a"])
         operation_public_id = str(conn.execute(text(
             "SELECT public_id FROM us_lacey_operations WHERE id=:op AND organization_id=:org"
         ), {"org": vals["org_a"], "op": vals["op_a"]}).scalar_one())
