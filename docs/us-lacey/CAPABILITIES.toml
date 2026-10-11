@@ -531,7 +531,8 @@ implementation = [
 ]
 tests = [
   "tests/test_assurance_v2_labeled_pdf_fields.py",
-  "tests/test_assurance_v2_golden_postgres.py"
+  "tests/test_assurance_v2_golden_postgres.py",
+  "tests/test_assurance_v2_filing_complete_postgres.py"
 ]
 notes = "Only literal, fully labeled and page/block anchored entered value, plant-material quantity and metric-unit observations; independent documentary SKU binding and authenticated human authority remain required. No new regulatory filing authority."
 
