@@ -394,6 +394,11 @@ def review_us_lacey_field(
 
         v2_promoted = False
         if v2_journal_active:
+            if source_selection is not None:
+                # The authoritative journal resolves evidence using database
+                # columns, not unflushed ORM changes. Keep this flush inside
+                # the same locked transaction: any rejection rolls it back.
+                session.flush()
             authority_decision = journal_reviewed_field(
                 session, organization_id=org_id, operation=operation,
                 field=field, authenticated_user_id=int(user_id),
