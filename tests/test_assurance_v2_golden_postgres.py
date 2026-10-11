@@ -215,6 +215,50 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
                 if field["authority"] == "VERIFIED_REUSE"} == botanical
         assert all(not field["document_ids"] for field in applied_case.fields
                    if field["authority"] == "VERIFIED_REUSE")
+        # The source observation of article/component is bound to the
+        # current exact supplier-SKU-line. Unlike an inferred answer, it can
+        # be explicitly selected and journaled by the authenticated reviewer.
+        current = read_tenant_assurance_case(
+            organization_id=organization_id, operation_public_id=second_id,
+        )
+        article_exception = next(
+            row for row in current.exceptions
+            if row.get("field_name") == "article_component"
+            and str(row.get("id", "")).startswith("field:")
+        )
+        source_choices = [
+            item for item in article_exception.get("candidates", ())
+            if str(item.get("id", "")).startswith("source:")
+        ]
+        assert len(source_choices) == 1
+        reviewed_article = client.post(
+            f"/assurance-v2/operations/{second_id}/decisions",
+            json={
+                "csrf_token": us_lacey_csrf_token(
+                    session_token=client.cookies.get("us_lacey_session"),
+                    purpose=f"assurance-v2:{second_id}",
+                ),
+                "exception_id": article_exception["id"],
+                "action": "ACCEPT",
+                "candidate_id": source_choices[0]["id"],
+                "reason": "Reviewed original PDF article and confirmed the exact SKU line",
+            },
+        )
+        assert reviewed_article.status_code == 202, reviewed_article.text
+        article_case = read_tenant_assurance_case(
+            organization_id=organization_id, operation_public_id=second_id,
+        )
+        assert any(
+            row["name"] == "article_component"
+            and row["authority"] == "HUMAN_CONFIRMED"
+            and row["document_ids"]
+            and row["evidence_ids"]
+            for row in article_case.fields
+        )
+        assert not any(
+            row.get("field_name") == "article_component"
+            for row in article_case.exceptions
+        )
         assert read_tenant_assurance_case(
             organization_id=organization_id + 1000000, operation_public_id=second_id,
         ) is None
