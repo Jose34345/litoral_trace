@@ -31,7 +31,9 @@ changed. `US_LACEY_ASSURANCE_V2_MODE=ENABLED` remains prohibited.
 - The UI now displays source linked observations and their original PDF links
   separately from authoritative fields. A supported `article_component`
   observation without a safe line association creates an explicit blocking
-  `SOURCE_CLAIM_UNBOUND` exception.
+  `SOURCE_CLAIM_UNBOUND` exception. The source-claim stream still reports
+  `UNBOUND` for all 164 observations across the four shipments; the canonical
+  field projection is a separate path. This unresolved bridge is a P0 gate.
 
 ## PostgreSQL golden result
 
@@ -82,7 +84,8 @@ filing-ready second shipment. Required fields such as filing entry reference,
 merchandise description, entered value, plant quantity and metric unit are
 still missing or lack source-linked V2 authority in the operational field
 ledger. One supported `article_component` candidate is explicitly unbound
-to a line. The gate correctly returns 409 for issuance and legacy exports;
+to a line, and no V2 source observation has an exact line association in this
+run. The gate correctly returns 409 for issuance and legacy exports;
 there is no final dossier or authorized final export from this Golden path.
 It would be incorrect to fabricate a customs reference, invent human
 authorization or claim a complete E2E release.
