@@ -174,6 +174,7 @@ def review_us_lacey_field(
     action: str,
     value: str | None = None,
     candidate_id: int | None = None,
+    source_claim_id: str | None = None,
     reason_code: str | None = None,
     expected_source_set_fingerprint: str | None = None,
     expected_case_fingerprint: str | None = None,
@@ -199,6 +200,13 @@ def review_us_lacey_field(
         raise UsLaceyReviewError("V2 review cannot authorize NOT_REQUIRED without an explicit decision contract.")
     if v2_journal_active and normalized_action == "edit" and not str(reason_code or "").strip():
         raise UsLaceyReviewError("Explain the correction and supporting evidence before saving.")
+    if source_claim_id and (
+        not v2_fenced or normalized_action != "accept" or candidate_id is not None
+        or not str(reason_code or "").strip()
+    ):
+        raise UsLaceyReviewError(
+            "Source-claim selection requires an authenticated, fenced ACCEPT with reviewer reason."
+        )
 
     session = get_us_lacey_db_session()
     try:
@@ -243,6 +251,22 @@ def review_us_lacey_field(
         if field is None:
             raise UsLaceyReviewError("Review field was not found for this operation.")
 
+        source_selection = None
+        if source_claim_id:
+            # The tenant/source-set-fenced case was loaded under the operation
+            # lock above. The helper requires an exact current document span,
+            # correct field and confirmed supplier/SKU/line for product claims.
+            from litoral_trace.us_lacey.assurance_v2_source_claim_review import (
+                select_reviewable_source_claim,
+            )
+            try:
+                source_selection = select_reviewable_source_claim(
+                    current_case, claim_id=str(source_claim_id),
+                    field_name=field.field_name,
+                    line_reference=field.merchandise_line_reference or PPQ505_SHIPMENT_REFERENCE,
+                )
+            except ValueError as exc:
+                raise UsLaceyReviewError(str(exc)) from exc
         selected_candidate = None
         if candidate_id is not None:
             selected_candidate = session.scalar(
@@ -258,7 +282,10 @@ def review_us_lacey_field(
         proposed = (
             (selected_candidate.normalized_value or selected_candidate.original_value)
             if selected_candidate is not None
-            else (field.normalized_value or field.original_value)
+            else (
+                source_selection.normalized_value if source_selection is not None
+                else (field.normalized_value or field.original_value)
+            )
         )
         before = {
             "field_id": field.id,
@@ -272,6 +299,14 @@ def review_us_lacey_field(
             validation = validate_ppq_value(field.field_name, proposed)
             if validation.status.value in {"INVALID", "MISSING", "REVIEW_REQUIRED"}:
                 raise UsLaceyReviewError(validation.error or "This value requires further review.")
+            if source_selection is not None:
+                # Preserve original extracted text and its *verified* current
+                # PDF span; selected source is not automatically canonical.
+                field.original_value = source_selection.raw_value
+                field.normalized_value = source_selection.normalized_value
+                field.source_assurance_document_id = source_selection.assurance_document_id
+                field.source_page = source_selection.page
+                field.source_locator = source_selection.locator
             field.human_value = validation.normalized_value
             field.field_status = "MATCHED"
             field.validation_status = "VALID"
