@@ -111,3 +111,31 @@ drops sidecar data, so retain backups before any future production rollback.
 Do not deploy, enable final mode, issue federal filings or merge for release
 until the P0 is closed and the complete Golden is green. Production requires
 separate explicit approval after all gates and remote CI pass.
+
+## Follow-up: exact source-document identity bridge
+
+**Scope:** separate branch `fix/assurance-v2-source-identity-bridge` based on RC
+`bc320837`. This is a candidate-only bridge, not a release authorization.
+
+- Reuses existing independent PDF identity corroboration to establish the
+  exact single invoice line, manufacturer SKU and supplier name/address.
+- Attaches `DOCUMENT_EXACT_SINGLE_SKU` only to source-supported,
+  source-anchored product/plant claims in documents carrying that SKU; general
+  shipment claims remain UNBOUND. Multiple product lines, mixed logical
+  documents or insufficient witnesses abstain.
+- Persists the tenant/revision/fingerprint, invoice/SKU/supplier witness
+  document IDs + hashes, exact line/SKU and supplier identity digest without
+  copying source text or granting human authority.
+- The case reader validates every document witness against the *current*
+  tenant source set, including revisions, before accepting candidate context.
+- Existing original synthetic four-shipment PostgreSQL Golden passed after
+  changing the obsolete expectation that `article_component` must be UNBOUND.
+  The new expectation is exact documentary binding while the unpublished
+  source claim remains blocking until actual human/regulatory authority exists.
+
+**Release status remains NO-GO:** this bridge does not create missing filing
+entry reference, merchandise description, entered value, plant quantity or
+metric unit; it does not authorize final issuance. Full required-field review,
+authorized final dossier/export, concurrency, full-field ground truth and
+remote checks remain distinct release gates. No production deployment or
+`ENABLED` activation is part of this patch.
