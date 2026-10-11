@@ -133,3 +133,50 @@ def test_decision_and_audit_rollback_with_review_transaction(session):
     assert session.scalar(select(AssuranceV2Decision)) is None
     assert session.scalar(select(AssuranceV2MemoryLink)) is None
     assert session.scalar(select(UsLaceyOperationEvent)) is None
+
+
+
+def test_v2_review_rejects_unreasoned_correction_before_opening_database(monkeypatch):
+    """An enabled V2 gate cannot record a correction with no human reason."""
+    from litoral_trace.us_lacey import review as review_module
+
+    monkeypatch.setenv("US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL", "ON")
+
+    def database_must_not_open():
+        pytest.fail("V2 correction validation must precede DB access")
+
+    monkeypatch.setattr(review_module, "get_us_lacey_db_session", database_must_not_open)
+    with pytest.raises(review_module.UsLaceyReviewError, match="Explain the correction"):
+        review_module.review_us_lacey_field(
+            organization_id=1, operation_public_id="not-used",
+            field_id=1, user_id=1, user_email="reviewer@example.test",
+            action="edit", value="Phyllostachys", reason_code=" ",
+        )
+
+
+def test_v2_review_not_applicable_must_not_be_misrepresented_as_accept(monkeypatch):
+    from litoral_trace.us_lacey import review as review_module
+
+    monkeypatch.setenv("US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL", "ON")
+    monkeypatch.setattr(
+        review_module, "get_us_lacey_db_session",
+        lambda: pytest.fail("Unsupported V2 action must be rejected before DB"),
+    )
+    with pytest.raises(review_module.UsLaceyReviewError, match="NOT_REQUIRED"):
+        review_module.review_us_lacey_field(
+            organization_id=1, operation_public_id="not-used",
+            field_id=1, user_id=1, user_email="reviewer@example.test",
+            action="not_required", reason_code="NOT_PAPER_OR_PAPERBOARD",
+        )
+
+
+def test_review_dialog_exposes_explicit_correction_reason():
+    from pathlib import Path
+
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
+    ).read_text(encoding="utf-8")
+    assert 'name="reason_code" rows="2"' in template
+    assert "Reason for correction" in template
+    assert 'name="action" value="edit"' in template
