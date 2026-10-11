@@ -51,8 +51,8 @@ def test_human_decision_carries_forward_and_second_shipment_only_proposes_reuse(
     two = _case(session, org.id, op2.public_id)
     assert two.fields[0]["authority"] == "CANDIDATE"
     assert not two.fields[0]["value"]
-    assert two.reuses and two.reuses[0]["value"] == "Quercus alba"
-    assert two.reuses[0]["status"] == "ELIGIBLE"
-    assert two.reuses[0]["provenance"] == "REUSE_PROPOSED_NOT_CANONICAL"
+    # Without an ingestion-verified snapshot covering every current PDF, the
+    # case cannot prove that no current botanical claim supersedes history.
+    assert two.reuses == ()
     assert not evaluate_filing_gate(two).ready
     assert _case(session, org.id + 987, op2.public_id) is None

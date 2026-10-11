@@ -20,6 +20,7 @@ from litoral_trace.db.models import (
 )
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.assurance_v2_memory import evaluate_reuse
+from litoral_trace.us_lacey.assurance_v2_claim_ingestion import _nonfactual_placeholder
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.exporters.assurance_v2 import AssuranceCase
 from litoral_trace.us_lacey.ppq505 import PPQ505_SHIPMENT_REFERENCE
@@ -48,17 +49,21 @@ def read_tenant_assurance_case(
 def _source_claim_observations(
     db: Session, *, organization_id: int, operation_id: int,
     revision: UsLaceySourceSetRevision, documents: list[dict],
-) -> tuple[dict, ...]:
-    """Read a source-set-fenced observation stream, never final authority.
+) -> tuple[tuple[dict, ...], bool]:
+    """Return verified candidates and whether *all* current PDFs were checked.
 
-    A forged, obsolete or cross-tenant claim/document reference is discarded.
-    Legacy canonical fields do not become V2 decisions because an extraction
-    candidate has a plausible value or a verified literal source anchor.
+    An incomplete, stale, forged, failed or absent claim snapshot cannot prove
+    that the new shipment lacks botanical evidence. Reuse must abstain in that
+    case. Only the ingestion pipeline may create these candidate observations.
     """
+    if not documents or len(documents) != revision.document_count:
+        return (), False
     current_documents = {
         (int(doc["operation_document_id"]), int(doc["id"])): doc
         for doc in documents
     }
+    if len(current_documents) != len(documents):
+        return (), False
     runs = db.scalars(select(UsLaceyEngineShipmentRun).where(
         UsLaceyEngineShipmentRun.organization_id == organization_id,
         UsLaceyEngineShipmentRun.operation_id == operation_id,
@@ -69,69 +74,88 @@ def _source_claim_observations(
         if not isinstance(snapshot, dict) or snapshot.get("schema_version") != "assurance.claim.snapshot.v1":
             continue
         if (
-            int(snapshot.get("source_set_revision_id") or -1) != revision.id
+            snapshot.get("source_set_revision_id") != revision.id
             or snapshot.get("source_set_fingerprint") != revision.source_set_fingerprint
         ):
             continue
+        sources = snapshot.get("documents")
+        if (
+            snapshot.get("status") != "CANDIDATE_ONLY"
+            or not isinstance(sources, list)
+            or len(sources) != len(current_documents)
+        ):
+            return (), False
+        seen: set[tuple[int, int]] = set()
         observations: list[dict] = []
-        for source in snapshot.get("documents", ()):
+        count = 0
+        for source in sources:
             if not isinstance(source, dict):
-                continue
-            key = (int(source.get("operation_document_id") or -1),
-                   int(source.get("assurance_document_id") or -1))
-            document = current_documents.get(key)
-            if (
-                document is None
-                or source.get("original_sha256") != document["sha256"]
-                or int(source.get("document_version_number") or -1) != int(document["version"])
-                or int(source.get("organization_id") or -1) != organization_id
-                or int(source.get("operation_id") or -1) != operation_id
-                or int(source.get("source_set_revision_id") or -1) != revision.id
-            ):
-                continue
-            if source.get("status") == "FAILED":
-                observations.append({
-                    "id": f"source:{key[0]}:FAILED",
-                    "document_id": document["id"],
-                    "field_name": "DOCUMENT_EXTRACTION",
-                    "support_status": "UNSUPPORTED",
-                    "authority": "CANDIDATE",
-                    "reason_codes": [str(source.get("reason_code") or "VERIFICATION_FAILED")],
-                    "original_value": "",
-                    "source_locator": None,
-                })
-                continue
-            for candidate in source.get("claims", ()):
-                if not isinstance(candidate, dict):
-                    continue
+                return (), False
+            try:
+                key = (int(source.get("operation_document_id")),
+                       int(source.get("assurance_document_id")))
+                document = current_documents.get(key)
+                claims = source.get("claims")
                 if (
-                    candidate.get("contract_version") != "assurance.claim.v1"
-                    or candidate.get("candidate_state") != "CANDIDATE"
-                    or candidate.get("interpretation_status") != "PROPOSED"
-                    or candidate.get("original_sha256") != document["sha256"]
-                    or int(candidate.get("source_set_revision_id") or -1) != revision.id
-                    or int(candidate.get("organization_id") or -1) != organization_id
-                    or int(candidate.get("operation_id") or -1) != operation_id
-                    or int(candidate.get("assurance_document_id") or -1) != key[1]
-                    or int(candidate.get("operation_document_id") or -1) != key[0]
+                    document is None or key in seen
+                    or source.get("status") == "FAILED"
+                    or source.get("original_sha256") != document["sha256"]
+                    or int(source.get("document_version_number")) != int(document["version"])
+                    or int(source.get("organization_id")) != organization_id
+                    or int(source.get("operation_id")) != operation_id
+                    or int(source.get("source_set_revision_id")) != revision.id
+                    or source.get("source_set_fingerprint") != revision.source_set_fingerprint
+                    or not isinstance(claims, list)
+                    or int(source.get("claim_count")) != len(claims)
                 ):
-                    continue
-                observations.append({
-                    "id": str(candidate.get("claim_id") or ""),
-                    "document_id": document["id"],
-                    "field_name": str(candidate.get("field_name") or ""),
-                    "original_value": str(candidate.get("original_value") or ""),
-                    "normalized_value": candidate.get("normalized_value"),
-                    "support_status": str(candidate.get("support_status") or "UNSUPPORTED"),
-                    "authority": "CANDIDATE",
-                    "association_status": str(candidate.get("association_status") or "UNBOUND"),
-                    "sku": candidate.get("sku"),
-                    "line_reference": candidate.get("line_reference"),
-                    "source_locator": candidate.get("source_locator"),
-                    "reason_codes": list(candidate.get("reason_codes") or ()),
-                })
-        return tuple(observations)
-    return ()
+                    return (), False
+                seen.add(key)
+                count += len(claims)
+                for candidate in claims:
+                    if (
+                        not isinstance(candidate, dict)
+                        or candidate.get("contract_version") != "assurance.claim.v1"
+                        or candidate.get("candidate_state") != "CANDIDATE"
+                        or candidate.get("interpretation_status") != "PROPOSED"
+                        or not candidate.get("claim_id")
+                        or not candidate.get("field_name")
+                        or candidate.get("support_status") not in {
+                            "SUPPORTED", "UNSUPPORTED", "AMBIGUOUS", "OUT_OF_SCOPE"
+                        }
+                        or candidate.get("original_sha256") != document["sha256"]
+                        or int(candidate.get("source_set_revision_id")) != revision.id
+                        or int(candidate.get("organization_id")) != organization_id
+                        or int(candidate.get("operation_id")) != operation_id
+                        or int(candidate.get("assurance_document_id")) != key[1]
+                        or int(candidate.get("operation_document_id")) != key[0]
+                        or str(candidate.get("document_version")) != document["version"]
+                    ):
+                        return (), False
+                    if (
+                        candidate.get("support_status") == "SUPPORTED"
+                        and not candidate.get("source_locator")
+                    ):
+                        return (), False
+                    observations.append({
+                        "id": str(candidate.get("claim_id") or ""),
+                        "document_id": document["id"],
+                        "field_name": str(candidate.get("field_name") or ""),
+                        "original_value": str(candidate.get("original_value") or ""),
+                        "normalized_value": candidate.get("normalized_value"),
+                        "support_status": str(candidate.get("support_status") or "UNSUPPORTED"),
+                        "authority": "CANDIDATE",
+                        "association_status": str(candidate.get("association_status") or "UNBOUND"),
+                        "sku": candidate.get("sku"),
+                        "line_reference": candidate.get("line_reference"),
+                        "source_locator": candidate.get("source_locator"),
+                        "reason_codes": list(candidate.get("reason_codes") or ()),
+                    })
+            except (TypeError, ValueError, OverflowError):
+                return (), False
+        if seen != set(current_documents) or count != snapshot.get("claim_count"):
+            return (), False
+        return tuple(observations), True
+    return (), False
 
 
 def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
@@ -166,7 +190,10 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
             VaultDocument.organization_id == AssuranceDocument.organization_id,
             VaultDocument.id == AssuranceDocument.vault_document_id,
         ))
-        .where(UsLaceyOperationDocument.organization_id == org_id)
+        .where(
+            UsLaceyOperationDocument.organization_id == org_id,
+            UsLaceyOperationDocument.is_current.is_(True),
+        )
         .order_by(UsLaceyOperationDocument.id)
     ):
         valid_document_ids.add(assurance.id)
@@ -179,7 +206,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
             "raw_available": vault.status == "available",
         })
 
-    source_observations = _source_claim_observations(
+    source_observations, source_claims_complete = _source_claim_observations(
         db, organization_id=org_id, operation_id=op.id,
         revision=revision, documents=documents,
     )
@@ -295,11 +322,29 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         if (
             field.field_name in _REUSABLE_FIELDS and line in line_set
             and not field.human_value and revision.status == "FINALIZED"
+            and source_claims_complete
         ):
+            # Every current source candidate must be accounted for before
+            # history can be offered. Unbound or conflicting evidence on any
+            # line also blocks: never silently assign it to another SKU.
+            current_values = tuple(
+                str(candidate.get("normalized_value") or candidate.get("original_value"))
+                for candidate in source_observations
+                if candidate["field_name"] == field.field_name
+                and not (
+                    "NONFACTUAL_PLACEHOLDER" in candidate["reason_codes"]
+                    and candidate["support_status"] == "UNSUPPORTED"
+                    and candidate.get("normalized_value") is None
+                    and _nonfactual_placeholder(
+                        field.field_name, candidate.get("original_value") or ""
+                    )
+                )
+                and (candidate.get("normalized_value") or candidate.get("original_value"))
+            )
             reuse = evaluate_reuse(
                 db, organization_id=org_id, operation_id=op.id,
                 source_set_revision_id=revision.id, line_reference=line,
-                field_name=field.field_name,
+                field_name=field.field_name, current_claim_values=current_values,
             )
             if reuse.eligible:
                 reuses.append({
