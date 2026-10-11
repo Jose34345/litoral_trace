@@ -51,6 +51,8 @@ on:
       - "src/litoral_trace/db/models/us_lacey_assurance_v2.py"
       - "tests/test_assurance_v2_core_postgres.py"
       - "tests/test_assurance_v2_golden_postgres.py"
+      - "tests/test_assurance_v2_filing_complete_postgres.py"
+      - "tests/test_assurance_v2_issuance_concurrent_postgres.py"
       - "tests/fixtures/assurance_v2_pdf_e2e/**"
       - "src/litoral_trace/workers/sandbox_cleanup.py"
       - "scripts/backfill_us_lacey_identities.py"
@@ -660,6 +662,8 @@ jobs:
             tests/test_assurance_v2_outputs_postgres.py \
             tests/test_assurance_v2_claim_replay_postgres.py \
             tests/test_assurance_v2_golden_postgres.py \
+            tests/test_assurance_v2_filing_complete_postgres.py \
+            tests/test_assurance_v2_issuance_concurrent_postgres.py \
             | tee /tmp/assurance-v2-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/assurance-v2-postgres.txt; then
             echo "Assurance V2 PostgreSQL/RLS acceptance must run, not skip."

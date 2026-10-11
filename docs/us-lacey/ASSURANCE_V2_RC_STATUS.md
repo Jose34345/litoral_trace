@@ -301,3 +301,16 @@ paths. It does **not** substitute for a representative external ground-truth
 corpus, live broker review, operational Northflank access, production data
 migration rehearsals or red-team review. Therefore the RC and
 `US_LACEY_ASSURANCE_V2_MODE=ENABLED` remain NO-GO for production.
+
+
+## Mandatory CI acceptance correction
+
+Previous GitHub workflow green statuses did not prove the original-PDF
+**completed authorized dossier** or its concurrent in-flight source mutation:
+`.github/workflows/us-lacey-postgres-gate.yml` listed only the older
+four-shipment Golden in its mandatory PostgreSQL execution step.
+The release-hardening PR now explicitly includes
+`test_assurance_v2_filing_complete_postgres.py` and
+`test_assurance_v2_issuance_concurrent_postgres.py` in BOTH the triggering
+path filters and the PostgreSQL run, with the existing zero-skips requirement.
+The updated remote gate must pass before integrating the change.
