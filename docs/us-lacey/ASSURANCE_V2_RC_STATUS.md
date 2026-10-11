@@ -111,3 +111,41 @@ drops sidecar data, so retain backups before any future production rollback.
 Do not deploy, enable final mode, issue federal filings or merge for release
 until the P0 is closed and the complete Golden is green. Production requires
 separate explicit approval after all gates and remote CI pass.
+
+## Follow-up: exact source-document identity bridge
+
+**Scope:** separate branch `fix/assurance-v2-source-identity-bridge` based on RC
+`bc320837`. This is a candidate-only bridge, not a release authorization.
+
+- Reuses existing independent PDF identity corroboration to establish the
+  exact single invoice line, manufacturer SKU and supplier name/address.
+- Attaches `DOCUMENT_EXACT_SINGLE_SKU` only to source-supported,
+  source-anchored product/plant claims in documents carrying that SKU; general
+  shipment claims remain UNBOUND. Multiple product lines, mixed logical
+  documents or insufficient witnesses abstain.
+- Persists the tenant/revision/fingerprint, invoice/SKU/supplier witness
+  document IDs + hashes, exact line/SKU and supplier identity digest without
+  copying source text or granting human authority.
+- The case reader validates every document witness against the *current*
+  tenant source set, including revisions, before accepting candidate context.
+- Existing original synthetic four-shipment PostgreSQL Golden passed after
+  changing the obsolete expectation that `article_component` must be UNBOUND.
+  The new expectation is exact documentary binding while the unpublished
+  source claim remains blocking until actual human/regulatory authority exists.
+
+**Measured effect on the original fixture packets:** Pack 1 binds 12/47
+candidate observations (3 genus, 3 species, 3 country of harvest, HTS,
+article component, description); Pack 2 binds 2/39 (HTS and article
+component). Other shipment-level and unsupported observations are intentionally
+not assigned to a product line. The authenticated four-shipment PostgreSQL
+Golden passed, 36 focused local tests passed, the dedicated Pg/RLS/runtime
+group passed **15 tests / 0 skips**, and GitHub CI and PostgreSQL Gate for
+PR #404's initial head passed. No production quality metrics are inferred
+from this small synthetic corpus.
+
+**Release status remains NO-GO:** this bridge does not create missing filing
+entry reference, merchandise description, entered value, plant quantity or
+metric unit; it does not authorize final issuance. Full required-field review,
+authorized final dossier/export, concurrency, full-field ground truth and
+remote checks remain distinct release gates. No production deployment or
+`ENABLED` activation is part of this patch.

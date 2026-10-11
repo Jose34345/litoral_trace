@@ -18,6 +18,7 @@ from litoral_trace.db.models import (
     UsLaceyEngineShipmentRun,
     UsLaceyOperation,
     UsLaceyOperationDocument,
+    UsLaceyPpqPlantLine,
     UsLaceySourceSetRevision,
     VaultDocument,
 )
@@ -49,6 +50,9 @@ from litoral_trace.lacey_engine.shipment import LaceyRuleset, ShipmentDocumentIn
 from litoral_trace.services.vault import VaultService
 from litoral_trace.us_lacey import specialized_projection_runtime, specialized_shadow
 from litoral_trace.us_lacey.assurance_v2_claim_ingestion import collect_source_claims
+from litoral_trace.us_lacey.assurance_v2_documentary_claim_binding import (
+    ParsedIdentityDocument, bind_documentary_claims,
+)
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.storage import (
     build_us_lacey_storage_settings,
@@ -1168,6 +1172,29 @@ class UsLaceyEngine2Service:
             if claim_documents:
                 if len(claim_documents) != len(current_rows):
                     raise ValueError("ASSURANCE_V2_SOURCE_CLAIM_DOCUMENT_LOSS")
+                # Engine 2's candidate-level layout is FREE_TEXT on these PDFs.
+                # Do not manufacture table rows. Reuse the already implemented
+                # exact supplier/SKU/invoice corroboration on the SAME parsed
+                # bytes, scoped to this locked source-set revision. The bridge
+                # is candidate metadata, never a review or export decision.
+                line_references = tuple(write_session.scalars(
+                    select(UsLaceyPpqPlantLine.line_reference).where(
+                        UsLaceyPpqPlantLine.organization_id == organization_id,
+                        UsLaceyPpqPlantLine.operation_id == operation_id,
+                    )
+                ).all())
+                bind_documentary_claims(
+                    snapshots=claim_documents,
+                    parsed_documents=tuple(
+                        ParsedIdentityDocument(
+                            assurance_document_id=int(item.result[1].id),
+                            original_sha256=item.result[2].sha256,
+                            bundle=item.result[3],
+                        )
+                        for item in batch.succeeded
+                    ),
+                    line_references=line_references,
+                )
                 claim_snapshot = {
                     "schema_version": "assurance.claim.snapshot.v1",
                     "source_set_revision_id": claim_revision_id,

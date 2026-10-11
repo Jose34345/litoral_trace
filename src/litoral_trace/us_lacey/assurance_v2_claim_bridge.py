@@ -21,6 +21,10 @@ from litoral_trace.lacey_engine.source_linked_claims import (
     verify_claim_anchor,
 )
 
+from litoral_trace.us_lacey.assurance_v2_documentary_claim_binding import (
+    DOCUMENTARY_BINDING_STATUS, validate_documentary_binding,
+)
+
 AUTHORITY_CONTRACT_VERSION = "assurance.v2/1.0.0"
 
 
@@ -194,6 +198,7 @@ def to_authority_candidate(
 
 def to_authority_candidate_snapshot(
     source: Mapping[str, Any], *, binding: ResolvedDocumentBinding,
+    current_document_hashes: Mapping[int, str] | None = None,
 ) -> AuthorityCandidate:
     """Validate a persisted, byte-verified claim against current DB identity.
 
@@ -244,6 +249,11 @@ def to_authority_candidate_snapshot(
         raise ValueError("Persisted claim status is incompatible") from exc
     if association is AssociationStatus.EXPLICIT_SKU and not source["sku"]:
         raise ValueError("Exact SKU association lacks SKU")
+    if association.value == DOCUMENTARY_BINDING_STATUS:
+        validate_documentary_binding(
+            source, binding=binding,
+            current_document_hashes=current_document_hashes,
+        )
     locator = source["source_locator"]
     if locator is not None:
         if not isinstance(locator, Mapping):

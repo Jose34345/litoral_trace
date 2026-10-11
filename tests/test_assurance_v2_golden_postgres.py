@@ -165,7 +165,17 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
                     and item["support_status"] == "SUPPORTED"}
         assert {item["field_name"] for item in second_case.reuses
                 if item["status"] == "ELIGIBLE"} == botanical
-        assert any(item["reason"] == "SOURCE_CLAIM_UNBOUND"
+        # Article/component has an exact documentary line/SKU context.
+        # It is still source-supported candidate data, not human authority.
+        assert any(
+            item["field_name"] == "article_component"
+            and item["association_status"] == "DOCUMENT_EXACT_SINGLE_SKU"
+            and item["sku"] == "BAM-COAST-04"
+            and item["line_reference"] == "1"
+            and item["authority_status"] == "CANDIDATE"
+            for item in second_case.candidate_observations
+        )
+        assert any(item["reason"] == "SUPPORTED_CLAIM_UNPUBLISHED"
                    and item["field_name"] == "article_component"
                    for item in second_case.exceptions)
         assert len(second_case.identities) == 1

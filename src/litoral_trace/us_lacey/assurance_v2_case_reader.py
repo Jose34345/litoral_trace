@@ -38,6 +38,7 @@ from litoral_trace.us_lacey.ppq505 import PPQ505_SHIPMENT_REFERENCE
 _REUSABLE_FIELDS = frozenset({"genus", "species", "country_of_harvest"})
 _LINE_BOUND_ASSOCIATION_STATUSES = frozenset({
     "EXPLICIT_SKU", "SOURCE_LOCAL_LINE", "SOURCE_ROW",
+    "DOCUMENT_EXACT_SINGLE_SKU",
 })
 
 
@@ -162,7 +163,13 @@ def _source_claim_observations(
             for candidate in source.get("claims", ()):
                 if not isinstance(candidate, dict):
                     return None
-                adapted = to_authority_candidate_snapshot(candidate, binding=binding)
+                adapted = to_authority_candidate_snapshot(
+                    candidate, binding=binding,
+                    current_document_hashes={
+                        int(doc["id"]): doc["sha256"]
+                        for doc in current_documents.values()
+                    },
+                )
                 observation = adapted.as_authority_input()
                 observation.update({
                     "id": str(candidate["claim_id"]),
