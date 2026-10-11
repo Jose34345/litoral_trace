@@ -27,6 +27,30 @@
       } catch (error) { result.textContent = 'Not recorded: ' + error.message; }
     });
   });
+  const authorizationForm = document.querySelector('#authorize-export-form');
+  if (authorizationForm) authorizationForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const status = authorizationForm.querySelector('.authorization-result');
+    const button = authorizationForm.querySelector('button[type="submit"]');
+    const confirmed = authorizationForm.querySelector('[name="explicit_confirmation"]')?.checked === true;
+    const reason = authorizationForm.querySelector('[name="reason"]')?.value.trim() || '';
+    if (!confirmed || !reason) {
+      status.textContent = 'Explicit confirmation and a reason are required.';
+      return;
+    }
+    button.disabled = true;
+    status.textContent = 'Recording your authorization…';
+    try {
+      const result = await post('/authorize-export', {reason, explicit_confirmation: true});
+      if (result.status !== 'AUTHORIZED') throw new Error('Authorization not confirmed');
+      // Always re-read the case from the server. No browser-local
+      // authority is inferred from the receipt alone.
+      window.location.reload();
+    } catch (error) {
+      status.textContent = 'Authorization not recorded: ' + error.message;
+      button.disabled = false;
+    }
+  });
   const button = document.querySelector('#issue-package');
   if (button) button.addEventListener('click', async () => {
     const result = document.querySelector('#package-result');

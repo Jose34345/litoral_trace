@@ -45,3 +45,6 @@ on the production target commit `0f8398de`. This is **not a GA release**.
    compare V1 versus V2 via shadow mode, and only then canary and promote.
 
 No deployment, migration or source document changes are authorized by this file.
+
+## Current-source reuse gate (2026-10-11)
+The V2 case reader must see a complete, source-set-fenced, byte-verified document-claim snapshot before proposing historical supplier memory. A missing, partial, failed, stale, or mismatched snapshot is not evidence of absence. Current-shipment field observations take precedence; non-factual template placeholders are excluded from botanical facts. This is a shadow/read-model safety improvement, not authorization to enable V2 filing or deployment.

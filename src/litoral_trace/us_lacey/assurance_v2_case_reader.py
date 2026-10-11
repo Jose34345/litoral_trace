@@ -6,6 +6,7 @@ into a new shipment's original-document observations.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -14,12 +15,14 @@ from sqlalchemy.orm import Session
 from litoral_trace.db.models import (
     AssuranceDocument, AssuranceV2Decision, AssuranceV2DecisionSource,
     UsLaceyEngineShipmentRun, UsLaceyOperation, UsLaceyOperationDocument, UsLaceyOperationField,
-    UsLaceyPpqPlantLine, UsLaceySourceSetMember, UsLaceySourceSetRevision,
+    UsLaceyPpqPlantLine, UsLaceyRegulatoryAssessmentSnapshot,
+    UsLaceySourceSetMember, UsLaceySourceSetRevision,
     UsLaceySupplier, UsLaceySupplierProduct, UsLaceyOperationProductLink,
     VaultDocument,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.assurance_v2_memory import evaluate_reuse
+from litoral_trace.us_lacey.assurance_v2_reuse_guard import current_claim_values_for_reuse
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.exporters.assurance_v2 import AssuranceCase
 from litoral_trace.us_lacey.ppq505 import PPQ505_SHIPMENT_REFERENCE
@@ -48,7 +51,7 @@ def read_tenant_assurance_case(
 def _source_claim_observations(
     db: Session, *, organization_id: int, operation_id: int,
     revision: UsLaceySourceSetRevision, documents: list[dict],
-) -> tuple[dict, ...]:
+) -> tuple[dict, ...] | None:
     """Read a source-set-fenced observation stream, never final authority.
 
     A forged, obsolete or cross-tenant claim/document reference is discarded.
@@ -71,15 +74,21 @@ def _source_claim_observations(
         if (
             int(snapshot.get("source_set_revision_id") or -1) != revision.id
             or snapshot.get("source_set_fingerprint") != revision.source_set_fingerprint
+            or snapshot.get("status") != "CANDIDATE_ONLY"
+            or len(snapshot.get("documents") or ()) != len(current_documents)
         ):
             continue
         observations: list[dict] = []
+        seen = set()
         for source in snapshot.get("documents", ()):
             if not isinstance(source, dict):
-                continue
+                return None
             key = (int(source.get("operation_document_id") or -1),
                    int(source.get("assurance_document_id") or -1))
             document = current_documents.get(key)
+            if key in seen:
+                return None
+            seen.add(key)
             if (
                 document is None
                 or source.get("original_sha256") != document["sha256"]
@@ -88,22 +97,14 @@ def _source_claim_observations(
                 or int(source.get("operation_id") or -1) != operation_id
                 or int(source.get("source_set_revision_id") or -1) != revision.id
             ):
-                continue
+                return None
             if source.get("status") == "FAILED":
-                observations.append({
-                    "id": f"source:{key[0]}:FAILED",
-                    "document_id": document["id"],
-                    "field_name": "DOCUMENT_EXTRACTION",
-                    "support_status": "UNSUPPORTED",
-                    "authority": "CANDIDATE",
-                    "reason_codes": [str(source.get("reason_code") or "VERIFICATION_FAILED")],
-                    "original_value": "",
-                    "source_locator": None,
-                })
-                continue
+                return None
+            if source.get("claim_count") != len(source.get("claims") or ()):
+                return None
             for candidate in source.get("claims", ()):
                 if not isinstance(candidate, dict):
-                    continue
+                    return None
                 if (
                     candidate.get("contract_version") != "assurance.claim.v1"
                     or candidate.get("candidate_state") != "CANDIDATE"
@@ -115,7 +116,7 @@ def _source_claim_observations(
                     or int(candidate.get("assurance_document_id") or -1) != key[1]
                     or int(candidate.get("operation_document_id") or -1) != key[0]
                 ):
-                    continue
+                    return None
                 observations.append({
                     "id": str(candidate.get("claim_id") or ""),
                     "document_id": document["id"],
@@ -130,8 +131,51 @@ def _source_claim_observations(
                     "source_locator": candidate.get("source_locator"),
                     "reason_codes": list(candidate.get("reason_codes") or ()),
                 })
+        if seen != set(current_documents) or snapshot.get("claim_count") != len(observations):
+            return None
         return tuple(observations)
-    return ()
+    return None
+
+
+def _current_regulatory_rules(
+    db: Session, *, organization_id: int, operation_id: int,
+    revision: UsLaceySourceSetRevision,
+) -> tuple[str, tuple[dict, ...]]:
+    """Only existing CURRENT rule assessments from this exact source revision.
+
+    An assessment from another shipment, revision or ruleset never grants filing
+    readiness. This is read-only; missing assessments must remain UNVERIFIED.
+    """
+    from litoral_trace.us_lacey.regulatory.rules import RULESET_VERSION
+    from litoral_trace.us_lacey.regulatory_assessment_snapshot import RegulatoryAssessmentView
+    from litoral_trace.us_lacey.regulatory.assurance_v2_adapter import rules_from_current_assessment
+
+    row = db.scalar(select(UsLaceyRegulatoryAssessmentSnapshot).where(
+        UsLaceyRegulatoryAssessmentSnapshot.organization_id == organization_id,
+        UsLaceyRegulatoryAssessmentSnapshot.operation_id == operation_id,
+        UsLaceyRegulatoryAssessmentSnapshot.source_set_revision_id == revision.id,
+        UsLaceyRegulatoryAssessmentSnapshot.source_set_fingerprint == revision.source_set_fingerprint,
+        UsLaceyRegulatoryAssessmentSnapshot.ruleset_version == RULESET_VERSION,
+        UsLaceyRegulatoryAssessmentSnapshot.status == "CURRENT",
+    ).order_by(UsLaceyRegulatoryAssessmentSnapshot.id.desc()))
+    if row is None:
+        return "US_LACEY_ASSESSMENT_UNVERIFIED", ()
+    view = RegulatoryAssessmentView(
+        status=row.status, generation=row.generation,
+        source_set_fingerprint=row.source_set_fingerprint,
+        ruleset_version=row.ruleset_version,
+        input_fingerprint=row.input_fingerprint,
+        assessment_count=row.assessment_count,
+        indeterminate_count=row.indeterminate_count,
+        payload=dict(row.payload_json or {}),
+    )
+    rules = rules_from_current_assessment(
+        view, current_source_set_fingerprint=revision.source_set_fingerprint,
+        current_ruleset_version=RULESET_VERSION,
+    )
+    if not rules or len(rules) != row.assessment_count:
+        return "US_LACEY_ASSESSMENT_UNVERIFIED", ()
+    return RULESET_VERSION, rules
 
 
 def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
@@ -151,6 +195,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
 
     documents: list[dict] = []
     valid_document_ids: set[int] = set()
+    current_source_versions: set[tuple[int, int, int]] = set()
     for link, assurance, vault in db.execute(
         select(UsLaceyOperationDocument, AssuranceDocument, VaultDocument)
         .join(UsLaceySourceSetMember, and_(
@@ -170,6 +215,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         .order_by(UsLaceyOperationDocument.id)
     ):
         valid_document_ids.add(assurance.id)
+        current_source_versions.add((int(assurance.id), int(link.id), int(link.version_number)))
         documents.append({
             "id": str(assurance.id), "version": str(link.version_number),
             "operation_document_id": int(link.id),
@@ -201,7 +247,9 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         (d.line_reference or PPQ505_SHIPMENT_REFERENCE, d.field_name): d
         for d in decisions if d.id not in superseded and d.action in {"ACCEPT", "CORRECT"}
         and docs_by_decision.get(d.id)
-        and all(source.assurance_document_id in valid_document_ids
+        and all((int(source.assurance_document_id),
+                 int(source.operation_document_id),
+                 int(source.document_version_number)) in current_source_versions
                 for source in docs_by_decision[d.id])
     }
 
@@ -296,10 +344,13 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
             field.field_name in _REUSABLE_FIELDS and line in line_set
             and not field.human_value and revision.status == "FINALIZED"
         ):
+            current_values = current_claim_values_for_reuse(source_observations, field_name=field.field_name, line_reference=line)
+            if current_values is None:
+                continue
             reuse = evaluate_reuse(
                 db, organization_id=org_id, operation_id=op.id,
                 source_set_revision_id=revision.id, line_reference=line,
-                field_name=field.field_name,
+                field_name=field.field_name, current_claim_values=current_values,
             )
             if reuse.eligible:
                 reuses.append({
@@ -310,6 +361,9 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
                     "origin_decision_id": str(reuse.origin_decision_public_id),
                     "provenance": "REUSE_PROPOSED_NOT_CANONICAL",
                 })
+    ruleset_version, regulatory_rules = _current_regulatory_rules(
+        db, organization_id=org_id, operation_id=op.id, revision=revision,
+    )
     output_decisions = tuple({
         "id": str(d.public_id), "actor_id": d.actor_user_id,
         "field_name": d.field_name,
@@ -317,23 +371,29 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         "value": d.selected_value, "reason": d.reason, "action": d.action,
         "decided_at": d.decided_at.isoformat(),
     } for d in decisions)
-    return AssuranceCase(
+    case = AssuranceCase(
         organization_id=org_id,
         operation_id=str(op.public_id),
         source_set_fingerprint=revision.source_set_fingerprint,
         source_set_revision=revision.id,
         current_source_set_fingerprint=revision.source_set_fingerprint,
         current_source_set_revision=revision.id,
-        ruleset_version="US_LACEY_ASSESSMENT_UNVERIFIED",
+        ruleset_version=ruleset_version,
         documents=tuple(documents),
         lines=lines,
         fields=tuple(fields),
-        candidate_observations=source_observations,
+        candidate_observations=source_observations or (),
         exceptions=tuple(exceptions),
         decisions=output_decisions,
         reuses=tuple(reuses),
         identities=identities,
-        rules=(),
-        # Intentional: no automatic filing authorization from a read model.
+        rules=regulatory_rules,
+        # No approval is inferred from fields; only an explicit immutable
+        # authenticated export-authorizing operation event can fill this.
         export_authorization={},
     )
+    from litoral_trace.us_lacey.assurance_v2_export_authorization import authorization_from_event
+    authorization = authorization_from_event(
+        db, organization_id=org_id, operation_id=op.id, case=case,
+    )
+    return replace(case, export_authorization=authorization) if authorization else case

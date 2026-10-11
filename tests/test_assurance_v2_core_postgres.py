@@ -241,3 +241,72 @@ def test_tenant_context_required_for_reads(pg_case):
         assert conn.execute(text(
             "SELECT count(*) FROM us_lacey_assurance_v2_decisions"
         )).scalar_one() == 0
+
+
+
+def test_explicit_export_authorization_uses_runtime_postgres_rls(pg_case):
+    """Real app-role PostgreSQL write/read. Only the CASE is synthetic.
+
+    This proves append-only tenant isolation and actor checks. It is not a
+    documentary golden test or an actual CBP/APHIS export.
+    """
+    from dataclasses import replace
+    from sqlalchemy.orm import Session
+    from litoral_trace.us_lacey.assurance_v2_export_authorization import (
+        authorization_from_event, explicitly_authorize_assurance_export,
+    )
+    from litoral_trace.us_lacey.exporters.assurance_v2 import evaluate_filing_gate
+    from test_assurance_v2_outputs_core import make_case
+
+    vals, owner, runtime = pg_case
+    with owner.connect() as conn:
+        _tenant(conn, vals["org_a"])
+        operation_public_id = str(conn.execute(text(
+            "SELECT public_id FROM us_lacey_operations WHERE id=:op AND organization_id=:org"
+        ), {"org": vals["org_a"], "op": vals["op_a"]}).scalar_one())
+
+    case = replace(
+        make_case(organization_id=vals["org_a"], approved=False),
+        operation_id=operation_public_id,
+        source_set_revision=vals["revision_a"],
+        current_source_set_revision=vals["revision_a"],
+        source_set_fingerprint="a" * 64,
+        current_source_set_fingerprint="a" * 64,
+    )
+    assert {b.code for b in evaluate_filing_gate(case).blockers} == {"EXPORT_NOT_AUTHORIZED"}
+    factory = lambda: Session(bind=runtime, expire_on_commit=False)
+    auth = explicitly_authorize_assurance_export(
+        organization_id=vals["org_a"], operation_public_id=operation_public_id,
+        authenticated_user_id=vals["user_a"],
+        expected_source_set_fingerprint="a" * 64,
+        expected_case_fingerprint=case.authority_fingerprint(),
+        explicit_confirmation=True,
+        reason="Verified all evidence for this exact synthetic test case",
+        session_factory=factory, case_loader=lambda *_: case,
+    )
+    assert auth["actor_id"] == f"user:{vals['user_a']}"
+    assert auth["status"] == "AUTHORIZED"
+
+    with factory() as session:
+        _tenant(session, vals["org_a"])
+        assert authorization_from_event(
+            session, organization_id=vals["org_a"],
+            operation_id=vals["op_a"], case=case,
+        ) == auth
+    with factory() as session:
+        _tenant(session, vals["org_b"])
+        assert not authorization_from_event(
+            session, organization_id=vals["org_b"],
+            operation_id=vals["op_b"], case=case,
+        )
+    # A changed field or document invalidates the authorization; no blanket
+    # permission is recorded for future source sets.
+    fields = list(case.fields)
+    fields[0] = {**fields[0], "value": "Changed source after approval"}
+    changed = replace(case, fields=tuple(fields))
+    with factory() as session:
+        _tenant(session, vals["org_a"])
+        assert not authorization_from_event(
+            session, organization_id=vals["org_a"],
+            operation_id=vals["op_a"], case=changed,
+        )

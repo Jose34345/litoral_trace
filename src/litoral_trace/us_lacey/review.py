@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 
 from litoral_trace.db.models import (
     AssuranceDocument,
+    AssuranceV2MemoryLink,
     ReconciliationIssue,
     UsLaceyFieldCandidate,
     UsLaceyOperation,
@@ -45,6 +46,9 @@ from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
 )
 from litoral_trace.us_lacey.reconciliation_invariants import reconcile_entered_value_invariant
 from litoral_trace.us_lacey.reusable_evidence_promotion import promote_reviewed_field
+from litoral_trace.us_lacey.assurance_v2_review_adapter import (
+    journal_reviewed_field, review_journal_enabled,
+)
 from litoral_trace.us_lacey.identity_memory import resolve_operation_identity_memory
 from litoral_trace.us_lacey.review_telemetry import ReviewTelemetry
 from litoral_trace.us_lacey.ppq505 import (
@@ -182,6 +186,11 @@ def review_us_lacey_field(
     normalized_action = str(action or "").strip().lower()
     if normalized_action not in {"accept", "edit", "not_required"}:
         raise UsLaceyReviewError("Review action is invalid.")
+    v2_journal_active = review_journal_enabled()
+    if v2_journal_active and normalized_action == "not_required":
+        raise UsLaceyReviewError("V2 review cannot authorize NOT_REQUIRED without an explicit decision contract.")
+    if v2_journal_active and normalized_action == "edit" and not str(reason_code or "").strip():
+        raise UsLaceyReviewError("Explain the correction and supporting evidence before saving.")
 
     session = get_us_lacey_db_session()
     try:
@@ -315,9 +324,25 @@ def review_us_lacey_field(
             )
             issue.resolved_at = field.reviewed_at
 
-        promotion_reason = "not_applicable"
-        promotion_promoted = False
-        if normalized_action in {"accept", "edit"}:
+        v2_promoted = False
+        if v2_journal_active:
+            authority_decision = journal_reviewed_field(
+                session, organization_id=org_id, operation=operation,
+                field=field, authenticated_user_id=int(user_id),
+                action=normalized_action, reason=reason_code,
+            )
+            v2_promoted = session.scalar(select(AssuranceV2MemoryLink.id).where(
+                AssuranceV2MemoryLink.organization_id == org_id,
+                AssuranceV2MemoryLink.decision_id == authority_decision.id,
+            ).limit(1)) is not None
+
+        promotion_reason = (
+            "v2_verified_memory" if v2_promoted else "v2_decision_only"
+        ) if v2_journal_active else "not_applicable"
+        promotion_promoted = v2_promoted
+        # V2 owns promotion through a source-bound human decision. Never run
+        # the legacy promoter in parallel or create two competing authorities.
+        if normalized_action in {"accept", "edit"} and not v2_journal_active:
             try:
                 # Reusable memory is an additive optimization, not part of the
                 # regulatory review transaction's availability contract. A savepoint
@@ -458,6 +483,7 @@ def accept_supported_us_lacey_fields(
 ) -> UsLaceyBulkReviewResult:
     """Confirm all server-supported fields in one atomic customer review action."""
     org_id = int(organization_id)
+    v2_journal_active = review_journal_enabled()
     session = get_us_lacey_db_session()
     try:
         set_tenant_db_context(session, org_id)
@@ -516,26 +542,41 @@ def accept_supported_us_lacey_fields(
             field.reviewed_by_user_id = int(user_id)
             field.reviewed_at = reviewed_at
             accepted_ids.append(int(field.id))
-            try:
-                with session.begin_nested():
-                    promotion = promote_reviewed_field(
-                        session,
-                        organization_id=org_id,
-                        operation=operation,
-                        field=field,
-                        user_id=int(user_id),
-                    )
-                if promotion.promoted:
-                    promoted_field_ids.append(int(field.id))
-            except Exception:
-                LOGGER.exception(
-                    "Bulk reusable supplier evidence promotion failed closed",
-                    extra={
-                        "organization_id": org_id,
-                        "operation_id": operation.id,
-                        "field_id": field.id,
-                    },
+            if v2_journal_active:
+                # The V2 journal owns both decision and any durable promotion.
+                # Its failure rolls the entire bulk review back; never fall
+                # back to the unaudited legacy promotion path.
+                authority_decision = journal_reviewed_field(
+                    session, organization_id=org_id, operation=operation,
+                    field=field, authenticated_user_id=int(user_id),
+                    action="accept", reason=None,
                 )
+                if session.scalar(select(AssuranceV2MemoryLink.id).where(
+                    AssuranceV2MemoryLink.organization_id == org_id,
+                    AssuranceV2MemoryLink.decision_id == authority_decision.id,
+                ).limit(1)) is not None:
+                    promoted_field_ids.append(int(field.id))
+            else:
+                try:
+                    with session.begin_nested():
+                        promotion = promote_reviewed_field(
+                            session,
+                            organization_id=org_id,
+                            operation=operation,
+                            field=field,
+                            user_id=int(user_id),
+                        )
+                    if promotion.promoted:
+                        promoted_field_ids.append(int(field.id))
+                except Exception:
+                    LOGGER.exception(
+                        "Bulk reusable supplier evidence promotion failed closed",
+                        extra={
+                            "organization_id": org_id,
+                            "operation_id": operation.id,
+                            "field_id": field.id,
+                        },
+                    )
 
         reconcile_entered_value_invariant(
             session,
