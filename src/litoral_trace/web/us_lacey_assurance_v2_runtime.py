@@ -42,6 +42,9 @@ from litoral_trace.us_lacey.assurance_v2_review_adapter import review_journal_en
 from litoral_trace.us_lacey.assurance_v2_reuse_application import (
     apply_authorized_assurance_v2_reuse,
 )
+from litoral_trace.us_lacey.assurance_v2_identity_confirmation import (
+    confirm_assurance_v2_identity,
+)
 from litoral_trace.us_lacey.csrf import us_lacey_csrf_token
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.exporters.assurance_v2_package import (
@@ -263,6 +266,25 @@ def configure_assurance_v2_shadow(
         except PermissionError:
             raise HTTPException(403, "Historical reuse denied") from None
 
+    def identity_gateway(principal, operation_id, command):
+        require_commands()
+        try:
+            return confirm_assurance_v2_identity(
+                organization_id=principal.organization_id,
+                operation_public_id=operation_id,
+                authenticated_user_id=int(principal.actor_id),
+                line_reference=command["line_reference"],
+                supplier_id=command["supplier_id"],
+                product_id=command["product_id"],
+                reason=command["reason"],
+                expected_source_set_fingerprint=command["expected_source_set_fingerprint"],
+                expected_case_fingerprint=command["expected_case_fingerprint"],
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except PermissionError:
+            raise HTTPException(403, "Identity confirmation denied") from None
+
     def issue_gateway(principal, operation_id, source_fingerprint, case_fingerprint):
         require_commands()
         try:
@@ -292,6 +314,7 @@ def configure_assurance_v2_shadow(
         authorization_gateway=authorization_gateway,
         issue_gateway=issue_gateway,
         reuse_gateway=reuse_gateway,
+        identity_gateway=identity_gateway,
         document_link_for=lambda principal, operation_id, doc, page: (
             f"/assurance-v2/operations/{operation_id}/documents/{doc}"
             + (f"#page={page}" if page is not None and 0 < page <= 10000 else "")

@@ -16,7 +16,7 @@ from test_assurance_v2_outputs_core import OPERATION_ID, make_case, authorize
 
 
 def make_client(case=None, *, test_issue_enabled=True, test_authorization_enabled=False,
-                test_reuse_enabled=False):
+                test_reuse_enabled=False, test_identity_enabled=False):
     case = case or make_case()
     receipts: list[dict[str, str]] = []
     store = MemoryPackageStore()
@@ -72,6 +72,10 @@ def make_client(case=None, *, test_issue_enabled=True, test_authorization_enable
         receipts.append(command)
         return {"status": "VERIFIED_REUSE", "field_name": command["field_name"]}
 
+    def fixture_identity(principal: WorkspacePrincipal, operation_id: str, command: dict):
+        receipts.append(command)
+        return {"status": "HUMAN_CONFIRMED", "line_reference": command["line_reference"]}
+
     app.include_router(create_assurance_v2_router(
         principal_for=principal,
         case_for=read,
@@ -81,6 +85,7 @@ def make_client(case=None, *, test_issue_enabled=True, test_authorization_enable
         issue_gateway=fixture_issue if test_issue_enabled else None,
         authorization_gateway=fixture_authorize if test_authorization_enabled else None,
         reuse_gateway=fixture_reuse if test_reuse_enabled else None,
+        identity_gateway=fixture_identity if test_identity_enabled else None,
         document_link_for=lambda principal, op, doc, page:
             f"/operations/{op}/documents/{doc}" + (f"?page={page}" if page else ""),
     ))
@@ -107,6 +112,25 @@ def test_reuse_application_requires_csrf_and_explicit_eligible_memory():
     assert response.status_code == 202
     assert receipts[0]["expected_case_fingerprint"] == case.authority_fingerprint()
     assert receipts[0]["expected_source_set_fingerprint"] == case.source_set_fingerprint
+
+
+def test_identity_confirmation_requires_exact_line_product_and_csrf():
+    case = replace(make_case(approved=False), identities=({
+        "line_reference": "LINE-1", "supplier_id": 7, "product_id": 12,
+        "sku": "OAK-1", "status": "REVIEW_REQUIRED",
+    },))
+    client, receipts = make_client(case, test_identity_enabled=True)
+    url = f"/assurance-v2/operations/{OPERATION_ID}/identities"
+    command = {"csrf_token": "fixture-csrf", "line_reference": "LINE-1",
+               "supplier_id": 7, "product_id": 12,
+               "reason": "Reviewed supplier, SKU and line source"}
+    assert client.post(url, json={**command, "csrf_token": "bad"},
+                       headers={"X-Demo-Tenant": "11"}).status_code == 403
+    assert client.post(url, json={**command, "supplier_id": 8},
+                       headers={"X-Demo-Tenant": "11"}).status_code == 422
+    response = client.post(url, json=command, headers={"X-Demo-Tenant": "11"})
+    assert response.status_code == 202
+    assert receipts[0]["expected_case_fingerprint"] == case.authority_fingerprint()
 
 
 def test_ui_separates_candidate_supported_human_and_memory_and_links_origin():

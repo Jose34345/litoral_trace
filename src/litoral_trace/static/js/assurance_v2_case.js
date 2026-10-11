@@ -49,6 +49,28 @@
       }
     });
   });
+  document.querySelectorAll('.identity-form').forEach(form => {
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const result = form.querySelector('.identity-result');
+      const button = form.querySelector('button[type="submit"]');
+      const reason = form.querySelector('[name="reason"]')?.value.trim() || '';
+      if (!reason) { result.textContent = 'A reviewer reason is required.'; return; }
+      button.disabled = true;
+      result.textContent = 'Checking current supplier, SKU and line…';
+      try {
+        const receipt = await post('/identities', {
+          line_reference: form.dataset.line, supplier_id: Number(form.dataset.supplier),
+          product_id: Number(form.dataset.product), reason
+        });
+        if (receipt.status !== 'HUMAN_CONFIRMED') throw new Error('Identity was not confirmed');
+        window.location.reload();
+      } catch (error) {
+        result.textContent = 'Identity not confirmed: ' + error.message;
+        button.disabled = false;
+      }
+    });
+  });
   const authorizationForm = document.querySelector('#authorize-export-form');
   if (authorizationForm) authorizationForm.addEventListener('submit', async (event) => {
     event.preventDefault();

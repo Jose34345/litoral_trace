@@ -97,7 +97,14 @@
       </section>
       <section class="panel" id="identities">
         <div class="section-heading"><div><div class="eyebrow">04 / IDENTITY</div><h2>Supplier / product / SKU binding</h2></div></div>
-        {% for identity in case.identities %}<div class="simple-row"><span>{{ identity.line_reference }} → {{ identity.supplier_id }} / {{ identity.product_id }}{% if identity.sku %} / {{ identity.sku }}{% endif %}</span><span class="tag neutral">{{ identity.status }}</span></div>{% endfor %}
+        {% for identity in case.identities %}<div class="simple-row"><span>{{ identity.line_reference }} → {{ identity.supplier_id }} / {{ identity.product_id }}{% if identity.sku %} / {{ identity.sku }}{% endif %}</span><span class="tag neutral">{{ identity.status }}</span></div>
+        {% if identity.status == 'REVIEW_REQUIRED' %}
+        <form class="identity-form" data-line="{{ identity.line_reference }}" data-supplier="{{ identity.supplier_id }}" data-product="{{ identity.product_id }}">
+          <label>Reason for confirming this supplier, SKU and shipment line<input name="reason" maxlength="180" required placeholder="I reviewed the original supplier and product source"></label>
+          <button type="submit">Confirm exact identity</button>
+          <div class="identity-result" role="status" aria-live="polite"></div>
+        </form>
+        {% endif %}{% endfor %}
       </section>
       <section class="panel" id="decisions">
         <div class="section-heading"><div><div class="eyebrow">05 / HUMAN AUTHORITY</div><h2>Recorded decisions</h2></div></div>

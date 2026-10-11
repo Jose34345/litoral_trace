@@ -43,6 +43,11 @@ class ReuseGateway(Protocol):
                  command: dict[str, str]) -> dict[str, Any]: ...
 
 
+class IdentityGateway(Protocol):
+    def __call__(self, principal: WorkspacePrincipal, operation_id: str,
+                 command: dict[str, str]) -> dict[str, Any]: ...
+
+
 class AuthorizationGateway(Protocol):
     """Only a tenant-authenticated, current-source-set-locked writer."""
     def __call__(self, principal: WorkspacePrincipal, operation_id: str,
@@ -73,6 +78,7 @@ def create_assurance_v2_router(
     issue_gateway: IssueGateway | None = None,
     authorization_gateway: AuthorizationGateway | None = None,
     reuse_gateway: ReuseGateway | None = None,
+    identity_gateway: IdentityGateway | None = None,
 ) -> APIRouter:
     """The web adapter cannot select/promote candidates or write canonical truth."""
     router = APIRouter(prefix="/assurance-v2/operations", tags=["Assurance V2"])
@@ -204,6 +210,43 @@ def create_assurance_v2_router(
             "expected_case_fingerprint": case.authority_fingerprint(),
         }
         return JSONResponse(reuse_gateway(principal, operation_id, command), status_code=202)
+
+    @router.post("/{operation_id}/identities")
+    async def confirm_identity(request: Request, operation_id: str):
+        principal, case = context(request, operation_id)
+        body = await request.json()
+        if not isinstance(body, dict) or not csrf_verify(
+            principal, str(body.get("csrf_token") or "")
+        ):
+            raise HTTPException(403, "Invalid CSRF token")
+        line_reference = str(body.get("line_reference") or "").strip()
+        reason = str(body.get("reason") or "").strip()
+        try:
+            supplier_id = int(body.get("supplier_id"))
+            product_id = int(body.get("product_id"))
+        except (TypeError, ValueError):
+            raise HTTPException(422, "Invalid supplier or product") from None
+        if not line_reference or not reason or len(reason) > 180:
+            raise HTTPException(422, "Exact line and reviewer reason are required")
+        matches = [item for item in case.identities if (
+            item.get("status") == "REVIEW_REQUIRED"
+            and item.get("line_reference") == line_reference
+            and item.get("supplier_id") == supplier_id
+            and item.get("product_id") == product_id
+        )]
+        if len(matches) != 1:
+            raise HTTPException(422, "Supplier product is not this line's current candidate")
+        if identity_gateway is None:
+            raise HTTPException(503, "Authenticated identity confirmation is disabled")
+        command = {
+            "line_reference": line_reference,
+            "supplier_id": supplier_id,
+            "product_id": product_id,
+            "reason": reason,
+            "expected_source_set_fingerprint": case.source_set_fingerprint,
+            "expected_case_fingerprint": case.authority_fingerprint(),
+        }
+        return JSONResponse(identity_gateway(principal, operation_id, command), status_code=202)
 
     @router.post("/{operation_id}/issue")
     async def issue(request: Request, operation_id: str):

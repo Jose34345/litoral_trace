@@ -36,6 +36,9 @@ def _client(monkeypatch, *, commands: bool, case=None):
     monkeypatch.setattr(runtime, "apply_authorized_assurance_v2_reuse", lambda **kw: (
         calls.append(("reuse", kw)) or {"status": "VERIFIED_REUSE"}
     ))
+    monkeypatch.setattr(runtime, "confirm_assurance_v2_identity", lambda **kw: (
+        calls.append(("identity", kw)) or {"status": "HUMAN_CONFIRMED"}
+    ))
     app = FastAPI()
     static_dir = Path(__file__).resolve().parents[1] / "src/litoral_trace/static"
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
@@ -152,6 +155,30 @@ def test_runtime_reuse_application_is_authenticated_and_off_by_default(monkeypat
     sent = next(payload for kind, payload in calls if kind == "reuse")
     assert sent["organization_id"] == case.organization_id
     assert sent["authenticated_user_id"] == 42
+    assert sent["expected_case_fingerprint"] == case.authority_fingerprint()
+
+
+def test_runtime_identity_confirmation_is_authenticated_and_off_by_default(monkeypatch):
+    case = replace(make_case(approved=False), identities=({
+        "line_reference": "LINE-1", "supplier_id": 7, "product_id": 12,
+        "sku": "OAK-1", "status": "REVIEW_REQUIRED",
+    },))
+    csrf = runtime.us_lacey_csrf_token(
+        session_token="fixture-session", purpose=f"assurance-v2:{OPERATION_ID}",
+    )
+    command = {"csrf_token": csrf, "line_reference": "LINE-1",
+               "supplier_id": 7, "product_id": 12, "reason": "Reviewed original source"}
+    base = f"/assurance-v2/operations/{OPERATION_ID}/identities"
+    disabled, calls, _ = _client(monkeypatch, commands=False, case=case)
+    assert disabled.post(base, json=command).status_code == 503
+    assert not any(kind == "identity" for kind, _ in calls)
+    enabled, calls, case = _client(monkeypatch, commands=True, case=case)
+    assert enabled.post(base, json={**command, "csrf_token": "invalid"}).status_code == 403
+    response = enabled.post(base, json=command)
+    assert response.status_code == 202, response.text
+    sent = next(payload for kind, payload in calls if kind == "identity")
+    assert sent["authenticated_user_id"] == 42
+    assert sent["supplier_id"] == 7 and sent["product_id"] == 12
     assert sent["expected_case_fingerprint"] == case.authority_fingerprint()
 
 
