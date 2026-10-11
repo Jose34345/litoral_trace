@@ -20,7 +20,8 @@ from sqlalchemy.orm import Session
 from litoral_trace.db.models import (
     AssuranceDocument, AssuranceV2Decision, AssuranceV2DecisionSource,
     AssuranceV2IdentityEvent, AssuranceV2MemoryLink, SemanticEvidenceNode,
-    UsLaceyEngineShipmentRun, UsLaceyEvidenceClaim, UsLaceyOperation,
+    UsLaceyAssuranceV2ClaimSnapshot, UsLaceyEngineShipmentRun,
+    UsLaceyEvidenceClaim, UsLaceyOperation,
     UsLaceyOperationDocument, UsLaceyOperationEvent, UsLaceyOperationField,
     UsLaceyOperationProductLink, UsLaceySourceSetMember, UsLaceySourceSetRevision,
     UsLaceySupplier, UsLaceySupplierEvidence, UsLaceySupplierProduct,
@@ -730,13 +731,32 @@ def _current_claim_snapshot(
     revision: UsLaceySourceSetRevision,
 ) -> Mapping[str, object] | None:
     """Require the persisted full packet to match every current document byte hash."""
-    run = session.scalar(select(UsLaceyEngineShipmentRun).where(
-        UsLaceyEngineShipmentRun.organization_id == organization_id,
-        UsLaceyEngineShipmentRun.operation_id == operation_id,
-        UsLaceyEngineShipmentRun.source_set_fingerprint == revision.source_set_fingerprint,
-    ))
-    raw = run.resolution_json if run is not None and isinstance(run.resolution_json, dict) else {}
-    snapshot = raw.get("assurance_v2_claim_snapshot")
+    sidecars = session.scalars(select(UsLaceyAssuranceV2ClaimSnapshot).where(
+        UsLaceyAssuranceV2ClaimSnapshot.organization_id == organization_id,
+        UsLaceyAssuranceV2ClaimSnapshot.operation_id == operation_id,
+        UsLaceyAssuranceV2ClaimSnapshot.source_set_revision_id == revision.id,
+    )).all()
+    if sidecars:
+        if len(sidecars) != 1:
+            return None
+        sidecar = sidecars[0]
+        snapshot = sidecar.snapshot_json
+        if (sidecar.source_set_fingerprint != revision.source_set_fingerprint
+                or sidecar.status != "CANDIDATE_ONLY"
+                or sidecar.document_count != revision.document_count
+                or not isinstance(snapshot, dict)
+                or snapshot.get("status") != sidecar.status
+                or snapshot.get("document_count", len(snapshot.get("documents") or ())) != sidecar.document_count
+                or snapshot.get("claim_count") != sidecar.claim_count):
+            return None
+    else:
+        run = session.scalar(select(UsLaceyEngineShipmentRun).where(
+            UsLaceyEngineShipmentRun.organization_id == organization_id,
+            UsLaceyEngineShipmentRun.operation_id == operation_id,
+            UsLaceyEngineShipmentRun.source_set_fingerprint == revision.source_set_fingerprint,
+        ))
+        raw = run.resolution_json if run is not None and isinstance(run.resolution_json, dict) else {}
+        snapshot = raw.get("assurance_v2_claim_snapshot")
     if not isinstance(snapshot, dict) or any((
         snapshot.get("schema_version") != "assurance.claim.snapshot.v1",
         snapshot.get("status") != "CANDIDATE_ONLY",
@@ -812,7 +832,7 @@ def _application_details(
     revision: UsLaceySourceSetRevision, line_reference: str,
     field_name: str, reuse: ReuseEligibility,
     current_claim_snapshot_digest: str, authenticated_user_id: int,
-    reason: str, idempotency_key: str,
+    reason: str, request_digest: str,
 ) -> dict:
     return {
         "action": "authorize_historical_reuse",
@@ -831,7 +851,7 @@ def _application_details(
         "source_claim_snapshot_digest": current_claim_snapshot_digest,
         "actor_user_id": authenticated_user_id,
         "reason": reason,
-        "request_digest": sha256(idempotency_key.encode("utf-8")).hexdigest(),
+        "request_digest": request_digest,
         "provenance": "REUSED_HISTORICAL",
     }
 
@@ -925,7 +945,7 @@ def authorize_reuse_application(
         line_reference=line, field_name=field, reuse=reuse,
         current_claim_snapshot_digest=current_claim_snapshot_digest,
         authenticated_user_id=int(authenticated_user_id), reason=reason,
-        idempotency_key=key,
+        request_digest=sha256(key.encode("utf-8")).hexdigest(),
     )
     event = append_operation_event(
         session, organization_id=org_id, operation_id=op_id,
@@ -981,10 +1001,12 @@ def verified_reuse_application(
         current_claim_snapshot_digest=current_claim_snapshot_digest,
         authenticated_user_id=actor_user_id,
         reason=str(details.get("reason") or ""),
-        idempotency_key=str(details.get("request_digest") or ""),
+        request_digest=str(details.get("request_digest") or ""),
     )
-    expected["request_digest"] = details.get("request_digest")
-    if details != expected or not details["reason"] or not details["request_digest"]:
+    digest = details.get("request_digest")
+    if (details != expected or not details["reason"]
+            or not isinstance(digest, str) or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest)):
         return None
     return _application_view(event)
 

@@ -12,6 +12,7 @@ from litoral_trace.db.base import Base
 from litoral_trace.db.models import (
     AssuranceDocument, AssuranceV2Decision, AssuranceV2DecisionSource,
     AssuranceV2MemoryLink, Organization, UsLaceyEvidenceClaim,
+    UsLaceyAssuranceV2ClaimSnapshot,
     UsLaceySupplierEvidence, UsLaceyOperation,
     UsLaceyOperationDocument, UsLaceyOperationEvent, UsLaceyOperationField,
     UsLaceyOperationProductLink, UsLaceyPpqPlantLine, UsLaceySourceSetMember,
@@ -340,6 +341,33 @@ def test_reuse_application_rejects_unreported_current_claim_and_incomplete_packe
                         "current_claim_values": ("Quercus rubra",)})
     assert session.scalar(select(UsLaceyOperationEvent).where(
         UsLaceyOperationEvent.operation_id == op2.id)) is None
+
+
+def test_failed_sidecar_blocks_legacy_packet_fallback_for_reuse(session):
+    org, reviewer = org_and_actor(session, "Sidecar")
+    _, product = supplier_product(session, org.id, supplier_key="MID:SIDECAR")
+    op1, doc1, _, rev1, _ = shipment(session, org.id, product.id, reference="SC-1", source_value="Quercus alba")
+    _, memory = approve_and_promote(session, org, reviewer, op1, doc1, rev1)
+    op2, doc2, _, rev2, _ = shipment(session, org.id, product.id, reference="SC-2")
+    snapshot = current_claim_snapshot(session, org, op2, doc2, rev2)
+    digest = canonical_claim_snapshot_digest(snapshot)
+    session.add(UsLaceyAssuranceV2ClaimSnapshot(
+        organization_id=org.id, operation_id=op2.id,
+        source_set_revision_id=rev2.id,
+        source_set_fingerprint=rev2.source_set_fingerprint,
+        status="FAILED", document_count=1, claim_count=0,
+        snapshot_json={**snapshot, "status": "FAILED"},
+    ))
+    session.flush()
+    args = dict(organization_id=org.id, operation_id=op2.id,
+                source_set_revision_id=rev2.id, line_reference="1", field_name="species",
+                current_claim_values=(), current_claim_snapshot_digest=digest)
+    assert verified_reuse_application(session, **args) is None
+    with pytest.raises(ValueError, match="not eligible"):
+        authorize_reuse_application(
+            session, **args, authenticated_user_id=reviewer.id,
+            memory_public_id=memory.public_id, reason="Reviewed original",
+            idempotency_key="failed-sidecar")
 
 
 def test_two_shipments_same_supplier_sku_reuse_with_original_provenance(session):
