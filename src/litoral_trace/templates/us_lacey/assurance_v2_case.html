@@ -84,6 +84,18 @@
       </section>
       <section class="panel" id="claims">
         <div class="section-heading"><div><div class="eyebrow">03 / AUTHORITY LEDGER</div><h2>Field claims</h2></div></div>
+        <h3>Source linked observations</h3>
+        <p class="muted">These are parser observations from the current document set. Source support does not grant human authority.</p>
+        <div class="table-scroll"><table><thead><tr><th>Field / entity</th><th>Original → normalized</th><th>Support</th><th>Current source</th></tr></thead><tbody>
+        {% for claim in case.candidate_observations %}
+        <tr><td><strong>{{ claim.field_name }}</strong><small>{{ claim.subject_id or claim.entity_identity or 'Unresolved entity' }}</small></td>
+          <td>{{ claim.original_value or '—' }} → {{ claim.normalized_value or '—' }}</td>
+          <td><span class="tag {{ 'blue' if claim.support_status == 'SUPPORTED' else 'amber' }}">{{ 'SOURCE SUPPORTED' if claim.support_status == 'SUPPORTED' else claim.support_status }}</span></td>
+          <td>{% if claim.url %}<a href="{{ claim.url }}" target="_blank" rel="noopener noreferrer">Open original ↗</a>{% else %}Unavailable{% endif %}
+          <small>{{ claim.source_locator or '' }}</small></td></tr>
+        {% else %}<tr><td colspan="4">No current source observations. Check the source claim exception.</td></tr>{% endfor %}
+        </tbody></table></div>
+        <h3>Authority state</h3>
         <div class="table-scroll"><table><thead><tr><th>Entity / field</th><th>Value</th><th>Authority</th><th>Evidence</th></tr></thead><tbody>
         {% for item in case.fields %}
         <tr><td><strong>{{ item.name }}</strong><small>{{ item.line_reference }}</small></td><td>{{ item.value or '—' }}</td>

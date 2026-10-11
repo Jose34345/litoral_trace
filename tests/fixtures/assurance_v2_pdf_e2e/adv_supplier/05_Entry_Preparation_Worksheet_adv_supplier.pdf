@@ -1,0 +1,534 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<<
+/Producer (pypdf)
+>>
+endobj
+2 0 obj
+<<
+/Type /Pages
+/Count 1
+/Kids [ 4 0 R ]
+>>
+endobj
+3 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+4 0 obj
+<<
+/Contents 5 0 R
+/MediaBox [ 0 0 595.2756 841.8898 ]
+/Resources <<
+/Font 6 0 R
+/ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>>
+/Rotate 0
+/Trans <<
+>>
+/Type /Page
+/Parent 2 0 R
+>>
+endobj
+5 0 obj
+<<
+/Length 8392
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+q
+.737255 .835294 .803922 RG
+n 48.18898 799.3701 m 547.0866 799.3701 l S
+.031373 .47451 .352941 rg
+BT /F2 9 Tf 10.8 TL ET
+BT 1 0 0 1 48.18898 807.874 Tm (LITORAL TRACE  /  SHIPMENT TEST CORPUS) Tj T* ET
+.709804 .74902 .780392 rg
+BT /F2 8 Tf 9.6 TL ET
+BT 1 0 0 1 174.2978 793.7008 Tm (SYNTHETIC TEST DATA - NOT VALID FOR CUSTOMS OR FILING) Tj T* ET
+.384314 .45098 .533333 rg
+BT /F1 8 Tf 9.6 TL ET
+BT 1 0 0 1 48.18898 39.68504 Tm (All organizations, addresses, identifiers and signatures are fictional.) Tj T* ET
+BT 1 0 0 1 521.7346 39.68504 Tm (Page 1) Tj T* ET
+Q
+q
+1 0 0 1 54.18898 762.8661 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 5 Tm /F2 17 Tf 22 TL (U.S. LACEY DATA - ENTRY PREPARATION WORKSHEET) Tj T* ET
+Q
+Q
+q
+1 0 0 1 54.18898 743.8661 cm
+q
+.384314 .45098 .533333 rg
+BT 1 0 0 1 0 3.5 Tm /F1 7.5 Tf 11 TL (REFERENCE HHI-IMP-2026-2083 | USD / metric units unless specified) Tj T* ET
+Q
+Q
+q
+1 0 0 1 54.18898 530.8661 cm
+q
+1 1 1 rg
+n 0 209 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 190 480 -19 re f*
+1 1 1 rg
+n 0 171 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 152 480 -19 re f*
+1 1 1 rg
+n 0 133 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 114 480 -19 re f*
+1 1 1 rg
+n 0 95 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 76 480 -19 re f*
+1 1 1 rg
+n 0 57 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 38 480 -19 re f*
+1 1 1 rg
+n 0 19 480 -19 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 9 194 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Shipment reference) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 194 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (HHI-IMP-2026-2083) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 175 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Invoice) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 175 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (LSBH-CI-261102) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 156 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (B/L) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 156 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (HBL-XMN-LAX-261120-083) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 137 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Importer / consignee) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 137 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (HARBORLINE HOME IMPORTS LLC) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 118 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Importer contact) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 118 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (import-compliance@harborline-imports.example) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 99 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Broker contact) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 99 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (operations@cascade-brokerage.example) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 80 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Manufacturer) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 80 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (EASTSHORE BAMBOO HOUSEWARES CO., LTD.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 61 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Proposed manufacturer ID) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 61 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (CNFUZEAS99JIN) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 42 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Container number) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 42 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (TGHU6042314) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 23 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Expected U.S. arrival) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 23 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (2026-12-08) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 4 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Port of entry) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 4 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (PORT OF LOS ANGELES, CA) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+.847059 .886275 .901961 RG
+.5 w
+n 0 0 m 480 0 l S
+Q
+Q
+Q
+q
+1 0 0 1 54.18898 505.8661 cm
+q
+.031373 .47451 .352941 rg
+BT 1 0 0 1 0 3.5 Tm /F2 9.5 Tf 13 TL (MERCHANDISE LINE - ARTICLE 1) Tj T* ET
+Q
+Q
+q
+1 0 0 1 54.18898 272.8661 cm
+q
+1 1 1 rg
+n 0 228 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 209 480 -19 re f*
+1 1 1 rg
+n 0 190 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 171 480 -19 re f*
+1 1 1 rg
+n 0 152 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 133 480 -19 re f*
+1 1 1 rg
+n 0 114 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 95 480 -19 re f*
+1 1 1 rg
+n 0 76 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 57 480 -19 re f*
+1 1 1 rg
+n 0 38 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 19 480 -19 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 9 213 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Manufacturer SKU) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 213 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (BAM-COAST-04) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 194 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (HTS - proposed classification) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 194 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (4419.19.9010) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 175 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Entry type \(exercise\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 175 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (01 - Formal commercial entry) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 156 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Entered value) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 156 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (USD 11,250.00) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 137 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Article / component) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 137 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Solid bamboo coasters) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 118 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Scientific genus) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 118 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (TO BE FILLED FROM REVIEWED SUPPLIER MEMORY) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 99 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Scientific species) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 99 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (TO BE FILLED FROM REVIEWED SUPPLIER MEMORY) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 80 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Country of harvest) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 80 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (TO BE CONFIRMED FROM VALID SUPPLIER EVIDENCE) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 61 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Quantity of plant material) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 61 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (288.0 KG) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 42 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Percent recycled) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 42 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (0%) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 23 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Evidence reference to retrieve) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 23 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (LSBH-BOT-2026-0815; LSBH-SPEC-BAM-2026-08) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 4 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Product / manufacturer / source lot) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 4 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (BAM-COAST-04 / Eastshore Bamboo Housewares / BAM-ZJ-26-0815) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+.847059 .886275 .901961 RG
+.5 w
+n 0 0 m 480 0 l S
+Q
+Q
+Q
+q
+1 0 0 1 54.18898 246.8661 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 17.2 Tm /F1 8.8 Tf 13 TL (Shipment gross weight, shipping carton count and finished-set quantity are not interchangeable with declared metric) Tj T* (plant-material quantity.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 54.18898 217.8661 cm
+q
+.556863 .329412 .113725 rg
+BT 1 0 0 1 0 16 Tm /F2 8 Tf 12 TL (Working paper only. Not a filed PPQ 505, an ACE message set, or a LAWGS submission. All values must be confirmed by an) Tj T* (authorized importer or customs broker.) Tj T* ET
+Q
+Q
+ 
+
+endstream
+endobj
+6 0 obj
+<<
+/F1 7 0 R
+/F2 8 0 R
+>>
+endobj
+7 0 obj
+<<
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+/Name /F1
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+8 0 obj
+<<
+/BaseFont /Helvetica-Bold
+/Encoding /WinAnsiEncoding
+/Name /F2
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000054 00000 n 
+0000000113 00000 n 
+0000000162 00000 n 
+0000000361 00000 n 
+0000008805 00000 n 
+0000008846 00000 n 
+0000008953 00000 n 
+trailer
+<<
+/Size 9
+/Root 3 0 R
+/Info 1 0 R
+>>
+startxref
+9065
+%%EOF

@@ -1,4 +1,20 @@
 {
+  "adv_conflict": {
+    "01_Commercial_Invoice_adv_conflict.pdf": "2eeec93c369418a6e37608c0dc5175ab8055739a17a3508b26504c7b9ce8d1c7",
+    "02_Packing_List_adv_conflict.pdf": "3b6efe73cb3890d47afd740794b9a80653e0c96e06d9bcaaa5e5367ee93ac194",
+    "03_House_Bill_of_Lading_adv_conflict.pdf": "1698ed9ec2a912df973005ba99179023a8f4e101dd627727b0ec54042a792ffe",
+    "04_Supplier_Order_Confirmation_adv_conflict.pdf": "b42aef8b1d11d871acbf18da86465f257012641bec9bf92ca5a0ff61826a64fb",
+    "05_Entry_Preparation_Worksheet_adv_conflict.pdf": "716e020762098a627959846a966ec7aa8c932f9d76de7d8a3782c9530a13be53",
+    "06_Arrival_Notice_adv_conflict.pdf": "0f4b4f69c2f2a13709ce745f44a811b2d333e8b989d78c035334d1f3c8672ade"
+  },
+  "adv_supplier": {
+    "01_Commercial_Invoice_adv_supplier.pdf": "f65f98b4d2934d576a55fe0943d38ba9f6b67ad5eb9a86e456fb3173af5e91c6",
+    "02_Packing_List_adv_supplier.pdf": "1cafab1310cbe2be834f72e764697e82ce8ee1a3162c84df7987e82ac9b50ba2",
+    "03_House_Bill_of_Lading_adv_supplier.pdf": "3c98d333ecb3fa68a1a6dad065a044763a65ffa7a53400837dd8dd52ff9603c6",
+    "04_Supplier_Order_Confirmation_adv_supplier.pdf": "c59d29bc89bc9747d1e9e48f627f9419286374c36dbd0bf94df03658bd5409e9",
+    "05_Entry_Preparation_Worksheet_adv_supplier.pdf": "50c87b0dc8158e42a6ef3178d055a72a3d33d0c059fb02cbed401ae80c1d76c8",
+    "06_Arrival_Notice_adv_supplier.pdf": "c05127622b73cd55023f98e12db43f3aada04eb74bd0aaa8bdb486b74075c8b7"
+  },
   "pack1": {
     "01_Commercial_Invoice_Shipment1.pdf": "37eef3f540b53d4f178b2b96a43a61aec7022c388bb8df5633553738d5fb66c1",
     "02_Packing_List_Shipment1.pdf": "aa99577dcb211c806f3343b3c46b3034bf4b6370491e142bac2350198eb49210",

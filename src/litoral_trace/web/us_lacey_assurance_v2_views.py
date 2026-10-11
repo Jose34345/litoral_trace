@@ -115,6 +115,14 @@ def create_assurance_v2_router(
                     str(candidate.get("document_id") or ""),
                     int(candidate["page"]) if str(candidate.get("page") or "").isdigit() else None,
                 ) if str(candidate.get("document_id")) in documents else None
+        for claim in snapshot["candidate_observations"]:
+            doc_id = str(claim.get("assurance_document_id") or "")
+            locator = claim.get("source_locator") or {}
+            page = locator.get("page") if isinstance(locator, dict) else None
+            claim["url"] = source_link(
+                principal, operation_id, doc_id,
+                int(page) if str(page or "").isdigit() else None,
+            ) if doc_id in documents else None
         return templates.TemplateResponse(
             request=request, name="us_lacey/assurance_v2_case.html",
             context={"case": snapshot, "gate": gate, "csrf_token": principal.csrf_token,

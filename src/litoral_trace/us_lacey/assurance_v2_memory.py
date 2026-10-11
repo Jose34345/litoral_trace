@@ -1231,7 +1231,9 @@ def revoke_verified_memory(
             AssuranceV2MemoryLink.organization_id == org_id,
             AssuranceV2MemoryLink.public_id == memory_public_id,
         )
-        .with_for_update()
+        # The runtime role may update the mutable evidence status, but the
+        # historical decision and memory link are deliberately append-only.
+        .with_for_update(of=UsLaceySupplierEvidence)
     ).one_or_none()
     if linked is None:
         raise ValueError("unknown tenant-owned memory record")
