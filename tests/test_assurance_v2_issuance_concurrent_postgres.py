@@ -25,7 +25,13 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_concurrent_issuance_commits_exactly_one_immutable_package(pg_case):
+def test_concurrent_issuers_serialize_operation_lock_and_package_event(pg_case, monkeypatch):
+    # The Pg fixture contains no physical document: replace *only* the source
+    # dependency walker, leaving the real operation/revision row locks,
+    # authorization actor, transaction, event table and RLS intact.
+    # This is NOT concurrent source-document mutation acceptance.
+    import litoral_trace.us_lacey.assurance_v2_issuance as issuance_module
+    monkeypatch.setattr(issuance_module, "_lock_case_dependencies", lambda *a, **kw: None)
     values, _, runtime = pg_case
     org_id, operation_id, revision_id, user_id = (
         values["org_a"], values["op_a"], values["revision_a"], values["user_a"],
@@ -35,12 +41,6 @@ def test_concurrent_issuance_commits_exactly_one_immutable_package(pg_case):
             text("SELECT set_config('app.current_organization_id', :org, true)"),
             {"org": str(org_id)},
         )
-        # This fixture does not include physical documents. Set its source
-        # membership to the consistent empty state for an isolated lock test.
-        connection.execute(text(
-            "UPDATE us_lacey_source_set_revisions SET document_count=0 "
-            "WHERE organization_id=:org AND id=:revision"
-        ), {"org": org_id, "revision": revision_id})
         public_id = str(connection.execute(text(
             "SELECT public_id FROM us_lacey_operations "
             "WHERE organization_id=:org AND id=:operation"
