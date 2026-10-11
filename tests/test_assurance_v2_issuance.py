@@ -1,6 +1,7 @@
 """Isolated issue-transaction acceptance, NOT a substitute for 13-PDF E2E."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
 import pytest
@@ -95,3 +96,22 @@ def test_package_write_participates_in_atomic_commit_or_rollback(session):
         fingerprint=receipt["package_fingerprint"],
     )
     assert loaded is not None and loaded.snapshot["case"]["export_authorization"]["status"] == "AUTHORIZED"
+
+def test_two_concurrent_issuers_commit_one_immutable_package(session):
+    """Real PostgreSQL row locks serialize concurrent authenticated issuers."""
+    org, actor, op, rev, factory, case = _prepare(session)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        futures = [
+            workers.submit(_issue, org, actor, op, rev, factory, case)
+            for _ in range(2)
+        ]
+        receipts = [future.result(timeout=30) for future in futures]
+    assert all(item["status"] == "FILING_READY" for item in receipts)
+    assert len({item["package_fingerprint"] for item in receipts}) == 1
+    assert all(item["submitted_to_agency"] is False for item in receipts)
+    session.expire_all()
+    events = session.scalars(select(UsLaceyOperationEvent).where(
+        UsLaceyOperationEvent.organization_id == org.id,
+        UsLaceyOperationEvent.operation_id == op.id,
+    )).all()
+    assert len(events) == 1
