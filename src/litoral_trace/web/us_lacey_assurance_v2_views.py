@@ -38,6 +38,11 @@ class DecisionGateway(Protocol):
     def __call__(self, principal: WorkspacePrincipal, operation_id: str, command: dict[str, str]) -> dict[str, Any]: ...
 
 
+class ReuseGateway(Protocol):
+    def __call__(self, principal: WorkspacePrincipal, operation_id: str,
+                 command: dict[str, str]) -> dict[str, Any]: ...
+
+
 class AuthorizationGateway(Protocol):
     """Only a tenant-authenticated, current-source-set-locked writer."""
     def __call__(self, principal: WorkspacePrincipal, operation_id: str,
@@ -67,6 +72,7 @@ def create_assurance_v2_router(
     document_link_for: Callable[[WorkspacePrincipal, str, str, int | None], str | None],
     issue_gateway: IssueGateway | None = None,
     authorization_gateway: AuthorizationGateway | None = None,
+    reuse_gateway: ReuseGateway | None = None,
 ) -> APIRouter:
     """The web adapter cannot select/promote candidates or write canonical truth."""
     router = APIRouter(prefix="/assurance-v2/operations", tags=["Assurance V2"])
@@ -164,6 +170,40 @@ def create_assurance_v2_router(
             principal, operation_id, case.source_set_fingerprint,
             gate.case_fingerprint, reason, True,
         )
+
+    @router.post("/{operation_id}/reuses")
+    async def apply_reuse(request: Request, operation_id: str):
+        principal, case = context(request, operation_id)
+        body = await request.json()
+        if not isinstance(body, dict) or not csrf_verify(
+            principal, str(body.get("csrf_token") or "")
+        ):
+            raise HTTPException(403, "Invalid CSRF token")
+        memory_id = str(body.get("memory_id") or "").strip()
+        field_name = str(body.get("field_name") or "").strip()
+        line_reference = str(body.get("line_reference") or "").strip()
+        reason = str(body.get("reason") or "").strip()
+        if not reason or len(reason) > 180:
+            raise HTTPException(422, "Reviewer reason is required")
+        eligible = [item for item in case.reuses if (
+            item.get("status") == "ELIGIBLE"
+            and str(item.get("id")) == memory_id
+            and item.get("field_name") == field_name
+            and item.get("line_reference") == line_reference
+        )]
+        if len(eligible) != 1:
+            raise HTTPException(422, "Historical evidence is not eligible for this line")
+        if reuse_gateway is None:
+            raise HTTPException(503, "Authenticated reuse application is disabled")
+        command = {
+            "memory_id": memory_id,
+            "field_name": field_name,
+            "line_reference": line_reference,
+            "reason": reason,
+            "expected_source_set_fingerprint": case.source_set_fingerprint,
+            "expected_case_fingerprint": case.authority_fingerprint(),
+        }
+        return JSONResponse(reuse_gateway(principal, operation_id, command), status_code=202)
 
     @router.post("/{operation_id}/issue")
     async def issue(request: Request, operation_id: str):

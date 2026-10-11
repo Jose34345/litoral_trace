@@ -105,7 +105,16 @@
       </section>
       <section class="panel" id="memory">
         <div class="section-heading"><div><div class="eyebrow">06 / LONGITUDINAL MEMORY</div><h2>Historical evidence reuse</h2></div></div>
-        {% for reuse in case.reuses %}<div class="simple-row"><div><strong>{{ reuse.evidence_id }}</strong><small>Valid until {{ reuse.valid_until }} · Verified by {{ reuse.verified_by }}</small></div><span class="tag purple">{{ reuse.status }}</span></div>{% else %}<p class="empty">No reused evidence included in this shipment.</p>{% endfor %}
+        {% for reuse in case.reuses %}
+        <div class="simple-row"><div><strong>{{ reuse.field_name }} · {{ reuse.value }}</strong><small>Line {{ reuse.line_reference }} · historical source {{ reuse.origin_document_id }} · {% if reuse.status == 'VERIFIED' %}verified by {{ reuse.verified_by }} · valid until {{ reuse.valid_until }}{% else %}review required before application{% endif %}</small></div><span class="tag purple">{{ reuse.status }}</span></div>
+        {% if reuse.status == 'ELIGIBLE' %}
+        <form class="reuse-form" data-memory="{{ reuse.id }}" data-field="{{ reuse.field_name }}" data-line="{{ reuse.line_reference }}">
+          <label>Reason for applying this exact historical evidence<input name="reason" maxlength="180" required placeholder="I reviewed the supplier, SKU, line and original source"></label>
+          <button type="submit">Authorize reuse for this line</button>
+          <div class="reuse-result" role="status" aria-live="polite"></div>
+        </form>
+        {% endif %}
+        {% else %}<p class="empty">No reused evidence included in this shipment.</p>{% endfor %}
       </section>
       <section class="panel" id="rules">
         <div class="section-heading"><div><div class="eyebrow">07 / DETERMINISTIC ASSESSMENT</div><h2>Applicable regulatory rules</h2></div></div>

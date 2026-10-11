@@ -33,6 +33,9 @@ def _client(monkeypatch, *, commands: bool, case=None):
     monkeypatch.setattr(runtime, "issue_locked_assurance_package", lambda **kw: (
         calls.append(("issue", kw)) or {"status": "FILING_READY", "submitted_to_agency": False}
     ))
+    monkeypatch.setattr(runtime, "apply_authorized_assurance_v2_reuse", lambda **kw: (
+        calls.append(("reuse", kw)) or {"status": "VERIFIED_REUSE"}
+    ))
     app = FastAPI()
     static_dir = Path(__file__).resolve().parents[1] / "src/litoral_trace/static"
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
@@ -126,6 +129,30 @@ def test_runtime_authorization_and_issuance_are_session_bound(monkeypatch):
     sent = next(payload for kind, payload in calls if kind == "issue")
     assert sent["authenticated_user_id"] == 42
     assert sent["expected_case_fingerprint"] == approved.authority_fingerprint()
+
+
+def test_runtime_reuse_application_is_authenticated_and_off_by_default(monkeypatch):
+    case = replace(make_case(approved=False), reuses=({
+        "id": "memory-1", "status": "ELIGIBLE", "field_name": "species",
+        "line_reference": "LINE-1", "value": "rubra",
+    },))
+    csrf = runtime.us_lacey_csrf_token(
+        session_token="fixture-session", purpose=f"assurance-v2:{OPERATION_ID}",
+    )
+    command = {"csrf_token": csrf, "memory_id": "memory-1",
+               "field_name": "species", "line_reference": "LINE-1",
+               "reason": "I verified original source and identity"}
+    base = f"/assurance-v2/operations/{OPERATION_ID}/reuses"
+    disabled, calls, _ = _client(monkeypatch, commands=False, case=case)
+    assert disabled.post(base, json=command).status_code == 503
+    assert not any(kind == "reuse" for kind, _ in calls)
+    enabled, calls, case = _client(monkeypatch, commands=True, case=case)
+    response = enabled.post(base, json=command)
+    assert response.status_code == 202, response.text
+    sent = next(payload for kind, payload in calls if kind == "reuse")
+    assert sent["organization_id"] == case.organization_id
+    assert sent["authenticated_user_id"] == 42
+    assert sent["expected_case_fingerprint"] == case.authority_fingerprint()
 
 
 def test_runtime_source_link_downloads_only_verified_current_document(monkeypatch):

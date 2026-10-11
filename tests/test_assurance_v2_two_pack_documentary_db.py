@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 from copy import deepcopy
 
 from sqlalchemy import select
@@ -26,7 +26,8 @@ from litoral_trace.lacey_engine.serialization import (
 from litoral_trace.us_lacey.assurance_v2_claim_ingestion import collect_source_claims
 from litoral_trace.us_lacey.assurance_v2_case_reader import _case
 from litoral_trace.us_lacey.assurance_v2_memory import (
-    promote_decision_to_memory, record_human_decision,
+    authorize_reuse_application, canonical_claim_snapshot_digest,
+    promote_decision_to_memory, record_human_decision, revoke_verified_memory,
 )
 from litoral_trace.us_lacey.lacey_engine_service import source_set_fingerprint
 from litoral_trace.us_lacey.exporters.assurance_v2 import evaluate_filing_gate
@@ -48,6 +49,7 @@ def _ingest_original_documents(db, org_id: int, product_id: int, pack: str):
         db, org_id, product_id, reference=f"REAL-SYNTHETIC-{pack.upper()}",
     )
     operation.document_count = len(files)
+    revision.document_count = len(files)
     document_rows = []
     inputs = []
     for i, path in enumerate(files, 1):
@@ -243,6 +245,43 @@ def test_original_13_pdfs_to_verified_source_memory_and_safe_second_shipment(ses
     assert not evaluate_filing_gate(db_case2).ready
     # The report may propose reuse, but no proposed historical value can be
     # exported as if it were extracted from Pack 2.
+
+    run2 = session.scalar(select(UsLaceyEngineShipmentRun).where(
+        UsLaceyEngineShipmentRun.organization_id == org.id,
+        UsLaceyEngineShipmentRun.operation_id == op2.id,
+    ))
+    digest = canonical_claim_snapshot_digest(run2.resolution_json["assurance_v2_claim_snapshot"])
+    for item in db_case2.reuses:
+        applied = authorize_reuse_application(
+            session, organization_id=org.id, operation_id=op2.id,
+            source_set_revision_id=rev2.id, authenticated_user_id=actor.id,
+            line_reference="1", field_name=item["field_name"],
+            memory_public_id=UUID(item["id"]), current_claim_values=(),
+            current_claim_snapshot_digest=digest,
+            reason="Reviewer authorized this exact historical source and current packet",
+            idempotency_key=f"original13:reuse:{op2.id}:{item['field_name']}",
+        )
+        assert applied.status == "VERIFIED_REUSE"
+    applied_case = _case(session, org.id, op2.public_id)
+    assert applied_case is not None
+    assert {item["field_name"] for item in applied_case.reuses
+            if item["status"] == "VERIFIED"} == set(_STABLE)
+    assert {field["name"] for field in applied_case.fields
+            if field["authority"] == "VERIFIED_REUSE"} == set(_STABLE)
+    assert all(not field["document_ids"] for field in applied_case.fields
+               if field["authority"] == "VERIFIED_REUSE")
+    assert "INVALID_REUSED_EVIDENCE" not in {
+        blocker.code for blocker in evaluate_filing_gate(applied_case).blockers
+    }
+    assert revoke_verified_memory(
+        session, organization_id=org.id, authenticated_user_id=actor.id,
+        memory_public_id=UUID(applied_case.reuses[0]["id"]),
+        reason="Synthetic revocation QA", idempotency_key=f"revoke:{op2.id}",
+    )
+    revoked_case = _case(session, org.id, op2.public_id)
+    assert revoked_case is not None
+    assert len([item for item in revoked_case.reuses if item["status"] == "VERIFIED"]) < 3
+    assert not evaluate_filing_gate(revoked_case).ready
 
 
 def test_incomplete_persisted_claim_fails_explicitly_before_workspace(session):

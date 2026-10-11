@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import (
     AssuranceDocument, AssuranceV2Decision, AssuranceV2DecisionSource,
+    AssuranceV2MemoryLink, UsLaceyEvidenceClaim, UsLaceySupplierEvidence,
     UsLaceyAssuranceV2ClaimSnapshot,
     UsLaceyEngineShipmentRun, UsLaceyOperation, UsLaceyOperationDocument, UsLaceyOperationField,
     UsLaceyPpqPlantLine, UsLaceyRegulatoryAssessmentSnapshot,
@@ -22,7 +23,10 @@ from litoral_trace.db.models import (
     VaultDocument,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
-from litoral_trace.us_lacey.assurance_v2_memory import evaluate_reuse
+from litoral_trace.us_lacey.assurance_v2_memory import (
+    _current_claim_snapshot, canonical_claim_snapshot_digest,
+    evaluate_reuse, verified_reuse_application,
+)
 from litoral_trace.us_lacey.assurance_v2_claim_bridge import (
     ResolvedDocumentBinding, to_authority_candidate_snapshot,
 )
@@ -262,6 +266,21 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
     except ValueError:
         source_observations = None
         source_claim_error = "SOURCE_CLAIMS_INVALID"
+    claim_snapshot = (
+        _current_claim_snapshot(db, organization_id=org_id, operation_id=op.id,
+                                revision=revision)
+        if source_observations is not None else None
+    )
+    if source_observations is not None and claim_snapshot is None:
+        source_observations = None
+        source_claim_error = "SOURCE_CLAIMS_INVALID"
+    snapshot_digest = (
+        canonical_claim_snapshot_digest(claim_snapshot)
+        if claim_snapshot is not None else None
+    )
+    raw_claims = tuple(
+        claim for source in claim_snapshot["documents"] for claim in source["claims"]
+    ) if claim_snapshot is not None else ()
 
     decisions = db.scalars(select(AssuranceV2Decision).where(
         AssuranceV2Decision.organization_id == org_id,
@@ -346,25 +365,123 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
             }
         )
         proposed = (field.normalized_value or field.original_value or "").strip()
-        chosen = str(field.human_value or "").strip() if proven_decision else proposed
-        authority = "HUMAN_CONFIRMED" if proven_decision else "CANDIDATE"
+        verified = None
+        verified_record = None
+        if (
+            field.field_name in _REUSABLE_FIELDS and line in line_set
+            and not field.human_value and revision.status == "FINALIZED"
+            and snapshot_digest is not None
+        ):
+            current_values = current_claim_values_for_reuse(
+                raw_claims, field_name=field.field_name, line_reference=line,
+            )
+            if current_values is not None:
+                verified = verified_reuse_application(
+                    db, organization_id=org_id, operation_id=op.id,
+                    source_set_revision_id=revision.id, line_reference=line,
+                    field_name=field.field_name, current_claim_values=current_values,
+                    current_claim_snapshot_digest=snapshot_digest,
+                )
+                if verified is not None:
+                    memory = db.scalar(select(AssuranceV2MemoryLink).where(
+                        AssuranceV2MemoryLink.organization_id == org_id,
+                        AssuranceV2MemoryLink.public_id == verified.memory_public_id,
+                        AssuranceV2MemoryLink.evidence_claim_id == verified.evidence_claim_id,
+                        AssuranceV2MemoryLink.assurance_document_id == verified.origin_document_id,
+                    ))
+                    claim = db.scalar(select(UsLaceyEvidenceClaim).where(
+                        UsLaceyEvidenceClaim.organization_id == org_id,
+                        UsLaceyEvidenceClaim.id == verified.evidence_claim_id,
+                    ))
+                    evidence = db.scalar(select(UsLaceySupplierEvidence).where(
+                        UsLaceySupplierEvidence.organization_id == org_id,
+                        UsLaceySupplierEvidence.id == claim.evidence_id,
+                    )) if claim is not None else None
+                    origin = db.scalar(select(AssuranceDocument).where(
+                        AssuranceDocument.organization_id == org_id,
+                        AssuranceDocument.id == verified.origin_document_id,
+                    ))
+                    vault = db.scalar(select(VaultDocument).where(
+                        VaultDocument.organization_id == org_id,
+                        VaultDocument.id == origin.vault_document_id,
+                    )) if origin is not None else None
+                    identity = next((row for row in identities
+                                     if row["line_reference"] == line), None)
+                    if (
+                        memory is not None and evidence is not None and vault is not None
+                        and identity is not None and evidence.status == "VERIFIED"
+                        and evidence.document_hash == vault.sha256
+                        and evidence.supplier_product_id == identity["product_id"]
+                    ):
+                        verified_record = {
+                            "id": str(verified.memory_public_id),
+                            "status": "VERIFIED",
+                            "field_name": field.field_name,
+                            "line_reference": line,
+                            "value": verified.value,
+                            "evidence_id": str(verified.evidence_claim_id),
+                            "origin_document_id": str(verified.origin_document_id),
+                            "origin_decision_id": str(verified.origin_decision_public_id),
+                            "source_document_hash": vault.sha256,
+                            "supplier_id": identity["supplier_id"],
+                            "product_id": identity["product_id"],
+                            "verified_by": f"user:{verified.actor_user_id}",
+                            "audit_event_id": verified.audit_event_id,
+                            "valid_until": evidence.valid_until.isoformat(),
+                            "revoked_at": None,
+                            "provenance": "REUSED_HISTORICAL",
+                            "source_claim_snapshot_digest": verified.source_claim_snapshot_digest,
+                        }
+                        reuses.append(verified_record)
+                    else:
+                        exceptions.append({
+                            "id": f"reuse:provenance:{field.id}",
+                            "reason": "REUSE_PROVENANCE_INVALID", "status": "OPEN",
+                            "blocking": True,
+                        })
+                else:
+                    reuse = evaluate_reuse(
+                        db, organization_id=org_id, operation_id=op.id,
+                        source_set_revision_id=revision.id, line_reference=line,
+                        field_name=field.field_name, current_claim_values=current_values,
+                    )
+                    if reuse.eligible:
+                        reuses.append({
+                            "id": str(reuse.memory_public_id), "status": "ELIGIBLE",
+                            "field_name": field.field_name, "value": reuse.value,
+                            "line_reference": line, "evidence_id": str(reuse.evidence_claim_id),
+                            "origin_document_id": str(reuse.origin_document_id),
+                            "origin_decision_id": str(reuse.origin_decision_public_id),
+                            "provenance": "REUSE_PROPOSED_NOT_CANONICAL",
+                        })
+        chosen = (
+            str(field.human_value or "").strip() if proven_decision
+            else verified_record["value"] if verified_record else proposed
+        )
+        authority = (
+            "HUMAN_CONFIRMED" if proven_decision else
+            "VERIFIED_REUSE" if verified_record else "CANDIDATE"
+        )
         evidence_ids = [
             f"v2decision-source:{row.id}" for row in docs_by_decision.get(decision.id, ())
         ] if proven_decision else []
+        if verified_record:
+            evidence_ids = [verified_record["evidence_id"]]
         item = {
             "id": str(field.id), "name": field.field_name,
             "line_reference": line, "value": chosen,
             "authority": authority,
-            "status": field.field_status,
-            "source_locator": field.source_locator if is_current_document else None,
+            "status": "VERIFIED_REUSE" if verified_record else field.field_status,
+            "source_locator": field.source_locator if is_current_document and not verified_record else None,
             "document_ids": (
-                [str(field.source_assurance_document_id)] if is_current_document else []
+                [str(field.source_assurance_document_id)] if is_current_document and not verified_record else []
             ),
             "evidence_ids": evidence_ids,
             "decision_id": str(decision.public_id) if proven_decision else None,
+            "reuse_id": verified_record["id"] if verified_record else None,
         }
         fields.append(item)
-        if not proven_decision and field.field_status != "NOT_REQUIRED":
+        if not proven_decision and not verified_record and field.field_status != "NOT_REQUIRED":
             exceptions.append({
                 "id": f"field:{field.id}",
                 "line_reference": line,
@@ -379,27 +496,6 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
                     "page": field.source_page,
                 }] if proposed else [],
             })
-        if (
-            field.field_name in _REUSABLE_FIELDS and line in line_set
-            and not field.human_value and revision.status == "FINALIZED"
-        ):
-            current_values = current_claim_values_for_reuse(source_observations, field_name=field.field_name, line_reference=line)
-            if current_values is None:
-                continue
-            reuse = evaluate_reuse(
-                db, organization_id=org_id, operation_id=op.id,
-                source_set_revision_id=revision.id, line_reference=line,
-                field_name=field.field_name, current_claim_values=current_values,
-            )
-            if reuse.eligible:
-                reuses.append({
-                    "id": str(reuse.memory_public_id), "status": "ELIGIBLE",
-                    "field_name": field.field_name, "value": reuse.value,
-                    "line_reference": line, "evidence_id": str(reuse.evidence_claim_id),
-                    "origin_document_id": str(reuse.origin_document_id),
-                    "origin_decision_id": str(reuse.origin_decision_public_id),
-                    "provenance": "REUSE_PROPOSED_NOT_CANONICAL",
-                })
     ruleset_version, regulatory_rules = _current_regulatory_rules(
         db, organization_id=org_id, operation_id=op.id, revision=revision,
     )

@@ -15,7 +15,8 @@ from litoral_trace.web.us_lacey_assurance_v2_views import (
 from test_assurance_v2_outputs_core import OPERATION_ID, make_case, authorize
 
 
-def make_client(case=None, *, test_issue_enabled=True, test_authorization_enabled=False):
+def make_client(case=None, *, test_issue_enabled=True, test_authorization_enabled=False,
+                test_reuse_enabled=False):
     case = case or make_case()
     receipts: list[dict[str, str]] = []
     store = MemoryPackageStore()
@@ -67,6 +68,10 @@ def make_client(case=None, *, test_issue_enabled=True, test_authorization_enable
         case = authorize(case)
         return case.export_authorization
 
+    def fixture_reuse(principal: WorkspacePrincipal, operation_id: str, command: dict):
+        receipts.append(command)
+        return {"status": "VERIFIED_REUSE", "field_name": command["field_name"]}
+
     app.include_router(create_assurance_v2_router(
         principal_for=principal,
         case_for=read,
@@ -75,10 +80,33 @@ def make_client(case=None, *, test_issue_enabled=True, test_authorization_enable
         package_store=store,
         issue_gateway=fixture_issue if test_issue_enabled else None,
         authorization_gateway=fixture_authorize if test_authorization_enabled else None,
+        reuse_gateway=fixture_reuse if test_reuse_enabled else None,
         document_link_for=lambda principal, op, doc, page:
             f"/operations/{op}/documents/{doc}" + (f"?page={page}" if page else ""),
     ))
     return TestClient(app), receipts
+
+
+def test_reuse_application_requires_csrf_and_explicit_eligible_memory():
+    case = replace(make_case(approved=False), reuses=({
+        "id": "memory-1", "status": "ELIGIBLE", "field_name": "species",
+        "line_reference": "LINE-1", "value": "rubra",
+    },))
+    client, receipts = make_client(case, test_reuse_enabled=True)
+    url = f"/assurance-v2/operations/{OPERATION_ID}/reuses"
+    command = {"csrf_token": "fixture-csrf", "memory_id": "memory-1",
+               "field_name": "species", "line_reference": "LINE-1",
+               "reason": "Reviewed historical evidence for this line"}
+    assert client.post(url, json={**command, "csrf_token": "wrong"},
+                       headers={"X-Demo-Tenant": "11"}).status_code == 403
+    assert client.post(url, json={**command, "memory_id": "other"},
+                       headers={"X-Demo-Tenant": "11"}).status_code == 422
+    assert client.post(url, json=command,
+                       headers={"X-Demo-Tenant": "12"}).status_code == 404
+    response = client.post(url, json=command, headers={"X-Demo-Tenant": "11"})
+    assert response.status_code == 202
+    assert receipts[0]["expected_case_fingerprint"] == case.authority_fingerprint()
+    assert receipts[0]["expected_source_set_fingerprint"] == case.source_set_fingerprint
 
 
 def test_ui_separates_candidate_supported_human_and_memory_and_links_origin():
