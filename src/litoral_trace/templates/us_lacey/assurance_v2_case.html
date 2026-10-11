@@ -66,7 +66,14 @@
                 <option value="CORRECT">Correct value</option>
               </select>
             </label>
-            <label>Candidate reference<input name="candidate_id" placeholder="Exact candidate ID from evidence service"></label>
+            <label>Source candidate
+              <select name="candidate_id">
+                <option value="">Current field value (if available)</option>
+                {% for candidate in ex.candidates or [] %}
+                <option value="{{ candidate.id }}">{{ candidate.value or 'Missing' }} · source {{ candidate.document_name or candidate.document_id or 'unknown' }}{% if candidate.page %}, p. {{ candidate.page }}{% endif %}</option>
+                {% endfor %}
+              </select>
+            </label>
             <label>Correction (only for Correct)<input name="value" placeholder="Reviewed value"></label>
             <label>Reason / justification<input name="reason" placeholder="Reason and supporting evidence"></label>
             <button type="submit">Send to review authority</button>
