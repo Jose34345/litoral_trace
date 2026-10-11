@@ -1,0 +1,19 @@
+{
+  "pack1": {
+    "01_Commercial_Invoice_Shipment1.pdf": "37eef3f540b53d4f178b2b96a43a61aec7022c388bb8df5633553738d5fb66c1",
+    "02_Packing_List_Shipment1.pdf": "aa99577dcb211c806f3343b3c46b3034bf4b6370491e142bac2350198eb49210",
+    "03_House_Bill_of_Lading_Shipment1.pdf": "893e2bb042df2040e75051206b7ae19352603cdfb435bae64e0c748ee45814bd",
+    "04_Supplier_Order_Confirmation_Shipment1.pdf": "f7d65aab706877ffa7fefe25b99c28ad462701fc73887098590db5bca6ae2a07",
+    "05_Entry_Preparation_Worksheet_Shipment1.pdf": "98b45fed9e12c9411578177e80712e9733dd9f2770bd70c5b88fb825919778a1",
+    "06_Supplier_Botanical_Declaration_Shipment1.pdf": "2f3d7ef115510235000da32781a97ceb2652f8af6c0a6c087cf2229490e5f486",
+    "07_Supplier_Product_Specification_Shipment1.pdf": "49622d1a8b4e20a173f5694151d15f8550b275e70eb84edbc5b800044f381be4"
+  },
+  "pack2": {
+    "01_Commercial_Invoice_Shipment2.pdf": "b13282232e7f02a4f8fea3c1da3633206ea529231785a3ae9126cce22a310f25",
+    "02_Packing_List_Shipment2.pdf": "5a1fc75b252b049d70991d474459c1ba435e0a25bab1ddc5965456e1778f8ea7",
+    "03_House_Bill_of_Lading_Shipment2.pdf": "780d7ab8a0d54931cc006e1dbf0a327361d9caf28b47316c1308122e51f3ef3e",
+    "04_Supplier_Order_Confirmation_Shipment2.pdf": "895bb7a289ef22a333ba58f3ff55fbf36fdd8f36557e754f08acc0d0742b1974",
+    "05_Entry_Preparation_Worksheet_Shipment2.pdf": "3138321ec1272746428faeba18b8487c93f4d8e260870c951efdc284755bb4ee",
+    "06_Arrival_Notice_Shipment2.pdf": "77f6fd0d02002adf6154ae64537d87ff92479473007d2b45441fa3cea31731e8"
+  }
+}

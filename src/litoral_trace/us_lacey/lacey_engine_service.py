@@ -17,6 +17,7 @@ from litoral_trace.db.models import (
     UsLaceyEngineShipmentRun,
     UsLaceyOperation,
     UsLaceyOperationDocument,
+    UsLaceySourceSetRevision,
     VaultDocument,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
@@ -46,6 +47,7 @@ from litoral_trace.lacey_engine.serialization import (
 from litoral_trace.lacey_engine.shipment import LaceyRuleset, ShipmentDocumentInput, process_shipment
 from litoral_trace.services.vault import VaultService
 from litoral_trace.us_lacey import specialized_projection_runtime, specialized_shadow
+from litoral_trace.us_lacey.assurance_v2_claim_ingestion import collect_source_claims
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.storage import (
     build_us_lacey_storage_settings,
@@ -896,6 +898,11 @@ class UsLaceyEngine2Service:
         """
 
         # ---- Phase 1: short read transaction ---------------------------------
+        assurance_claim_shadow = (
+            os.getenv("US_LACEY_ASSURANCE_V2_MODE", "OFF").strip().upper() == "SHADOW"
+        )
+        claim_revision_id: int | None = None
+        claim_revision_fingerprint: str | None = None
         read_session: Session = self._session_factory()
         try:
             set_tenant_db_context(read_session, organization_id)
@@ -930,6 +937,21 @@ class UsLaceyEngine2Service:
                 ruleset_version=self._ruleset.version,
             )
 
+            if assurance_claim_shadow:
+                claim_revision = read_session.scalar(
+                    select(UsLaceySourceSetRevision)
+                    .where(
+                        UsLaceySourceSetRevision.organization_id == organization_id,
+                        UsLaceySourceSetRevision.operation_id == operation_id,
+                        UsLaceySourceSetRevision.is_current.is_(True),
+                    )
+                    .order_by(UsLaceySourceSetRevision.id.desc())
+                    .limit(1)
+                )
+                if claim_revision is not None:
+                    claim_revision_id = int(claim_revision.id)
+                    claim_revision_fingerprint = claim_revision.source_set_fingerprint
+
             cached_bundles: dict[int, BundleResolution] = {}
             for link, assurance, vault in rows:
                 success_identity = self._engine2_document_run_identity(
@@ -957,18 +979,66 @@ class UsLaceyEngine2Service:
         def process_one(row):
             link, assurance, vault = row
             cached = cached_bundles.get(int(assurance.id))
-            if cached is not None:
-                return link, assurance, vault, cached
+            # A cache hit does not revalidate original bytes. Shadow provenance
+            # still requires a verified transient download or must abstain.
+            claims_requested = bool(
+                assurance_claim_shadow and claim_revision_id is not None
+                and claim_revision_fingerprint
+            )
+            if cached is not None and not claims_requested:
+                return link, assurance, vault, cached, None
             with self._vault.materialize_verified_download(
                 organization_id=organization_id,
                 document_id=vault.public_id,
             ) as download:
-                bundle = process_bundle(
+                original_bytes = b"".join(download.iter_chunks())
+                bundle = cached if cached is not None else process_bundle(
                     filename=vault.original_filename,
-                    content=b"".join(download.iter_chunks()),
+                    content=original_bytes,
                     role_hint=link.document_role,
                 )
-            return link, assurance, vault, bundle
+                claim_payload = None
+                if claims_requested:
+                    try:
+                        claim_payload = collect_source_claims(
+                            organization_id=organization_id,
+                            operation_id=operation_id,
+                            source_set_revision_id=claim_revision_id,
+                            source_set_fingerprint=claim_revision_fingerprint,
+                            assurance_document_id=int(assurance.id),
+                            operation_document_id=int(link.id),
+                            document_version_number=int(link.version_number),
+                            original_sha256=vault.sha256,
+                            original_bytes=original_bytes,
+                            bundle=bundle,
+                        )
+                    except (ValueError, TypeError) as exc:
+                        # A claim-engine abstention cannot become supported
+                        # evidence. The legacy processing result remains intact.
+                        LOGGER.warning(
+                            "Assurance V2 source-claim verification abstained",
+                            extra={
+                                "organization_id": organization_id,
+                                "operation_id": operation_id,
+                                "operation_document_id": int(link.id),
+                                "error_code": type(exc).__name__,
+                            },
+                        )
+                        claim_payload = {
+                            "schema_version": "assurance.claim.snapshot.v1",
+                            "status": "FAILED",
+                            "reason_code": "UNVERIFIABLE_SOURCE_CLAIMS",
+                            "organization_id": organization_id,
+                            "operation_id": operation_id,
+                            "source_set_revision_id": claim_revision_id,
+                            "source_set_fingerprint": claim_revision_fingerprint,
+                            "assurance_document_id": int(assurance.id),
+                            "operation_document_id": int(link.id),
+                            "original_sha256": vault.sha256,
+                            "claim_count": 0,
+                            "claims": [],
+                        }
+            return link, assurance, vault, bundle, claim_payload
 
         batch = self._process_engine2_document_batch(
             documents=tuple(rows),
@@ -979,7 +1049,7 @@ class UsLaceyEngine2Service:
         ai_documents: list[_AIShadowDocumentContext] = []
         inputs: list[ShipmentDocumentInput] = []
         for success in batch.succeeded:
-            link, assurance, vault, bundle = success.result
+            link, assurance, vault, bundle, claim_payload = success.result
             if len(bundle.documents) == 1:
                 ai_documents.append(
                     _AIShadowDocumentContext(
@@ -1015,6 +1085,10 @@ class UsLaceyEngine2Service:
             if batch.status == "SUCCEEDED"
             else None
         )
+        claim_documents = [
+            result.result[4] for result in batch.succeeded
+            if result.result[4] is not None
+        ]
 
         # ---- Phase 3: short validation + persistence transaction --------------
         write_session: Session = self._session_factory()
@@ -1066,8 +1140,25 @@ class UsLaceyEngine2Service:
                     failed_document_count=len(batch.failed),
                 )
 
+            if claim_documents:
+                latest_revision = write_session.scalar(
+                    select(UsLaceySourceSetRevision).where(
+                        UsLaceySourceSetRevision.organization_id == organization_id,
+                        UsLaceySourceSetRevision.operation_id == operation_id,
+                        UsLaceySourceSetRevision.is_current.is_(True),
+                    ).order_by(UsLaceySourceSetRevision.id.desc()).limit(1)
+                )
+                if (
+                    latest_revision is None
+                    or latest_revision.id != claim_revision_id
+                    or latest_revision.source_set_fingerprint != claim_revision_fingerprint
+                ):
+                    # A new source generation cannot inherit observations from
+                    # a superseded generation even if document bytes coincide.
+                    claim_documents = []
+
             for success in batch.succeeded:
-                link, assurance, vault, bundle = success.result
+                link, assurance, vault, bundle, claim_payload = success.result
                 success_identity = self._engine2_document_run_identity(
                     organization_id=organization_id,
                     assurance_document_id=assurance.id,
@@ -1124,6 +1215,23 @@ class UsLaceyEngine2Service:
                 )
                 if existing is None:
                     assert shipment_resolution is not None
+                    serialized_resolution = serialize_shipment_resolution(shipment_resolution)
+                    if claim_documents:
+                        serialized_resolution["assurance_v2_claim_snapshot"] = {
+                            "schema_version": "assurance.claim.snapshot.v1",
+                            "source_set_revision_id": claim_revision_id,
+                            "source_set_fingerprint": claim_revision_fingerprint,
+                            "status": (
+                                "PARTIAL"
+                                if any(doc.get("status") == "FAILED" for doc in claim_documents)
+                                else "CANDIDATE_ONLY"
+                            ),
+                            "documents": claim_documents,
+                            "claim_count": sum(
+                                int(doc.get("claim_count") or 0)
+                                for doc in claim_documents
+                            ),
+                        }
                     snapshot = UsLaceyEngineShipmentRun(
                         organization_id=organization_id,
                         operation_id=operation_id,
@@ -1133,7 +1241,7 @@ class UsLaceyEngine2Service:
                         source_set_fingerprint=fingerprint,
                         document_count=len(inputs),
                         readiness=shipment_resolution.readiness.value,
-                        resolution_json=serialize_shipment_resolution(shipment_resolution),
+                        resolution_json=serialized_resolution,
                     )
                     write_session.add(snapshot)
                     write_session.flush()

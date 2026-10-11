@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import (
     AssuranceDocument, AssuranceV2Decision, AssuranceV2DecisionSource,
-    UsLaceyOperation, UsLaceyOperationDocument, UsLaceyOperationField,
+    UsLaceyEngineShipmentRun, UsLaceyOperation, UsLaceyOperationDocument, UsLaceyOperationField,
     UsLaceyPpqPlantLine, UsLaceySourceSetMember, UsLaceySourceSetRevision,
     UsLaceySupplier, UsLaceySupplierProduct, UsLaceyOperationProductLink,
     VaultDocument,
@@ -42,6 +42,96 @@ def read_tenant_assurance_case(
         return _case(db, int(organization_id), public_id)
     finally:
         db.close()
+
+
+
+def _source_claim_observations(
+    db: Session, *, organization_id: int, operation_id: int,
+    revision: UsLaceySourceSetRevision, documents: list[dict],
+) -> tuple[dict, ...]:
+    """Read a source-set-fenced observation stream, never final authority.
+
+    A forged, obsolete or cross-tenant claim/document reference is discarded.
+    Legacy canonical fields do not become V2 decisions because an extraction
+    candidate has a plausible value or a verified literal source anchor.
+    """
+    current_documents = {
+        (int(doc["operation_document_id"]), int(doc["id"])): doc
+        for doc in documents
+    }
+    runs = db.scalars(select(UsLaceyEngineShipmentRun).where(
+        UsLaceyEngineShipmentRun.organization_id == organization_id,
+        UsLaceyEngineShipmentRun.operation_id == operation_id,
+    ).order_by(UsLaceyEngineShipmentRun.id.desc()).limit(8)).all()
+    for run in runs:
+        raw = run.resolution_json if isinstance(run.resolution_json, dict) else {}
+        snapshot = raw.get("assurance_v2_claim_snapshot")
+        if not isinstance(snapshot, dict) or snapshot.get("schema_version") != "assurance.claim.snapshot.v1":
+            continue
+        if (
+            int(snapshot.get("source_set_revision_id") or -1) != revision.id
+            or snapshot.get("source_set_fingerprint") != revision.source_set_fingerprint
+        ):
+            continue
+        observations: list[dict] = []
+        for source in snapshot.get("documents", ()):
+            if not isinstance(source, dict):
+                continue
+            key = (int(source.get("operation_document_id") or -1),
+                   int(source.get("assurance_document_id") or -1))
+            document = current_documents.get(key)
+            if (
+                document is None
+                or source.get("original_sha256") != document["sha256"]
+                or int(source.get("document_version_number") or -1) != int(document["version"])
+                or int(source.get("organization_id") or -1) != organization_id
+                or int(source.get("operation_id") or -1) != operation_id
+                or int(source.get("source_set_revision_id") or -1) != revision.id
+            ):
+                continue
+            if source.get("status") == "FAILED":
+                observations.append({
+                    "id": f"source:{key[0]}:FAILED",
+                    "document_id": document["id"],
+                    "field_name": "DOCUMENT_EXTRACTION",
+                    "support_status": "UNSUPPORTED",
+                    "authority": "CANDIDATE",
+                    "reason_codes": [str(source.get("reason_code") or "VERIFICATION_FAILED")],
+                    "original_value": "",
+                    "source_locator": None,
+                })
+                continue
+            for candidate in source.get("claims", ()):
+                if not isinstance(candidate, dict):
+                    continue
+                if (
+                    candidate.get("contract_version") != "assurance.claim.v1"
+                    or candidate.get("candidate_state") != "CANDIDATE"
+                    or candidate.get("interpretation_status") != "PROPOSED"
+                    or candidate.get("original_sha256") != document["sha256"]
+                    or int(candidate.get("source_set_revision_id") or -1) != revision.id
+                    or int(candidate.get("organization_id") or -1) != organization_id
+                    or int(candidate.get("operation_id") or -1) != operation_id
+                    or int(candidate.get("assurance_document_id") or -1) != key[1]
+                    or int(candidate.get("operation_document_id") or -1) != key[0]
+                ):
+                    continue
+                observations.append({
+                    "id": str(candidate.get("claim_id") or ""),
+                    "document_id": document["id"],
+                    "field_name": str(candidate.get("field_name") or ""),
+                    "original_value": str(candidate.get("original_value") or ""),
+                    "normalized_value": candidate.get("normalized_value"),
+                    "support_status": str(candidate.get("support_status") or "UNSUPPORTED"),
+                    "authority": "CANDIDATE",
+                    "association_status": str(candidate.get("association_status") or "UNBOUND"),
+                    "sku": candidate.get("sku"),
+                    "line_reference": candidate.get("line_reference"),
+                    "source_locator": candidate.get("source_locator"),
+                    "reason_codes": list(candidate.get("reason_codes") or ()),
+                })
+        return tuple(observations)
+    return ()
 
 
 def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
@@ -82,11 +172,17 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         valid_document_ids.add(assurance.id)
         documents.append({
             "id": str(assurance.id), "version": str(link.version_number),
+            "operation_document_id": int(link.id),
             "sha256": vault.sha256, "role": link.document_role,
             "name": getattr(vault, "original_filename", None) or getattr(vault, "filename", None) or str(assurance.public_id),
             "document_public_id": str(assurance.public_id),
             "raw_available": vault.status == "available",
         })
+
+    source_observations = _source_claim_observations(
+        db, organization_id=org_id, operation_id=op.id,
+        revision=revision, documents=documents,
+    )
 
     decisions = db.scalars(select(AssuranceV2Decision).where(
         AssuranceV2Decision.organization_id == org_id,
@@ -232,6 +328,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         documents=tuple(documents),
         lines=lines,
         fields=tuple(fields),
+        candidate_observations=source_observations,
         exceptions=tuple(exceptions),
         decisions=output_decisions,
         reuses=tuple(reuses),
