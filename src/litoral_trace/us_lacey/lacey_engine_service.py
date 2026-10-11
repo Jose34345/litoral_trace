@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import (
     AssuranceDocument,
+    UsLaceyAssuranceV2ClaimSnapshot,
     UsLaceyEngineDocumentRun,
     UsLaceyEngineShipmentRun,
     UsLaceyOperation,
@@ -1147,6 +1148,7 @@ class UsLaceyEngine2Service:
                         UsLaceySourceSetRevision.operation_id == operation_id,
                         UsLaceySourceSetRevision.is_current.is_(True),
                     ).order_by(UsLaceySourceSetRevision.id.desc()).limit(1)
+                    .with_for_update()
                 )
                 if (
                     latest_revision is None
@@ -1155,7 +1157,31 @@ class UsLaceyEngine2Service:
                 ):
                     # A new source generation cannot inherit observations from
                     # a superseded generation even if document bytes coincide.
-                    claim_documents = []
+                    write_session.rollback()
+                    return ShadowAggregationResult(
+                        "SOURCE_SET_CHANGED",
+                        succeeded_document_count=len(batch.succeeded),
+                        failed_document_count=len(batch.failed),
+                    )
+
+            claim_snapshot = None
+            if claim_documents:
+                if len(claim_documents) != len(current_rows):
+                    raise ValueError("ASSURANCE_V2_SOURCE_CLAIM_DOCUMENT_LOSS")
+                claim_snapshot = {
+                    "schema_version": "assurance.claim.snapshot.v1",
+                    "source_set_revision_id": claim_revision_id,
+                    "source_set_fingerprint": claim_revision_fingerprint,
+                    "status": (
+                        "PARTIAL" if any(
+                            doc.get("status") == "FAILED" for doc in claim_documents
+                        ) else "CANDIDATE_ONLY"
+                    ),
+                    "documents": claim_documents,
+                    "claim_count": sum(
+                        int(doc.get("claim_count") or 0) for doc in claim_documents
+                    ),
+                }
 
             for success in batch.succeeded:
                 link, assurance, vault, bundle, claim_payload = success.result
@@ -1216,22 +1242,8 @@ class UsLaceyEngine2Service:
                 if existing is None:
                     assert shipment_resolution is not None
                     serialized_resolution = serialize_shipment_resolution(shipment_resolution)
-                    if claim_documents:
-                        serialized_resolution["assurance_v2_claim_snapshot"] = {
-                            "schema_version": "assurance.claim.snapshot.v1",
-                            "source_set_revision_id": claim_revision_id,
-                            "source_set_fingerprint": claim_revision_fingerprint,
-                            "status": (
-                                "PARTIAL"
-                                if any(doc.get("status") == "FAILED" for doc in claim_documents)
-                                else "CANDIDATE_ONLY"
-                            ),
-                            "documents": claim_documents,
-                            "claim_count": sum(
-                                int(doc.get("claim_count") or 0)
-                                for doc in claim_documents
-                            ),
-                        }
+                    if claim_snapshot is not None:
+                        serialized_resolution["assurance_v2_claim_snapshot"] = claim_snapshot
                     snapshot = UsLaceyEngineShipmentRun(
                         organization_id=organization_id,
                         operation_id=operation_id,
@@ -1248,6 +1260,38 @@ class UsLaceyEngine2Service:
                     shipment_run_id = int(snapshot.id)
                 else:
                     shipment_run_id = int(existing.id)
+                if claim_snapshot is not None:
+                    sidecar = write_session.scalar(
+                        select(UsLaceyAssuranceV2ClaimSnapshot).where(
+                            UsLaceyAssuranceV2ClaimSnapshot.organization_id == organization_id,
+                            UsLaceyAssuranceV2ClaimSnapshot.operation_id == operation_id,
+                            UsLaceyAssuranceV2ClaimSnapshot.source_set_revision_id == claim_revision_id,
+                            UsLaceyAssuranceV2ClaimSnapshot.source_set_fingerprint
+                            == claim_revision_fingerprint,
+                        )
+                    )
+                    sidecar_status = (
+                        "CANDIDATE_ONLY" if claim_snapshot["status"] == "CANDIDATE_ONLY"
+                        else "FAILED"
+                    )
+                    if sidecar is None:
+                        write_session.add(UsLaceyAssuranceV2ClaimSnapshot(
+                            organization_id=organization_id,
+                            operation_id=operation_id,
+                            source_set_revision_id=claim_revision_id,
+                            source_set_fingerprint=claim_revision_fingerprint,
+                            status=sidecar_status,
+                            document_count=len(claim_documents),
+                            claim_count=claim_snapshot["claim_count"],
+                            snapshot_json=claim_snapshot,
+                        ))
+                    elif (
+                        sidecar.status != sidecar_status
+                        or sidecar.document_count != len(claim_documents)
+                        or sidecar.claim_count != claim_snapshot["claim_count"]
+                        or sidecar.snapshot_json != claim_snapshot
+                    ):
+                        raise ValueError("ASSURANCE_V2_CLAIM_SNAPSHOT_REPLAY_CONFLICT")
                 write_session.commit()
                 result = ShadowAggregationResult(
                     "SUCCEEDED",
