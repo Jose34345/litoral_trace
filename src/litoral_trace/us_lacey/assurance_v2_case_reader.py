@@ -20,6 +20,7 @@ from litoral_trace.db.models import (
 )
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.assurance_v2_memory import evaluate_reuse
+from litoral_trace.us_lacey.assurance_v2_reuse_guard import current_claim_values_for_reuse
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.exporters.assurance_v2 import AssuranceCase
 from litoral_trace.us_lacey.ppq505 import PPQ505_SHIPMENT_REFERENCE
@@ -48,7 +49,7 @@ def read_tenant_assurance_case(
 def _source_claim_observations(
     db: Session, *, organization_id: int, operation_id: int,
     revision: UsLaceySourceSetRevision, documents: list[dict],
-) -> tuple[dict, ...]:
+) -> tuple[dict, ...] | None:
     """Read a source-set-fenced observation stream, never final authority.
 
     A forged, obsolete or cross-tenant claim/document reference is discarded.
@@ -71,15 +72,21 @@ def _source_claim_observations(
         if (
             int(snapshot.get("source_set_revision_id") or -1) != revision.id
             or snapshot.get("source_set_fingerprint") != revision.source_set_fingerprint
+            or snapshot.get("status") != "CANDIDATE_ONLY"
+            or len(snapshot.get("documents") or ()) != len(current_documents)
         ):
             continue
         observations: list[dict] = []
+        seen = set()
         for source in snapshot.get("documents", ()):
             if not isinstance(source, dict):
-                continue
+                return None
             key = (int(source.get("operation_document_id") or -1),
                    int(source.get("assurance_document_id") or -1))
             document = current_documents.get(key)
+            if key in seen:
+                return None
+            seen.add(key)
             if (
                 document is None
                 or source.get("original_sha256") != document["sha256"]
@@ -88,22 +95,14 @@ def _source_claim_observations(
                 or int(source.get("operation_id") or -1) != operation_id
                 or int(source.get("source_set_revision_id") or -1) != revision.id
             ):
-                continue
+                return None
             if source.get("status") == "FAILED":
-                observations.append({
-                    "id": f"source:{key[0]}:FAILED",
-                    "document_id": document["id"],
-                    "field_name": "DOCUMENT_EXTRACTION",
-                    "support_status": "UNSUPPORTED",
-                    "authority": "CANDIDATE",
-                    "reason_codes": [str(source.get("reason_code") or "VERIFICATION_FAILED")],
-                    "original_value": "",
-                    "source_locator": None,
-                })
-                continue
+                return None
+            if source.get("claim_count") != len(source.get("claims") or ()):
+                return None
             for candidate in source.get("claims", ()):
                 if not isinstance(candidate, dict):
-                    continue
+                    return None
                 if (
                     candidate.get("contract_version") != "assurance.claim.v1"
                     or candidate.get("candidate_state") != "CANDIDATE"
@@ -115,7 +114,7 @@ def _source_claim_observations(
                     or int(candidate.get("assurance_document_id") or -1) != key[1]
                     or int(candidate.get("operation_document_id") or -1) != key[0]
                 ):
-                    continue
+                    return None
                 observations.append({
                     "id": str(candidate.get("claim_id") or ""),
                     "document_id": document["id"],
@@ -130,8 +129,10 @@ def _source_claim_observations(
                     "source_locator": candidate.get("source_locator"),
                     "reason_codes": list(candidate.get("reason_codes") or ()),
                 })
+        if seen != set(current_documents) or snapshot.get("claim_count") != len(observations):
+            return None
         return tuple(observations)
-    return ()
+    return None
 
 
 def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
@@ -296,10 +297,13 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
             field.field_name in _REUSABLE_FIELDS and line in line_set
             and not field.human_value and revision.status == "FINALIZED"
         ):
+            current_values = current_claim_values_for_reuse(source_observations, field_name=field.field_name, line_reference=line)
+            if current_values is None:
+                continue
             reuse = evaluate_reuse(
                 db, organization_id=org_id, operation_id=op.id,
                 source_set_revision_id=revision.id, line_reference=line,
-                field_name=field.field_name,
+                field_name=field.field_name, current_claim_values=current_values,
             )
             if reuse.eligible:
                 reuses.append({
@@ -328,7 +332,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         documents=tuple(documents),
         lines=lines,
         fields=tuple(fields),
-        candidate_observations=source_observations,
+        candidate_observations=source_observations or (),
         exceptions=tuple(exceptions),
         decisions=output_decisions,
         reuses=tuple(reuses),
