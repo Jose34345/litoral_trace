@@ -229,3 +229,31 @@ def test_authenticated_review_path_does_not_duplicate_legacy_promotion(session, 
         assert len(verify.scalars(select(AssuranceV2MemoryLink)).all()) == 1
         event_types = [event.event_type for event in verify.scalars(select(UsLaceyOperationEvent))]
         assert event_types.count("HUMAN_REVIEW") == 2  # V2 authority + legacy UI audit, both same transaction
+
+
+def test_v2_review_rejects_stale_case_before_mutating_field(session, monkeypatch):
+    from litoral_trace.us_lacey import review as review_module
+
+    org, actor = org_and_actor(session, "StaleReview")
+    _, product = supplier_product(session, org.id, supplier_key="MID:STALE-REVIEW")
+    op, _, _, rev, field = shipment(
+        session, org.id, product.id, reference="STALE-REVIEW-1",
+        source_value="Quercus alba",
+    )
+    session.commit()
+    field_id = field.id
+    monkeypatch.setenv("US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL", "ON")
+    monkeypatch.setattr(review_module, "get_us_lacey_db_session", lambda: session)
+    monkeypatch.setattr(review_module, "set_tenant_db_context", lambda *_: None)
+
+    with pytest.raises(review_module.UsLaceyReviewError, match="stale"):
+        review_module.review_us_lacey_field(
+            organization_id=org.id, operation_public_id=op.public_id,
+            field_id=field.id, user_id=actor.id, user_email=actor.email,
+            action="accept", expected_source_set_fingerprint="stale",
+            expected_case_fingerprint="stale",
+        )
+    with Session(session.get_bind()) as verify:
+        persisted = verify.get(type(field), field_id)
+        assert persisted.human_value is None
+        assert verify.scalar(select(AssuranceV2Decision)) is None

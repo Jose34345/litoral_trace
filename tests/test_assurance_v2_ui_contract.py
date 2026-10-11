@@ -129,6 +129,24 @@ def test_review_action_never_mutates_frontend_truth_and_requires_csrf():
     assert case.fields[0]["value"] == "2026-10-25"
 
 
+def test_ui_offers_only_review_actions_supported_by_runtime():
+    case = replace(make_case(), exceptions=(
+        {"id": "field:1", "field_name": "genus", "status": "OPEN",
+         "blocking": True, "line_reference": "LINE-1", "candidates": []},
+        {"id": "source:claims-invalid", "status": "OPEN", "blocking": True,
+         "reason": "SOURCE_CLAIMS_INVALID", "candidates": []},
+    ))
+    client, _ = make_client(case)
+    html = client.get(f"/assurance-v2/operations/{OPERATION_ID}",
+                      headers={"X-Demo-Tenant": "11"})
+    assert html.status_code == 200
+    assert html.text.count('class="decision-form"') == 1
+    assert '<option value="ACCEPT">' in html.text
+    assert '<option value="CORRECT">' in html.text
+    assert '<option value="REJECT">' not in html.text
+    assert '<option value="REQUEST_EVIDENCE">' not in html.text
+
+
 def test_authorized_package_endpoints_are_tenant_scoped_and_reproducible():
     client, _ = make_client()
     base = f"/assurance-v2/operations/{OPERATION_ID}"

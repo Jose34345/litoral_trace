@@ -18,7 +18,7 @@ from litoral_trace.us_lacey.exporters.assurance_v2_package import (
 from litoral_trace.web.templates import templates
 
 
-_ACTIONS = frozenset({"ACCEPT", "CORRECT", "REJECT", "REQUEST_EVIDENCE", "PENDING"})
+_ACTIONS = frozenset({"ACCEPT", "CORRECT"})
 _FP = re.compile(r"^[a-f0-9]{64}$")
 
 
@@ -27,6 +27,7 @@ class WorkspacePrincipal:
     organization_id: int
     actor_id: str
     csrf_token: str
+    actor_email: str = ""
 
 
 class CaseReader(Protocol):

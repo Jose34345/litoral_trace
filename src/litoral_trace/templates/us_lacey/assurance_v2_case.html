@@ -58,14 +58,12 @@
             {% endfor %}
           </div>
           {% if ex.historical_evidence %}<div class="historical-evidence"><span class="tag purple">HISTORICAL MEMORY · VERIFY STATUS</span> {{ ex.historical_evidence }}</div>{% endif %}
+          {% if ex.id.startswith('field:') %}
           <form class="decision-form" data-exception="{{ ex.id }}">
             <label>Review action
               <select name="action" required>
-                <option value="PENDING">Keep pending</option>
                 <option value="ACCEPT">Accept supported candidate</option>
                 <option value="CORRECT">Correct value</option>
-                <option value="REJECT">Reject candidate</option>
-                <option value="REQUEST_EVIDENCE">Request evidence</option>
               </select>
             </label>
             <label>Candidate reference<input name="candidate_id" placeholder="Exact candidate ID from evidence service"></label>
@@ -74,6 +72,7 @@
             <button type="submit">Send to review authority</button>
             <div role="status" class="decision-result" aria-live="polite"></div>
           </form>
+          {% else %}<p class="muted">This exception requires source correction before field review.</p>{% endif %}
         </article>
         {% endfor %}
       </section>
