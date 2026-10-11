@@ -269,3 +269,64 @@ have passed together with issuer locking, real-customer documentation has been
 validated against required legal fields and release controls are green.
 A synthetic Golden never authorizes a federal filing, enables
 `US_LACEY_ASSURANCE_V2_MODE=ENABLED`, or permits a production merge by itself.
+
+
+## P0 release hardening: document withdrawal, hash replacement and concurrent mutation
+
+The original authenticated, source-linked, eight-PDF synthetic filing acceptance
+now exercises three negative transitions **after explicit human authorization**:
+
+1. Mark a current source PDF as `delete_pending`: the read-only filing
+   preflight can no longer issue and the locked issuer returns HTTP 409.
+2. Replace the source PDF's Vault SHA-256 with a different 64-character digest:
+   the source claim manifest loses current validity, the prior authorization
+   cannot be replayed, and issuance returns HTTP 409. Restoring the original
+   hash in the isolated test database restores its exact authority.
+3. Concurrently issue the final dossier from the real physical PDF source
+   manifest and attempt to change the Vault source status from another
+   tenant-scoped PostgreSQL transaction **while the issuer is inside package
+   construction**. The second transaction must receive a PostgreSQL lock
+   timeout, and successful emission remains a single immutable package/event
+   with the same fingerprint when requested again.
+
+These are real PostgreSQL/Vault-metadata source dependencies; the test does
+not monkeypatch the dependency-lock walker or bypass reviewer authorization.
+All mutations happen in a disposable PostgreSQL test database and are restored
+or rolled back. The original four-shipment Golden separately tests different
+suppliers, contradictory species, historical memory reuse and revocation.
+
+**Bounded assertion:** this establishes mechanical locking and fail-closed
+behavior for the particular original synthetic PDF fixture and source-change
+paths. It does **not** substitute for a representative external ground-truth
+corpus, live broker review, operational Northflank access, production data
+migration rehearsals or red-team review. Therefore the RC and
+`US_LACEY_ASSURANCE_V2_MODE=ENABLED` remain NO-GO for production.
+
+
+## Mandatory CI acceptance correction
+
+Previous GitHub workflow green statuses did not prove the original-PDF
+**completed authorized dossier** or its concurrent in-flight source mutation:
+`.github/workflows/us-lacey-postgres-gate.yml` listed only the older
+four-shipment Golden in its mandatory PostgreSQL execution step.
+The release-hardening PR now explicitly includes
+`test_assurance_v2_filing_complete_postgres.py` and
+`test_assurance_v2_issuance_concurrent_postgres.py` in BOTH the triggering
+path filters and the PostgreSQL run, with the existing zero-skips requirement.
+The updated remote gate must pass before integrating the change.
+
+
+## Current-only authorized artifact downloads
+
+The authenticated package download endpoint now re-evaluates current source,
+regulatory and authorization readiness for the requesting tenant and exact
+package `case_fingerprint` / source-set revision. The historical immutable
+package still exists in the append-only operation event store for audit, but
+it is **not** returned by the live `FILING_READY` route after the source PDF
+has been withdrawn, replaced or a decision superseded.
+The core filing gate explicitly blocks a known unavailable `raw_available:
+false` PDF; absence of the optional flag in standalone pure-domain fixtures
+does not create supported document truth.
+The synthetic PostgreSQL Golden verifies download and restoration behavior
+for all three formats and the manifest. Release status remains NO-GO pending
+representative documents and complete operational deployment validation.

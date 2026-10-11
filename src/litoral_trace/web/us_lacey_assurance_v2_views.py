@@ -297,13 +297,23 @@ def create_assurance_v2_router(
 
     @router.get("/{operation_id}/packages/{fingerprint}/{kind}")
     def artifact(request: Request, operation_id: str, fingerprint: str, kind: str):
-        principal, _ = context(request, operation_id)
+        principal, current_case = context(request, operation_id)
         if not _FP.fullmatch(fingerprint) or kind not in {"lawgs_xml", "lacey_excel", "ppq505_preparation_json", "manifest"}:
             raise HTTPException(404, "Package not found")
         package = package_store.load(organization_id=principal.organization_id,
                                      operation_id=operation_id, fingerprint=fingerprint)
         if package is None:
             raise HTTPException(404, "Package not found")
+        # The immutable event remains available in the audit system, but an
+        # obsolete package must never be served by a route explicitly marked
+        # FILING_READY. This can happen after source replacement, document
+        # withdrawal, reviewer supersession, or historical evidence revocation.
+        gate = evaluate_filing_gate(current_case)
+        if (not gate.ready
+                or package.snapshot.get("case_fingerprint") != gate.case_fingerprint
+                or package.snapshot.get("source_set_fingerprint") != current_case.source_set_fingerprint
+                or package.snapshot.get("source_set_revision") != current_case.source_set_revision):
+            raise HTTPException(409, "Issued package is no longer current or authorized")
         if kind == "manifest":
             import json
             safe = {key: value for key, value in package.snapshot.items() if key != "artifacts"}

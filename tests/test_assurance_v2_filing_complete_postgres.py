@@ -9,12 +9,21 @@ from __future__ import annotations
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from io import BytesIO
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
+from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
+from litoral_trace.db.models import AssuranceDocument, VaultDocument
+from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.us_lacey.db import get_us_lacey_db_session
+from litoral_trace.us_lacey.assurance_v2_issuance import issue_locked_assurance_package
+import litoral_trace.us_lacey.assurance_v2_issuance as issuance_module
 
 import litoral_trace.us_lacey.ingestion as ingestion_module
 import litoral_trace.us_lacey.worker as worker_module
@@ -263,6 +272,145 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
             organization_id=org_id, operation_public_id=op_id,
         )
         assert evaluate_filing_gate(approved).ready
+
+        # A previously authorized dossier MUST NOT issue while any original
+        # PDF is unavailable. The state transition is in this isolated test
+        # database only; the exact original source is restored before
+        # exercising successful emission below.
+        test_source_doc_id = int(next(
+            doc["id"] for doc in approved.documents
+            if doc["name"].startswith("SYNTHETIC_ENTRY_NUMBER_CONFIRMATION")
+        ))
+        def _set_source_status(value: str) -> None:
+            session = get_us_lacey_db_session()
+            try:
+                set_tenant_db_context(session, org_id)
+                source = session.scalar(select(AssuranceDocument).where(
+                    AssuranceDocument.organization_id == org_id,
+                    AssuranceDocument.id == test_source_doc_id,
+                ))
+                assert source is not None
+                vault = session.scalar(select(VaultDocument).where(
+                    VaultDocument.organization_id == org_id,
+                    VaultDocument.id == source.vault_document_id,
+                ))
+                assert vault is not None
+                vault.status = value
+                session.commit()
+            finally:
+                session.close()
+
+        _set_source_status("delete_pending")
+        try:
+            forbidden = client.post(
+                f"/assurance-v2/operations/{op_id}/issue",
+                json={"csrf_token": _csrf(client, op_id)},
+            )
+            assert forbidden.status_code == 409, forbidden.text
+        finally:
+            _set_source_status("available")
+        assert evaluate_filing_gate(read_tenant_assurance_case(
+            organization_id=org_id, operation_public_id=op_id,
+        )).ready
+
+        # A forged/replaced source checksum must invalidate current review
+        # authority and forbid issuance, even if the human export approval
+        # still exists in the append-only operation audit history.
+        original_hash = next(
+            doc["sha256"] for doc in approved.documents
+            if int(doc["id"]) == test_source_doc_id
+        )
+        def _set_source_hash(checksum: str) -> None:
+            session = get_us_lacey_db_session()
+            try:
+                set_tenant_db_context(session, org_id)
+                source = session.scalar(select(AssuranceDocument).where(
+                    AssuranceDocument.organization_id == org_id,
+                    AssuranceDocument.id == test_source_doc_id,
+                ))
+                assert source is not None
+                vault = session.scalar(select(VaultDocument).where(
+                    VaultDocument.organization_id == org_id,
+                    VaultDocument.id == source.vault_document_id,
+                ))
+                assert vault is not None
+                vault.sha256 = checksum
+                session.commit()
+            finally:
+                session.close()
+
+        _set_source_hash("f" * 64 if original_hash != "f" * 64 else "e" * 64)
+        try:
+            replaced_case = read_tenant_assurance_case(
+                organization_id=org_id, operation_public_id=op_id,
+            )
+            assert replaced_case is not None
+            assert not evaluate_filing_gate(replaced_case).ready
+            forbidden = client.post(
+                f"/assurance-v2/operations/{op_id}/issue",
+                json={"csrf_token": _csrf(client, op_id)},
+            )
+            assert forbidden.status_code == 409, forbidden.text
+        finally:
+            _set_source_hash(original_hash)
+        assert evaluate_filing_gate(read_tenant_assurance_case(
+            organization_id=org_id, operation_public_id=op_id,
+        )).ready
+
+        # True concurrent source-document mutation: the real issuer owns and
+        # locks all eight physical PDF dependencies. Hold that transaction
+        # during actual package construction, then attempt to withdraw the
+        # eighth PDF from a second tenant-scoped PostgreSQL connection.
+        # The mutation must TIME OUT rather than winning against a package
+        # whose approved case was reviewed before the source changed.
+        entered_builder, release_builder = Event(), Event()
+        original_builder = issuance_module.issue_assurance_package
+        def paused_builder(case):
+            entered_builder.set()
+            if not release_builder.wait(timeout=25):
+                raise AssertionError("Test failed to release package builder")
+            return original_builder(case)
+
+        with monkeypatch.context() as concurrent_patch:
+            concurrent_patch.setattr(
+                issuance_module, "issue_assurance_package", paused_builder,
+            )
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                reviewer_id = int(approved.export_authorization["actor_id"].split(":")[1])
+                issue_future = executor.submit(
+                    issue_locked_assurance_package,
+                    organization_id=org_id, operation_public_id=op_id,
+                    authenticated_user_id=reviewer_id,
+                    expected_source_set_fingerprint=approved.source_set_fingerprint,
+                    expected_case_fingerprint=approved.authority_fingerprint(),
+                )
+                mutation_session = None
+                try:
+                    assert entered_builder.wait(timeout=20), "Issuer did not lock physical documents"
+                    mutation_session = get_us_lacey_db_session()
+                    set_tenant_db_context(mutation_session, org_id)
+                    mutation_session.execute(text("SET LOCAL lock_timeout = '300ms'"))
+                    source = mutation_session.scalar(select(AssuranceDocument).where(
+                        AssuranceDocument.organization_id == org_id,
+                        AssuranceDocument.id == test_source_doc_id,
+                    ))
+                    assert source is not None
+                    with pytest.raises(OperationalError) as timeout_error:
+                        mutation_session.execute(
+                            text("UPDATE vault_documents SET status = 'delete_pending' "
+                                 "WHERE organization_id=:org AND id=:vault"),
+                            {"org": org_id, "vault": source.vault_document_id},
+                        )
+                    assert "lock" in str(timeout_error.value).lower(), timeout_error.value
+                finally:
+                    if mutation_session is not None:
+                        mutation_session.rollback()
+                        mutation_session.close()
+                    release_builder.set()
+                concurrent_receipt = issue_future.result(timeout=30)
+        assert concurrent_receipt["status"] == "FILING_READY"
+        assert concurrent_receipt["submitted_to_agency"] is False
+
         issue = client.post(
             f"/assurance-v2/operations/{op_id}/issue",
             json={"csrf_token": _csrf(client, op_id)},
@@ -271,6 +419,7 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
         receipt = issue.json()
         assert receipt["status"] == "FILING_READY"
         assert receipt["submitted_to_agency"] is False
+        assert receipt["package_fingerprint"] == concurrent_receipt["package_fingerprint"]
         fingerprint = receipt["package_fingerprint"]
         artifact_url = f"/assurance-v2/operations/{op_id}/packages/{fingerprint}"
         manifest = client.get(f"{artifact_url}/manifest")
@@ -298,4 +447,17 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
         )
         assert duplicate.status_code == 200, duplicate.text
         assert duplicate.json()["package_fingerprint"] == fingerprint
+        assert client.get(f"{artifact_url}/manifest").status_code == 200
+
+        # An immutable archived audit event does not imply current authority.
+        # After the original PDF is withdrawn, no historical package may be
+        # downloaded with a misleading FILING_READY response.
+        _set_source_status("delete_pending")
+        try:
+            assert client.get(f"{artifact_url}/manifest").status_code == 409
+            assert client.get(f"{artifact_url}/lawgs_xml").status_code == 409
+            assert client.get(f"{artifact_url}/lacey_excel").status_code == 409
+            assert client.get(f"{artifact_url}/ppq505_preparation_json").status_code == 409
+        finally:
+            _set_source_status("available")
         assert client.get(f"{artifact_url}/manifest").status_code == 200

@@ -142,6 +142,8 @@ def evaluate_filing_gate(case: AssuranceCase, *, now: datetime | None = None) ->
         identity = str(doc.get("id") or "")
         if not identity or identity in ids or not re.fullmatch(r"[a-f0-9]{64}", str(doc.get("sha256") or "")) or not doc.get("version"):
             block("INVALID_DOCUMENT_MANIFEST", identity or "unknown")
+        if doc.get("raw_available") is False:
+            block("SOURCE_DOCUMENT_UNAVAILABLE", identity or "unknown")
         ids.add(identity)
     if not ids:
         block("NO_SOURCE_DOCUMENTS", case.operation_id)
