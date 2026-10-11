@@ -32,8 +32,10 @@ def test_package_store_is_immutable_and_tenant_isolated_by_rls(audit_fixture):
     org_b = audit_fixture["org_b"]
     operation_a = audit_fixture["operation_a"]
 
-    with audit_fixture["owner"].connect() as owner:
-        operation_public_id = str(owner.execute(
+    with engine.begin() as reader:
+        reader.execute(text("SELECT set_config('app.current_organization_id', :org, true)"),
+                       {"org": str(org_a)})
+        operation_public_id = str(reader.execute(
             text("SELECT public_id FROM us_lacey_operations WHERE id=:id AND organization_id=:org"),
             {"id": operation_a, "org": org_a},
         ).scalar_one())

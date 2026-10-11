@@ -25,7 +25,7 @@ from litoral_trace.us_lacey.exporters.export_snapshot import (
 _AUTHORITIES = frozenset({"SUPPORTED", "HUMAN_CONFIRMED", "VERIFIED_REUSE"})
 _REVIEW_ACTIONS = frozenset({"ACCEPT", "CORRECT", "REJECT", "REQUEST_EVIDENCE", "PENDING"})
 _FINAL_DECISIONS = frozenset({"ACCEPT", "CORRECT"})
-_REUSE_GOOD = frozenset({"ACTIVE", "VERIFIED"})
+_REUSE_GOOD = frozenset({"VERIFIED"})
 _RULE_GOOD = frozenset({"PASS", "NOT_APPLICABLE"})
 
 

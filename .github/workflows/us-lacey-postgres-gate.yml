@@ -653,7 +653,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q -rs tests/test_assurance_v2_core_postgres.py | tee /tmp/assurance-v2-postgres.txt
+          python -m pytest -q -rs \
+            tests/test_assurance_v2_core_postgres.py \
+            tests/test_assurance_v2_outputs_postgres.py \
+            tests/test_assurance_v2_claim_replay_postgres.py \
+            | tee /tmp/assurance-v2-postgres.txt
           if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/assurance-v2-postgres.txt; then
             echo "Assurance V2 PostgreSQL/RLS acceptance must run, not skip."
             exit 1
