@@ -198,3 +198,32 @@ concurrent mutation; establish full-field reviewed ground truth; require
 all latest remote checks green. Keep `US_LACEY_ASSURANCE_V2_MODE` OFF/SHADOW
 and federal submission disabled. No merge to production or deploy while a
 P0 remains.
+
+
+## RC follow-up: exact source-labeled quantitative facts (pre-release)
+
+The original synthetic Pack 2 entry preparation worksheet contains literal
+`Entered value USD 11,250.00` and
+`Quantity of plant material 288.0 KG` on distinct, verifiable PDF text lines.
+Earlier Engine2 candidate output marked these quantitative values as non-authoritative
+and sometimes lacked their literal source spans. The new opt-in V2 source-claim
+collection supplements (never overwrites) that output with exact typed
+`entered_value`, `plant_quantity`, and `metric_unit` observations, each
+carrying the current physical PDF hash, logical-document identity, page, block
+and substring coordinates. No shipping gross weights, retail counts or
+unlabeled monetary totals are reinterpreted as Lacey quantities.
+
+Documentary binding remains separately conditional on independently
+corroborated single-SKU supplier/line proof. The original four-shipment
+HTTP/Vault/worker PostgreSQL Golden now requires all three fields to be
+**explicitly accepted by an authenticated reviewer** and journaled; the
+source claims never authorize themselves or trigger historical reuse.
+The two adversarial suppliers/species shipments remain in the same Golden.
+
+**NO-GO is unchanged.** This does not fabricate an entry number, resolve
+shipment merchandise description, authorize all remaining required fields,
+produce a completed original-PDF final dossier, establish system-wide field
+precision/recall or demonstrate concurrent source-replacement safety. A
+synthetic example is never a federal filing. Do not deploy V2, enable
+`US_LACEY_ASSURANCE_V2_MODE=ENABLED`, or merge the complete RC for release
+until all P0 checks and remote CI/PG gates are approved.

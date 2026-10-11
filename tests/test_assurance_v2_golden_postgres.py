@@ -259,10 +259,60 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
             row.get("field_name") == "article_component"
             for row in article_case.exceptions
         )
+        # The actual synthetic entry worksheet explicitly states its
+        # entered value and the plant-material mass/unit. These are current
+        # PDF observations, not a shipment-total/packing-gross-weight guess.
+        # Human review is indispensable; candidates alone remain unapproved.
+        for field_name in ("entered_value", "plant_quantity", "metric_unit"):
+            reviewable = read_tenant_assurance_case(
+                organization_id=organization_id, operation_public_id=second_id,
+            )
+            pending = next(
+                row for row in reviewable.exceptions
+                if row.get("field_name") == field_name
+                and str(row.get("id", "")).startswith("field:")
+            )
+            source_choices = [
+                row for row in pending.get("candidates", ())
+                if str(row.get("id", "")).startswith("source:")
+            ]
+            assert len(source_choices) == 1, (field_name, pending)
+            original = next(
+                row for row in reviewable.candidate_observations
+                if row["id"] == source_choices[0]["id"][7:]
+            )
+            assert original["support_status"] == "SUPPORTED"
+            assert original["association_status"] == "DOCUMENT_EXACT_SINGLE_SKU"
+            assert original["sku"] == "BAM-COAST-04"
+            confirmed = client.post(
+                f"/assurance-v2/operations/{second_id}/decisions",
+                json={
+                    "csrf_token": us_lacey_csrf_token(
+                        session_token=client.cookies.get("us_lacey_session"),
+                        purpose=f"assurance-v2:{second_id}",
+                    ),
+                    "exception_id": pending["id"], "action": "ACCEPT",
+                    "candidate_id": source_choices[0]["id"],
+                    "reason": "Reviewed literal source quantity/value and the exact supplier SKU line",
+                },
+            )
+            assert confirmed.status_code == 202, (field_name, confirmed.text)
+            updated = read_tenant_assurance_case(
+                organization_id=organization_id, operation_public_id=second_id,
+            )
+            assert any(
+                row["name"] == field_name
+                and row["authority"] == "HUMAN_CONFIRMED"
+                and row["document_ids"] and row["evidence_ids"]
+                for row in updated.fields
+            )
+            assert not any(
+                row.get("field_name") == field_name for row in updated.exceptions
+            )
         assert read_tenant_assurance_case(
             organization_id=organization_id + 1000000, operation_public_id=second_id,
         ) is None
-        readiness = evaluate_filing_gate(applied_case)
+        readiness = evaluate_filing_gate(updated)
         assert not readiness.ready
         assert any(blocker.code == "MISSING_REQUIRED_FIELD" for blocker in readiness.blockers)
         assert client.post(
