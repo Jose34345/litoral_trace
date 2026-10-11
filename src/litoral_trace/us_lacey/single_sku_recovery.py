@@ -20,6 +20,42 @@ _MANUFACTURER_SKU = re.compile(
     r"^\s*manufacturer\s+sku\s+(?P<sku>[A-Z][A-Z0-9]*[-_][A-Z0-9][A-Z0-9._-]{2,40})(?=\s|$)",
     re.I,
 )
+_SKU_TOKEN = r"[A-Z][A-Z0-9]*[-_][A-Z0-9][A-Z0-9._-]{2,40}"
+_SKU_EXPLICIT = re.compile(
+    rf"(?:^|[\s/|])(?:manufacturer\s+)?SKU\s*[:#-]?\s*(?P<sku>{_SKU_TOKEN})(?=\s|$|[.,;])",
+    re.I,
+)
+_SKU_STANDALONE = re.compile(rf"^\s*(?P<sku>{_SKU_TOKEN})\s*$", re.I)
+_SKU_AFTER_SLASH = re.compile(rf"/\s*(?P<sku>{_SKU_TOKEN})\s*$", re.I)
+_SKU_HEADERS = frozenset({"SKU", "MANUFACTURER SKU", "PRODUCT / SKU", "MERCHANDISE / SKU"})
+
+
+def _explicit_document_skus(lines: tuple[str, ...]) -> frozenset[str]:
+    """Recover exact labeled SKU tokens across PDF layout line breaks.
+
+    A table header can precede its value by several other headers.
+    These references remain candidates until tenant and supplier identity
+    is reconciled separately. Ambiguity blocks reuse.
+    """
+    seen: set[str] = set()
+    for index, line in enumerate(lines):
+        stripped = " ".join(str(line).strip().split())
+        match = _SKU_EXPLICIT.search(stripped)
+        if match is not None:
+            seen.add(match.group("sku").upper())
+        if stripped.upper() not in _SKU_HEADERS:
+            continue
+        for next_line in lines[index + 1:index + 9]:
+            value = str(next_line).strip()
+            match = _SKU_STANDALONE.fullmatch(value)
+            if match is None and stripped.upper() in {"PRODUCT / SKU", "MERCHANDISE / SKU"}:
+                match = _SKU_AFTER_SLASH.search(value)
+            if match is not None:
+                seen.add(match.group("sku").upper())
+                break
+    return frozenset(seen)
+
+
 _COMPONENT_FIELDS = frozenset({
     "article_component", "genus", "species", "country_of_harvest",
     "plant_quantity", "metric_unit", "percent_recycled",
@@ -92,9 +128,14 @@ def bind_single_sku_evidence(fields: dict, documents: object) -> bool:
                 (int(match.group("ordinal")), match.group("sku").upper())
                 for line in lines if (match := _INVOICE_ROW.match(line))
             )
+        observed_skus = _explicit_document_skus(lines)
+        # One contradictory SKU anywhere in an explicitly SKU-labeled source
+        # makes this a multi-product or ambiguous shipment. Never pick a winner.
+        if len(observed_skus) > 1:
+            return False
+        for discovered_sku in observed_skus:
+            sku_documents[discovered_sku].add(doc_id)
         for line in lines:
-            if match := _MANUFACTURER_SKU.match(line):
-                sku_documents[match.group("sku").upper()].add(doc_id)
             if match := re.fullmatch(r"\s*MERCHANDISE LINE\s*-\s*ARTICLE\s+([1-9][0-9]*)\s*", line, re.I):
                 worksheet_ordinals.add(int(match.group(1)))
 
@@ -108,11 +149,17 @@ def bind_single_sku_evidence(fields: dict, documents: object) -> bool:
     if worksheet_ordinals and worksheet_ordinals != {ordinal}:
         return False
 
+    # Exact commercial SKU and invoice line identity must be established
+    # BEFORE botanical evidence can be recovered from verified supplier memory.
+    # Requiring genus/species here created a circular dependency on Shipment 2.
     genus = _single_supported_value(fields.get("genus"))
     species = _single_supported_value(fields.get("species"))
     hts = _single_supported_value(fields.get("hts_code"))
-    if not genus or not species or not hts:
+    if not hts:
         return False
+    if bool(genus) != bool(species):
+        # One incomplete taxon is not authority to form a plant component.
+        genus = species = None
 
     # Fail closed on any other contradictory plant/commercial attribute. Missing
     # evidence remains missing; review-required values are *not* force-promoted.
@@ -127,7 +174,10 @@ def bind_single_sku_evidence(fields: dict, documents: object) -> bool:
             return False
 
     line_key = f"sku:{sku.casefold()}"
-    component_key = f"taxon:{genus.casefold()}:{species.casefold()}"
+    component_key = (
+        f"taxon:{genus.casefold()}:{species.casefold()}"
+        if genus and species else None
+    )
     changed = False
     for field_name in _COMPONENT_FIELDS | _LINE_FIELDS:
         field = fields.get(field_name)

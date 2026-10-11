@@ -1,0 +1,1 @@
+Synthetic, fictional 2026 U.S. Lacey Act two-shipment original PDF fixtures. Do not replace with real customer documents. Exact original SHA-256 values in sha256.json. Tests must process PDF bytes, not manually transcribed text.

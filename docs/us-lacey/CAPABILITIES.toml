@@ -518,3 +518,22 @@ workflows = [
   ".github/workflows/us-lacey-postgres-gate.yml"
 ]
 notes = "Ungated synthetic importer/broker samples never create a tenant or consume quota. The first real shipment is anonymous and card-free. After one successfully processed shipment, a work-email-only claim promotes the same tenant into a five-successful-shipment evaluation. FAILED processing never consumes quota and a distinct operation is counted at most once, so reprocessing is free. Claimed evaluations use a sliding seven-day inactivity window; after five successful shipments they become read-only rather than being immediately deleted. Raw Vault object bytes are independently scheduled for physical deletion four hours after each upload, while derived operation/review/supplier/audit state remains available for the active evaluation. Growth attribution separates raw link scans from likely-human browser visits and confirmed product engagement without storing IP addresses, raw User-Agent values, customer document content, or extracted values. Pilot Watch is consolidated into the superadmin owner console."
+
+[capabilities.assurance_v2_authority]
+status = "IMPLEMENTATION_PENDING_POSTGRES_ACCEPTANCE"
+owner = "us_lacey assurance_v2_memory"
+authority = "human_confirmed + noncanonical_reuse_proposal"
+implementation = [
+  "src/litoral_trace/us_lacey/assurance_v2_memory.py",
+  "src/litoral_trace/db/models/us_lacey_assurance_v2.py"
+]
+migrations = ["alembic/versions/078_us_lacey_assurance_v2_authority.py"]
+tests = [
+  "tests/test_assurance_v2_core_memory.py",
+  "tests/test_assurance_v2_core_postgres.py"
+]
+workflows = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/us-lacey-postgres-gate.yml"
+]
+notes = "Additive opt-in authority journal and exact, controlled longitudinal memory. Full PostgreSQL/RLS acceptance plus review/worker/read-model integration must pass before this capability is considered active. Existing supplier, semantic evidence, source-set and operation audit authorities are reused."
