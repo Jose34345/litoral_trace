@@ -45,6 +45,9 @@ from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
 )
 from litoral_trace.us_lacey.reconciliation_invariants import reconcile_entered_value_invariant
 from litoral_trace.us_lacey.reusable_evidence_promotion import promote_reviewed_field
+from litoral_trace.us_lacey.assurance_v2_review_adapter import (
+    journal_reviewed_field, review_journal_enabled,
+)
 from litoral_trace.us_lacey.identity_memory import resolve_operation_identity_memory
 from litoral_trace.us_lacey.review_telemetry import ReviewTelemetry
 from litoral_trace.us_lacey.ppq505 import (
@@ -182,6 +185,9 @@ def review_us_lacey_field(
     normalized_action = str(action or "").strip().lower()
     if normalized_action not in {"accept", "edit", "not_required"}:
         raise UsLaceyReviewError("Review action is invalid.")
+    v2_journal_active = review_journal_enabled()
+    if v2_journal_active and normalized_action == "not_required":
+        raise UsLaceyReviewError("V2 review cannot authorize NOT_REQUIRED without an explicit decision contract.")
 
     session = get_us_lacey_db_session()
     try:
@@ -314,6 +320,13 @@ def review_us_lacey_field(
                 f"Explicit human review ({normalized_action}) by U.S. portal user {user_id}."
             )
             issue.resolved_at = field.reviewed_at
+
+        if review_journal_enabled():
+            journal_reviewed_field(
+                session, organization_id=org_id, operation=operation,
+                field=field, authenticated_user_id=int(user_id),
+                action=normalized_action, reason=reason_code,
+            )
 
         promotion_reason = "not_applicable"
         promotion_promoted = False
@@ -516,6 +529,12 @@ def accept_supported_us_lacey_fields(
             field.reviewed_by_user_id = int(user_id)
             field.reviewed_at = reviewed_at
             accepted_ids.append(int(field.id))
+            if review_journal_enabled():
+                journal_reviewed_field(
+                    session, organization_id=org_id, operation=operation,
+                    field=field, authenticated_user_id=int(user_id),
+                    action="accept", reason=None,
+                )
             try:
                 with session.begin_nested():
                     promotion = promote_reviewed_field(
