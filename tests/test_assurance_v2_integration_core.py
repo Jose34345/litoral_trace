@@ -58,3 +58,32 @@ def test_human_decision_carries_forward_and_second_shipment_only_proposes_reuse(
     assert two.reuses[0]["provenance"] == "REUSE_PROPOSED_NOT_CANONICAL"
     assert not evaluate_filing_gate(two).ready
     assert _case(session, org.id + 987, op2.public_id) is None
+
+
+
+def test_source_version_mismatch_downgrades_existing_decision_to_candidate(session):
+    """A journal entry referencing a different original document version is not current authority."""
+    from sqlalchemy import select
+    from litoral_trace.db.models import AssuranceV2DecisionSource
+
+    org, actor = org_and_actor(session, "AssuranceVersionFence")
+    _, product = supplier_product(session, org.id, supplier_key="MID:V2-VERSION")
+    op, doc, _, revision, field = shipment(
+        session, org.id, product.id, reference="CASE-VERSION-1",
+        source_value="Quercus alba",
+    )
+    approve_and_promote(session, org, actor, op, doc, revision)
+    field.human_value = "Quercus alba"
+    session.flush()
+    assert _case(session, org.id, op.public_id).fields[0]["authority"] == "HUMAN_CONFIRMED"
+
+    linked = session.scalar(select(AssuranceV2DecisionSource).where(
+        AssuranceV2DecisionSource.organization_id == org.id,
+    ))
+    assert linked is not None
+    linked.document_version_number += 1
+    session.flush()
+    after = _case(session, org.id, op.public_id)
+    assert after.fields[0]["authority"] == "CANDIDATE"
+    assert not after.fields[0]["decision_id"]
+    assert not evaluate_filing_gate(after).ready

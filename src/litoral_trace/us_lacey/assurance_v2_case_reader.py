@@ -152,6 +152,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
 
     documents: list[dict] = []
     valid_document_ids: set[int] = set()
+    current_source_versions: set[tuple[int, int, int]] = set()
     for link, assurance, vault in db.execute(
         select(UsLaceyOperationDocument, AssuranceDocument, VaultDocument)
         .join(UsLaceySourceSetMember, and_(
@@ -171,6 +172,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         .order_by(UsLaceyOperationDocument.id)
     ):
         valid_document_ids.add(assurance.id)
+        current_source_versions.add((int(assurance.id), int(link.id), int(link.version_number)))
         documents.append({
             "id": str(assurance.id), "version": str(link.version_number),
             "operation_document_id": int(link.id),
@@ -202,7 +204,9 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         (d.line_reference or PPQ505_SHIPMENT_REFERENCE, d.field_name): d
         for d in decisions if d.id not in superseded and d.action in {"ACCEPT", "CORRECT"}
         and docs_by_decision.get(d.id)
-        and all(source.assurance_document_id in valid_document_ids
+        and all((int(source.assurance_document_id),
+                 int(source.operation_document_id),
+                 int(source.document_version_number)) in current_source_versions
                 for source in docs_by_decision[d.id])
     }
 

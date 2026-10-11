@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from litoral_trace.us_lacey.exporters.assurance_v2 import AssuranceCase, evaluate_filing_gate
 from litoral_trace.us_lacey.exporters.assurance_v2_package import (
-    ExportBlocked, PackageStore, draft_assurance_excel, issue_assurance_package,
+    ExportBlocked, PackageStore, draft_assurance_excel,
 )
 from litoral_trace.web.templates import templates
 
@@ -37,6 +37,17 @@ class DecisionGateway(Protocol):
     def __call__(self, principal: WorkspacePrincipal, operation_id: str, command: dict[str, str]) -> dict[str, Any]: ...
 
 
+class IssueGateway(Protocol):
+    """Must acquire source-set/operation locks and persist within one transaction.
+
+    The UI may pass expected state, but must never mint a filing-ready package
+    from an earlier request's detached read-model snapshot.
+    """
+    def __call__(self, principal: WorkspacePrincipal, operation_id: str,
+                 expected_source_set_fingerprint: str,
+                 expected_case_fingerprint: str) -> dict[str, Any]: ...
+
+
 def create_assurance_v2_router(
     *,
     principal_for: Callable[[Request], WorkspacePrincipal],
@@ -45,6 +56,7 @@ def create_assurance_v2_router(
     csrf_verify: Callable[[WorkspacePrincipal, str], bool],
     package_store: PackageStore,
     document_link_for: Callable[[WorkspacePrincipal, str, str, int | None], str | None],
+    issue_gateway: IssueGateway | None = None,
 ) -> APIRouter:
     """The web adapter cannot select/promote candidates or write canonical truth."""
     router = APIRouter(prefix="/assurance-v2/operations", tags=["Assurance V2"])
@@ -124,18 +136,25 @@ def create_assurance_v2_router(
         body = await request.json()
         if not isinstance(body, dict) or not csrf_verify(principal, str(body.get("csrf_token") or "")):
             raise HTTPException(403, "Invalid CSRF token")
-        # Even if the UI previously showed ready, re-read current source set
-        # and rerun authority checks at the issuance boundary.
+        # The request's read model is only a preflight preview. It cannot
+        # authorize or persist final artifacts: a separate trusted gateway must
+        # lock the operation/source set, re-read authority, and save atomically.
+        gate = evaluate_filing_gate(case)
+        if not gate.ready:
+            return JSONResponse({"status": "BLOCKED", "blockers": [
+                {"code": b.code, "subject": b.subject} for b in gate.blockers
+            ]}, status_code=409)
+        if issue_gateway is None:
+            raise HTTPException(503, "Atomic Assurance V2 issuance is not enabled")
         try:
-            package = issue_assurance_package(case)
+            return issue_gateway(
+                principal, operation_id, case.source_set_fingerprint,
+                gate.case_fingerprint,
+            )
         except ExportBlocked as exc:
             return JSONResponse({"status": "BLOCKED", "blockers": [
                 {"code": b.code, "subject": b.subject} for b in exc.gate.blockers
             ]}, status_code=409)
-        package_store.save(organization_id=principal.organization_id,
-                           operation_id=operation_id, package=package)
-        return {"status": "FILING_READY", "package_fingerprint": package.fingerprint,
-                "submitted_to_agency": False}
 
     @router.get("/{operation_id}/draft.xlsx")
     def draft(request: Request, operation_id: str):

@@ -8,14 +8,14 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 from fastapi.staticfiles import StaticFiles
 
-from litoral_trace.us_lacey.exporters.assurance_v2_package import MemoryPackageStore
+from litoral_trace.us_lacey.exporters.assurance_v2_package import MemoryPackageStore, issue_assurance_package
 from litoral_trace.web.us_lacey_assurance_v2_views import (
     WorkspacePrincipal, create_assurance_v2_router,
 )
 from test_assurance_v2_outputs_core import OPERATION_ID, make_case, authorize
 
 
-def make_client(case=None):
+def make_client(case=None, *, test_issue_enabled=True):
     case = case or make_case()
     receipts: list[dict[str, str]] = []
     store = MemoryPackageStore()
@@ -41,12 +41,25 @@ def make_client(case=None):
         receipts.append(command)
         return {"status": "PENDING_AUTHORITY", "request_id": "fixture-request-1"}
 
+    def fixture_issue(principal: WorkspacePrincipal, operation_id: str,
+                      expected_source_set_fingerprint: str, expected_case_fingerprint: str):
+        # This fixture's local MemoryPackageStore is NOT the production gateway.
+        # A real gateway must re-read, lock, and persist atomically in PostgreSQL.
+        assert expected_source_set_fingerprint == case.source_set_fingerprint
+        assert expected_case_fingerprint == case.authority_fingerprint()
+        package = issue_assurance_package(case)
+        store.save(organization_id=principal.organization_id,
+                   operation_id=operation_id, package=package)
+        return {"status": "FILING_READY", "package_fingerprint": package.fingerprint,
+                "submitted_to_agency": False}
+
     app.include_router(create_assurance_v2_router(
         principal_for=principal,
         case_for=read,
         decision_gateway=gateway,
         csrf_verify=lambda principal, token: token == principal.csrf_token,
         package_store=store,
+        issue_gateway=fixture_issue if test_issue_enabled else None,
         document_link_for=lambda principal, op, doc, page:
             f"/operations/{op}/documents/{doc}" + (f"?page={page}" if page else ""),
     ))
@@ -143,3 +156,15 @@ def test_blocked_final_output_provides_only_watermarked_draft():
     assert draft.status_code == 200
     assert draft.headers["X-Assurance-Status"] == "DRAFT"
     assert "INCOMPLETE_DRAFT" in draft.headers["content-disposition"]
+
+
+
+def test_production_router_cannot_issue_ready_case_without_atomic_gateway():
+    client, _ = make_client(test_issue_enabled=False)
+    response = client.post(
+        f"/assurance-v2/operations/{OPERATION_ID}/issue",
+        json={"csrf_token": "fixture-csrf"},
+        headers={"X-Demo-Tenant": "11"},
+    )
+    assert response.status_code == 503
+    assert "Atomic Assurance V2 issuance is not enabled" in response.text
