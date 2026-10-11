@@ -314,3 +314,19 @@ The release-hardening PR now explicitly includes
 `test_assurance_v2_issuance_concurrent_postgres.py` in BOTH the triggering
 path filters and the PostgreSQL run, with the existing zero-skips requirement.
 The updated remote gate must pass before integrating the change.
+
+
+## Current-only authorized artifact downloads
+
+The authenticated package download endpoint now re-evaluates current source,
+regulatory and authorization readiness for the requesting tenant and exact
+package `case_fingerprint` / source-set revision. The historical immutable
+package still exists in the append-only operation event store for audit, but
+it is **not** returned by the live `FILING_READY` route after the source PDF
+has been withdrawn, replaced or a decision superseded.
+The core filing gate explicitly blocks a known unavailable `raw_available:
+false` PDF; absence of the optional flag in standalone pure-domain fixtures
+does not create supported document truth.
+The synthetic PostgreSQL Golden verifies download and restoration behavior
+for all three formats and the manifest. Release status remains NO-GO pending
+representative documents and complete operational deployment validation.

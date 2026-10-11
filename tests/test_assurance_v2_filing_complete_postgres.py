@@ -448,3 +448,16 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
         assert duplicate.status_code == 200, duplicate.text
         assert duplicate.json()["package_fingerprint"] == fingerprint
         assert client.get(f"{artifact_url}/manifest").status_code == 200
+
+        # An immutable archived audit event does not imply current authority.
+        # After the original PDF is withdrawn, no historical package may be
+        # downloaded with a misleading FILING_READY response.
+        _set_source_status("delete_pending")
+        try:
+            assert client.get(f"{artifact_url}/manifest").status_code == 409
+            assert client.get(f"{artifact_url}/lawgs_xml").status_code == 409
+            assert client.get(f"{artifact_url}/lacey_excel").status_code == 409
+            assert client.get(f"{artifact_url}/ppq505_preparation_json").status_code == 409
+        finally:
+            _set_source_status("available")
+        assert client.get(f"{artifact_url}/manifest").status_code == 200
