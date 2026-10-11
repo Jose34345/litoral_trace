@@ -9,6 +9,7 @@ from __future__ import annotations
 from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
+from copy import deepcopy
 
 from sqlalchemy import select
 
@@ -208,7 +209,20 @@ def test_original_13_pdfs_to_verified_source_memory_and_safe_second_shipment(ses
     db_case1 = _case(session, org.id, op1.public_id)
     assert db_case1 is not None
     assert len(db_case1.documents) == 7
+    assert db_case1.source_set_generation == rev1.generation
     assert len(db_case1.candidate_observations) >= 30
+    first_observation = db_case1.candidate_observations[0]
+    assert first_observation["contract_version"] == "assurance.v2/1.0.0"
+    assert first_observation["source_claim_contract_version"] == "assurance.claim.v1"
+    assert first_observation["source_set_revision_id"] == rev1.id
+    assert first_observation["source_set_fingerprint"] == rev1.source_set_fingerprint
+    assert first_observation["generation"] == rev1.generation
+    assert first_observation["document_version_number"] == 1
+    assert len(first_observation["original_sha256"]) == 64
+    assert first_observation["entity_type"]
+    assert "subject_id" in first_observation
+    assert first_observation["authority"] == "CANDIDATE"
+    assert "historical_origin" in first_observation
     assert set(f["name"] for f in db_case1.fields if f["authority"] == "HUMAN_CONFIRMED") == set(_STABLE)
     assert not evaluate_filing_gate(db_case1).ready
 
@@ -228,3 +242,40 @@ def test_original_13_pdfs_to_verified_source_memory_and_safe_second_shipment(ses
     assert not evaluate_filing_gate(db_case2).ready
     # The report may propose reuse, but no proposed historical value can be
     # exported as if it were extracted from Pack 2.
+
+
+def test_incomplete_persisted_claim_fails_explicitly_before_workspace(session):
+    org, _ = org_and_actor(session, "OriginalPdfIncomplete")
+    _, product = supplier_product(
+        session, org.id, supplier_key="MID:LONGSHENG-INCOMPLETE",
+        sku="BAM-COAST-04",
+    )
+    operation, _, _, _ = _ingest_original_documents(
+        session, org.id, product.id, "pack1",
+    )
+    run = session.scalar(select(UsLaceyEngineShipmentRun).where(
+        UsLaceyEngineShipmentRun.organization_id == org.id,
+        UsLaceyEngineShipmentRun.operation_id == operation.id,
+    ))
+    snapshot = deepcopy(run.resolution_json)
+    snapshot["assurance_v2_claim_snapshot"]["documents"][0]["claims"][0].pop("entity_type")
+    run.resolution_json = snapshot
+    session.flush()
+    case = _case(session, org.id, operation.public_id)
+    assert case is not None
+    assert not case.candidate_observations
+    assert any(item["id"] == "source:claims-invalid" and item["blocking"]
+               for item in case.exceptions)
+    assert not evaluate_filing_gate(case).ready
+
+    # A document envelope with the right revision but a different fingerprint
+    # must not be accepted merely because the individual claim IDs still match.
+    snapshot = deepcopy(run.resolution_json)
+    snapshot["assurance_v2_claim_snapshot"]["documents"][0]["claims"][0]["entity_type"] = "SHIPMENT"
+    snapshot["assurance_v2_claim_snapshot"]["documents"][0]["source_set_fingerprint"] = "0" * 64
+    run.resolution_json = snapshot
+    session.flush()
+    stale = _case(session, org.id, operation.public_id)
+    assert not stale.candidate_observations
+    assert any(item["id"] == "source:claims-unavailable" and item["blocking"]
+               for item in stale.exceptions)

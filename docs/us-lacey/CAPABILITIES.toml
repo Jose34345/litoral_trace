@@ -525,11 +525,15 @@ owner = "us_lacey assurance_v2_memory"
 authority = "human_confirmed + noncanonical_reuse_proposal"
 implementation = [
   "src/litoral_trace/us_lacey/assurance_v2_memory.py",
+  "src/litoral_trace/us_lacey/assurance_v2_claim_bridge.py",
+  "src/litoral_trace/us_lacey/assurance_v2_case_reader.py",
   "src/litoral_trace/db/models/us_lacey_assurance_v2.py"
 ]
 migrations = ["alembic/versions/078_us_lacey_assurance_v2_authority.py"]
 tests = [
   "tests/test_assurance_v2_core_memory.py",
+  "tests/test_assurance_v2_claim_bridge.py",
+  "tests/test_assurance_v2_two_pack_documentary_db.py",
   "tests/test_assurance_v2_core_postgres.py"
 ]
 workflows = [

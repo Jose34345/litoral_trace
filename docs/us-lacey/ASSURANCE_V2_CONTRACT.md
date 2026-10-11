@@ -79,6 +79,19 @@ Snapshot is a **read model**, not canonical publication. It is CURRENT only when
 
 ## Integration and compatibility
 
+The runtime bridge consumes the persisted `assurance.claim.snapshot.v1` candidate
+stream through `to_authority_candidate_snapshot`. A trusted database binding
+supplies tenant, operation, source-set revision/fingerprint/generation and the
+current operation-document ID, Assurance document ID, version and original SHA.
+The adapter rejects missing fields, incompatible versions, stale document
+bindings and invalid locators. It carries the complete source claim inside the
+V2 candidate observation as `source_claim`, alongside explicit raw/normalized
+values, entity type/subject, support, conflict status and `authority_status`.
+`SUPPORTED` remains literal source support; `authority_status` remains
+`CANDIDATE`. A missing or invalid snapshot creates a blocking case exception,
+never evidence of absence for historical reuse. Human decisions and historical
+reuse origin are separate case records, not fields invented by the bridge.
+
 - **Consume** `semantic_evidence_nodes`, `document_text_spans`, `assurance_documents`, `us_lacey_source_set_revisions/members`; do not fork provenance.
 - **Extend** `us_lacey_supplier*`, `us_lacey_operation_product_link`, `us_lacey_supplier_evidence`, `us_lacey_evidence_claim` conservatively. Keep legacy readers/writers running while introducing V2 records.
 - **Emit** atomic `us_lacey_operation_events` of type `HUMAN_REVIEW` or `EVIDENCE_REUSED` (the event_type check is constrained); detailed action/reason goes in `details`, with deterministic `event_key`.

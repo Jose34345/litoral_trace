@@ -22,6 +22,9 @@ from litoral_trace.db.models import (
 )
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.assurance_v2_memory import evaluate_reuse
+from litoral_trace.us_lacey.assurance_v2_claim_bridge import (
+    ResolvedDocumentBinding, to_authority_candidate_snapshot,
+)
 from litoral_trace.us_lacey.assurance_v2_reuse_guard import current_claim_values_for_reuse
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.exporters.assurance_v2 import AssuranceCase
@@ -96,41 +99,38 @@ def _source_claim_observations(
                 or int(source.get("organization_id") or -1) != organization_id
                 or int(source.get("operation_id") or -1) != operation_id
                 or int(source.get("source_set_revision_id") or -1) != revision.id
+                or source.get("source_set_fingerprint") != revision.source_set_fingerprint
+                or source.get("schema_version") != "assurance.claim.snapshot.v1"
+                or source.get("source_claim_contract_version") != "assurance.claim.v1"
             ):
                 return None
             if source.get("status") == "FAILED":
                 return None
             if source.get("claim_count") != len(source.get("claims") or ()):
                 return None
+            binding = ResolvedDocumentBinding(
+                organization_id=organization_id,
+                operation_id=operation_id,
+                source_set_revision_id=revision.id,
+                source_set_fingerprint=revision.source_set_fingerprint,
+                generation=revision.generation,
+                assurance_document_id=key[1],
+                operation_document_id=key[0],
+                document_version_number=int(document["version"]),
+                original_sha256=document["sha256"],
+            )
             for candidate in source.get("claims", ()):
                 if not isinstance(candidate, dict):
                     return None
-                if (
-                    candidate.get("contract_version") != "assurance.claim.v1"
-                    or candidate.get("candidate_state") != "CANDIDATE"
-                    or candidate.get("interpretation_status") != "PROPOSED"
-                    or candidate.get("original_sha256") != document["sha256"]
-                    or int(candidate.get("source_set_revision_id") or -1) != revision.id
-                    or int(candidate.get("organization_id") or -1) != organization_id
-                    or int(candidate.get("operation_id") or -1) != operation_id
-                    or int(candidate.get("assurance_document_id") or -1) != key[1]
-                    or int(candidate.get("operation_document_id") or -1) != key[0]
-                ):
-                    return None
-                observations.append({
-                    "id": str(candidate.get("claim_id") or ""),
+                adapted = to_authority_candidate_snapshot(candidate, binding=binding)
+                observation = adapted.as_authority_input()
+                observation.update({
+                    "id": str(candidate["claim_id"]),
                     "document_id": document["id"],
-                    "field_name": str(candidate.get("field_name") or ""),
-                    "original_value": str(candidate.get("original_value") or ""),
-                    "normalized_value": candidate.get("normalized_value"),
-                    "support_status": str(candidate.get("support_status") or "UNSUPPORTED"),
+                    "original_value": adapted.raw_value,
                     "authority": "CANDIDATE",
-                    "association_status": str(candidate.get("association_status") or "UNBOUND"),
-                    "sku": candidate.get("sku"),
-                    "line_reference": candidate.get("line_reference"),
-                    "source_locator": candidate.get("source_locator"),
-                    "reason_codes": list(candidate.get("reason_codes") or ()),
                 })
+                observations.append(observation)
         if seen != set(current_documents) or snapshot.get("claim_count") != len(observations):
             return None
         return tuple(observations)
@@ -225,10 +225,15 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
             "raw_available": vault.status == "available",
         })
 
-    source_observations = _source_claim_observations(
-        db, organization_id=org_id, operation_id=op.id,
-        revision=revision, documents=documents,
-    )
+    try:
+        source_observations = _source_claim_observations(
+            db, organization_id=org_id, operation_id=op.id,
+            revision=revision, documents=documents,
+        )
+        source_claim_error = "SOURCE_CLAIMS_UNAVAILABLE" if source_observations is None else None
+    except ValueError:
+        source_observations = None
+        source_claim_error = "SOURCE_CLAIMS_INVALID"
 
     decisions = db.scalars(select(AssuranceV2Decision).where(
         AssuranceV2Decision.organization_id == org_id,
@@ -289,6 +294,12 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
 
     fields: list[dict] = []
     exceptions: list[dict] = []
+    if source_claim_error is not None:
+        exceptions.append({
+            "id": "source:claims-invalid" if source_claim_error == "SOURCE_CLAIMS_INVALID"
+            else "source:claims-unavailable",
+            "reason": source_claim_error, "status": "OPEN", "blocking": True,
+        })
     reuses: list[dict] = []
     for field in db.scalars(select(UsLaceyOperationField).where(
         UsLaceyOperationField.organization_id == org_id,
@@ -379,6 +390,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         current_source_set_fingerprint=revision.source_set_fingerprint,
         current_source_set_revision=revision.id,
         ruleset_version=ruleset_version,
+        source_set_generation=revision.generation,
         documents=tuple(documents),
         lines=lines,
         fields=tuple(fields),

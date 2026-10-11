@@ -55,6 +55,7 @@ class AssuranceCase:
     current_source_set_fingerprint: str
     current_source_set_revision: int
     ruleset_version: str
+    source_set_generation: int = 0
     documents: tuple[dict[str, Any], ...] = ()
     lines: tuple[str, ...] = ()
     fields: tuple[dict[str, Any], ...] = ()
@@ -91,6 +92,7 @@ def case_from_snapshot(payload: Mapping[str, Any]) -> AssuranceCase:
         current_source_set_fingerprint=str(payload["current_source_set_fingerprint"]),
         current_source_set_revision=int(payload["current_source_set_revision"]),
         ruleset_version=str(payload["ruleset_version"]),
+        source_set_generation=int(payload.get("source_set_generation") or 0),
         documents=collection("documents"),
         lines=tuple(str(line) for line in payload.get("lines", ())),
         fields=collection("fields"),
