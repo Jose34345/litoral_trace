@@ -519,6 +519,22 @@ workflows = [
 ]
 notes = "Ungated synthetic importer/broker samples never create a tenant or consume quota. The first real shipment is anonymous and card-free. After one successfully processed shipment, a work-email-only claim promotes the same tenant into a five-successful-shipment evaluation. FAILED processing never consumes quota and a distinct operation is counted at most once, so reprocessing is free. Claimed evaluations use a sliding seven-day inactivity window; after five successful shipments they become read-only rather than being immediately deleted. Raw Vault object bytes are independently scheduled for physical deletion four hours after each upload, while derived operation/review/supplier/audit state remains available for the active evaluation. Growth attribution separates raw link scans from likely-human browser visits and confirmed product engagement without storing IP addresses, raw User-Agent values, customer document content, or extracted values. Pilot Watch is consolidated into the superadmin owner console."
 
+[capabilities.assurance_v2_exact_pdf_quantities]
+status = "RC_NO_GO"
+owner = "lacey_engine + us_lacey"
+authority = "observation"
+implementation = [
+  "src/litoral_trace/lacey_engine/labeled_pdf_fields.py",
+  "src/litoral_trace/us_lacey/assurance_v2_claim_ingestion.py",
+  "src/litoral_trace/us_lacey/assurance_v2_documentary_claim_binding.py",
+  "src/litoral_trace/us_lacey/assurance_v2_source_claim_review.py"
+]
+tests = [
+  "tests/test_assurance_v2_labeled_pdf_fields.py",
+  "tests/test_assurance_v2_golden_postgres.py"
+]
+notes = "Only literal, fully labeled and page/block anchored entered value, plant-material quantity and metric-unit observations; independent documentary SKU binding and authenticated human authority remain required. No new regulatory filing authority."
+
 [capabilities.assurance_v2_authority]
 status = "IMPLEMENTATION_PENDING_POSTGRES_ACCEPTANCE"
 owner = "us_lacey assurance_v2_memory"

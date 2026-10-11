@@ -9,10 +9,15 @@ from __future__ import annotations
 from hashlib import sha256
 from typing import Any
 
-from litoral_trace.lacey_engine.domain import BundleResolution
+from litoral_trace.lacey_engine.domain import (
+    AdmittedCandidate, BundleResolution, EvidenceClass, Provenance, RawCandidate,
+)
+from litoral_trace.lacey_engine.labeled_pdf_fields import (
+    EXTRACTOR_VERSION, extract_explicit_field_spans,
+)
 from litoral_trace.lacey_engine.source_linked_claims import (
     CLAIM_CONTRACT_VERSION, ClaimContext, SourceEvidenceDocument,
-    claims_from_engine2_resolution, verify_claim_anchor,
+    claims_from_engine2_resolution, from_engine2_candidate, verify_claim_anchor,
 )
 
 ASSURANCE_CLAIMS_SNAPSHOT_VERSION = "assurance.claim.snapshot.v1"
@@ -142,6 +147,53 @@ def collect_source_claims(
                 claim, document_id=assurance_document_id,
                 operation_document_id=operation_document_id,
             ))
+            if len(claims) > MAX_SOURCE_CLAIMS:
+                raise ValueError("Assurance V2 source claims exceeded processing budget")
+
+        # Explicit PDF label/value spans are *supplemental source observations*.
+        # Keep them out of Engine2's canonical/fusion result and out of filing
+        # authority. Each candidate preserves its literal page/block/subspan.
+        # The existing V2 documentary identity bridge binds only when the
+        # full packet proves one exact supplier/SKU/line.
+        for span in extract_explicit_field_spans(logical.resolution.layout):
+            raw = RawCandidate(
+                field_key=span.field_name,
+                raw_text=span.value, normalized_value=span.value,
+                source_block=span.block,
+                evidence_class=EvidenceClass.EXPLICIT,
+                extractor_name="explicit_pdf_label",
+                extractor_version=EXTRACTOR_VERSION,
+            )
+            provenance = Provenance(
+                filename=bundle.filename, page=span.block.page,
+                bbox=span.block.bbox, block_id=span.block.block_id,
+                source_text=span.block.text,
+                extractor_name="explicit_pdf_label",
+                extractor_version=EXTRACTOR_VERSION,
+                evidence_class=EvidenceClass.EXPLICIT,
+            )
+            candidate = AdmittedCandidate(
+                raw=raw, provenance=provenance, score=1.0,
+                document_type=logical.resolution.document_type,
+            )
+            claim = from_engine2_candidate(
+                candidate, context=context, document=source,
+            )
+            if not verify_claim_anchor(claim, source):
+                raise ValueError("Explicit PDF label span failed source verification")
+            projected = _project_claim(
+                claim, document_id=assurance_document_id,
+                operation_document_id=operation_document_id,
+            )
+            # If Engine2 itself already reported the same evidence span,
+            # don't duplicate its existing source observation.
+            if any(c["field_name"] == projected["field_name"]
+                   and c["original_value"] == projected["original_value"]
+                   and c["source_locator"] == projected["source_locator"]
+                   and c["support_status"] == "SUPPORTED"
+                   for c in claims):
+                continue
+            claims.append(projected)
             if len(claims) > MAX_SOURCE_CLAIMS:
                 raise ValueError("Assurance V2 source claims exceeded processing budget")
 
