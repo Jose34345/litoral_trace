@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from litoral_trace.db.models import (
     AssuranceV2Decision, AssuranceV2DecisionSource, AssuranceV2MemoryLink,
@@ -180,3 +181,44 @@ def test_review_dialog_exposes_explicit_correction_reason():
     assert 'name="reason_code" rows="2"' in template
     assert "Reason for correction" in template
     assert 'name="action" value="edit"' in template
+
+
+
+def test_authenticated_review_path_does_not_duplicate_legacy_promotion(session, monkeypatch):
+    """Actual review command, not just the helper, uses one V2 authority path."""
+    from litoral_trace.us_lacey import review as review_module
+
+    org, actor = org_and_actor(session, "OneAuthority")
+    _, product = supplier_product(session, org.id, supplier_key="MID:ONE-AUTHORITY")
+    op, _, _, _, field = shipment(
+        session, org.id, product.id, reference="AUTHORITY-SHIP-1",
+        source_value="Quercus alba",
+    )
+    session.commit()
+    monkeypatch.setenv("US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL", "ON")
+    monkeypatch.setattr(review_module, "get_us_lacey_db_session", lambda: session)
+    monkeypatch.setattr(review_module, "set_tenant_db_context", lambda *_: None)
+
+    def legacy_promotion_must_not_run(*args, **kwargs):
+        pytest.fail("V2 human authority must not execute legacy promotion")
+
+    monkeypatch.setattr(review_module, "promote_reviewed_field", legacy_promotion_must_not_run)
+    # The standalone fixture focuses on the authority boundary. Readiness
+    # recalculation has its own integration tests and is not part of this case.
+    monkeypatch.setattr(review_module, "reconcile_entered_value_invariant", lambda *a, **kw: None)
+    monkeypatch.setattr(review_module, "refresh_regulatory_assessment_snapshot_for_review", lambda *a, **kw: None)
+    monkeypatch.setattr(review_module, "refresh_us_lacey_operation_status", lambda *a, **kw: "REVIEW_REQUIRED")
+    monkeypatch.setattr(review_module, "_counts", lambda *a, **kw: (0, 0, 0))
+    monkeypatch.setattr(review_module, "record_audit_event", lambda *a, **kw: None)
+
+    result = review_module.review_us_lacey_field(
+        organization_id=org.id, operation_public_id=op.public_id,
+        field_id=field.id, user_id=actor.id, user_email=actor.email,
+        action="accept",
+    )
+    assert result.field_status == "MATCHED"
+    with Session(session.get_bind()) as verify:
+        assert len(verify.scalars(select(AssuranceV2Decision)).all()) == 1
+        assert len(verify.scalars(select(AssuranceV2MemoryLink)).all()) == 1
+        event_types = [event.event_type for event in verify.scalars(select(UsLaceyOperationEvent))]
+        assert event_types.count("HUMAN_REVIEW") == 2  # V2 authority + legacy UI audit, both same transaction
