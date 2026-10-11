@@ -208,7 +208,10 @@ def configure_assurance_v2_shadow(
         except ValueError:
             raise HTTPException(422, "Invalid field reference") from None
         candidate_id = command["candidate_id"]
-        if candidate_id and candidate_id != f"legacy:{field_id}":
+        source_claim_id = None
+        if candidate_id.startswith("source:") and action == "ACCEPT":
+            source_claim_id = candidate_id.removeprefix("source:")
+        elif candidate_id and candidate_id != f"legacy:{field_id}":
             raise HTTPException(422, "Candidate reference is not bound to this review field")
         try:
             result = review_us_lacey_field(
@@ -221,6 +224,7 @@ def configure_assurance_v2_shadow(
                 value=command["value"] if action == "CORRECT" else None,
                 reason_code=command["reason"] or None,
                 candidate_id=None,
+                source_claim_id=source_claim_id,
                 expected_source_set_fingerprint=command["expected_source_set_fingerprint"],
                 expected_case_fingerprint=command["expected_case_fingerprint"],
             )
