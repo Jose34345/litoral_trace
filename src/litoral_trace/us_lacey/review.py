@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 
 from litoral_trace.db.models import (
     AssuranceDocument,
+    AssuranceV2MemoryLink,
     ReconciliationIssue,
     UsLaceyFieldCandidate,
     UsLaceyOperation,
@@ -323,15 +324,22 @@ def review_us_lacey_field(
             )
             issue.resolved_at = field.reviewed_at
 
+        v2_promoted = False
         if v2_journal_active:
-            journal_reviewed_field(
+            authority_decision = journal_reviewed_field(
                 session, organization_id=org_id, operation=operation,
                 field=field, authenticated_user_id=int(user_id),
                 action=normalized_action, reason=reason_code,
             )
+            v2_promoted = session.scalar(select(AssuranceV2MemoryLink.id).where(
+                AssuranceV2MemoryLink.organization_id == org_id,
+                AssuranceV2MemoryLink.decision_id == authority_decision.id,
+            ).limit(1)) is not None
 
-        promotion_reason = "v2_authority_journal" if v2_journal_active else "not_applicable"
-        promotion_promoted = False
+        promotion_reason = (
+            "v2_verified_memory" if v2_promoted else "v2_decision_only"
+        ) if v2_journal_active else "not_applicable"
+        promotion_promoted = v2_promoted
         # V2 owns promotion through a source-bound human decision. Never run
         # the legacy promoter in parallel or create two competing authorities.
         if normalized_action in {"accept", "edit"} and not v2_journal_active:
@@ -538,11 +546,16 @@ def accept_supported_us_lacey_fields(
                 # The V2 journal owns both decision and any durable promotion.
                 # Its failure rolls the entire bulk review back; never fall
                 # back to the unaudited legacy promotion path.
-                journal_reviewed_field(
+                authority_decision = journal_reviewed_field(
                     session, organization_id=org_id, operation=operation,
                     field=field, authenticated_user_id=int(user_id),
                     action="accept", reason=None,
                 )
+                if session.scalar(select(AssuranceV2MemoryLink.id).where(
+                    AssuranceV2MemoryLink.organization_id == org_id,
+                    AssuranceV2MemoryLink.decision_id == authority_decision.id,
+                ).limit(1)) is not None:
+                    promoted_field_ids.append(int(field.id))
             else:
                 try:
                     with session.begin_nested():

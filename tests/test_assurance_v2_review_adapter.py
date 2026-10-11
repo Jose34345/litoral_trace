@@ -209,7 +209,11 @@ def test_authenticated_review_path_does_not_duplicate_legacy_promotion(session, 
     monkeypatch.setattr(review_module, "refresh_regulatory_assessment_snapshot_for_review", lambda *a, **kw: None)
     monkeypatch.setattr(review_module, "refresh_us_lacey_operation_status", lambda *a, **kw: "REVIEW_REQUIRED")
     monkeypatch.setattr(review_module, "_counts", lambda *a, **kw: (0, 0, 0))
-    monkeypatch.setattr(review_module, "record_audit_event", lambda *a, **kw: None)
+    review_audits = []
+    monkeypatch.setattr(
+        review_module, "record_audit_event",
+        lambda *a, **kw: review_audits.append(kw),
+    )
 
     result = review_module.review_us_lacey_field(
         organization_id=org.id, operation_public_id=op.public_id,
@@ -217,6 +221,9 @@ def test_authenticated_review_path_does_not_duplicate_legacy_promotion(session, 
         action="accept",
     )
     assert result.field_status == "MATCHED"
+    assert len(review_audits) == 1
+    assert review_audits[0]["metadata"]["reusable_evidence_promoted"] is True
+    assert review_audits[0]["metadata"]["reusable_evidence_promotion_reason"] == "v2_verified_memory"
     with Session(session.get_bind()) as verify:
         assert len(verify.scalars(select(AssuranceV2Decision)).all()) == 1
         assert len(verify.scalars(select(AssuranceV2MemoryLink)).all()) == 1
