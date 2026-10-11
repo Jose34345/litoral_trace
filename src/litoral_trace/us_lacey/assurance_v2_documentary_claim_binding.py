@@ -18,6 +18,7 @@ from litoral_trace.us_lacey.single_sku_recovery import _explicit_document_skus
 
 PROOF_VERSION = "assurance.documentary.binding.v1"
 ASSOCIATION_STATUS = "DOCUMENT_EXACT_SINGLE_SKU"
+DOCUMENTARY_BINDING_STATUS = ASSOCIATION_STATUS
 _LINE_FIELDS = frozenset({
     "article_component", "genus", "species", "country_of_harvest",
     "plant_quantity", "metric_unit", "percent_recycled", "hts_code",
