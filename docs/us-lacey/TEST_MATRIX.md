@@ -32,6 +32,7 @@ Use this as a routing guide. Exact test names evolve; search existing tests befo
 | review/audit behavior | review/bulk-review/audit tests | general CI + relevant PostgreSQL gate |
 | immutable operation audit trail | `tests/test_us_lacey_operation_audit.py` | `tests/test_us_lacey_operation_audit_postgres.py` + U.S. Lacey PostgreSQL gate |
 | exception-first review / staging / UX telemetry | `tests/test_us_lacey_p2_exception_first.py` + review UX/regulatory UI tests | general CI + `lacey-visual-qa.yml` for material presentation changes |
+| Assurance V2 source withdrawal / checksum supersession / in-flight mutation | `tests/test_assurance_v2_filing_complete_postgres.py` + `tests/test_assurance_v2_issuance_concurrent_postgres.py` | PostgreSQL Gate with real PDF source rows locked; unauthorized issuance blocked and idempotent package event |
 | Assurance V2 source-backed complete dossier Golden | `tests/test_assurance_v2_filing_complete_postgres.py` + original blocked `tests/test_assurance_v2_golden_postgres.py` | CI and mandatory isolated PostgreSQL Gate; complete source evidence and authenticated authorization, production NO-GO until quality and concurrency gates |
 | Assurance V2 exact PDF labeled quantities | `tests/test_assurance_v2_labeled_pdf_fields.py` + source identity binding and source-claim review tests | four-shipment PostgreSQL HTTP/Vault/worker Golden; main CI and U.S. Lacey PostgreSQL Gate before merge |
 | PPQ505/exporters | export snapshot, Excel/XML/PPQ505 tests | general CI; live gate only if runtime integration affected |
