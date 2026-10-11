@@ -496,6 +496,35 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
                     "page": field.source_page,
                 }] if proposed else [],
             })
+        if not chosen and source_observations:
+            detected = [claim for claim in source_observations if (
+                claim.get("field_name") == field.field_name
+                and claim.get("support_status") == "SUPPORTED"
+                and claim.get("normalized_value")
+            )]
+            if detected:
+                # A supported document literal without a safe entity/line
+                # binding must remain a visible abstention, never disappear
+                # between the claim stream and the authority workspace.
+                exceptions.append({
+                    "id": f"source:unpublished:{field.id}",
+                    "field_name": field.field_name,
+                    "line_reference": line,
+                    "reason": (
+                        "SOURCE_CLAIM_UNBOUND" if any(
+                            claim.get("association_status") != "BOUND"
+                            for claim in detected
+                        ) else "SUPPORTED_CLAIM_UNPUBLISHED"
+                    ),
+                    "status": "OPEN", "blocking": True,
+                    "candidates": [{
+                        "id": claim.get("id"),
+                        "value": claim.get("normalized_value"),
+                        "document_id": str(claim.get("assurance_document_id")),
+                        "page": (claim.get("source_locator") or {}).get("page"),
+                        "locator": claim.get("source_locator"),
+                    } for claim in detected],
+                })
     ruleset_version, regulatory_rules = _current_regulatory_rules(
         db, organization_id=org_id, operation_id=op.id, revision=revision,
     )

@@ -165,6 +165,9 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
                     and item["support_status"] == "SUPPORTED"}
         assert {item["field_name"] for item in second_case.reuses
                 if item["status"] == "ELIGIBLE"} == botanical
+        assert any(item["reason"] == "SOURCE_CLAIM_UNBOUND"
+                   and item["field_name"] == "article_component"
+                   for item in second_case.exceptions)
         assert len(second_case.identities) == 1
         identity = second_case.identities[0]
         if identity["status"] == "REVIEW_REQUIRED":
