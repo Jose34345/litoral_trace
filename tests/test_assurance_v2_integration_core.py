@@ -27,7 +27,7 @@ def test_initial_legacy_found_is_only_candidate_and_export_remains_blocked(sessi
     assert _case(session, org.id + 123456, op.public_id) is None
 
 
-def test_human_decision_carries_forward_and_second_shipment_only_proposes_reuse(session, monkeypatch):
+def test_human_decision_carries_forward_but_missing_source_snapshot_blocks_reuse(session):
     org, actor = org_and_actor(session, "AssuranceLongitudinal")
     _, product = supplier_product(session, org.id, supplier_key="MID:LONG")
     op1, doc1, _, rev1, field1 = shipment(
@@ -49,13 +49,11 @@ def test_human_decision_carries_forward_and_second_shipment_only_proposes_reuse(
         session, org.id, product.id, reference="CASE-MEM-2",
     )
     assert not _case(session, org.id, op2.public_id).reuses
-    monkeypatch.setattr("litoral_trace.us_lacey.assurance_v2_case_reader._source_claim_observations", lambda *a, **k: ())
     two = _case(session, org.id, op2.public_id)
     assert two.fields[0]["authority"] == "CANDIDATE"
     assert not two.fields[0]["value"]
-    assert two.reuses and two.reuses[0]["value"] == "Quercus alba"
-    assert two.reuses[0]["status"] == "ELIGIBLE"
-    assert two.reuses[0]["provenance"] == "REUSE_PROPOSED_NOT_CANONICAL"
+    assert not two.reuses
+    assert any(item["reason"] == "SOURCE_CLAIMS_UNAVAILABLE" for item in two.exceptions)
     assert not evaluate_filing_gate(two).ready
     assert _case(session, org.id + 987, op2.public_id) is None
 
