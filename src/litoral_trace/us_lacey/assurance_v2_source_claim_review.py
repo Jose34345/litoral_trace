@@ -35,8 +35,8 @@ def select_reviewable_source_claim(
     claim = candidates[0]
     if (claim.get("field_name") != field_name
             or claim.get("candidate_origin") != "DOCUMENT"
+            or claim.get("state") != "CANDIDATE"
             or claim.get("candidate_state", "CANDIDATE") != "CANDIDATE"
-            and claim.get("state") != "CANDIDATE"
             or claim.get("authority_status") != "CANDIDATE"
             or claim.get("support_status") != "SUPPORTED"):
         raise ValueError("Source candidate is not supported for this field")
