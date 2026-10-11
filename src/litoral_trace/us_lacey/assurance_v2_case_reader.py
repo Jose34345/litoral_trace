@@ -36,6 +36,14 @@ from litoral_trace.us_lacey.exporters.assurance_v2 import AssuranceCase
 from litoral_trace.us_lacey.ppq505 import PPQ505_SHIPMENT_REFERENCE
 
 _REUSABLE_FIELDS = frozenset({"genus", "species", "country_of_harvest"})
+_LINE_BOUND_ASSOCIATION_STATUSES = frozenset({
+    "EXPLICIT_SKU", "SOURCE_LOCAL_LINE", "SOURCE_ROW",
+})
+
+
+def _is_line_bound(claim: dict) -> bool:
+    """Return whether the immutable source-claim contract binds a line."""
+    return claim.get("association_status") in _LINE_BOUND_ASSOCIATION_STATUSES
 
 
 def read_tenant_assurance_case(
@@ -512,8 +520,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
                     "line_reference": line,
                     "reason": (
                         "SOURCE_CLAIM_UNBOUND" if any(
-                            claim.get("association_status") != "BOUND"
-                            for claim in detected
+                            not _is_line_bound(claim) for claim in detected
                         ) else "SUPPORTED_CLAIM_UNPUBLISHED"
                     ),
                     "status": "OPEN", "blocking": True,

@@ -1,4 +1,4 @@
-from litoral_trace.us_lacey.assurance_v2_case_reader import _case
+from litoral_trace.us_lacey.assurance_v2_case_reader import _case, _is_line_bound
 from test_assurance_v2_core_memory import session, org_and_actor, supplier_product, shipment, approve_and_promote
 
 
@@ -13,3 +13,10 @@ def test_current_source_species_blocks_memory(session, monkeypatch):
     assert not _case(session, org.id, second.public_id).reuses
     current[0]["line_reference"] = None
     assert not _case(session, org.id, second.public_id).reuses
+
+
+def test_source_claim_line_binding_recognizes_only_contract_bound_statuses():
+    assert _is_line_bound({"association_status": "EXPLICIT_SKU"})
+    assert _is_line_bound({"association_status": "SOURCE_LOCAL_LINE"})
+    assert _is_line_bound({"association_status": "SOURCE_ROW"})
+    assert not _is_line_bound({"association_status": "UNBOUND"})

@@ -34,6 +34,10 @@ changed. `US_LACEY_ASSURANCE_V2_MODE=ENABLED` remains prohibited.
   `SOURCE_CLAIM_UNBOUND` exception. The source-claim stream still reports
   `UNBOUND` for all 164 observations across the four shipments; the canonical
   field projection is a separate path. This unresolved bridge is a P0 gate.
+  The reader now recognizes the contract's three valid bound states
+  (`EXPLICIT_SKU`, `SOURCE_LOCAL_LINE`, and `SOURCE_ROW`) instead of comparing
+  against a nonexistent `BOUND` state. That correction does not bind this
+  corpus: all of its source observations remain `UNBOUND`.
 
 ## PostgreSQL golden result
 
