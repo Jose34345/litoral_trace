@@ -6,6 +6,7 @@ into a new shipment's original-document observations.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -370,7 +371,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         "value": d.selected_value, "reason": d.reason, "action": d.action,
         "decided_at": d.decided_at.isoformat(),
     } for d in decisions)
-    return AssuranceCase(
+    case = AssuranceCase(
         organization_id=org_id,
         operation_id=str(op.public_id),
         source_set_fingerprint=revision.source_set_fingerprint,
@@ -387,6 +388,12 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         reuses=tuple(reuses),
         identities=identities,
         rules=regulatory_rules,
-        # Intentional: no automatic filing authorization from a read model.
+        # No approval is inferred from fields; only an explicit immutable
+        # authenticated export-authorizing operation event can fill this.
         export_authorization={},
     )
+    from litoral_trace.us_lacey.assurance_v2_export_authorization import authorization_from_event
+    authorization = authorization_from_event(
+        db, organization_id=org_id, operation_id=op.id, case=case,
+    )
+    return replace(case, export_authorization=authorization) if authorization else case
