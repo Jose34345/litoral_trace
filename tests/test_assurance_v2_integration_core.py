@@ -87,3 +87,44 @@ def test_source_version_mismatch_downgrades_existing_decision_to_candidate(sessi
     assert after.fields[0]["authority"] == "CANDIDATE"
     assert not after.fields[0]["decision_id"]
     assert not evaluate_filing_gate(after).ready
+
+
+
+def test_regulatory_rules_are_bound_to_current_snapshot_and_never_grant_human_authority(session):
+    from litoral_trace.db.models import UsLaceyRegulatoryAssessmentSnapshot
+    from litoral_trace.us_lacey.regulatory.rules import RULESET_VERSION
+
+    org, actor = org_and_actor(session, "RulesFence")
+    _, product = supplier_product(session, org.id, supplier_key="MID:RULES")
+    op, _, _, revision, _ = shipment(
+        session, org.id, product.id, reference="RULES-CASE-1",
+        source_value="Quercus alba",
+    )
+    snapshot = UsLaceyRegulatoryAssessmentSnapshot(
+        organization_id=org.id, operation_id=op.id,
+        source_set_revision_id=revision.id, generation=1,
+        source_set_fingerprint=revision.source_set_fingerprint,
+        ruleset_version=RULESET_VERSION, input_fingerprint="f" * 64,
+        status="CURRENT", assessment_count=1, indeterminate_count=0,
+        payload_json={"assessments": [
+            {"rule_id": "HTS_APPLICABILITY", "status": "PASS",
+             "is_blocking": True, "subject_ref": "shipment"}
+        ]},
+    )
+    session.add(snapshot)
+    session.flush()
+
+    current = _case(session, org.id, op.public_id)
+    assert current.ruleset_version == RULESET_VERSION
+    assert len(current.rules) == 1
+    assert current.rules[0]["id"] == "HTS_APPLICABILITY"
+    assert current.fields[0]["authority"] == "CANDIDATE"
+    assert not evaluate_filing_gate(current).ready
+
+    snapshot.status = "STALE"
+    session.flush()
+    stale = _case(session, org.id, op.public_id)
+    assert stale.rules == ()
+    assert stale.ruleset_version == "US_LACEY_ASSESSMENT_UNVERIFIED"
+    assert any(b.code == "RULES_NOT_EVALUATED"
+               for b in evaluate_filing_gate(stale).blockers)

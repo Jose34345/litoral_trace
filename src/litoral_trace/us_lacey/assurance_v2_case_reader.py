@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from litoral_trace.db.models import (
     AssuranceDocument, AssuranceV2Decision, AssuranceV2DecisionSource,
     UsLaceyEngineShipmentRun, UsLaceyOperation, UsLaceyOperationDocument, UsLaceyOperationField,
-    UsLaceyPpqPlantLine, UsLaceySourceSetMember, UsLaceySourceSetRevision,
+    UsLaceyPpqPlantLine, UsLaceyRegulatoryAssessmentSnapshot,
+    UsLaceySourceSetMember, UsLaceySourceSetRevision,
     UsLaceySupplier, UsLaceySupplierProduct, UsLaceyOperationProductLink,
     VaultDocument,
 )
@@ -133,6 +134,47 @@ def _source_claim_observations(
             return None
         return tuple(observations)
     return None
+
+
+def _current_regulatory_rules(
+    db: Session, *, organization_id: int, operation_id: int,
+    revision: UsLaceySourceSetRevision,
+) -> tuple[str, tuple[dict, ...]]:
+    """Only existing CURRENT rule assessments from this exact source revision.
+
+    An assessment from another shipment, revision or ruleset never grants filing
+    readiness. This is read-only; missing assessments must remain UNVERIFIED.
+    """
+    from litoral_trace.us_lacey.regulatory.rules import RULESET_VERSION
+    from litoral_trace.us_lacey.regulatory_assessment_snapshot import RegulatoryAssessmentView
+    from litoral_trace.us_lacey.regulatory.assurance_v2_adapter import rules_from_current_assessment
+
+    row = db.scalar(select(UsLaceyRegulatoryAssessmentSnapshot).where(
+        UsLaceyRegulatoryAssessmentSnapshot.organization_id == organization_id,
+        UsLaceyRegulatoryAssessmentSnapshot.operation_id == operation_id,
+        UsLaceyRegulatoryAssessmentSnapshot.source_set_revision_id == revision.id,
+        UsLaceyRegulatoryAssessmentSnapshot.source_set_fingerprint == revision.source_set_fingerprint,
+        UsLaceyRegulatoryAssessmentSnapshot.ruleset_version == RULESET_VERSION,
+        UsLaceyRegulatoryAssessmentSnapshot.status == "CURRENT",
+    ).order_by(UsLaceyRegulatoryAssessmentSnapshot.id.desc()))
+    if row is None:
+        return "US_LACEY_ASSESSMENT_UNVERIFIED", ()
+    view = RegulatoryAssessmentView(
+        status=row.status, generation=row.generation,
+        source_set_fingerprint=row.source_set_fingerprint,
+        ruleset_version=row.ruleset_version,
+        input_fingerprint=row.input_fingerprint,
+        assessment_count=row.assessment_count,
+        indeterminate_count=row.indeterminate_count,
+        payload=dict(row.payload_json or {}),
+    )
+    rules = rules_from_current_assessment(
+        view, current_source_set_fingerprint=revision.source_set_fingerprint,
+        current_ruleset_version=RULESET_VERSION,
+    )
+    if not rules or len(rules) != row.assessment_count:
+        return "US_LACEY_ASSESSMENT_UNVERIFIED", ()
+    return RULESET_VERSION, rules
 
 
 def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
@@ -318,6 +360,9 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
                     "origin_decision_id": str(reuse.origin_decision_public_id),
                     "provenance": "REUSE_PROPOSED_NOT_CANONICAL",
                 })
+    ruleset_version, regulatory_rules = _current_regulatory_rules(
+        db, organization_id=org_id, operation_id=op.id, revision=revision,
+    )
     output_decisions = tuple({
         "id": str(d.public_id), "actor_id": d.actor_user_id,
         "field_name": d.field_name,
@@ -332,7 +377,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         source_set_revision=revision.id,
         current_source_set_fingerprint=revision.source_set_fingerprint,
         current_source_set_revision=revision.id,
-        ruleset_version="US_LACEY_ASSESSMENT_UNVERIFIED",
+        ruleset_version=ruleset_version,
         documents=tuple(documents),
         lines=lines,
         fields=tuple(fields),
@@ -341,7 +386,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         decisions=output_decisions,
         reuses=tuple(reuses),
         identities=identities,
-        rules=(),
+        rules=regulatory_rules,
         # Intentional: no automatic filing authorization from a read model.
         export_authorization={},
     )
