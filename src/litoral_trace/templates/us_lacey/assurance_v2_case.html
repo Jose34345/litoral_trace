@@ -25,6 +25,7 @@
   </div>
   <div class="workspace">
     <aside class="assurance-nav" aria-label="Case navigation">
+      <a href="#required">Required evidence <strong>{{ required_evidence.verified }}/{{ required_evidence.total }}</strong></a>
       <a href="#exceptions">Review queue <strong>{{ case.exceptions|length }}</strong></a>
       <a href="#documents">Documents <strong>{{ case.documents|length }}</strong></a>
       <a href="#claims">Claims <strong>{{ case.fields|length }}</strong></a>
@@ -36,6 +37,27 @@
       <div class="nav-note">A candidate is not evidence. A rule PASS is not a shipment-level compliance verdict.</div>
     </aside>
     <div class="assurance-main">
+      <section class="panel" id="required">
+        <div class="section-heading">
+          <div><div class="eyebrow">REQUIRED DECLARATION INPUTS</div><h2>Evidence completion checklist</h2></div>
+          <span class="counter">{{ required_evidence.verified }}/{{ required_evidence.total }} verified</span>
+        </div>
+        <p class="muted">This checklist explains what still needs evidence or reviewer confirmation. It does not authorize a filing or replace regulatory checks.</p>
+        <p class="muted">{{ required_evidence.review }} fields need review; {{ required_evidence.missing }} lack sufficient current source evidence.</p>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Required field</th><th>Scope</th><th>Current value</th><th>Next action</th></tr></thead>
+          <tbody>{% for item in required_evidence.rows %}
+          <tr>
+            <td><strong>{{ item.label }}</strong><small>{{ item.field_name }}</small></td>
+            <td>{{ 'Shipment' if item.line_reference == '__shipment__' else 'Line ' ~ item.line_reference }}</td>
+            <td>{{ item.value or 'Not established' }}</td>
+            <td>
+              <span class="tag {{ 'green' if item.status == 'VERIFIED' else 'amber' if item.status != 'MISSING_EVIDENCE' else 'red' }}">{{ item.status.replace('_', ' ') }}</span>
+              <small>{{ item.guidance }}</small>
+            </td>
+          </tr>{% endfor %}</tbody>
+        </table></div>
+      </section>
       <section class="panel" id="exceptions">
         <div class="section-heading"><div><div class="eyebrow">01 / PRIORITY WORK QUEUE</div><h2>Exceptions requiring resolution</h2></div><span class="counter">{{ case.exceptions|length }} items</span></div>
         {% if not case.exceptions %}<p class="empty">No exception records supplied by the authority service.</p>{% endif %}
