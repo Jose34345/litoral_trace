@@ -14,6 +14,8 @@ from litoral_trace.us_lacey.assurance_v2_case_reader import read_tenant_assuranc
 from litoral_trace.us_lacey.assurance_v2_memory import revoke_verified_memory
 from litoral_trace.us_lacey.csrf import us_lacey_csrf_token
 from litoral_trace.db.tenant import set_tenant_db_context
+from sqlalchemy import select
+from litoral_trace.db.models import UsLaceyOperation, UsLaceyOperationField
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.exporters.assurance_v2 import evaluate_filing_gate
 from litoral_trace.us_lacey.db import reset_us_lacey_engine_state
@@ -88,6 +90,8 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
         assert signup.status_code == 201, signup.text
         assert client.get(f"/verify-email?token={delivered['verification_token']}").status_code == 303
         organization_id = _organization_id_for_email(email)
+        # Exercise the owner-only lab path under real worker ordering.
+        monkeypatch.setenv("US_LACEY_ASSURANCE_V2_LAB_ORG_IDS", str(organization_id))
         _activate_account(organization_id)
         assert client.post("/login", data={"email": email, "password": password}).status_code == 303
         create = client.get("/operations/new")
@@ -158,6 +162,39 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
         )
         assert second_case is not None
         assert len(second_case.documents) == 6
+        # Real worker: canonical truth -> identity link -> exact-source REVIEW.
+        db = get_us_lacey_db_session()
+        try:
+            set_tenant_db_context(db, organization_id)
+            op = db.scalar(select(UsLaceyOperation).where(
+                UsLaceyOperation.organization_id == organization_id,
+                UsLaceyOperation.public_id == UUID(second_id),
+            ))
+            recovered = db.scalars(select(UsLaceyOperationField).where(
+                UsLaceyOperationField.organization_id == organization_id,
+                UsLaceyOperationField.operation_id == op.id,
+                UsLaceyOperationField.merchandise_line_reference == "1",
+                UsLaceyOperationField.field_name.in_((
+                    "entered_value", "article_component",
+                    "plant_quantity", "metric_unit",
+                )),
+            )).all()
+            assert {row.field_name for row in recovered} == {
+                "entered_value", "article_component",
+                "plant_quantity", "metric_unit",
+            }
+            assert all(
+                row.field_status == "REVIEW"
+                and row.validation_status == "REVIEW_REQUIRED"
+                and row.normalized_value
+                and row.source_assurance_document_id is not None
+                and row.human_value is None
+                and row.reviewed_at is None
+                for row in recovered
+            ), [(row.field_name, row.field_status, row.normalized_value)
+                for row in recovered]
+        finally:
+            db.close()
         botanical = {"genus", "species", "country_of_harvest"}
         assert not {(item["field_name"], item["normalized_value"])
                     for item in second_case.candidate_observations
