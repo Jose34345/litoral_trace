@@ -17,7 +17,7 @@
     </div>
     <div class="filing-state {{ 'ready' if gate.ready else 'blocked' }}" aria-live="polite">
       <span class="state-label">{{ "Authorized preparation" if gate.ready else "Blocked for final export" }}</span>
-      <small>{{ "Eligible to generate an assurance package" if gate.ready else gate.blockers|length ~ " checks require attention" }}</small>
+      <small>{{ "Eligible to generate an assurance package" if gate.ready else gate.blockers|length ~ " gate findings (not unique errors)" }}</small>
     </div>
   </header>
   <div class="context-row">
@@ -83,6 +83,19 @@
             </div>
             {% endfor %}
           </div>
+          {% if ex.pending_candidates %}
+          <div class="candidate-list" data-awaiting-identity="{{ ex.line_reference }}">
+            <p class="muted"><strong>Source values found — confirm supplier / SKU / line identity first.</strong> These PDF observations are not missing evidence and cannot be accepted until the identity is confirmed below.</p>
+            {% for candidate in ex.pending_candidates %}
+            <div class="candidate">
+              <div><span class="tag amber">SOURCE FOUND · IDENTITY PENDING</span><strong>{{ candidate.value }}</strong></div>
+              <div class="muted">Document {{ candidate.document_id }}{% if candidate.page %} · p. {{ candidate.page }}{% endif %}</div>
+            </div>
+            {% endfor %}
+            <a class="source-link" href="#identity">Confirm line identity ↓</a>
+          </div>
+          {% endif %}
+          {% if ex.source_diagnostic %}<p class="muted">Diagnostic: {{ ex.source_diagnostic }}. No verified shipment-line binding; supply or corroborate the source before accepting it.</p>{% endif %}
           {% if ex.historical_evidence %}<div class="historical-evidence"><span class="tag purple">HISTORICAL MEMORY · VERIFY STATUS</span> {{ ex.historical_evidence }}</div>{% endif %}
           {% if ex.id.startswith('field:') %}
           <form class="decision-form" data-exception="{{ ex.id }}">
@@ -200,8 +213,15 @@
         </form>
         {% endif %}
         {% else %}
-        <p>Final XML is disabled. Resolve the following authority gaps first:</p>
-        <ul class="blocker-list">{% for b in gate.blockers %}<li><strong>{{ b.code }}</strong> · {{ b.subject }}</li>{% endfor %}</ul>
+        <p>Final XML is disabled. Gate findings are grouped by cause; several findings may refer to the same field and do not mean separate document errors.</p>
+        <div class="gate-groups" data-assurance-blocker-groups>
+        {% for category, findings in gate.blockers|groupby('code') %}
+          <details class="gate-group">
+            <summary><strong>{{ category }}</strong> · {{ findings|length }} related checks</summary>
+            <ul>{% for b in findings %}<li>{{ b.subject }}</li>{% endfor %}</ul>
+          </details>
+        {% endfor %}
+        </div>
         <a class="draft-link" href="/assurance-v2/operations/{{ case.operation_id }}/draft.xlsx">Export visibly marked incomplete draft (XLSX)</a>
         {% endif %}
         <div id="package-result" role="status" aria-live="polite"></div>

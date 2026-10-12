@@ -8,3 +8,25 @@
 .assurance-shell .identity-form .identity-result,.assurance-shell .reuse-form .reuse-result{min-height:1em;overflow-wrap:anywhere}
 .assurance-shell .source-link{overflow-wrap:anywhere}
 @media print{.assurance-shell{padding:0;font-size:11px;background:#fff}.assurance-shell h1{font-size:22px}.assurance-shell h2{font-size:14px}.assurance-shell .workspace{display:block}.assurance-shell .assurance-nav{display:none}.assurance-shell .assurance-main{display:block}.assurance-shell .assurance-header{gap:12px}.assurance-shell .context-row{margin:10px 0;gap:5px}.assurance-shell .context-row span{padding:5px}.assurance-shell .panel{padding:12px;border-radius:0;margin:10px 0;break-inside:auto}.assurance-shell .panel h2{margin:2px 0}.assurance-shell .section-heading{margin-bottom:8px}.assurance-shell table{table-layout:fixed}.assurance-shell td,.assurance-shell th{padding:6px;font-size:10px;overflow-wrap:anywhere;word-break:break-word}.assurance-shell tr,.assurance-shell .simple-row,.assurance-shell .exception{break-inside:avoid;page-break-inside:avoid}.assurance-shell .simple-row{padding:6px 0}.assurance-shell .identity-form,.assurance-shell .reuse-form,.assurance-shell .export-authorization-form,.assurance-shell button{display:none}.assurance-shell .blocker-list{columns:1}}
+
+/* Exception-first gate diagnostics: one expandable group per distinct reason. */
+.assurance-shell .gate-groups{display:grid;gap:8px}
+.assurance-shell .gate-group{border:1px solid #e1e9ee;border-radius:6px;padding:10px;background:#fbfcfd}
+.assurance-shell .gate-group summary{cursor:pointer;color:#395569}
+.assurance-shell .gate-group ul{margin:12px 0 4px;padding-left:20px;columns:2;overflow-wrap:anywhere}
+.assurance-shell .gate-group li{break-inside:avoid;margin:3px 0}
+@media print{
+  /* App chrome must not obscure the evidence report or print across pages. */
+  header:has([data-lacey-global-search]), [data-shipment-section-nav],
+  .assurance-shell .assurance-nav, .assurance-shell .nav-note{
+    display:none!important;position:static!important
+  }
+  .assurance-shell .assurance-header{position:static!important}
+  .assurance-shell .candidate-list{display:block}
+  .assurance-shell .candidate{padding:6px;margin:6px 0;break-inside:avoid;page-break-inside:avoid}
+  .assurance-shell .exception{break-inside:auto;page-break-inside:auto}
+  .assurance-shell .exception-title{break-after:avoid}
+  .assurance-shell .gate-group{padding:6px;margin-bottom:5px}
+  .assurance-shell .gate-group ul{columns:1}
+  .assurance-shell .source-link,.assurance-shell .decision-form{display:none!important}
+}

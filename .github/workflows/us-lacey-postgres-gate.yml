@@ -1199,6 +1199,18 @@ jobs:
           tests/test_us_lacey_active_portal_postgres_e2e.py
       - name: Prove tenant A/B isolation
         run: python -m pytest -q -rs tests/test_us_lacey_rls_postgres_integration.py
+      - name: Prove Assurance V2 Pack2 source claim canonical review publication
+        env:
+          DATABASE_URL: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs tests/test_us_lacey_v2lab_review_bridge_postgres.py | tee /tmp/v2lab-pack2-binding.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/v2lab-pack2-binding.txt; then
+            echo "Pack2 Source-to-Review acceptance must not skip."
+            exit 1
+          fi
       - name: Prove Assurance V2 same-source reprocess idempotency and tenant fences
         env:
           DATABASE_URL: ""

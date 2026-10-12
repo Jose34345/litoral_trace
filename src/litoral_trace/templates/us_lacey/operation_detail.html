@@ -85,6 +85,13 @@
     <span class="font-semibold text-slate-500">No automatic ACE / LAWGS submission</span>
   </div>
 
+  {% if identity and identity.organization_id in (request.scope['app'].state.assurance_v2_lab_org_ids|default(())) and business_reference.upper().startswith('V2LAB-') %}
+  <div class="border-t border-slate-200 bg-slate-50 px-5 py-3 text-sm text-slate-700" data-v2-authority-boundary>
+    <strong>Assurance V2 authority is separate.</strong>
+    Verified supplier evidence here reflects the shipment preparation workflow. The V2 case requires an explicit confirmation of supplier/SKU/line identity and authorized evidence reuse for this exact source revision. These badges are not V2 filing authorization.
+    <a class="font-bold underline" href="/assurance-v2/operations/{{ detail.public_id }}#identities">Confirm V2 identity</a>
+  </div>
+  {% endif %}
   {% if reused_evidence_summary and reused_evidence_summary.claim_count %}
   <div class="border-t border-emerald-200 bg-emerald-50 px-5 py-4" data-reuse-memory-summary>
     <div class="flex flex-wrap items-center justify-between gap-4">

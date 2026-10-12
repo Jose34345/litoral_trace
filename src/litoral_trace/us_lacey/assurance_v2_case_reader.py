@@ -47,39 +47,96 @@ def _is_line_bound(claim: dict) -> bool:
     return claim.get("association_status") in _LINE_BOUND_ASSOCIATION_STATUSES
 
 
+
+def _supported_observation_for_field(claim: dict, *, field_name: str) -> bool:
+    """Only verified current-PDF literal observations; never authority."""
+    return bool(
+        claim.get("field_name") == field_name
+        and claim.get("support_status") == "SUPPORTED"
+        and claim.get("authority_status") == "CANDIDATE"
+        and claim.get("state") == "CANDIDATE"
+        and str(claim.get("normalized_value") or "").strip()
+        and isinstance(claim.get("source_locator"), dict)
+        and claim["source_locator"].get("kind") == "TEXT_SPAN"
+    )
+
+
+def _observation_review_state(
+    claim: dict, *, line_reference: str, identities: tuple[dict, ...],
+) -> str | None:
+    """Classify exact-document claims without confusing shipment UNBOUND with a defect.
+
+    A product claim needs documentary proof of line/SKU association and
+    authenticated human confirmation of the SAME line/SKU before ACCEPT can
+    be offered. Corroborated source candidates stay visible while awaiting
+    identity; they are never selectable prematurely.
+    """
+    if line_reference == PPQ505_SHIPMENT_REFERENCE:
+        return (
+            "REVIEW_SOURCE"
+            if claim.get("entity_type") == "SHIPMENT"
+            and claim.get("association_status") == "UNBOUND"
+            else None
+        )
+    if (claim.get("association_status") != "DOCUMENT_EXACT_SINGLE_SKU"
+            or claim.get("line_reference") != line_reference
+            or not claim.get("sku")):
+        return None
+    matched = tuple(i for i in identities if (
+        i.get("line_reference") == line_reference
+        and i.get("sku") == claim.get("sku")
+    ))
+    if len(matched) != 1:
+        return None
+    return (
+        "REVIEW_SOURCE" if matched[0].get("status") in {"VERIFIED", "HUMAN_CONFIRMED"}
+        else "REVIEW_IDENTITY"
+    )
+
+
+def _source_review_candidates(
+    observations: tuple[dict, ...] | None, *, field_name: str,
+    line_reference: str, identities: tuple[dict, ...],
+) -> tuple[list[dict], list[dict]]:
+    """Separate safe selectable source claims from identity-pending previews."""
+    reviewable: list[dict] = []
+    pending_identity: list[dict] = []
+    seen: set[str] = set()
+    for claim in observations or ():
+        if not _supported_observation_for_field(claim, field_name=field_name):
+            continue
+        state = _observation_review_state(
+            claim, line_reference=line_reference, identities=identities,
+        )
+        claim_id = str(claim.get("id") or "")
+        if state is None or not claim_id or claim_id in seen:
+            continue
+        seen.add(claim_id)
+        item = {
+            "id": ("source:" if state == "REVIEW_SOURCE" else "pending:") + claim_id,
+            "value": claim["normalized_value"],
+            "document_id": str(claim["assurance_document_id"]),
+            "page": claim["source_locator"].get("page"),
+            "locator": claim["source_locator"],
+        }
+        if state == "REVIEW_SOURCE":
+            reviewable.append(item)
+        else:
+            pending_identity.append(item)
+    return reviewable, pending_identity
+
+
+
 def _current_review_source_choices(
     observations: tuple[dict, ...] | None, *, field_name: str,
     line_reference: str, identities: tuple[dict, ...],
 ) -> list[dict]:
-    """Show current PDF candidates but NEVER choose or authorize them here."""
-    valid_identities = tuple(
-        item for item in identities
-        if item["line_reference"] == line_reference
-        and item["status"] in {"VERIFIED", "HUMAN_CONFIRMED"}
+    """Expose only exactly bound current source claims to human review."""
+    reviewable, _pending = _source_review_candidates(
+        observations, field_name=field_name,
+        line_reference=line_reference, identities=identities,
     )
-    results = []
-    for claim in observations or ():
-        if (claim.get("field_name") != field_name
-                or claim.get("support_status") != "SUPPORTED"
-                or claim.get("authority_status") != "CANDIDATE"
-                or not claim.get("normalized_value")):
-            continue
-        if line_reference == PPQ505_SHIPMENT_REFERENCE:
-            if claim.get("entity_type") != "SHIPMENT" or claim.get("association_status") != "UNBOUND":
-                continue
-        elif (len(valid_identities) != 1
-              or claim.get("association_status") != "DOCUMENT_EXACT_SINGLE_SKU"
-              or claim.get("line_reference") != line_reference
-              or claim.get("sku") != valid_identities[0]["sku"]):
-            continue
-        results.append({
-            "id": "source:" + str(claim["id"]),
-            "value": claim["normalized_value"],
-            "document_id": str(claim["assurance_document_id"]),
-            "page": (claim.get("source_locator") or {}).get("page"),
-            "locator": claim.get("source_locator"),
-        })
-    return results
+    return reviewable
 
 
 def read_tenant_assurance_case(
@@ -540,51 +597,46 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         }
         fields.append(item)
         if not proven_decision and not verified_record and field.field_status != "NOT_REQUIRED":
-            exceptions.append({
+            # Current source claims are shown even if the canonical writer
+            # abstained. They are NOT projected as human authority or filing
+            # facts. The reviewer must confirm the exact SKU/line first.
+            reviewable, pending = _source_review_candidates(
+                source_observations, field_name=field.field_name,
+                line_reference=line, identities=identities,
+            )
+            legacy = ([{
+                "id": f"legacy:{field.id}", "value": proposed,
+                "document_id": str(field.source_assurance_document_id)
+                if is_current_document else None,
+                "locator": field.source_locator,
+                "page": field.source_page,
+            }] if proposed else [])
+            exception = {
                 "id": f"field:{field.id}",
                 "line_reference": line,
                 "field_name": field.field_name,
-                "reason": "Human V2 authority or source evidence is not yet verified.",
-                "status": "OPEN", "blocking": True,
-                "candidates": ([{
-                    "id": f"legacy:{field.id}", "value": proposed,
-                    "document_id": str(field.source_assurance_document_id)
-                    if is_current_document else None,
-                    "locator": field.source_locator,
-                    "page": field.source_page,
-                }] if proposed else []) + _current_review_source_choices(
-                    source_observations, field_name=field.field_name,
-                    line_reference=line, identities=identities,
+                "reason": (
+                    "Confirm this shipment line's supplier/SKU identity to review supported PDF values."
+                    if pending and not reviewable else
+                    "Human V2 authority or source evidence is not yet verified."
                 ),
-            })
-        if not chosen and source_observations:
-            detected = [claim for claim in source_observations if (
-                claim.get("field_name") == field.field_name
-                and claim.get("support_status") == "SUPPORTED"
-                and claim.get("normalized_value")
-            )]
-            if detected:
-                # A supported document literal without a safe entity/line
-                # binding must remain a visible abstention, never disappear
-                # between the claim stream and the authority workspace.
-                exceptions.append({
-                    "id": f"source:unpublished:{field.id}",
-                    "field_name": field.field_name,
-                    "line_reference": line,
-                    "reason": (
-                        "SOURCE_CLAIM_UNBOUND" if any(
-                            not _is_line_bound(claim) for claim in detected
-                        ) else "SUPPORTED_CLAIM_UNPUBLISHED"
-                    ),
-                    "status": "OPEN", "blocking": True,
-                    "candidates": [{
-                        "id": claim.get("id"),
-                        "value": claim.get("normalized_value"),
-                        "document_id": str(claim.get("assurance_document_id")),
-                        "page": (claim.get("source_locator") or {}).get("page"),
-                        "locator": claim.get("source_locator"),
-                    } for claim in detected],
-                })
+                "status": "OPEN", "blocking": True,
+                "candidates": legacy + reviewable,
+                "pending_candidates": pending,
+            }
+            # A single user decision resolves the field. Do not manufacture
+            # an additional BLOCKING_EXCEPTION/UNDECIDED_CONFLICT for a
+            # diagnostic source observation of that same field.
+            if not proposed and not reviewable and not pending:
+                unsupported = [
+                    c for c in source_observations or ()
+                    if _supported_observation_for_field(c, field_name=field.field_name)
+                    and (line == PPQ505_SHIPMENT_REFERENCE or
+                         c.get("line_reference") in {None, line})
+                ]
+                if unsupported:
+                    exception["source_diagnostic"] = "SOURCE_CLAIM_UNBOUND"
+            exceptions.append(exception)
     ruleset_version, regulatory_rules = _current_regulatory_rules(
         db, organization_id=org_id, operation_id=op.id, revision=revision,
     )

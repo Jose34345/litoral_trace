@@ -1153,7 +1153,17 @@ def process_one_us_lacey_job(
                     extra={"organization_id": job.organization_id, "operation_id": job.operation_id, "job_id": job.id, "stage": "source_set_finalization", "source_set_fingerprint": source_set_claim.fingerprint},
                 )
             else:
-                audit_source_key = str(source_set_fingerprint or f"job:{job.id}")
+                # Replays reuse the exact original file fingerprint. Audit event
+                # keys must also include the *revision*, otherwise the existing
+                # append-only uniqueness silently swallows completion events.
+                revision_id = getattr(source_set_claim, "revision_id", None)
+                generation = getattr(source_set_claim, "generation", None)
+                audit_source_key = (
+                    f"revision:{revision_id}:generation:{generation}:"
+                    f"{source_set_fingerprint}"
+                    if revision_id is not None
+                    else str(source_set_fingerprint or f"job:{job.id}")
+                )
                 record_operation_event(
                     organization_id=job.organization_id,
                     operation_id=job.operation_id,
@@ -1165,6 +1175,8 @@ def process_one_us_lacey_job(
                         "projected_field_count": projection.projected_count,
                         "conflict_count": projection.conflict_count,
                         "document_status": document_status,
+                        "source_set_revision_id": revision_id,
+                        "source_set_generation": generation,
                     },
                 )
                 if reused_evidence_count:
@@ -1175,11 +1187,15 @@ def process_one_us_lacey_job(
                         actor_identity="Litoral Trace",
                         event_type=OperationEventType.EVIDENCE_REUSED,
                         event_key=f"source-set:{audit_source_key}:evidence-reused",
-                        details=_reused_evidence_event_details(
-                            organization_id=job.organization_id,
-                            operation_id=job.operation_id,
-                            claim_count=reused_evidence_count,
-                        ),
+                        details={
+                            **_reused_evidence_event_details(
+                                organization_id=job.organization_id,
+                                operation_id=job.operation_id,
+                                claim_count=reused_evidence_count,
+                            ),
+                            "source_set_revision_id": source_set_claim.revision_id,
+                            "source_set_generation": source_set_claim.generation,
+                        },
                     )
 
         with _timed_worker_stage(job=job, stage="queue_complete", worker_id=worker_id):
