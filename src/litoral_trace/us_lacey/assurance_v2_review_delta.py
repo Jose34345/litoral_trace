@@ -19,6 +19,7 @@ from litoral_trace.db.models import (
 )
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.assurance_v2_batch_review import preview_batch_review
+from litoral_trace.us_lacey.assurance_v2_review_adapter import review_journal_enabled
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
 
@@ -125,7 +126,9 @@ def read_p1_review_insights(*, organization_id: int, operation_public_id: str,
             UsLaceyOperation.organization_id == int(organization_id),
             UsLaceyOperation.public_id == op_uuid,
         ))
-        if op is None:
+        if op is None or not review_journal_enabled(
+            int(organization_id), op.client_reference
+        ):
             return empty
         events = session.scalars(select(UsLaceyOperationEvent).where(
             UsLaceyOperationEvent.organization_id == int(organization_id),
