@@ -558,3 +558,20 @@ workflows = [
   ".github/workflows/us-lacey-postgres-gate.yml"
 ]
 notes = "Additive opt-in authority journal and exact, controlled longitudinal memory. Full PostgreSQL/RLS acceptance plus review/worker/read-model integration must pass before this capability is considered active. Existing supplier, semantic evidence, source-set and operation audit authorities are reused."
+
+
+[capabilities.v2lab_existing_source_reprocessing]
+status = "OWNER_LAB_ONLY"
+owner = "us_lacey + web"
+authority = "review_required"
+implementation = [
+  "src/litoral_trace/us_lacey/reprocessing.py",
+  "src/litoral_trace/us_lacey/source_sets.py",
+  "src/litoral_trace/web/us_lacey_pilot_app.py",
+  "src/litoral_trace/templates/us_lacey/operation_detail.html"
+]
+tests = [
+  "tests/test_us_lacey_v2lab_reprocess_http.py",
+  "tests/test_us_lacey_v2lab_reprocess_postgres.py"
+]
+notes = "CSRF-scoped current-document replay without new uploaded files or quota consumption. New source-set revision is required even with unchanged SHA; old human decisions stay audited but never grant V2 authority on replay. The deterministic parser may reuse compatible cached output; derived claims and reconciliation are recomputed by the normal worker. Rejected for non-V2LAB customers."
