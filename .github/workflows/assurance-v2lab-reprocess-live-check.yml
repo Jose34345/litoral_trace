@@ -51,7 +51,12 @@ jobs:
                   "COMMANDS_ON": str(env.get("US_LACEY_ASSURANCE_V2_COMMANDS", "")).upper() == "ON",
               }
               print("OWNER_LAB_FLAGS_VALID", service, flags)
-              if not all(flags.values()): raise SystemExit("OWNER_LAB_NOT_PROTECTED")
+              if not flags["SHADOW"] or not flags["OWNER_ONLY"]:
+                  raise SystemExit("OWNER_LAB_NOT_PROTECTED")
+              if service == "litoral-trace-web" and not flags["COMMANDS_ON"]:
+                  raise SystemExit("LAB_REVIEW_COMMANDS_NOT_ACTIVE_ON_WEB")
+              if service == "litoral-trace-worker" and flags["COMMANDS_ON"]:
+                  raise SystemExit("UNNECESSARY_WORKER_COMMAND_COMMANDS_ACTIVE")
           for path in ("/health", "/ready"):
               status, _ = get("https://lacey.litoraltrace.com" + path)
               if status != 200: raise SystemExit("PRODUCTION_UNHEALTHY_" + path)
