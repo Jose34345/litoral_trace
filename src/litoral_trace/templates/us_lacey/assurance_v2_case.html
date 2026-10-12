@@ -46,6 +46,8 @@
       <a href="#documents">Source documents</a> · <a href="#claims">Evidence ledger</a> · <a href="#export">Full gate diagnostics</a>
     </details>
   </section>
+  <details class="assurance-full-review" id="full-assurance-details">
+    <summary>Open detailed review and supporting evidence</summary>
   <div class="context-row">
     <span>Operation <strong>{{ case.operation_id }}</strong></span>
     <span>Source set <code>{{ case.source_set_fingerprint[:16] }}</code></span>
@@ -254,6 +256,7 @@
       </section>
     </div>
   </div>
+  </details>
 </div>
 {% endblock %}
 {% block body_scripts %}
