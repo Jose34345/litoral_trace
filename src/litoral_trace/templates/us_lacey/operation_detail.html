@@ -114,11 +114,24 @@
       <p class="mt-1 text-xs text-slate-500">{{ detail.document_count }} document{{ '' if detail.document_count == 1 else 's' }} preserved in the current source set.</p>
       <p class="mt-1 text-[11px] text-slate-400">Need to add more documents? Use Add evidence. Reprocessing may update auto-resolved fields, evidence, and remaining exceptions.</p>
     </div>
+    {% if identity is defined and identity and identity.organization_id in (request.scope['app'].state.assurance_v2_lab_org_ids|default(())) and business_reference.upper().startswith('V2LAB-') and detail.documents and processing.terminal and not processing.failed %}
+    <form method="post" action="/operations/{{ detail.public_id }}/actions/reprocess" class="inline-flex" data-reprocess-existing-documents>
+      <input type="hidden" name="csrf_token" value="{{ reprocess_csrf }}">
+      <button type="submit" class="lt-btn lt-btn--primary" aria-label="Reprocess the existing shipment documents">
+        <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+        <span>Reprocess existing documents</span>
+      </button>
+    </form>
+    {% endif %}
     <button type="button" class="lt-btn lt-btn--secondary" data-add-documents-trigger>
       <i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i>
       <span>Add evidence</span>
     </button>
   </div>
+
+  {% if identity is defined and identity and identity.organization_id in (request.scope['app'].state.assurance_v2_lab_org_ids|default(())) and business_reference.upper().startswith('V2LAB-') and detail.documents and processing.terminal and not processing.failed %}
+  <p class="mt-3 text-xs text-slate-600">Lab replay uses the same original documents (no upload or extra operation). It creates a new source-set revision; previous human approvals remain in the audit log but must be confirmed again for the new revision.</p>
+  {% endif %}
 
   {% if detail.documents %}
   <details class="mt-4 rounded-xl border border-slate-200 bg-slate-50">
