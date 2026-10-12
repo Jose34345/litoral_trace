@@ -71,6 +71,31 @@
       }
     });
   });
+  const batchForm = document.querySelector('#review-batch-form');
+  if (batchForm) batchForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const result = batchForm.querySelector('.batch-result');
+    const button = batchForm.querySelector('button[type="submit"]');
+    const reason = batchForm.querySelector('[name="reason"]')?.value.trim() || '';
+    const confirmed = batchForm.querySelector('[name="explicit_confirmation"]')?.checked === true;
+    if (!confirmed || !reason) {
+      result.textContent = 'Review the source values and confirm this specific batch.';
+      return;
+    }
+    button.disabled = true;
+    result.textContent = 'Validating source references and recording a single batch action…';
+    try {
+      const receipt = await post('/review-batch', {
+        batch_fingerprint: batchForm.dataset.fingerprint,
+        reason, explicit_confirmation: true
+      });
+      if (receipt.status !== 'RECORDED') throw new Error('Review was not recorded');
+      window.location.reload();
+    } catch (error) {
+      result.textContent = 'Batch not approved: ' + error.message;
+      button.disabled = false;
+    }
+  });
   const authorizationForm = document.querySelector('#authorize-export-form');
   if (authorizationForm) authorizationForm.addEventListener('submit', async (event) => {
     event.preventDefault();
