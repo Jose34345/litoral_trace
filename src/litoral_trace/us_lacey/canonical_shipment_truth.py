@@ -8,7 +8,7 @@ human-reviewed work.
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from enum import Enum
@@ -889,6 +889,61 @@ def _promotable_merchandise_line_keys(
     return frozenset(valid_hts_keys | valid_entered_value_keys)
 
 
+_REVIEW_ONLY_SOURCE_LINE_PREFIX = "review-single-source:"
+
+
+def _bind_unique_unassociated_source_row(
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+    field_payloads: Mapping[str, Mapping],
+) -> dict[str, tuple[CanonicalEvidence, ...]]:
+    """Rescue one unbound invoice/worksheet row without guessing a SKU or value.
+
+    Engine 2 sometimes emits an explicit HTS and component from the SAME source
+    PDF with no line_key/component_key. Only an absolutely unique HTS row and
+    unique supported component row on the same physical document are sufficient
+    to open a single REVIEW-ONLY canonical plant-line candidate. Other documents
+    cannot provide an implicit SKU link. Shipment totals, botanical placeholders
+    and differently valued quantities are never coerced into line facts.
+    """
+    keys = ("hts_code", "article_component", "plant_quantity", "metric_unit")
+    if any(
+        row.line_key or row.component_key
+        for key in keys for row in evidence_by_field.get(key, ())
+    ):
+        return dict(evidence_by_field)
+    hts = evidence_by_field.get("hts_code", ())
+    articles = evidence_by_field.get("article_component", ())
+    if len(hts) != 1 or len(articles) != 1:
+        return dict(evidence_by_field)
+    hts_row, article = hts[0], articles[0]
+    if (not hts_row.document_id or hts_row.document_id != article.document_id
+        or str(field_payloads.get("hts_code", {}).get("state")) not in
+           {CanonicalTruthState.SUPPORTED.value, CanonicalTruthState.SUPPORTED_MULTIPLE.value}
+        or str(field_payloads.get("article_component", {}).get("state")) not in
+           {CanonicalTruthState.SUPPORTED.value, CanonicalTruthState.SUPPORTED_MULTIPLE.value}
+        or validate_ppq_value("hts_code", hts_row.normalized_value).status.value != "VALID"
+        or validate_ppq_value("article_component", article.normalized_value).status.value != "VALID"
+    ):
+        return dict(evidence_by_field)
+    # Use the physical operation-document ID, not just a logical row suffix;
+    # this does not match unrelated documents from separate shipments.
+    key = _REVIEW_ONLY_SOURCE_LINE_PREFIX + hts_row.document_id
+    result = dict(evidence_by_field)
+    result["hts_code"] = (replace(hts_row, line_key=key),)
+    result["article_component"] = (replace(article, component_key=key),)
+    for field_name in ("plant_quantity", "metric_unit"):
+        rows = evidence_by_field.get(field_name, ())
+        if not rows or len(_distinct_values(rows, target_key=field_name)) != 1:
+            continue
+        matching = tuple(row for row in rows if row.document_id == hts_row.document_id)
+        if len(matching) != 1 or validate_ppq_value(
+            field_name, matching[0].normalized_value,
+        ).status.value != "VALID":
+            continue
+        result[field_name] = (replace(matching[0], component_key=key),)
+    return result
+
+
 def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
     """Build one fail-closed shipment/plant-line truth from Engine 2 JSON.
 
@@ -914,6 +969,10 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
             for row in (raw_field.get("supporting_evidence") or ())
             if isinstance(row, Mapping)
         )
+
+    evidence_by_field = _bind_unique_unassociated_source_row(
+        evidence_by_field, field_payloads,
+    )
 
     source_merchandise_keys = tuple(
         sorted(
@@ -1033,6 +1092,7 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
                 target_key=_ENGINE_TO_PPQ[engine_key],
                 field_payload=field_payload,
                 rows=rows,
+                force_review=line_key.startswith(_REVIEW_ONLY_SOURCE_LINE_PREFIX),
             )
 
         component_key = component_for_line.get(line_key)
@@ -1054,7 +1114,8 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
                     target_key=_ENGINE_TO_PPQ[engine_key],
                     field_payload=field_payload,
                     rows=rows,
-                    force_review=engine_key in low_authority_fields,
+                    force_review=(engine_key in low_authority_fields
+                                  or line_key.startswith(_REVIEW_ONLY_SOURCE_LINE_PREFIX)),
                 )
 
         line_truths.append(
