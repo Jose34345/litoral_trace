@@ -216,7 +216,10 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
         original_review = client.get(operation_path)
         post_action = f"{operation_path}/review/fields/{bol_field_id}"
         accepted = client.post(post_action, data={
-            "csrf_token": _csrf_for(original_review.text, post_action),
+            "csrf_token": us_lacey_csrf_token(
+                session_token=client.cookies.get("us_lacey_session"),
+                purpose=f"review:{op_id}:{bol_field_id}",
+            ),
             "action": "accept", "candidate_id": str(bol_candidate_id),
         })
         assert accepted.status_code == 303, accepted.text
