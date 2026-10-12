@@ -42,6 +42,7 @@ from litoral_trace.us_lacey.assurance_v2_review_adapter import review_journal_en
 from litoral_trace.us_lacey.assurance_v2_reuse_application import (
     apply_authorized_assurance_v2_reuse,
 )
+from litoral_trace.us_lacey.assurance_v2_review_batch import approve_assurance_review_batch
 from litoral_trace.us_lacey.assurance_v2_identity_confirmation import (
     confirm_assurance_v2_identity,
 )
@@ -325,6 +326,24 @@ def configure_assurance_v2_shadow(
         except PermissionError:
             raise HTTPException(403, "Identity confirmation denied") from None
 
+    def batch_gateway(principal, operation_id, command):
+        require_commands(principal)
+        try:
+            return approve_assurance_review_batch(
+                organization_id=principal.organization_id,
+                operation_public_id=operation_id,
+                authenticated_user_id=int(principal.actor_id),
+                reason=command["reason"],
+                explicit_confirmation=command["explicit_confirmation"],
+                expected_source_set_fingerprint=command["expected_source_set_fingerprint"],
+                expected_case_fingerprint=command["expected_case_fingerprint"],
+                expected_batch_fingerprint=command["expected_batch_fingerprint"],
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except PermissionError:
+            raise HTTPException(403, "Batch review denied") from None
+
     def issue_gateway(principal, operation_id, source_fingerprint, case_fingerprint):
         if environment in {"production", "pilot"}:
             raise HTTPException(403, "Private V2 laboratory: regulatory package issuance is disabled; not for filing")
@@ -357,6 +376,7 @@ def configure_assurance_v2_shadow(
         issue_gateway=issue_gateway,
         reuse_gateway=reuse_gateway,
         identity_gateway=identity_gateway,
+        batch_gateway=batch_gateway,
         document_link_for=lambda principal, operation_id, doc, page: (
             f"/assurance-v2/operations/{operation_id}/documents/{doc}"
             + (f"#page={page}" if page is not None and 0 < page <= 10000 else "")
