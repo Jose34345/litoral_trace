@@ -149,9 +149,15 @@ def create_assurance_v2_router(
             choice["url"] = source_link(
                 principal, operation_id, str(choice["document_id"]), choice["page"],
             )
+        confirmed_lines = {
+            str(identity.get("line_reference"))
+            for identity in snapshot.get("identities") or ()
+            if identity.get("status") == "HUMAN_CONFIRMED"
+        }
         botanical_choices = []
         for reuse in snapshot.get("reuses") or []:
             if (reuse.get("status") != "ELIGIBLE"
+                    or str(reuse.get("line_reference")) not in confirmed_lines
                     or reuse.get("field_name") not in {
                         "genus", "species", "country_of_harvest"
                     }):
