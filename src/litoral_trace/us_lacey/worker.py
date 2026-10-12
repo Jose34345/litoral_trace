@@ -43,7 +43,10 @@ from litoral_trace.us_lacey.candidate_reconciliation import (
     reconcile_duplicate_field_candidates,
 )
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
-from litoral_trace.us_lacey.engine2_suggestions import project_engine2_supported_suggestions
+from litoral_trace.us_lacey.engine2_suggestions import (
+    project_engine2_supported_suggestions,
+    publish_lab_post_identity_review_candidates,
+)
 from litoral_trace.us_lacey.jobs import (
     claim_next_us_lacey_job,
     complete_us_lacey_job,
@@ -114,6 +117,7 @@ _PERSISTED_STAGE_NAMES = {
     "engine2_shadow": "ENGINE_2",
     "verified_ai_suggestions": "AI_SUGGESTIONS",
     "canonical_publication": "PROJECTION",
+    "post_identity_review_publication": "PROJECTION",
     "product_intelligence": "PRODUCT_INTELLIGENCE",
     "reusable_evidence": "RECONCILIATION",
     "regulatory_assessment": "REGULATORY",
@@ -1100,6 +1104,20 @@ def process_one_us_lacey_job(
                             operation_id=job.operation_id,
                             claim=source_set_claim,
                         )
+                    # Identity exists only after product_intelligence commits.
+                    # Reconcile exact source observations through the one
+                    # canonical REVIEW-only writer before supplier reuse.
+                    if canonical_ready:
+                        with _timed_worker_stage(
+                            job=job,
+                            stage="post_identity_review_publication",
+                            worker_id=worker_id,
+                            source_set_fingerprint=source_set_fingerprint,
+                        ):
+                            publish_lab_post_identity_review_candidates(
+                                organization_id=job.organization_id,
+                                operation_id=job.operation_id,
+                            )
                     with _timed_worker_stage(
                         job=job,
                         stage="reusable_evidence",
