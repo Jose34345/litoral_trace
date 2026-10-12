@@ -621,6 +621,7 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
                     "Human V2 authority or source evidence is not yet verified."
                 ),
                 "status": "OPEN", "blocking": True,
+                "kind": "CONFLICT" if field.field_status in {"CONFLICT", "CONFLICTED"} else "REVIEW",
                 "candidates": legacy + reviewable,
                 "pending_candidates": pending,
             }
