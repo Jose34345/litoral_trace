@@ -2,7 +2,7 @@ name: Assurance V2 Pack2 P0 P1 Live Verification
 on:
   pull_request:
     branches: [feature/us-lacey-pilot-platform]
-    paths: [.github/workflows/assurance-v2lab-reprocess-live-check.yml]
+    paths: [.github/workflows/assurance-v2-pack2-p0p1-live-check.yml]
 permissions:
   contents: read
 jobs:
