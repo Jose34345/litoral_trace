@@ -20,6 +20,7 @@ from litoral_trace.us_lacey.assurance_v2_memory import (
 )
 from litoral_trace.us_lacey.assurance_v2_reuse_guard import current_claim_values_for_reuse
 from litoral_trace.us_lacey.audit_trail import append_operation_event
+from litoral_trace.us_lacey.assurance_v2_review_adapter import review_journal_enabled
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 
 _ALLOWED = frozenset({"genus", "species", "country_of_harvest"})
@@ -53,6 +54,8 @@ def authorize_assurance_reuse_group(
         ).with_for_update())
         if operation is None:
             raise PermissionError("Shipment unavailable")
+        if not review_journal_enabled(org_id, operation.client_reference):
+            raise PermissionError("V2 lab review journal disabled for this shipment")
         if not str(operation.client_reference or "").upper().startswith("V2LAB-"):
             raise PermissionError("Historical batch review is private-lab only")
         revision = db.scalar(select(UsLaceySourceSetRevision).where(
