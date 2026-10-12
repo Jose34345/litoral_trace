@@ -97,7 +97,7 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
         create = client.get("/operations/new")
         operation = client.post("/operations/new", data={
             "csrf_token": _csrf_for(create.text, "/operations/new"),
-            "client_reference": f"V2-GOLDEN-{suffix}",
+            "client_reference": f"V2LAB-GOLDEN-{suffix}",
         })
         assert operation.status_code == 303, operation.text
         operation_path = operation.headers["location"]
@@ -148,7 +148,7 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
         assert create.status_code == 200, create.text
         second = client.post("/operations/new", data={
             "csrf_token": _csrf_for(create.text, "/operations/new"),
-            "client_reference": f"V2-GOLDEN-SECOND-{suffix}",
+            "client_reference": f"V2LAB-GOLDEN-SECOND-{suffix}",
         })
         assert second.status_code == 303, second.text
         second_path = second.headers["location"]
@@ -353,7 +353,7 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
             assert create.status_code == 200, create.text
             created = client.post("/operations/new", data={
                 "csrf_token": _csrf_for(create.text, "/operations/new"),
-                "client_reference": f"V2-GOLDEN-{ordinal}-{suffix}",
+                "client_reference": f"V2LAB-GOLDEN-{ordinal}-{suffix}",
             })
             assert created.status_code == 303, created.text
             path = created.headers["location"]
