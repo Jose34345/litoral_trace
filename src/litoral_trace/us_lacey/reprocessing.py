@@ -53,7 +53,7 @@ def reprocess_existing_v2lab_documents(
             select(UsLaceyOperation).where(
                 UsLaceyOperation.organization_id == org_id,
                 UsLaceyOperation.public_id == operation_id,
-            ).with_for_update()
+            )
         )
         if operation is None:
             raise UsLaceyJobError("Shipment not found.")
@@ -65,6 +65,13 @@ def reprocess_existing_v2lab_documents(
         # Serialize against upload and worker finalization on this SAME operation.
         # The operation row lock also serializes two simultaneous user requests.
         with lock_factory(organization_id=org_id, operation_id=op_id):
+            # Lock in the same order as the worker: advisory lock THEN row lock.
+            # Revalidate after waiting; the first SELECT was only a locator.
+            session.refresh(operation, with_for_update=True)
+            if operation.status not in {"REVIEW_REQUIRED", "READY_FOR_REVIEW", "COMPLETED"}:
+                raise UsLaceyJobError("Wait for the current analysis to finish before reprocessing.")
+            if not str(operation.client_reference or "").upper().startswith("V2LAB-"):
+                raise UsLaceyJobError("Reprocessing is restricted to private V2 lab shipments.")
             rows = session.execute(
                 select(UsLaceyOperationDocument, VaultDocument)
                 .join(
