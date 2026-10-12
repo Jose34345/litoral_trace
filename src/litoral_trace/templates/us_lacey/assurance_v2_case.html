@@ -26,6 +26,101 @@
     <span>Revision {{ case.source_set_revision }}</span>
     <span>Ruleset {{ case.ruleset_version }}</span>
   </div>
+
+  {# One decision per risk, not one click per raw extraction observation. #}
+  <section class="simple-workspace" aria-labelledby="simple-review-title" data-exception-first>
+    <div class="simple-header">
+      <div><div class="eyebrow">SHIPMENT REVIEW · {{ case.documents|length }} CURRENT DOCUMENTS</div>
+        <h2 id="simple-review-title">Review only what matters</h2>
+        <p>Evidence is prepared. Confirm the product, resolve missing information, then review the supported values together.</p>
+      </div>
+      <a href="/operations/{{ case.operation_id }}" class="source-link">Back to shipment</a>
+    </div>
+    <div class="simple-metrics">
+      <div><strong>{{ simple.found }}</strong><small>Required values found</small></div>
+      <div><strong>{{ simple.missing_count }}</strong><small>Missing evidence</small></div>
+      <div><strong>{{ simple.verified }}</strong><small>Verified in V2</small></div>
+    </div>
+    <h3>Attention needed</h3>
+    {% if simple.identities %}
+      <article class="simple-task" id="identity-task">
+        <div class="simple-task-head"><span class="simple-step">1</span>
+          <div><h4>Confirm supplier and product</h4><p>One confirmation connects the supplier, SKU and shipment line. It does not approve the extracted values.</p></div>
+        </div>
+        {% for identity in simple.identities %}
+        <div class="simple-identity"><strong>Line {{ identity.line_reference }} · {{ identity.supplier_name }}</strong>
+          <small>{{ identity.product_name }} · SKU {{ identity.sku }}</small>
+          <form class="identity-form" data-line="{{ identity.line_reference }}" data-supplier="{{ identity.supplier_id }}" data-product="{{ identity.product_id }}">
+            <label>Why does this supplier and SKU match this shipment?
+              <input name="reason" maxlength="180" required placeholder="Checked supplier invoice and product SKU">
+            </label><button type="submit">Confirm this identity</button><div class="identity-result" role="status" aria-live="polite"></div>
+          </form>
+        </div>
+        {% endfor %}
+      </article>
+    {% else %}
+      <article class="simple-task complete"><span class="simple-step">✓</span><div><h4>Supplier and product matched</h4><p>Line identity was confirmed for this source revision.</p></div></article>
+    {% endif %}
+    {% if simple.reuse %}
+      <article class="simple-task" id="memory-task">
+        <div class="simple-task-head"><span class="simple-step">2</span>
+          <div><h4>Review historical plant evidence</h4><p>Previously verified evidence is eligible, but it cannot be reused automatically. Confirm the original provenance and applicability to this shipment.</p></div>
+        </div>
+        {% for item in simple.reuse %}
+          <div class="simple-memory"><strong>{{ item.field_name|replace('_',' ')|title }} · {{ item.value }}</strong>
+            <small>Line {{ item.line_reference }} · Historical document {{ item.origin_document_id }}</small>
+            <form class="reuse-form" data-memory="{{ item.id }}" data-field="{{ item.field_name }}" data-line="{{ item.line_reference }}">
+              <label>Reason for using this supplier evidence<input name="reason" maxlength="180" required placeholder="I reviewed the original supplier documentation"></label>
+              <button type="submit">Authorize this historical value</button><div class="reuse-result" role="status" aria-live="polite"></div>
+            </form>
+          </div>
+        {% endfor %}
+      </article>
+    {% endif %}
+    {% for item in simple.missing %}
+      <article class="simple-task pending">
+        <div class="simple-task-head"><span class="simple-step"><span aria-hidden="true">!</span></span>
+          <div><h4>{{ item.label }} not available</h4>
+            <p>{{ item.guidance }}. This can remain pending during pre-entry preparation, but blocks any filing-ready package when required.</p></div>
+        </div>
+      </article>
+    {% endfor %}
+    {% for issue in simple.conflicts %}
+      <article class="simple-task pending"><h4>Evidence needs individual review</h4>
+        <p>{{ issue.reason }}. Technical details below include the relevant sources.</p>
+      </article>
+    {% endfor %}
+    <article class="simple-task" id="batch-task">
+      <div class="simple-task-head"><span class="simple-step">3</span>
+        <div><h4>Review the supported values together</h4>
+          <p>{{ simple.batch_count }} fields currently qualify for a source-linked batch review. No missing, ambiguous, botanical-memory or unsupported value can be approved in this step.</p></div>
+      </div>
+      {% if simple.batch_candidates %}
+        <details class="simple-values"><summary>Inspect {{ simple.batch_count }} values and original sources</summary>
+          <div class="table-scroll"><table><thead><tr><th>Field</th><th>Value to confirm</th><th>Original source</th></tr></thead><tbody>
+          {% for item in simple.batch_candidates %}<tr><td>{{ item.field_name|replace('_',' ')|title }} · {{ 'Shipment' if item.line_reference == '__shipment__' else 'Line ' ~ item.line_reference }}</td>
+            <td>{{ item.value }}</td><td><a href="/assurance-v2/operations/{{ case.operation_id }}/documents/{{ item.document_id }}" target="_blank" rel="noopener noreferrer">View original ↗</a></td></tr>{% endfor %}
+          </tbody></table></div>
+        </details>
+      {% endif %}
+      {% if simple.can_batch %}
+      <form id="review-batch-form" data-fingerprint="{{ simple.batch_fingerprint }}">
+        <label>Reason for approving the displayed current evidence
+          <input name="reason" maxlength="1000" required placeholder="Reviewed the original documents and supported values">
+        </label>
+        <label class="simple-checkbox"><input name="explicit_confirmation" type="checkbox" required>
+          I reviewed this exact list of values and their sources. This action records human decisions, not a customs filing.
+        </label>
+        <button type="submit">Approve {{ simple.batch_count }} reviewed fields</button><div class="batch-result" role="status" aria-live="polite"></div>
+      </form>
+      {% else %}
+        <p class="simple-wait">Finish the supplier/identity review first. The final batch is unavailable while a risk or source is unresolved.</p>
+      {% endif %}
+    </article>
+    <p class="simple-footnote">Private Assurance V2 laboratory · Not for filing. Your team remains responsible for final verification; this workspace does not submit to ACE or LAWGS.</p>
+  </section>
+  <details class="technical-review">
+    <summary>Technical details and full audit trail <span>Document sources · Field-by-field authority · Regulatory diagnostics</span></summary>
   <div class="workspace">
     <aside class="assurance-nav" aria-label="Case navigation">
       <a href="#required">Required evidence <strong>{{ required_evidence.verified }}/{{ required_evidence.total }}</strong></a>
@@ -228,6 +323,7 @@
       </section>
     </div>
   </div>
+  </details>
 </div>
 {% endblock %}
 {% block body_scripts %}
