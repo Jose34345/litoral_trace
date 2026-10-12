@@ -46,7 +46,7 @@ def build_review_workspace(case: dict[str, Any], required: dict[str, Any], gate:
         tasks.append(ReviewTask(
             "botanical-memory", "Review supplier botanical evidence",
             f"{len(botanical)} reusable botanical claims need their original provenance and scope checked.",
-            "#memory", "Memory is eligible, not yet authorized for this shipment.", 20,
+            "#botanical-group-panel", "Memory is eligible, not yet authorized for this shipment.", 20,
         ))
     missing = [r for r in rows if r.get("status") == "MISSING_EVIDENCE"]
     for item in missing:
