@@ -49,3 +49,9 @@
 .quick-review-technical summary{cursor:pointer;font-weight:600;color:#405d55}
 @media(max-width:740px){.assurance-quick-review{padding:16px}.quick-review-metrics{gap:7px}.quick-review-metrics>div{padding:10px}.quick-review-metrics strong{font-size:1.38rem}.quick-review-task{align-items:flex-start;flex-direction:column}.quick-review-head{flex-direction:column}}
 @media print{.assurance-quick-review{box-shadow:none;break-inside:avoid}.quick-review-task a{color:#00553f;background:transparent;padding:0}}
+
+.assurance-full-review{margin:12px 0 24px}
+.assurance-full-review>summary{cursor:pointer;display:block;padding:15px 18px;background:#f6f9f8;border:1px solid #d8e8e2;border-radius:9px;font-weight:700;color:#275344}
+.assurance-full-review>summary:hover{background:#ecf5f1}
+.assurance-full-review[open]>summary{margin-bottom:16px}
+@media print{.assurance-full-review>summary{display:none}}
