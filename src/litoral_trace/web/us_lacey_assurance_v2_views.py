@@ -14,7 +14,6 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from litoral_trace.us_lacey.exporters.assurance_v2 import AssuranceCase, evaluate_filing_gate
 from litoral_trace.us_lacey.assurance_v2_evidence_checklist import required_evidence_summary
 from litoral_trace.us_lacey.assurance_v2_review_policy import simplified_review
-from litoral_trace.us_lacey.assurance_v2_review_metrics import review_effort_snapshot
 from litoral_trace.us_lacey.exporters.assurance_v2_package import (
     ExportBlocked, PackageStore, draft_assurance_excel,
 )
@@ -95,6 +94,7 @@ def create_assurance_v2_router(
     batch_gateway: BatchGateway | None = None,
     reuse_batch_gateway: ReuseBatchGateway | None = None,
     historical_link_for: Callable[[WorkspacePrincipal, str, str, int], str | None] | None = None,
+    effort_for: Callable[[WorkspacePrincipal, str], dict[str, Any]] | None = None,
 ) -> APIRouter:
     """The web adapter cannot select/promote candidates or write canonical truth."""
     router = APIRouter(prefix="/assurance-v2/operations", tags=["Assurance V2"])
@@ -159,7 +159,12 @@ def create_assurance_v2_router(
             request=request, name="us_lacey/assurance_v2_case.html",
             context={"case": snapshot, "gate": gate,
                      "simple": simple,
-                     "effort": review_effort_snapshot(organization_id=principal.organization_id, operation_public_id=operation_id),
+                     "effort": effort_for(principal, operation_id) if effort_for is not None else {
+                         "previous_source_bytes_unchanged": None,
+                         "human_batch_actions": 0,
+                         "fields_confirmed_by_batch": 0,
+                         "historical_fields_authorized_by_group": 0,
+                     },
                      "required_evidence": required_evidence_summary(case),
                      "csrf_token": principal.csrf_token,
                      "actions": sorted(_ACTIONS), "authenticated": True},
