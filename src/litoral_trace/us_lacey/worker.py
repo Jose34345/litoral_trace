@@ -17,6 +17,7 @@ from litoral_trace.db.models import (
     AssuranceDocument,
     UsLaceyEngineDocumentRun,
     UsLaceyOperation,
+    UsLaceyOperationField,
     UsLaceyOperationDocument,
     UsLaceyProcessingJob,
     VaultDocument,
@@ -541,6 +542,39 @@ def _apply_reusable_supplier_evidence(*, organization_id: int, operation_id: int
             },
         )
         return 0
+
+
+def _reused_evidence_event_details(*, organization_id: int, operation_id: int, claim_count: int) -> dict:
+    """Snapshot exact tenant-scoped historical source IDs for the immutable reuse event.
+
+    The legacy reused-count alone cannot explain WHAT was reused or the source
+    supporting it. Retain references, not personal or commercial field values.
+    A missing source ID stays explicitly unproven; never invent provenance.
+    """
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, organization_id)
+        rows = session.scalars(select(UsLaceyOperationField).where(
+            UsLaceyOperationField.organization_id == int(organization_id),
+            UsLaceyOperationField.operation_id == int(operation_id),
+            UsLaceyOperationField.source_locator.like("reused_evidence:%"),
+        ).order_by(UsLaceyOperationField.id)).all()
+        claims = [
+            {
+                "field_name": field.field_name,
+                "line_reference": field.merchandise_line_reference or "__shipment__",
+                "evidence_public_id": str(field.source_locator).split(":", 1)[1],
+            }
+            for field in rows
+            if str(field.source_locator).split(":", 1)[1]
+        ]
+        return {
+            "claim_count": int(claim_count),
+            "reused_claim_sources": claims,
+            "provenance_complete": len(claims) >= int(claim_count),
+        }
+    finally:
+        session.close()
 
 
 def _build_regulatory_assessment_snapshot(*, organization_id: int, operation_id: int, claim: SourceSetClaim):
@@ -1141,7 +1175,11 @@ def process_one_us_lacey_job(
                         actor_identity="Litoral Trace",
                         event_type=OperationEventType.EVIDENCE_REUSED,
                         event_key=f"source-set:{audit_source_key}:evidence-reused",
-                        details={"claim_count": int(reused_evidence_count)},
+                        details=_reused_evidence_event_details(
+                            organization_id=job.organization_id,
+                            operation_id=job.operation_id,
+                            claim_count=reused_evidence_count,
+                        ),
                     )
 
         with _timed_worker_stage(job=job, stage="queue_complete", worker_id=worker_id):
