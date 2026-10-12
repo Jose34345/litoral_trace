@@ -51,13 +51,33 @@ def build_review_workspace(case: dict[str, Any], required: dict[str, Any], gate:
             else "Memory is eligible, not yet authorized for this shipment.", 20,
         ))
     missing = [r for r in rows if r.get("status") == "MISSING_EVIDENCE"]
+    # Request supporting evidence once per shipment line, rather than asking
+    # the same supplier to perform one task per missing declaration field.
+    # This is presentation-only: retain all original checklist rows and gates.
+    missing_by_line: dict[str, list[dict[str, Any]]] = {}
     for item in missing:
-        tasks.append(ReviewTask(
-            "missing:" + str(item.get("line_reference")) + ":" + str(item.get("field_name")),
-            "Provide missing information",
+        line = str(item.get("line_reference") or "__shipment__")
+        missing_by_line.setdefault(line, []).append(item)
+    for line, items in missing_by_line.items():
+        labels = [
             str(item.get("label") or item.get("field_name") or "Required field")
-            + " is not established by the current sources.",
-            "#required", "External evidence is missing; do not invent a value.", 30,
+            for item in items
+        ]
+        visible = ", ".join(labels[:3])
+        if len(labels) > 3:
+            visible += f", and {len(labels) - 3} more"
+        scope = "shipment" if line == "__shipment__" else f"line {line}"
+        key = (
+            "missing:" + line + ":" + str(items[0].get("field_name"))
+            if len(items) == 1 else "missing:" + line + ":group"
+        )
+        tasks.append(ReviewTask(
+            key, "Request missing evidence",
+            f"{len(items)} missing input{'s' if len(items) != 1 else ''} for {scope}: "
+            f"{visible}. Request supporting documentation; do not infer values.",
+            "#required",
+            "Grouped evidence request only; each underlying requirement stays open.",
+            30,
         ))
     unresolved_review = [r for r in rows if r.get("status") not in ("VERIFIED", "MISSING_EVIDENCE")]
     tasks.append(ReviewTask(
