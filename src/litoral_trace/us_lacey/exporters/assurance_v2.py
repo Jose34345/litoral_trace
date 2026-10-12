@@ -25,7 +25,7 @@ from litoral_trace.us_lacey.exporters.export_snapshot import (
 _AUTHORITIES = frozenset({"SUPPORTED", "HUMAN_CONFIRMED", "VERIFIED_REUSE"})
 _REVIEW_ACTIONS = frozenset({"ACCEPT", "CORRECT", "REJECT", "REQUEST_EVIDENCE", "PENDING"})
 _FINAL_DECISIONS = frozenset({"ACCEPT", "CORRECT"})
-_REUSE_GOOD = frozenset({"ACTIVE", "VERIFIED"})
+_REUSE_GOOD = frozenset({"VERIFIED"})
 _RULE_GOOD = frozenset({"PASS", "NOT_APPLICABLE"})
 
 
@@ -55,6 +55,7 @@ class AssuranceCase:
     current_source_set_fingerprint: str
     current_source_set_revision: int
     ruleset_version: str
+    source_set_generation: int = 0
     documents: tuple[dict[str, Any], ...] = ()
     lines: tuple[str, ...] = ()
     fields: tuple[dict[str, Any], ...] = ()
@@ -91,6 +92,7 @@ def case_from_snapshot(payload: Mapping[str, Any]) -> AssuranceCase:
         current_source_set_fingerprint=str(payload["current_source_set_fingerprint"]),
         current_source_set_revision=int(payload["current_source_set_revision"]),
         ruleset_version=str(payload["ruleset_version"]),
+        source_set_generation=int(payload.get("source_set_generation") or 0),
         documents=collection("documents"),
         lines=tuple(str(line) for line in payload.get("lines", ())),
         fields=collection("fields"),
@@ -140,6 +142,8 @@ def evaluate_filing_gate(case: AssuranceCase, *, now: datetime | None = None) ->
         identity = str(doc.get("id") or "")
         if not identity or identity in ids or not re.fullmatch(r"[a-f0-9]{64}", str(doc.get("sha256") or "")) or not doc.get("version"):
             block("INVALID_DOCUMENT_MANIFEST", identity or "unknown")
+        if doc.get("raw_available") is False:
+            block("SOURCE_DOCUMENT_UNAVAILABLE", identity or "unknown")
         ids.add(identity)
     if not ids:
         block("NO_SOURCE_DOCUMENTS", case.operation_id)

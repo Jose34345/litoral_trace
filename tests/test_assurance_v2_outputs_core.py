@@ -119,6 +119,16 @@ def test_complete_reviewed_case_exports_same_authorized_values_to_xml_and_excel(
     assert package.snapshot["case"]["export_authorization"]["actor_id"] == "user:42"
 
 
+def test_withdrawn_original_document_cannot_be_filing_ready():
+    case = make_case()
+    missing = authorize(replace(case, documents=tuple(
+        {**doc, "raw_available": False} for doc in case.documents
+    )))
+    assert "SOURCE_DOCUMENT_UNAVAILABLE" in codes(missing)
+    with pytest.raises(ExportBlocked):
+        issue_assurance_package(missing, generated_at=NOW)
+
+
 def test_unsupported_claim_never_leaks_to_filing_ready():
     bad = with_field(make_case(), "species", authority="CANDIDATE")
     assert "UNSUPPORTED_CLAIM" in codes(bad)
@@ -144,6 +154,7 @@ def test_blocking_conflict_stops_final_export_even_if_other_fields_valid():
 @pytest.mark.parametrize("state,valid_until,revoked", [
     ("REVOKED", "2030-01-01T00:00:00Z", "2026-10-01T00:00:00Z"),
     ("ACTIVE", "2026-01-01T00:00:00Z", None),
+    ("ACTIVE", "2030-01-01T00:00:00Z", None),
     ("ACTIVE", "2030-01-01T00:00:00Z", "2026-10-08T00:00:00Z"),
 ])
 def test_revoked_or_expired_memory_cannot_be_current(state, valid_until, revoked):

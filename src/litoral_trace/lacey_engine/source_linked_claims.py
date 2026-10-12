@@ -33,6 +33,7 @@ class AssociationStatus(str, Enum):
     EXPLICIT_SKU = "EXPLICIT_SKU"
     SOURCE_LOCAL_LINE = "SOURCE_LOCAL_LINE"
     SOURCE_ROW = "SOURCE_ROW"
+    DOCUMENT_EXACT_SINGLE_SKU = "DOCUMENT_EXACT_SINGLE_SKU"  # Cross-document verified source context.
     UNBOUND = "UNBOUND"
 
 

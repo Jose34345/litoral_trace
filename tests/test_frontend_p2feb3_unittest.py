@@ -31,7 +31,7 @@ def test_frontend_runtime_dependencies_are_exactly_pinned():
 
     assert package["devDependencies"] == {
         "@fortawesome/fontawesome-free": "6.5.1",
-        "@tailwindcss/cli": "4.3.1",
+        "@tailwindcss/cli": "4.3.0",
         "htmx.org": "2.0.10",
         "leaflet": "1.9.4",
         "tailwindcss": "4.3.1",

@@ -4,7 +4,7 @@ This directory is the current navigation/control plane for agents and engineers 
 
 ## Read order
 
-For the opt-in Assurance V2 authority work, read `ASSURANCE_V2_CONTRACT.md` and `ASSURANCE_V2_IMPLEMENTATION.md` alongside the canonical documentation below. V2 is not production-active without the PostgreSQL/RLS and integration gates.
+For the opt-in Assurance V2 authority work, read `ASSURANCE_V2_CONTRACT.md` and `ASSURANCE_V2_IMPLEMENTATION.md` alongside the canonical documentation below. Release and manual staging controls: `ASSURANCE_V2_RELEASE_RUNBOOK.md`. V2 is not production-active without the PostgreSQL/RLS and integration gates.
 
 1. `ARCHITECTURE.md` — bounded contexts and ownership
 2. `CAPABILITIES.toml` — machine-readable capability map

@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 
 from litoral_trace.db.models import (
     AssuranceDocument,
+    AssuranceV2MemoryLink,
     ReconciliationIssue,
     UsLaceyFieldCandidate,
     UsLaceyOperation,
@@ -45,6 +46,9 @@ from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
 )
 from litoral_trace.us_lacey.reconciliation_invariants import reconcile_entered_value_invariant
 from litoral_trace.us_lacey.reusable_evidence_promotion import promote_reviewed_field
+from litoral_trace.us_lacey.assurance_v2_review_adapter import (
+    journal_reviewed_field, review_journal_enabled,
+)
 from litoral_trace.us_lacey.identity_memory import resolve_operation_identity_memory
 from litoral_trace.us_lacey.review_telemetry import ReviewTelemetry
 from litoral_trace.us_lacey.ppq505 import (
@@ -170,7 +174,10 @@ def review_us_lacey_field(
     action: str,
     value: str | None = None,
     candidate_id: int | None = None,
+    source_claim_id: str | None = None,
     reason_code: str | None = None,
+    expected_source_set_fingerprint: str | None = None,
+    expected_case_fingerprint: str | None = None,
 ) -> UsLaceyReviewResult:
     """Accept, edit or explicitly mark one preparation field as not required.
 
@@ -182,6 +189,24 @@ def review_us_lacey_field(
     normalized_action = str(action or "").strip().lower()
     if normalized_action not in {"accept", "edit", "not_required"}:
         raise UsLaceyReviewError("Review action is invalid.")
+    v2_journal_active = review_journal_enabled()
+    v2_fenced = expected_source_set_fingerprint is not None or expected_case_fingerprint is not None
+    if v2_fenced and (
+        not v2_journal_active or not expected_source_set_fingerprint
+        or not expected_case_fingerprint
+    ):
+        raise UsLaceyReviewError("V2 review requires the enabled journal and both authority fingerprints.")
+    if v2_journal_active and normalized_action == "not_required":
+        raise UsLaceyReviewError("V2 review cannot authorize NOT_REQUIRED without an explicit decision contract.")
+    if v2_journal_active and normalized_action == "edit" and not str(reason_code or "").strip():
+        raise UsLaceyReviewError("Explain the correction and supporting evidence before saving.")
+    if source_claim_id and (
+        not v2_fenced or normalized_action != "accept" or candidate_id is not None
+        or not str(reason_code or "").strip()
+    ):
+        raise UsLaceyReviewError(
+            "Source-claim selection requires an authenticated, fenced ACCEPT with reviewer reason."
+        )
 
     session = get_us_lacey_db_session()
     try:
@@ -191,6 +216,31 @@ def review_us_lacey_field(
             organization_id=org_id,
             operation_public_id=operation_public_id,
         )
+        if v2_fenced:
+            # The source-set and authority check shares the same transaction
+            # as field mutation, decision journal, audit and memory promotion.
+            # Operation lock serializes competing review/source-set writers.
+            operation = session.scalar(select(UsLaceyOperation).where(
+                UsLaceyOperation.organization_id == org_id,
+                UsLaceyOperation.id == operation.id,
+            ).with_for_update())
+            revision = session.scalar(select(UsLaceySourceSetRevision).where(
+                UsLaceySourceSetRevision.organization_id == org_id,
+                UsLaceySourceSetRevision.operation_id == operation.id,
+                UsLaceySourceSetRevision.is_current.is_(True),
+                UsLaceySourceSetRevision.status == "FINALIZED",
+            ).with_for_update())
+            if revision is None or revision.source_set_fingerprint != expected_source_set_fingerprint:
+                raise UsLaceyReviewError("V2 review source set is stale.")
+            from litoral_trace.us_lacey.assurance_v2_case_reader import _case
+
+            current_case = _case(session, org_id, operation.public_id)
+            if (
+                current_case is None
+                or current_case.source_set_revision != revision.id
+                or current_case.authority_fingerprint() != expected_case_fingerprint
+            ):
+                raise UsLaceyReviewError("V2 review case authority is stale.")
         field = session.scalar(
             select(UsLaceyOperationField).where(
                 UsLaceyOperationField.organization_id == org_id,
@@ -201,6 +251,22 @@ def review_us_lacey_field(
         if field is None:
             raise UsLaceyReviewError("Review field was not found for this operation.")
 
+        source_selection = None
+        if source_claim_id:
+            # The tenant/source-set-fenced case was loaded under the operation
+            # lock above. The helper requires an exact current document span,
+            # correct field and confirmed supplier/SKU/line for product claims.
+            from litoral_trace.us_lacey.assurance_v2_source_claim_review import (
+                select_reviewable_source_claim,
+            )
+            try:
+                source_selection = select_reviewable_source_claim(
+                    current_case, claim_id=str(source_claim_id),
+                    field_name=field.field_name,
+                    line_reference=field.merchandise_line_reference or PPQ505_SHIPMENT_REFERENCE,
+                )
+            except ValueError as exc:
+                raise UsLaceyReviewError(str(exc)) from exc
         selected_candidate = None
         if candidate_id is not None:
             selected_candidate = session.scalar(
@@ -216,7 +282,10 @@ def review_us_lacey_field(
         proposed = (
             (selected_candidate.normalized_value or selected_candidate.original_value)
             if selected_candidate is not None
-            else (field.normalized_value or field.original_value)
+            else (
+                source_selection.normalized_value if source_selection is not None
+                else (field.normalized_value or field.original_value)
+            )
         )
         before = {
             "field_id": field.id,
@@ -230,6 +299,14 @@ def review_us_lacey_field(
             validation = validate_ppq_value(field.field_name, proposed)
             if validation.status.value in {"INVALID", "MISSING", "REVIEW_REQUIRED"}:
                 raise UsLaceyReviewError(validation.error or "This value requires further review.")
+            if source_selection is not None:
+                # Preserve original extracted text and its *verified* current
+                # PDF span; selected source is not automatically canonical.
+                field.original_value = source_selection.raw_value
+                field.normalized_value = source_selection.normalized_value
+                field.source_assurance_document_id = source_selection.assurance_document_id
+                field.source_page = source_selection.page
+                field.source_locator = source_selection.locator
             field.human_value = validation.normalized_value
             field.field_status = "MATCHED"
             field.validation_status = "VALID"
@@ -315,9 +392,30 @@ def review_us_lacey_field(
             )
             issue.resolved_at = field.reviewed_at
 
-        promotion_reason = "not_applicable"
-        promotion_promoted = False
-        if normalized_action in {"accept", "edit"}:
+        v2_promoted = False
+        if v2_journal_active:
+            if source_selection is not None:
+                # The authoritative journal resolves evidence using database
+                # columns, not unflushed ORM changes. Keep this flush inside
+                # the same locked transaction: any rejection rolls it back.
+                session.flush()
+            authority_decision = journal_reviewed_field(
+                session, organization_id=org_id, operation=operation,
+                field=field, authenticated_user_id=int(user_id),
+                action=normalized_action, reason=reason_code,
+            )
+            v2_promoted = session.scalar(select(AssuranceV2MemoryLink.id).where(
+                AssuranceV2MemoryLink.organization_id == org_id,
+                AssuranceV2MemoryLink.decision_id == authority_decision.id,
+            ).limit(1)) is not None
+
+        promotion_reason = (
+            "v2_verified_memory" if v2_promoted else "v2_decision_only"
+        ) if v2_journal_active else "not_applicable"
+        promotion_promoted = v2_promoted
+        # V2 owns promotion through a source-bound human decision. Never run
+        # the legacy promoter in parallel or create two competing authorities.
+        if normalized_action in {"accept", "edit"} and not v2_journal_active:
             try:
                 # Reusable memory is an additive optimization, not part of the
                 # regulatory review transaction's availability contract. A savepoint
@@ -458,6 +556,7 @@ def accept_supported_us_lacey_fields(
 ) -> UsLaceyBulkReviewResult:
     """Confirm all server-supported fields in one atomic customer review action."""
     org_id = int(organization_id)
+    v2_journal_active = review_journal_enabled()
     session = get_us_lacey_db_session()
     try:
         set_tenant_db_context(session, org_id)
@@ -516,26 +615,41 @@ def accept_supported_us_lacey_fields(
             field.reviewed_by_user_id = int(user_id)
             field.reviewed_at = reviewed_at
             accepted_ids.append(int(field.id))
-            try:
-                with session.begin_nested():
-                    promotion = promote_reviewed_field(
-                        session,
-                        organization_id=org_id,
-                        operation=operation,
-                        field=field,
-                        user_id=int(user_id),
-                    )
-                if promotion.promoted:
-                    promoted_field_ids.append(int(field.id))
-            except Exception:
-                LOGGER.exception(
-                    "Bulk reusable supplier evidence promotion failed closed",
-                    extra={
-                        "organization_id": org_id,
-                        "operation_id": operation.id,
-                        "field_id": field.id,
-                    },
+            if v2_journal_active:
+                # The V2 journal owns both decision and any durable promotion.
+                # Its failure rolls the entire bulk review back; never fall
+                # back to the unaudited legacy promotion path.
+                authority_decision = journal_reviewed_field(
+                    session, organization_id=org_id, operation=operation,
+                    field=field, authenticated_user_id=int(user_id),
+                    action="accept", reason=None,
                 )
+                if session.scalar(select(AssuranceV2MemoryLink.id).where(
+                    AssuranceV2MemoryLink.organization_id == org_id,
+                    AssuranceV2MemoryLink.decision_id == authority_decision.id,
+                ).limit(1)) is not None:
+                    promoted_field_ids.append(int(field.id))
+            else:
+                try:
+                    with session.begin_nested():
+                        promotion = promote_reviewed_field(
+                            session,
+                            organization_id=org_id,
+                            operation=operation,
+                            field=field,
+                            user_id=int(user_id),
+                        )
+                    if promotion.promoted:
+                        promoted_field_ids.append(int(field.id))
+                except Exception:
+                    LOGGER.exception(
+                        "Bulk reusable supplier evidence promotion failed closed",
+                        extra={
+                            "organization_id": org_id,
+                            "operation_id": operation.id,
+                            "field_id": field.id,
+                        },
+                    )
 
         reconcile_entered_value_invariant(
             session,

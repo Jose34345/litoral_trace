@@ -12,16 +12,19 @@ from litoral_trace.db.base import Base
 from litoral_trace.db.models import (
     AssuranceDocument, AssuranceV2Decision, AssuranceV2DecisionSource,
     AssuranceV2MemoryLink, Organization, UsLaceyEvidenceClaim,
+    UsLaceyAssuranceV2ClaimSnapshot,
     UsLaceySupplierEvidence, UsLaceyOperation,
     UsLaceyOperationDocument, UsLaceyOperationEvent, UsLaceyOperationField,
     UsLaceyOperationProductLink, UsLaceyPpqPlantLine, UsLaceySourceSetMember,
     UsLaceySourceSetRevision, UsLaceySupplier, UsLaceySupplierProduct,
-    User, VaultDocument,
+    UsLaceyEngineShipmentRun, User, VaultDocument,
 )
 from litoral_trace.us_lacey.assurance_v2_memory import (
     EvidenceRelation, build_case_snapshot, classify_evidence, evaluate_reuse,
     promote_decision_to_memory, record_human_decision, record_identity_event,
     revoke_verified_memory, current_identity_bindings,
+    authorize_reuse_application, verified_reuse_application,
+    canonical_claim_snapshot_digest,
 )
 
 
@@ -150,6 +153,221 @@ def approve_and_promote(db: Session, org: Organization, reviewer: User, op, doc,
     memory = promote_decision_to_memory(db, organization_id=org.id, decision_id=decision.id)
     assert memory is not None
     return decision, memory
+
+
+def current_claim_snapshot(db: Session, org, op, doc, rev):
+    """A persisted complete (zero botanical claims) source packet for reuse tests."""
+    opdoc = db.scalar(select(UsLaceyOperationDocument).where(
+        UsLaceyOperationDocument.organization_id == org.id,
+        UsLaceyOperationDocument.operation_id == op.id,
+        UsLaceyOperationDocument.assurance_document_id == doc.id,
+    ))
+    vault = db.get(VaultDocument, doc.vault_document_id)
+    snapshot = {
+        "schema_version": "assurance.claim.snapshot.v1",
+        "status": "CANDIDATE_ONLY",
+        "source_set_revision_id": rev.id,
+        "source_set_fingerprint": rev.source_set_fingerprint,
+        "claim_count": 0,
+        "documents": [{
+            "schema_version": "assurance.claim.snapshot.v1",
+            "source_claim_contract_version": "assurance.claim.v1",
+            "organization_id": org.id, "operation_id": op.id,
+            "source_set_revision_id": rev.id,
+            "source_set_fingerprint": rev.source_set_fingerprint,
+            "operation_document_id": opdoc.id,
+            "assurance_document_id": doc.id,
+            "document_version_number": opdoc.version_number,
+            "original_sha256": vault.sha256,
+            "status": "COMPLETE", "claim_count": 0, "claims": [],
+        }],
+    }
+    db.add(UsLaceyEngineShipmentRun(
+        organization_id=org.id, operation_id=op.id,
+        engine_version="assurance-test", ruleset_version="test",
+        schema_version="test", source_set_fingerprint=rev.source_set_fingerprint,
+        document_count=1, readiness="REVIEW_REQUIRED",
+        resolution_json={"assurance_v2_claim_snapshot": snapshot},
+    ))
+    db.flush()
+    return snapshot
+
+
+def test_reuse_application_requires_human_authority_and_preserves_origin(session):
+    org, reviewer = org_and_actor(session, "Apply")
+    _, product = supplier_product(session, org.id, supplier_key="MID:APPLY")
+    op1, doc1, _, rev1, _ = shipment(session, org.id, product.id, reference="AP-1", source_value="Quercus alba")
+    decision, memory = approve_and_promote(session, org, reviewer, op1, doc1, rev1)
+    op2, doc2, _, rev2, field2 = shipment(session, org.id, product.id, reference="AP-2")
+    snapshot = current_claim_snapshot(session, org, op2, doc2, rev2)
+    digest = canonical_claim_snapshot_digest(snapshot)
+    assert verified_reuse_application(
+        session, organization_id=org.id, operation_id=op2.id,
+        source_set_revision_id=rev2.id, line_reference="1", field_name="species",
+        current_claim_values=(), current_claim_snapshot_digest=digest,
+    ) is None
+    applied = authorize_reuse_application(
+        session, organization_id=org.id, operation_id=op2.id,
+        source_set_revision_id=rev2.id, authenticated_user_id=reviewer.id,
+        line_reference="1", field_name="species",
+        memory_public_id=memory.public_id, current_claim_values=(),
+        current_claim_snapshot_digest=digest, reason="Reviewed historical source",
+        idempotency_key="ap-2:species",
+    )
+    assert applied.status == "VERIFIED_REUSE"
+    assert applied.value == "Quercus alba"
+    assert applied.origin_document_id == doc1.id
+    assert applied.origin_decision_public_id == decision.public_id
+    assert applied.actor_user_id == reviewer.id
+    assert field2.original_value is None and field2.source_assurance_document_id is None
+    reread = verified_reuse_application(
+        session, organization_id=org.id, operation_id=op2.id,
+        source_set_revision_id=rev2.id, line_reference="1", field_name="species",
+        current_claim_values=(), current_claim_snapshot_digest=digest,
+    )
+    assert reread == applied
+    audit = session.get(UsLaceyOperationEvent, applied.audit_event_id)
+    assert audit.event_type == "HUMAN_REVIEW"
+    assert audit.actor_identity == f"user:{reviewer.id}"
+    assert audit.details["source_set_fingerprint"] == rev2.source_set_fingerprint
+    assert audit.details["generation"] == rev2.generation
+
+
+def test_reuse_application_is_idempotent_and_detects_payload_collision(session):
+    org, reviewer = org_and_actor(session, "Retry")
+    _, product = supplier_product(session, org.id, supplier_key="MID:RETRY")
+    op1, doc1, _, rev1, _ = shipment(session, org.id, product.id, reference="RE-1", source_value="Quercus alba")
+    _, memory = approve_and_promote(session, org, reviewer, op1, doc1, rev1)
+    op2, doc2, _, rev2, _ = shipment(session, org.id, product.id, reference="RE-2")
+    digest = canonical_claim_snapshot_digest(current_claim_snapshot(session, org, op2, doc2, rev2))
+    args = dict(organization_id=org.id, operation_id=op2.id,
+                source_set_revision_id=rev2.id, authenticated_user_id=reviewer.id,
+                line_reference="1", field_name="species", memory_public_id=memory.public_id,
+                current_claim_values=(), current_claim_snapshot_digest=digest,
+                reason="Reviewed original", idempotency_key="retry-species")
+    first = authorize_reuse_application(session, **args)
+    assert authorize_reuse_application(session, **args).audit_event_id == first.audit_event_id
+    assert len(session.scalars(select(UsLaceyOperationEvent).where(
+        UsLaceyOperationEvent.operation_id == op2.id)).all()) == 1
+    with pytest.raises(ValueError, match="idempotency collision"):
+        authorize_reuse_application(session, **{**args, "reason": "Different review"})
+
+
+def test_reuse_application_invalidates_on_revocation_claim_drift_and_stale_revision(session):
+    org, reviewer = org_and_actor(session, "Invalidate")
+    _, product = supplier_product(session, org.id, supplier_key="MID:INVALIDATE")
+    op1, doc1, _, rev1, _ = shipment(session, org.id, product.id, reference="IN-1", source_value="Quercus alba")
+    _, memory = approve_and_promote(session, org, reviewer, op1, doc1, rev1)
+    op2, doc2, _, rev2, field2 = shipment(session, org.id, product.id, reference="IN-2")
+    snapshot = current_claim_snapshot(session, org, op2, doc2, rev2)
+    digest = canonical_claim_snapshot_digest(snapshot)
+    args = dict(organization_id=org.id, operation_id=op2.id,
+                source_set_revision_id=rev2.id, line_reference="1", field_name="species",
+                current_claim_values=(), current_claim_snapshot_digest=digest)
+    authorize_reuse_application(
+        session, **args, authenticated_user_id=reviewer.id,
+        memory_public_id=memory.public_id, reason="Reviewed original",
+        idempotency_key="invalidate-species")
+    assert verified_reuse_application(session, **args) is not None
+    assert verified_reuse_application(session, **{**args, "current_claim_values": ("Quercus rubra",)}) is None
+    assert verified_reuse_application(session, **{**args, "current_claim_snapshot_digest": "f" * 64}) is None
+    field2.original_value = "Quercus rubra"
+    assert verified_reuse_application(session, **args) is None
+    field2.original_value = None
+    assert revoke_verified_memory(session, organization_id=org.id,
+                                  authenticated_user_id=reviewer.id,
+                                  memory_public_id=memory.public_id,
+                                  reason="Withdrawn", idempotency_key="invalidate-revoke")
+    assert verified_reuse_application(session, **args) is None
+    rev2.is_current = False
+    assert verified_reuse_application(session, **args) is None
+
+
+def test_reuse_application_rejects_wrong_supplier_tenant_and_actor(session):
+    org, reviewer = org_and_actor(session, "RejectApply")
+    other, other_reviewer = org_and_actor(session, "OtherApply")
+    _, product1 = supplier_product(session, org.id, supplier_key="MID:ONE")
+    _, product2 = supplier_product(session, org.id, supplier_key="MID:TWO")
+    op1, doc1, _, rev1, _ = shipment(session, org.id, product1.id, reference="RA-1", source_value="Quercus alba")
+    _, memory = approve_and_promote(session, org, reviewer, op1, doc1, rev1)
+    op2, doc2, _, rev2, _ = shipment(session, org.id, product2.id, reference="RA-2")
+    digest = canonical_claim_snapshot_digest(current_claim_snapshot(session, org, op2, doc2, rev2))
+    args = dict(organization_id=org.id, operation_id=op2.id,
+                source_set_revision_id=rev2.id, line_reference="1", field_name="species",
+                memory_public_id=memory.public_id, current_claim_values=(),
+                current_claim_snapshot_digest=digest, reason="Reviewed original",
+                idempotency_key="wrong-supplier")
+    with pytest.raises(ValueError, match="not eligible"):
+        authorize_reuse_application(session, **args, authenticated_user_id=reviewer.id)
+    with pytest.raises(ValueError, match="reviewer does not belong"):
+        authorize_reuse_application(session, **args, authenticated_user_id=other_reviewer.id)
+    with pytest.raises(ValueError, match="not eligible"):
+        authorize_reuse_application(session, **{**args, "organization_id": other.id},
+                                    authenticated_user_id=other_reviewer.id)
+    assert session.scalar(select(UsLaceyOperationEvent).where(
+        UsLaceyOperationEvent.operation_id == op2.id)) is None
+
+
+def test_reuse_application_rejects_unreported_current_claim_and_incomplete_packet(session):
+    org, reviewer = org_and_actor(session, "Packet")
+    _, product = supplier_product(session, org.id, supplier_key="MID:PACKET")
+    op1, doc1, _, rev1, _ = shipment(session, org.id, product.id, reference="PK-1", source_value="Quercus alba")
+    _, memory = approve_and_promote(session, org, reviewer, op1, doc1, rev1)
+    op2, doc2, _, rev2, _ = shipment(session, org.id, product.id, reference="PK-2")
+    snapshot = current_claim_snapshot(session, org, op2, doc2, rev2)
+    run = session.scalar(select(UsLaceyEngineShipmentRun).where(
+        UsLaceyEngineShipmentRun.organization_id == org.id,
+        UsLaceyEngineShipmentRun.operation_id == op2.id,
+    ))
+    packet = {**snapshot, "documents": [{**snapshot["documents"][0],
+              "claims": [{"field_name": "species", "line_reference": "1",
+                          "original_value": "Quercus rubra", "normalized_value": "Quercus rubra"}],
+              "claim_count": 1}], "claim_count": 1}
+    run.resolution_json = {"assurance_v2_claim_snapshot": packet}
+    session.flush()
+    args = dict(organization_id=org.id, operation_id=op2.id,
+                source_set_revision_id=rev2.id, authenticated_user_id=reviewer.id,
+                line_reference="1", field_name="species", memory_public_id=memory.public_id,
+                current_claim_values=(), current_claim_snapshot_digest=canonical_claim_snapshot_digest(packet),
+                reason="Reviewed original", idempotency_key="packet-species")
+    with pytest.raises(ValueError, match="not eligible"):
+        authorize_reuse_application(session, **args)
+    packet["documents"][0]["original_sha256"] = "0" * 64
+    run.resolution_json = {"assurance_v2_claim_snapshot": packet}
+    session.flush()
+    with pytest.raises(ValueError, match="not eligible"):
+        authorize_reuse_application(
+            session, **{**args, "current_claim_snapshot_digest": canonical_claim_snapshot_digest(packet),
+                        "current_claim_values": ("Quercus rubra",)})
+    assert session.scalar(select(UsLaceyOperationEvent).where(
+        UsLaceyOperationEvent.operation_id == op2.id)) is None
+
+
+def test_failed_sidecar_blocks_legacy_packet_fallback_for_reuse(session):
+    org, reviewer = org_and_actor(session, "Sidecar")
+    _, product = supplier_product(session, org.id, supplier_key="MID:SIDECAR")
+    op1, doc1, _, rev1, _ = shipment(session, org.id, product.id, reference="SC-1", source_value="Quercus alba")
+    _, memory = approve_and_promote(session, org, reviewer, op1, doc1, rev1)
+    op2, doc2, _, rev2, _ = shipment(session, org.id, product.id, reference="SC-2")
+    snapshot = current_claim_snapshot(session, org, op2, doc2, rev2)
+    digest = canonical_claim_snapshot_digest(snapshot)
+    session.add(UsLaceyAssuranceV2ClaimSnapshot(
+        organization_id=org.id, operation_id=op2.id,
+        source_set_revision_id=rev2.id,
+        source_set_fingerprint=rev2.source_set_fingerprint,
+        status="FAILED", document_count=1, claim_count=0,
+        snapshot_json={**snapshot, "status": "FAILED"},
+    ))
+    session.flush()
+    args = dict(organization_id=org.id, operation_id=op2.id,
+                source_set_revision_id=rev2.id, line_reference="1", field_name="species",
+                current_claim_values=(), current_claim_snapshot_digest=digest)
+    assert verified_reuse_application(session, **args) is None
+    with pytest.raises(ValueError, match="not eligible"):
+        authorize_reuse_application(
+            session, **args, authenticated_user_id=reviewer.id,
+            memory_public_id=memory.public_id, reason="Reviewed original",
+            idempotency_key="failed-sidecar")
 
 
 def test_two_shipments_same_supplier_sku_reuse_with_original_provenance(session):

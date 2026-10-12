@@ -25,6 +25,7 @@ pytestmark = pytest.mark.skipif(
     reason="Assurance V2 PostgreSQL/RLS gate requires isolated owner/runtime test URLs.",
 )
 TABLES = (
+    "us_lacey_assurance_v2_claim_snapshots",
     "us_lacey_assurance_v2_decisions",
     "us_lacey_assurance_v2_decision_sources",
     "us_lacey_assurance_v2_memory_links",
@@ -56,7 +57,7 @@ def pg_case():
                 "WHERE schemaname = 'public' AND tablename LIKE 'us_lacey_assurance_v2_%'"
             )).scalars().all())
         assert set(TABLES) <= names, (
-            "078 not applied to isolated PostgreSQL test DB: run alembic upgrade head first."
+            "079 not applied to isolated PostgreSQL test DB: run alembic upgrade head first."
         )
         with owner.begin() as conn:
             for label in ("a", "b"):
@@ -161,10 +162,10 @@ def test_assurance_v2_rls_force_and_append_only(pg_case):
             "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity "
             "FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace "
             "WHERE ns.nspname = 'public' AND c.relname IN "
-            "('us_lacey_assurance_v2_decisions', 'us_lacey_assurance_v2_decision_sources',"
+            "('us_lacey_assurance_v2_claim_snapshots', 'us_lacey_assurance_v2_decisions', 'us_lacey_assurance_v2_decision_sources',"
             "'us_lacey_assurance_v2_memory_links','us_lacey_assurance_v2_identity_events')"
         )).all()
-        assert len(entries) == 4
+        assert len(entries) == 5
         assert all(row[1] is True and row[2] is True for row in entries)
 
     with runtime.begin() as conn:
@@ -241,3 +242,156 @@ def test_tenant_context_required_for_reads(pg_case):
         assert conn.execute(text(
             "SELECT count(*) FROM us_lacey_assurance_v2_decisions"
         )).scalar_one() == 0
+
+
+def test_claim_snapshot_is_tenant_scoped_immutable_and_operation_bound(pg_case):
+    vals, _, runtime = pg_case
+    table = "us_lacey_assurance_v2_claim_snapshots"
+
+    def insert(conn, org, op, revision, fingerprint):
+        return conn.execute(text(
+            f"INSERT INTO {table} (organization_id, operation_id, "
+            "source_set_revision_id, source_set_fingerprint, status, "
+            "document_count, claim_count, snapshot_json) "
+            "VALUES (:org,:op,:revision,:fingerprint,'CANDIDATE_ONLY',1,0, "
+            "CAST(:snapshot AS JSONB)) RETURNING id"
+        ), {"org": org, "op": op, "revision": revision,
+            "fingerprint": fingerprint,
+            "snapshot": '{"schema_version":"assurance.claim.snapshot.v1","documents":[]}',
+            }).scalar_one()
+
+    with runtime.begin() as conn:
+        _tenant(conn, vals["org_a"])
+        snap_id = insert(conn, vals["org_a"], vals["op_a"], vals["revision_a"], "a" * 64)
+        assert conn.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 1
+    with runtime.begin() as conn:
+        _tenant(conn, vals["org_b"])
+        assert conn.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 0
+    with runtime.begin() as conn:
+        assert conn.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 0
+
+    with pytest.raises(DBAPIError):
+        with runtime.begin() as conn:
+            _tenant(conn, vals["org_a"])
+            insert(conn, vals["org_a"], vals["op_a"], vals["revision_a"], "a" * 64)
+    with pytest.raises(DBAPIError):
+        with runtime.begin() as conn:
+            _tenant(conn, vals["org_a"])
+            insert(conn, vals["org_a"], vals["op_b"], vals["revision_a"], "b" * 64)
+    with pytest.raises(DBAPIError):
+        with runtime.begin() as conn:
+            _tenant(conn, vals["org_a"])
+            insert(conn, vals["org_b"], vals["op_b"], vals["revision_b"], "b" * 64)
+    with pytest.raises(DBAPIError):
+        with runtime.begin() as conn:
+            _tenant(conn, vals["org_a"])
+            conn.execute(text(f"UPDATE {table} SET claim_count=7 WHERE id=:id"), {"id": snap_id})
+    with pytest.raises(DBAPIError):
+        with runtime.begin() as conn:
+            _tenant(conn, vals["org_a"])
+            conn.execute(text(f"DELETE FROM {table} WHERE id=:id"), {"id": snap_id})
+
+
+def test_legacy_export_guard_blocks_v2_adopted_operation_only(pg_case):
+    from sqlalchemy.orm import Session
+    from litoral_trace.us_lacey.assurance_v2_legacy_export_gate import (
+        AssuranceV2LegacyExportBlocked, legacy_export_guard,
+    )
+
+    vals, _, runtime = pg_case
+    factory = lambda: Session(bind=runtime, expire_on_commit=False)
+    with runtime.connect() as conn:
+        _tenant(conn, vals["org_a"])
+        public_a = str(conn.execute(text(
+            "SELECT public_id FROM us_lacey_operations WHERE id=:op"
+        ), {"op": vals["op_a"]}).scalar_one())
+    with runtime.connect() as conn:
+        _tenant(conn, vals["org_b"])
+        public_b = str(conn.execute(text(
+            "SELECT public_id FROM us_lacey_operations WHERE id=:op"
+        ), {"op": vals["op_b"]}).scalar_one())
+
+    with legacy_export_guard(organization_id=vals["org_a"],
+                             operation_public_id=public_a, session_factory=factory):
+        pass  # Historical V1 operation remains available.
+    with runtime.begin() as conn:
+        _tenant(conn, vals["org_a"])
+        _insert_decision(conn, org_id=vals["org_a"], op_id=vals["op_a"],
+                         revision_id=vals["revision_a"], user_id=vals["user_a"],
+                         audit_id=vals["audit_a"], key="a:legacy-gate")
+    with pytest.raises(AssuranceV2LegacyExportBlocked):
+        with legacy_export_guard(organization_id=vals["org_a"],
+                                 operation_public_id=public_a, session_factory=factory):
+            raise AssertionError("V2 operation reached legacy export")
+    with legacy_export_guard(organization_id=vals["org_b"],
+                             operation_public_id=public_b, session_factory=factory):
+        pass  # Another tenant's V2 decision cannot affect this operation.
+
+
+
+def test_explicit_export_authorization_uses_runtime_postgres_rls(pg_case):
+    """Real app-role PostgreSQL write/read. Only the CASE is synthetic.
+
+    This proves append-only tenant isolation and actor checks. It is not a
+    documentary golden test or an actual CBP/APHIS export.
+    """
+    from dataclasses import replace
+    from sqlalchemy.orm import Session
+    from litoral_trace.us_lacey.assurance_v2_export_authorization import (
+        authorization_from_event, explicitly_authorize_assurance_export,
+    )
+    from litoral_trace.us_lacey.exporters.assurance_v2 import evaluate_filing_gate
+    from test_assurance_v2_outputs_core import make_case
+
+    vals, owner, runtime = pg_case
+    with owner.connect() as conn:
+        _tenant(conn, vals["org_a"])
+        operation_public_id = str(conn.execute(text(
+            "SELECT public_id FROM us_lacey_operations WHERE id=:op AND organization_id=:org"
+        ), {"org": vals["org_a"], "op": vals["op_a"]}).scalar_one())
+
+    case = replace(
+        make_case(organization_id=vals["org_a"], approved=False),
+        operation_id=operation_public_id,
+        source_set_revision=vals["revision_a"],
+        current_source_set_revision=vals["revision_a"],
+        source_set_fingerprint="a" * 64,
+        current_source_set_fingerprint="a" * 64,
+    )
+    assert {b.code for b in evaluate_filing_gate(case).blockers} == {"EXPORT_NOT_AUTHORIZED"}
+    factory = lambda: Session(bind=runtime, expire_on_commit=False)
+    auth = explicitly_authorize_assurance_export(
+        organization_id=vals["org_a"], operation_public_id=operation_public_id,
+        authenticated_user_id=vals["user_a"],
+        expected_source_set_fingerprint="a" * 64,
+        expected_case_fingerprint=case.authority_fingerprint(),
+        explicit_confirmation=True,
+        reason="Verified all evidence for this exact synthetic test case",
+        session_factory=factory, case_loader=lambda *_: case,
+    )
+    assert auth["actor_id"] == f"user:{vals['user_a']}"
+    assert auth["status"] == "AUTHORIZED"
+
+    with factory() as session:
+        _tenant(session, vals["org_a"])
+        assert authorization_from_event(
+            session, organization_id=vals["org_a"],
+            operation_id=vals["op_a"], case=case,
+        ) == auth
+    with factory() as session:
+        _tenant(session, vals["org_b"])
+        assert not authorization_from_event(
+            session, organization_id=vals["org_b"],
+            operation_id=vals["op_b"], case=case,
+        )
+    # A changed field or document invalidates the authorization; no blanket
+    # permission is recorded for future source sets.
+    fields = list(case.fields)
+    fields[0] = {**fields[0], "value": "Changed source after approval"}
+    changed = replace(case, fields=tuple(fields))
+    with factory() as session:
+        _tenant(session, vals["org_a"])
+        assert not authorization_from_event(
+            session, organization_id=vals["org_a"],
+            operation_id=vals["op_a"], case=changed,
+        )

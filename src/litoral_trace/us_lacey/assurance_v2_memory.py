@@ -9,6 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
+from hashlib import sha256
+import json
+from collections.abc import Mapping
 from uuid import UUID, NAMESPACE_URL, uuid5
 
 from sqlalchemy import and_, select, text
@@ -17,7 +20,9 @@ from sqlalchemy.orm import Session
 from litoral_trace.db.models import (
     AssuranceDocument, AssuranceV2Decision, AssuranceV2DecisionSource,
     AssuranceV2IdentityEvent, AssuranceV2MemoryLink, SemanticEvidenceNode,
-    UsLaceyEvidenceClaim, UsLaceyOperationDocument, UsLaceyOperationField,
+    UsLaceyAssuranceV2ClaimSnapshot, UsLaceyEngineShipmentRun,
+    UsLaceyEvidenceClaim, UsLaceyOperation,
+    UsLaceyOperationDocument, UsLaceyOperationEvent, UsLaceyOperationField,
     UsLaceyOperationProductLink, UsLaceySourceSetMember, UsLaceySourceSetRevision,
     UsLaceySupplier, UsLaceySupplierEvidence, UsLaceySupplierProduct,
     User, VaultDocument,
@@ -29,6 +34,7 @@ from litoral_trace.us_lacey.reusable_evidence import (
     REUSABLE_EVIDENCE_EXTRACTOR, REUSABLE_FIELD_NAMES,
 )
 from litoral_trace.us_lacey.reusable_evidence_promotion import _add_one_calendar_year
+from litoral_trace.us_lacey.assurance_v2_reuse_guard import current_claim_values_for_reuse
 
 CONTRACT_VERSION = "assurance.v2/1.0.0"
 MEMORY_EVIDENCE_TYPE = "HUMAN_VERIFIED_ASSURANCE_V2"
@@ -58,6 +64,22 @@ class ReuseEligibility:
     origin_document_id: int | None = None
     origin_decision_public_id: UUID | None = None
     provenance: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReuseApplication:
+    """Human-authorized historical value; never a current-document assertion."""
+    status: str
+    field_name: str
+    line_reference: str
+    value: str
+    memory_public_id: UUID
+    evidence_claim_id: int
+    origin_document_id: int
+    origin_decision_public_id: UUID
+    actor_user_id: int
+    audit_event_id: int
+    source_claim_snapshot_digest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -692,6 +714,303 @@ def evaluate_reuse(
     )
 
 
+def canonical_claim_snapshot_digest(snapshot: Mapping[str, object]) -> str:
+    """SHA-256 of the *entire* JSON snapshot (sorted keys, compact ASCII JSON)."""
+    if not isinstance(snapshot, Mapping):
+        raise ValueError("complete source claim snapshot required")
+    try:
+        payload = json.dumps(snapshot, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=True, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("source claim snapshot is not canonical JSON") from exc
+    return sha256(payload.encode("ascii")).hexdigest()
+
+
+def _current_claim_snapshot(
+    session: Session, *, organization_id: int, operation_id: int,
+    revision: UsLaceySourceSetRevision,
+) -> Mapping[str, object] | None:
+    """Require the persisted full packet to match every current document byte hash."""
+    sidecars = session.scalars(select(UsLaceyAssuranceV2ClaimSnapshot).where(
+        UsLaceyAssuranceV2ClaimSnapshot.organization_id == organization_id,
+        UsLaceyAssuranceV2ClaimSnapshot.operation_id == operation_id,
+        UsLaceyAssuranceV2ClaimSnapshot.source_set_revision_id == revision.id,
+    )).all()
+    if sidecars:
+        if len(sidecars) != 1:
+            return None
+        sidecar = sidecars[0]
+        snapshot = sidecar.snapshot_json
+        if (sidecar.source_set_fingerprint != revision.source_set_fingerprint
+                or sidecar.status != "CANDIDATE_ONLY"
+                or sidecar.document_count != revision.document_count
+                or not isinstance(snapshot, dict)
+                or snapshot.get("status") != sidecar.status
+                or snapshot.get("document_count", len(snapshot.get("documents") or ())) != sidecar.document_count
+                or snapshot.get("claim_count") != sidecar.claim_count):
+            return None
+    else:
+        run = session.scalar(select(UsLaceyEngineShipmentRun).where(
+            UsLaceyEngineShipmentRun.organization_id == organization_id,
+            UsLaceyEngineShipmentRun.operation_id == operation_id,
+            UsLaceyEngineShipmentRun.source_set_fingerprint == revision.source_set_fingerprint,
+        ))
+        raw = run.resolution_json if run is not None and isinstance(run.resolution_json, dict) else {}
+        snapshot = raw.get("assurance_v2_claim_snapshot")
+    if not isinstance(snapshot, dict) or any((
+        snapshot.get("schema_version") != "assurance.claim.snapshot.v1",
+        snapshot.get("status") != "CANDIDATE_ONLY",
+        snapshot.get("source_set_revision_id") != revision.id,
+        snapshot.get("source_set_fingerprint") != revision.source_set_fingerprint,
+        not isinstance(snapshot.get("documents"), list),
+    )):
+        return None
+    rows = session.execute(
+        select(UsLaceyOperationDocument, AssuranceDocument, VaultDocument)
+        .join(UsLaceySourceSetMember, and_(
+            UsLaceySourceSetMember.organization_id == UsLaceyOperationDocument.organization_id,
+            UsLaceySourceSetMember.operation_document_id == UsLaceyOperationDocument.id,
+            UsLaceySourceSetMember.source_set_revision_id == revision.id,
+        ))
+        .join(AssuranceDocument, and_(
+            AssuranceDocument.organization_id == UsLaceyOperationDocument.organization_id,
+            AssuranceDocument.id == UsLaceyOperationDocument.assurance_document_id,
+        ))
+        .join(VaultDocument, and_(
+            VaultDocument.organization_id == AssuranceDocument.organization_id,
+            VaultDocument.id == AssuranceDocument.vault_document_id,
+        ))
+        .where(UsLaceyOperationDocument.organization_id == organization_id,
+               UsLaceyOperationDocument.operation_id == operation_id,
+               UsLaceyOperationDocument.is_current.is_(True))
+    ).all()
+    current = {(document.id, assurance.id): (document, vault)
+               for document, assurance, vault in rows}
+    documents = snapshot["documents"]
+    if len(current) != revision.document_count or len(documents) != len(current):
+        return None
+    seen: set[tuple[int, int]] = set()
+    total_claims = 0
+    for entry in documents:
+        if not isinstance(entry, dict):
+            return None
+        key = (entry.get("operation_document_id"), entry.get("assurance_document_id"))
+        if key in seen or key not in current:
+            return None
+        seen.add(key)
+        document, vault = current[key]
+        claims = entry.get("claims")
+        if not isinstance(claims, list) or any(not isinstance(c, dict) for c in claims):
+            return None
+        if any((
+            entry.get("schema_version") != "assurance.claim.snapshot.v1",
+            entry.get("source_claim_contract_version") != "assurance.claim.v1",
+            entry.get("organization_id") != organization_id,
+            entry.get("operation_id") != operation_id,
+            entry.get("source_set_revision_id") != revision.id,
+            entry.get("source_set_fingerprint") != revision.source_set_fingerprint,
+            entry.get("document_version_number") != document.version_number,
+            entry.get("original_sha256") != vault.sha256,
+            entry.get("status") == "FAILED",
+            entry.get("claim_count") != len(claims),
+        )):
+            return None
+        total_claims += len(claims)
+    if len(seen) != len(current) or snapshot.get("claim_count") != total_claims:
+        return None
+    return snapshot
+
+
+def _reuse_application_key(revision_id: int, line_reference: str, field_name: str) -> str:
+    slot = json.dumps([revision_id, line_reference, field_name], separators=(",", ":"),
+                      ensure_ascii=True)
+    return f"assurance_v2:reuse_application:{sha256(slot.encode('ascii')).hexdigest()}"
+
+
+def _application_details(
+    *, organization_id: int, operation_id: int,
+    revision: UsLaceySourceSetRevision, line_reference: str,
+    field_name: str, reuse: ReuseEligibility,
+    current_claim_snapshot_digest: str, authenticated_user_id: int,
+    reason: str, request_digest: str,
+) -> dict:
+    return {
+        "action": "authorize_historical_reuse",
+        "organization_id": organization_id,
+        "operation_id": operation_id,
+        "source_set_revision_id": revision.id,
+        "source_set_fingerprint": revision.source_set_fingerprint,
+        "generation": revision.generation,
+        "line_reference": line_reference,
+        "field_name": field_name,
+        "memory_public_id": str(reuse.memory_public_id),
+        "evidence_claim_id": reuse.evidence_claim_id,
+        "origin_document_id": reuse.origin_document_id,
+        "origin_decision_public_id": str(reuse.origin_decision_public_id),
+        "value": reuse.value,
+        "source_claim_snapshot_digest": current_claim_snapshot_digest,
+        "actor_user_id": authenticated_user_id,
+        "reason": reason,
+        "request_digest": request_digest,
+        "provenance": "REUSED_HISTORICAL",
+    }
+
+
+def _application_view(event: UsLaceyOperationEvent) -> ReuseApplication:
+    details = event.details
+    return ReuseApplication(
+        status="VERIFIED_REUSE", field_name=details["field_name"],
+        line_reference=details["line_reference"], value=details["value"],
+        memory_public_id=UUID(details["memory_public_id"]),
+        evidence_claim_id=details["evidence_claim_id"],
+        origin_document_id=details["origin_document_id"],
+        origin_decision_public_id=UUID(details["origin_decision_public_id"]),
+        actor_user_id=details["actor_user_id"], audit_event_id=event.id,
+        source_claim_snapshot_digest=details["source_claim_snapshot_digest"],
+    )
+
+
+def _eligible_for_application(
+    session: Session, *, organization_id: int, operation_id: int,
+    source_set_revision_id: int, line_reference: str, field_name: str,
+    current_claim_values: tuple[str, ...], current_claim_snapshot_digest: str,
+    regulatory_context: dict | None,
+) -> tuple[UsLaceySourceSetRevision, ReuseEligibility] | None:
+    try:
+        revision = _revision(session, organization_id=organization_id,
+                             operation_id=operation_id,
+                             source_set_revision_id=source_set_revision_id)
+    except ValueError:
+        return None
+    snapshot = _current_claim_snapshot(session, organization_id=organization_id,
+                                        operation_id=operation_id, revision=revision)
+    if snapshot is None or canonical_claim_snapshot_digest(snapshot) != current_claim_snapshot_digest:
+        return None
+    claims = tuple(claim for document in snapshot["documents"]
+                   for claim in document["claims"])
+    actual_values = current_claim_values_for_reuse(
+        claims, field_name=field_name, line_reference=line_reference)
+    if actual_values is None or actual_values != current_claim_values:
+        return None
+    reuse = evaluate_reuse(
+        session, organization_id=organization_id, operation_id=operation_id,
+        source_set_revision_id=source_set_revision_id,
+        line_reference=line_reference, field_name=field_name,
+        regulatory_context=regulatory_context,
+        current_claim_values=current_claim_values,
+    )
+    return (revision, reuse) if reuse.eligible else None
+
+
+def authorize_reuse_application(
+    session: Session, *, organization_id: int, operation_id: int,
+    source_set_revision_id: int, authenticated_user_id: int,
+    line_reference: str, field_name: str, memory_public_id: UUID,
+    current_claim_values: tuple[str, ...], current_claim_snapshot_digest: str,
+    reason: str, idempotency_key: str, regulatory_context: dict | None = None,
+) -> ReuseApplication:
+    """Append one human consent event; caller commits the whole transaction.
+
+    This never writes a current-document field. A unique revision/line/field
+    event key makes retries idempotent and contradictory authorizations collide.
+    """
+    org_id, op_id = int(organization_id), int(operation_id)
+    line, field = str(line_reference or "").strip(), str(field_name or "").strip()
+    reason, key = str(reason or "").strip(), str(idempotency_key or "").strip()
+    if not line or not field or len(line) > 100 or len(field) > 100:
+        raise ValueError("line and field required")
+    if not reason or len(reason) > 180 or not key or len(key) > 160:
+        raise ValueError("reason and idempotency key required")
+    if not isinstance(current_claim_values, tuple) or any(not isinstance(v, str) for v in current_claim_values):
+        raise ValueError("complete current claim values required")
+    if not isinstance(current_claim_snapshot_digest, str) or len(current_claim_snapshot_digest) != 64:
+        raise ValueError("complete current claim snapshot digest required")
+    _actor(session, org_id, authenticated_user_id)
+    session.scalar(select(UsLaceyOperation.id).where(
+        UsLaceyOperation.organization_id == org_id,
+        UsLaceyOperation.id == op_id,
+    ).with_for_update())
+    eligible = _eligible_for_application(
+        session, organization_id=org_id, operation_id=op_id,
+        source_set_revision_id=source_set_revision_id, line_reference=line,
+        field_name=field, current_claim_values=current_claim_values,
+        current_claim_snapshot_digest=current_claim_snapshot_digest,
+        regulatory_context=regulatory_context,
+    )
+    if eligible is None or eligible[1].memory_public_id != memory_public_id:
+        raise ValueError("historical memory is not eligible for this source set")
+    revision, reuse = eligible
+    details = _application_details(
+        organization_id=org_id, operation_id=op_id, revision=revision,
+        line_reference=line, field_name=field, reuse=reuse,
+        current_claim_snapshot_digest=current_claim_snapshot_digest,
+        authenticated_user_id=int(authenticated_user_id), reason=reason,
+        request_digest=sha256(key.encode("utf-8")).hexdigest(),
+    )
+    event = append_operation_event(
+        session, organization_id=org_id, operation_id=op_id,
+        actor_type=OperationActorType.USER,
+        actor_identity=f"user:{int(authenticated_user_id)}",
+        event_type=OperationEventType.HUMAN_REVIEW,
+        event_key=_reuse_application_key(revision.id, line, field),
+        details=details,
+    )
+    if event.details != details or event.actor_identity != f"user:{int(authenticated_user_id)}":
+        raise ValueError("idempotency collision with different reuse application")
+    return _application_view(event)
+
+
+def verified_reuse_application(
+    session: Session, *, organization_id: int, operation_id: int,
+    source_set_revision_id: int, line_reference: str, field_name: str,
+    current_claim_values: tuple[str, ...], current_claim_snapshot_digest: str,
+    regulatory_context: dict | None = None,
+) -> ReuseApplication | None:
+    """Return authority only while original evidence and current packet still pass."""
+    org_id, op_id = int(organization_id), int(operation_id)
+    line, field = str(line_reference or "").strip(), str(field_name or "").strip()
+    if not line or not field or not isinstance(current_claim_values, tuple):
+        return None
+    eligible = _eligible_for_application(
+        session, organization_id=org_id, operation_id=op_id,
+        source_set_revision_id=source_set_revision_id, line_reference=line,
+        field_name=field, current_claim_values=current_claim_values,
+        current_claim_snapshot_digest=current_claim_snapshot_digest,
+        regulatory_context=regulatory_context,
+    )
+    if eligible is None:
+        return None
+    revision, reuse = eligible
+    event = session.scalar(select(UsLaceyOperationEvent).where(
+        UsLaceyOperationEvent.organization_id == org_id,
+        UsLaceyOperationEvent.operation_id == op_id,
+        UsLaceyOperationEvent.event_key == _reuse_application_key(revision.id, line, field),
+        UsLaceyOperationEvent.event_type == OperationEventType.HUMAN_REVIEW.value,
+        UsLaceyOperationEvent.actor_type == OperationActorType.USER.value,
+    ))
+    if event is None or not event.actor_identity.startswith("user:"):
+        return None
+    try:
+        actor_user_id = int(event.actor_identity.removeprefix("user:"))
+    except ValueError:
+        return None
+    details = dict(event.details or {})
+    expected = _application_details(
+        organization_id=org_id, operation_id=op_id, revision=revision,
+        line_reference=line, field_name=field, reuse=reuse,
+        current_claim_snapshot_digest=current_claim_snapshot_digest,
+        authenticated_user_id=actor_user_id,
+        reason=str(details.get("reason") or ""),
+        request_digest=str(details.get("request_digest") or ""),
+    )
+    digest = details.get("request_digest")
+    if (details != expected or not details["reason"]
+            or not isinstance(digest, str) or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest)):
+        return None
+    return _application_view(event)
+
+
 def record_identity_event(
     session: Session, *, organization_id: int, operation_id: int,
     authenticated_user_id: int, entity_type: str, source_id: int,
@@ -912,7 +1231,9 @@ def revoke_verified_memory(
             AssuranceV2MemoryLink.organization_id == org_id,
             AssuranceV2MemoryLink.public_id == memory_public_id,
         )
-        .with_for_update()
+        # The runtime role may update the mutable evidence status, but the
+        # historical decision and memory link are deliberately append-only.
+        .with_for_update(of=UsLaceySupplierEvidence)
     ).one_or_none()
     if linked is None:
         raise ValueError("unknown tenant-owned memory record")

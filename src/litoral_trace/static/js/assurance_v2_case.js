@@ -27,6 +27,74 @@
       } catch (error) { result.textContent = 'Not recorded: ' + error.message; }
     });
   });
+  document.querySelectorAll('.reuse-form').forEach(form => {
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const result = form.querySelector('.reuse-result');
+      const button = form.querySelector('button[type="submit"]');
+      const reason = form.querySelector('[name="reason"]')?.value.trim() || '';
+      if (!reason) { result.textContent = 'A reviewer reason is required.'; return; }
+      button.disabled = true;
+      result.textContent = 'Checking current documents and historical evidence…';
+      try {
+        const receipt = await post('/reuses', {
+          memory_id: form.dataset.memory, field_name: form.dataset.field,
+          line_reference: form.dataset.line, reason
+        });
+        if (receipt.status !== 'VERIFIED_REUSE') throw new Error('Reuse was not verified');
+        window.location.reload();
+      } catch (error) {
+        result.textContent = 'Reuse not applied: ' + error.message;
+        button.disabled = false;
+      }
+    });
+  });
+  document.querySelectorAll('.identity-form').forEach(form => {
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const result = form.querySelector('.identity-result');
+      const button = form.querySelector('button[type="submit"]');
+      const reason = form.querySelector('[name="reason"]')?.value.trim() || '';
+      if (!reason) { result.textContent = 'A reviewer reason is required.'; return; }
+      button.disabled = true;
+      result.textContent = 'Checking current supplier, SKU and line…';
+      try {
+        const receipt = await post('/identities', {
+          line_reference: form.dataset.line, supplier_id: Number(form.dataset.supplier),
+          product_id: Number(form.dataset.product), reason
+        });
+        if (receipt.status !== 'HUMAN_CONFIRMED') throw new Error('Identity was not confirmed');
+        window.location.reload();
+      } catch (error) {
+        result.textContent = 'Identity not confirmed: ' + error.message;
+        button.disabled = false;
+      }
+    });
+  });
+  const authorizationForm = document.querySelector('#authorize-export-form');
+  if (authorizationForm) authorizationForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const status = authorizationForm.querySelector('.authorization-result');
+    const button = authorizationForm.querySelector('button[type="submit"]');
+    const confirmed = authorizationForm.querySelector('[name="explicit_confirmation"]')?.checked === true;
+    const reason = authorizationForm.querySelector('[name="reason"]')?.value.trim() || '';
+    if (!confirmed || !reason) {
+      status.textContent = 'Explicit confirmation and a reason are required.';
+      return;
+    }
+    button.disabled = true;
+    status.textContent = 'Recording your authorization…';
+    try {
+      const result = await post('/authorize-export', {reason, explicit_confirmation: true});
+      if (result.status !== 'AUTHORIZED') throw new Error('Authorization not confirmed');
+      // Always re-read the case from the server. No browser-local
+      // authority is inferred from the receipt alone.
+      window.location.reload();
+    } catch (error) {
+      status.textContent = 'Authorization not recorded: ' + error.message;
+      button.disabled = false;
+    }
+  });
   const button = document.querySelector('#issue-package');
   if (button) button.addEventListener('click', async () => {
     const result = document.querySelector('#package-result');

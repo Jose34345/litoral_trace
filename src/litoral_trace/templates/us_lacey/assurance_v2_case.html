@@ -25,6 +25,7 @@
   </div>
   <div class="workspace">
     <aside class="assurance-nav" aria-label="Case navigation">
+      <a href="#required">Required evidence <strong>{{ required_evidence.verified }}/{{ required_evidence.total }}</strong></a>
       <a href="#exceptions">Review queue <strong>{{ case.exceptions|length }}</strong></a>
       <a href="#documents">Documents <strong>{{ case.documents|length }}</strong></a>
       <a href="#claims">Claims <strong>{{ case.fields|length }}</strong></a>
@@ -36,6 +37,27 @@
       <div class="nav-note">A candidate is not evidence. A rule PASS is not a shipment-level compliance verdict.</div>
     </aside>
     <div class="assurance-main">
+      <section class="panel" id="required">
+        <div class="section-heading">
+          <div><div class="eyebrow">REQUIRED DECLARATION INPUTS</div><h2>Evidence completion checklist</h2></div>
+          <span class="counter">{{ required_evidence.verified }}/{{ required_evidence.total }} verified</span>
+        </div>
+        <p class="muted">This checklist explains what still needs evidence or reviewer confirmation. It does not authorize a filing or replace regulatory checks.</p>
+        <p class="muted">{{ required_evidence.review }} fields need review; {{ required_evidence.missing }} lack sufficient current source evidence.</p>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Required field</th><th>Scope</th><th>Current value</th><th>Next action</th></tr></thead>
+          <tbody>{% for item in required_evidence.rows %}
+          <tr>
+            <td><strong>{{ item.label }}</strong><small>{{ item.field_name }}</small></td>
+            <td>{{ 'Shipment' if item.line_reference == '__shipment__' else 'Line ' ~ item.line_reference }}</td>
+            <td>{{ item.value or 'Not established' }}</td>
+            <td>
+              <span class="tag {{ 'green' if item.status == 'VERIFIED' else 'amber' if item.status != 'MISSING_EVIDENCE' else 'red' }}">{{ item.status.replace('_', ' ') }}</span>
+              <small>{{ item.guidance }}</small>
+            </td>
+          </tr>{% endfor %}</tbody>
+        </table></div>
+      </section>
       <section class="panel" id="exceptions">
         <div class="section-heading"><div><div class="eyebrow">01 / PRIORITY WORK QUEUE</div><h2>Exceptions requiring resolution</h2></div><span class="counter">{{ case.exceptions|length }} items</span></div>
         {% if not case.exceptions %}<p class="empty">No exception records supplied by the authority service.</p>{% endif %}
@@ -58,22 +80,28 @@
             {% endfor %}
           </div>
           {% if ex.historical_evidence %}<div class="historical-evidence"><span class="tag purple">HISTORICAL MEMORY · VERIFY STATUS</span> {{ ex.historical_evidence }}</div>{% endif %}
+          {% if ex.id.startswith('field:') %}
           <form class="decision-form" data-exception="{{ ex.id }}">
             <label>Review action
               <select name="action" required>
-                <option value="PENDING">Keep pending</option>
                 <option value="ACCEPT">Accept supported candidate</option>
                 <option value="CORRECT">Correct value</option>
-                <option value="REJECT">Reject candidate</option>
-                <option value="REQUEST_EVIDENCE">Request evidence</option>
               </select>
             </label>
-            <label>Candidate reference<input name="candidate_id" placeholder="Exact candidate ID from evidence service"></label>
+            <label>Source candidate
+              <select name="candidate_id">
+                <option value="">Current field value (if available)</option>
+                {% for candidate in ex.candidates or [] %}
+                <option value="{{ candidate.id }}">{{ candidate.value or 'Missing' }} · source {{ candidate.document_name or candidate.document_id or 'unknown' }}{% if candidate.page %}, p. {{ candidate.page }}{% endif %}</option>
+                {% endfor %}
+              </select>
+            </label>
             <label>Correction (only for Correct)<input name="value" placeholder="Reviewed value"></label>
             <label>Reason / justification<input name="reason" placeholder="Reason and supporting evidence"></label>
             <button type="submit">Send to review authority</button>
             <div role="status" class="decision-result" aria-live="polite"></div>
           </form>
+          {% else %}<p class="muted">This exception requires source correction before field review.</p>{% endif %}
         </article>
         {% endfor %}
       </section>
@@ -85,6 +113,18 @@
       </section>
       <section class="panel" id="claims">
         <div class="section-heading"><div><div class="eyebrow">03 / AUTHORITY LEDGER</div><h2>Field claims</h2></div></div>
+        <h3>Source linked observations</h3>
+        <p class="muted">These are parser observations from the current document set. Source support does not grant human authority.</p>
+        <div class="table-scroll"><table><thead><tr><th>Field / entity</th><th>Original → normalized</th><th>Support</th><th>Current source</th></tr></thead><tbody>
+        {% for claim in case.candidate_observations %}
+        <tr><td><strong>{{ claim.field_name }}</strong><small>{{ claim.subject_id or claim.entity_identity or 'Unresolved entity' }}</small></td>
+          <td>{{ claim.original_value or '—' }} → {{ claim.normalized_value or '—' }}</td>
+          <td><span class="tag {{ 'blue' if claim.support_status == 'SUPPORTED' else 'amber' }}">{{ 'SOURCE SUPPORTED' if claim.support_status == 'SUPPORTED' else claim.support_status }}</span></td>
+          <td>{% if claim.url %}<a href="{{ claim.url }}" target="_blank" rel="noopener noreferrer">Open original ↗</a>{% else %}Unavailable{% endif %}
+          <small>{{ claim.source_locator or '' }}</small></td></tr>
+        {% else %}<tr><td colspan="4">No current source observations. Check the source claim exception.</td></tr>{% endfor %}
+        </tbody></table></div>
+        <h3>Authority state</h3>
         <div class="table-scroll"><table><thead><tr><th>Entity / field</th><th>Value</th><th>Authority</th><th>Evidence</th></tr></thead><tbody>
         {% for item in case.fields %}
         <tr><td><strong>{{ item.name }}</strong><small>{{ item.line_reference }}</small></td><td>{{ item.value or '—' }}</td>
@@ -98,7 +138,14 @@
       </section>
       <section class="panel" id="identities">
         <div class="section-heading"><div><div class="eyebrow">04 / IDENTITY</div><h2>Supplier / product / SKU binding</h2></div></div>
-        {% for identity in case.identities %}<div class="simple-row"><span>{{ identity.line_reference }} → {{ identity.supplier_id }} / {{ identity.product_id }}{% if identity.sku %} / {{ identity.sku }}{% endif %}</span><span class="tag neutral">{{ identity.status }}</span></div>{% endfor %}
+        {% for identity in case.identities %}<div class="simple-row"><span>{{ identity.line_reference }} → {{ identity.supplier_id }} / {{ identity.product_id }}{% if identity.sku %} / {{ identity.sku }}{% endif %}</span><span class="tag neutral">{{ identity.status }}</span></div>
+        {% if identity.status == 'REVIEW_REQUIRED' %}
+        <form class="identity-form" data-line="{{ identity.line_reference }}" data-supplier="{{ identity.supplier_id }}" data-product="{{ identity.product_id }}">
+          <label>Reason for confirming this supplier, SKU and shipment line<input name="reason" maxlength="180" required placeholder="I reviewed the original supplier and product source"></label>
+          <button type="submit">Confirm exact identity</button>
+          <div class="identity-result" role="status" aria-live="polite"></div>
+        </form>
+        {% endif %}{% endfor %}
       </section>
       <section class="panel" id="decisions">
         <div class="section-heading"><div><div class="eyebrow">05 / HUMAN AUTHORITY</div><h2>Recorded decisions</h2></div></div>
@@ -106,7 +153,16 @@
       </section>
       <section class="panel" id="memory">
         <div class="section-heading"><div><div class="eyebrow">06 / LONGITUDINAL MEMORY</div><h2>Historical evidence reuse</h2></div></div>
-        {% for reuse in case.reuses %}<div class="simple-row"><div><strong>{{ reuse.evidence_id }}</strong><small>Valid until {{ reuse.valid_until }} · Verified by {{ reuse.verified_by }}</small></div><span class="tag purple">{{ reuse.status }}</span></div>{% else %}<p class="empty">No reused evidence included in this shipment.</p>{% endfor %}
+        {% for reuse in case.reuses %}
+        <div class="simple-row"><div><strong>{{ reuse.field_name }} · {{ reuse.value }}</strong><small>Line {{ reuse.line_reference }} · historical source {{ reuse.origin_document_id }} · {% if reuse.status == 'VERIFIED' %}verified by {{ reuse.verified_by }} · valid until {{ reuse.valid_until }}{% else %}review required before application{% endif %}</small></div><span class="tag purple">{{ reuse.status }}</span></div>
+        {% if reuse.status == 'ELIGIBLE' %}
+        <form class="reuse-form" data-memory="{{ reuse.id }}" data-field="{{ reuse.field_name }}" data-line="{{ reuse.line_reference }}">
+          <label>Reason for applying this exact historical evidence<input name="reason" maxlength="180" required placeholder="I reviewed the supplier, SKU, line and original source"></label>
+          <button type="submit">Authorize reuse for this line</button>
+          <div class="reuse-result" role="status" aria-live="polite"></div>
+        </form>
+        {% endif %}
+        {% else %}<p class="empty">No reused evidence included in this shipment.</p>{% endfor %}
       </section>
       <section class="panel" id="rules">
         <div class="section-heading"><div><div class="eyebrow">07 / DETERMINISTIC ASSESSMENT</div><h2>Applicable regulatory rules</h2></div></div>
@@ -118,6 +174,18 @@
         {% if gate.ready %}
         <p>All snapshot authority checks passed. Issuance persists an immutable package containing exact XML/XLSX bytes and a source manifest. No filing submission is performed.</p>
         <button type="button" id="issue-package">Issue reproducible assurance package</button>
+        {% elif gate.blockers|length == 1 and gate.blockers[0].code == "EXPORT_NOT_AUTHORIZED" %}
+        <p>Document, identity, decision, and regulatory checks passed. A signed-in reviewer must explicitly authorize this exact source-set and case fingerprint before a final package can be issued.</p>
+        <form id="authorize-export-form" class="export-authorization-form">
+          <label for="export-authorization-reason">Reason for issuing this specific evidence-backed package</label>
+          <textarea id="export-authorization-reason" name="reason" maxlength="1000" rows="3" required placeholder="I reviewed the evidence, identities, decisions and regulatory readiness for this shipment."></textarea>
+          <label for="export-authorization-confirm">
+            <input type="checkbox" id="export-authorization-confirm" name="explicit_confirmation" required>
+            I authorize preparation of this exact case. This is not a CBP/APHIS submission.
+          </label>
+          <button type="submit">Record explicit export authorization</button>
+          <div class="authorization-result" role="status" aria-live="polite"></div>
+        </form>
         {% else %}
         <p>Final XML is disabled. Resolve the following authority gaps first:</p>
         <ul class="blocker-list">{% for b in gate.blockers %}<li><strong>{{ b.code }}</strong> · {{ b.subject }}</li>{% endfor %}</ul>

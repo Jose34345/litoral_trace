@@ -178,41 +178,97 @@ class PostgresOperationEventPackageStore:
             UsLaceyOperation.public_id == oid,
         ))
 
-    def save(self, *, organization_id: int, operation_id: str, package: AssurancePackage) -> None:
+    def load_for_case_in_transaction(
+        self, session, *, organization_id: int, operation_id: str,
+        case_fingerprint: str,
+    ) -> AssurancePackage | None:
+        """Return already-issued immutable bytes for the same authorized case.
+
+        The issuer MUST hold the operation/source-set locks and revalidate
+        current authority first. A new source set, revoked evidence or changed
+        decision produces a different case fingerprint, never a stale replay.
+        """
         from sqlalchemy import select
         from litoral_trace.db.models import UsLaceyOperationEvent
-        from litoral_trace.db.tenant import set_tenant_db_context
+
+        if len(case_fingerprint) != 64 or any(
+            ch not in "0123456789abcdef" for ch in case_fingerprint
+        ):
+            raise ValueError("Invalid case authority fingerprint")
+        internal_id = self._operation(session, organization_id, operation_id)
+        if internal_id is None:
+            raise PermissionError("Operation not found within tenant")
+        records = session.scalars(select(UsLaceyOperationEvent).where(
+            UsLaceyOperationEvent.organization_id == organization_id,
+            UsLaceyOperationEvent.operation_id == internal_id,
+            UsLaceyOperationEvent.event_type == "PACKAGE_GENERATED",
+            UsLaceyOperationEvent.details["package"]["case_fingerprint"].as_string()
+            == case_fingerprint,
+        ).order_by(UsLaceyOperationEvent.id)).all()
+        if not records:
+            return None
+        if len(records) != 1:
+            raise ValueError("Duplicate issuance for one authorized case")
+        value = records[0].details.get("package")
+        if not isinstance(value, dict):
+            raise ValueError("Issued package is missing its immutable snapshot")
+        package = AssurancePackage(_fingerprint(value), dict(value))
+        package.verify()
+        if (package.snapshot.get("organization_id") != organization_id
+                or package.snapshot.get("operation_id") != operation_id
+                or package.snapshot.get("case_fingerprint") != case_fingerprint
+                or records[0].event_key != f"assurance_v2:{package.fingerprint}"):
+            raise ValueError("Issued package does not match authenticated case")
+        return package
+
+    def save_in_transaction(self, session, *, organization_id: int,
+                            operation_id: str, package: AssurancePackage) -> None:
+        """Stage immutable issuance in the caller's tenant-scoped transaction.
+
+        The trusted issuer must first lock and re-check current document state.
+        This method deliberately DOES NOT COMMIT, so a concurrent-source failure
+        can roll back both the authorization and the generated artifacts.
+        """
+        from sqlalchemy import select
+        from litoral_trace.db.models import UsLaceyOperationEvent
 
         package.verify()
         if package.snapshot["organization_id"] != organization_id or package.snapshot["operation_id"] != operation_id:
             raise PermissionError("Package tenant/operation mismatch")
+        internal_id = self._operation(session, organization_id, operation_id)
+        if internal_id is None:
+            raise PermissionError("Operation not found within tenant")
+        key = f"assurance_v2:{package.fingerprint}"
+        existing = session.scalar(select(UsLaceyOperationEvent).where(
+            UsLaceyOperationEvent.organization_id == organization_id,
+            UsLaceyOperationEvent.operation_id == internal_id,
+            UsLaceyOperationEvent.event_key == key,
+        ))
+        if existing is not None:
+            if existing.details.get("package") != package.snapshot:
+                raise ValueError("Immutable package collision")
+            return
+        session.add(UsLaceyOperationEvent(
+            organization_id=organization_id,
+            operation_id=internal_id,
+            actor_type="USER",
+            actor_identity=str(package.snapshot["case"]["export_authorization"]["actor_id"])[:255],
+            event_type="PACKAGE_GENERATED",
+            event_key=key,
+            details={"package_type": "ASSURANCE_V2", "package": package.snapshot},
+        ))
+        session.flush()
+
+    def save(self, *, organization_id: int, operation_id: str, package: AssurancePackage) -> None:
+        from litoral_trace.db.tenant import set_tenant_db_context
+
         session = self._session_factory()
         try:
             set_tenant_db_context(session, organization_id)
-            internal_id = self._operation(session, organization_id, operation_id)
-            if internal_id is None:
-                raise PermissionError("Operation not found within tenant")
-            key = f"assurance_v2:{package.fingerprint}"
-            existing = session.scalar(select(UsLaceyOperationEvent).where(
-                UsLaceyOperationEvent.organization_id == organization_id,
-                UsLaceyOperationEvent.operation_id == internal_id,
-                UsLaceyOperationEvent.event_key == key,
-            ))
-            if existing is not None:
-                if existing.details.get("package") != package.snapshot:
-                    raise ValueError("Immutable package collision")
-            else:
-                # Do not use sanitize_audit_metadata: it truncates source-linked
-                # snapshot values; the tenant-owned persisted record must be lossless.
-                session.add(UsLaceyOperationEvent(
-                    organization_id=organization_id,
-                    operation_id=internal_id,
-                    actor_type="USER",
-                    actor_identity=str(package.snapshot["case"]["export_authorization"]["actor_id"])[:255],
-                    event_type="PACKAGE_GENERATED",
-                    event_key=key,
-                    details={"package_type": "ASSURANCE_V2", "package": package.snapshot},
-                ))
+            self.save_in_transaction(
+                session, organization_id=organization_id,
+                operation_id=operation_id, package=package,
+            )
             session.commit()
         except Exception:
             session.rollback()
