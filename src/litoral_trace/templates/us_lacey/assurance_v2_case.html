@@ -20,13 +20,39 @@
       <small>{{ "Eligible to generate an assurance package" if gate.ready else gate.blockers|length ~ " gate findings (not unique errors)" }}</small>
     </div>
   </header>
+  <section class="assurance-quick-review" aria-label="Shipment review summary" id="review-overview">
+    <div class="quick-review-head"><div>
+      <div class="eyebrow">YOUR NEXT ACTIONS</div>
+      <h2>Review only what needs attention</h2>
+      <p class="muted">{{ review_workspace.source_count }} documents analyzed. Source evidence is not the same as a reviewer decision.</p>
+    </div><span class="tag amber">Review pending</span></div>
+    <div class="quick-review-metrics">
+      <div><strong>{{ review_workspace.found_count }}</strong><small>Values found</small></div>
+      <div><strong>{{ review_workspace.missing_count }}</strong><small>Missing values</small></div>
+      <div><strong>{{ review_workspace.tasks|length }}</strong><small>Grouped next steps</small></div>
+    </div>
+    <div class="quick-review-actions">
+      {% for task in review_workspace.tasks %}
+      <div class="quick-review-task">
+        <div><strong>{{ loop.index }}. {{ task.title }}</strong><p>{{ task.detail }}</p></div>
+        <a href="{{ task.target }}">Review</a>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="quick-review-note">Values with consistent documentary evidence can be inspected together. They are not automatically human-approved. The final package remains blocked until the relevant authority and regulatory checks pass.</p>
+    <details class="quick-review-technical">
+      <summary>Technical assurance details ({{ review_workspace.technical_finding_count }} diagnostic checks)</summary>
+      <p class="muted">These findings are validation diagnostics, not {{ review_workspace.technical_finding_count }} separate tasks for you.</p>
+      <a href="#documents">Source documents</a> · <a href="#claims">Evidence ledger</a> · <a href="#export">Full gate diagnostics</a>
+    </details>
+  </section>
   <div class="context-row">
     <span>Operation <strong>{{ case.operation_id }}</strong></span>
     <span>Source set <code>{{ case.source_set_fingerprint[:16] }}</code></span>
     <span>Revision {{ case.source_set_revision }}</span>
     <span>Ruleset {{ case.ruleset_version }}</span>
   </div>
-  <div class="workspace">
+  <div class="workspace" id="technical-workspace">
     <aside class="assurance-nav" aria-label="Case navigation">
       <a href="#required">Required evidence <strong>{{ required_evidence.verified }}/{{ required_evidence.total }}</strong></a>
       <a href="#exceptions">Review queue <strong>{{ case.exceptions|length }}</strong></a>
@@ -92,7 +118,7 @@
               <div class="muted">Document {{ candidate.document_id }}{% if candidate.page %} · p. {{ candidate.page }}{% endif %}</div>
             </div>
             {% endfor %}
-            <a class="source-link" href="#identity">Confirm line identity ↓</a>
+            <a class="source-link" href="#identities">Confirm line identity ↓</a>
           </div>
           {% endif %}
           {% if ex.source_diagnostic %}<p class="muted">Diagnostic: {{ ex.source_diagnostic }}. No verified shipment-line binding; supply or corroborate the source before accepting it.</p>{% endif %}
