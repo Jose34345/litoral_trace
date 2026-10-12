@@ -61,7 +61,7 @@ def review_effort_snapshot(*, organization_id: int, operation_public_id: str,
         events = db.scalars(select(UsLaceyOperationEvent).where(
             UsLaceyOperationEvent.organization_id == org_id,
             UsLaceyOperationEvent.operation_id == op.id,
-            UsLaceyOperationEvent.event_type == "human_review",
+            UsLaceyOperationEvent.event_type == "HUMAN_REVIEW",
         )).all()
         for event in events:
             data = dict(event.details or {})
