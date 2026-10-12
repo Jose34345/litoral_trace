@@ -5,7 +5,7 @@
 <link rel="stylesheet" href="{{ url_for('static', path='/css/assurance_v2_case.css') }}">
 {% endblock %}
 {% block lacey_content %}
-{% if (request.app.state.assurance_v2_lab_org_ids|default(())) %}
+{% if request.scope.get('app') and (request.scope['app'].state.assurance_v2_lab_org_ids|default(())) %}
 <div class="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-bold text-amber-950">PRIVATE ASSURANCE V2 LAB — NOT FOR CUSTOMS FILING. Test data only. <a href="/assurance-v2" class="text-emerald-800 underline">Return to test shipments</a>. Package issuance is disabled.</div>
 {% endif %}
 <div class="assurance-shell" data-assurance-case data-operation="{{ case.operation_id }}" data-csrf="{{ csrf_token }}">
