@@ -69,7 +69,7 @@ def test_historical_botanical_and_conditional_missing_not_silently_approved():
         "origin_document_id": "19",
     },))
     plan = simplified_review(case)
-    assert not plan["can_batch"]
+    assert plan["can_batch"]  # botanical review remains separate; not a filing approval
     assert len(plan["reuse"]) == 1
     assert plan["batch_count"] == 1  # source-supported is prepared, not granted.
     botanical = _case(field={
