@@ -250,6 +250,55 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
         ]
         assert {item["field_name"] for item in eligible_botanical} == botanical
         first = eligible_botanical[0]
+        # Diagnose physical historical original prerequisites explicitly.
+        from litoral_trace.db.models import (
+            AssuranceV2MemoryLink, UsLaceyEvidenceClaim,
+            UsLaceySupplierEvidence, AssuranceDocument, VaultDocument,
+        )
+        from litoral_trace.us_lacey.assurance_v2_historical_source import (
+            verified_historical_original,
+        )
+        db = get_us_lacey_db_session()
+        try:
+            set_tenant_db_context(db, organization_id)
+            match = db.execute(
+                select(
+                    AssuranceV2MemoryLink, UsLaceyEvidenceClaim,
+                    UsLaceySupplierEvidence, VaultDocument,
+                )
+                .join(UsLaceyEvidenceClaim,
+                      UsLaceyEvidenceClaim.id == AssuranceV2MemoryLink.evidence_claim_id)
+                .join(UsLaceySupplierEvidence,
+                      UsLaceySupplierEvidence.id == UsLaceyEvidenceClaim.evidence_id)
+                .join(AssuranceDocument,
+                      AssuranceDocument.id == AssuranceV2MemoryLink.assurance_document_id)
+                .join(VaultDocument,
+                      VaultDocument.id == AssuranceDocument.vault_document_id)
+                .where(
+                    AssuranceV2MemoryLink.organization_id == organization_id,
+                    AssuranceV2MemoryLink.public_id == UUID(str(first["id"])),
+                )
+            ).one_or_none()
+            assert match is not None, "Historical memory row not joined"
+            link, claim, evidence, vault = match
+            inspected = verified_historical_original(
+                db, organization_id=organization_id,
+                memory_public_id=str(first["id"]),
+                origin_document_id=int(first["origin_document_id"]),
+            )
+            assert inspected is not None, {
+                "link_document": link.assurance_document_id,
+                "case_origin": first["origin_document_id"],
+                "evidence_status": evidence.status,
+                "valid_from": evidence.valid_from.isoformat(),
+                "valid_until": evidence.valid_until.isoformat(),
+                "hash_matches": evidence.document_hash == vault.sha256,
+                "vault_status": vault.status,
+                "claim_field": claim.field_name,
+                "claim_value": claim.normalized_value or claim.field_value,
+            }
+        finally:
+            db.close()
         original = client.get(
             f"/assurance-v2/operations/{second_id}/historical-documents/"
             f"{first['origin_document_id']}/{first['id']}",
