@@ -175,9 +175,19 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
             and item["authority_status"] == "CANDIDATE"
             for item in second_case.candidate_observations
         )
-        assert any(item["reason"] == "SUPPORTED_CLAIM_UNPUBLISHED"
-                   and item["field_name"] == "article_component"
-                   for item in second_case.exceptions)
+        # Source evidence is shown once on the actionable field, not as a
+        # second artificial BLOCKING_EXCEPTION/UNDECIDED_CONFLICT.
+        article_items = [
+            item for item in second_case.exceptions
+            if item.get("field_name") == "article_component"
+        ]
+        assert len(article_items) == 1
+        assert article_items[0]["id"].startswith("field:")
+        assert len(article_items[0]["pending_candidates"]) == 1
+        assert not article_items[0]["candidates"] or all(
+            not str(c["id"]).startswith("source:")
+            for c in article_items[0]["candidates"]
+        )
         assert len(second_case.identities) == 1
         identity = second_case.identities[0]
         if identity["status"] == "REVIEW_REQUIRED":
