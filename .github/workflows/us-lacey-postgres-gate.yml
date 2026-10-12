@@ -1199,5 +1199,17 @@ jobs:
           tests/test_us_lacey_active_portal_postgres_e2e.py
       - name: Prove tenant A/B isolation
         run: python -m pytest -q -rs tests/test_us_lacey_rls_postgres_integration.py
+      - name: Prove Assurance V2 same-source reprocess idempotency and tenant fences
+        env:
+          DATABASE_URL: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python -m pytest -q -rs tests/test_us_lacey_v2lab_reprocess_postgres.py | tee /tmp/v2lab-replay-postgres.txt
+          if grep -Eq '([1-9][0-9]* skipped|BLOCKED_ENVIRONMENT|POSTGRES_SCHEMA_NOT_MIGRATED)' /tmp/v2lab-replay-postgres.txt; then
+            echo "V2 Lab replay PostgreSQL acceptance must not skip in CI."
+            exit 1
+          fi
       - name: Prove immutable operation audit trail RLS
         run: python -m pytest -q -rs tests/test_us_lacey_operation_audit_postgres.py
