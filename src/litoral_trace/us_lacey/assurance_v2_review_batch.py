@@ -115,7 +115,7 @@ def approve_assurance_review_batch(
             if (field.field_name != candidate.field_name
                     or (field.merchandise_line_reference or "") != candidate.line_reference
                     or field.human_value or field.reviewed_at is not None
-                    or field.field_status not in {"REVIEW", "SUPPORTED", "MISSING"}):
+                    or field.field_status not in {"REVIEW", "SUPPORTED", "MISSING", "FOUND"}):
                 raise ValueError("BATCH_FIELD_CHANGED")
             source = select_reviewable_source_claim(
                 case, claim_id=candidate.claim_id, field_name=candidate.field_name,
