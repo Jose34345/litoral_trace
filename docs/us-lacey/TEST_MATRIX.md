@@ -145,3 +145,27 @@ Add end-to-end tests that a displayed decision can resolve to an existing eviden
 
 ## Agent rule
 Do not guess which tests matter from filenames alone. Read `CAPABILITIES.toml`, search imports/callers, run focused tests first, then broaden according to the table above.
+
+## Assurance V2 Exception-First & Batch Review — private lab gate
+
+- `tests/test_assurance_v2_review_policy.py`: current source SHA/revision, exact
+  product line/SKU, valid PPQ normalized values, mismatches, conflicting claims,
+  unresolved identity and excluded botanical memory.
+- `tests/test_assurance_v2_golden_postgres.py`: six original Pack 2 PDFs, source
+  reconciliation, identity confirmation, **one** grouped memory review for three
+  botanical claims and **one** explicit documentary batch approval for four or
+  more fields, one source-linked immutable V2 decision per field.
+- CSRF, stale case/batch fingerprints, replay idempotency, RLS tenant fences and
+  remaining entry-number/export blockers must fail closed.
+- Historical evidence original bytes must be available and match the verified
+  evidence hash before **any** group reuse command; do not infer consent from
+  mere eligibility.
+- Final package issuance remains prohibited in owner V2LAB production.
+- The UI must show grouped attention tasks by default; technical gate findings
+  remain accessible through an explicit disclosure, never hidden from audit.
+- Replay on unchanged bytes does not silently inherit review authority; reviewer
+  must explicitly re-approve an eligible generation-bound batch.
+
+Human effort telemetry is captured as *one human action* and `field_count`
+in immutable batch events; time-to-completion targets require observation with
+actual users and are not inferred from machine processing durations.
