@@ -32,6 +32,7 @@ from litoral_trace.us_lacey.access import (
     UsLaceyOperationalAccessError, require_us_lacey_operational_access,
 )
 from litoral_trace.us_lacey.assurance_v2_case_reader import read_tenant_assurance_case
+from litoral_trace.us_lacey.assurance_v2_batch_review import accept_assurance_v2_batch
 from litoral_trace.us_lacey.assurance_v2_export_authorization import (
     explicitly_authorize_assurance_export,
 )
@@ -270,6 +271,23 @@ def configure_assurance_v2_shadow(
         return {"status": "RECORDED", "field_id": result.field_id,
                 "field_status": result.field_status}
 
+    def batch_review_gateway(principal, operation_id, selections, reason,
+                             source_fingerprint, case_fingerprint):
+        require_commands(principal)
+        try:
+            return accept_assurance_v2_batch(
+                organization_id=principal.organization_id,
+                operation_public_id=operation_id,
+                authenticated_user_id=int(principal.actor_id),
+                selected=selections, reason=reason, explicit_confirmation=True,
+                expected_source_set_fingerprint=source_fingerprint,
+                expected_case_fingerprint=case_fingerprint,
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except PermissionError:
+            raise HTTPException(403, "Batch review denied") from None
+
     def authorization_gateway(principal, operation_id, source_fingerprint,
                               case_fingerprint, reason, confirmed):
         require_commands(principal)
@@ -357,6 +375,7 @@ def configure_assurance_v2_shadow(
         issue_gateway=issue_gateway,
         reuse_gateway=reuse_gateway,
         identity_gateway=identity_gateway,
+        batch_review_gateway=batch_review_gateway,
         document_link_for=lambda principal, operation_id, doc, page: (
             f"/assurance-v2/operations/{operation_id}/documents/{doc}"
             + (f"#page={page}" if page is not None and 0 < page <= 10000 else "")
