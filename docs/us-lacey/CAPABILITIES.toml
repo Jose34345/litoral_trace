@@ -586,7 +586,7 @@ implementation = [
   "src/litoral_trace/templates/us_lacey/assurance_v2_case.html"
 ]
 tests = ["tests/test_assurance_v2_simplified_review.py"]
-notes = "Groups source-backed tasks for the reviewer while preserving each exception and raw gate check in technical details. This stage does NOT supply bulk human authority or automatic reuse. Batch approval requires a separately tested write-side transaction contract with source revision, per-field evidence and audit atomicity."
+notes = "Groups source-backed tasks for the reviewer while preserving each exception and raw gate check in technical details. Missing evidence is requested once per shipment line in the task-first UI; all individual required fields remain counted, accessible and blocking until resolved. This stage does NOT supply bulk human authority or automatic reuse. Batch approval requires a separately tested write-side transaction contract with source revision, per-field evidence and audit atomicity."
 
 
 [capabilities.assurance_v2_atomic_batch_review]
