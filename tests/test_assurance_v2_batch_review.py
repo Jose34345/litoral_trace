@@ -11,7 +11,11 @@ from test_assurance_v2_source_claim_review import (
 
 
 def _review_case():
-    return replace(make_case(), exceptions=({
+    base = make_case()
+    return replace(
+        base,
+        documents=tuple({**doc, "raw_available": True} for doc in base.documents),
+        exceptions=({
         "id": "field:42", "field_name": "article_component",
         "line_reference": "1", "blocking": True, "status": "OPEN",
         "candidates": [{
