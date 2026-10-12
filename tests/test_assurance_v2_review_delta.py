@@ -54,9 +54,11 @@ def test_delta_never_reuses_disputed_changed_or_expired_evidence(override, expec
 
 
 def test_current_verified_authority_only_when_all_sources_still_current():
-    assert compare(current_authority="HUMAN_CONFIRMED") == "CURRENTLY_AUTHORIZED"
+    assert compare(current_authority="HUMAN_CONFIRMED", current_value="288.0") == "CURRENTLY_AUTHORIZED"
+    assert compare(current_authority="HUMAN_CONFIRMED", current_value="999") == "VALUE_REVIEWED_DIFFERENTLY"
     assert compare(
-        current_authority="HUMAN_CONFIRMED", current_documents=(doc(version=2),)
+        current_authority="HUMAN_CONFIRMED", current_value="288.0",
+        current_documents=(doc(version=2),)
     ) == "SOURCE_CHANGED"
 
 
