@@ -51,6 +51,41 @@ def test_pack2_unbound_single_row_is_review_only_and_never_promotes_total():
     assert len(bound["plant_quantity"]) == 1  # no invented cross-PDF line identity
 
 
+def test_pack2_full_canonical_truth_preserves_source_link_and_human_review():
+    fields = _fixture()
+    payload = {"canonical_fields": {}, "documents": [], "issues": []}
+    for name, rows in fields.items():
+        payload["canonical_fields"][name] = {
+            "state": "SUPPORTED_MULTIPLE" if len(rows) > 1 else "SUPPORTED",
+            "supporting_evidence": [{
+                "candidate_id": row.candidate_id,
+                "document_id": row.document_id,
+                "field_key": name,
+                "normalized_value": row.normalized_value,
+                "scope": "MERCHANDISE_LINE" if name == "hts_code" else "PLANT_COMPONENT",
+                "source_authority": row.source_authority,
+                "candidate_score": row.candidate_score,
+                "candidate": {"raw": {
+                    "normalized_value": row.normalized_value,
+                    "evidence_class": "EXPLICIT",
+                }, "provenance": {
+                    "page": 1,
+                    "source_text": row.source_text,
+                    "evidence_class": "EXPLICIT",
+                }},
+            } for row in rows],
+        }
+    truth = build_canonical_shipment_truth(payload)
+    assert len(truth.plant_lines) == 1
+    fields = truth.plant_lines[0].fields
+    for name in ("hts_code", "article_component", "plant_quantity", "metric_unit"):
+        assert fields[name].state is CanonicalTruthState.REVIEW_REQUIRED
+        assert len(fields[name].values) == 1
+        assert fields[name].evidence[0].document_id == "128:logical-001"
+    assert "entered_value" not in fields
+    assert "merchandise_description" not in truth.shipment_fields
+
+
 def test_pack2_never_binds_unrelated_documents_or_multiple_source_rows():
     rows = _fixture()
     rows["article_component"] = (_row("article_component", "Solid bamboo coasters", "111:logical-001"),)
