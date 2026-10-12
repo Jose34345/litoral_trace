@@ -131,7 +131,7 @@ def simplified_review(case) -> dict:
         "batch_candidates": candidates,
         "batch_count": len(candidates),
         "batch_fingerprint": batch_fingerprint(case, candidates) if candidates else None,
-        "can_batch": bool(candidates) and not identities and not conflicts,
+        "can_batch": bool(candidates) and not identities and not eligible_reuses and not conflicts,
         "requires_review": bool(identities or eligible_reuses or missing or conflicts or candidates),
         "filing_ready": False,  # Lab issuance is always disabled.
     }
