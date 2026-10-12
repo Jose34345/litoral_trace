@@ -250,81 +250,26 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
         ]
         assert {item["field_name"] for item in eligible_botanical} == botanical
         first = eligible_botanical[0]
-        # Diagnose physical historical original prerequisites explicitly.
-        from litoral_trace.db.models import (
-            AssuranceV2MemoryLink, UsLaceyEvidenceClaim,
-            UsLaceySupplierEvidence, AssuranceDocument, VaultDocument,
-        )
-        from litoral_trace.us_lacey.assurance_v2_historical_source import (
-            verified_historical_original,
-        )
-        db = get_us_lacey_db_session()
-        try:
-            set_tenant_db_context(db, organization_id)
-            match = db.execute(
-                select(
-                    AssuranceV2MemoryLink, UsLaceyEvidenceClaim,
-                    UsLaceySupplierEvidence, VaultDocument,
-                )
-                .join(UsLaceyEvidenceClaim,
-                      UsLaceyEvidenceClaim.id == AssuranceV2MemoryLink.evidence_claim_id)
-                .join(UsLaceySupplierEvidence,
-                      UsLaceySupplierEvidence.id == UsLaceyEvidenceClaim.evidence_id)
-                .join(AssuranceDocument,
-                      AssuranceDocument.id == AssuranceV2MemoryLink.assurance_document_id)
-                .join(VaultDocument,
-                      VaultDocument.id == AssuranceDocument.vault_document_id)
-                .where(
-                    AssuranceV2MemoryLink.organization_id == organization_id,
-                    AssuranceV2MemoryLink.public_id == UUID(str(first["id"])),
-                )
-            ).one_or_none()
-            assert match is not None, "Historical memory row not joined"
-            link, claim, evidence, vault = match
-            inspected = verified_historical_original(
-                db, organization_id=organization_id,
-                memory_public_id=str(first["id"]),
-                origin_document_id=int(first["origin_document_id"]),
-            )
-            assert inspected is not None, {
-                "link_document": link.assurance_document_id,
-                "case_origin": first["origin_document_id"],
-                "evidence_status": evidence.status,
-                "valid_from": evidence.valid_from.isoformat(),
-                "valid_until": evidence.valid_until.isoformat(),
-                "hash_matches": evidence.document_hash == vault.sha256,
-                "vault_status": vault.status,
-                "claim_field": claim.field_name,
-                "claim_value": claim.normalized_value or claim.field_value,
-            }
-        finally:
-            db.close()
-        # Compare the exact arguments and result inside HTTP's route context.
+        # The Golden Test uses an in-memory object store for all original
+        # shipment PDFs. Use the *real* Vault verification service with this
+        # fixture's object store and U.S.-Lacey storage settings: the default
+        # global Vault client would otherwise look in a different bucket.
+        from litoral_trace.services.vault import VaultService as RealVaultService
+        from litoral_trace.us_lacey.storage import build_us_lacey_storage_settings
         from litoral_trace.web import us_lacey_assurance_v2_runtime as _v2_runtime
-        _original_resolver = _v2_runtime.verified_historical_original
-        resolver_calls = []
-        def _assert_same_source_session(session, **kwargs):
-            result = _original_resolver(session, **kwargs)
-            resolver_calls.append({
-                "org_matches": kwargs["organization_id"] == organization_id,
-                "memory_matches": kwargs["memory_public_id"] == str(first["id"]),
-                "document_matches": str(kwargs["origin_document_id"]) ==
-                                    str(first["origin_document_id"]),
-                "source_returned": result is not None,
-            })
-            return result
         monkeypatch.setattr(
-            _v2_runtime, "verified_historical_original",
-            _assert_same_source_session,
+            _v2_runtime, "VaultService",
+            lambda: RealVaultService(
+                storage_settings=build_us_lacey_storage_settings(),
+                storage=storage,
+                session_factory=get_us_lacey_db_session,
+            ),
         )
         original = client.get(
             f"/assurance-v2/operations/{second_id}/historical-documents/"
             f"{first['origin_document_id']}/{first['id']}",
         )
-        assert original.status_code == 200, {
-            "detail": original.text[:300],
-            "resolver_calls": resolver_calls,
-        }
+        assert original.status_code == 200, original.text[:300]
         assert "pdf" in original.headers.get("content-type", "").lower()
         assert client.get(
             f"/assurance-v2/operations/{second_id}/historical-documents/"
