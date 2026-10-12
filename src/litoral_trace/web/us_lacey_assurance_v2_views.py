@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from litoral_trace.us_lacey.exporters.assurance_v2 import AssuranceCase, evaluate_filing_gate
 from litoral_trace.us_lacey.assurance_v2_evidence_checklist import required_evidence_summary
 from litoral_trace.us_lacey.assurance_v2_review_policy import simplified_review
+from litoral_trace.us_lacey.assurance_v2_review_metrics import review_effort_snapshot
 from litoral_trace.us_lacey.exporters.assurance_v2_package import (
     ExportBlocked, PackageStore, draft_assurance_excel,
 )
@@ -158,6 +159,7 @@ def create_assurance_v2_router(
             request=request, name="us_lacey/assurance_v2_case.html",
             context={"case": snapshot, "gate": gate,
                      "simple": simple,
+                     "effort": review_effort_snapshot(organization_id=principal.organization_id, operation_public_id=operation_id),
                      "required_evidence": required_evidence_summary(case),
                      "csrf_token": principal.csrf_token,
                      "actions": sorted(_ACTIONS), "authenticated": True},
