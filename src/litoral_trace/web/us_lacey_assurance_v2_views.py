@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from litoral_trace.us_lacey.exporters.assurance_v2 import AssuranceCase, evaluate_filing_gate
 from litoral_trace.us_lacey.assurance_v2_evidence_checklist import required_evidence_summary
+from litoral_trace.us_lacey.assurance_v2_review_policy import simplified_review
 from litoral_trace.us_lacey.exporters.assurance_v2_package import (
     ExportBlocked, PackageStore, draft_assurance_excel,
 )
@@ -49,6 +50,11 @@ class IdentityGateway(Protocol):
                  command: dict[str, str]) -> dict[str, Any]: ...
 
 
+class BatchGateway(Protocol):
+    def __call__(self, principal: WorkspacePrincipal, operation_id: str,
+                 command: dict[str, Any]) -> dict[str, Any]: ...
+
+
 class AuthorizationGateway(Protocol):
     """Only a tenant-authenticated, current-source-set-locked writer."""
     def __call__(self, principal: WorkspacePrincipal, operation_id: str,
@@ -80,6 +86,7 @@ def create_assurance_v2_router(
     authorization_gateway: AuthorizationGateway | None = None,
     reuse_gateway: ReuseGateway | None = None,
     identity_gateway: IdentityGateway | None = None,
+    batch_gateway: BatchGateway | None = None,
 ) -> APIRouter:
     """The web adapter cannot select/promote candidates or write canonical truth."""
     router = APIRouter(prefix="/assurance-v2/operations", tags=["Assurance V2"])
@@ -127,6 +134,7 @@ def create_assurance_v2_router(
         return templates.TemplateResponse(
             request=request, name="us_lacey/assurance_v2_case.html",
             context={"case": snapshot, "gate": gate,
+                     "simple": simplified_review(case),
                      "required_evidence": required_evidence_summary(case),
                      "csrf_token": principal.csrf_token,
                      "actions": sorted(_ACTIONS), "authenticated": True},
@@ -162,6 +170,31 @@ def create_assurance_v2_router(
         }
         receipt = decision_gateway(principal, operation_id, command)
         return JSONResponse(receipt, status_code=202)
+
+    @router.post("/{operation_id}/review-batch")
+    async def submit_review_batch(request: Request, operation_id: str):
+        principal, case = context(request, operation_id)
+        body = await request.json()
+        if not isinstance(body, dict) or not csrf_verify(
+            principal, str(body.get("csrf_token") or "")
+        ):
+            raise HTTPException(403, "Invalid CSRF token")
+        reason = str(body.get("reason") or "").strip()
+        if body.get("explicit_confirmation") is not True or not reason or len(reason) > 1000:
+            raise HTTPException(422, "Explicit review and a reason are required")
+        preview = simplified_review(case)
+        if (not preview["can_batch"]
+                or not preview["batch_fingerprint"]
+                or body.get("batch_fingerprint") != preview["batch_fingerprint"]):
+            raise HTTPException(409, "Review the latest shipment summary before approving")
+        if batch_gateway is None:
+            raise HTTPException(503, "Authenticated batch review is not enabled")
+        return JSONResponse(batch_gateway(principal, operation_id, {
+            "reason": reason, "explicit_confirmation": True,
+            "expected_source_set_fingerprint": case.source_set_fingerprint,
+            "expected_case_fingerprint": case.authority_fingerprint(),
+            "expected_batch_fingerprint": preview["batch_fingerprint"],
+        }), status_code=202)
 
     @router.post("/{operation_id}/authorize-export")
     async def authorize_export(request: Request, operation_id: str):
