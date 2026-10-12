@@ -77,3 +77,72 @@
 .batch-review-result{font-size:.82rem;color:#566b61}
 @media(max-width:740px){.batch-review-item{flex-wrap:wrap}.batch-review-item .source-link{margin-left:32px}.batch-review-submit{flex-direction:column;align-items:flex-start}}
 @media print{.batch-review-item input,.batch-review-consent,.batch-review-submit{display:none!important}.batch-review-panel{break-inside:avoid}}
+
+/* P1: distinguish prior-review hints and observed work from authority status. */
+.assurance-shell .review-delta-strip,.assurance-shell .review-effort-strip{
+  border:1px solid #d8e6df;border-radius:9px;background:#f6faf8;
+  padding:12px 15px;margin:14px 0;color:#35594b;font-size:.86rem
+}
+.assurance-shell .review-delta-strip p,.assurance-shell .review-effort-strip p{
+  margin:5px 0 0;line-height:1.5;color:#567266
+}
+.assurance-shell .review-effort-strip{display:flex;gap:8px 15px;flex-wrap:wrap}
+.assurance-shell .review-effort-strip strong{width:100%}
+.assurance-shell .review-effort-strip span{border:1px solid #d3e1db;border-radius:5px;padding:5px;background:#fff}
+.assurance-shell .review-effort-strip p{width:100%}
+.assurance-shell .review-delta-marker{color:#00694f;font-weight:700}
+
+/* Source PDF printout is not an interactive webpage. Remove app chrome,
+   eliminate giant unsplittable cards and keep provenance readable. */
+@media print{
+  @page { size:A4; margin:13mm 12mm; }
+  body:has(.assurance-shell) .lt-sidebar,
+  body:has(.assurance-shell) .lt-topbar,
+  body:has(.assurance-shell) .lt-app-overlay,
+  body:has(.assurance-shell) [data-app-drawer-overlay]{
+    display:none!important;
+    position:static!important;
+  }
+  body:has(.assurance-shell) .lt-app-shell,
+  body:has(.assurance-shell) .lt-main,
+  body:has(.assurance-shell) .lt-content-frame,
+  body:has(.assurance-shell) .lt-page{
+    position:static!important;display:block!important;min-height:0!important;
+    max-width:none!important;margin:0!important;padding:0!important;
+    transform:none!important;overflow:visible!important;
+  }
+  .assurance-shell{padding:0!important;max-width:none!important;margin:0!important}
+  .assurance-shell .assurance-header{break-after:avoid;page-break-after:avoid}
+  .assurance-shell .assurance-quick-review{
+    margin:8px 0!important;padding:11px!important;
+    box-shadow:none!important;break-inside:auto!important;page-break-inside:auto!important
+  }
+  .assurance-shell .quick-review-head h2{font-size:17px}
+  .assurance-shell .quick-review-metrics{margin:7px 0 10px;gap:7px}
+  .assurance-shell .quick-review-metrics>div{padding:7px}
+  .assurance-shell .quick-review-metrics strong{font-size:18px}
+  .assurance-shell .quick-review-actions{gap:4px}
+  .assurance-shell .quick-review-task{padding:7px;break-inside:avoid}
+  .assurance-shell .quick-review-task p{font-size:11px}
+  .assurance-shell .batch-review-panel{
+    margin:8px 0!important;padding:8px!important;break-inside:auto!important;
+    page-break-inside:auto!important
+  }
+  .assurance-shell .batch-review-list{
+    grid-template-columns:repeat(2,minmax(0,1fr));gap:5px
+  }
+  .assurance-shell .batch-review-item{
+    min-width:0;padding:6px;break-inside:avoid!important;page-break-inside:avoid!important
+  }
+  .assurance-shell .batch-review-value span{font-size:10px}
+  .assurance-shell .batch-review-value small{font-size:9px}
+  .assurance-shell .batch-review-reason,
+  .assurance-shell .quick-review-note,
+  .assurance-shell .batch-review-consent,
+  .assurance-shell .batch-review-submit,
+  .assurance-shell .quick-review-technical,
+  .assurance-shell .assurance-full-review{display:none!important}
+  .assurance-shell .review-effort-strip,.assurance-shell .review-delta-strip{
+    padding:7px;margin:6px 0;break-inside:avoid
+  }
+}
