@@ -17,7 +17,7 @@
     </div>
     <div class="filing-state {{ 'ready' if gate.ready else 'blocked' }}" aria-live="polite">
       <span class="state-label">{{ "Authorized preparation" if gate.ready else "Blocked for final export" }}</span>
-      <small>{{ "Eligible to generate an assurance package" if gate.ready else gate.blockers|length ~ " checks require attention" }}</small>
+      <small>{{ "Eligible to generate an assurance package" if gate.ready else gate.blockers|length ~ " gate findings (not unique errors)" }}</small>
     </div>
   </header>
   <div class="context-row">
@@ -213,8 +213,15 @@
         </form>
         {% endif %}
         {% else %}
-        <p>Final XML is disabled. Resolve the following authority gaps first:</p>
-        <ul class="blocker-list">{% for b in gate.blockers %}<li><strong>{{ b.code }}</strong> · {{ b.subject }}</li>{% endfor %}</ul>
+        <p>Final XML is disabled. Gate findings are grouped by cause; several findings may refer to the same field and do not mean separate document errors.</p>
+        <div class="gate-groups" data-assurance-blocker-groups>
+        {% for category, findings in gate.blockers|groupby('code') %}
+          <details class="gate-group">
+            <summary><strong>{{ category }}</strong> · {{ findings|length }} related checks</summary>
+            <ul>{% for b in findings %}<li>{{ b.subject }}</li>{% endfor %}</ul>
+          </details>
+        {% endfor %}
+        </div>
         <a class="draft-link" href="/assurance-v2/operations/{{ case.operation_id }}/draft.xlsx">Export visibly marked incomplete draft (XLSX)</a>
         {% endif %}
         <div id="package-result" role="status" aria-live="polite"></div>
