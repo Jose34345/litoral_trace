@@ -401,9 +401,21 @@ def configure_assurance_v2_shadow(
         identity_gateway=identity_gateway,
         batch_review_gateway=batch_review_gateway,
         botanical_batch_gateway=botanical_batch_gateway,
-        review_insights_for=lambda principal, operation_id, case: read_p1_review_insights(
-            organization_id=principal.organization_id, operation_public_id=operation_id,
-            current_case=case,
+        review_insights_for=lambda principal, operation_id, case: (
+            read_p1_review_insights(
+                organization_id=principal.organization_id,
+                operation_public_id=operation_id,
+                current_case=case,
+            )
+            if (
+                os.getenv("US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL", "OFF").upper() == "ON"
+                and str(principal.organization_id) in {
+                    org.strip() for org in os.getenv(
+                        "US_LACEY_ASSURANCE_V2_LAB_ORG_IDS", ""
+                    ).split(",")
+                }
+            )
+            else {}
         ),
         document_link_for=lambda principal, operation_id, doc, page: (
             f"/assurance-v2/operations/{operation_id}/documents/{doc}"
