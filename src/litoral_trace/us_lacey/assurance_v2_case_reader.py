@@ -381,6 +381,9 @@ def _case(db: Session, org_id: int, public_id: UUID) -> AssuranceCase | None:
         "supplier_id": supplier.id,
         "product_id": product.id,
         "sku": product.sku,
+        "supplier_name": supplier.display_name,
+        "product_name": product.display_name,
+        "link_method": link.link_method,
         "status": (
             "HUMAN_CONFIRMED" if link.link_method == "HUMAN_CONFIRMED"
             and supplier.status in {"ACTIVE", "VERIFIED"}
