@@ -1,7 +1,7 @@
 name: V2Lab Form Live Deployment Verification
 on:
-  push:
-    branches: [chore/verify-v2lab-form-live-20261012]
+  pull_request:
+    branches: [feature/us-lacey-pilot-platform]
     paths: [.github/workflows/v2lab-form-live-check.yml]
 permissions:
   contents: read
