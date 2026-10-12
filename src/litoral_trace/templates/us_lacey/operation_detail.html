@@ -32,7 +32,7 @@
     <p class="mt-2 text-[11px] text-slate-400">Immutable operation ID · {{ detail.public_id }}</p>
   </div>
 </header>
-{% if identity is defined and identity and identity.organization_id in request.app.state.assurance_v2_lab_org_ids and business_reference.upper().startswith('V2LAB-') %}
+{% if identity is defined and identity and identity.organization_id in (request.app.state.assurance_v2_lab_org_ids|default(())) and business_reference.upper().startswith('V2LAB-') %}
 <div class="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
   <strong>Assurance V2 Private Lab · Not for filing.</strong>
   <p class="mt-1">Compare source-linked evidence, resolve exceptions and inspect reusable memory for this test shipment. Regulatory package issuance is disabled.</p>
