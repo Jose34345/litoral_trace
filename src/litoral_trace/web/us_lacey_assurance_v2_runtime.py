@@ -42,6 +42,10 @@ from litoral_trace.us_lacey.assurance_v2_review_adapter import review_journal_en
 from litoral_trace.us_lacey.assurance_v2_reuse_application import (
     apply_authorized_assurance_v2_reuse,
 )
+from litoral_trace.us_lacey.assurance_v2_review_batch import approve_assurance_review_batch
+from litoral_trace.us_lacey.assurance_v2_review_metrics import review_effort_snapshot
+from litoral_trace.us_lacey.assurance_v2_reuse_batch import authorize_assurance_reuse_group
+from litoral_trace.us_lacey.assurance_v2_historical_source import eligible_historical_source
 from litoral_trace.us_lacey.assurance_v2_identity_confirmation import (
     confirm_assurance_v2_identity,
 )
@@ -325,6 +329,55 @@ def configure_assurance_v2_shadow(
         except PermissionError:
             raise HTTPException(403, "Identity confirmation denied") from None
 
+    def batch_gateway(principal, operation_id, command):
+        require_commands(principal)
+        try:
+            return approve_assurance_review_batch(
+                organization_id=principal.organization_id,
+                operation_public_id=operation_id,
+                authenticated_user_id=int(principal.actor_id),
+                reason=command["reason"],
+                explicit_confirmation=command["explicit_confirmation"],
+                expected_source_set_fingerprint=command["expected_source_set_fingerprint"],
+                expected_case_fingerprint=command["expected_case_fingerprint"],
+                expected_batch_fingerprint=command["expected_batch_fingerprint"],
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except PermissionError:
+            raise HTTPException(403, "Batch review denied") from None
+
+    def reuse_batch_gateway(principal, operation_id, command):
+        require_commands(principal)
+        try:
+            return authorize_assurance_reuse_group(
+                organization_id=principal.organization_id,
+                operation_public_id=operation_id,
+                authenticated_user_id=int(principal.actor_id),
+                reason=command["reason"],
+                explicit_confirmation=command["explicit_confirmation"],
+                expected_source_set_fingerprint=command["expected_source_set_fingerprint"],
+                expected_case_fingerprint=command["expected_case_fingerprint"],
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except PermissionError:
+            raise HTTPException(403, "Historical review denied") from None
+
+    def historical_link_for(principal, operation_id, memory_id, document_id):
+        db = get_us_lacey_db_session()
+        try:
+            set_tenant_db_context(db, principal.organization_id)
+            source = eligible_historical_source(
+                db, organization_id=principal.organization_id,
+                memory_id=memory_id, assurance_document_id=document_id,
+            )
+            if source is None:
+                return None
+            return f"/assurance-v2/operations/{operation_id}/historical-documents/{memory_id}"
+        finally:
+            db.close()
+
     def issue_gateway(principal, operation_id, source_fingerprint, case_fingerprint):
         if environment in {"production", "pilot"}:
             raise HTTPException(403, "Private V2 laboratory: regulatory package issuance is disabled; not for filing")
@@ -357,6 +410,22 @@ def configure_assurance_v2_shadow(
         issue_gateway=issue_gateway,
         reuse_gateway=reuse_gateway,
         identity_gateway=identity_gateway,
+        batch_gateway=batch_gateway,
+        reuse_batch_gateway=reuse_batch_gateway,
+        historical_link_for=historical_link_for,
+        effort_for=lambda principal, operation_id: (
+            review_effort_snapshot(
+                organization_id=principal.organization_id,
+                operation_public_id=operation_id,
+            )
+            if os.getenv("US_LACEY_ENVIRONMENT")
+            else {
+                "previous_source_bytes_unchanged": None,
+                "human_batch_actions": 0,
+                "fields_confirmed_by_batch": 0,
+                "historical_fields_authorized_by_group": 0,
+            }
+        ),
         document_link_for=lambda principal, operation_id, doc, page: (
             f"/assurance-v2/operations/{operation_id}/documents/{doc}"
             + (f"#page={page}" if page is not None and 0 < page <= 10000 else "")
@@ -451,6 +520,72 @@ def configure_assurance_v2_shadow(
                                      "Cache-Control": "private, no-store",
                                      "X-Content-Type-Options": "nosniff",
                                  })
+
+    @app.get("/assurance-v2/operations/{operation_id}/historical-documents/{memory_id}")
+    def historical_original(request: Request, operation_id: str, memory_id: str):
+        principal = principal_for(request)
+        case = read_tenant_assurance_case(
+            organization_id=principal.organization_id,
+            operation_public_id=operation_id,
+        )
+        if case is None or case.operation_id != operation_id:
+            raise HTTPException(404, "Historical document unavailable")
+        matches = [r for r in case.reuses if (
+            str(r.get("id")) == memory_id
+            and r.get("status") in {"ELIGIBLE", "VERIFIED"}
+        )]
+        if len(matches) != 1:
+            raise HTTPException(404, "Historical document unavailable")
+        doc_id = int(matches[0]["origin_document_id"])
+        db = get_us_lacey_db_session()
+        try:
+            set_tenant_db_context(db, principal.organization_id)
+            source = eligible_historical_source(
+                db, organization_id=principal.organization_id,
+                memory_id=memory_id, assurance_document_id=doc_id,
+            )
+        finally:
+            db.close()
+        if source is None:
+            raise HTTPException(404, "Original historical evidence is not available")
+        try:
+            verified = VaultService().materialize_verified_download(
+                organization_id=principal.organization_id,
+                document_id=source["vault_public_id"],
+            )
+        except (VaultNotFoundError, VaultValidationError):
+            raise HTTPException(404, "Original historical evidence is not available") from None
+        except (VaultIntegrityError, VaultConflictError):
+            raise HTTPException(409, "Original document integrity changed") from None
+        except (VaultPersistenceError, VaultStorageOperationError):
+            raise HTTPException(503, "Historical source storage unavailable") from None
+        if verified.document.sha256 != source["sha256"]:
+            verified.close()
+            raise HTTPException(409, "Historical source hash changed")
+        try:
+            _audit_source_access(
+                principal=principal, operation_id=operation_id,
+                assurance_document_id=str(doc_id),
+            )
+        except Exception:
+            verified.close()
+            raise HTTPException(503, "Historical source audit unavailable") from None
+
+        def chunks():
+            try:
+                yield from verified.iter_chunks(chunk_size=64 * 1024)
+            finally:
+                verified.close()
+
+        return StreamingResponse(
+            chunks(), media_type=verified.document.content_type,
+            headers={
+                "Content-Disposition": 'inline; filename="historical-source.pdf"',
+                "Content-Length": str(verified.document.size_bytes),
+                "Cache-Control": "private, no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     app.include_router(router)
     return True

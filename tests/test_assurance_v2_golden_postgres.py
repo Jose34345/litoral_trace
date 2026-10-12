@@ -97,7 +97,7 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
         create = client.get("/operations/new")
         operation = client.post("/operations/new", data={
             "csrf_token": _csrf_for(create.text, "/operations/new"),
-            "client_reference": f"V2-GOLDEN-{suffix}",
+            "client_reference": f"V2LAB-GOLDEN-{suffix}",
         })
         assert operation.status_code == 303, operation.text
         operation_path = operation.headers["location"]
@@ -148,7 +148,7 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
         assert create.status_code == 200, create.text
         second = client.post("/operations/new", data={
             "csrf_token": _csrf_for(create.text, "/operations/new"),
-            "client_reference": f"V2-GOLDEN-SECOND-{suffix}",
+            "client_reference": f"V2LAB-GOLDEN-SECOND-{suffix}",
         })
         assert second.status_code == 303, second.text
         second_path = second.headers["location"]
@@ -239,22 +239,22 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
                       "reason": "Reviewed exact supplier SKU and shipment line"},
             )
             assert confirmed.status_code == 202, confirmed.text
-        for name in botanical:
-            current = read_tenant_assurance_case(
-                organization_id=organization_id, operation_public_id=second_id,
-            )
-            reuse = next(item for item in current.reuses if item["field_name"] == name)
-            applied = client.post(
-                f"/assurance-v2/operations/{second_id}/reuses",
-                json={"csrf_token": us_lacey_csrf_token(
-                          session_token=client.cookies.get("us_lacey_session"),
-                          purpose=f"assurance-v2:{second_id}"),
-                      "memory_id": reuse["id"], "field_name": name,
-                      "line_reference": reuse["line_reference"],
-                      "reason": "Reviewed exact historical PDF and current product identity"},
-            )
-            assert applied.status_code == 202, (name, applied.text)
-            assert applied.json()["status"] == "VERIFIED_REUSE"
+        # Product Simplification acceptance: one reviewed action for the three
+        # botanical claims, each independently source-fenced and audit-linked.
+        grouped = client.post(
+            f"/assurance-v2/operations/{second_id}/reuse-group",
+            json={
+                "csrf_token": us_lacey_csrf_token(
+                    session_token=client.cookies.get("us_lacey_session"),
+                    purpose=f"assurance-v2:{second_id}",
+                ),
+                "reason": "Reviewed original supplier evidence for all three botanical facts",
+                "explicit_confirmation": True,
+            },
+        )
+        assert grouped.status_code == 202, grouped.text
+        assert grouped.json()["status"] == "VERIFIED_REUSE_BATCH"
+        assert grouped.json()["field_count"] == 3
         applied_case = read_tenant_assurance_case(
             organization_id=organization_id, operation_public_id=second_id,
         )
@@ -262,100 +262,75 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
                 if field["authority"] == "VERIFIED_REUSE"} == botanical
         assert all(not field["document_ids"] for field in applied_case.fields
                    if field["authority"] == "VERIFIED_REUSE")
-        # The source observation of article/component is bound to the
-        # current exact supplier-SKU-line. Unlike an inferred answer, it can
-        # be explicitly selected and journaled by the authenticated reviewer.
-        current = read_tenant_assurance_case(
+        # One final human action accepts every eligible literal PDF claim
+        # with an individual V2 decision/provenance record in one transaction.
+        from litoral_trace.us_lacey.assurance_v2_review_policy import (
+            batch_candidates, simplified_review,
+        )
+        ready_for_review = read_tenant_assurance_case(
             organization_id=organization_id, operation_public_id=second_id,
         )
-        article_exception = next(
-            row for row in current.exceptions
-            if row.get("field_name") == "article_component"
-            and str(row.get("id", "")).startswith("field:")
+        plan = simplified_review(ready_for_review)
+        assert not plan["identities"]
+        assert not plan["reuse"]
+        assert plan["can_batch"], plan
+        assert {field.field_name for field in batch_candidates(ready_for_review)} >= {
+            "entered_value", "article_component", "plant_quantity", "metric_unit",
+        }
+        unauthenticated = client.post(
+            f"/assurance-v2/operations/{second_id}/review-batch",
+            json={"csrf_token": "invalid", "reason": "reviewed",
+                  "explicit_confirmation": True,
+                  "batch_fingerprint": plan["batch_fingerprint"]},
         )
-        source_choices = [
-            item for item in article_exception.get("candidates", ())
-            if str(item.get("id", "")).startswith("source:")
-        ]
-        assert len(source_choices) == 1
-        reviewed_article = client.post(
-            f"/assurance-v2/operations/{second_id}/decisions",
+        assert unauthenticated.status_code == 403
+        stale = client.post(
+            f"/assurance-v2/operations/{second_id}/review-batch",
+            json={"csrf_token": us_lacey_csrf_token(
+                session_token=client.cookies.get("us_lacey_session"),
+                purpose=f"assurance-v2:{second_id}",
+            ), "reason": "Reviewed full original source documents",
+                  "explicit_confirmation": True, "batch_fingerprint": "a"*64},
+        )
+        assert stale.status_code == 409
+        approved = client.post(
+            f"/assurance-v2/operations/{second_id}/review-batch",
             json={
                 "csrf_token": us_lacey_csrf_token(
                     session_token=client.cookies.get("us_lacey_session"),
                     purpose=f"assurance-v2:{second_id}",
                 ),
-                "exception_id": article_exception["id"],
-                "action": "ACCEPT",
-                "candidate_id": source_choices[0]["id"],
-                "reason": "Reviewed original PDF article and confirmed the exact SKU line",
+                "reason": "Reviewed the exact source-linked values in the current batch",
+                "explicit_confirmation": True,
+                "batch_fingerprint": plan["batch_fingerprint"],
             },
         )
-        assert reviewed_article.status_code == 202, reviewed_article.text
-        article_case = read_tenant_assurance_case(
+        assert approved.status_code == 202, approved.text
+        assert approved.json()["status"] == "RECORDED"
+        assert approved.json()["reviewed_fields"] >= 4
+        second_approval = client.post(
+            f"/assurance-v2/operations/{second_id}/review-batch",
+            json={
+                "csrf_token": us_lacey_csrf_token(
+                    session_token=client.cookies.get("us_lacey_session"),
+                    purpose=f"assurance-v2:{second_id}",
+                ),
+                "reason": "Attempt duplicate approval",
+                "explicit_confirmation": True,
+                "batch_fingerprint": plan["batch_fingerprint"],
+            },
+        )
+        assert second_approval.status_code == 409
+        updated = read_tenant_assurance_case(
             organization_id=organization_id, operation_public_id=second_id,
         )
-        assert any(
-            row["name"] == "article_component"
-            and row["authority"] == "HUMAN_CONFIRMED"
-            and row["document_ids"]
-            and row["evidence_ids"]
-            for row in article_case.fields
-        )
-        assert not any(
-            row.get("field_name") == "article_component"
-            for row in article_case.exceptions
-        )
-        # The actual synthetic entry worksheet explicitly states its
-        # entered value and the plant-material mass/unit. These are current
-        # PDF observations, not a shipment-total/packing-gross-weight guess.
-        # Human review is indispensable; candidates alone remain unapproved.
-        for field_name in ("entered_value", "plant_quantity", "metric_unit"):
-            reviewable = read_tenant_assurance_case(
-                organization_id=organization_id, operation_public_id=second_id,
-            )
-            pending = next(
-                row for row in reviewable.exceptions
-                if row.get("field_name") == field_name
-                and str(row.get("id", "")).startswith("field:")
-            )
-            source_choices = [
-                row for row in pending.get("candidates", ())
-                if str(row.get("id", "")).startswith("source:")
-            ]
-            assert len(source_choices) == 1, (field_name, pending)
-            original = next(
-                row for row in reviewable.candidate_observations
-                if row["id"] == source_choices[0]["id"][7:]
-            )
-            assert original["support_status"] == "SUPPORTED"
-            assert original["association_status"] == "DOCUMENT_EXACT_SINGLE_SKU"
-            assert original["sku"] == "BAM-COAST-04"
-            confirmed = client.post(
-                f"/assurance-v2/operations/{second_id}/decisions",
-                json={
-                    "csrf_token": us_lacey_csrf_token(
-                        session_token=client.cookies.get("us_lacey_session"),
-                        purpose=f"assurance-v2:{second_id}",
-                    ),
-                    "exception_id": pending["id"], "action": "ACCEPT",
-                    "candidate_id": source_choices[0]["id"],
-                    "reason": "Reviewed literal source quantity/value and the exact supplier SKU line",
-                },
-            )
-            assert confirmed.status_code == 202, (field_name, confirmed.text)
-            updated = read_tenant_assurance_case(
-                organization_id=organization_id, operation_public_id=second_id,
-            )
+        for name in ("entered_value", "article_component", "plant_quantity", "metric_unit"):
             assert any(
-                row["name"] == field_name
-                and row["authority"] == "HUMAN_CONFIRMED"
-                and row["document_ids"] and row["evidence_ids"]
-                for row in updated.fields
-            )
-            assert not any(
-                row.get("field_name") == field_name for row in updated.exceptions
-            )
+                field["name"] == name and field["authority"] == "HUMAN_CONFIRMED"
+                and field["document_ids"] and field["evidence_ids"]
+                for field in updated.fields
+            ), name
+            assert not any(row.get("field_name") == name for row in updated.exceptions)
         assert read_tenant_assurance_case(
             organization_id=organization_id + 1000000, operation_public_id=second_id,
         ) is None
@@ -378,7 +353,7 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
             assert create.status_code == 200, create.text
             created = client.post("/operations/new", data={
                 "csrf_token": _csrf_for(create.text, "/operations/new"),
-                "client_reference": f"V2-GOLDEN-{ordinal}-{suffix}",
+                "client_reference": f"V2LAB-GOLDEN-{ordinal}-{suffix}",
             })
             assert created.status_code == 303, created.text
             path = created.headers["location"]
