@@ -30,3 +30,50 @@
   .assurance-shell .gate-group ul{columns:1}
   .assurance-shell .source-link,.assurance-shell .decision-form{display:none!important}
 }
+
+/* Customer-first review: show three meaningful tasks, keep audit below a disclosure. */
+.assurance-shell .simple-workspace{max-width:1060px;margin:20px auto 24px;padding:26px;border:1px solid #dce6e9;border-radius:18px;background:#fff;box-shadow:0 6px 28px rgba(24,54,65,.035)}
+.assurance-shell .simple-header{display:flex;justify-content:space-between;gap:20px;align-items:start}
+.assurance-shell .simple-header h2{font-size:clamp(22px,2.4vw,30px);font-weight:750;letter-spacing:-.035em;margin:4px 0}
+.assurance-shell .simple-header p,.assurance-shell .simple-task p{color:#4e6674;margin:5px 0 0;line-height:1.55}
+.assurance-shell .simple-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:22px 0}
+.assurance-shell .simple-metrics>div{padding:15px;background:#f5f9f9;border:1px solid #e2ebea;border-radius:12px;display:flex;flex-direction:column;gap:4px}
+.assurance-shell .simple-metrics strong{font-size:28px;color:#124f43;line-height:1.1}
+.assurance-shell .simple-metrics small{color:#627685;font-size:12px}
+.assurance-shell .simple-workspace>h3{font-size:17px;margin:20px 0 13px}
+.assurance-shell .simple-task{padding:19px;border:1px solid #e0e9e7;border-radius:12px;margin:12px 0;background:#fff}
+.assurance-shell .simple-task.complete{display:flex;gap:15px;border-color:#bce7d4;background:#f2fbf7}
+.assurance-shell .simple-task.pending{background:#fffaf2;border-color:#f2dcbd}
+.assurance-shell .simple-task-head{display:flex;align-items:flex-start;gap:14px}
+.assurance-shell .simple-step{display:inline-flex;align-items:center;justify-content:center;flex:none;width:31px;height:31px;border-radius:50%;background:#e3f4ed;color:#17634f;font-weight:800}
+.assurance-shell .simple-task h4{font-size:16px;font-weight:750;margin:3px 0}
+.assurance-shell .simple-identity,.assurance-shell .simple-memory{margin:14px 0 0 45px;padding:14px;border:1px solid #e5ebeb;border-radius:8px}
+.assurance-shell .simple-identity small,.assurance-shell .simple-memory small{display:block;color:#637784;margin-top:4px}
+.assurance-shell .simple-workspace form{display:grid;gap:10px;margin-top:14px}
+.assurance-shell .simple-workspace input:not([type=checkbox]){display:block;margin-top:6px;width:100%;padding:10px 12px;border:1px solid #cddadb;border-radius:8px}
+.assurance-shell .simple-workspace button{justify-self:start;border:0;border-radius:9px;background:#076b50;color:#fff;padding:11px 18px;font-weight:700;cursor:pointer}
+.assurance-shell .simple-workspace button:disabled{opacity:.6;cursor:not-allowed}
+.assurance-shell .simple-values{margin:15px 0;border:1px solid #e2eceb;border-radius:8px;padding:12px}
+.assurance-shell .simple-values summary,.assurance-shell .technical-review>summary{cursor:pointer;font-weight:700}
+.assurance-shell .simple-values table{margin-top:12px}
+.assurance-shell .simple-checkbox{display:flex;gap:8px;align-items:flex-start;line-height:1.45}
+.assurance-shell .simple-checkbox input{margin-top:4px}
+.assurance-shell .simple-wait,.assurance-shell .simple-footnote{font-size:13px;color:#617683;line-height:1.5}
+.assurance-shell .technical-review{max-width:1100px;margin:0 auto 24px}
+.assurance-shell .technical-review>summary{display:block;list-style:none;padding:16px 20px;background:#f5f8fa;border:1px solid #dce5e8;border-radius:12px;color:#2d5261}
+.assurance-shell .technical-review>summary::-webkit-details-marker{display:none}
+.assurance-shell .technical-review>summary span{display:block;font-size:12px;font-weight:400;color:#738693;margin-top:3px}
+.assurance-shell .technical-review[open]>.workspace{margin-top:18px}
+@media(max-width:720px){
+ .assurance-shell .simple-workspace{padding:16px}
+ .assurance-shell .simple-header{display:block}
+ .assurance-shell .simple-metrics{gap:6px}
+ .assurance-shell .simple-metrics>div{padding:10px}
+ .assurance-shell .simple-metrics strong{font-size:23px}
+ .assurance-shell .simple-identity,.assurance-shell .simple-memory{margin-left:0}
+}
+@media print{
+ .assurance-shell .technical-review{display:none!important}
+ .assurance-shell .simple-workspace{box-shadow:none;border:0;padding:0}
+ .assurance-shell .simple-workspace form,.assurance-shell .simple-workspace button{display:none!important}
+}
