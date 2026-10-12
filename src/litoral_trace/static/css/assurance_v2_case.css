@@ -55,3 +55,25 @@
 .assurance-full-review>summary:hover{background:#ecf5f1}
 .assurance-full-review[open]>summary{margin-bottom:16px}
 @media print{.assurance-full-review>summary{display:none}}
+
+/* Bounded, evidence-first batch decision. Never appear as an automatic approval. */
+.assurance-shell .batch-review-panel{border:1px solid #d4e5df;border-radius:10px;background:#f9fcfa;margin:17px 0;padding:18px}
+.batch-review-heading{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}
+.batch-review-heading strong{font-size:1.06rem;color:#173d32}
+.batch-review-heading p{margin:5px 0 10px;font-size:.87rem;color:#476c5e}
+.batch-review-list{display:grid;gap:8px;margin:10px 0}
+.batch-review-item{display:flex;align-items:center;gap:14px;border:1px solid #dbe9e3;border-radius:8px;padding:11px;background:white;cursor:pointer}
+.batch-review-item input{width:19px;height:19px;accent-color:#087056;flex-shrink:0}
+.batch-review-value{display:flex;flex-direction:column;gap:2px;flex:1;overflow-wrap:anywhere}
+.batch-review-value strong{font-size:.95rem}
+.batch-review-value span{font-size:.9rem}
+.batch-review-value small{font-size:.75rem;color:#527064}
+.batch-review-item .source-link{margin-left:auto;white-space:nowrap;font-size:.82rem;font-weight:700}
+.batch-review-reason{display:block;font-weight:650;font-size:.91rem;margin:14px 0 9px}
+.batch-review-reason textarea{display:block;border:1px solid #bccfc7;border-radius:7px;background:#fff;width:100%;margin-top:5px;padding:10px;color:#163e33;font-size:.88rem}
+.batch-review-consent{display:flex;align-items:flex-start;gap:9px;font-size:.86rem;line-height:1.5;cursor:pointer}
+.batch-review-consent input{margin-top:3px;accent-color:#087056}
+.batch-review-submit{display:flex;align-items:center;gap:14px;margin-top:14px}
+.batch-review-result{font-size:.82rem;color:#566b61}
+@media(max-width:740px){.batch-review-item{flex-wrap:wrap}.batch-review-item .source-link{margin-left:32px}.batch-review-submit{flex-direction:column;align-items:flex-start}}
+@media print{.batch-review-item input,.batch-review-consent,.batch-review-submit{display:none!important}.batch-review-panel{break-inside:avoid}}
