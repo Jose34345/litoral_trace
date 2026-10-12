@@ -61,8 +61,8 @@ def build_review_workspace(case: dict[str, Any], required: dict[str, Any], gate:
     tasks.append(ReviewTask(
         "batch-review", "Review document-backed values",
         f"{len(unresolved_review)} declaration inputs still require authorized review. "
-        "Evidence is available for inspection; no bulk approval is enabled yet.",
-        "#required", "Review the source-backed fields; do not treat candidates as verified.", 40,
+        "Select the source-backed values you have checked. One approval can cover the eligible fields while each source remains auditable.",
+        "#batch-review-panel", "Review the source-backed fields; do not treat candidates as verified.", 40,
     )) if unresolved_review else None
     tasks.sort(key=lambda t: t.priority)
     grouped: dict[str, int] = {}
