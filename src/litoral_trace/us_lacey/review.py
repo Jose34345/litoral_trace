@@ -191,6 +191,14 @@ def review_us_lacey_field(
         raise UsLaceyReviewError("Review action is invalid.")
     v2_journal_active = False
     v2_fenced = expected_source_set_fingerprint is not None or expected_case_fingerprint is not None
+    # Outside production's owner-only lab, preserve the original fail-fast
+    # validation contract before opening a database connection. Production
+    # lab decisions are scoped after resolving the actual test shipment.
+    if review_journal_enabled():
+        if normalized_action == "not_required":
+            raise UsLaceyReviewError("V2 review cannot authorize NOT_REQUIRED without an explicit decision contract.")
+        if normalized_action == "edit" and not str(reason_code or "").strip():
+            raise UsLaceyReviewError("Explain the correction and supporting evidence before saving.")
     if source_claim_id and (
         not v2_fenced or normalized_action != "accept" or candidate_id is not None
         or not str(reason_code or "").strip()
