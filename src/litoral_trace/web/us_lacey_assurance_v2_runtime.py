@@ -413,9 +413,18 @@ def configure_assurance_v2_shadow(
         batch_gateway=batch_gateway,
         reuse_batch_gateway=reuse_batch_gateway,
         historical_link_for=historical_link_for,
-        effort_for=lambda principal, operation_id: review_effort_snapshot(
-            organization_id=principal.organization_id,
-            operation_public_id=operation_id,
+        effort_for=lambda principal, operation_id: (
+            review_effort_snapshot(
+                organization_id=principal.organization_id,
+                operation_public_id=operation_id,
+            )
+            if os.getenv("US_LACEY_ENVIRONMENT")
+            else {
+                "previous_source_bytes_unchanged": None,
+                "human_batch_actions": 0,
+                "fields_confirmed_by_batch": 0,
+                "historical_fields_authorized_by_group": 0,
+            }
         ),
         document_link_for=lambda principal, operation_id, doc, page: (
             f"/assurance-v2/operations/{operation_id}/documents/{doc}"
