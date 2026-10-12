@@ -53,7 +53,7 @@ def test_explicit_private_lab_registers_only_scoped_routes(monkeypatch):
     assert configure_assurance_v2_shadow(app)
     assert app.state.assurance_v2_lab_org_ids == frozenset({1})
     assert any(route.path == "/assurance-v2" for route in app.routes)
-    assert any(route.path == "/assurance-v2/operations/{operation_id}" for route in app.routes)
+    assert any(getattr(route, "path", "") == "/assurance-v2/operations/{operation_id}" for route in app.routes)
     # A visitor without a valid U.S. portal cookie is forbidden.
     with TestClient(app) as client:
         response = client.get("/assurance-v2", follow_redirects=False)
