@@ -69,12 +69,27 @@
         {% for item in simple.reuse %}
           <div class="simple-memory"><strong>{{ item.field_name|replace('_',' ')|title }} · {{ item.value }}</strong>
             <small>Line {{ item.line_reference }} · Historical document {{ item.origin_document_id }}</small>
-            <form class="reuse-form" data-memory="{{ item.id }}" data-field="{{ item.field_name }}" data-line="{{ item.line_reference }}">
-              <label>Reason for using this supplier evidence<input name="reason" maxlength="180" required placeholder="I reviewed the original supplier documentation"></label>
-              <button type="submit">Authorize this historical value</button><div class="reuse-result" role="status" aria-live="polite"></div>
-            </form>
+            {% if item.source_url %}
+              <a href="{{ item.source_url }}" class="source-link" target="_blank" rel="noopener noreferrer">Inspect original evidence ↗</a>
+            {% else %}
+              <p class="simple-wait"><strong>Original unavailable.</strong> Cannot authorize this historical claim until its source is restored and its integrity verified.</p>
+            {% endif %}
           </div>
         {% endfor %}
+        {% if simple.can_reuse_group %}
+          <form id="reuse-group-form">
+            <label>Reason for authorizing these {{ simple.reuse|length }} values
+              <input name="reason" maxlength="180" required placeholder="I checked all original source documents and this shipment's origin">
+            </label>
+            <label class="simple-checkbox"><input type="checkbox" name="explicit_confirmation" required>
+              I verified every historical document and that the supplier, product, harvest context and current shipment are compatible.
+            </label>
+            <button type="submit">Authorize {{ simple.reuse|length }} historical values together</button>
+            <div class="reuse-group-result" role="status" aria-live="polite"></div>
+          </form>
+        {% else %}
+          <p class="simple-wait">This evidence cannot be approved as a group until the exact product identity and every original document have been verified.</p>
+        {% endif %}
       </article>
     {% endif %}
     {% for item in simple.missing %}
