@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+import os
 from typing import Mapping
 
 from litoral_trace.db.tenant import set_tenant_db_context
@@ -252,8 +253,20 @@ def project_engine2_supported_suggestions(*, organization_id: int, operation_id:
         # cross-document canonical line binder conservatively abstained from.
         # This remains a REVIEW-only extension of the SINGLE canonical
         # publication transaction, never a second standalone writer.
-        source_review_count = publish_source_linked_review_candidates(
-            session, organization_id=organization_id, operation_id=operation_id,
+        # Explicit owner laboratory allowlist: never alter general production
+        # shipment publication or tests that only exercise the legacy writer.
+        lab_ids = {
+            int(token) for token in os.getenv(
+                "US_LACEY_ASSURANCE_V2_LAB_ORG_IDS", "",
+            ).split(",") if token.strip().isdigit() and int(token) > 0
+        }
+        source_review_count = (
+            publish_source_linked_review_candidates(
+                session, organization_id=organization_id, operation_id=operation_id,
+            )
+            if (os.getenv("US_LACEY_ASSURANCE_V2_MODE", "OFF").upper() == "SHADOW"
+                and int(organization_id) in lab_ids)
+            else 0
         )
         session.commit()
         return int(result.field_count) + int(derived_count) + int(source_review_count)
