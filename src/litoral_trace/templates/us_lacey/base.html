@@ -145,7 +145,11 @@
           {% else %}
           <div class="flex min-w-0 items-center gap-2">
             <p class="truncate text-sm font-bold text-slate-950">{{ identity.legal_name if identity is defined else 'Litoral Trace' }}</p>
+            {% if request.url.hostname in ('127.0.0.1', 'localhost') %}
+            <span class="hidden rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-sky-800 sm:inline-flex">Local staging</span>
+            {% else %}
             <span class="hidden rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-800 sm:inline-flex">Production</span>
+            {% endif %}
           </div>
           <p class="hidden truncate text-[11px] text-slate-500 sm:block">U.S. Lacey Act workspace · Regulatory ruleset active · Declaration preparation · Human review required</p>
           {% endif %}
