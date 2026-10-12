@@ -16,16 +16,11 @@
       <p class="subtext">Evidence, identity, human decisions and preparation status — not a filing receipt.</p>
     </div>
     <div class="filing-state {{ 'ready' if gate.ready else 'blocked' }}" aria-live="polite">
-      <span class="state-label">{{ "Authorized preparation" if gate.ready else "Blocked for final export" }}</span>
-      <small>{{ "Eligible to generate an assurance package" if gate.ready else gate.blockers|length ~ " gate findings (not unique errors)" }}</small>
+      <span class="state-label">{{ "Review complete" if gate.ready else "Review needed" }}</span>
+      <small>{{ "Private lab: filing disabled" if gate.ready else "Resolve the important tasks below · not for filing" }}</small>
     </div>
   </header>
-  <div class="context-row">
-    <span>Operation <strong>{{ case.operation_id }}</strong></span>
-    <span>Source set <code>{{ case.source_set_fingerprint[:16] }}</code></span>
-    <span>Revision {{ case.source_set_revision }}</span>
-    <span>Ruleset {{ case.ruleset_version }}</span>
-  </div>
+
 
   {# One decision per risk, not one click per raw extraction observation. #}
   <section class="simple-workspace" aria-labelledby="simple-review-title" data-exception-first>
@@ -135,13 +130,19 @@
         <button type="submit">Approve {{ simple.batch_count }} reviewed fields</button><div class="batch-result" role="status" aria-live="polite"></div>
       </form>
       {% else %}
-        <p class="simple-wait">Finish the supplier/identity review first. The final batch is unavailable while a risk or source is unresolved.</p>
+        <p class="simple-wait">Confirm this shipment’s supplier/SKU identity and resolve conflicting documentary sources before reviewing the remaining batch.</p>
       {% endif %}
     </article>
     <p class="simple-footnote">Private Assurance V2 laboratory · Not for filing. Your team remains responsible for final verification; this workspace does not submit to ACE or LAWGS.</p>
   </section>
   <details class="technical-review">
     <summary>Technical details and full audit trail <span>Document sources · Field-by-field authority · Regulatory diagnostics</span></summary>
+  <div class="context-row">
+    <span>Operation <strong>{{ case.operation_id }}</strong></span>
+    <span>Source set <code>{{ case.source_set_fingerprint[:16] }}</code></span>
+    <span>Revision {{ case.source_set_revision }}</span>
+    <span>Ruleset {{ case.ruleset_version }}</span>
+  </div>
   <div class="workspace">
     <aside class="assurance-nav" aria-label="Case navigation">
       <a href="#required">Required evidence <strong>{{ required_evidence.verified }}/{{ required_evidence.total }}</strong></a>
