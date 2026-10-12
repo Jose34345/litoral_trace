@@ -41,6 +41,12 @@
       <div><strong>{{ simple.missing_count }}</strong><small>Missing evidence</small></div>
       <div><strong>{{ simple.verified }}</strong><small>Verified in V2</small></div>
     </div>
+    {% if effort.previous_source_bytes_unchanged is not none %}
+      <p class="simple-footnote">Since the previous processing: {{ 'Original documents unchanged' if effort.previous_source_bytes_unchanged else 'Source set changed' }}. Previous approvals remain in the audit log; any authority for this revision needs explicit review of the new results.</p>
+    {% endif %}
+    {% if effort.human_batch_actions %}
+      <p class="simple-footnote">{{ effort.human_batch_actions }} grouped review {{ 'action' if effort.human_batch_actions == 1 else 'actions' }} recorded for this revision · {{ effort.fields_confirmed_by_batch }} documentary fields confirmed · {{ effort.historical_fields_authorized_by_group }} historical facts authorized.</p>
+    {% endif %}
     <h3>Attention needed</h3>
     {% if simple.identities %}
       <article class="simple-task" id="identity-task">
