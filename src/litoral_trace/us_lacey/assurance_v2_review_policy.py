@@ -49,7 +49,7 @@ def batch_candidates(case) -> tuple[BatchCandidate, ...]:
         if (not name or not line or not field.get("id")
                 or field.get("authority") != "CANDIDATE"
                 or name in _BOTANICAL
-                or field.get("status") in {"CONFLICT", "NOT_REQUIRED", "MATCHED"}):
+                or field.get("status") not in {"REVIEW", "SUPPORTED", "MISSING", "FOUND"}):
             continue
         proposed = _comparable_value(name, str(field.get("value") or ""))
         if proposed is None:
