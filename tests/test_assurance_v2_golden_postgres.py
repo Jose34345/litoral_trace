@@ -303,6 +303,7 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
                 } for item in eligible_botanical],
                 "reason": "Reviewed original botanical PDF and the current supplier, product and lot scope",
                 "explicit_confirmation": True,
+                "active_review_seconds": 35,
             },
         )
         assert applied.status_code == 202, applied.text
@@ -343,11 +344,30 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
                 "selected": selections,
                 "reason": "Inspected the four original worksheet values and the exact SKU line",
                 "explicit_confirmation": True,
+                "active_review_seconds": 75,
             },
         )
         assert result.status_code == 202, result.text
         assert result.json()["status"] == "RECORDED"
         assert result.json()["accepted_count"] == 4
+        from litoral_trace.us_lacey.assurance_v2_review_delta import (
+            read_p1_review_insights,
+        )
+        # One grouped botanical decision for 3 facts and one PDF-backed
+        # decision for 4 facts: seven legal sources, two human actions.
+        insights = read_p1_review_insights(
+            organization_id=organization_id,
+            operation_public_id=second_id,
+            current_case=read_tenant_assurance_case(
+                organization_id=organization_id, operation_public_id=second_id,
+            ),
+        )
+        assert insights["effort"]["grouped_review_actions"] == 2, insights
+        assert insights["effort"]["fields_authorized_by_group"] == 7, insights
+        assert insights["effort"]["estimated_clicks_avoided"] == 5, insights
+        assert insights["effort"]["observed_review_seconds"] == 110, insights
+        assert insights["effort"]["time_basis"] == "CLIENT_REPORTED_ACTIVE_INTERVAL"
+
         updated = read_tenant_assurance_case(
             organization_id=organization_id, operation_public_id=second_id,
         )
