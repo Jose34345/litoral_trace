@@ -111,7 +111,7 @@ def simplified_review(case) -> dict:
     missing = [
         {"field": row.field_name, "label": row.label,
          "line": row.line_reference, "guidance": row.guidance}
-        for row in checklist.rows if row.status == "MISSING_EVIDENCE"
+        for row in checklist["rows"] if row.status == "MISSING_EVIDENCE"
     ]
     conflicts = [
         item for item in case.exceptions
@@ -120,10 +120,10 @@ def simplified_review(case) -> dict:
     ]
     candidates = batch_candidates(case)
     return {
-        "total": checklist.total,
-        "verified": checklist.verified,
-        "found": checklist.total - checklist.missing,
-        "missing_count": checklist.missing,
+        "total": checklist["total"],
+        "verified": checklist["verified"],
+        "found": checklist["total"] - checklist["missing"],
+        "missing_count": checklist["missing"],
         "missing": missing,
         "identities": identities,
         "reuse": eligible_reuses,
