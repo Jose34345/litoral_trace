@@ -77,6 +77,16 @@ def _eligible_case_choices(case) -> dict[int, dict[str, str]]:
             )
         except ValueError:
             continue
+        # The case may know a historical document hash even after raw Vault
+        # bytes expire. A human cannot inspect an unavailable original;
+        # never offer such a source as a selectable batch decision.
+        current_docs = [
+            doc for doc in case.documents
+            if str(doc.get("id")) == str(source.assurance_document_id)
+            and doc.get("raw_available") is True
+        ]
+        if len(current_docs) != 1:
+            continue
         checked = validate_ppq_value(str(exception["field_name"]), source.normalized_value)
         if checked.status.value != "VALID" or not checked.normalized_value:
             continue
