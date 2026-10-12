@@ -1,0 +1,48 @@
+name: Verify Northflank Assurance V2 live
+on:
+  push:
+    branches:
+      - chore/verify-northflank-assurance-v2-20261012
+    paths:
+      - .github/workflows/assurance-v2-live-verification.yml
+permissions:
+  contents: read
+jobs:
+  northflank-readonly-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Inspect deployed versions and V2 switches (read-only)
+        env:
+          NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error
+          key=os.environ.get("NORTHFLANK_API_KEY")
+          if not key:
+              raise SystemExit("NORTHFLANK_SECRET_MISSING")
+          def get(path):
+              req=urllib.request.Request("https://api.northflank.com"+path,
+                  headers={"Authorization":"Bearer "+key,"Accept":"application/json"})
+              try:
+                  with urllib.request.urlopen(req,timeout=18) as rsp:
+                      return json.load(rsp).get("data",{})
+              except urllib.error.HTTPError as exc:
+                  raise SystemExit("NORTHFLANK_READ_HTTP_"+str(exc.code))
+          project="litoral-trace"
+          for name in ("litoral-trace-web","litoral-trace-worker"):
+              d=get("/v1/projects/"+project+"/services/"+name)
+              deploy=d.get("deployment") or {}
+              internal=deploy.get("internal") or {}
+              status=d.get("status") or {}
+              print("SERVICE",name)
+              print("DEPLOY_SHA",name,internal.get("deployedSHA"))
+              print("BUILD_SHA",name,internal.get("buildSHA"))
+              print("STATUS",name,"build",status.get("build"),"deployment",status.get("deployment"))
+              env=get("/v1/projects/"+project+"/services/"+name+"/runtime-environment").get("runtimeEnvironment",{})
+              mode=str(env.get("US_LACEY_ASSURANCE_V2_MODE") or "").upper().strip()
+              commands=str(env.get("US_LACEY_ASSURANCE_V2_COMMANDS") or "").upper().strip()
+              print("V2_SAFE_OFF",name,mode in ("","OFF","DISABLED"),commands in ("","OFF","DISABLED"))
+              if mode not in ("","OFF","DISABLED") or commands not in ("","OFF","DISABLED"):
+                  raise SystemExit("UNEXPECTED_V2_PRODUCTION_ACTIVATION")
+          PY
