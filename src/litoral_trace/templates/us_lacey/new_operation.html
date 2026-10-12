@@ -56,6 +56,7 @@
                 name="client_reference"
                 maxlength="255"
                 placeholder="Entry, job, PO, B/L or shipment number"
+                {% if request.query_params.get("assurance_v2_lab") == "1" %}value="V2LAB-PACK1" required{% endif %}
                 aria-describedby="client_reference_hint"
             >
             <span id="client_reference_hint" class="text-xs text-slate-500">Leave blank and Litoral Trace creates an internal shipment reference automatically.</span>
