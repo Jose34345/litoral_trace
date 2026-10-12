@@ -27,6 +27,7 @@ from litoral_trace.us_lacey.assurance_v2_source_claim_review import (
     select_reviewable_source_claim,
 )
 from litoral_trace.us_lacey.audit_trail import append_operation_event
+from litoral_trace.us_lacey.assurance_v2_review_adapter import review_journal_enabled
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.ppq505 import validate_ppq_value
 from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
@@ -65,6 +66,8 @@ def approve_assurance_review_batch(
         ).with_for_update())
         if op is None:
             raise PermissionError("Shipment unavailable")
+        if not review_journal_enabled(org_id, op.client_reference):
+            raise PermissionError("V2 lab review journal disabled for this shipment")
         if not str(op.client_reference or "").upper().startswith("V2LAB-"):
             raise PermissionError("Batch review is private-lab only")
         revision = session.scalar(select(UsLaceySourceSetRevision).where(
