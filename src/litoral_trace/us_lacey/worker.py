@@ -1156,11 +1156,12 @@ def process_one_us_lacey_job(
                 # Replays reuse the exact original file fingerprint. Audit event
                 # keys must also include the *revision*, otherwise the existing
                 # append-only uniqueness silently swallows completion events.
+                revision_id = getattr(source_set_claim, "revision_id", None)
+                generation = getattr(source_set_claim, "generation", None)
                 audit_source_key = (
-                    f"revision:{source_set_claim.revision_id}:"
-                    f"generation:{source_set_claim.generation}:"
+                    f"revision:{revision_id}:generation:{generation}:"
                     f"{source_set_fingerprint}"
-                    if source_set_claim.revision_id is not None
+                    if revision_id is not None
                     else str(source_set_fingerprint or f"job:{job.id}")
                 )
                 record_operation_event(
@@ -1174,8 +1175,8 @@ def process_one_us_lacey_job(
                         "projected_field_count": projection.projected_count,
                         "conflict_count": projection.conflict_count,
                         "document_status": document_status,
-                        "source_set_revision_id": source_set_claim.revision_id,
-                        "source_set_generation": source_set_claim.generation,
+                        "source_set_revision_id": revision_id,
+                        "source_set_generation": generation,
                     },
                 )
                 if reused_evidence_count:
