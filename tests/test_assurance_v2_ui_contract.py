@@ -154,7 +154,7 @@ def test_ui_separates_candidate_supported_human_and_memory_and_links_origin():
     assert html.status_code == 200
     for label in ["CANDIDATE · NOT CONFIRMED", "SOURCE SUPPORTED",
                   "HUMAN DECISION", "VERIFIED MEMORY", "HISTORICAL MEMORY",
-                  "View original source", "Blocked for final export", "SHA-256"]:
+                  "View original source", "Review needed", "SHA-256"]:
         assert label in html.text
     assert f"/operations/{OPERATION_ID}/documents/doc-invoice?page=2" in html.text
     assert "Conflicting species" in html.text
