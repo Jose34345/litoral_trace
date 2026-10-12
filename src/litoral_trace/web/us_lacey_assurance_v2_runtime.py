@@ -11,7 +11,7 @@ import os
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import select
 
 from litoral_trace.db.models import (
@@ -56,7 +56,7 @@ from litoral_trace.us_lacey.portal_auth import (
 )
 from litoral_trace.us_lacey.review import UsLaceyReviewError, review_us_lacey_field
 from litoral_trace.web.us_lacey_assurance_v2_views import (
-    WorkspacePrincipal, create_assurance_v2_router,
+    WorkspacePrincipal, create_assurance_v2_router, templates,
 )
 
 
@@ -159,8 +159,17 @@ def configure_assurance_v2_shadow(
     setting = (mode if mode is not None
                else os.environ.get("US_LACEY_ASSURANCE_V2_MODE", "OFF"))
     normalized = str(setting).strip().upper()
+    environment = os.environ.get("US_LACEY_ENVIRONMENT", "").strip().lower()
+    lab_org_ids = frozenset(
+        int(item.strip()) for item in
+        os.environ.get("US_LACEY_ASSURANCE_V2_LAB_ORG_IDS", "").split(",")
+        if item.strip().isdigit() and int(item.strip()) > 0
+    )
+    app.state.assurance_v2_lab_org_ids = lab_org_ids if normalized == "SHADOW" else frozenset()
     if normalized in {"", "OFF", "DISABLED"}:
         return False
+    if environment in {"production", "pilot"} and not lab_org_ids:
+        raise ValueError("Production Assurance V2 shadow requires an explicit organization allowlist")
     if normalized != "SHADOW":
         raise ValueError("Assurance V2 final release is blocked until full E2E acceptance")
     commands = (
@@ -180,7 +189,26 @@ def configure_assurance_v2_shadow(
             )
         except (UsLaceyPortalAuthError, UsLaceyOperationalAccessError):
             raise HTTPException(401, "Session unavailable") from None
+        if environment in {"production", "pilot"} and int(identity.organization_id) not in lab_org_ids:
+            raise HTTPException(404, "Assurance V2 private lab is unavailable")
         operation_id = str(request.path_params.get("operation_id") or "")
+        if environment in {"production", "pilot"} and operation_id:
+            try:
+                op_uuid = UUID(operation_id)
+            except ValueError:
+                raise HTTPException(404, "Test operation not found") from None
+            db = get_us_lacey_db_session()
+            try:
+                set_tenant_db_context(db, int(identity.organization_id))
+                test_operation = db.scalar(select(UsLaceyOperation).where(
+                    UsLaceyOperation.organization_id == int(identity.organization_id),
+                    UsLaceyOperation.public_id == op_uuid,
+                    UsLaceyOperation.client_reference.startswith("V2LAB-"),
+                ))
+                if test_operation is None:
+                    raise HTTPException(404, "Assurance V2 is limited to V2LAB- test shipments")
+            finally:
+                db.close()
         csrf = us_lacey_csrf_token(
             session_token=cookie, purpose=f"assurance-v2:{operation_id}",
         )
@@ -191,12 +219,20 @@ def configure_assurance_v2_shadow(
             actor_email=str(identity.email),
         )
 
-    def require_commands() -> None:
-        if not commands or not review_journal_enabled():
+    def require_commands(principal: WorkspacePrincipal) -> None:
+        # In production the journal is scoped to the authenticated owner and
+        # specifically-marked V2LAB shipments; never global to existing customers.
+        if environment in {"production", "pilot"}:
+            journal_ok = review_journal_enabled(
+                principal.organization_id, "V2LAB-PRIVATE-REVIEW",
+            )
+        else:
+            journal_ok = review_journal_enabled()
+        if not commands or not journal_ok:
             raise HTTPException(503, "Assurance V2 commands are disabled pending release acceptance")
 
     def decision_gateway(principal, operation_id, command):
-        require_commands()
+        require_commands(principal)
         action = command["action"]
         exception_id = command["exception_id"]
         if action not in {"ACCEPT", "CORRECT"} or not exception_id.startswith("field:"):
@@ -236,7 +272,7 @@ def configure_assurance_v2_shadow(
 
     def authorization_gateway(principal, operation_id, source_fingerprint,
                               case_fingerprint, reason, confirmed):
-        require_commands()
+        require_commands(principal)
         try:
             return explicitly_authorize_assurance_export(
                 organization_id=principal.organization_id,
@@ -252,7 +288,7 @@ def configure_assurance_v2_shadow(
             raise HTTPException(403, "Export authorization denied") from None
 
     def reuse_gateway(principal, operation_id, command):
-        require_commands()
+        require_commands(principal)
         try:
             return apply_authorized_assurance_v2_reuse(
                 organization_id=principal.organization_id,
@@ -271,7 +307,7 @@ def configure_assurance_v2_shadow(
             raise HTTPException(403, "Historical reuse denied") from None
 
     def identity_gateway(principal, operation_id, command):
-        require_commands()
+        require_commands(principal)
         try:
             return confirm_assurance_v2_identity(
                 organization_id=principal.organization_id,
@@ -290,7 +326,9 @@ def configure_assurance_v2_shadow(
             raise HTTPException(403, "Identity confirmation denied") from None
 
     def issue_gateway(principal, operation_id, source_fingerprint, case_fingerprint):
-        require_commands()
+        if environment in {"production", "pilot"}:
+            raise HTTPException(403, "Private V2 laboratory: regulatory package issuance is disabled; not for filing")
+        require_commands(principal)
         try:
             return issue_locked_assurance_package(
                 organization_id=principal.organization_id,
@@ -324,6 +362,37 @@ def configure_assurance_v2_shadow(
             + (f"#page={page}" if page is not None and 0 < page <= 10000 else "")
         ),
     )
+
+    @app.get("/assurance-v2", include_in_schema=False, response_class=HTMLResponse)
+    def assurance_v2_lab_home(request: Request):
+        principal = principal_for(request)
+        cookie = request.cookies.get(US_LACEY_SESSION_COOKIE) or ""
+        identity = resolve_us_lacey_session(cookie)
+        entitlement = require_us_lacey_operational_access(
+            organization_id=principal.organization_id,
+        )
+        db = get_us_lacey_db_session()
+        try:
+            set_tenant_db_context(db, principal.organization_id)
+            rows = db.scalars(select(UsLaceyOperation).where(
+                UsLaceyOperation.organization_id == principal.organization_id,
+                UsLaceyOperation.client_reference.startswith("V2LAB-"),
+            ).order_by(UsLaceyOperation.id.desc()).limit(30)).all()
+            operations = [{
+                "public_id": str(op.public_id),
+                "client_reference": str(op.client_reference),
+                "status": str(op.status),
+            } for op in rows]
+        finally:
+            db.close()
+        return templates.TemplateResponse(
+            request=request, name="us_lacey/assurance_v2_lab_home.html",
+            context={
+                "identity": identity, "entitlement": entitlement,
+                "authenticated": True, "operations": operations,
+            },
+            headers={"Cache-Control": "private, no-store"},
+        )
 
     @router.get("/{operation_id}/documents/{document_id}")
     def original_source(request: Request, operation_id: str, document_id: str):

@@ -28,6 +28,9 @@
         <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Workspace</p>
         <div class="space-y-1">
           <a href="/operations" {% if current_path.startswith('/operations') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-briefcase" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Shipments</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{{ entitlement.evaluation_completed_operations ~ '/' ~ entitlement.evaluation_total_operations if evaluation_mode else 'Queue' }}</span></a>
+          {% if identity is defined and identity and request.scope.get('app') and identity.organization_id in (request.scope['app'].state.assurance_v2_lab_org_ids|default(())) %}
+          <a href="/assurance-v2" {% if current_path.startswith('/assurance-v2') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-flask" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Assurance V2 Lab</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-400">Test only</span></a>
+          {% endif %}
           <a href="/evidence" {% if current_path.startswith('/evidence') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
             <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-folder-open" aria-hidden="true"></i></span>
             <span class="min-w-0 flex-1 truncate">Evidence</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Source</span>

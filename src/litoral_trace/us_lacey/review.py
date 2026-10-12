@@ -189,17 +189,16 @@ def review_us_lacey_field(
     normalized_action = str(action or "").strip().lower()
     if normalized_action not in {"accept", "edit", "not_required"}:
         raise UsLaceyReviewError("Review action is invalid.")
-    v2_journal_active = review_journal_enabled()
+    v2_journal_active = False
     v2_fenced = expected_source_set_fingerprint is not None or expected_case_fingerprint is not None
-    if v2_fenced and (
-        not v2_journal_active or not expected_source_set_fingerprint
-        or not expected_case_fingerprint
-    ):
-        raise UsLaceyReviewError("V2 review requires the enabled journal and both authority fingerprints.")
-    if v2_journal_active and normalized_action == "not_required":
-        raise UsLaceyReviewError("V2 review cannot authorize NOT_REQUIRED without an explicit decision contract.")
-    if v2_journal_active and normalized_action == "edit" and not str(reason_code or "").strip():
-        raise UsLaceyReviewError("Explain the correction and supporting evidence before saving.")
+    # Outside production's owner-only lab, preserve the original fail-fast
+    # validation contract before opening a database connection. Production
+    # lab decisions are scoped after resolving the actual test shipment.
+    if review_journal_enabled():
+        if normalized_action == "not_required":
+            raise UsLaceyReviewError("V2 review cannot authorize NOT_REQUIRED without an explicit decision contract.")
+        if normalized_action == "edit" and not str(reason_code or "").strip():
+            raise UsLaceyReviewError("Explain the correction and supporting evidence before saving.")
     if source_claim_id and (
         not v2_fenced or normalized_action != "accept" or candidate_id is not None
         or not str(reason_code or "").strip()
@@ -216,6 +215,16 @@ def review_us_lacey_field(
             organization_id=org_id,
             operation_public_id=operation_public_id,
         )
+        v2_journal_active = review_journal_enabled(org_id, operation.client_reference)
+        if v2_fenced and (
+            not v2_journal_active or not expected_source_set_fingerprint
+            or not expected_case_fingerprint
+        ):
+            raise UsLaceyReviewError("V2 review requires the enabled journal and both authority fingerprints.")
+        if v2_journal_active and normalized_action == "not_required":
+            raise UsLaceyReviewError("V2 review cannot authorize NOT_REQUIRED without an explicit decision contract.")
+        if v2_journal_active and normalized_action == "edit" and not str(reason_code or "").strip():
+            raise UsLaceyReviewError("Explain the correction and supporting evidence before saving.")
         if v2_fenced:
             # The source-set and authority check shares the same transaction
             # as field mutation, decision journal, audit and memory promotion.
@@ -568,7 +577,7 @@ def accept_supported_us_lacey_fields(
 ) -> UsLaceyBulkReviewResult:
     """Confirm all server-supported fields in one atomic customer review action."""
     org_id = int(organization_id)
-    v2_journal_active = review_journal_enabled()
+    v2_journal_active = False
     session = get_us_lacey_db_session()
     try:
         set_tenant_db_context(session, org_id)
@@ -577,6 +586,7 @@ def accept_supported_us_lacey_fields(
             organization_id=org_id,
             operation_public_id=operation_public_id,
         )
+        v2_journal_active = review_journal_enabled(org_id, operation.client_reference)
         fields = session.scalars(
             select(UsLaceyOperationField)
             .where(

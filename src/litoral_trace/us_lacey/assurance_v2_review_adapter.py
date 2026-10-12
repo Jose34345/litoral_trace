@@ -21,9 +21,29 @@ from litoral_trace.us_lacey.assurance_v2_memory import (
 from litoral_trace.us_lacey.reusable_evidence import REUSABLE_FIELD_NAMES
 
 
-def review_journal_enabled() -> bool:
-    """No production behavior change without a deliberate release switch."""
-    return os.environ.get("US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL", "OFF").upper() == "ON"
+def review_journal_enabled(
+    organization_id: int | None = None, operation_reference: str | None = None,
+) -> bool:
+    """Limit production journaling to explicitly allowlisted TEST operations.
+
+    Ordinary shipments must keep their original review behavior even when a
+    private owner-only V2 laboratory is enabled in the same deployment.
+    """
+    if os.environ.get("US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL", "OFF").upper() != "ON":
+        return False
+    environment = os.environ.get("US_LACEY_ENVIRONMENT", "").strip().lower()
+    if environment not in {"production", "pilot"}:
+        return True
+    allowed = {
+        value.strip() for value in
+        os.environ.get("US_LACEY_ASSURANCE_V2_LAB_ORG_IDS", "").split(",")
+        if value.strip().isdigit()
+    }
+    return (
+        organization_id is not None
+        and str(int(organization_id)) in allowed
+        and str(operation_reference or "").upper().startswith("V2LAB-")
+    )
 
 
 def journal_reviewed_field(
