@@ -249,27 +249,11 @@ def project_engine2_supported_suggestions(*, organization_id: int, operation_id:
             operation_id=operation_id,
             truth=truth,
         )
-        # Rescue exact, byte-verified single-SKU source claims which the
-        # cross-document canonical line binder conservatively abstained from.
-        # This remains a REVIEW-only extension of the SINGLE canonical
-        # publication transaction, never a second standalone writer.
-        # Explicit owner laboratory allowlist: never alter general production
-        # shipment publication or tests that only exercise the legacy writer.
-        lab_ids = {
-            int(token) for token in os.getenv(
-                "US_LACEY_ASSURANCE_V2_LAB_ORG_IDS", "",
-            ).split(",") if token.strip().isdigit() and int(token) > 0
-        }
-        source_review_count = (
-            publish_source_linked_review_candidates(
-                session, organization_id=organization_id, operation_id=operation_id,
-            )
-            if (os.getenv("US_LACEY_ASSURANCE_V2_MODE", "OFF").upper() == "SHADOW"
-                and int(organization_id) in lab_ids)
-            else 0
-        )
+        # Document/SKU publication must wait for product_intelligence to create
+        # the *current revision* operation_product_link. Publishing here used to
+        # quietly return zero because the link did not yet exist.
         session.commit()
-        return int(result.field_count) + int(derived_count) + int(source_review_count)
+        return int(result.field_count) + int(derived_count)
     except RuntimeError as exc:
         session.rollback()
         if str(exc) == "CANONICAL_STALE_LINE_REQUIRES_REVIEW":
@@ -297,6 +281,65 @@ def project_engine2_supported_suggestions(*, organization_id: int, operation_id:
             "U.S. Lacey canonical publication failed",
             extra={
                 "event": "us_lacey_canonical_publication_failed",
+                "organization_id": int(organization_id),
+                "operation_id": int(operation_id),
+            },
+        )
+        raise
+    finally:
+        session.close()
+
+
+def publish_lab_post_identity_review_candidates(*, organization_id: int, operation_id: int) -> int:
+    """Resume the canonical writer AFTER durable current-revision SKU linkage.
+
+    Production worker order is canonical truth -> product intelligence (identity
+    materialization) -> review-candidate reconciliation -> supplier reuse.
+    The previous in-canonical call ran before identity materialization, so the
+    bridge's fail-closed guard skipped every line candidate in real shipments,
+    although isolated tests supplied identity fixtures ahead of time.
+
+    This is not a second authority writer: the SAME canonical _publish_field
+    function persists REVIEW-only candidate state. Never create a human
+    decision, reuse record, filing authority, or overwrite a reviewed field.
+    Scoped to explicitly allowlisted owner lab tenants and SHADOW mode.
+    """
+    if engine2_mode() != ENGINE2_SHADOW:
+        return 0
+    if os.getenv("US_LACEY_ASSURANCE_V2_MODE", "OFF").strip().upper() != "SHADOW":
+        return 0
+    lab_ids = {
+        int(token) for token in os.getenv(
+            "US_LACEY_ASSURANCE_V2_LAB_ORG_IDS", "",
+        ).split(",") if token.strip().isdigit() and int(token) > 0
+    }
+    if int(organization_id) not in lab_ids:
+        return 0
+
+    session = get_us_lacey_db_session()
+    try:
+        set_tenant_db_context(session, int(organization_id))
+        count = publish_source_linked_review_candidates(
+            session, organization_id=int(organization_id),
+            operation_id=int(operation_id),
+        )
+        session.commit()
+        LOGGER.info(
+            "Assurance V2 post-identity source candidates reconciled",
+            extra={
+                "event": "assurance_v2_post_identity_review_candidates",
+                "organization_id": int(organization_id),
+                "operation_id": int(operation_id),
+                "review_only_field_count": int(count),
+            },
+        )
+        return int(count)
+    except Exception:
+        session.rollback()
+        LOGGER.exception(
+            "Assurance V2 post-identity source candidate publication failed closed",
+            extra={
+                "event": "assurance_v2_post_identity_review_candidates_failed",
                 "organization_id": int(organization_id),
                 "operation_id": int(operation_id),
             },
