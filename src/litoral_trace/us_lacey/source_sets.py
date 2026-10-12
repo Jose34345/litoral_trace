@@ -80,6 +80,72 @@ def _fingerprint_current_source_set(
     return fingerprint, rows
 
 
+
+def reseal_same_sources_for_reprocessing(
+    session: Session, *, organization_id: int, operation_id: int,
+) -> UsLaceySourceSetRevision:
+    """Create a NEW authority generation for a controlled replay of unchanged bytes.
+
+    Must be invoked while the operation row is locked, under the operation
+    projection advisory lock, in the SAME transaction as requeueing jobs.
+    Historical decisions and documents are never deleted or implicitly carried
+    forward as newly verified V2 decisions.
+    """
+    old = session.scalar(
+        select(UsLaceySourceSetRevision).where(
+            UsLaceySourceSetRevision.organization_id == organization_id,
+            UsLaceySourceSetRevision.operation_id == operation_id,
+            UsLaceySourceSetRevision.is_current.is_(True),
+        ).with_for_update()
+    )
+    if old is None or old.status != "FINALIZED":
+        raise ValueError("The current source set must finish processing before reprocessing.")
+    fingerprint, rows = _fingerprint_current_source_set(
+        session, organization_id=organization_id, operation_id=operation_id,
+    )
+    if not rows or fingerprint != old.source_set_fingerprint:
+        raise ValueError("The current documents changed; refresh the shipment first.")
+
+    # A new revision is mandatory even when the original bytes are identical:
+    # prior human authority was granted for the OLD revision, not this replay.
+    old.is_current = False
+    old.status = "SUPERSEDED"
+    session.execute(
+        update(UsLaceyProductIntelligenceSnapshot).where(
+            UsLaceyProductIntelligenceSnapshot.organization_id == organization_id,
+            UsLaceyProductIntelligenceSnapshot.operation_id == operation_id,
+            UsLaceyProductIntelligenceSnapshot.status != "STALE",
+        ).values(status="STALE")
+    )
+    session.execute(
+        update(UsLaceyRegulatoryAssessmentSnapshot).where(
+            UsLaceyRegulatoryAssessmentSnapshot.organization_id == organization_id,
+            UsLaceyRegulatoryAssessmentSnapshot.operation_id == operation_id,
+            UsLaceyRegulatoryAssessmentSnapshot.status != "STALE",
+        ).values(status="STALE")
+    )
+    generation = int(session.scalar(
+        select(func.coalesce(func.max(UsLaceySourceSetRevision.generation), 0)).where(
+            UsLaceySourceSetRevision.organization_id == organization_id,
+            UsLaceySourceSetRevision.operation_id == operation_id,
+        )
+    ) or 0) + 1
+    revision = UsLaceySourceSetRevision(
+        organization_id=organization_id, operation_id=operation_id,
+        generation=generation, source_set_fingerprint=fingerprint,
+        document_count=len(rows), status="SEALED", is_current=True,
+    )
+    session.add(revision)
+    session.flush()
+    session.add_all(
+        UsLaceySourceSetMember(
+            organization_id=organization_id, source_set_revision_id=revision.id,
+            operation_document_id=link.id, assurance_document_id=link.assurance_document_id,
+        ) for link, _vault in rows
+    )
+    return revision
+
+
 def seal_current_source_set(*, organization_id: int, operation_id: int, session_factory: SessionFactory = get_us_lacey_db_session) -> UsLaceySourceSetRevision:
     """Snapshot current links and expose them to workers only as one SEALED set."""
     session = session_factory()
