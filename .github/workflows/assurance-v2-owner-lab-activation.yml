@@ -75,7 +75,10 @@ jobs:
               for name in services:
                   patch(name,proposed[name])
                   changed.append(name)
-                  print("PRIVATE_LAB_ENV_APPLIED",name,flush=True)
+                  # PATCH writes desired environment but an in-flight web pod
+                  # may still serve old routes. Restart deliberately.
+                  call(base+name+"/restart","POST",{})
+                  print("PRIVATE_LAB_ENV_APPLIED_AND_RESTART_REQUESTED",name,flush=True)
               for name in services:
                   current=call(base+name+"/runtime-environment").get("runtimeEnvironment") or {}
                   for k in ("US_LACEY_ASSURANCE_V2_MODE","US_LACEY_ASSURANCE_V2_LAB_ORG_IDS",
@@ -96,13 +99,22 @@ jobs:
               else:
                   raise RuntimeError("PRODUCTION_HEALTH_READINESS_NOT_RECOVERED")
               url="https://lacey.litoraltrace.com/assurance-v2"
-              try:
-                  with urllib.request.urlopen(url,timeout=18) as response:
-                      code=response.status
-              except urllib.error.HTTPError as err:
-                  code=err.code
-              if code!=401:
-                  raise RuntimeError("PRIVATE_LAB_UNAUTHENTICATED_BOUNDARY_UNEXPECTED_HTTP_"+str(code))
+              for tick in range(36):
+                  try:
+                      with urllib.request.urlopen(url,timeout=12) as response:
+                          code=response.status
+                  except urllib.error.HTTPError as err:
+                      code=err.code
+                  except (urllib.error.URLError,TimeoutError):
+                      code=503
+                  if code==401:
+                      break
+                  if code not in (404,502,503):
+                      raise RuntimeError("PRIVATE_LAB_UNAUTHENTICATED_BOUNDARY_UNEXPECTED_HTTP_"+str(code))
+                  if tick%5==0: print("WAITING_FOR_LAB_ROUTE",tick,"HTTP",code,flush=True)
+                  time.sleep(6)
+              else:
+                  raise RuntimeError("LAB_ROUTE_NOT_REACHABLE_AFTER_RESTART")
               print("ASSURANCE_V2_PRIVATE_LAB_LIVE_VERIFIED")
               print("WEB_AND_WORKER_HEALTH_READY_200")
               print("PRIVATE_LAB_ANONYMOUS_HTTP_401")
@@ -112,7 +124,8 @@ jobs:
               for name in reversed(changed):
                   try:
                       patch(name,original[name])
-                      print("ROLLED_BACK",name,flush=True)
+                      call(base+name+"/restart","POST",{})
+                      print("ROLLED_BACK_AND_RESTART_REQUESTED",name,flush=True)
                   except Exception as rollback_exc:
                       print("ROLLBACK_FAILED",name,type(rollback_exc).__name__,flush=True)
               raise
