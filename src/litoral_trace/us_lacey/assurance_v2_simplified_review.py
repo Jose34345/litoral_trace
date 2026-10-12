@@ -5,7 +5,7 @@ historical evidence. Aggregation groups UI actions, not compliance checks.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any
 
 _BOTANICAL = frozenset({"genus", "species", "country_of_harvest"})
@@ -29,7 +29,7 @@ def build_review_workspace(case: dict[str, Any], required: dict[str, Any], gate:
     """Summarize next human ACTIONS without claiming the fields are approved."""
     identities = tuple(case.get("identities") or ())
     reuses = tuple(case.get("reuses") or ())
-    rows = tuple(required.get("rows") or ())
+    rows = tuple(asdict(row) if is_dataclass(row) else row for row in (required.get("rows") or ()))
     tasks: list[ReviewTask] = []
     pending_identities = [i for i in identities if i.get("status") == "REVIEW_REQUIRED"]
     for item in pending_identities:
