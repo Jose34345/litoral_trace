@@ -256,6 +256,25 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
         )
         assert original.status_code == 200, original.text[:300]
         assert "pdf" in original.headers.get("content-type", "").lower()
+        assert client.get(
+            f"/assurance-v2/operations/{second_id}/historical-documents/"
+            f"{first['origin_document_id']}/00000000-0000-0000-0000-000000000000"
+        ).status_code == 404
+        assert client.post(
+            f"/assurance-v2/operations/{second_id}/botanical-batch",
+            json={
+                "csrf_token": us_lacey_csrf_token(
+                    session_token=client.cookies.get("us_lacey_session"),
+                    purpose=f"assurance-v2:{second_id}",
+                ),
+                "selected": [{
+                    "memory_id": item["id"], "field_name": item["field_name"],
+                    "line_reference": item["line_reference"],
+                } for item in eligible_botanical],
+                "reason": "Reviewed original botanical PDF",
+                "explicit_confirmation": False,
+            },
+        ).status_code == 422
         applied = client.post(
             f"/assurance-v2/operations/{second_id}/botanical-batch",
             json={
