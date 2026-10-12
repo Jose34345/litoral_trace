@@ -93,6 +93,13 @@ def approve_botanical_evidence_group(
         if (case is None or case.source_set_revision != revision.id
                 or case.authority_fingerprint() != expected_case_fingerprint):
             raise ValueError("STALE_CASE_AUTHORITY")
+        confirmed_identity = [
+            identity for identity in case.identities
+            if identity.get("line_reference") == entries[0][2]
+            and identity.get("status") == "HUMAN_CONFIRMED"
+        ]
+        if len(confirmed_identity) != 1:
+            raise ValueError("IDENTITY_NOT_CONFIRMED")
         eligible = {
             (str(row["id"]), str(row["field_name"]), str(row["line_reference"])): row
             for row in case.reuses if row.get("status") == "ELIGIBLE"
