@@ -217,6 +217,10 @@ def _detail_text(event_type: str, details: dict[str, Any]) -> str:
         return f"{package} preparation package generated from the reviewed record."
     if event_type == OperationEventType.HUMAN_REVIEW.value:
         action = str(details.get("action") or "").strip().lower()
+        if action == "reprocess_requested":
+            count = int(details.get("document_count") or 0)
+            revision = int(details.get("source_set_generation") or 0)
+            return f"Reprocessing requested for {count} existing documents · source revision {revision}. Human approvals must be reviewed for the new revision."
         if action == "accept_supported":
             count = int(details.get("accepted_field_count") or 0)
             return f"{count} supported field{'s' if count != 1 else ''} confirmed in bulk."
