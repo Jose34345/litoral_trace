@@ -62,6 +62,7 @@ from litoral_trace.us_lacey.jobs import (
     UsLaceyJobError,
     retry_failed_us_lacey_operation,
 )
+from litoral_trace.us_lacey.reprocessing import reprocess_existing_v2lab_documents
 from litoral_trace.us_lacey.paddle import (
     UsLaceyPaddleConfigurationError,
     load_us_lacey_paddle_config,
@@ -270,7 +271,7 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
     except Exception:
         dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
     tokens = {field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}") for field in detail.fields if field.status in {"MISSING", "CONFLICT", "SUPPORTED", "REVIEW", "FOUND"}}
-    return _html(render_operation_detail(request=request, identity=identity, entitlement=entitlement, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, alias_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"alias:{detail.public_id}"), retry_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"retry:{detail.public_id}"), error=error, notice=notice, field_errors=field_errors, field_input_values=field_input_values), status_code=status_code)
+    return _html(render_operation_detail(request=request, identity=identity, entitlement=entitlement, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, alias_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"alias:{detail.public_id}"), retry_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"retry:{detail.public_id}"), reprocess_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"reprocess:{detail.public_id}"), error=error, notice=notice, field_errors=field_errors, field_input_values=field_input_values), status_code=status_code)
 
 
 def _workspace_fragment(
@@ -1381,6 +1382,51 @@ def operation_retry_processing(
                 request,
                 "Operation not found.",
                 status_code=404,
+            )
+
+
+@app.post("/operations/{operation_public_id}/actions/reprocess", response_class=HTMLResponse)
+def operation_reprocess_existing_documents(
+    operation_public_id: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """Replay existing current documents in the owner-only V2 lab, no re-upload."""
+    try:
+        identity, _entitlement = _operational_mutation_context(us_session)
+        if identity.organization_id not in getattr(
+            request.app.state, "assurance_v2_lab_org_ids", frozenset()
+        ):
+            raise HTTPException(status_code=404, detail="Not found.")
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"reprocess:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        reprocess_existing_v2lab_documents(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            user_id=identity.user_id,
+        )
+        wake_us_lacey_worker()
+        return RedirectResponse(
+            f"/operations/{operation_public_id}?reprocessing=1", status_code=303,
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyJobError, ValueError) as exc:
+        try:
+            return _detail_page(
+                request=request, identity=identity,
+                operation_public_id=operation_public_id,
+                us_session=us_session or "", error=str(exc), status_code=409,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(
+                request, "Operation not found.", status_code=404,
             )
 
 
