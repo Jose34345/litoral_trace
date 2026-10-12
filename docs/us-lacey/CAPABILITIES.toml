@@ -587,3 +587,20 @@ implementation = [
 ]
 tests = ["tests/test_assurance_v2_simplified_review.py"]
 notes = "Groups source-backed tasks for the reviewer while preserving each exception and raw gate check in technical details. This stage does NOT supply bulk human authority or automatic reuse. Batch approval requires a separately tested write-side transaction contract with source revision, per-field evidence and audit atomicity."
+
+
+[capabilities.assurance_v2_atomic_batch_review]
+status = "OWNER_LAB_ONLY"
+owner = "us_lacey + web"
+authority = "explicit_human_review"
+implementation = [
+  "src/litoral_trace/us_lacey/assurance_v2_batch_review.py",
+  "src/litoral_trace/web/us_lacey_assurance_v2_views.py",
+  "src/litoral_trace/web/us_lacey_assurance_v2_runtime.py",
+  "src/litoral_trace/templates/us_lacey/assurance_v2_case.html",
+]
+tests = [
+  "tests/test_assurance_v2_batch_review.py",
+  "tests/test_assurance_v2_golden_postgres.py",
+]
+notes = "One reviewer gesture may ACCEPT selected exact current-document claims on a confirmed SKU/line, while preserving a separate immutable source-linked V2 decision per field and atomic transaction. Original-document hashes, tenant, current source revision, PPQ validity, review status and no real conflicts are required. Botanical reuse, unknown values, correction and filing authorization remain independent explicit decisions. The V2 private lab remains NOT FOR FILING."
