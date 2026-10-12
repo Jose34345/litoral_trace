@@ -239,6 +239,206 @@ def _derived_component_truth(
     )
 
 
+
+# The same canonical publication transaction may use an already byte-verified
+# Assurance V2 observation to populate a REVIEW candidate. It must NEVER turn a
+# candidate into a regulatory fact, reuse, MATCHED field or export authorization.
+_DOCUMENTARY_REVIEW_FIELDS = frozenset({
+    "entered_value", "article_component", "plant_quantity", "metric_unit",
+    "merchandise_description",
+})
+
+
+def publish_source_linked_review_candidates(
+    session, *, organization_id: int, operation_id: int,
+) -> int:
+    """Fill missing machine-only PPQ *review* fields from exact-PDF claims.
+
+    Hard fences: current finalized/finishing source-set membership and hashes;
+    a corroborated documentary binding plus SAME SKU on current line for plant
+    fields; a literal shipment-scope claim for shipment fields; unique value per
+    field; PPQ validation; no existing value or human decision. Publication uses
+    the existing canonical _publish_field writer in this transaction, not a
+    competing ingestion writer.
+    """
+    from litoral_trace.db.models import (
+        AssuranceDocument, UsLaceyOperationProductLink,
+        UsLaceySourceSetRevision, UsLaceySupplierProduct, VaultDocument,
+    )
+    from litoral_trace.us_lacey.assurance_v2_case_reader import (
+        _source_claim_observations,
+    )
+    from litoral_trace.us_lacey.ppq505 import (
+        PPQ505_SHIPMENT_REFERENCE, validate_ppq_value,
+    )
+
+    revision = session.scalar(select(UsLaceySourceSetRevision).where(
+        UsLaceySourceSetRevision.organization_id == organization_id,
+        UsLaceySourceSetRevision.operation_id == operation_id,
+        UsLaceySourceSetRevision.is_current.is_(True),
+        UsLaceySourceSetRevision.status.in_(("FINALIZING", "FINALIZED")),
+    ))
+    if revision is None:
+        return 0
+    # The current source set is immutable under the worker's operation lock.
+    source_rows = session.execute(
+        select(UsLaceyOperationDocument, VaultDocument)
+        .join(AssuranceDocument, (
+            AssuranceDocument.id == UsLaceyOperationDocument.assurance_document_id
+        ) & (
+            AssuranceDocument.organization_id == organization_id
+        ))
+        .join(VaultDocument, (
+            VaultDocument.id == AssuranceDocument.vault_document_id
+        ) & (
+            VaultDocument.organization_id == organization_id
+        ))
+        .where(
+            UsLaceyOperationDocument.organization_id == organization_id,
+            UsLaceyOperationDocument.operation_id == operation_id,
+            UsLaceyOperationDocument.is_current.is_(True),
+        )
+    ).all()
+    if len(source_rows) != revision.document_count or not source_rows:
+        return 0
+    docs = [{
+        "id": str(link.assurance_document_id),
+        "operation_document_id": int(link.id),
+        "version": str(link.version_number),
+        "sha256": vault.sha256,
+    } for link, vault in source_rows if vault.status == "available"]
+    if len(docs) != revision.document_count:
+        return 0
+    try:
+        claims = _source_claim_observations(
+            session, organization_id=organization_id, operation_id=operation_id,
+            revision=revision, documents=docs,
+        )
+    except ValueError:
+        return 0
+    if claims is None:
+        return 0
+
+    lines = session.scalars(select(UsLaceyPpqPlantLine).where(
+        UsLaceyPpqPlantLine.organization_id == organization_id,
+        UsLaceyPpqPlantLine.operation_id == operation_id,
+    )).all()
+    line_by_ref = {line.line_reference: line for line in lines}
+    links = session.execute(
+        select(UsLaceyOperationProductLink, UsLaceySupplierProduct)
+        .join(UsLaceySupplierProduct, (
+            UsLaceySupplierProduct.id == UsLaceyOperationProductLink.supplier_product_id
+        ) & (
+            UsLaceySupplierProduct.organization_id == organization_id
+        ))
+        .where(
+            UsLaceyOperationProductLink.organization_id == organization_id,
+            UsLaceyOperationProductLink.operation_id == operation_id,
+            UsLaceyOperationProductLink.source_set_revision_id == revision.id,
+        )
+    ).all()
+    sku_by_line: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    for link, product in links:
+        ref = str(link.line_reference)
+        if ref in sku_by_line:
+            ambiguous.add(ref)
+        sku_by_line[ref] = str(product.sku)
+    for ref in ambiguous:
+        sku_by_line.pop(ref, None)
+
+    targets = session.scalars(select(UsLaceyOperationField).where(
+        UsLaceyOperationField.organization_id == organization_id,
+        UsLaceyOperationField.operation_id == operation_id,
+        UsLaceyOperationField.field_name.in_(_DOCUMENTARY_REVIEW_FIELDS),
+    )).all()
+    source_to_assurance = {int(link.id): int(link.assurance_document_id)
+                           for link, _ in source_rows}
+    operation_by_assurance = {int(link.assurance_document_id): int(link.id)
+                              for link, _ in source_rows}
+    published = 0
+    for target in targets:
+        if (_field_has_human_review(target)
+                or str(target.human_value or "").strip()
+                or str(target.normalized_value or target.original_value or "").strip()
+                or target.field_status == "NOT_REQUIRED"):
+            continue
+        ref = str(target.merchandise_line_reference or "")
+        if target.field_scope == "PLANT_LINE":
+            if ref not in line_by_ref or target.plant_line_id != line_by_ref[ref].id:
+                continue
+            expected_sku = sku_by_line.get(ref)
+            if not expected_sku:
+                continue
+        elif target.field_scope == "SHIPMENT" and ref == PPQ505_SHIPMENT_REFERENCE:
+            expected_sku = None
+        else:
+            continue
+
+        eligible = []
+        for claim in claims:
+            if (claim.get("field_name") != target.field_name
+                    or claim.get("authority_status") != "CANDIDATE"
+                    or claim.get("state") != "CANDIDATE"
+                    or claim.get("support_status") != "SUPPORTED"
+                    or not str(claim.get("normalized_value") or "").strip()
+                    or not isinstance(claim.get("source_locator"), dict)
+                    or claim["source_locator"].get("kind") != "TEXT_SPAN"):
+                continue
+            if expected_sku is None:
+                if (claim.get("entity_type") != "SHIPMENT"
+                        or claim.get("association_status") != "UNBOUND"):
+                    continue
+            elif not (
+                claim.get("association_status") == "DOCUMENT_EXACT_SINGLE_SKU"
+                and claim.get("line_reference") == ref
+                and claim.get("sku") == expected_sku
+            ):
+                continue
+            try:
+                assurance_id = int(claim["assurance_document_id"])
+            except (ValueError, TypeError):
+                continue
+            operation_document_id = operation_by_assurance.get(assurance_id)
+            if operation_document_id is None:
+                continue
+            validation = validate_ppq_value(
+                target.field_name, claim["normalized_value"],
+            )
+            if validation.status.value != "VALID" or not validation.normalized_value:
+                continue
+            eligible.append((claim, operation_document_id, validation.normalized_value))
+        if not eligible or len({value for _claim, _doc, value in eligible}) != 1:
+            # Genuine conflicting values or ambiguous scope MUST abstain.
+            continue
+        chosen_value = eligible[0][2]
+        evidence = tuple(CanonicalEvidence(
+            candidate_id=str(claim["id"]),
+            document_id=str(operation_document_id),
+            field_key=target.field_name,
+            normalized_value=value,
+            source_authority=0.5, candidate_score=0.5,
+            source_page=claim["source_locator"].get("page"),
+            source_text=str(claim.get("raw_value") or value),
+            line_key=ref if expected_sku is not None else None,
+            component_key=None, evidence_class="EXPLICIT",
+        ) for claim, operation_document_id, value in eligible)
+        source_truth = CanonicalFieldTruth(
+            field_name=target.field_name,
+            state=CanonicalTruthState.REVIEW_REQUIRED,
+            values=(chosen_value,),
+            evidence=evidence,
+        )
+        written, _requires_review, _rejected = _publish_field(
+            session, organization_id=organization_id, operation_id=operation_id,
+            target=target, truth=source_truth,
+            assurance_by_operation_document=source_to_assurance,
+            ambiguous_component_binding=False,
+        )
+        published += written
+    return published
+
+
 def publish_derived_article_components(
     session,
     *,
