@@ -77,6 +77,7 @@ def classify_prior_review(
     current_documents: tuple[dict, ...],
     current_choice: dict | None,
     current_authority: str | None,
+    current_value: str | None = None,
 ) -> str:
     """Fail closed on absent/changed source, claim, identity or selected value."""
     if not prior_sources:
@@ -96,7 +97,11 @@ def classify_prior_review(
     if prior_source_fingerprint != current_source_fingerprint:
         return "SOURCE_SET_CHANGED"
     if current_authority == "HUMAN_CONFIRMED":
-        return "CURRENTLY_AUTHORIZED"
+        return (
+            "CURRENTLY_AUTHORIZED"
+            if str(current_value or "").strip() == str(prior_value or "").strip()
+            else "VALUE_REVIEWED_DIFFERENTLY"
+        )
     if (current_choice is None or
             str(current_choice.get("value") or "").strip() != str(prior_value or "").strip()):
         return "REVIEW_NEEDED"
@@ -197,6 +202,7 @@ def read_p1_review_insights(*, organization_id: int, operation_public_id: str,
                 current_documents=tuple(current_case.documents),
                 current_choice=choices.get(key),
                 current_authority=current.get("authority"),
+                current_value=current.get("value"),
             )
             notes.append({
                 "line_reference": key[0], "field_name": key[1],
