@@ -226,7 +226,12 @@ def evaluate_filing_gate(case: AssuranceCase, *, now: datetime | None = None) ->
     for exception in case.exceptions:
         if str(exception.get("status") or "").upper() not in {"RESOLVED", "DISMISSED"}:
             block("BLOCKING_EXCEPTION", exception.get("id") or "unknown")
-        if bool(exception.get("blocking")) and not exception.get("resolution_decision_id"):
+        # An unresolved review task is not automatically a contradictory
+        # evidence conflict. BLOCKING_EXCEPTION already safely blocks export;
+        # UNDECIDED_CONFLICT is reserved for genuine opposing supported facts.
+        if (bool(exception.get("blocking"))
+                and str(exception.get("kind") or "").upper() == "CONFLICT"
+                and not exception.get("resolution_decision_id")):
             block("UNDECIDED_CONFLICT", exception.get("id") or "unknown")
         if exception.get("resolution_decision_id") and str(exception.get("resolution_decision_id")) not in decisions:
             block("UNVERIFIED_EXCEPTION_DECISION", exception.get("id") or "unknown")
