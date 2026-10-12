@@ -43,6 +43,7 @@ from litoral_trace.us_lacey.assurance_v2_reuse_application import (
     apply_authorized_assurance_v2_reuse,
 )
 from litoral_trace.us_lacey.assurance_v2_review_batch import approve_assurance_review_batch
+from litoral_trace.us_lacey.assurance_v2_review_metrics import review_effort_snapshot
 from litoral_trace.us_lacey.assurance_v2_reuse_batch import authorize_assurance_reuse_group
 from litoral_trace.us_lacey.assurance_v2_historical_source import eligible_historical_source
 from litoral_trace.us_lacey.assurance_v2_identity_confirmation import (
@@ -412,6 +413,10 @@ def configure_assurance_v2_shadow(
         batch_gateway=batch_gateway,
         reuse_batch_gateway=reuse_batch_gateway,
         historical_link_for=historical_link_for,
+        effort_for=lambda principal, operation_id: review_effort_snapshot(
+            organization_id=principal.organization_id,
+            operation_public_id=operation_id,
+        ),
         document_link_for=lambda principal, operation_id, doc, page: (
             f"/assurance-v2/operations/{operation_id}/documents/{doc}"
             + (f"#page={page}" if page is not None and 0 < page <= 10000 else "")
