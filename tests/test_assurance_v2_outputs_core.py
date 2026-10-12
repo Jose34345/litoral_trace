@@ -143,7 +143,7 @@ def test_blocking_conflict_stops_final_export_even_if_other_fields_valid():
     case = make_case()
     bad = authorize(replace(case, exceptions=({
         "id": "ex-1", "field_name": "species", "line_reference": "LINE-1",
-        "blocking": True, "status": "OPEN", "candidates": [
+        "blocking": True, "status": "OPEN", "kind": "CONFLICT", "candidates": [
             {"value": "alba", "document_id": "doc-invoice", "page": 1},
             {"value": "rubra", "document_id": "doc-invoice", "page": 2},
         ],
