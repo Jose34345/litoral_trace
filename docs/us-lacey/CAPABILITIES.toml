@@ -575,3 +575,27 @@ tests = [
   "tests/test_us_lacey_v2lab_reprocess_postgres.py"
 ]
 notes = "CSRF-scoped current-document replay without new uploaded files or quota consumption. New source-set revision is required even with unchanged SHA; old human decisions stay audited but never grant V2 authority on replay. The deterministic parser may reuse compatible cached output; derived claims and reconciliation are recomputed by the normal worker. Rejected for non-V2LAB customers."
+
+[capabilities.assurance_v2_exception_first_batch_review]
+status = "OWNER_LAB_ONLY"
+owner = "us_lacey + web"
+authority = "deterministic_read_policy + explicit_human_batch"
+implementation = [
+  "src/litoral_trace/us_lacey/assurance_v2_review_policy.py",
+  "src/litoral_trace/us_lacey/assurance_v2_review_batch.py",
+  "src/litoral_trace/us_lacey/assurance_v2_reuse_batch.py",
+  "src/litoral_trace/us_lacey/assurance_v2_historical_source.py",
+  "src/litoral_trace/web/us_lacey_assurance_v2_views.py",
+  "src/litoral_trace/web/us_lacey_assurance_v2_runtime.py",
+  "src/litoral_trace/templates/us_lacey/assurance_v2_case.html"
+]
+tests = [
+  "tests/test_assurance_v2_review_policy.py",
+  "tests/test_assurance_v2_golden_postgres.py",
+  "tests/test_assurance_v2_private_lab_policy.py"
+]
+workflows = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/us-lacey-postgres-gate.yml"
+]
+notes = "Private-owner V2LAB-only exception-first read policy, exact-document human batch decisions with a single reviewer action, individual immutable authority records, full current-generation fencing, and grouped botanical memory review only while all original Vault bytes remain available and hash-verified. UI defaults to a small work queue; complete technical audit remains accessible in a disclosure. Unlike a final filing authorization, a batch review cannot unblock missing entry numbers or disabled lab issuance. Replay never silently transfers authority between generations."
