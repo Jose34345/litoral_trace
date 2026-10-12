@@ -250,6 +250,15 @@ def review_us_lacey_field(
         )
         if field is None:
             raise UsLaceyReviewError("Review field was not found for this operation.")
+        if (
+            v2_journal_active and normalized_action == "edit"
+            and not field.source_assurance_document_id
+        ):
+            raise UsLaceyReviewError(
+                "A verified value needs a linked original document. "
+                "Open Inspect evidence and accept the correct documented candidate, "
+                "or upload supporting evidence before correcting this field."
+            )
 
         source_selection = None
         if source_claim_id:
@@ -394,10 +403,13 @@ def review_us_lacey_field(
 
         v2_promoted = False
         if v2_journal_active:
-            if source_selection is not None:
-                # The authoritative journal resolves evidence using database
-                # columns, not unflushed ORM changes. Keep this flush inside
-                # the same locked transaction: any rejection rolls it back.
+            if source_selection is not None or selected_candidate is not None:
+                # Source-claim and explicit extracted-field candidates both
+                # update the ORM's source document and locator. This session
+                # has autoflush disabled: persist those source columns inside
+                # the same locked transaction before resolving V2 provenance.
+                # If the V2 journal rejects the claim, the entire transaction
+                # rolls back, including this flush.
                 session.flush()
             authority_decision = journal_reviewed_field(
                 session, organization_id=org_id, operation=operation,
