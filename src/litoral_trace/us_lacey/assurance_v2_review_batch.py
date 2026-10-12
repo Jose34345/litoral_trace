@@ -30,6 +30,8 @@ from litoral_trace.us_lacey.audit_trail import append_operation_event
 from litoral_trace.us_lacey.assurance_v2_review_adapter import review_journal_enabled
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.ppq505 import validate_ppq_value
+from litoral_trace.us_lacey.reconciliation_invariants import reconcile_entered_value_invariant
+from litoral_trace.us_lacey.regulatory_assessment_snapshot import refresh_regulatory_assessment_snapshot_for_review
 from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
 
 
@@ -155,6 +157,15 @@ def approve_assurance_review_batch(
                      "field_count": len(candidates),
                      "human_actions": 1,
                      "unresolved_external_fields": plan["missing_count"]},
+        )
+        # Keep the same post-review invariants as review_us_lacey_field:
+        # one field approval can affect line arithmetic and regulatory rules.
+        # Both updates share this same all-or-nothing reviewer transaction.
+        reconcile_entered_value_invariant(
+            session, organization_id=org_id, operation=op,
+        )
+        refresh_regulatory_assessment_snapshot_for_review(
+            session, organization_id=org_id, operation=op,
         )
         refresh_us_lacey_operation_status(
             session, organization_id=org_id, operation=op,
