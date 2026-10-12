@@ -1,0 +1,63 @@
+name: Assurance V2 P0 P1 Live Verification
+on:
+  pull_request:
+    branches: [feature/us-lacey-pilot-platform]
+    paths: [.github/workflows/assurance-v2-p0p1-live-check.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'chore/verify-assurance-v2-p0p1-live-20261012'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Read-only Northflank web and worker deployment check
+        env:
+          NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json, os, time, urllib.request, urllib.error
+          token=os.getenv('NORTHFLANK_API_KEY')
+          if not token: raise SystemExit('NO_NORTHFLANK_TOKEN')
+          target='a5df6eb7db081b18b56c5977474e82908363f076'
+          base='https://api.northflank.com/v1/projects/litoral-trace/services/'
+          def get(url,auth=False):
+              headers={'Accept':'application/json'}
+              if auth: headers['Authorization']='Bearer '+token
+              req=urllib.request.Request(url,headers=headers)
+              with urllib.request.urlopen(req,timeout=17) as resp:
+                  return resp.status,json.load(resp)
+          for trial in range(55):
+              deployed={}
+              for service in ('litoral-trace-web','litoral-trace-worker'):
+                  _,res=get(base+service,auth=True)
+                  d=res.get('data',{})
+                  sha=((d.get('deployment') or {}).get('internal') or {}).get('deployedSHA')
+                  status=((d.get('status') or {}).get('deployment') or {}).get('status')
+                  deployed[service]=(sha,status)
+              if all(sha==target and status=='COMPLETED' for sha,status in deployed.values()):
+                  break
+              if trial%6==0:
+                  print('WAITING_DEPLOYMENT',trial,{k:(str(v[0] or '')[:12],v[1]) for k,v in deployed.items()},flush=True)
+              time.sleep(10)
+          else: raise SystemExit('TARGET_SHA_NOT_DEPLOYED')
+          print('WEB_AND_WORKER_SHA_VERIFIED',target)
+          for service in deployed:
+              _,r=get(base+service+'/runtime-environment',auth=True)
+              env=(r.get('data') or {}).get('runtimeEnvironment') or {}
+              print('V2LAB_FLAGS_PRESENT',service,{
+                  'SHADOW':str(env.get('US_LACEY_ASSURANCE_V2_MODE','')).upper()=='SHADOW',
+                  'OWNER_ONLY':str(env.get('US_LACEY_ASSURANCE_V2_LAB_ORG_IDS','')).strip()=='1',
+                  'COMMANDS_ON':str(env.get('US_LACEY_ASSURANCE_V2_COMMANDS','')).upper()=='ON',
+              })
+          for path in ('/health','/ready'):
+              status,_=get('https://lacey.litoraltrace.com'+path)
+              if status!=200: raise SystemExit('LIVE_ENDPOINT_NOT_READY_'+path)
+          try:
+              with urllib.request.urlopen('https://lacey.litoraltrace.com/assurance-v2',timeout=15) as r:
+                  status=r.status
+          except urllib.error.HTTPError as exc:
+              status=exc.code
+          if status!=401: raise SystemExit('UNEXPECTED_ANONYMOUS_LAB_STATUS_'+str(status))
+          print('HEALTH_READY_200_AND_LAB_ANONYMOUS_401')
+          PY
