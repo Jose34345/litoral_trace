@@ -83,6 +83,19 @@
             </div>
             {% endfor %}
           </div>
+          {% if ex.pending_candidates %}
+          <div class="candidate-list" data-awaiting-identity="{{ ex.line_reference }}">
+            <p class="muted"><strong>Source values found — confirm supplier / SKU / line identity first.</strong> These PDF observations are not missing evidence and cannot be accepted until the identity is confirmed below.</p>
+            {% for candidate in ex.pending_candidates %}
+            <div class="candidate">
+              <div><span class="tag amber">SOURCE FOUND · IDENTITY PENDING</span><strong>{{ candidate.value }}</strong></div>
+              <div class="muted">Document {{ candidate.document_id }}{% if candidate.page %} · p. {{ candidate.page }}{% endif %}</div>
+            </div>
+            {% endfor %}
+            <a class="source-link" href="#identity">Confirm line identity ↓</a>
+          </div>
+          {% endif %}
+          {% if ex.source_diagnostic %}<p class="muted">Diagnostic: {{ ex.source_diagnostic }}. No verified shipment-line binding; supply or corroborate the source before accepting it.</p>{% endif %}
           {% if ex.historical_evidence %}<div class="historical-evidence"><span class="tag purple">HISTORICAL MEMORY · VERIFY STATUS</span> {{ ex.historical_evidence }}</div>{% endif %}
           {% if ex.id.startswith('field:') %}
           <form class="decision-form" data-exception="{{ ex.id }}">
