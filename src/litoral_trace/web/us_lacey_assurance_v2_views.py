@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from litoral_trace.us_lacey.exporters.assurance_v2 import AssuranceCase, evaluate_filing_gate
 from litoral_trace.us_lacey.assurance_v2_evidence_checklist import required_evidence_summary
 from litoral_trace.us_lacey.assurance_v2_simplified_review import build_review_workspace
+from litoral_trace.us_lacey.assurance_v2_batch_review import preview_batch_review
 from litoral_trace.us_lacey.exporters.assurance_v2_package import (
     ExportBlocked, PackageStore, draft_assurance_excel,
 )
@@ -38,6 +39,14 @@ class CaseReader(Protocol):
 
 class DecisionGateway(Protocol):
     def __call__(self, principal: WorkspacePrincipal, operation_id: str, command: dict[str, str]) -> dict[str, Any]: ...
+
+
+class BatchReviewGateway(Protocol):
+    """Only an operation-locked transactional V2 decision journal writer."""
+    def __call__(self, principal: WorkspacePrincipal, operation_id: str,
+                 selections: tuple[dict, ...], reason: str,
+                 expected_source_set_fingerprint: str,
+                 expected_case_fingerprint: str) -> dict[str, Any]: ...
 
 
 class ReuseGateway(Protocol):
@@ -81,6 +90,7 @@ def create_assurance_v2_router(
     authorization_gateway: AuthorizationGateway | None = None,
     reuse_gateway: ReuseGateway | None = None,
     identity_gateway: IdentityGateway | None = None,
+    batch_review_gateway: BatchReviewGateway | None = None,
 ) -> APIRouter:
     """The web adapter cannot select/promote candidates or write canonical truth."""
     router = APIRouter(prefix="/assurance-v2/operations", tags=["Assurance V2"])
@@ -125,14 +135,60 @@ def create_assurance_v2_router(
                 principal, operation_id, doc_id,
                 int(page) if str(page or "").isdigit() else None,
             ) if doc_id in documents else None
+        batch_choices = [dict(choice) for choice in preview_batch_review(case)]
+        for choice in batch_choices:
+            choice["url"] = source_link(
+                principal, operation_id, str(choice["document_id"]), choice["page"],
+            )
         return templates.TemplateResponse(
             request=request, name="us_lacey/assurance_v2_case.html",
             context={"case": snapshot, "gate": gate,
                      "required_evidence": required_evidence_summary(case),
                      "review_workspace": build_review_workspace(snapshot, required_evidence_summary(case), gate),
+                     "batch_choices": batch_choices,
                      "csrf_token": principal.csrf_token,
                      "actions": sorted(_ACTIONS), "authenticated": True},
         )
+
+    @router.post("/{operation_id}/batch-review")
+    async def submit_batch_review(request: Request, operation_id: str):
+        principal, case = context(request, operation_id)
+        body = await request.json()
+        if not isinstance(body, dict) or not csrf_verify(
+            principal, str(body.get("csrf_token") or "")
+        ):
+            raise HTTPException(403, "Invalid CSRF token")
+        if body.get("explicit_confirmation") is not True:
+            raise HTTPException(422, "Explicit review confirmation required")
+        reason = str(body.get("reason") or "").strip()
+        if len(reason) < 6 or len(reason) > 500:
+            raise HTTPException(422, "Reviewer explanation required (6-500 characters)")
+        selections = body.get("selected")
+        if not isinstance(selections, list) or not 1 <= len(selections) <= 32:
+            raise HTTPException(422, "Select between 1 and 32 source-backed fields")
+        valid = {
+            (int(row["field_id"]), str(row["claim_id"]))
+            for row in preview_batch_review(case)
+        }
+        observed: set[tuple[int, str]] = set()
+        for row in selections:
+            if not isinstance(row, dict) or set(row) != {"field_id", "claim_id"}:
+                raise HTTPException(422, "Invalid source selection")
+            try:
+                pair = int(row["field_id"]), str(row["claim_id"])
+            except (TypeError, ValueError):
+                raise HTTPException(422, "Invalid source selection") from None
+            if pair not in valid or pair in observed:
+                raise HTTPException(422, "Source is not currently reviewable")
+            observed.add(pair)
+        if len({f for f, _ in observed}) != len(observed):
+            raise HTTPException(422, "Conflicting selections")
+        if batch_review_gateway is None:
+            raise HTTPException(503, "Atomic batch review is not enabled")
+        return JSONResponse(batch_review_gateway(
+            principal, operation_id, tuple(selections), reason,
+            case.source_set_fingerprint, case.authority_fingerprint(),
+        ), status_code=202)
 
     @router.post("/{operation_id}/decisions")
     async def submit_decision(request: Request, operation_id: str):
