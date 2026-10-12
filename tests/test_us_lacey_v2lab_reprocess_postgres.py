@@ -16,7 +16,7 @@ from litoral_trace.us_lacey.jobs import UsLaceyJobError
 from litoral_trace.us_lacey.reprocessing import reprocess_existing_v2lab_documents
 from litoral_trace.us_lacey.source_sets import seal_current_source_set
 from tests.us_lacey_engine2_postgres import (
-    create_test_graph, engine2_postgres_session_factory, tenant_session,
+    add_test_document, create_test_graph, engine2_postgres_session_factory, tenant_session,
 )
 
 
@@ -141,3 +141,54 @@ def test_replay_fails_closed_for_non_lab_reference(engine2_postgres_session_fact
     db.close()
     with pytest.raises(UsLaceyJobError, match="restricted"):
         _replay(factory, org, public_id)
+
+
+def test_pack2_six_existing_documents_requeue_as_one_atomic_batch(
+    engine2_postgres_session_factory,
+):
+    factory = engine2_postgres_session_factory
+    org, op_id, public_id, *_ = _prepare_completed_v2lab(factory)
+    for idx in range(5):
+        _link, doc_id, _vault, _sha = add_test_document(
+            factory, organization_id=org, operation_id=op_id,
+            role="UNKNOWN", filename=f"pack2-{idx + 2}.pdf",
+            content=f"separate-original-{idx + 2}".encode(),
+        )
+        db = tenant_session(factory, org)
+        db.add(UsLaceyProcessingJob(
+            organization_id=org, operation_id=op_id,
+            assurance_document_id=doc_id, status="COMPLETED",
+            attempt_count=1, max_attempts=3,
+            available_at=datetime.now(timezone.utc),
+        ))
+        db.commit()
+        db.close()
+    latest = seal_current_source_set(
+        organization_id=org, operation_id=op_id, session_factory=factory,
+    )
+    db = tenant_session(factory, org)
+    db.get(UsLaceySourceSetRevision, latest.id).status = "FINALIZED"
+    db.commit()
+    db.close()
+
+    assert _replay(factory, org, public_id) == 6
+    db = tenant_session(factory, org)
+    queued = db.scalars(select(UsLaceyProcessingJob).where(
+        UsLaceyProcessingJob.organization_id == org,
+        UsLaceyProcessingJob.operation_id == op_id,
+        UsLaceyProcessingJob.status == "QUEUED",
+    )).all()
+    current = db.scalar(select(UsLaceySourceSetRevision).where(
+        UsLaceySourceSetRevision.organization_id == org,
+        UsLaceySourceSetRevision.operation_id == op_id,
+        UsLaceySourceSetRevision.is_current.is_(True),
+    ))
+    assert len(queued) == 6
+    assert current.generation == latest.generation + 1
+    assert current.document_count == 6
+    assert db.scalar(select(func.count(UsLaceyOperationDocument.id)).where(
+        UsLaceyOperationDocument.organization_id == org,
+        UsLaceyOperationDocument.operation_id == op_id,
+        UsLaceyOperationDocument.is_current.is_(True),
+    )) == 6
+    db.close()
