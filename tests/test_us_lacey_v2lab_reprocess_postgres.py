@@ -115,7 +115,7 @@ def test_replay_rejects_wrong_tenant_and_unavailable_original_atomically(
     with pytest.raises(UsLaceyJobError, match="not found"):
         _replay(factory, org + 1000000, public_id)
     db = tenant_session(factory, org)
-    db.get(VaultDocument, vault_id).status = "deleted"
+    db.get(VaultDocument, vault_id).status = "delete_pending"
     db.commit()
     db.close()
     with pytest.raises(UsLaceyJobError, match="unavailable"):
