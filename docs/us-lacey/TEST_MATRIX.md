@@ -23,6 +23,8 @@ Use this as a routing guide. Exact test names evolve; search existing tests befo
 | Regulatory Assessment worker ordering | `tests/test_us_lacey_regulatory_assessment_worker.py` + worker stage timing test | general CI + U.S. Lacey PostgreSQL Gate |
 | Regulatory Assessment RLS/supersession | `tests/test_us_lacey_regulatory_assessment_snapshot_postgres.py` | U.S. Lacey PostgreSQL Gate, no skip allowed for targeted acceptance |
 | canonical shipment truth | `tests/lacey_engine/test_canonical_shipment_truth.py` | U.S. Lacey PostgreSQL gate + general CI |
+
+| Owner-only V2Lab current-source replay / reprocess | `tests/test_us_lacey_v2lab_reprocess_http.py` and `tests/test_us_lacey_v2lab_reprocess_postgres.py` | Full CI and U.S. Lacey PostgreSQL Gate; assert new generation with identical hash, immutable originals, no quota consumption, CSRF/allowlist and active-work rejection |
 | operation/source-set lifecycle | U.S. Lacey operation/source-set/worker tests under `tests/` | `.github/workflows/us-lacey-postgres-gate.yml` |
 | worker locking/idempotency | worker/job/lock/source-set tests | U.S. Lacey PostgreSQL gate |
 | sandbox retention/physical purge | `tests/test_us_lacey_sandbox_cleanup.py` + `tests/test_us_lacey_worker_supervisor.py` + `tests/test_us_lacey_worker_health.py` | `tests/test_us_lacey_sandbox_cleanup_postgres.py` + U.S. Lacey PostgreSQL gate |
