@@ -14,6 +14,7 @@ from typing import Mapping
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.canonical_publication_support import (
     prepare_canonical_publication,
+    publish_source_linked_review_candidates,
     publish_derived_article_components,
 )
 from litoral_trace.us_lacey.canonical_shipment_truth import publish_canonical_shipment_truth
@@ -247,8 +248,15 @@ def project_engine2_supported_suggestions(*, organization_id: int, operation_id:
             operation_id=operation_id,
             truth=truth,
         )
+        # Rescue exact, byte-verified single-SKU source claims which the
+        # cross-document canonical line binder conservatively abstained from.
+        # This remains a REVIEW-only extension of the SINGLE canonical
+        # publication transaction, never a second standalone writer.
+        source_review_count = publish_source_linked_review_candidates(
+            session, organization_id=organization_id, operation_id=operation_id,
+        )
         session.commit()
-        return int(result.field_count) + int(derived_count)
+        return int(result.field_count) + int(derived_count) + int(source_review_count)
     except RuntimeError as exc:
         session.rollback()
         if str(exc) == "CANONICAL_STALE_LINE_REQUIRES_REVIEW":
