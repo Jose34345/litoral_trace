@@ -71,6 +71,28 @@
       }
     });
   });
+  const reuseGroup = document.querySelector('#reuse-group-form');
+  if (reuseGroup) reuseGroup.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const result = reuseGroup.querySelector('.reuse-group-result');
+    const button = reuseGroup.querySelector('button[type="submit"]');
+    const reason = reuseGroup.querySelector('[name="reason"]')?.value.trim() || '';
+    const confirmed = reuseGroup.querySelector('[name="explicit_confirmation"]')?.checked === true;
+    if (!confirmed || !reason) {
+      result.textContent = 'Inspect every original and explicitly authorize this group.';
+      return;
+    }
+    button.disabled = true;
+    result.textContent = 'Verifying all historical source hashes and authorizations…';
+    try {
+      const receipt = await post('/reuse-group', {reason, explicit_confirmation: true});
+      if (receipt.status !== 'VERIFIED_REUSE_BATCH') throw new Error('Historical review was not recorded');
+      window.location.reload();
+    } catch (error) {
+      result.textContent = 'Historical group not authorized: ' + error.message;
+      button.disabled = false;
+    }
+  });
   const batchForm = document.querySelector('#review-batch-form');
   if (batchForm) batchForm.addEventListener('submit', async (event) => {
     event.preventDefault();
