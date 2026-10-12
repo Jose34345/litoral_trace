@@ -15,6 +15,38 @@
     if (!response.ok) throw new Error((data.detail || (data.blockers || []).map(x => x.code).join(', ') || 'Request failed'));
     return data;
   }
+  const botanicalForm = document.querySelector('[data-botanical-batch]');
+  if (botanicalForm) botanicalForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const result = botanicalForm.querySelector('.botanical-batch-result');
+    const button = botanicalForm.querySelector('button[type="submit"]');
+    const selected = [...botanicalForm.querySelectorAll('.botanical-batch-checkbox:checked')]
+      .map(c => ({
+        memory_id: c.dataset.memoryId,
+        field_name: c.dataset.fieldName,
+        line_reference: c.dataset.line,
+      }));
+    const reason = botanicalForm.querySelector('[name="reason"]')?.value.trim() || '';
+    const confirmed = botanicalForm.querySelector('[name="explicit_confirmation"]')?.checked === true;
+    if (!selected.length || !confirmed || reason.length < 6) {
+      result.textContent = 'Select the verified claims, inspect each original source and explicitly confirm the applicable origin.';
+      return;
+    }
+    button.disabled = true;
+    result.textContent = 'Rechecking original document integrity, authority and validity…';
+    try {
+      const receipt = await post('/botanical-batch', {
+        selected, reason, explicit_confirmation: true,
+      });
+      if (receipt.status !== 'RECORDED' || receipt.authorized_count !== selected.length) {
+        throw new Error('Historical evidence was not verified');
+      }
+      window.location.reload();
+    } catch (error) {
+      result.textContent = 'No historical evidence was authorized: ' + error.message;
+      button.disabled = false;
+    }
+  });
   const batchForm = document.querySelector('[data-batch-review]');
   if (batchForm) batchForm.addEventListener('submit', async event => {
     event.preventDefault();

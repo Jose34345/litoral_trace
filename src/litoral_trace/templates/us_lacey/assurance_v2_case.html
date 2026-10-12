@@ -11,13 +11,13 @@
 <div class="assurance-shell" data-assurance-case data-operation="{{ case.operation_id }}" data-csrf="{{ csrf_token }}">
   <header class="assurance-header">
     <div>
-      <div class="eyebrow">LITORAL TRACE / ASSURANCE V2 / US LACEY ACT</div>
-      <h1>Shipment assurance case</h1>
-      <p class="subtext">Evidence, identity, human decisions and preparation status — not a filing receipt.</p>
+      <div class="eyebrow">LITORAL TRACE / SHIPMENT REVIEW</div>
+      <h1>Review shipment</h1>
+      <p class="subtext">We checked your documents. Review the few items that still need your judgment.</p>
     </div>
     <div class="filing-state {{ 'ready' if gate.ready else 'blocked' }}" aria-live="polite">
-      <span class="state-label">{{ "Authorized preparation" if gate.ready else "Blocked for final export" }}</span>
-      <small>{{ "Eligible to generate an assurance package" if gate.ready else gate.blockers|length ~ " gate findings (not unique errors)" }}</small>
+      <span class="state-label">{{ "Preparation authorized" if gate.ready else "Review required" }}</span>
+      <small>{{ "Current checks passed" if gate.ready else "Complete the outstanding reviews and information" }}</small>
     </div>
   </header>
   <section class="assurance-quick-review" aria-label="Shipment review summary" id="review-overview">
@@ -39,6 +39,45 @@
       </div>
       {% endfor %}
     </div>
+    {% if botanical_choices %}
+    <section id="botanical-group-panel" class="batch-review-panel" aria-label="Review supplier botanical history">
+      <div class="batch-review-heading"><div>
+        <strong>Review verified supplier history once</strong>
+        <p>These are historical botanical claims, not current-document findings. Inspect their original evidence and confirm they still apply to this supplier, product and shipment. The country of harvest may change by lot.</p>
+      </div><span class="tag amber">{{ botanical_choices|length }} eligible claims</span></div>
+      <form id="botanical-group-form" data-botanical-batch>
+        <div class="batch-review-list">
+        {% for item in botanical_choices %}
+          <label class="batch-review-item">
+            <input class="botanical-batch-checkbox" type="checkbox" name="botanical_field"
+                   data-memory-id="{{ item.id }}" data-field-name="{{ item.field_name }}"
+                   data-line="{{ item.line_reference }}" checked>
+            <span class="batch-review-value">
+              <strong>{{ item.field_name.replace('_', ' ').title() }}</strong>
+              <span>{{ item.value }} · Line {{ item.line_reference }}</span>
+              <small>Verified historical evidence · Origin document {{ item.origin_document_id }}</small>
+            </span>
+            <a class="source-link" href="{{ item.url }}" target="_blank"
+               rel="noopener noreferrer">Inspect original PDF</a>
+          </label>
+        {% endfor %}
+        </div>
+        <label class="batch-review-reason">Why does this historical evidence apply to this shipment?
+          <textarea name="reason" required minlength="6" maxlength="180" rows="2"
+                    placeholder="I reviewed the original product evidence and confirmed the applicable botanical origin."></textarea>
+        </label>
+        <label class="batch-review-consent">
+          <input type="checkbox" name="explicit_confirmation" required>
+          I inspected the original evidence and verified the scope of each selected claim, including country of harvest for this lot.
+        </label>
+        <div class="batch-review-submit">
+          <button type="submit" class="lt-btn lt-btn--primary">Authorize selected botanical evidence</button>
+          <p class="botanical-batch-result" role="status" aria-live="polite"></p>
+        </div>
+      </form>
+      <p class="muted">If an original PDF is unavailable, do not authorize that claim. Request current supplier evidence instead.</p>
+    </section>
+    {% endif %}
     <section id="batch-review-panel" class="batch-review-panel" aria-label="Approve selected source-backed fields">
       <div class="batch-review-heading">
         <div><strong>Approve document-backed values together</strong>

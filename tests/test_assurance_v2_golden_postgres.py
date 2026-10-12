@@ -239,22 +239,75 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
                       "reason": "Reviewed exact supplier SKU and shipment line"},
             )
             assert confirmed.status_code == 202, confirmed.text
-        for name in botanical:
-            current = read_tenant_assurance_case(
-                organization_id=organization_id, operation_public_id=second_id,
-            )
-            reuse = next(item for item in current.reuses if item["field_name"] == name)
-            applied = client.post(
-                f"/assurance-v2/operations/{second_id}/reuses",
-                json={"csrf_token": us_lacey_csrf_token(
-                          session_token=client.cookies.get("us_lacey_session"),
-                          purpose=f"assurance-v2:{second_id}"),
-                      "memory_id": reuse["id"], "field_name": name,
-                      "line_reference": reuse["line_reference"],
-                      "reason": "Reviewed exact historical PDF and current product identity"},
-            )
-            assert applied.status_code == 202, (name, applied.text)
-            assert applied.json()["status"] == "VERIFIED_REUSE"
+        # Review one original historical document and authorize all three
+        # botanical facts in ONE click; each still gets separate provenance.
+        current = read_tenant_assurance_case(
+            organization_id=organization_id, operation_public_id=second_id,
+        )
+        eligible_botanical = [
+            item for item in current.reuses
+            if item.get("status") == "ELIGIBLE" and item["field_name"] in botanical
+        ]
+        assert {item["field_name"] for item in eligible_botanical} == botanical
+        first = eligible_botanical[0]
+        # The Golden Test uses an in-memory object store for all original
+        # shipment PDFs. Use the *real* Vault verification service with this
+        # fixture's object store and U.S.-Lacey storage settings: the default
+        # global Vault client would otherwise look in a different bucket.
+        from litoral_trace.services.vault import VaultService as RealVaultService
+        from litoral_trace.us_lacey.storage import build_us_lacey_storage_settings
+        from litoral_trace.web import us_lacey_assurance_v2_runtime as _v2_runtime
+        monkeypatch.setattr(
+            _v2_runtime, "VaultService",
+            lambda: RealVaultService(
+                storage_settings=build_us_lacey_storage_settings(),
+                storage=storage,
+                session_factory=get_us_lacey_db_session,
+            ),
+        )
+        original = client.get(
+            f"/assurance-v2/operations/{second_id}/historical-documents/"
+            f"{first['origin_document_id']}/{first['id']}",
+        )
+        assert original.status_code == 200, original.text[:300]
+        assert "pdf" in original.headers.get("content-type", "").lower()
+        assert client.get(
+            f"/assurance-v2/operations/{second_id}/historical-documents/"
+            f"{first['origin_document_id']}/00000000-0000-0000-0000-000000000000"
+        ).status_code == 404
+        assert client.post(
+            f"/assurance-v2/operations/{second_id}/botanical-batch",
+            json={
+                "csrf_token": us_lacey_csrf_token(
+                    session_token=client.cookies.get("us_lacey_session"),
+                    purpose=f"assurance-v2:{second_id}",
+                ),
+                "selected": [{
+                    "memory_id": item["id"], "field_name": item["field_name"],
+                    "line_reference": item["line_reference"],
+                } for item in eligible_botanical],
+                "reason": "Reviewed original botanical PDF",
+                "explicit_confirmation": False,
+            },
+        ).status_code == 422
+        applied = client.post(
+            f"/assurance-v2/operations/{second_id}/botanical-batch",
+            json={
+                "csrf_token": us_lacey_csrf_token(
+                    session_token=client.cookies.get("us_lacey_session"),
+                    purpose=f"assurance-v2:{second_id}",
+                ),
+                "selected": [{
+                    "memory_id": item["id"], "field_name": item["field_name"],
+                    "line_reference": item["line_reference"],
+                } for item in eligible_botanical],
+                "reason": "Reviewed original botanical PDF and the current supplier, product and lot scope",
+                "explicit_confirmation": True,
+            },
+        )
+        assert applied.status_code == 202, applied.text
+        assert applied.json()["status"] == "RECORDED"
+        assert applied.json()["authorized_count"] == 3
         applied_case = read_tenant_assurance_case(
             organization_id=organization_id, operation_public_id=second_id,
         )

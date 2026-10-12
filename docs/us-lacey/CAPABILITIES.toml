@@ -604,3 +604,20 @@ tests = [
   "tests/test_assurance_v2_golden_postgres.py",
 ]
 notes = "One reviewer gesture may ACCEPT selected exact current-document claims on a confirmed SKU/line, while preserving a separate immutable source-linked V2 decision per field and atomic transaction. Original-document hashes, tenant, current source revision, PPQ validity, review status and no real conflicts are required. Botanical reuse, unknown values, correction and filing authorization remain independent explicit decisions. The V2 private lab remains NOT FOR FILING."
+
+[capabilities.assurance_v2_grouped_botanical_reuse]
+status = "OWNER_LAB_ONLY"
+owner = "us_lacey + web"
+authority = "explicit_human_reuse"
+implementation = [
+  "src/litoral_trace/us_lacey/assurance_v2_botanical_batch.py",
+  "src/litoral_trace/us_lacey/assurance_v2_historical_source.py",
+  "src/litoral_trace/web/us_lacey_assurance_v2_runtime.py",
+  "src/litoral_trace/web/us_lacey_assurance_v2_views.py",
+  "src/litoral_trace/templates/us_lacey/assurance_v2_case.html"
+]
+tests = [
+  "tests/test_assurance_v2_botanical_batch.py",
+  "tests/test_assurance_v2_golden_postgres.py"
+]
+notes = "One explicit current-line source-inspected group consent authorizes up to three VERIFIED historical genus/species/country-of-harvest claims. Each claim separately revalidates identity, original immutable hash and raw availability, active evidence validity, current packet and conflicts; per-field immutable application audit and group summary commit atomically. Country of harvest requires reviewer scope/lot confirmation, no inferred automatic reuse. Original source download is tenant/operation/memory-eligible, Vault hash checked and audited. No filing authority. Public customer shipments remain unchanged."

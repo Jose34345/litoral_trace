@@ -49,6 +49,14 @@ class BatchReviewGateway(Protocol):
                  expected_case_fingerprint: str) -> dict[str, Any]: ...
 
 
+class BotanicalBatchGateway(Protocol):
+    """Explicit group consent; all individual historical checks commit atomically."""
+    def __call__(self, principal: WorkspacePrincipal, operation_id: str,
+                 selections: tuple[dict, ...], reason: str,
+                 expected_source_set_fingerprint: str,
+                 expected_case_fingerprint: str) -> dict[str, Any]: ...
+
+
 class ReuseGateway(Protocol):
     def __call__(self, principal: WorkspacePrincipal, operation_id: str,
                  command: dict[str, str]) -> dict[str, Any]: ...
@@ -91,6 +99,7 @@ def create_assurance_v2_router(
     reuse_gateway: ReuseGateway | None = None,
     identity_gateway: IdentityGateway | None = None,
     batch_review_gateway: BatchReviewGateway | None = None,
+    botanical_batch_gateway: BotanicalBatchGateway | None = None,
 ) -> APIRouter:
     """The web adapter cannot select/promote candidates or write canonical truth."""
     router = APIRouter(prefix="/assurance-v2/operations", tags=["Assurance V2"])
@@ -140,15 +149,83 @@ def create_assurance_v2_router(
             choice["url"] = source_link(
                 principal, operation_id, str(choice["document_id"]), choice["page"],
             )
+        confirmed_lines = {
+            str(identity.get("line_reference"))
+            for identity in snapshot.get("identities") or ()
+            if identity.get("status") == "HUMAN_CONFIRMED"
+        }
+        botanical_choices = []
+        for reuse in snapshot.get("reuses") or []:
+            if (reuse.get("status") != "ELIGIBLE"
+                    or str(reuse.get("line_reference")) not in confirmed_lines
+                    or reuse.get("field_name") not in {
+                        "genus", "species", "country_of_harvest"
+                    }):
+                continue
+            doc = str(reuse.get("origin_document_id") or "")
+            memory_id = str(reuse.get("id") or "")
+            if not doc.isdigit() or not memory_id:
+                continue
+            botanical_choices.append({
+                **reuse,
+                "url": f"/assurance-v2/operations/{operation_id}/historical-documents/{doc}/{memory_id}",
+            })
         return templates.TemplateResponse(
             request=request, name="us_lacey/assurance_v2_case.html",
             context={"case": snapshot, "gate": gate,
                      "required_evidence": required_evidence_summary(case),
                      "review_workspace": build_review_workspace(snapshot, required_evidence_summary(case), gate),
                      "batch_choices": batch_choices,
+                     "botanical_choices": botanical_choices,
                      "csrf_token": principal.csrf_token,
                      "actions": sorted(_ACTIONS), "authenticated": True},
         )
+
+    @router.post("/{operation_id}/botanical-batch")
+    async def submit_botanical_group(request: Request, operation_id: str):
+        principal, case = context(request, operation_id)
+        body = await request.json()
+        if not isinstance(body, dict) or not csrf_verify(
+            principal, str(body.get("csrf_token") or "")
+        ):
+            raise HTTPException(403, "Invalid CSRF token")
+        if body.get("explicit_confirmation") is not True:
+            raise HTTPException(422, "Explicit botanical evidence review required")
+        reason = str(body.get("reason") or "").strip()
+        if len(reason) < 6 or len(reason) > 180:
+            raise HTTPException(422, "Reviewer reason required (6-180 characters)")
+        selections = body.get("selected")
+        if not isinstance(selections, list) or not 1 <= len(selections) <= 3:
+            raise HTTPException(422, "Select 1-3 eligible botanical claims")
+        allowed = {
+            (str(row.get("id")), str(row.get("field_name")),
+             str(row.get("line_reference")))
+            for row in case.reuses if row.get("status") == "ELIGIBLE"
+            and row.get("field_name") in {
+                "genus", "species", "country_of_harvest",
+            }
+        }
+        observed = []
+        for item in selections:
+            if not isinstance(item, dict) or set(item) != {
+                "memory_id", "field_name", "line_reference",
+            }:
+                raise HTTPException(422, "Invalid historical evidence selection")
+            token = (str(item["memory_id"]), str(item["field_name"]),
+                     str(item["line_reference"]))
+            if token not in allowed or token in observed:
+                raise HTTPException(422, "Historical evidence is no longer eligible")
+            observed.append(token)
+        if len({field for _, field, _ in observed}) != len(observed):
+            raise HTTPException(422, "Duplicate botanical field")
+        if len({line for _, _, line in observed}) != 1:
+            raise HTTPException(422, "Select botanical facts for one product line")
+        if botanical_batch_gateway is None:
+            raise HTTPException(503, "Grouped botanical review is not enabled")
+        return JSONResponse(botanical_batch_gateway(
+            principal, operation_id, tuple(selections), reason,
+            case.source_set_fingerprint, case.authority_fingerprint(),
+        ), status_code=202)
 
     @router.post("/{operation_id}/batch-review")
     async def submit_batch_review(request: Request, operation_id: str):

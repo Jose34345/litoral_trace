@@ -32,6 +32,8 @@ from litoral_trace.us_lacey.access import (
     UsLaceyOperationalAccessError, require_us_lacey_operational_access,
 )
 from litoral_trace.us_lacey.assurance_v2_case_reader import read_tenant_assurance_case
+from litoral_trace.us_lacey.assurance_v2_botanical_batch import approve_botanical_evidence_group
+from litoral_trace.us_lacey.assurance_v2_historical_source import verified_historical_original
 from litoral_trace.us_lacey.assurance_v2_batch_review import accept_assurance_v2_batch
 from litoral_trace.us_lacey.assurance_v2_export_authorization import (
     explicitly_authorize_assurance_export,
@@ -288,6 +290,23 @@ def configure_assurance_v2_shadow(
         except PermissionError:
             raise HTTPException(403, "Batch review denied") from None
 
+    def botanical_batch_gateway(principal, operation_id, selections, reason,
+                                source_fingerprint, case_fingerprint):
+        require_commands(principal)
+        try:
+            return approve_botanical_evidence_group(
+                organization_id=principal.organization_id,
+                operation_public_id=operation_id,
+                authenticated_user_id=int(principal.actor_id),
+                selected=selections, reason=reason, explicit_confirmation=True,
+                expected_source_set_fingerprint=source_fingerprint,
+                expected_case_fingerprint=case_fingerprint,
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except PermissionError:
+            raise HTTPException(403, "Botanical reuse denied") from None
+
     def authorization_gateway(principal, operation_id, source_fingerprint,
                               case_fingerprint, reason, confirmed):
         require_commands(principal)
@@ -376,6 +395,7 @@ def configure_assurance_v2_shadow(
         reuse_gateway=reuse_gateway,
         identity_gateway=identity_gateway,
         batch_review_gateway=batch_review_gateway,
+        botanical_batch_gateway=botanical_batch_gateway,
         document_link_for=lambda principal, operation_id, doc, page: (
             f"/assurance-v2/operations/{operation_id}/documents/{doc}"
             + (f"#page={page}" if page is not None and 0 < page <= 10000 else "")
@@ -470,6 +490,74 @@ def configure_assurance_v2_shadow(
                                      "Cache-Control": "private, no-store",
                                      "X-Content-Type-Options": "nosniff",
                                  })
+
+
+    @router.get("/{operation_id}/historical-documents/{document_id}/{memory_id}")
+    def historical_source(request: Request, operation_id: str,
+                          document_id: str, memory_id: str):
+        principal = principal_for(request)
+        current = read_tenant_assurance_case(
+            organization_id=principal.organization_id,
+            operation_public_id=operation_id,
+        )
+        if current is None or current.operation_id != operation_id:
+            raise HTTPException(404, "Historical source not found")
+        allowed = any(
+            str(item.get("id")) == memory_id
+            and str(item.get("origin_document_id")) == document_id
+            and item.get("status") in {"ELIGIBLE", "VERIFIED"}
+            for item in current.reuses
+        )
+        if not allowed:
+            raise HTTPException(404, "Historical source not eligible for this shipment")
+        db = get_us_lacey_db_session()
+        try:
+            set_tenant_db_context(db, principal.organization_id)
+            source = verified_historical_original(
+                db, organization_id=principal.organization_id,
+                memory_public_id=memory_id, origin_document_id=document_id,
+            )
+        finally:
+            db.close()
+        if source is None:
+            raise HTTPException(404, "Original historical evidence no longer available")
+        try:
+            verified = VaultService().materialize_verified_download(
+                organization_id=principal.organization_id,
+                document_id=source["vault_public_id"],
+            )
+        except (VaultNotFoundError, VaultValidationError):
+            raise HTTPException(404, "Original historical evidence unavailable") from None
+        except (VaultIntegrityError, VaultConflictError):
+            raise HTTPException(409, "Historical document integrity changed") from None
+        except (VaultPersistenceError, VaultStorageOperationError):
+            raise HTTPException(503, "Historical original cannot be inspected") from None
+        if verified.document.sha256 != source["sha256"]:
+            verified.close()
+            raise HTTPException(409, "Historical document integrity changed")
+        try:
+            _audit_source_access(
+                principal=principal, operation_id=operation_id,
+                assurance_document_id=document_id,
+            )
+        except Exception:
+            verified.close()
+            raise HTTPException(503, "Historical source access audit unavailable") from None
+
+        def chunks():
+            try:
+                yield from verified.iter_chunks(chunk_size=64 * 1024)
+            finally:
+                verified.close()
+        return StreamingResponse(
+            chunks(), media_type=verified.document.content_type,
+            headers={
+                "Content-Disposition": 'inline; filename="verified-historical-source.pdf"',
+                "Content-Length": str(verified.document.size_bytes),
+                "Cache-Control": "private, no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     app.include_router(router)
     return True
