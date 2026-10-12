@@ -262,100 +262,66 @@ def test_four_original_pdf_shipments_http_worker_review_and_controlled_reuse(mon
                 if field["authority"] == "VERIFIED_REUSE"} == botanical
         assert all(not field["document_ids"] for field in applied_case.fields
                    if field["authority"] == "VERIFIED_REUSE")
-        # The source observation of article/component is bound to the
-        # current exact supplier-SKU-line. Unlike an inferred answer, it can
-        # be explicitly selected and journaled by the authenticated reviewer.
+        # Pack 2 operational acceptance: one reviewer click for all four
+        # CURRENT, exact-SKU/PDF-backed claims, not four review commands.
+        # Botanical reuse above is a separately authorized provenance flow.
+        from litoral_trace.us_lacey.assurance_v2_batch_review import (
+            preview_batch_review,
+        )
         current = read_tenant_assurance_case(
             organization_id=organization_id, operation_public_id=second_id,
         )
-        article_exception = next(
-            row for row in current.exceptions
-            if row.get("field_name") == "article_component"
-            and str(row.get("id", "")).startswith("field:")
-        )
-        source_choices = [
-            item for item in article_exception.get("candidates", ())
-            if str(item.get("id", "")).startswith("source:")
+        batch_choices = preview_batch_review(current)
+        expected_fields = {"article_component", "entered_value",
+                           "plant_quantity", "metric_unit"}
+        assert expected_fields <= {c["field_name"] for c in batch_choices}, batch_choices
+        selections = [
+            {"field_id": c["field_id"], "claim_id": c["claim_id"]}
+            for c in batch_choices if c["field_name"] in expected_fields
         ]
-        assert len(source_choices) == 1
-        reviewed_article = client.post(
-            f"/assurance-v2/operations/{second_id}/decisions",
+        assert len(selections) == 4
+        result = client.post(
+            f"/assurance-v2/operations/{second_id}/batch-review",
             json={
                 "csrf_token": us_lacey_csrf_token(
                     session_token=client.cookies.get("us_lacey_session"),
                     purpose=f"assurance-v2:{second_id}",
                 ),
-                "exception_id": article_exception["id"],
-                "action": "ACCEPT",
-                "candidate_id": source_choices[0]["id"],
-                "reason": "Reviewed original PDF article and confirmed the exact SKU line",
+                "selected": selections,
+                "reason": "Inspected the four original worksheet values and the exact SKU line",
+                "explicit_confirmation": True,
             },
         )
-        assert reviewed_article.status_code == 202, reviewed_article.text
-        article_case = read_tenant_assurance_case(
+        assert result.status_code == 202, result.text
+        assert result.json()["status"] == "RECORDED"
+        assert result.json()["accepted_count"] == 4
+        updated = read_tenant_assurance_case(
             organization_id=organization_id, operation_public_id=second_id,
         )
-        assert any(
-            row["name"] == "article_component"
-            and row["authority"] == "HUMAN_CONFIRMED"
-            and row["document_ids"]
-            and row["evidence_ids"]
-            for row in article_case.fields
-        )
-        assert not any(
-            row.get("field_name") == "article_component"
-            for row in article_case.exceptions
-        )
-        # The actual synthetic entry worksheet explicitly states its
-        # entered value and the plant-material mass/unit. These are current
-        # PDF observations, not a shipment-total/packing-gross-weight guess.
-        # Human review is indispensable; candidates alone remain unapproved.
-        for field_name in ("entered_value", "plant_quantity", "metric_unit"):
-            reviewable = read_tenant_assurance_case(
-                organization_id=organization_id, operation_public_id=second_id,
-            )
-            pending = next(
-                row for row in reviewable.exceptions
-                if row.get("field_name") == field_name
-                and str(row.get("id", "")).startswith("field:")
-            )
-            source_choices = [
-                row for row in pending.get("candidates", ())
-                if str(row.get("id", "")).startswith("source:")
-            ]
-            assert len(source_choices) == 1, (field_name, pending)
-            original = next(
-                row for row in reviewable.candidate_observations
-                if row["id"] == source_choices[0]["id"][7:]
-            )
-            assert original["support_status"] == "SUPPORTED"
-            assert original["association_status"] == "DOCUMENT_EXACT_SINGLE_SKU"
-            assert original["sku"] == "BAM-COAST-04"
-            confirmed = client.post(
-                f"/assurance-v2/operations/{second_id}/decisions",
-                json={
-                    "csrf_token": us_lacey_csrf_token(
-                        session_token=client.cookies.get("us_lacey_session"),
-                        purpose=f"assurance-v2:{second_id}",
-                    ),
-                    "exception_id": pending["id"], "action": "ACCEPT",
-                    "candidate_id": source_choices[0]["id"],
-                    "reason": "Reviewed literal source quantity/value and the exact supplier SKU line",
-                },
-            )
-            assert confirmed.status_code == 202, (field_name, confirmed.text)
-            updated = read_tenant_assurance_case(
-                organization_id=organization_id, operation_public_id=second_id,
-            )
+        for field_name in expected_fields:
             assert any(
                 row["name"] == field_name
                 and row["authority"] == "HUMAN_CONFIRMED"
                 and row["document_ids"] and row["evidence_ids"]
                 for row in updated.fields
-            )
+            ), field_name
             assert not any(
                 row.get("field_name") == field_name for row in updated.exceptions
             )
+        # The same click cannot repeat approvals with an obsolete case.
+        again = client.post(
+            f"/assurance-v2/operations/{second_id}/batch-review",
+            json={
+                "csrf_token": us_lacey_csrf_token(
+                    session_token=client.cookies.get("us_lacey_session"),
+                    purpose=f"assurance-v2:{second_id}",
+                ),
+                "selected": selections,
+                "reason": "Inspected the four original worksheet values and the exact SKU line",
+                "explicit_confirmation": True,
+            },
+        )
+        assert again.status_code in {409, 422}, again.text
         assert read_tenant_assurance_case(
             organization_id=organization_id + 1000000, operation_public_id=second_id,
         ) is None
