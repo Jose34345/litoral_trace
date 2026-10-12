@@ -31,6 +31,24 @@
       <div><strong>{{ review_workspace.missing_count }}</strong><small>Missing values</small></div>
       <div><strong>{{ review_workspace.tasks|length }}</strong><small>Grouped next steps</small></div>
     </div>
+    {% if review_insights.get('prior_review_count', 0) %}
+    <section class="review-delta-strip" aria-label="Reprocessing changes">
+      <strong>Since the previous reviewed version</strong>
+      <p>{{ review_insights.unchanged_reconfirm }} previously reviewed values have unchanged verified source documents and can be reconfirmed together. {{ review_insights.needs_review }} require fresh attention. No previous approval was silently carried into this source revision.</p>
+    </section>
+    {% endif %}
+    {% if review_insights.get('effort', {}).get('grouped_review_actions', 0) %}
+    <section class="review-effort-strip" aria-label="Recorded human review effort">
+      <strong>Human work recorded</strong>
+      <span>{{ review_insights.effort.grouped_review_actions }} grouped decisions</span>
+      <span>{{ review_insights.effort.fields_authorized_by_group }} values covered</span>
+      <span>{{ review_insights.effort.estimated_clicks_avoided }} fewer individual approvals</span>
+      {% if review_insights.effort.timed_actions %}
+      <span>{{ review_insights.effort.observed_review_seconds }} seconds observed in active form focus (client estimate)</span>
+      {% endif %}
+      <p>This counts actual recorded actions. Fewer approvals is not proof of minutes saved; no baseline has been established.</p>
+    </section>
+    {% endif %}
     <div class="quick-review-actions">
       {% for task in review_workspace.tasks %}
       <div class="quick-review-task">
@@ -95,6 +113,9 @@
               <strong>{{ item.field_name.replace('_', ' ').title() }}</strong>
               <span>{{ item.value }} · {{ 'Shipment' if item.line_reference == '__shipment__' else 'Line ' ~ item.line_reference }}</span>
               <small>Document {{ item.document_id }}{% if item.page %}, p. {{ item.page }}{% endif %}</small>
+              {% if item.previously_reviewed %}
+              <small class="review-delta-marker">Previously reviewed with unchanged source — reconfirm this value</small>
+              {% endif %}
             </span>
             {% if item.url %}
             <a class="source-link" href="{{ item.url }}" target="_blank" rel="noopener noreferrer">Inspect PDF</a>

@@ -621,3 +621,21 @@ tests = [
   "tests/test_assurance_v2_golden_postgres.py"
 ]
 notes = "One explicit current-line source-inspected group consent authorizes up to three VERIFIED historical genus/species/country-of-harvest claims. Each claim separately revalidates identity, original immutable hash and raw availability, active evidence validity, current packet and conflicts; per-field immutable application audit and group summary commit atomically. Country of harvest requires reviewer scope/lot confirmation, no inferred automatic reuse. Original source download is tenant/operation/memory-eligible, Vault hash checked and audited. No filing authority. Public customer shipments remain unchanged."
+
+[capabilities.assurance_v2_p1_review_delta_and_effort]
+status = "OWNER_LAB_ONLY"
+owner = "us_lacey + web"
+authority = "observation"
+implementation = [
+  "src/litoral_trace/us_lacey/assurance_v2_review_delta.py",
+  "src/litoral_trace/web/us_lacey_assurance_v2_views.py",
+  "src/litoral_trace/web/us_lacey_assurance_v2_runtime.py",
+  "src/litoral_trace/templates/us_lacey/assurance_v2_case.html",
+  "src/litoral_trace/static/js/assurance_v2_case.js",
+  "src/litoral_trace/static/css/assurance_v2_case.css"
+]
+tests = [
+  "tests/test_assurance_v2_review_delta.py",
+  "tests/test_assurance_v2_golden_postgres.py"
+]
+notes = "Current and prior human-reviewed values are compared with original doc ID, current link ID, exact document version, SHA-256, source-set fingerprint, current supported claim and value. Reprocessing unchanged source versions retains any already-valid current-authority decisions; approvals from a different source revision are NEVER silently copied. Matching previous decisions are shown as eligible for ONE explicit grouped reconfirmation. Changed/missing/conflicting evidence is fail-closed. Effort metrics count actual grouped audit events and coverage; review seconds are bounded client-focused observations, not authoritative time savings. PDF print style suppresses app chrome and avoids giant unbreakable boxes."

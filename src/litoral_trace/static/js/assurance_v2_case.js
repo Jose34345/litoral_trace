@@ -15,7 +15,37 @@
     if (!response.ok) throw new Error((data.detail || (data.blockers || []).map(x => x.code).join(', ') || 'Request failed'));
     return data;
   }
+  // Passive UX timing: browser-observed focused intervals only. No field
+  // values, email, raw documents or browsing history enter telemetry.
+  // This is not a legally authoritative timer or a time-savings estimate.
+  function watchReviewAttention(form) {
+    let elapsedMs = 0;
+    let startedAt = null;
+    const stop = () => {
+      if (startedAt !== null) {
+        elapsedMs += Math.max(0, performance.now() - startedAt);
+        startedAt = null;
+      }
+    };
+    const start = () => {
+      if (!document.hidden && document.hasFocus() && startedAt === null) {
+        startedAt = performance.now();
+      }
+    };
+    form.addEventListener('focusin', start);
+    form.addEventListener('focusout', stop);
+    form.addEventListener('pointerdown', start);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) stop(); else if (form.contains(document.activeElement)) start();
+    });
+    window.addEventListener('blur', stop);
+    return () => {
+      stop();
+      return Math.max(0, Math.min(3600, Math.round(elapsedMs / 1000)));
+    };
+  }
   const botanicalForm = document.querySelector('[data-botanical-batch]');
+  const botanicalObservedSeconds = botanicalForm ? watchReviewAttention(botanicalForm) : null;
   if (botanicalForm) botanicalForm.addEventListener('submit', async event => {
     event.preventDefault();
     const result = botanicalForm.querySelector('.botanical-batch-result');
@@ -37,6 +67,7 @@
     try {
       const receipt = await post('/botanical-batch', {
         selected, reason, explicit_confirmation: true,
+        active_review_seconds: botanicalObservedSeconds(),
       });
       if (receipt.status !== 'RECORDED' || receipt.authorized_count !== selected.length) {
         throw new Error('Historical evidence was not verified');
@@ -48,6 +79,7 @@
     }
   });
   const batchForm = document.querySelector('[data-batch-review]');
+  const batchObservedSeconds = batchForm ? watchReviewAttention(batchForm) : null;
   if (batchForm) batchForm.addEventListener('submit', async event => {
     event.preventDefault();
     const status = batchForm.querySelector('.batch-review-result');
@@ -66,6 +98,7 @@
     try {
       const receipt = await post('/batch-review', {
         selected, reason, explicit_confirmation: true,
+        active_review_seconds: batchObservedSeconds(),
       });
       if (receipt.status !== 'RECORDED' || receipt.accepted_count !== selected.length) {
         throw new Error('Batch review was not confirmed');

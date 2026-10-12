@@ -112,8 +112,15 @@ def accept_assurance_v2_batch(
     authenticated_user_id: int, selected: tuple[dict, ...],
     reason: str, explicit_confirmation: bool,
     expected_source_set_fingerprint: str, expected_case_fingerprint: str,
+    active_review_seconds: int | None = None,
     session_factory=get_us_lacey_db_session,
 ) -> dict:
+    if active_review_seconds is not None and (
+        isinstance(active_review_seconds, bool)
+        or not isinstance(active_review_seconds, int)
+        or not 0 <= active_review_seconds <= 3600
+    ):
+        raise ValueError("Invalid non-authoritative review-time observation")
     org_id, user_id = int(organization_id), int(authenticated_user_id)
     try:
         operation_uuid = UUID(str(operation_public_id))
@@ -244,6 +251,8 @@ def accept_assurance_v2_batch(
                 "actor_user_id": user_id,
                 "reason": explanation,
                 "claim_fingerprint": request_digest,
+                **({"client_review_seconds": active_review_seconds}
+                   if active_review_seconds is not None else {}),
             },
         )
         db.commit()

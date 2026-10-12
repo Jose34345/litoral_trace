@@ -34,8 +34,15 @@ def approve_botanical_evidence_group(
     authenticated_user_id: int, selected: tuple[dict, ...],
     reason: str, explicit_confirmation: bool,
     expected_source_set_fingerprint: str, expected_case_fingerprint: str,
+    active_review_seconds: int | None = None,
     session_factory=get_us_lacey_db_session,
 ) -> dict:
+    if active_review_seconds is not None and (
+        isinstance(active_review_seconds, bool)
+        or not isinstance(active_review_seconds, int)
+        or not 0 <= active_review_seconds <= 3600
+    ):
+        raise ValueError("Invalid non-authoritative review-time observation")
     org_id, user_id = int(organization_id), int(authenticated_user_id)
     try:
         operation_uuid = UUID(str(operation_public_id))
@@ -170,6 +177,8 @@ def approve_botanical_evidence_group(
                 "fields": [r["field_name"] for r in applied],
                 "origin_document_ids": sorted({r["origin_document_id"] for r in applied}),
                 "reason": note,
+                **({"client_review_seconds": active_review_seconds}
+                   if active_review_seconds is not None else {}),
             },
         )
         session.commit()

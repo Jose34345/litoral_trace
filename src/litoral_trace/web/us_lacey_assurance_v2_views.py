@@ -100,6 +100,7 @@ def create_assurance_v2_router(
     identity_gateway: IdentityGateway | None = None,
     batch_review_gateway: BatchReviewGateway | None = None,
     botanical_batch_gateway: BotanicalBatchGateway | None = None,
+    review_insights_for: Callable[[WorkspacePrincipal, str, AssuranceCase], dict] | None = None,
 ) -> APIRouter:
     """The web adapter cannot select/promote candidates or write canonical truth."""
     router = APIRouter(prefix="/assurance-v2/operations", tags=["Assurance V2"])
@@ -144,8 +145,18 @@ def create_assurance_v2_router(
                 principal, operation_id, doc_id,
                 int(page) if str(page or "").isdigit() else None,
             ) if doc_id in documents else None
+        review_insights = (review_insights_for(principal, operation_id, case)
+                           if review_insights_for is not None else {})
+        previous_fields = {
+            (str(item["line_reference"]), str(item["field_name"]))
+            for item in review_insights.get("previously_reviewed_fields", ())
+            if item.get("status") == "UNCHANGED_RECONFIRM_REQUIRED"
+        }
         batch_choices = [dict(choice) for choice in preview_batch_review(case)]
         for choice in batch_choices:
+            choice["previously_reviewed"] = (
+                str(choice["line_reference"]), str(choice["field_name"])
+            ) in previous_fields
             choice["url"] = source_link(
                 principal, operation_id, str(choice["document_id"]), choice["page"],
             )
@@ -177,6 +188,7 @@ def create_assurance_v2_router(
                      "review_workspace": build_review_workspace(snapshot, required_evidence_summary(case), gate),
                      "batch_choices": batch_choices,
                      "botanical_choices": botanical_choices,
+                     "review_insights": review_insights,
                      "csrf_token": principal.csrf_token,
                      "actions": sorted(_ACTIONS), "authenticated": True},
         )
@@ -222,10 +234,19 @@ def create_assurance_v2_router(
             raise HTTPException(422, "Select botanical facts for one product line")
         if botanical_batch_gateway is None:
             raise HTTPException(503, "Grouped botanical review is not enabled")
-        return JSONResponse(botanical_batch_gateway(
-            principal, operation_id, tuple(selections), reason,
-            case.source_set_fingerprint, case.authority_fingerprint(),
-        ), status_code=202)
+        seconds = body.get("active_review_seconds")
+        if seconds is not None and (
+            isinstance(seconds, bool) or not isinstance(seconds, int)
+            or seconds < 0 or seconds > 3600
+        ):
+            raise HTTPException(422, "Invalid review time observation")
+        args = (principal, operation_id, tuple(selections), reason,
+                case.source_set_fingerprint, case.authority_fingerprint())
+        return JSONResponse(
+            botanical_batch_gateway(*args, active_review_seconds=seconds)
+            if seconds is not None else botanical_batch_gateway(*args),
+            status_code=202,
+        )
 
     @router.post("/{operation_id}/batch-review")
     async def submit_batch_review(request: Request, operation_id: str):
@@ -262,10 +283,19 @@ def create_assurance_v2_router(
             raise HTTPException(422, "Conflicting selections")
         if batch_review_gateway is None:
             raise HTTPException(503, "Atomic batch review is not enabled")
-        return JSONResponse(batch_review_gateway(
-            principal, operation_id, tuple(selections), reason,
-            case.source_set_fingerprint, case.authority_fingerprint(),
-        ), status_code=202)
+        seconds = body.get("active_review_seconds")
+        if seconds is not None and (
+            isinstance(seconds, bool) or not isinstance(seconds, int)
+            or seconds < 0 or seconds > 3600
+        ):
+            raise HTTPException(422, "Invalid review time observation")
+        args = (principal, operation_id, tuple(selections), reason,
+                case.source_set_fingerprint, case.authority_fingerprint())
+        return JSONResponse(
+            batch_review_gateway(*args, active_review_seconds=seconds)
+            if seconds is not None else batch_review_gateway(*args),
+            status_code=202,
+        )
 
     @router.post("/{operation_id}/decisions")
     async def submit_decision(request: Request, operation_id: str):
