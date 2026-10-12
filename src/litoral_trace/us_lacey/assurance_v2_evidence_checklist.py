@@ -45,10 +45,18 @@ def required_evidence_checklist(case: AssuranceCase) -> tuple[RequiredEvidenceRo
                     for c in ex.get("candidates") or ())
             for ex in exceptions
         )
+        pending_identity = any(
+            ex.get("field_name") == requirement.key
+            and ex.get("line_reference") == line
+            and bool(ex.get("pending_candidates"))
+            for ex in exceptions
+        )
         if value and authority in {"HUMAN_CONFIRMED", "VERIFIED_REUSE"} and not open_field:
             status, guidance = "VERIFIED", "Reviewed source or authorized historical evidence"
         elif source_choice:
             status, guidance = "REVIEW_SOURCE", "Select the supported PDF observation and confirm it"
+        elif pending_identity:
+            status, guidance = "REVIEW_IDENTITY", "Source located; confirm the exact supplier/SKU/line before reviewing"
         elif value:
             status, guidance = "REVIEW_VALUE", "Check the original source and record a human decision"
         else:
@@ -66,6 +74,6 @@ def required_evidence_summary(case: AssuranceCase) -> dict[str, Any]:
     return {
         "rows": rows, "total": len(rows),
         "verified": sum(r.status == "VERIFIED" for r in rows),
-        "review": sum(r.status in {"REVIEW_SOURCE", "REVIEW_VALUE"} for r in rows),
+        "review": sum(r.status in {"REVIEW_SOURCE", "REVIEW_IDENTITY", "REVIEW_VALUE"} for r in rows),
         "missing": sum(r.status == "MISSING_EVIDENCE" for r in rows),
     }
