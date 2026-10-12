@@ -7,7 +7,6 @@ and the V2 review journal; ENABLED remains blocked pending release acceptance.
 from __future__ import annotations
 
 import hmac
-import html
 import os
 from uuid import UUID
 
@@ -57,7 +56,7 @@ from litoral_trace.us_lacey.portal_auth import (
 )
 from litoral_trace.us_lacey.review import UsLaceyReviewError, review_us_lacey_field
 from litoral_trace.web.us_lacey_assurance_v2_views import (
-    WorkspacePrincipal, create_assurance_v2_router,
+    WorkspacePrincipal, create_assurance_v2_router, templates,
 )
 
 
@@ -223,10 +222,13 @@ def configure_assurance_v2_shadow(
     def require_commands(principal: WorkspacePrincipal) -> None:
         # In production the journal is scoped to the authenticated owner and
         # specifically-marked V2LAB shipments; never global to existing customers.
-        if not commands or not review_journal_enabled(
-            principal.organization_id,
-            "V2LAB-PRIVATE-REVIEW" if environment in {"production", "pilot"} else None,
-        ):
+        if environment in {"production", "pilot"}:
+            journal_ok = review_journal_enabled(
+                principal.organization_id, "V2LAB-PRIVATE-REVIEW",
+            )
+        else:
+            journal_ok = review_journal_enabled()
+        if not commands or not journal_ok:
             raise HTTPException(503, "Assurance V2 commands are disabled pending release acceptance")
 
     def decision_gateway(principal, operation_id, command):
@@ -364,43 +366,33 @@ def configure_assurance_v2_shadow(
     @app.get("/assurance-v2", include_in_schema=False, response_class=HTMLResponse)
     def assurance_v2_lab_home(request: Request):
         principal = principal_for(request)
+        cookie = request.cookies.get(US_LACEY_SESSION_COOKIE) or ""
+        identity = resolve_us_lacey_session(cookie)
+        entitlement = require_us_lacey_operational_access(
+            organization_id=principal.organization_id,
+        )
         db = get_us_lacey_db_session()
         try:
             set_tenant_db_context(db, principal.organization_id)
-            operations = db.scalars(select(UsLaceyOperation).where(
+            rows = db.scalars(select(UsLaceyOperation).where(
                 UsLaceyOperation.organization_id == principal.organization_id,
                 UsLaceyOperation.client_reference.startswith("V2LAB-"),
             ).order_by(UsLaceyOperation.id.desc()).limit(30)).all()
-            links = "".join(
-                '<li><a href="/assurance-v2/operations/' + str(op.public_id) + '">' +
-                html.escape(str(op.client_reference)) + '</a> · ' +
-                html.escape(str(op.status)) + '</li>' for op in operations
-            ) or "<li>No V2LAB shipments yet. Create one to begin.</li>"
+            operations = [{
+                "public_id": str(op.public_id),
+                "client_reference": str(op.client_reference),
+                "status": str(op.status),
+            } for op in rows]
         finally:
             db.close()
-        content = (
-            '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width, initial-scale=1">'
-            '<title>Assurance V2 Private Lab | Litoral Trace</title>'
-            '<style>body{font:16px system-ui;background:#f5f8fa;color:#152238;max-width:920px;'
-            'padding:32px;margin:auto;line-height:1.7}a{color:#047857}header,section{background:white;'
-            'border:1px solid #d5e2e9;border-radius:14px;padding:26px;margin:18px 0}'
-            'h1{margin:0}small{color:#546477}.notice{border-color:#f2b75b;background:#fff9eb}'
-            'code{background:#e9eff4;padding:4px;border-radius:5px}</style></head><body>'
-            '<header><small>LITORAL TRACE / PRIVATE ASSURANCE V2 LAB</small>'
-            '<h1>Document evidence testing</h1>'
-            '<p>Source-linked claims, reviewer decisions, identity and memory for authorized testing.</p>'
-            '<p><a href="/operations">← Shipments</a> · <a href="/operations/new">Create new test shipment</a></p></header>'
-            '<section class="notice"><strong>TEST ENVIRONMENT WITHIN THE LIVE PLATFORM — NOT FOR FILING</strong>'
-            '<p>Use synthetic or authorized test PDFs only. No automatic agency submission. '
-            'Regulatory package issuance is blocked in this private lab.</p>'
-            '<p>In New shipment, begin the reference with <code>V2LAB-</code> '
-            '(for example <code>V2LAB-PACK1</code>). Upload one pack per shipment; '
-            'then open the case below.</p></section>'
-            '<section><h2>Your Assurance V2 test shipments</h2><ul>' + links + '</ul></section>'
-            '</body></html>'
+        return templates.TemplateResponse(
+            request=request, name="us_lacey/assurance_v2_lab_home.html",
+            context={
+                "identity": identity, "entitlement": entitlement,
+                "authenticated": True, "operations": operations,
+            },
+            headers={"Cache-Control": "private, no-store"},
         )
-        return HTMLResponse(content, headers={"Cache-Control":"private, no-store"})
 
     @router.get("/{operation_id}/documents/{document_id}")
     def original_source(request: Request, operation_id: str, document_id: str):
