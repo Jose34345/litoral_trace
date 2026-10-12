@@ -5,8 +5,8 @@
 <link rel="stylesheet" href="{{ url_for('static', path='/css/assurance_v2_case.css') }}">
 {% endblock %}
 {% block lacey_content %}
-{% if request.app.state.assurance_v2_lab_org_ids %}
-<div style="margin:12px 0;padding:14px;border:2px solid #d6a54d;background:#fff8e8;color:#6e4b1f;border-radius:10px;font-weight:700">PRIVATE ASSURANCE V2 LAB — NOT FOR CUSTOMS FILING. Test data only. <a href="/assurance-v2" style="text-decoration:underline">Return to test shipments</a>. Package issuance is disabled.</div>
+{% if (request.app.state.assurance_v2_lab_org_ids|default(())) %}
+<div class="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-bold text-amber-950">PRIVATE ASSURANCE V2 LAB — NOT FOR CUSTOMS FILING. Test data only. <a href="/assurance-v2" class="text-emerald-800 underline">Return to test shipments</a>. Package issuance is disabled.</div>
 {% endif %}
 <div class="assurance-shell" data-assurance-case data-operation="{{ case.operation_id }}" data-csrf="{{ csrf_token }}">
   <header class="assurance-header">
@@ -176,7 +176,7 @@
         <div class="section-heading"><div><div class="eyebrow">08 / EXPLICIT FINALIZATION GATE</div><h2>Preparation and package</h2></div></div>
         {% if gate.ready %}
         <p>All snapshot authority checks passed. Issuance persists an immutable package containing exact XML/XLSX bytes and a source manifest. No filing submission is performed.</p>
-        {% if request.app.state.assurance_v2_lab_org_ids %}
+        {% if (request.app.state.assurance_v2_lab_org_ids|default(())) %}
         <p><strong>Private laboratory:</strong> issuing a filing-ready package is disabled. This result is only a readiness simulation.</p>
         {% else %}
         <button type="button" id="issue-package">Issue reproducible assurance package</button>
