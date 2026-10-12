@@ -11,13 +11,13 @@
 <div class="assurance-shell" data-assurance-case data-operation="{{ case.operation_id }}" data-csrf="{{ csrf_token }}">
   <header class="assurance-header">
     <div>
-      <div class="eyebrow">LITORAL TRACE / ASSURANCE V2 / US LACEY ACT</div>
-      <h1>Shipment assurance case</h1>
-      <p class="subtext">Evidence, identity, human decisions and preparation status — not a filing receipt.</p>
+      <div class="eyebrow">LITORAL TRACE / SHIPMENT REVIEW</div>
+      <h1>Review shipment</h1>
+      <p class="subtext">We checked your documents. Review the few items that still need your judgment.</p>
     </div>
     <div class="filing-state {{ 'ready' if gate.ready else 'blocked' }}" aria-live="polite">
-      <span class="state-label">{{ "Authorized preparation" if gate.ready else "Blocked for final export" }}</span>
-      <small>{{ "Eligible to generate an assurance package" if gate.ready else gate.blockers|length ~ " gate findings (not unique errors)" }}</small>
+      <span class="state-label">{{ "Preparation authorized" if gate.ready else "Review required" }}</span>
+      <small>{{ "Current checks passed" if gate.ready else "Complete the outstanding reviews and information" }}</small>
     </div>
   </header>
   <section class="assurance-quick-review" aria-label="Shipment review summary" id="review-overview">
