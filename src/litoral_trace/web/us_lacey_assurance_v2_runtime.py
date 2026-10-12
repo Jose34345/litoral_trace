@@ -35,6 +35,7 @@ from litoral_trace.us_lacey.assurance_v2_case_reader import read_tenant_assuranc
 from litoral_trace.us_lacey.assurance_v2_botanical_batch import approve_botanical_evidence_group
 from litoral_trace.us_lacey.assurance_v2_historical_source import verified_historical_original
 from litoral_trace.us_lacey.assurance_v2_batch_review import accept_assurance_v2_batch
+from litoral_trace.us_lacey.assurance_v2_review_delta import read_p1_review_insights
 from litoral_trace.us_lacey.assurance_v2_export_authorization import (
     explicitly_authorize_assurance_export,
 )
@@ -274,7 +275,8 @@ def configure_assurance_v2_shadow(
                 "field_status": result.field_status}
 
     def batch_review_gateway(principal, operation_id, selections, reason,
-                             source_fingerprint, case_fingerprint):
+                             source_fingerprint, case_fingerprint,
+                             active_review_seconds=None):
         require_commands(principal)
         try:
             return accept_assurance_v2_batch(
@@ -284,6 +286,7 @@ def configure_assurance_v2_shadow(
                 selected=selections, reason=reason, explicit_confirmation=True,
                 expected_source_set_fingerprint=source_fingerprint,
                 expected_case_fingerprint=case_fingerprint,
+                active_review_seconds=active_review_seconds,
             )
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from None
@@ -291,7 +294,8 @@ def configure_assurance_v2_shadow(
             raise HTTPException(403, "Batch review denied") from None
 
     def botanical_batch_gateway(principal, operation_id, selections, reason,
-                                source_fingerprint, case_fingerprint):
+                                source_fingerprint, case_fingerprint,
+                                active_review_seconds=None):
         require_commands(principal)
         try:
             return approve_botanical_evidence_group(
@@ -301,6 +305,7 @@ def configure_assurance_v2_shadow(
                 selected=selections, reason=reason, explicit_confirmation=True,
                 expected_source_set_fingerprint=source_fingerprint,
                 expected_case_fingerprint=case_fingerprint,
+                active_review_seconds=active_review_seconds,
             )
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from None
@@ -396,6 +401,10 @@ def configure_assurance_v2_shadow(
         identity_gateway=identity_gateway,
         batch_review_gateway=batch_review_gateway,
         botanical_batch_gateway=botanical_batch_gateway,
+        review_insights_for=lambda principal, operation_id, case: read_p1_review_insights(
+            organization_id=principal.organization_id, operation_public_id=operation_id,
+            current_case=case,
+        ),
         document_link_for=lambda principal, operation_id, doc, page: (
             f"/assurance-v2/operations/{operation_id}/documents/{doc}"
             + (f"#page={page}" if page is not None and 0 < page <= 10000 else "")
