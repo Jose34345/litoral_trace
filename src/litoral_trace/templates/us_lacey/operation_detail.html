@@ -77,7 +77,7 @@
     <div class="p-5">
       <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Evidence set</p>
       <p class="mt-2 text-lg font-bold text-slate-950">{{ detail.document_count }} docs</p>
-      <p class="mt-1 text-xs text-slate-500">{{ provenance_summary.current_shipment_count }} current · {{ provenance_summary.reused_evidence_count }} reused</p>
+      <p class="mt-1 text-xs text-slate-500">{{ provenance_summary.current_shipment_count }} current shipment documents · {{ provenance_summary.reused_evidence_count }} reused documentary attachments{% if reused_evidence_summary and reused_evidence_summary.claim_count %} · {{ reused_evidence_summary.claim_count }} verified supplier claims reused{% endif %}</p>
     </div>
   </div>
   <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3 text-[11px] text-slate-600" data-human-filing-boundary>
