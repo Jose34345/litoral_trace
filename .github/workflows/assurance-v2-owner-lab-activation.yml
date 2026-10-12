@@ -1,0 +1,119 @@
+name: Activate Assurance V2 Owner Lab
+on:
+  pull_request:
+    branches: [feature/us-lacey-pilot-platform]
+    paths:
+      - .github/workflows/assurance-v2-owner-lab-activation.yml
+permissions:
+  contents: read
+jobs:
+  activate-private-lab:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'chore/activate-assurance-v2-owner-lab-20261012'
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    steps:
+      - name: Verify deployment SHA and atomically opt in only the private owner test laboratory
+        env:
+          NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json,os,time,urllib.request,urllib.error
+          key=os.environ.get("NORTHFLANK_API_KEY")
+          if not key: raise SystemExit("NORTHFLANK_TOKEN_MISSING")
+          expected="5529e7cac002127f941506332ae28f6a1ae4f784"
+          project="litoral-trace"
+          services=("litoral-trace-worker","litoral-trace-web")
+          base="/v1/projects/"+project+"/services/"
+          auth={"Authorization":"Bearer "+key,"Content-Type":"application/json","Accept":"application/json"}
+          def call(path,method="GET",payload=None):
+              data=None if payload is None else json.dumps(payload).encode()
+              req=urllib.request.Request("https://api.northflank.com"+path,
+                  headers=auth,data=data,method=method)
+              try:
+                  with urllib.request.urlopen(req,timeout=25) as response:
+                      return json.load(response).get("data",{})
+              except urllib.error.HTTPError as exc:
+                  raise RuntimeError("NORTHFLANK_API_HTTP_"+str(exc.code)+" "+method+" "+path.split("?")[0]) from None
+          def deployed(name):
+              status=call(base+name)
+              internal=(status.get("deployment") or {}).get("internal") or {}
+              s=status.get("status") or {}
+              return internal.get("deployedSHA"),(s.get("deployment") or {}).get("status")
+          def config(name):
+              return dict(call(base+name+"/runtime-environment?show=this").get("runtimeEnvironment") or {})
+          def patch(name,values):
+              result=call(base.replace("/services/","/services/combined/")+name,"PATCH",{"runtimeEnvironment":values})
+              if result.get("success") is False:
+                  raise RuntimeError("SERVICE_ENV_UPDATE_REJECTED "+name)
+          for tick in range(48):
+              state={n:deployed(n) for n in services}
+              if all(sha==expected and status=="COMPLETED" for sha,status in state.values()):
+                  break
+              if tick%6==0:
+                  print("WAITING_FOR_SAME_CHECKED_COMMIT",tick,
+                        {n:(str(sha or "")[:10],status) for n,(sha,status) in state.items()},flush=True)
+              time.sleep(10)
+          else:
+              raise SystemExit("DEPLOYMENT_SHA_MISMATCH_NO_CHANGES_MADE")
+          print("CHECKED_SHA_RUNNING_ON_WEB_AND_WORKER",expected[:12],flush=True)
+          original={n:config(n) for n in services}
+          keys=("US_LACEY_ASSURANCE_V2_MODE","US_LACEY_ASSURANCE_V2_COMMANDS",
+                "US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL")
+          for n,env in original.items():
+              if any(str(env.get(k) or "").upper().strip() not in ("","OFF","DISABLED") for k in keys):
+                  raise SystemExit("PREEXISTING_V2_FLAGS_NOT_OFF_NO_CHANGES_MADE")
+          proposed={}
+          for name in services:
+              env=dict(original[name])
+              env["US_LACEY_ASSURANCE_V2_MODE"]="SHADOW"
+              env["US_LACEY_ASSURANCE_V2_LAB_ORG_IDS"]="1"
+              env["US_LACEY_ASSURANCE_V2_COMMANDS"]="ON" if name.endswith("-web") else "OFF"
+              env["US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL"]="ON" if name.endswith("-web") else "OFF"
+              proposed[name]=env
+          changed=[]
+          try:
+              for name in services:
+                  patch(name,proposed[name])
+                  changed.append(name)
+                  print("PRIVATE_LAB_ENV_APPLIED",name,flush=True)
+              for name in services:
+                  current=call(base+name+"/runtime-environment").get("runtimeEnvironment") or {}
+                  for k in ("US_LACEY_ASSURANCE_V2_MODE","US_LACEY_ASSURANCE_V2_LAB_ORG_IDS",
+                            "US_LACEY_ASSURANCE_V2_COMMANDS","US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL"):
+                      if current.get(k)!=proposed[name][k]:
+                          raise RuntimeError("LAB_SCOPE_FLAG_MISMATCH "+name+" "+k)
+              for tick in range(42):
+                  try:
+                      with urllib.request.urlopen("https://lacey.litoraltrace.com/health",timeout=10) as h:
+                          health=h.status
+                      with urllib.request.urlopen("https://lacey.litoraltrace.com/ready",timeout=10) as r:
+                          ready=r.status
+                      if health==200 and ready==200:
+                          break
+                  except (urllib.error.URLError,TimeoutError):
+                      pass
+                  time.sleep(5)
+              else:
+                  raise RuntimeError("PRODUCTION_HEALTH_READINESS_NOT_RECOVERED")
+              url="https://lacey.litoraltrace.com/assurance-v2"
+              try:
+                  with urllib.request.urlopen(url,timeout=18) as response:
+                      code=response.status
+              except urllib.error.HTTPError as err:
+                  code=err.code
+              if code!=401:
+                  raise RuntimeError("PRIVATE_LAB_UNAUTHENTICATED_BOUNDARY_UNEXPECTED_HTTP_"+str(code))
+              print("ASSURANCE_V2_PRIVATE_LAB_LIVE_VERIFIED")
+              print("WEB_AND_WORKER_HEALTH_READY_200")
+              print("PRIVATE_LAB_ANONYMOUS_HTTP_401")
+              print("REGULATORY_ISSUANCE_PRODUCTION_DISABLED_IN_CHECKED_CODE")
+          except Exception as exc:
+              print("ACTIVATION_FAILED_ROLLING_BACK",type(exc).__name__,str(exc),flush=True)
+              for name in reversed(changed):
+                  try:
+                      patch(name,original[name])
+                      print("ROLLED_BACK",name,flush=True)
+                  except Exception as rollback_exc:
+                      print("ROLLBACK_FAILED",name,type(rollback_exc).__name__,flush=True)
+              raise
+          PY
