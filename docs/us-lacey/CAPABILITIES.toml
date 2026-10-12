@@ -575,3 +575,15 @@ tests = [
   "tests/test_us_lacey_v2lab_reprocess_postgres.py"
 ]
 notes = "CSRF-scoped current-document replay without new uploaded files or quota consumption. New source-set revision is required even with unchanged SHA; old human decisions stay audited but never grant V2 authority on replay. The deterministic parser may reuse compatible cached output; derived claims and reconciliation are recomputed by the normal worker. Rejected for non-V2LAB customers."
+
+[capabilities.assurance_v2_exception_first_workspace]
+status = "OWNER_LAB_READ_ONLY"
+owner = "us_lacey + web"
+authority = "observation"
+implementation = [
+  "src/litoral_trace/us_lacey/assurance_v2_simplified_review.py",
+  "src/litoral_trace/web/us_lacey_assurance_v2_views.py",
+  "src/litoral_trace/templates/us_lacey/assurance_v2_case.html"
+]
+tests = ["tests/test_assurance_v2_simplified_review.py"]
+notes = "Groups source-backed tasks for the reviewer while preserving each exception and raw gate check in technical details. This stage does NOT supply bulk human authority or automatic reuse. Batch approval requires a separately tested write-side transaction contract with source revision, per-field evidence and audit atomicity."

@@ -30,3 +30,28 @@
   .assurance-shell .gate-group ul{columns:1}
   .assurance-shell .source-link,.assurance-shell .decision-form{display:none!important}
 }
+
+/* Progressive disclosure: operational tasks precede detailed audit evidence. */
+.assurance-quick-review{background:#fff;border:1px solid #d8e8e2;border-radius:12px;padding:24px;margin:18px 0 22px;box-shadow:0 4px 20px rgba(12,32,30,.04)}
+.quick-review-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}
+.quick-review-head h2{font-size:1.42rem;font-weight:750;margin:4px 0 5px;color:#112c2b}
+.quick-review-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:20px 0}
+.quick-review-metrics>div{background:#f4f8f7;padding:14px;border-radius:9px}
+.quick-review-metrics strong{display:block;font-size:1.8rem;line-height:1.15;color:#123e35}
+.quick-review-metrics small{display:block;color:#526b65;margin-top:6px}
+.quick-review-actions{display:grid;gap:10px}
+.quick-review-task{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px;border:1px solid #dfebe7;border-radius:9px}
+.quick-review-task p{margin:5px 0 0;font-size:.91rem;color:#566c66}
+.quick-review-task a{white-space:nowrap;padding:9px 13px;background:#00694f;border-radius:7px;color:white;text-decoration:none;font-weight:650}
+.quick-review-task a:hover{background:#00553f}
+.quick-review-note{font-size:.85rem;margin:16px 0 9px;color:#50665e}
+.quick-review-technical{border-top:1px solid #e0eae6;margin-top:14px;padding-top:13px;font-size:.87rem}
+.quick-review-technical summary{cursor:pointer;font-weight:600;color:#405d55}
+@media(max-width:740px){.assurance-quick-review{padding:16px}.quick-review-metrics{gap:7px}.quick-review-metrics>div{padding:10px}.quick-review-metrics strong{font-size:1.38rem}.quick-review-task{align-items:flex-start;flex-direction:column}.quick-review-head{flex-direction:column}}
+@media print{.assurance-quick-review{box-shadow:none;break-inside:avoid}.quick-review-task a{color:#00553f;background:transparent;padding:0}}
+
+.assurance-full-review{margin:12px 0 24px}
+.assurance-full-review>summary{cursor:pointer;display:block;padding:15px 18px;background:#f6f9f8;border:1px solid #d8e8e2;border-radius:9px;font-weight:700;color:#275344}
+.assurance-full-review>summary:hover{background:#ecf5f1}
+.assurance-full-review[open]>summary{margin-bottom:16px}
+@media print{.assurance-full-review>summary{display:none}}

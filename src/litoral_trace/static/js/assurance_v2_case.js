@@ -114,3 +114,20 @@
     finally { button.disabled = false; }
   });
 })();
+
+
+/* Open the read-only technical dossier only when the reviewer requests
+   specific evidence. Keep the short exception-first overview primary. */
+document.addEventListener("click", function (event) {
+  const anchor = event.target.closest("a[href^='#']");
+  if (!anchor) return;
+  const targetId = anchor.getAttribute("href").slice(1);
+  const detail = document.getElementById("full-assurance-details");
+  const target = document.getElementById(targetId);
+  if (detail && target && detail.contains(target)) detail.open = true;
+});
+window.addEventListener("hashchange", function () {
+  const detail = document.getElementById("full-assurance-details");
+  const target = document.getElementById(location.hash.slice(1));
+  if (detail && target && detail.contains(target)) detail.open = true;
+});

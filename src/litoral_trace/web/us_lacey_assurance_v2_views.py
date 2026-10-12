@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from litoral_trace.us_lacey.exporters.assurance_v2 import AssuranceCase, evaluate_filing_gate
 from litoral_trace.us_lacey.assurance_v2_evidence_checklist import required_evidence_summary
+from litoral_trace.us_lacey.assurance_v2_simplified_review import build_review_workspace
 from litoral_trace.us_lacey.exporters.assurance_v2_package import (
     ExportBlocked, PackageStore, draft_assurance_excel,
 )
@@ -128,6 +129,7 @@ def create_assurance_v2_router(
             request=request, name="us_lacey/assurance_v2_case.html",
             context={"case": snapshot, "gate": gate,
                      "required_evidence": required_evidence_summary(case),
+                     "review_workspace": build_review_workspace(snapshot, required_evidence_summary(case), gate),
                      "csrf_token": principal.csrf_token,
                      "actions": sorted(_ACTIONS), "authenticated": True},
         )
