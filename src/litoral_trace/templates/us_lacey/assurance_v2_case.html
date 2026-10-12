@@ -39,7 +39,49 @@
       </div>
       {% endfor %}
     </div>
-    <p class="quick-review-note">Values with consistent documentary evidence can be inspected together. They are not automatically human-approved. The final package remains blocked until the relevant authority and regulatory checks pass.</p>
+    <section id="batch-review-panel" class="batch-review-panel" aria-label="Approve selected source-backed fields">
+      <div class="batch-review-heading">
+        <div><strong>Approve document-backed values together</strong>
+        <p>Review each original source, select the values you have checked and record one authorization. Each field keeps a separate auditable source link.</p></div>
+        <span class="tag amber">{{ batch_choices|length }} eligible</span>
+      </div>
+      {% if batch_choices %}
+      <form id="batch-review-form" data-batch-review>
+        <div class="batch-review-list">
+        {% for item in batch_choices %}
+          <label class="batch-review-item">
+            <input type="checkbox" class="batch-review-checkbox" name="batch_field"
+                   value="{{ item.field_id }}" data-claim-id="{{ item.claim_id }}">
+            <span class="batch-review-value">
+              <strong>{{ item.field_name.replace('_', ' ').title() }}</strong>
+              <span>{{ item.value }} · {{ 'Shipment' if item.line_reference == '__shipment__' else 'Line ' ~ item.line_reference }}</span>
+              <small>Document {{ item.document_id }}{% if item.page %}, p. {{ item.page }}{% endif %}</small>
+            </span>
+            {% if item.url %}
+            <a class="source-link" href="{{ item.url }}" target="_blank" rel="noopener noreferrer">Inspect PDF</a>
+            {% else %}
+            <span class="tag red">Source unavailable</span>
+            {% endif %}
+          </label>
+        {% endfor %}
+        </div>
+        <label class="batch-review-reason">Review note
+          <textarea name="reason" required minlength="6" maxlength="500" rows="2" placeholder="I checked the selected values against the linked original documents."></textarea>
+        </label>
+        <label class="batch-review-consent">
+          <input name="explicit_confirmation" type="checkbox" required>
+          I inspected the selected source documents and authorize only these field values for this source revision.
+        </label>
+        <div class="batch-review-submit">
+          <button class="lt-btn lt-btn--primary" type="submit">Confirm selected fields</button>
+          <p class="batch-review-result" role="status" aria-live="polite"></p>
+        </div>
+      </form>
+      {% else %}
+      <p class="muted">No values are eligible for one-click batch review yet. Confirm the supplier/SKU identity above or inspect individual exceptions; missing or conflicting fields remain outside the batch.</p>
+      {% endif %}
+    </section>
+    <p class="quick-review-note">The final package stays blocked until missing information, evidence reuse and regulatory checks are resolved. Bulk review is an explicit human decision, not automatic approval.</p>
     <details class="quick-review-technical">
       <summary>Technical assurance details ({{ review_workspace.technical_finding_count }} diagnostic checks)</summary>
       <p class="muted">These findings are validation diagnostics, not {{ review_workspace.technical_finding_count }} separate tasks for you.</p>

@@ -15,6 +15,35 @@
     if (!response.ok) throw new Error((data.detail || (data.blockers || []).map(x => x.code).join(', ') || 'Request failed'));
     return data;
   }
+  const batchForm = document.querySelector('[data-batch-review]');
+  if (batchForm) batchForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const status = batchForm.querySelector('.batch-review-result');
+    const button = batchForm.querySelector('button[type="submit"]');
+    const selected = [...batchForm.querySelectorAll('.batch-review-checkbox:checked')].map(c => ({
+      field_id: Number(c.value), claim_id: c.dataset.claimId,
+    }));
+    const reason = batchForm.querySelector('[name="reason"]')?.value.trim() || '';
+    const confirmed = batchForm.querySelector('[name="explicit_confirmation"]')?.checked === true;
+    if (!selected.length || !confirmed || reason.length < 6) {
+      status.textContent = 'Select source-backed values, inspect their PDFs, and explicitly confirm your review.';
+      return;
+    }
+    button.disabled = true;
+    status.textContent = 'Validating selected document evidence and recording the entire review atomically…';
+    try {
+      const receipt = await post('/batch-review', {
+        selected, reason, explicit_confirmation: true,
+      });
+      if (receipt.status !== 'RECORDED' || receipt.accepted_count !== selected.length) {
+        throw new Error('Batch review was not confirmed');
+      }
+      window.location.reload();
+    } catch (error) {
+      status.textContent = 'Nothing approved: ' + error.message;
+      button.disabled = false;
+    }
+  });
   document.querySelectorAll('.decision-form').forEach(form => {
     form.addEventListener('submit', async event => {
       event.preventDefault();
