@@ -1109,6 +1109,11 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
         readiness_summary=readiness_summary,
         applicability_preview=applicability_preview,
         applicability_csrf=applicability_csrf,
+        applicability_hts_confirmed=(
+            len([f for f in detail.fields if f.field_name == "hts_code"]) == 1
+            and all(f.status == "CONFIRMED" and f.effective_value
+                    for f in detail.fields if f.field_name == "hts_code")
+        ),
         applicability_sources=applicability_sources,
         recorded_applicability=recorded_applicability,
         business_reference=_business_reference(detail),
