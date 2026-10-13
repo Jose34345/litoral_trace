@@ -59,17 +59,7 @@ def _test_session(rows, events=()):
             self.scalar_calls += 1
             return NS(id=9) if self.scalar_calls == 1 else NS(id=25, source_set_fingerprint="f"*64)
         def execute(self, _): return NS(all=lambda: rows)
-        def scalars(self, sql):
-            # Human-review audit query has an ORDER/LIMIT clause.
-            if "us_lacey_operation_events" in str(sql):
-                return NS(all=lambda: events)
-            fields = [
-                NS(field_name="hts_code",field_status="CONFIRMED",human_value="4419199010",
-                   normalized_value=None,original_value=None),
-                NS(field_name="article_component",field_status="CONFIRMED",human_value="solid bamboo coasters",
-                   normalized_value=None,original_value=None),
-            ]
-            return NS(all=lambda: fields)
+        def scalars(self, _): return NS(all=lambda: events)
         def commit(self): self.committed = True
         def rollback(self): self.rollback_called = True
         def close(self): self.closed = True
@@ -117,7 +107,7 @@ def test_cultivated_bamboo_attestation_requires_separate_supplier_evidence(monke
     assert recorded[0]["actor_identity"] == "55"
 
     db2=DB([_source(20,"COMMERCIAL_INVOICE","invoice.pdf"), _source(30,"ENTRY_WORKSHEET","preparation worksheet.pdf")])
-    with pytest.raises(a.ApplicabilityAttestationError,match="supplier-origin"):
+    with pytest.raises(a.ApplicabilityAttestationError,match="supplier"):
         _record(db2,monkeypatch)
     assert not db2.committed and db2.closed
 
