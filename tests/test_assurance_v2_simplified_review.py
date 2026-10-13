@@ -83,7 +83,7 @@ def test_pack2_missing_supplier_evidence_is_one_task_per_line_not_per_field():
     ]
     assert "4 missing inputs for line 1" in x["tasks"][1]["detail"]
     assert "Genus, Species, Harvest country, and 1 more" in x["tasks"][1]["detail"]
-    assert x["tasks"][1]["target"] == "#required"
+    assert x["tasks"][1]["target"] == "#missing-evidence-panel"
     assert x["technical_finding_count"] == 3
     assert rows[1]["status"] == "MISSING_EVIDENCE"
     assert rows[2]["status"] == "MISSING_EVIDENCE"
@@ -106,4 +106,40 @@ def test_missing_evidence_grouping_does_not_mix_lines_or_hide_many_requirements(
     assert "and 9 more" in x["tasks"][0]["detail"]
     assert "line L1" in x["tasks"][0]["detail"]
     assert "line L2" in x["tasks"][1]["detail"]
-    assert all(task["target"] == "#required" for task in x["tasks"])
+    assert all(task["target"] == "#missing-evidence-panel" for task in x["tasks"])
+
+
+def test_pack2_actions_route_to_real_first_screen_review_forms():
+    case = {
+        "documents": [{"id": str(i)} for i in range(6)],
+        "identities": [{"line_reference": "1", "supplier_name": "LONGSHENG",
+                        "sku": "BAM-COAST-04", "status": "REVIEW_REQUIRED"}],
+        "reuses": [{"status": "ELIGIBLE", "field_name": name, "line_reference": "1"}
+                   for name in ("genus", "species", "country_of_harvest")],
+    }
+    rows = [{"field_name": "filing_entry_reference", "line_reference": "__shipment__",
+             "status": "MISSING_EVIDENCE", "label": "Entry Number", "value": None}]
+    rows += [{"field_name": f"field_{i}", "line_reference": "1",
+              "status": "REVIEW_SOURCE", "label": f"Value {i}", "value": str(i)}
+             for i in range(15)]
+    x = build_review_workspace(case, {"rows": rows, "verified": 0, "review": 15}, Gate())
+    assert x["found_count"] == 15
+    assert x["missing_count"] == 1
+    assert len(x["tasks"]) == 4
+    assert [task["target"] for task in x["tasks"]] == [
+        "#identity-action-panel", "#identity-action-panel",
+        "#missing-evidence-panel", "#batch-review-panel",
+    ]
+    assert x["technical_finding_count"] == 3
+    # No single task can be interpreted as regulatory approval.
+    assert x["verified_count"] == 0
+
+
+def test_botanical_review_routes_to_primary_form_only_after_identity_confirmation():
+    case = {
+        "documents": [{"id": "1"}],
+        "identities": [{"line_reference": "1", "status": "HUMAN_CONFIRMED"}],
+        "reuses": [{"status": "ELIGIBLE", "field_name": "genus", "line_reference": "1"}],
+    }
+    x = build_review_workspace(case, {"rows": (), "verified": 0, "review": 0}, Gate())
+    assert [task["target"] for task in x["tasks"]] == ["#botanical-group-panel"]
