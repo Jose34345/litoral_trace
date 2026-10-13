@@ -30,6 +30,9 @@ from litoral_trace.us_lacey.semantic_evidence_read import (
     EvidenceTextView,
     SemanticEvidenceReadService,
 )
+from litoral_trace.web.shipment_v2_unified import (
+    is_private_v2_shipment, unified_v2_review_context,
+)
 from litoral_trace.web.templates import templates
 
 
@@ -1037,6 +1040,12 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
         regulatory_action_items=regulatory_action_items,
     )
     reused_evidence_summary = _reuse_summary(identity, detail)
+    private_v2 = is_private_v2_shipment(request, identity, _business_reference(detail))
+    unified_v2 = (
+        unified_v2_review_context(
+            request=request, identity=identity, operation_public_id=str(detail.public_id),
+        ) if private_v2 else None
+    )
     audit_events = list_operation_events(
         organization_id=identity.organization_id,
         operation_public_id=detail.public_id,
@@ -1065,6 +1074,8 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
         settled_fields=settled_fields,
         provenance_summary=_review_provenance_summary(detail),
         reused_evidence_summary=reused_evidence_summary,
+        private_v2=private_v2,
+        unified_v2=unified_v2,
         audit_events=audit_events,
         readiness_summary=readiness_summary,
         business_reference=_business_reference(detail),

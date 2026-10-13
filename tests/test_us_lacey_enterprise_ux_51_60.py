@@ -11,7 +11,7 @@ def test_enterprise_ux_51_60_contract() -> None:
 
     # 51-53: persistent shipment context and direct section navigation.
     assert 'data-shipment-section-nav' in detail
-    for label in ("Summary", "Documents", "Human review", "Regulatory", "Package", "Audit trail"):
+    for label in ("Overview", "Review", "Documents", "Compliance &amp; package", "Audit trail"):
         assert label in detail
     assert 'id="shipment-summary"' in detail
     assert 'id="documents"' in detail
@@ -29,7 +29,7 @@ def test_enterprise_ux_51_60_contract() -> None:
     assert "Add evidence" in detail
 
     # 59: regulatory section can be opened from the workspace nav.
-    assert 'data-open-regulatory-tab' in detail
+    assert 'href="#declaration-package"' in detail
     assert 'data-review-tab-button="regulatory"' in workspace
 
     # 60: audit remains embedded and deep-linkable.
