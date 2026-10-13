@@ -437,7 +437,7 @@ def test_p13_batch_review_is_compact_and_authorization_contract_unchanged():
     assert 'id="batch-review-form"' not in html
     template = (
         Path(__file__).resolve().parents[1]
-        / "src/litoral_trace/templates/us_lacey/assurance_v2_case.html"
+        / "src/litoral_trace/templates/us_lacey/fragments/assurance_unified_actions.html"
     ).read_text(encoding="utf-8")
     assert 'class="assurance-batch-table"' in template
     assert 'data-select-inspected' in template
