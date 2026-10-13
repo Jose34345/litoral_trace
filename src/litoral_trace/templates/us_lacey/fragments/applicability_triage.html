@@ -121,7 +121,7 @@
         <input type="checkbox" name="explicitly_confirmed" value="yes" required class="mt-0.5">
         <span>I inspected the selected original entry documentation and, where an origin claim is made, the separate supplier source. The evidence supports the recorded entry type and bamboo status for this shipment. I understand this remains advisory and does not authorize customs filing.</span>
       </label>
-      <button type="submit" class="lt-btn lt-btn--primary" {% if not applicability_preview.entry_type or applicability_preview.hts_status == 'MISSING_OR_INVALID' or (applicability_sources|selectattr('page_available')|selectattr('is_primary_candidate')|list|length == 0) %}disabled{% endif %}>
+      <button type="submit" class="lt-btn lt-btn--primary" {% if not applicability_preview.entry_type or not applicability_hts_confirmed or applicability_preview.hts_status == 'MISSING_OR_INVALID' or (applicability_sources|selectattr('page_available')|selectattr('is_primary_candidate')|list|length == 0) %}disabled{% endif %}>
         Record reviewed determination
       </button>
       {% if not applicability_preview.entry_type or applicability_preview.hts_status == 'MISSING_OR_INVALID' %}
