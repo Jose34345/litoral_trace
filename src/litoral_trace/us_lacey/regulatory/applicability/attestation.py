@@ -54,6 +54,7 @@ class RecordedApplicability:
     hts10: str
     preview_status: str
     filename: str
+    botanical_filename: str
     source_page: int
     reviewed_by: str
     source_set_fingerprint: str
@@ -142,8 +143,15 @@ def read_applicability_evidence(
             source_id = int(value.get("source_document_id") or 0)
             matching = next(((link, vault) for link, vault in rows
                              if int(link.assurance_document_id) == source_id), None)
+            botanical_id = int(value.get("botanical_document_id") or 0)
+            botanical = next(((link, vault) for link, vault in rows if int(link.assurance_document_id) == botanical_id), None)
+            botanical_current = (not botanical_id or (botanical is not None
+                and str(botanical[1].sha256) == value.get("botanical_source_sha256")
+                and str(botanical[0].version_number) == value.get("botanical_source_version")
+                and _usable_source(*botanical)))
             current = (
-                value.get("source_set_fingerprint") == revision.source_set_fingerprint
+                botanical_current
+                and value.get("source_set_fingerprint") == revision.source_set_fingerprint
                 and matching is not None
                 and str(matching[1].sha256) == value.get("source_sha256")
                 and str(matching[0].version_number) == value.get("source_version")
@@ -156,6 +164,7 @@ def read_applicability_evidence(
                 hts10=str(value.get("hts10") or ""),
                 preview_status=str(value.get("preview_status") or ""),
                 filename="" if matching is None else str(matching[1].original_filename),
+                botanical_filename="" if botanical is None else str(botanical[1].original_filename),
                 source_page=int(value.get("source_page") or 1),
                 reviewed_by=str(item.actor_identity or ""),
                 source_set_fingerprint=str(value.get("source_set_fingerprint") or ""),
@@ -168,7 +177,8 @@ def read_applicability_evidence(
 def record_applicability_attestation(
     *, organization_id: int, operation_public_id: str, reviewer_user_id: int,
     entry_type: str, bamboo_origin: str, source_document_id: int,
-    source_page: int, explicitly_confirmed: bool, session_factory=None,
+    source_page: int, explicitly_confirmed: bool, botanical_document_id: int = 0,
+    botanical_page: int = 1, session_factory=None,
 ) -> dict:
     if not explicitly_confirmed:
         raise ApplicabilityAttestationError("Inspect the original and explicitly confirm this review.")
@@ -176,6 +186,8 @@ def record_applicability_attestation(
         raise ApplicabilityAttestationError("Choose a valid CBP entry type.")
     if not (1 <= int(source_page) <= 10000 and int(source_document_id) > 0):
         raise ApplicabilityAttestationError("Choose a linked source and a valid PDF page.")
+    if botanical_document_id and not (1 <= int(botanical_page) <= 10000):
+        raise ApplicabilityAttestationError("Choose a valid botanical PDF page.")
     if str(bamboo_origin) not in {"CULTIVATED", "WILD", "UNKNOWN", ""}:
         raise ApplicabilityAttestationError("Invalid bamboo cultivation selection.")
     db = (session_factory or get_us_lacey_db_session)()
@@ -211,12 +223,22 @@ def record_applicability_attestation(
             raise ApplicabilityAttestationError("Select cultivated, wild or unknown origin for bamboo.")
         if not preview.is_bamboo and bamboo_origin:
             raise ApplicabilityAttestationError("Bamboo status cannot be assigned to non-bamboo merchandise.")
-        if preview.is_bamboo and bamboo_origin == "CULTIVATED":
-            category = _source_class(link, vault)
-            if category.code != "SUPPLIER_SOURCE":
+        botanical_link = botanical_vault = None
+        if preview.is_bamboo and bamboo_origin in {"CULTIVATED", "WILD"}:
+            botanical = next(((row_link, row_vault) for row_link, row_vault in rows
+                              if int(row_link.assurance_document_id) == int(botanical_document_id)), None)
+            if botanical is None or not _usable_source(*botanical):
                 raise ApplicabilityAttestationError(
-                    "Cultivation must be supported by current supplier-origin evidence."
+                    "Select a current original supplier PDF supporting bamboo origin."
                 )
+            botanical_link, botanical_vault = botanical
+            if (_source_class(botanical_link, botanical_vault).code != "SUPPLIER_SOURCE"
+                    or str(botanical_vault.content_type).lower() != "application/pdf"):
+                raise ApplicabilityAttestationError(
+                    "Cultivated or wild bamboo origin needs supplier-origin PDF evidence."
+                )
+        elif botanical_document_id:
+            raise ApplicabilityAttestationError("Botanical evidence may only be attached to an evidenced origin claim.")
         details = {
             "kind": KIND,
             "source_set_fingerprint": str(revision.source_set_fingerprint),
@@ -224,6 +246,10 @@ def record_applicability_attestation(
             "source_sha256": str(vault.sha256),
             "source_version": str(link.version_number),
             "source_page": int(source_page),
+            "botanical_document_id": int(botanical_document_id),
+            "botanical_source_sha256": "" if botanical_vault is None else str(botanical_vault.sha256),
+            "botanical_source_version": "" if botanical_link is None else str(botanical_link.version_number),
+            "botanical_page": int(botanical_page) if botanical_vault is not None else 0,
             "entry_type": str(entry_type),
             "bamboo_origin": str(bamboo_origin),
             "hts10": str(preview.hts10),
