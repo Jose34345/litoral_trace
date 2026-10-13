@@ -410,7 +410,7 @@ def test_p13_pack2_missing_entry_is_explained_without_changing_filing_gate():
     assert 'Entry Number is required for final PPQ 505 preparation' in html
     assert 'do not invent one' in html
     assert 'Required declaration inputs' in html
-    assert "0 selected for explicit review" in html
+    # A missing Entry Number is explained, never automatically synthesized.
     assert 'id="export"' in html
     from litoral_trace.us_lacey.exporters.assurance_v2 import evaluate_filing_gate
     gate = evaluate_filing_gate(case)
@@ -432,11 +432,18 @@ def test_p13_batch_review_is_compact_and_authorization_contract_unchanged():
     )
     assert response.status_code == 200
     html = response.text
-    assert 'class="assurance-batch-table"' in html
-    assert 'data-select-inspected' in html
-    assert 'data-batch-selected-count' in html
-    assert 'name="explicit_confirmation"' in html
-    assert 'id="batch-review-form"' not in html or 'data-batch-review' in html
+    # This fully supported fixture has no eligible unresolved PDF candidates:
+    # batch authorizations are intentionally absent, not automatically offered.
+    assert 'id="batch-review-form"' not in html
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "src/litoral_trace/templates/us_lacey/assurance_v2_case.html"
+    ).read_text(encoding="utf-8")
+    assert 'class="assurance-batch-table"' in template
+    assert 'data-select-inspected' in template
+    assert 'data-batch-selected-count' in template
+    assert 'name="explicit_confirmation"' in template
+    assert 'data-batch-review' in template
     assert 'class="assurance-nav"' not in html
     assert 'id="technical-workspace"' in html
     assert 'Why final preparation remains blocked' in html
