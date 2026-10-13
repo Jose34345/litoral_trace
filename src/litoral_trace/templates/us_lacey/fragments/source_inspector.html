@@ -1,0 +1,20 @@
+<aside class="lt-source-inspector" data-source-inspector aria-hidden="true" aria-label="Original source PDF inspector">
+  <div class="lt-source-inspector__backdrop" data-source-inspector-close></div>
+  <section class="lt-source-inspector__panel" role="dialog" aria-modal="true" aria-labelledby="source-inspector-title" tabindex="-1">
+    <header class="lt-source-inspector__header">
+      <div class="min-w-0">
+        <p class="text-[11px] font-bold uppercase tracking-widest text-emerald-700">Source evidence · read-only</p>
+        <h2 id="source-inspector-title" class="mt-1 truncate text-sm font-bold text-slate-950" data-inspector-title>Original PDF</h2>
+        <p class="text-[11px] text-slate-600" data-inspector-locator>Open the original page and check the claimed value before accepting.</p>
+      </div>
+      <button type="button" class="lt-source-inspector__close" data-source-inspector-close aria-label="Close source inspector">×</button>
+    </header>
+    <div class="lt-source-inspector__body">
+      <iframe data-inspector-frame title="Original PDF page" loading="lazy" referrerpolicy="same-origin" src="about:blank"></iframe>
+      <div class="lt-source-inspector__fallback">
+        <span>Originals may expire under your document-retention policy. If this PDF is unavailable, request the original; do not treat a derived worksheet as independent evidence.</span>
+        <a href="#" target="_blank" rel="noopener noreferrer" data-inspector-external>Open original in a new tab</a>
+      </div>
+    </div>
+  </section>
+</aside>
