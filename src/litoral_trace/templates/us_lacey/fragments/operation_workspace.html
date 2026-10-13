@@ -800,6 +800,29 @@
 
   if (!window.__ltReviewTabsBound) {
     window.__ltReviewTabsBound = true;
+    let pendingQuickAcceptance = null;
+
+    // The user's click is not authority: only navigate after an HTMX success
+    // whose fresh server-rendered queue no longer contains that pending field.
+    document.body.addEventListener("htmx:beforeRequest", (event) => {
+      const form = event.detail?.elt || event.target;
+      if (!form?.matches?.("[data-quick-accept]")) return;
+      const field = form.closest("[data-review-field]");
+      const workspace = form.closest("[data-review-tabs]");
+      if (!field || !workspace) return;
+      pendingQuickAcceptance = {
+        fieldId: field.dataset.reviewFieldId,
+        operationId: workspace.dataset.operationId,
+        serverSucceeded: false
+      };
+    });
+
+    document.body.addEventListener("htmx:afterRequest", (event) => {
+      const form = event.detail?.elt || event.target;
+      if (!form?.matches?.("[data-quick-accept]") || !pendingQuickAcceptance) return;
+      pendingQuickAcceptance.serverSucceeded = event.detail?.successful === true;
+      if (!pendingQuickAcceptance.serverSucceeded) pendingQuickAcceptance = null;
+    });
 
     document.body.addEventListener("htmx:afterSettle", () => {
       const root = document.querySelector("[data-review-tabs]");
@@ -807,6 +830,36 @@
       root.querySelectorAll('[data-review-resolved="true"]').forEach((node) => node.remove());
       dedupeEngine2Dossier(root);
       refreshActionCount(root);
+      if (!pendingQuickAcceptance || !pendingQuickAcceptance.serverSucceeded
+          || pendingQuickAcceptance.operationId !== root.dataset.operationId) return;
+
+      const priorField = root.querySelector(
+        '[data-action-required-list] [data-review-field-id="' +
+        pendingQuickAcceptance.fieldId + '"]'
+      );
+      pendingQuickAcceptance = null;
+      if (priorField) return;  // A validation error left the review unresolved.
+
+      const nextField = root.querySelector(
+        '[data-action-required-list] [data-review-field], ' +
+        '[data-action-required-list] [data-regulatory-action-required]'
+      );
+      if (!nextField) {
+        const summary = root.querySelector("#quality-output-title");
+        if (summary) {
+          summary.tabIndex = -1;
+          summary.focus({preventScroll:true});
+        }
+        return;
+      }
+      activateTab(root, "action");
+      const focusTarget = nextField.querySelector("[data-quick-accept] button, button, a")
+        || nextField;
+      if (!focusTarget.hasAttribute("tabindex") && focusTarget === nextField) {
+        focusTarget.tabIndex = -1;
+      }
+      focusTarget.focus({preventScroll:true});
+      nextField.scrollIntoView({behavior:"smooth", block:"center"});
     });
 
     document.body.addEventListener("htmx:afterSwap", (event) => {
