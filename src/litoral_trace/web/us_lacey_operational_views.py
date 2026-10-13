@@ -17,6 +17,7 @@ from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
     canonical_ppq_value_key,
 )
+from litoral_trace.us_lacey.quick_review_eligibility import quick_accept_eligible
 from litoral_trace.us_lacey.product_intelligence_snapshot import (
     get_current_product_intelligence_view,
 )
@@ -1064,6 +1065,7 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
         upload_csrf=upload_csrf,
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
+        quick_accept_eligible=quick_accept_eligible,
         alias_csrf=alias_csrf,
         retry_csrf=retry_csrf,
         reprocess_csrf=reprocess_csrf,
@@ -1154,6 +1156,7 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         regulatory_action_items=regulatory_action_items,
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
+        quick_accept_eligible=quick_accept_eligible,
         field_errors=dict(field_errors or {}),
         field_input_values=dict(field_input_values or {}),
         attention_fields=attention_fields,

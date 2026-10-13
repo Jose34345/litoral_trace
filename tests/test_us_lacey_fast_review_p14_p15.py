@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from jinja2 import Environment
+from litoral_trace.us_lacey.quick_review_eligibility import quick_accept_eligible
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT / "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
@@ -43,6 +44,7 @@ def _render_field(field):
         field_input_values={}, field_errors={},
         missing_guidance=lambda *_: "Upload original evidence",
         action_status=lambda *_: "Needs confirmation",
+        quick_accept_eligible=quick_accept_eligible,
         button=lambda text, **kwargs: '<button type="submit">' + text + '</button>',
     )
 
@@ -59,7 +61,7 @@ def test_single_current_candidate_has_inline_accept_with_exact_id_and_low_confid
     assert 'name="csrf_token"' in html
     assert '/review/actions/fields/991' in html
     assert 'name="action" value="accept"' in html
-    assert "confidence is not approval" in html
+    assert "Document register" in html
 
 
 def test_distinct_candidates_stay_explicit_and_never_auto_select():
@@ -85,7 +87,6 @@ def test_missing_value_has_no_accept_but_can_request_evidence():
 def test_invalid_candidate_never_exposes_accept():
     for status, err, source_id in (
         ("INVALID", "Quantity invalid", 20),
-        ("REVIEW_REQUIRED", None, 20),
         ("MISSING", None, 20),
         ("VALID", None, None),
     ):
@@ -93,7 +94,30 @@ def test_invalid_candidate_never_exposes_accept():
             _candidate(validation_status=status, validation_error=err, source_id=source_id)
         ]))
         assert 'data-quick-accept' not in html
-        assert "Evidence must be verified" in html
+        assert "Value cannot be accepted directly." in html
+
+
+def test_review_required_metadata_is_human_decision_not_invalid_ppq():
+    field = _field(name="entered_value", candidates=[
+        _candidate(value="11250", confidence=0.50, validation_status="REVIEW_REQUIRED",
+                   validation_error="Human review is required.")
+    ])
+    assert quick_accept_eligible(field, field.candidates[0])
+    html = _render_field(field)
+    assert 'data-quick-accept' in html
+    assert "Accept &amp; next" in html
+    assert "Value cannot be accepted directly." not in html
+
+
+def test_ppq_invalid_value_fails_closed_even_if_candidate_metadata_says_valid():
+    invalid = _field(name="entered_value", proposed="not-a-number", candidates=[
+        _candidate(value="not-a-number", validation_status="REVIEW_REQUIRED")
+    ])
+    assert not quick_accept_eligible(invalid, invalid.candidates[0])
+    assert 'data-quick-accept' not in _render_field(invalid)
+    conflict = _field(candidates=[_candidate()])
+    conflict.status = "CONFLICT"
+    assert not quick_accept_eligible(conflict, conflict.candidates[0])
 
 
 def test_six_field_pack2_contract_keeps_entry_pending_and_no_implicit_approval():

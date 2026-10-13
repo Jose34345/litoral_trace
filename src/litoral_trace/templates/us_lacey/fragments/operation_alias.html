@@ -6,9 +6,9 @@
   {% if alias_saved %}data-toast-success="Operation name updated."{% endif %}
 >
   <div class="flex min-w-0 items-center gap-2"{% if alias_error %} hidden{% endif %} data-operation-alias-display>
-    <h1 class="lt-page-header__title min-w-0" style="font-size:clamp(1.25rem,2.2vw,1.8rem);line-height:1.25;">
-      <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
-      <span id="operation-alias-label" data-operation-alias-label class="block truncate" style="max-width:min(73vw,74rem)" title="{{ business_title|default(detail.client_reference, true) }}">{{ business_title|default(detail.client_reference, true) }}</span>
+    <h1 class="lt-page-header__title flex min-w-0 items-center gap-2" style="font-size:clamp(1.25rem,2.2vw,1.8rem);line-height:1.25;">
+      <i class="fa-solid fa-folder-open shrink-0" aria-hidden="true"></i>
+      <span id="operation-alias-label" data-operation-alias-label class="min-w-0 truncate" style="max-width:min(73vw,74rem)" title="{{ business_reference|default(detail.client_reference, true) }}">{{ business_reference|default(detail.client_reference, true) }}</span>
     </h1>
     <button
       type="button"
