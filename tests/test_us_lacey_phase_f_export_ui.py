@@ -55,8 +55,8 @@ def test_incomplete_operation_keeps_exports_visible_but_safely_disabled():
     assert "cursor" not in html  # styling belongs to the design-system extension, not inline CSS
     assert f'/operations/{OPERATION_ID}/export/lawgs-xml' not in html
     assert f'/operations/{OPERATION_ID}/export/excel' not in html
-    assert "Unlock your declaration package" in html
-    assert "Resolve the <strong>2</strong> items in the Action Required tab" in html
+    assert "Package blocked · review required" in html
+    assert "while <strong>2</strong> field or regulatory review items remain unresolved" in html
     assert "opacity-50" in html
 
 
@@ -126,8 +126,9 @@ def test_export_unlock_banner_quantifies_product_progress():
         auto_items=25,
     )
 
-    assert "Unlock your declaration package" in html
-    assert "Resolve the <strong>9</strong> items in the Action Required tab" in html
-    assert "already auto-resolved <strong>25</strong> fields" in html
+    assert "Package blocked · review required" in html
+    assert "while <strong>9</strong> field or regulatory review items remain unresolved" in html
+    # Auto-resolved totals remain in Review; no duplicate metric in Package.
+    assert "already auto-resolved" not in html
     assert "Final confirmation" not in html
     assert "Declaration outputs" not in html.lower()
