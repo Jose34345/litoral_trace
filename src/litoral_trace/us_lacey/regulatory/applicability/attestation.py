@@ -94,6 +94,7 @@ def _source_rows(db, *, organization_id: int, operation_id: int, revision_id: in
             UsLaceyOperationDocument.is_current.is_(True),
             UsLaceySourceSetMember.organization_id == organization_id,
             UsLaceySourceSetMember.source_set_revision_id == revision_id,
+            UsLaceySourceSetMember.assurance_document_id == UsLaceyOperationDocument.assurance_document_id,
             AssuranceDocument.organization_id == organization_id,
             VaultDocument.organization_id == organization_id,
         )
