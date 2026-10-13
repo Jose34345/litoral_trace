@@ -125,6 +125,7 @@ from litoral_trace.web.us_lacey_operational_views import (
     render_regulatory_overview,
     render_trust_center,
 )
+from litoral_trace.web.us_lacey_source_inspector import stream_current_pdf
 from litoral_trace.web.us_lacey_audit_views import render_audit_log_list
 from litoral_trace.web.us_lacey_evaluation_views import (
     render_evaluation_claim,
@@ -1195,6 +1196,25 @@ def operation_detail_page(
         return RedirectResponse("/billing", status_code=303)
     except UsLaceyOperationNotFound:
         return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
+@app.get("/operations/{operation_public_id}/source/{assurance_document_id:int}", include_in_schema=False)
+def shipment_current_original_pdf(
+    operation_public_id: str,
+    assurance_document_id: int,
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, _ = _operational_context(us_session)
+    except UsLaceyPortalAuthError:
+        raise HTTPException(401, "Sign in to inspect original evidence.") from None
+    except UsLaceyOperationalAccessError:
+        raise HTTPException(403, "Shipment access unavailable.") from None
+    return stream_current_pdf(
+        identity=identity,
+        operation_public_id=operation_public_id,
+        assurance_document_id=assurance_document_id,
+    )
 
 
 @app.post("/operations/{operation_public_id}/alias", response_class=HTMLResponse)
