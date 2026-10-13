@@ -122,7 +122,7 @@ def test_batch_rejection_is_detected_before_any_persistent_ingestion(monkeypatch
 def test_exception_first_workspace_exposes_tabs_and_bulk_confirmation():
     template = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
 
-    assert "Action Required" in template
+    assert "Pending <span" in template
     assert "Auto-Resolved Data" in template
     assert "Regulatory Analysis" in template
     assert "data-review-tab-button" in template
