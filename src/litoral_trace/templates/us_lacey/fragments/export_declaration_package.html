@@ -45,8 +45,8 @@
       <div class="flex gap-3">
         <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700" aria-hidden="true"><i class="fa-solid fa-lock-open"></i></span>
         <div>
-          <h3 class="font-bold text-slate-950">Unlock your declaration package</h3>
-          <p class="mt-1 text-sm leading-6 text-slate-600">You are almost done. Resolve the <strong>{{ action_count }}</strong> item{{ '' if action_count == 1 else 's' }} in the Action Required tab to generate your review-ready LAWGS XML and audit summary. This count includes field exceptions and blocking regulatory information requirements. Litoral Trace has already auto-resolved <strong>{{ auto_count }}</strong> field{{ '' if auto_count == 1 else 's' }} for you.</p>
+          <h3 class="font-bold text-slate-950">Package blocked · review required</h3>
+          <p class="mt-1 text-sm leading-6 text-slate-600">The package remains locked while <strong>{{ action_count }}</strong> field or regulatory review item{{ '' if action_count == 1 else 's' }} remain unresolved. <a href="#operation-workspace" class="font-semibold text-emerald-800 underline">Continue review</a>.</p>
         </div>
       </div>
     </div>
