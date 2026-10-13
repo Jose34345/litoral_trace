@@ -160,6 +160,10 @@ def create_assurance_v2_router(
             choice["url"] = source_link(
                 principal, operation_id, str(choice["document_id"]), choice["page"],
             )
+        pending_identities = tuple(
+            identity for identity in snapshot.get("identities") or ()
+            if identity.get("status") == "REVIEW_REQUIRED"
+        )
         confirmed_lines = {
             str(identity.get("line_reference"))
             for identity in snapshot.get("identities") or ()
@@ -188,6 +192,7 @@ def create_assurance_v2_router(
                      "review_workspace": build_review_workspace(snapshot, required_evidence_summary(case), gate),
                      "batch_choices": batch_choices,
                      "botanical_choices": botanical_choices,
+                     "pending_identities": pending_identities,
                      "review_insights": review_insights,
                      "csrf_token": principal.csrf_token,
                      "actions": sorted(_ACTIONS), "authenticated": True},

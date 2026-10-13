@@ -80,6 +80,27 @@
   });
   const batchForm = document.querySelector('[data-batch-review]');
   const batchObservedSeconds = batchForm ? watchReviewAttention(batchForm) : null;
+  // Selection is never approval. Reviewers may mark inspected sources together,
+  // but the existing explicit consent, comment and locked authority writer remain.
+  if (batchForm) {
+    const selectAll = batchForm.querySelector('[data-select-inspected]');
+    const checks = [...batchForm.querySelectorAll('.batch-review-checkbox:not(:disabled)')];
+    const counter = batchForm.querySelector('[data-batch-selected-count]');
+    const updateCount = () => {
+      const selected = checks.filter(box => box.checked).length;
+      if (counter) counter.textContent = selected + ' of ' + checks.length + ' eligible values selected for explicit review';
+      if (selectAll) {
+        selectAll.checked = checks.length > 0 && selected === checks.length;
+        selectAll.indeterminate = selected > 0 && selected < checks.length;
+      }
+    };
+    if (selectAll) selectAll.addEventListener('change', () => {
+      checks.forEach(box => { box.checked = selectAll.checked; });
+      updateCount();
+    });
+    checks.forEach(box => box.addEventListener('change', updateCount));
+    updateCount();
+  }
   if (batchForm) batchForm.addEventListener('submit', async event => {
     event.preventDefault();
     const status = batchForm.querySelector('.batch-review-result');

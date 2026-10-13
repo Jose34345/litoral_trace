@@ -364,3 +364,95 @@ def test_task_links_reveal_nested_evidence_without_global_expand():
     assert "window.addEventListener('hashchange', revealEvidenceHash)" in script
     assert "revealEvidenceHash();" in script
     assert "scrollIntoView({block:'start'})" in script
+
+
+def test_p13_identity_review_is_executable_on_primary_screen_once():
+    case = replace(make_case(approved=False), identities=({
+        "line_reference": "LINE-1", "supplier_id": 7, "product_id": 12,
+        "supplier_name": "LONGSHENG", "product_name": "Bamboo coaster",
+        "sku": "BAM-COAST-04", "status": "REVIEW_REQUIRED",
+    },))
+    client, _ = make_client(case, test_identity_enabled=True)
+    response = client.get(
+        f"/assurance-v2/operations/{OPERATION_ID}",
+        headers={"X-Demo-Tenant": "11"},
+    )
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="identity-action-panel"' in html
+    assert 'href="#identity-action-panel"' in html
+    assert html.count('class="identity-form"') == 1
+    assert 'data-supplier="7" data-product="12"' in html
+    assert 'name="reason"' in html
+    assert 'Confirm exact identity' in html
+    assert html.index('id="identity-action-panel"') < html.index('id="full-assurance-details"')
+    assert html.index('class="identity-form"') < html.index('id="identities"')
+    # Documentary audit continues to carry exact supplier/SKU information.
+    assert 'BAM-COAST-04' in html
+    assert 'id="identities"' in html
+    assert 'Return to the primary identity action' in html
+
+
+def test_p13_pack2_missing_entry_is_explained_without_changing_filing_gate():
+    case = make_case(approved=False)
+    fields = tuple(field for field in case.fields
+                   if field["name"] != "filing_entry_reference")
+    case = replace(case, fields=fields)
+    client, _ = make_client(case)
+    response = client.get(
+        f"/assurance-v2/operations/{OPERATION_ID}",
+        headers={"X-Demo-Tenant": "11"},
+    )
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="missing-evidence-panel"' in html
+    assert 'href="#missing-evidence-panel"' in html
+    assert 'Entry Number is required for final PPQ 505 preparation' in html
+    assert 'do not invent one' in html
+    assert 'Required declaration inputs' in html
+    # A missing Entry Number is explained, never automatically synthesized.
+    assert 'id="export"' in html
+    from litoral_trace.us_lacey.exporters.assurance_v2 import evaluate_filing_gate
+    gate = evaluate_filing_gate(case)
+    assert not gate.ready
+    assert any(
+        b.code == "MISSING_REQUIRED_FIELD"
+        and "filing_entry_reference" in b.subject
+        for b in gate.blockers
+    )
+
+
+def test_p13_batch_review_is_compact_and_authorization_contract_unchanged():
+    # Candidate values never become authorized merely because a checkbox is
+    # toggled, even when "select all" is present.
+    client, _ = make_client(make_case(approved=False))
+    response = client.get(
+        f"/assurance-v2/operations/{OPERATION_ID}",
+        headers={"X-Demo-Tenant": "11"},
+    )
+    assert response.status_code == 200
+    html = response.text
+    # This fully supported fixture has no eligible unresolved PDF candidates:
+    # batch authorizations are intentionally absent, not automatically offered.
+    assert 'id="batch-review-form"' not in html
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "src/litoral_trace/templates/us_lacey/assurance_v2_case.html"
+    ).read_text(encoding="utf-8")
+    assert 'class="assurance-batch-table"' in template
+    assert 'data-select-inspected' in template
+    assert 'data-batch-selected-count' in template
+    assert 'name="explicit_confirmation"' in template
+    assert 'data-batch-review' in template
+    assert 'class="assurance-nav"' not in html
+    assert 'id="technical-workspace"' in html
+    assert 'Why final preparation remains blocked' in html
+    assert 'diagnostic categories' in html
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "src/litoral_trace/static/js/assurance_v2_case.js"
+    ).read_text(encoding="utf-8")
+    assert "querySelector('[data-select-inspected]')" in script
+    assert "const selected = [...batchForm.querySelectorAll('.batch-review-checkbox:checked')]" in script
+    assert "explicit_confirmation: true" in script
+    assert "post('/batch-review'" in script
