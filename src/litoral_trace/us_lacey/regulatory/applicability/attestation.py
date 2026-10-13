@@ -211,6 +211,13 @@ def record_applicability_attestation(
             UsLaceyOperationField.organization_id == int(organization_id),
             UsLaceyOperationField.operation_id == op.id,
         )).all()
+        hts_fields = [field for field in fields if str(field.field_name) == "hts_code"]
+        if (len(hts_fields) != 1 or
+                str(hts_fields[0].field_status) != "CONFIRMED" or
+                not str(hts_fields[0].human_value or "").strip()):
+            raise ApplicabilityAttestationError(
+                "Confirm the current HTS as a reviewed field before recording applicability."
+            )
         detail = SimpleNamespace(fields=[
             SimpleNamespace(field_name=f.field_name,
                             effective_value=f.human_value if str(f.field_status) == "CONFIRMED" else None,
