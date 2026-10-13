@@ -73,7 +73,7 @@
     <div>
       <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700">Shipment overview</p>
       {% if private_v2 and unified_v2.available %}
-      <h2 class="mt-1 text-lg font-bold text-slate-950">{{ unified_v2.review_workspace.tasks|length }} grouped decisions or requests</h2>
+      <h2 class="mt-1 text-lg font-bold text-slate-950">Source-linked review required</h2>
       <p class="mt-1 text-sm text-slate-600">Review the source-linked actions below; extracted values are not automatically human-approved.</p>
       {% elif private_v2 %}
       <h2 class="mt-1 text-lg font-bold text-amber-900">Current V2 evidence unavailable</h2>
@@ -88,11 +88,9 @@
   <div class="mt-4 flex flex-wrap items-center gap-5 text-xs text-slate-600" data-unified-overview-counts>
     <span><strong>{{ detail.document_count }}</strong> source documents</span>
     {% if private_v2 and unified_v2.available %}
-    <span><strong>{{ unified_v2.review_workspace.found_count }}</strong> values found</span>
-    <span><strong>{{ unified_v2.review_workspace.missing_count }}</strong> missing inputs</span>
-    <span><strong>{{ unified_v2.required_evidence.verified }}/{{ unified_v2.required_evidence.total }}</strong> V2-reviewed inputs</span>
+    <span>Source revision <strong>{{ unified_v2.case.source_set_revision }}</strong></span>
     {% else %}
-    <span><strong>{{ readiness_summary.exception_count }}</strong> preparation review items</span>
+    <span>Review outcome: <strong>{{ readiness_summary.overall }}</strong></span>
     {% endif %}
     <a href="#operation-workspace" class="font-bold text-emerald-800 underline">Continue review</a>
   </div>
