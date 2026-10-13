@@ -1,10 +1,8 @@
-/* Fast, restrained evidence inspection. Original PDF is served same-origin. */
-.lt-source-inspector { position:fixed; inset:0; z-index:110; visibility:hidden; pointer-events:none; }
-.lt-source-inspector.is-open { visibility:visible; pointer-events:auto; }
-.lt-source-inspector__backdrop { position:absolute; inset:0; background:rgba(13,25,43,.40); opacity:0; transition:opacity 160ms ease-out; }
-.lt-source-inspector.is-open .lt-source-inspector__backdrop { opacity:1; }
-.lt-source-inspector__panel { position:absolute; right:0; top:0; height:100dvh; width:min(62vw,920px); background:#fff; display:flex; flex-direction:column; box-shadow:-12px 0 48px rgba(9,22,38,.18); transform:translateX(24px); opacity:.85; transition:transform 180ms cubic-bezier(.2,.75,.35,1),opacity 180ms ease; outline:none; }
-.lt-source-inspector.is-open .lt-source-inspector__panel { transform:translateX(0); opacity:1; }
+/* Same-origin native PDF dialog: background inert, fast sidebar motion. */
+.lt-source-inspector { position:fixed; inset:0; width:100vw; max-width:none; height:100dvh; max-height:none; margin:0; padding:0; border:0; background:transparent; opacity:1; overflow:hidden; }
+.lt-source-inspector::backdrop { background:rgba(13,25,43,.40); }
+.lt-source-inspector__panel { position:absolute; right:0; top:0; height:100dvh; width:min(62vw,920px); background:#fff; display:flex; flex-direction:column; box-shadow:-12px 0 48px rgba(9,22,38,.18); transform:translateX(100%); transition:transform 180ms cubic-bezier(.2,.75,.35,1); }
+.lt-source-inspector.is-open .lt-source-inspector__panel { transform:translateX(0); }
 .lt-source-inspector__header { padding:14px 18px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; gap:16px; align-items:start; }
 .lt-source-inspector__close { width:36px;height:36px;border:1px solid #cbd5e1;border-radius:9px;font-size:25px;line-height:1;color:#334155; flex-shrink:0; }
 .lt-source-inspector__close:hover { background:#f1f5f9; }
@@ -12,6 +10,5 @@
 .lt-source-inspector__body iframe { border:0; background:#f1f5f9; width:100%; flex:1; min-height:220px; }
 .lt-source-inspector__fallback { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:9px 15px; border-top:1px solid #e2e8f0; color:#64748b; font-size:11px; line-height:1.5; }
 .lt-source-inspector__fallback a { color:#047857; font-weight:700; white-space:nowrap; text-decoration:underline; }
-html.lt-source-inspector-lock { overflow:hidden; }
 @media (max-width:850px) { .lt-source-inspector__panel { width:100%; } .lt-source-inspector__fallback { flex-wrap:wrap; } }
-@media (prefers-reduced-motion:reduce) { .lt-source-inspector__backdrop,.lt-source-inspector__panel { transition:none!important; } }
+@media (prefers-reduced-motion:reduce) { .lt-source-inspector__panel { transition:none!important; } }
