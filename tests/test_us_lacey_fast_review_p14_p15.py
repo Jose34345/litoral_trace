@@ -25,7 +25,7 @@ def _field(*, name="entered_value", candidates=(), proposed="11250", source_id=2
         id=991, field_name=name, label=name.replace("_", " ").title(),
         scope="LINE", line_reference="1", status="REVIEW",
         candidates=tuple(candidates), proposed_value=proposed, provenance="current_shipment",
-        source_page=1, source_locator=None,
+        source_page=1 if source_id is not None else None, source_locator=None,
         source_assurance_document_id=source_id, effective_value=proposed,
     )
 
