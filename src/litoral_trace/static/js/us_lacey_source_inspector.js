@@ -45,13 +45,14 @@
     const select = event.target.closest("[data-applicability-source-select]");
     if (!select) return;
     const form = select.closest("form");
-    const button = form?.querySelector("[data-applicability-inspect-selected]");
+    const block = select.closest("[data-applicability-source-block]");
+    const button = block?.querySelector("[data-applicability-inspect-selected]");
     if (!button) return;
     const selected = select.selectedOptions[0];
     const available = !!select.value && !!selected && !selected.disabled;
     button.disabled = !available;
     if (!available) { button.removeAttribute("data-source-url"); return; }
-    const pageInput = form.querySelector('[name="source_page"]');
+    const pageInput = block.querySelector('input[type="number"]');
     button.setAttribute("data-source-url",
       (window.location.pathname.endsWith("/") ? window.location.pathname.slice(0, -1) : window.location.pathname) + "/source/" + select.value);
     button.setAttribute("data-source-page", pageInput?.value || "1");
@@ -59,8 +60,8 @@
     button.setAttribute("data-source-locator", "Original document · verify the selected page.");
   });
   document.addEventListener("input", (event) => {
-    if (!event.target.matches('[data-applicability-review-form] [name="source_page"]')) return;
-    const button = event.target.closest("form")?.querySelector("[data-applicability-inspect-selected]");
+    if (!event.target.matches('[data-applicability-review-form] input[type="number"]')) return;
+    const button = event.target.closest("[data-applicability-source-block]")?.querySelector("[data-applicability-inspect-selected]");
     if (button) button.setAttribute("data-source-page", event.target.value || "1");
   });
   document.addEventListener("click", (event) => {
