@@ -18,6 +18,8 @@ from litoral_trace.us_lacey.ppq505 import (
     canonical_ppq_value_key,
 )
 from litoral_trace.us_lacey.quick_review_eligibility import quick_accept_eligible
+from litoral_trace.us_lacey.document_evidence_class import classify_document
+from litoral_trace.us_lacey.regulatory.applicability.triage import preview_applicability
 from litoral_trace.us_lacey.product_intelligence_snapshot import (
     get_current_product_intelligence_view,
 )
@@ -1023,6 +1025,17 @@ def render_new_operation(*, request, identity, entitlement, csrf_token: str, err
     return _render(request, "new_operation", identity=identity, entitlement=entitlement, csrf_token=csrf_token, error=error)
 
 
+def _source_class_for_detail(detail):
+    by_name = {
+        str(document.filename).casefold(): document.document_role
+        for document in getattr(detail, "documents", ())
+    }
+    def for_filename(filename):
+        name = str(filename or "")
+        return classify_document(name, by_name.get(name.casefold()))
+    return for_filename
+
+
 def render_operation_detail(*, request, identity, entitlement=None, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], alias_csrf: str = "", retry_csrf: str = "", reprocess_csrf: str = "", product_intelligence=None, regulatory_assessment=None, error: str | None = None, notice: str | None = None, field_errors: Mapping[int, str] | None = None, field_input_values: Mapping[int, str] | None = None) -> str:
     attention_fields, auto_supported_fields, settled_fields = _review_field_groups_with_semantic_evidence(identity, detail)
     progress = processing_view(detail)
@@ -1047,6 +1060,11 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
             request=request, identity=identity, operation_public_id=str(detail.public_id),
         ) if private_v2 else None
     )
+    applicability_preview = preview_applicability(
+        detail,
+        entry_type=request.query_params.get("entry_type", ""),
+        bamboo_origin=request.query_params.get("bamboo_origin", ""),
+    )
     audit_events = list_operation_events(
         organization_id=identity.organization_id,
         operation_public_id=detail.public_id,
@@ -1066,6 +1084,7 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
         quick_accept_eligible=quick_accept_eligible,
+        source_class_for_filename=_source_class_for_detail(detail),
         alias_csrf=alias_csrf,
         retry_csrf=retry_csrf,
         reprocess_csrf=reprocess_csrf,
@@ -1080,6 +1099,7 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
         unified_v2=unified_v2,
         audit_events=audit_events,
         readiness_summary=readiness_summary,
+        applicability_preview=applicability_preview,
         business_reference=_business_reference(detail),
         business_supplier_name=_business_supplier_name(detail),
         business_title=_business_title(detail),
@@ -1157,6 +1177,7 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         complete_csrf=complete_csrf,
         review_csrf=review_csrf,
         quick_accept_eligible=quick_accept_eligible,
+        source_class_for_filename=_source_class_for_detail(detail),
         field_errors=dict(field_errors or {}),
         field_input_values=dict(field_input_values or {}),
         attention_fields=attention_fields,
