@@ -56,8 +56,22 @@
     {% endif %}
   </td>
   <td class="px-4 py-3">
-    <details class="max-w-sm">
-      <summary class="cursor-pointer text-xs font-bold text-emerald-700">Inspect evidence{% if field.candidates %} · {{ field.candidates|length }} candidate{{ '' if field.candidates|length == 1 else 's' }}{% endif %}</summary>
+    {% if field.candidates|length == 1 %}
+    {% set one = field.candidates[0] %}
+    <div data-inline-candidate="{{ one.id }}" class="max-w-sm space-y-1">
+      <p class="text-xs font-semibold text-slate-900">{{ one.normalized_value or one.original_value }}</p>
+      <p class="text-[11px] text-slate-600">
+        {% if one.source_document_id %}Document {{ one.source_document_id }}{% else %}Document not linked{% endif %}{% if one.source_page %} · Page {{ one.source_page }}{% endif %} · Extraction confidence {{ (one.confidence * 100)|round(0) }}%
+      </p>
+      {% if one.validation_status in ['INVALID', 'MISSING', 'REVIEW_REQUIRED'] or one.validation_error or not one.source_document_id %}
+      <p class="text-[11px] text-amber-800">Evidence must be verified before accepting this candidate.</p>
+      {% else %}
+      <p class="text-[11px] text-slate-500">Check original evidence before accepting; confidence is not approval.</p>
+      {% endif %}
+    </div>
+    {% elif field.candidates|length > 1 %}
+    <details class="max-w-sm" data-multiple-candidates>
+      <summary class="cursor-pointer text-xs font-bold text-emerald-700">Compare {{ field.candidates|length }} candidates</summary>
       <div class="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
         {% if field.candidates %}
           <div class="grid gap-2">
@@ -83,17 +97,34 @@
         {% endif %}
       </div>
     </details>
+    {% elif field.source_page %}
+    <p class="text-[11px] text-slate-600">Document evidence · page {{ field.source_page }}{% if field.source_locator %} · {{ field.source_locator }}{% endif %}</p>
+    {% elif field.provenance == "reused_evidence" %}
+    <p class="text-[11px] text-slate-600">Verified supplier evidence from a prior shipment.</p>
+    {% else %}
+    <p class="text-[11px] text-slate-600">No current linked source candidate.</p>
+    {% endif %}
   </td>
   <td class="px-4 py-3">
     <span class="lt-review-status {% if field.status in ['MISSING', 'CONFLICT'] %}lt-review-status--blocking{% else %}lt-review-status--confirmation{% endif %}" data-action-status>{{ action_status(field) }}</span>
   </td>
   <td class="px-4 py-3">
     <div class="flex min-w-[11rem] flex-wrap gap-2">
-      {% if field.proposed_value and not field.candidates %}
-      <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="accept">
+      {% if field.candidates|length == 1 %}
+      {% set one = field.candidates[0] %}
+      {% if one.source_document_id and one.validation_status not in ['INVALID', 'MISSING', 'REVIEW_REQUIRED'] and not one.validation_error %}
+      <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="accept" data-quick-accept>
         <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
         <input type="hidden" name="action" value="accept">
-        {{ button("Accept", variant="primary", button_type="submit") }}
+        <input type="hidden" name="candidate_id" value="{{ one.id }}">
+        {{ button("Accept & next", variant="primary", button_type="submit") }}
+      </form>
+      {% endif %}
+      {% elif field.proposed_value and not field.candidates and (field.source_assurance_document_id or field.provenance == 'reused_evidence') %}
+      <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="accept" data-quick-accept>
+        <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
+        <input type="hidden" name="action" value="accept">
+        {{ button("Accept & next", variant="primary", button_type="submit") }}
       </form>
       {% endif %}
 
