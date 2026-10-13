@@ -39,14 +39,14 @@ def build_review_workspace(case: dict[str, Any], required: dict[str, Any], gate:
         tasks.append(ReviewTask(
             "identity:" + line, "Verify supplier and product",
             f"Confirm {supplier} / {sku} belongs to shipment line {line}.",
-            "#identities", "Current source identity must be confirmed once per line.", 10,
+            "#identity-action-panel", "Current source identity must be confirmed once per line.", 10,
         ))
     botanical = [r for r in reuses if r.get("status") == "ELIGIBLE" and r.get("field_name") in _BOTANICAL]
     if botanical:
         tasks.append(ReviewTask(
             "botanical-memory", "Review supplier botanical evidence",
             f"{len(botanical)} reusable botanical claims need their original provenance and scope checked.",
-            "#identities" if pending_identities else "#botanical-group-panel",
+            "#identity-action-panel" if pending_identities else "#botanical-group-panel",
             "Confirm supplier/SKU identity before reusing history." if pending_identities
             else "Memory is eligible, not yet authorized for this shipment.", 20,
         ))
@@ -75,7 +75,7 @@ def build_review_workspace(case: dict[str, Any], required: dict[str, Any], gate:
             key, "Request missing evidence",
             f"{len(items)} missing input{'s' if len(items) != 1 else ''} for {scope}: "
             f"{visible}. Request supporting documentation; do not infer values.",
-            "#required",
+            "#missing-evidence-panel",
             "Grouped evidence request only; each underlying requirement stays open.",
             30,
         ))
