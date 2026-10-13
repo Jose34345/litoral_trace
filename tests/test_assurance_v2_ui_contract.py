@@ -317,3 +317,50 @@ def test_authorization_gateway_cannot_override_missing_required_review():
                        headers={"X-Demo-Tenant": "11"})
     assert resp.status_code == 409
     assert any(b["code"] == "UNSUPPORTED_CLAIM" for b in resp.json()["blockers"])
+
+
+def test_pack2_evidence_sections_are_independently_collapsed_by_default():
+    # One source-backed action remains visible; 9 technical areas are separate
+    # disclosures rather than one giant expanded checklist/exception ledger.
+    case = make_case()
+    client, _ = make_client(case)
+    response = client.get(
+        f"/assurance-v2/operations/{OPERATION_ID}",
+        headers={"X-Demo-Tenant": str(case.organization_id)},
+    )
+    assert response.status_code == 200
+    html = response.text
+    for section in (
+        "required", "exceptions", "documents", "claims", "identities",
+        "decisions", "memory", "rules", "export",
+    ):
+        assert f'class="panel assurance-evidence-section" id="{section}"' in html
+    assert html.count('class="panel assurance-evidence-section"') == 9
+    assert 'class="assurance-full-review" id="full-assurance-details"' in html
+    assert 'Explore evidence and audit records (advanced)' in html
+    assert 'These records explain the system' in html
+    assert 'id="required" open' not in html
+    assert 'id="exceptions" open' not in html
+    assert html.count('class="exception exception-disclosure"') == len(case.exceptions)
+    # Fixture has no field:* exception; the conditional writer form must still
+    # exist in the template and is rendered by the separate field-action test.
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "src/litoral_trace/templates/us_lacey/assurance_v2_case.html"
+    ).read_text(encoding="utf-8")
+    assert 'class="decision-form"' in template
+    assert 'data-exception="{{ ex.id }}"' in template
+
+
+def test_task_links_reveal_nested_evidence_without_global_expand():
+    # An anchor to #identities or a field exception must open its parent
+    # <details> elements, including on direct URLs and browser back/forward.
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "src/litoral_trace/static/js/assurance_v2_case.js"
+    ).read_text(encoding="utf-8")
+    assert "function revealEvidenceAnchor(id)" in script
+    assert "if (node.tagName === 'DETAILS') node.open = true;" in script
+    assert "window.addEventListener('hashchange', revealEvidenceHash)" in script
+    assert "revealEvidenceHash();" in script
+    assert "scrollIntoView({block:'start'})" in script
