@@ -56,7 +56,12 @@
 
 {% set shell_oob = false %}
 {% set shell_empty_bulk_rejection = empty_bulk_rejection %}
-{% if not private_v2 %}{% include "us_lacey/fragments/workflow_stepper_shell.html" %}{% endif %}
+{% if not private_v2 %}
+<details class="mb-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600" data-workflow-stage-details>
+  <summary class="cursor-pointer font-semibold">Workflow stages · view progress</summary>
+  {% include "us_lacey/fragments/workflow_stepper_shell.html" %}
+</details>
+{% endif %}
 
 <nav class="sticky top-16 z-20 -mx-1 mb-5 overflow-x-auto rounded-xl border border-slate-200 bg-white/95 px-2 py-2 shadow-sm backdrop-blur" aria-label="Shipment workspace sections" data-shipment-section-nav>
   <div class="flex min-w-max items-center gap-1">
@@ -79,8 +84,8 @@
       <h2 class="mt-1 text-lg font-bold text-amber-900">Current V2 evidence unavailable</h2>
       <p class="mt-1 text-sm text-slate-600">No legacy approval substitutes for an unavailable V2 authority state.</p>
       {% else %}
-      <h2 class="mt-1 text-lg font-bold text-slate-950">{{ readiness_summary.exception_count }} items need attention</h2>
-      <p class="mt-1 text-sm text-slate-600">Check unresolved fields and regulatory information before final preparation.</p>
+      <h2 class="mt-1 text-lg font-bold text-slate-950">Next step · review outstanding evidence</h2>
+      <p class="mt-1 text-sm text-slate-600">Only approved, source-backed values can contribute to final preparation.</p>
       {% endif %}
     </div>
     <span class="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">{% if private_v2 %}Private lab · Filing disabled{% else %}{{ readiness_summary.overall }}{% endif %}</span>
@@ -89,10 +94,8 @@
     <span><strong>{{ detail.document_count }}</strong> source documents</span>
     {% if private_v2 and unified_v2.available %}
     <span>Source revision <strong>{{ unified_v2.case.source_set_revision }}</strong></span>
-    {% else %}
-    <span>Review outcome: <strong>{{ readiness_summary.overall }}</strong></span>
     {% endif %}
-    <a href="#operation-workspace" class="font-bold text-emerald-800 underline">Continue review</a>
+    <a href="#operation-workspace" class="font-bold text-emerald-800 underline">Start review</a>
   </div>
   <p class="mt-3 text-[11px] text-slate-500" data-human-filing-boundary>Preparation support only: your authorized team remains responsible for final review and filing. No automatic ACE / LAWGS submission.</p>
   {% if not private_v2 and reused_evidence_summary and reused_evidence_summary.claim_count %}
