@@ -79,7 +79,7 @@
         </li>
         {% endfor %}
       </ul>
-      <a href="#required" class="source-link">See exact required inputs and current evidence status</a>
+      <a href="{{ '/assurance-v2/operations/' ~ case.operation_id ~ '#required' if unified_review_embedded|default(false) else '#required' }}" class="source-link">See exact required inputs and current evidence status</a>
     </section>
     {% endif %}
     {% if botanical_choices %}
