@@ -1233,6 +1233,8 @@ def operation_applicability_attest(
     bamboo_origin: str = Form(""),
     source_document_id: int = Form(...),
     source_page: int = Form(1),
+    botanical_document_id: int = Form(0),
+    botanical_page: int = Form(1),
     explicitly_confirmed: str = Form(""),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
@@ -1251,6 +1253,8 @@ def operation_applicability_attest(
             bamboo_origin=bamboo_origin,
             source_document_id=source_document_id,
             source_page=source_page,
+            botanical_document_id=botanical_document_id,
+            botanical_page=botanical_page,
             explicitly_confirmed=explicitly_confirmed == "yes",
         )
         return RedirectResponse(
