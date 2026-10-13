@@ -210,18 +210,34 @@
 })();
 
 
-/* Open the read-only technical dossier only when the reviewer requests
-   specific evidence. Keep the short exception-first overview primary. */
-document.addEventListener("click", function (event) {
+/* Task links reveal only the requested evidence section (and exception).
+   A long audit ledger must never open automatically as a wall of records. */
+function revealEvidenceAnchor(id) {
+  const target = document.getElementById(id);
+  if (!target) return false;
+  for (let node = target; node; node = node.parentElement) {
+    if (node.tagName === 'DETAILS') node.open = true;
+  }
+  return true;
+}
+
+document.addEventListener('click', function (event) {
   const anchor = event.target.closest("a[href^='#']");
   if (!anchor) return;
-  const targetId = anchor.getAttribute("href").slice(1);
-  const detail = document.getElementById("full-assurance-details");
-  const target = document.getElementById(targetId);
-  if (detail && target && detail.contains(target)) detail.open = true;
+  const id = anchor.getAttribute('href').slice(1);
+  if (id) revealEvidenceAnchor(id);
 });
-window.addEventListener("hashchange", function () {
-  const detail = document.getElementById("full-assurance-details");
-  const target = document.getElementById(location.hash.slice(1));
-  if (detail && target && detail.contains(target)) detail.open = true;
-});
+
+function revealEvidenceHash() {
+  const raw = window.location.hash.slice(1);
+  if (!raw) return;
+  let id;
+  try { id = decodeURIComponent(raw); }
+  catch (_) { return; }
+  if (revealEvidenceAnchor(id)) {
+    // Native hash scrolling sometimes precedes opening hidden ancestors.
+    requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({block:'start'}));
+  }
+}
+window.addEventListener('hashchange', revealEvidenceHash);
+revealEvidenceHash();
