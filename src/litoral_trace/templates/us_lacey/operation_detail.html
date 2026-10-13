@@ -5,6 +5,7 @@
 {% set engine2_downstream_annotations = engine2_downstream_annotations|default({}) %}
 {% set audit_events = audit_events|default(()) %}
 {% block lacey_title %}Review shipment{% endblock %}
+{% block head_extra %}{{ super() }}{% if private_v2|default(false) %}<link rel="stylesheet" href="{{ url_for('static', path='/css/assurance_v2_case.css') }}">{% endif %}{% endblock %}
 {% block lacey_content %}
 {% set bulk_upload_rejection = error and error.startswith("This file contains multiple shipments.") %}
 {% set empty_bulk_rejection = bulk_upload_rejection and not detail.documents %}
@@ -32,11 +33,10 @@
     <p class="mt-2 text-[11px] text-slate-400">Immutable operation ID · {{ detail.public_id }}</p>
   </div>
 </header>
-{% if identity is defined and identity and request.scope.get('app') and identity.organization_id in (request.scope['app'].state.assurance_v2_lab_org_ids|default(())) and business_reference.upper().startswith('V2LAB-') %}
-<div class="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
-  <strong>Assurance V2 Private Lab · Not for filing.</strong>
-  <p class="mt-1">Compare source-linked evidence, resolve exceptions and inspect reusable memory for this test shipment. Regulatory package issuance is disabled.</p>
-  <a href="/assurance-v2/operations/{{ detail.public_id }}" class="mt-2 inline-flex font-bold text-emerald-800 underline">Open Assurance V2 case</a>
+{% if private_v2 %}
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-950" data-private-v2-boundary>
+  <span><strong>Private V2 lab · Test only.</strong> Filing package issuance is disabled. Source-linked V2 authority applies to decisions below.</span>
+  <a href="/assurance-v2/operations/{{ detail.public_id }}#claims" class="font-bold underline">Advanced evidence dossier</a>
 </div>
 {% endif %}
 
@@ -56,60 +56,55 @@
 
 {% set shell_oob = false %}
 {% set shell_empty_bulk_rejection = empty_bulk_rejection %}
-{% include "us_lacey/fragments/workflow_stepper_shell.html" %}
+{% if not private_v2 %}{% include "us_lacey/fragments/workflow_stepper_shell.html" %}{% endif %}
 
 <nav class="sticky top-16 z-20 -mx-1 mb-5 overflow-x-auto rounded-xl border border-slate-200 bg-white/95 px-2 py-2 shadow-sm backdrop-blur" aria-label="Shipment workspace sections" data-shipment-section-nav>
   <div class="flex min-w-max items-center gap-1">
-    <a href="#shipment-summary" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Summary</a>
-    <a href="#documents" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Documents <span class="ml-1 text-[10px] text-slate-400">{{ detail.document_count }}</span></a>
-    <a href="#operation-workspace" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Human review <span class="ml-1 text-[10px] {{ 'text-amber-700' if readiness_summary.exception_count else 'text-slate-400' }}">{{ readiness_summary.exception_count }}</span></a>
-    <a href="#operation-workspace" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100" data-open-regulatory-tab>Regulatory</a>
-    <a href="#declaration-package" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Package</a>
-    <a href="#activity-audit-log" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Audit trail</a>
+    <a href="#shipment-summary" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700">Overview</a>
+    <a href="#operation-workspace" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700">Review{% if private_v2 and unified_v2.available %} · {{ unified_v2.review_workspace.tasks|length }} groups{% elif not private_v2 %} · {{ readiness_summary.exception_count }} items{% endif %}</a>
+    <a href="#documents" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700">Documents · {{ detail.document_count }}</a>
+    <a href="#declaration-package" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700">Compliance &amp; package</a>
+    <a href="#activity-audit-log" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700">Audit trail</a>
   </div>
 </nav>
 
-<section id="shipment-summary" class="lt-card scroll-mt-36 overflow-hidden border border-slate-200 bg-white shadow-sm" data-readiness-summary>
-  <div class="grid gap-0 lg:grid-cols-[1.2fr_repeat(3,minmax(0,0.8fr))]">
-    {% include "us_lacey/fragments/shipment_readiness_status.html" %}
-    {% include "us_lacey/fragments/species_status.html" %}
-    {% include "us_lacey/fragments/country_status.html" %}
-    <div class="p-5">
-      <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Evidence set</p>
-      <p class="mt-2 text-lg font-bold text-slate-950">{{ detail.document_count }} docs</p>
-      <p class="mt-1 text-xs text-slate-500">{{ provenance_summary.current_shipment_count }} current shipment documents · {{ provenance_summary.reused_evidence_count }} reused documentary attachments{% if reused_evidence_summary and reused_evidence_summary.claim_count %} · {{ reused_evidence_summary.claim_count }} verified supplier claims reused{% endif %}</p>
-    </div>
-  </div>
-  <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3 text-[11px] text-slate-600" data-human-filing-boundary>
-    <span><strong class="font-semibold text-slate-800">Preparation boundary:</strong> Litoral Trace reconciles, validates and packages declaration data; your authorized team remains responsible for final review and filing.</span>
-    <span class="font-semibold text-slate-500">No automatic ACE / LAWGS submission</span>
-  </div>
-
-  {% if identity and identity.organization_id in (request.scope['app'].state.assurance_v2_lab_org_ids|default(())) and business_reference.upper().startswith('V2LAB-') %}
-  <div class="border-t border-slate-200 bg-slate-50 px-5 py-3 text-sm text-slate-700" data-v2-authority-boundary>
-    <strong>Assurance V2 authority is separate.</strong>
-    Verified supplier evidence here reflects the shipment preparation workflow. The V2 case requires an explicit confirmation of supplier/SKU/line identity and authorized evidence reuse for this exact source revision. These badges are not V2 filing authorization.
-    <a class="font-bold underline" href="/assurance-v2/operations/{{ detail.public_id }}#identities">Confirm V2 identity</a>
-  </div>
-  {% endif %}
-  {% if reused_evidence_summary and reused_evidence_summary.claim_count %}
-  <div class="border-t border-emerald-200 bg-emerald-50 px-5 py-4" data-reuse-memory-summary>
-    <div class="flex flex-wrap items-center justify-between gap-4">
-      <div class="flex min-w-0 items-start gap-3">
-        <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-clock-rotate-left"></i></span>
-        <div class="min-w-0">
-          <p class="text-sm font-bold text-emerald-950">{{ reused_evidence_summary.claim_count }} claim{{ '' if reused_evidence_summary.claim_count == 1 else 's' }} reused from verified supplier evidence</p>
-          {% if reused_evidence_summary.sources %}
-          {% set source = reused_evidence_summary.sources[0] %}
-          <p class="mt-1 text-xs text-emerald-800">{{ source.supplier_name }} · {{ source.product_name }} · Verified {{ source.verified_at.strftime("%b %d, %Y") }} · Valid until {{ source.valid_until.strftime("%b %d, %Y") }}</p>
-          {% endif %}
-        </div>
-      </div>
-      {% if reused_evidence_summary.sources %}
-      <a class="lt-btn lt-btn--secondary" href="/evidence#evidence-{{ reused_evidence_summary.sources[0].public_id }}"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><span>Inspect source</span></a>
+<section id="shipment-summary" class="lt-card scroll-mt-36 border border-slate-200 p-5" data-readiness-summary>
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700">Shipment overview</p>
+      {% if private_v2 and unified_v2.available %}
+      <h2 class="mt-1 text-lg font-bold text-slate-950">{{ unified_v2.review_workspace.tasks|length }} grouped decisions or requests</h2>
+      <p class="mt-1 text-sm text-slate-600">Review the source-linked actions below; extracted values are not automatically human-approved.</p>
+      {% elif private_v2 %}
+      <h2 class="mt-1 text-lg font-bold text-amber-900">Current V2 evidence unavailable</h2>
+      <p class="mt-1 text-sm text-slate-600">No legacy approval substitutes for an unavailable V2 authority state.</p>
+      {% else %}
+      <h2 class="mt-1 text-lg font-bold text-slate-950">{{ readiness_summary.exception_count }} items need attention</h2>
+      <p class="mt-1 text-sm text-slate-600">Check unresolved fields and regulatory information before final preparation.</p>
       {% endif %}
     </div>
+    <span class="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">{% if private_v2 %}Private lab · Filing disabled{% else %}{{ readiness_summary.overall }}{% endif %}</span>
   </div>
+  <div class="mt-4 flex flex-wrap items-center gap-5 text-xs text-slate-600" data-unified-overview-counts>
+    <span><strong>{{ detail.document_count }}</strong> source documents</span>
+    {% if private_v2 and unified_v2.available %}
+    <span><strong>{{ unified_v2.review_workspace.found_count }}</strong> values found</span>
+    <span><strong>{{ unified_v2.review_workspace.missing_count }}</strong> missing inputs</span>
+    <span><strong>{{ unified_v2.required_evidence.verified }}/{{ unified_v2.required_evidence.total }}</strong> V2-reviewed inputs</span>
+    {% else %}
+    <span><strong>{{ readiness_summary.exception_count }}</strong> preparation review items</span>
+    {% endif %}
+    <a href="#operation-workspace" class="font-bold text-emerald-800 underline">Continue review</a>
+  </div>
+  {% if not private_v2 %}
+  <details class="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-600">
+    <summary class="cursor-pointer font-semibold">Detailed preparation status</summary>
+    <div class="mt-3 grid gap-0 lg:grid-cols-3">
+      {% include "us_lacey/fragments/shipment_readiness_status.html" %}
+      {% include "us_lacey/fragments/species_status.html" %}
+      {% include "us_lacey/fragments/country_status.html" %}
+    </div>
+  </details>
   {% endif %}
 </section>
 
@@ -260,4 +255,5 @@
   });
 })();
 </script>
+{% if private_v2 %}<script src="{{ url_for('static', path='/js/assurance_v2_case.js') }}" defer></script>{% endif %}
 {% endblock %}
