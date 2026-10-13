@@ -99,7 +99,9 @@ def test_single_review_surface_and_five_navigation_regions():
     assert 'data-unified-audit' in op
     assert 'data-secondary-reprocess' in op
     # Legacy stage stepper remains available outside owner-only laboratory.
-    assert '{% if not private_v2 %}{% include "us_lacey/fragments/workflow_stepper_shell.html" %}{% endif %}' in op
+    assert '{% include "us_lacey/fragments/workflow_stepper_shell.html" %}' in op
+    assert "Workflow stages · view progress" in op
+    assert "data-workflow-stage-details" in op
 
 
 def test_entry_requirement_remains_blocking_and_v2_lab_cannot_issue():
