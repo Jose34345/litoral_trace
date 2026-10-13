@@ -1062,8 +1062,16 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
     )
     applicability_preview = preview_applicability(
         detail,
-        entry_type=request.query_params.get("entry_type", ""),
-        bamboo_origin=request.query_params.get("bamboo_origin", ""),
+        entry_type=request.query_params.get(
+            "entry_type",
+            recorded_applicability.entry_type
+            if recorded_applicability is not None and recorded_applicability.current else "",
+        ),
+        bamboo_origin=request.query_params.get(
+            "bamboo_origin",
+            recorded_applicability.bamboo_origin
+            if recorded_applicability is not None and recorded_applicability.current else "",
+        ),
     )
     audit_events = list_operation_events(
         organization_id=identity.organization_id,
