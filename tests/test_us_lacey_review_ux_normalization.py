@@ -151,7 +151,8 @@ def test_exception_first_workspace_has_four_tabs_and_htmx_actions():
     assert 'data-review-tab-panel="resolved"' in template
     assert 'data-review-tab-panel="confirmed"' in template
     assert 'data-review-tab-panel="regulatory"' in template
-    assert "Action Required" in template
+    assert "Review decisions" in template
+    assert "Accept & next" in template
     assert "Auto-Resolved Data" in template
     assert "Confirmed <span" in template
     assert "Regulatory Analysis" in template
