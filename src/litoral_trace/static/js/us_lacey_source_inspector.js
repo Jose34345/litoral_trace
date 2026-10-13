@@ -53,7 +53,7 @@
     if (!available) { button.removeAttribute("data-source-url"); return; }
     const pageInput = form.querySelector('[name="source_page"]');
     button.setAttribute("data-source-url",
-      window.location.pathname.replace(/\\/$/, "") + "/source/" + select.value);
+      (window.location.pathname.endsWith("/") ? window.location.pathname.slice(0, -1) : window.location.pathname) + "/source/" + select.value);
     button.setAttribute("data-source-page", pageInput?.value || "1");
     button.setAttribute("data-source-label", selected.dataset.sourceFile || "Source PDF");
     button.setAttribute("data-source-locator", "Original document · verify the selected page.");
