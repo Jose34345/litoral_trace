@@ -120,7 +120,18 @@
 {# A rejected upload is request-local feedback. Do not mix it with stale analysis
    or a previous processing failure from documents already stored on the operation. #}
 {% if private_v2 %}
-{% if unified_v2.available %}
+{% if not processing.terminal and detail.documents %}
+<section id="operation-workspace" class="lt-card mt-6 p-5" data-v2-processing-refresh aria-live="polite">
+  <h2 class="text-base font-bold text-slate-900">Processing shipment evidence</h2>
+  <p class="mt-1 text-sm text-slate-600">{{ processing.message }}. When the current source revision is finalized, source-linked review actions will appear here.</p>
+  <p class="mt-2 text-xs text-slate-500">This is a processing status, not a reviewer task.</p>
+</section>
+{% elif processing.failed %}
+<section id="operation-workspace" class="lt-card mt-6 p-5" role="alert">
+  <h2 class="text-base font-bold text-amber-900">Document analysis requires attention</h2>
+  <p class="mt-1 text-sm text-slate-600">{{ processing.message }}. Inspect the documents and retry with supported evidence.</p>
+</section>
+{% elif unified_v2.available %}
 <div class="assurance-shell" data-assurance-case data-operation="{{ detail.public_id }}" data-csrf="{{ unified_v2.csrf_token }}">
   {% with case=unified_v2.case, gate=unified_v2.gate, review_workspace=unified_v2.review_workspace, required_evidence=unified_v2.required_evidence, review_insights=unified_v2.review_insights, pending_identities=unified_v2.pending_identities, botanical_choices=unified_v2.botanical_choices, batch_choices=unified_v2.batch_choices, unified_review_embedded=true %}
     {% include "us_lacey/fragments/assurance_unified_actions.html" %}
@@ -312,5 +323,8 @@
   });
 })();
 </script>
+{% if private_v2 and not processing.terminal and detail.documents %}
+<script>window.setTimeout(function () { window.location.reload(); }, 8000);</script>
+{% endif %}
 {% if private_v2 %}<script src="{{ url_for('static', path='/js/assurance_v2_case.js') }}" defer></script>{% endif %}
 {% endblock %}
