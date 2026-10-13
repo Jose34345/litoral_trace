@@ -212,53 +212,59 @@
   </section>
   {% endif %}
 
-  <section id="review-summary" class="lt-card p-6" aria-labelledby="quality-output-title">
-    <div class="max-w-4xl">
-      <h2 id="quality-output-title" class="text-2xl font-bold tracking-tight text-slate-950">Review shipment</h2>
-      <p class="mt-2 text-sm leading-6 text-slate-600">Litoral Trace has already reconciled consistent evidence. Review only the remaining missing or conflicting fields.</p>
-      <div class="mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-700" data-provenance-summary>
-        <span class="font-semibold text-slate-950" data-current-shipment-count>{{ provenance_summary.current_shipment_count }} from this shipment</span>
-        <span class="text-slate-500" aria-hidden="true">·</span>
-        <span class="font-semibold text-emerald-700" data-reused-evidence-count>{{ provenance_summary.reused_evidence_count }} reused</span>
-        <span class="text-slate-500" aria-hidden="true">·</span>
-        <span class="font-semibold text-amber-900" data-review-required-provenance-count>{{ combined_action_count }} need attention</span>
+  <section id="review-summary" class="lt-card p-4 sm:p-5" aria-labelledby="quality-output-title">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="min-w-0">
+        <h2 id="quality-output-title" class="text-lg font-bold tracking-tight text-slate-950">Review decisions</h2>
+        <p class="mt-1 text-xs text-slate-600">Check the original source, then accept the value or request evidence. Unconfirmed values remain pending.</p>
       </div>
-      {% if combined_action_count > 0 %}
-      <div class="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900" data-attention-callout>
-        <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
-        <span><strong data-attention-callout-count>{{ combined_action_count }}</strong> item{{ '' if combined_action_count == 1 else 's' }} need attention before generating the declaration package.</span>
-      </div>
-      {% else %}
-      <div class="mt-4 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900" data-attention-callout>
-        <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-        <span>No items need attention before generating the declaration package.</span>
-      </div>
-      {% endif %}
+      <p class="text-xs text-slate-500" data-provenance-summary>
+        <span data-current-shipment-count>{{ provenance_summary.current_shipment_count }} from shipment</span>
+        · <span data-reused-evidence-count>{{ provenance_summary.reused_evidence_count }} reused claims</span>
+      </p>
     </div>
-
-    <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-review-kpis>
-      <div class="lt-enterprise-stat border-amber-200 bg-amber-50" data-review-kpi="action">
-        <p class="text-2xl font-bold text-amber-700" data-action-required-count>{{ combined_action_count }}</p>
-        <p class="mt-1 text-xs font-bold uppercase tracking-wide text-amber-900">Action Required</p>
-        <p class="mt-1 text-xs text-amber-800">Work pending</p>
-      </div>
-      <div class="lt-enterprise-stat border-emerald-200 bg-emerald-50" data-review-kpi="resolved">
-        <p class="text-2xl font-bold text-emerald-700" data-auto-resolved-count>{{ auto_supported_fields|length }}</p>
-        <p class="mt-1 text-xs font-bold uppercase tracking-wide text-emerald-900">Auto-resolved</p>
-        <p class="mt-1 text-xs text-emerald-800">Resolved by Litoral Trace</p>
-      </div>
-      <div class="lt-enterprise-stat" data-review-kpi="confirmed">
-        <p class="text-2xl font-bold text-slate-950">{{ settled_fields|length }}</p>
-        <p class="mt-1 text-xs font-bold uppercase tracking-wide text-slate-700">Confirmed</p>
-        <p class="mt-1 text-xs text-slate-500">Settled review fields</p>
-      </div>
-      <div class="lt-enterprise-stat bg-slate-50" data-review-kpi="documents">
-        <p class="text-2xl font-bold text-slate-950">{{ detail.document_count }}</p>
-        <p class="mt-1 text-xs font-bold uppercase tracking-wide text-slate-700">Documents</p>
-        <p class="mt-1 text-xs text-slate-500">Shipment evidence</p>
-      </div>
+    <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 pt-3 text-xs text-slate-700" data-review-kpis>
+      <span data-review-kpi="action"><strong class="text-amber-800" data-action-required-count>{{ combined_action_count }}</strong> pending</span>
+      <span data-review-kpi="confirmed"><strong>{{ settled_fields|length }}</strong> confirmed</span>
+      <span data-review-kpi="resolved"><strong class="text-emerald-700" data-auto-resolved-count>{{ auto_supported_fields|length }}</strong> auto-resolved</span>
+      <span data-review-kpi="documents"><strong>{{ detail.document_count }}</strong> documents</span>
     </div>
   </section>
+  <div class="flex flex-wrap items-center justify-end gap-2" data-sticky-action-bar data-review-next-controls role="region" aria-label="Review navigation and confirmation">
+    <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      {% if combined_action_count > 0 %}
+        {% if attention_fields %}
+        <a href="#review-field-{{ attention_fields[0].id }}" class="lt-btn lt-btn--primary" data-focus-next-required>
+          <i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span>Review next item</span>
+        </a>
+        {% else %}
+        <a href="#regulatory-action-{{ regulatory_action_items[0].get('action_id') }}" class="lt-btn lt-btn--primary" data-focus-next-required>
+          <i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span>Review regulatory item</span>
+        </a>
+        {% endif %}
+      {% elif auto_supported_fields %}
+      <form
+        method="post"
+        action="/operations/{{ detail.public_id }}/review/accept-supported"
+        hx-post="/operations/{{ detail.public_id }}/review/actions/accept-supported"
+        hx-target="#operation-workspace"
+        hx-swap="outerHTML transition:true"
+        data-review-bulk
+      >
+        <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
+        {{ button("Confirm All", variant="primary", button_type="submit", icon="fa-check-double") }}
+      </form>
+      {% elif detail.status != "COMPLETED" %}
+      <form method="post" action="/operations/{{ detail.public_id }}/complete" data-review-completion-form>
+        <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
+        {{ review_telemetry_inputs() }}
+        {{ button("Proceed to Final Confirmation", variant="primary", button_type="submit", icon="fa-arrow-right") }}
+      </form>
+      {% else %}
+      <a href="#declaration-package" class="lt-btn lt-btn--primary"><i class="fa-solid fa-box-open" aria-hidden="true"></i><span>View package</span></a>
+      {% endif %}
+    </div>
+  </div>
 
   {% set default_review_tab = "action" if combined_action_count > 0 else ("resolved" if auto_supported_fields else "confirmed") %}
   <section class="lt-card overflow-hidden">
@@ -277,10 +283,10 @@
 
     <nav class="flex overflow-x-auto border-b border-slate-200 px-4" role="tablist" aria-label="Shipment review">
       <button id="review-tab-action" type="button" role="tab" aria-selected="{{ 'true' if default_review_tab == 'action' else 'false' }}" aria-controls="review-panel-action" tabindex="{{ '0' if default_review_tab == 'action' else '-1' }}" data-review-tab-button="action" class="border-b-2 px-4 py-3 text-xs {% if default_review_tab == 'action' %}border-emerald-600 font-bold text-emerald-700{% else %}border-transparent font-semibold text-slate-500{% endif %}">
-        Exceptions <span class="ml-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20" data-action-tab-count>{{ combined_action_count }}</span>
+        Pending <span class="ml-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20" data-action-tab-count>{{ combined_action_count }}</span>
       </button>
       <button id="review-tab-resolved" type="button" role="tab" aria-selected="{{ 'true' if default_review_tab == 'resolved' else 'false' }}" aria-controls="review-panel-resolved" tabindex="{{ '0' if default_review_tab == 'resolved' else '-1' }}" data-review-tab-button="resolved" class="border-b-2 px-4 py-3 text-xs {% if default_review_tab == 'resolved' %}border-emerald-600 font-bold text-emerald-700{% else %}border-transparent font-semibold text-slate-500{% endif %}">
-        Auto-Resolved <span class="ml-1 text-[10px]">{{ auto_supported_fields|length }}</span>
+        Auto-resolved <span class="ml-1 text-[10px]">{{ auto_supported_fields|length }}</span>
       </button>
       <button id="review-tab-confirmed" type="button" role="tab" aria-selected="{{ 'true' if default_review_tab == 'confirmed' else 'false' }}" aria-controls="review-panel-confirmed" tabindex="{{ '0' if default_review_tab == 'confirmed' else '-1' }}" data-review-tab-button="confirmed" class="border-b-2 px-4 py-3 text-xs {% if default_review_tab == 'confirmed' %}border-emerald-600 font-bold text-emerald-700{% else %}border-transparent font-semibold text-slate-500{% endif %}">
         Confirmed <span class="ml-1 text-[10px]">{{ settled_fields|length }}</span>
@@ -572,59 +578,6 @@
     {% for field in settled_fields %}<div id="review-field-{{ field.id }}" hidden data-review-resolved="true"></div>{% endfor %}
   </section>
 
-  <div class="lt-sticky-action-bar" data-sticky-action-bar role="region" aria-label="Review actions">
-    <div class="flex min-w-0 flex-1 items-center gap-3">
-      <span class="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 sm:flex" aria-hidden="true"><i class="fa-solid fa-bolt"></i></span>
-      <div class="min-w-0">
-        {% if combined_action_count > 0 %}
-        <p class="text-sm font-bold text-slate-950">{{ combined_action_count }} item{{ '' if combined_action_count == 1 else 's' }} still need attention</p>
-        <p class="text-xs text-slate-500">Resolve field and regulatory blockers to continue.</p>
-        {% elif auto_supported_fields %}
-        <p class="text-sm font-bold text-slate-950">Exceptions resolved</p>
-        <p class="text-xs text-slate-500">Confirm the auto-resolved evidence before final preparation.</p>
-        {% elif detail.status != "COMPLETED" %}
-        <p class="text-sm font-bold text-slate-950">Ready for final confirmation</p>
-        <p class="text-xs text-slate-500">All required information has been resolved.</p>
-        {% else %}
-        <p class="text-sm font-bold text-slate-950">Preparation package ready</p>
-        <p class="text-xs text-slate-500">Download the reviewed work products below.</p>
-        {% endif %}
-      </div>
-    </div>
-    <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
-      {% if combined_action_count > 0 %}
-        {% if attention_fields %}
-        <a href="#review-field-{{ attention_fields[0].id }}" class="lt-btn lt-btn--primary" data-focus-next-required>
-          <i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span>Review next item</span>
-        </a>
-        {% else %}
-        <a href="#regulatory-action-{{ regulatory_action_items[0].get('action_id') }}" class="lt-btn lt-btn--primary" data-focus-next-required>
-          <i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span>Review regulatory item</span>
-        </a>
-        {% endif %}
-      {% elif auto_supported_fields %}
-      <form
-        method="post"
-        action="/operations/{{ detail.public_id }}/review/accept-supported"
-        hx-post="/operations/{{ detail.public_id }}/review/actions/accept-supported"
-        hx-target="#operation-workspace"
-        hx-swap="outerHTML transition:true"
-        data-review-bulk
-      >
-        <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
-        {{ button("Confirm All", variant="primary", button_type="submit", icon="fa-check-double") }}
-      </form>
-      {% elif detail.status != "COMPLETED" %}
-      <form method="post" action="/operations/{{ detail.public_id }}/complete" data-review-completion-form>
-        <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
-        {{ review_telemetry_inputs() }}
-        {{ button("Proceed to Final Confirmation", variant="primary", button_type="submit", icon="fa-arrow-right") }}
-      </form>
-      {% else %}
-      <a href="#declaration-package" class="lt-btn lt-btn--primary"><i class="fa-solid fa-box-open" aria-hidden="true"></i><span>View package</span></a>
-      {% endif %}
-    </div>
-  </div>
 
   {% include "us_lacey/fragments/export_declaration_package.html" %}
 
@@ -693,7 +646,7 @@
     </div>
   </details>
 
-  <p class="px-1 text-xs text-slate-500">Human review required for unresolved exceptions. Litoral Trace does not submit this operation to ACE or LAWGS. Preparation work product only; not a legal compliance determination.</p>
+  <p class="px-1 text-[11px] text-slate-500">Preparation only · No automatic submission to ACE or LAWGS.</p>
 </div>
 
 <script>
