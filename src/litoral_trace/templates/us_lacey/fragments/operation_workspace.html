@@ -62,7 +62,22 @@
       <p class="text-[11px] text-slate-700">
         {% if field.source_filename and field.source_assurance_document_id == one.source_document_id %}{{ field.source_filename }}{% elif one.source_document_id %}Document {{ one.source_document_id }}{% else %}No linked document{% endif %}{% if one.source_page %} · p. {{ one.source_page }}{% endif %}
       </p>
-      <p class="text-[11px] text-slate-500">Extraction confidence {{ (one.confidence * 100)|round(0) }}% · <a href="#documents" class="font-medium text-emerald-800 underline">Document register</a></p>
+      <p class="text-[11px] text-slate-500">Extraction confidence {{ (one.confidence * 100)|round(0) }}%</p>
+      {% set candidate_filename = field.source_filename if field.source_assurance_document_id == one.source_document_id else '' %}
+      {% set source_class = source_class_for_filename(candidate_filename) %}
+      <p class="text-[11px] {{ 'text-amber-800' if source_class.code == 'DERIVED_PREPARATION' else 'text-slate-600' }}" data-source-authority="{{ source_class.code }}">
+        <strong>{{ source_class.label }}</strong>{% if source_class.code == 'DERIVED_PREPARATION' %} · Trace to original commercial or supplier evidence{% endif %}
+      </p>
+      {% if one.source_document_id %}
+      <button type="button" class="text-xs font-bold text-emerald-800 underline" data-source-inspect
+        data-source-url="/operations/{{ detail.public_id }}/source/{{ one.source_document_id }}"
+        data-source-page="{{ one.source_page or 1 }}"
+        data-source-label="{{ candidate_filename or 'Document ' ~ one.source_document_id }}"
+        data-source-locator="{{ 'Source locator: ' ~ one.source_locator if one.source_locator else 'PDF page ' ~ (one.source_page or 1) ~ ' · Compare the original before confirming.' }}"
+      >Inspect original PDF · p. {{ one.source_page or 1 }}</button>
+      {% else %}
+      <a href="#documents" class="text-xs text-emerald-800 underline">Document register</a>
+      {% endif %}
       {% if not quick_accept_eligible(field, one) %}
       <p class="text-[11px] text-amber-800">Value cannot be accepted directly. Check its validity or provide supporting evidence.</p>
       {% endif %}
@@ -77,6 +92,14 @@
             <div class="rounded-md border border-slate-200 bg-white p-2">
               <p class="text-xs font-semibold text-slate-900">{{ candidate.normalized_value or candidate.original_value }}</p>
               <p class="mt-1 text-[10px] text-slate-500">Page {{ candidate.source_page or '—' }} · confidence {{ (candidate.confidence * 100)|round(0) }}%</p>
+              {% if candidate.source_document_id %}
+              <button type="button" class="mt-1 text-xs font-bold text-emerald-800 underline" data-source-inspect
+                data-source-url="/operations/{{ detail.public_id }}/source/{{ candidate.source_document_id }}"
+                data-source-page="{{ candidate.source_page or 1 }}"
+                data-source-label="Document {{ candidate.source_document_id }}"
+                data-source-locator="{{ 'Source locator: ' ~ candidate.source_locator if candidate.source_locator else 'Compare original PDF page before choosing a candidate.' }}"
+              >Inspect PDF source</button>
+              {% endif %}
               <form class="mt-2" method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="accept">
                 <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
                 <input type="hidden" name="action" value="accept">
