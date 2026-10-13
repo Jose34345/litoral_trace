@@ -64,9 +64,9 @@ def test_document_dossier_does_not_claim_final_preparation_readiness():
 def test_review_workspace_is_exception_first():
     source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
 
-    assert "Review shipment" in source
-    assert "Litoral Trace has already reconciled consistent evidence." in source
-    assert "need attention before generating the declaration package." in source
+    assert "Review decisions" in source
+    assert "Check the original source, then accept the value or request evidence." in source
+    assert "Unconfirmed values remain pending." in source
     assert "Only missing information, review-required evidence, or genuinely conflicting evidence appears here." in source
     assert "Auto-Resolved Data" in source
     assert "default_review_tab" in source

@@ -295,7 +295,8 @@ def test_workspace_summary_uses_combined_regulatory_action_count(monkeypatch):
         review_csrf={},
     )
 
-    assert "data-review-required-provenance-count>1 need attention<" in html
+    assert 'data-review-kpi="action"' in html
+    assert "pending</span>" in html
     assert "data-action-required-count>1<" in html
     assert "Provide HTS" in html
     assert "Provide quantity / mass evidence" not in html

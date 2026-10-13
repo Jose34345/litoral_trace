@@ -138,9 +138,9 @@ def test_workspace_shows_reuse_summary_and_field_badge(monkeypatch):
         review_csrf={3: "review-country"},
     )
 
-    assert "1 from this shipment" in html
+    assert "1 from shipment" in html
     assert "1 reused" in html
-    assert "1 need attention" in html
+    assert "1</strong> pending" in html
     assert 'data-provenance-summary' in html
     assert 'data-reused-evidence-count' in html
     assert "Reused from verified supplier evidence" in html
