@@ -146,3 +146,48 @@
     padding:7px;margin:6px 0;break-inside:avoid
   }
 }
+
+
+/* P1.2: progressive evidence drill-down. An audit record is not a new task. */
+.assurance-evidence-help{margin:10px 0 14px;color:#567064;line-height:1.5;font-size:.89rem}
+.assurance-shell .assurance-evidence-section{padding:0;min-width:0;scroll-margin-top:18px}
+.assurance-shell .assurance-evidence-section[open]{padding:0 17px 17px}
+.assurance-shell .assurance-evidence-summary{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  cursor:pointer;padding:15px 17px;margin:0;list-style:none;
+  color:#244a3d;line-height:1.4
+}
+.assurance-shell .assurance-evidence-summary::-webkit-details-marker,
+.assurance-shell .exception-disclosure>summary::-webkit-details-marker{display:none}
+.assurance-shell .assurance-evidence-section[open]>.assurance-evidence-summary{
+  border-bottom:1px solid #e3ebe7;margin:0 -17px 15px
+}
+.assurance-shell .assurance-evidence-summary:hover,
+.assurance-shell .exception-disclosure>summary:hover{background:#f4f9f7}
+.assurance-shell .assurance-evidence-title{font-weight:720;flex:1;min-width:170px}
+.assurance-shell .assurance-evidence-count{color:#647f74;font-size:.82rem}
+.assurance-shell .assurance-evidence-summary::after,
+.assurance-shell .exception-disclosure>summary::after{
+  content:"+";font-size:1.15rem;color:#436d5b;font-weight:700;margin-left:5px
+}
+.assurance-shell .assurance-evidence-section[open]>.assurance-evidence-summary::after,
+.assurance-shell .exception-disclosure[open]>summary::after{content:"−"}
+.assurance-shell .exception-disclosure{border:1px solid #e2ebe7;border-radius:8px;padding:0;margin:7px 0;scroll-margin-top:18px}
+.assurance-shell .exception-disclosure>summary{padding:10px 13px;list-style:none;cursor:pointer}
+.assurance-shell .exception-disclosure>summary>div{flex:1;min-width:0}
+.assurance-shell .exception-disclosure>summary h3{margin:3px 0 0;font-size:.85rem}
+.assurance-shell .exception-disclosure[open]{padding:0 13px 13px}
+.assurance-shell .exception-disclosure[open]>summary{margin:0 -13px 10px;border-bottom:1px solid #e5ece9}
+.assurance-shell .assurance-evidence-section:focus-within,
+.assurance-shell .exception-disclosure:focus-within{outline-offset:3px}
+@media(max-width:740px){
+  .assurance-shell .assurance-evidence-summary{padding:13px;gap:6px}
+  .assurance-shell .assurance-evidence-count{width:100%;order:3}
+  .assurance-shell .assurance-evidence-summary::after{margin-left:auto}
+}
+@media print{
+  .assurance-shell .assurance-evidence-section[open]{padding:0 8px 8px}
+  .assurance-shell .assurance-evidence-section>.assurance-evidence-summary{padding:8px 0}
+  .assurance-shell .assurance-evidence-summary::after,
+  .assurance-shell .exception-disclosure>summary::after{display:none}
+}
