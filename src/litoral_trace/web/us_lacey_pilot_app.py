@@ -274,12 +274,20 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
         dossier = UsLaceyEngineDossierService().get_dossier(organization_id=identity.organization_id, operation_public_id=detail.public_id)
     except Exception:
         dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
-    applicability_sources, recorded_applicability = read_applicability_evidence(
-        organization_id=identity.organization_id,
-        operation_public_id=str(detail.public_id),
-    )
+    applicability_read_unavailable = False
+    try:
+        applicability_sources, recorded_applicability = read_applicability_evidence(
+            organization_id=identity.organization_id,
+            operation_public_id=str(detail.public_id),
+        )
+    except Exception:
+        LOGGER.warning("applicability_attestation_read_unavailable", extra={
+            "organization_id": identity.organization_id,
+        })
+        applicability_sources, recorded_applicability = (), None
+        applicability_read_unavailable = True
     tokens = {field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}") for field in detail.fields if field.status in {"MISSING", "CONFLICT", "SUPPORTED", "REVIEW", "FOUND"}}
-    return _html(render_operation_detail(request=request, identity=identity, entitlement=entitlement, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, alias_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"alias:{detail.public_id}"), retry_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"retry:{detail.public_id}"), reprocess_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"reprocess:{detail.public_id}"), applicability_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"applicability:{detail.public_id}"), applicability_sources=applicability_sources, recorded_applicability=recorded_applicability, error=error, notice=notice, field_errors=field_errors, field_input_values=field_input_values), status_code=status_code)
+    return _html(render_operation_detail(request=request, identity=identity, entitlement=entitlement, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, alias_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"alias:{detail.public_id}"), retry_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"retry:{detail.public_id}"), reprocess_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"reprocess:{detail.public_id}"), applicability_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"applicability:{detail.public_id}"), applicability_sources=applicability_sources, recorded_applicability=recorded_applicability, applicability_read_unavailable=applicability_read_unavailable, error=error, notice=notice, field_errors=field_errors, field_input_values=field_input_values), status_code=status_code)
 
 
 def _workspace_fragment(
