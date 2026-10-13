@@ -342,7 +342,14 @@ def test_pack2_evidence_sections_are_independently_collapsed_by_default():
     assert 'id="required" open' not in html
     assert 'id="exceptions" open' not in html
     assert html.count('class="exception exception-disclosure"') == len(case.exceptions)
-    assert 'class="decision-form"' in html  # The authority form remains available.
+    # Fixture has no field:* exception; the conditional writer form must still
+    # exist in the template and is rendered by the separate field-action test.
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "src/litoral_trace/templates/us_lacey/assurance_v2_case.html"
+    ).read_text(encoding="utf-8")
+    assert 'class="decision-form"' in template
+    assert 'data-exception="{{ ex.id }}"' in template
 
 
 def test_task_links_reveal_nested_evidence_without_global_expand():
