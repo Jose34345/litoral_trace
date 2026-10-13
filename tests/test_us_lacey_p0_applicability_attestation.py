@@ -123,7 +123,7 @@ def test_source_changes_invalidate_recorded_review(monkeypatch):
     },actor_identity="55")
     db=_test_session(rows,[event])
     sources,record=a.read_applicability_evidence(
-        organization_id=99,operation_public_id="abc",session_factory=lambda:db)
+        organization_id=99,operation_public_id="7b1f1bb5-a299-4f3c-8e33-57f58fb71381",session_factory=lambda:db)
     assert record is not None and not record.current
     assert len(sources) == 1
     assert db.closed
