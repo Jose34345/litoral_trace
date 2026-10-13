@@ -225,8 +225,8 @@
     </div>
     <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 pt-3 text-xs text-slate-700" data-review-kpis>
       <span data-review-kpi="action"><strong class="text-amber-800" data-action-required-count>{{ combined_action_count }}</strong> pending</span>
-      <span data-review-kpi="confirmed"><strong>{{ settled_fields|length }}</strong> confirmed</span>
       <span data-review-kpi="resolved"><strong class="text-emerald-700" data-auto-resolved-count>{{ auto_supported_fields|length }}</strong> auto-resolved</span>
+      <span data-review-kpi="confirmed"><strong>{{ settled_fields|length }}</strong> confirmed</span>
       <span data-review-kpi="documents"><strong>{{ detail.document_count }}</strong> documents</span>
     </div>
   </section>
