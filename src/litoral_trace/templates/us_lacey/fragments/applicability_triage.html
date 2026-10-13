@@ -75,7 +75,7 @@
     {% endif %}
     {% if recorded_applicability %}
     <p class="mt-2 text-xs text-slate-600" data-applicability-audit>
-      Recorded scenario: HTS {{ recorded_applicability.hts10 }} · Entry {{ recorded_applicability.entry_type }} · Bamboo {{ recorded_applicability.bamboo_origin or 'n/a' }} · {{ recorded_applicability.filename or 'Previous source revision' }} p.{{ recorded_applicability.source_page }}.
+      Recorded scenario: HTS {{ recorded_applicability.hts10 }} · Entry {{ recorded_applicability.entry_type }} · Bamboo {{ recorded_applicability.bamboo_origin or 'n/a' }} · {{ recorded_applicability.filename or 'Previous source revision' }} p.{{ recorded_applicability.source_page }}{% if recorded_applicability.botanical_filename %} · Supplier origin: {{ recorded_applicability.botanical_filename }}{% endif %}.
       {% if not recorded_applicability.current %}<strong>Current evidence changed or expired. This prior decision cannot substitute for a new review.</strong>{% endif %}
     </p>
     {% endif %}
@@ -83,7 +83,7 @@
       <input type="hidden" name="csrf_token" value="{{ applicability_csrf }}">
       <input type="hidden" name="entry_type" value="{{ applicability_preview.entry_type }}">
       <input type="hidden" name="bamboo_origin" value="{{ applicability_preview.bamboo_origin }}">
-      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_115px]">
+      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_115px]" data-applicability-source-block>
         <label class="text-xs font-bold text-slate-700">Original source used for this determination
           <select class="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3 text-xs" name="source_document_id" required data-applicability-source-select>
             <option value="">Choose an original PDF</option>
@@ -99,10 +99,27 @@
         </label>
       </div>
       <button type="button" class="text-xs font-bold text-emerald-800 underline disabled:text-slate-400" data-applicability-inspect-selected data-source-inspect disabled>Inspect selected PDF</button>
+      {% if applicability_preview.is_bamboo and applicability_preview.bamboo_origin in ('CULTIVATED','WILD') %}
+      <div class="rounded-lg border border-emerald-200 bg-white p-3" data-applicability-source-block>
+        <p class="text-xs font-semibold text-slate-800">Independent supplier evidence for {{ applicability_preview.bamboo_origin|lower }} bamboo</p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_115px]">
+          <label class="text-xs text-slate-700">Supplier-origin PDF
+            <select name="botanical_document_id" class="mt-1 w-full rounded-lg border border-slate-300 p-3 text-xs" required data-applicability-source-select>
+              <option value="">Choose supplier evidence</option>
+              {% for source in applicability_sources %}
+              <option value="{{ source.id }}" data-source-file="{{ source.filename }}" {% if not source.is_primary_candidate or not source.page_available or source.classification != 'Supplier evidence' %}disabled{% endif %}>{{ source.filename }} · {{ source.classification }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="text-xs text-slate-700">Page <input name="botanical_page" type="number" min="1" max="10000" value="1" required class="mt-1 w-full rounded-lg border border-slate-300 p-3 text-xs"></label>
+        </div>
+        <button type="button" class="mt-2 text-xs font-bold text-emerald-800 underline disabled:text-slate-400" data-applicability-inspect-selected data-source-inspect disabled>Inspect supplier source</button>
+      </div>
+      {% endif %}
       <p class="text-[11px] text-slate-600">Derived worksheets are not accepted as independent evidence for this review. For a cultivated-bamboo claim, supplier-origin documentation is required.</p>
       <label class="flex items-start gap-2 text-xs text-slate-700">
         <input type="checkbox" name="explicitly_confirmed" value="yes" required class="mt-0.5">
-        <span>I inspected the selected original and confirm that it supports the entry type and, where claimed, the bamboo cultivation status for this shipment. I understand this remains advisory and does not authorize customs filing.</span>
+        <span>I inspected the selected original entry documentation and, where an origin claim is made, the separate supplier source. The evidence supports the recorded entry type and bamboo status for this shipment. I understand this remains advisory and does not authorize customs filing.</span>
       </label>
       <button type="submit" class="lt-btn lt-btn--primary" {% if not applicability_preview.entry_type or applicability_preview.hts_status == 'MISSING_OR_INVALID' %}disabled{% endif %}>
         Record reviewed determination
