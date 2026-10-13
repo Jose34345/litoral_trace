@@ -5,7 +5,9 @@
 {% set engine2_downstream_annotations = engine2_downstream_annotations|default({}) %}
 {% set audit_events = audit_events|default(()) %}
 {% block lacey_title %}Review shipment{% endblock %}
-{% block head_extra %}{{ super() }}{% if private_v2|default(false) %}<link rel="stylesheet" href="{{ url_for('static', path='/css/assurance_v2_case.css') }}">{% endif %}{% endblock %}
+{% block head_extra %}{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/us_lacey_source_inspector.css') }}">
+{% if private_v2|default(false) %}<link rel="stylesheet" href="{{ url_for('static', path='/css/assurance_v2_case.css') }}">{% endif %}{% endblock %}
 {% block lacey_content %}
 {% set bulk_upload_rejection = error and error.startswith("This file contains multiple shipments.") %}
 {% set empty_bulk_rejection = bulk_upload_rejection and not detail.documents %}
@@ -120,6 +122,10 @@
   {% endif %}
 </section>
 
+{% if not private_v2 and not bulk_upload_rejection and processing.terminal and not processing.failed %}
+{% include "us_lacey/fragments/applicability_triage.html" %}
+{% endif %}
+
 {# A rejected upload is request-local feedback. Do not mix it with stale analysis
    or a previous processing failure from documents already stored on the operation. #}
 {% if private_v2 %}
@@ -196,7 +202,11 @@
             {% endif %}
           {% endif %}
         </div>
-        <span class="text-[11px] font-semibold text-slate-600">{{ 'Auto-detect' if doc.document_role == 'UNKNOWN' else doc.document_role|replace('_', ' ')|title }}</span>
+        {% set doc_class = source_class_for_filename(doc.filename) %}
+        <div class="text-right">
+          <span class="text-[11px] font-semibold text-slate-600">{{ 'Auto-detect' if doc.document_role == 'UNKNOWN' else doc.document_role|replace('_', ' ')|title }}</span>
+          <p class="mt-1 text-[11px] {{ 'text-amber-800' if doc_class.code == 'DERIVED_PREPARATION' else 'text-slate-500' }}" data-source-authority="{{ doc_class.code }}">{{ doc_class.label }}</p>
+        </div>
       </div>
       {% endfor %}
     </div>
@@ -330,4 +340,6 @@
 <script>window.setTimeout(function () { window.location.reload(); }, 8000);</script>
 {% endif %}
 {% if private_v2 %}<script src="{{ url_for('static', path='/js/assurance_v2_case.js') }}" defer></script>{% endif %}
+{% include "us_lacey/fragments/source_inspector.html" %}
+<script src="{{ url_for('static', path='/js/us_lacey_source_inspector.js') }}" defer></script>
 {% endblock %}

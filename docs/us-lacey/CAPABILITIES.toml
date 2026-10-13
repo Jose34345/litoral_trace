@@ -674,3 +674,19 @@ tests = [
   "tests/test_us_lacey_pre_entry_document_review.py"
 ]
 notes = "P1.4 offers inline current evidence, source/document page and extraction confidence for unique candidates, with a first-class explicit Accept & next form carrying candidate_id to the existing tenant-scoped review writer. Multiple competing candidates remain explicitly selectable; no candidate or invalid/unlinked candidate has no direct Accept control. HTMX advances focus only after a successful server response has removed the pending field. P1.5 compacts review counts and folds the previous full-height stepper, removes the bottom sticky overlay, and keeps documents, compliance, CSRF, PPQ and audit gates unchanged. A displayed candidate, even with high confidence, is never automatic human authority."
+
+[capabilities.us_lacey_applicability_source_inspector_p0]
+status = "IMPLEMENTED_PENDING_GATES"
+owner = "web + us_lacey regulatory applicability"
+authority = "advisory_read_only_no_filing_waiver"
+implementation = [
+  "src/litoral_trace/us_lacey/regulatory/applicability/triage.py",
+  "src/litoral_trace/us_lacey/document_evidence_class.py",
+  "src/litoral_trace/web/us_lacey_source_inspector.py",
+  "src/litoral_trace/templates/us_lacey/fragments/applicability_triage.html",
+  "src/litoral_trace/templates/us_lacey/fragments/source_inspector.html",
+  "src/litoral_trace/static/css/us_lacey_source_inspector.css",
+  "src/litoral_trace/static/js/us_lacey_source_inspector.js"
+]
+tests = ["tests/test_us_lacey_p0_applicability_source_inspector.py"]
+notes = "Owner P0 visibility step: APHIS 2026 entry-type code and bamboo cultivation what-if inputs are explicitly unsaved, are never trusted as verified evidence, and never waive regulatory or export gates. Missing HTS/entry type fails closed; special FTZ entry 06 always needs separate review. Catalog is the existing pinned Phase VII snapshot. Source Inspector shows the actual same-origin verified current PDF page in an accessible slide-over using 180ms transitions and reduced-motion support. Raw source is not cached; expired/deleted source fails closed. Primary commercial, supplier and derived preparation worksheets are labeled conservatively; classification is informational, never an autonomous field authorization. A source document role/filename cannot convert a derivative worksheet into original evidence. Future full regulatory scope release requires authoritative persistence of entered entry type/cultivation and evidence-linked human decision before a non-required determination may be canonical."
