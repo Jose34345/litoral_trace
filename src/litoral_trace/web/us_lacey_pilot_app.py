@@ -54,6 +54,9 @@ from litoral_trace.us_lacey.operations import (
     UsLaceyOperationNotFound,
     UsLaceyOperationService,
 )
+from litoral_trace.us_lacey.regulatory.applicability.attestation import (
+    ApplicabilityAttestationError, record_applicability_attestation, read_applicability_evidence,
+)
 from litoral_trace.us_lacey.assurance_v2_legacy_export_gate import (
     AssuranceV2LegacyExportBlocked, legacy_export_guard,
 )
@@ -271,8 +274,20 @@ def _detail_page(*, request: Request, identity, operation_public_id: str, us_ses
         dossier = UsLaceyEngineDossierService().get_dossier(organization_id=identity.organization_id, operation_public_id=detail.public_id)
     except Exception:
         dossier = Engine2DossierView(Engine2DossierAvailability.INVALID, safe_status_message="The stored dossier could not be safely read.")
+    applicability_read_unavailable = False
+    try:
+        applicability_sources, recorded_applicability = read_applicability_evidence(
+            organization_id=identity.organization_id,
+            operation_public_id=str(detail.public_id),
+        )
+    except Exception:
+        LOGGER.warning("applicability_attestation_read_unavailable", extra={
+            "organization_id": identity.organization_id,
+        })
+        applicability_sources, recorded_applicability = (), None
+        applicability_read_unavailable = True
     tokens = {field.id: us_lacey_csrf_token(session_token=us_session, purpose=f"review:{detail.public_id}:{field.id}") for field in detail.fields if field.status in {"MISSING", "CONFLICT", "SUPPORTED", "REVIEW", "FOUND"}}
-    return _html(render_operation_detail(request=request, identity=identity, entitlement=entitlement, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, alias_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"alias:{detail.public_id}"), retry_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"retry:{detail.public_id}"), reprocess_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"reprocess:{detail.public_id}"), error=error, notice=notice, field_errors=field_errors, field_input_values=field_input_values), status_code=status_code)
+    return _html(render_operation_detail(request=request, identity=identity, entitlement=entitlement, detail=detail, engine2_dossier=dossier, upload_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"upload:{detail.public_id}"), complete_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"complete:{detail.public_id}"), review_csrf=tokens, alias_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"alias:{detail.public_id}"), retry_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"retry:{detail.public_id}"), reprocess_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"reprocess:{detail.public_id}"), applicability_csrf=us_lacey_csrf_token(session_token=us_session, purpose=f"applicability:{detail.public_id}"), applicability_sources=applicability_sources, recorded_applicability=recorded_applicability, applicability_read_unavailable=applicability_read_unavailable, error=error, notice=notice, field_errors=field_errors, field_input_values=field_input_values), status_code=status_code)
 
 
 def _workspace_fragment(
@@ -1215,6 +1230,56 @@ def shipment_current_original_pdf(
         operation_public_id=operation_public_id,
         assurance_document_id=assurance_document_id,
     )
+
+
+@app.post("/operations/{operation_public_id}/applicability/attest", include_in_schema=False)
+def operation_applicability_attest(
+    operation_public_id: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    entry_type: str = Form(...),
+    bamboo_origin: str = Form(""),
+    source_document_id: int = Form(...),
+    source_page: int = Form(1),
+    botanical_document_id: int = Form(0),
+    botanical_page: int = Form(1),
+    explicitly_confirmed: str = Form(""),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, _ = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"applicability:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        record_applicability_attestation(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            reviewer_user_id=identity.user_id,
+            entry_type=entry_type,
+            bamboo_origin=bamboo_origin,
+            source_document_id=source_document_id,
+            source_page=source_page,
+            botanical_document_id=botanical_document_id,
+            botanical_page=botanical_page,
+            explicitly_confirmed=explicitly_confirmed == "yes",
+        )
+        return RedirectResponse(
+            f"/operations/{operation_public_id}?applicability_recorded=1#applicability",
+            status_code=303,
+        )
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        raise HTTPException(403, "This account cannot record applicability reviews.") from None
+    except (ApplicabilityAttestationError, UsLaceyCsrfError) as exc:
+        return _detail_page(
+            request=request, identity=identity,
+            operation_public_id=operation_public_id,
+            us_session=us_session or "",
+            error=str(exc), status_code=400,
+        )
 
 
 @app.post("/operations/{operation_public_id}/alias", response_class=HTMLResponse)

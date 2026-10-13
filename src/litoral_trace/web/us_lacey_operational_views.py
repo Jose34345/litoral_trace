@@ -1036,7 +1036,7 @@ def _source_class_for_detail(detail):
     return for_filename
 
 
-def render_operation_detail(*, request, identity, entitlement=None, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], alias_csrf: str = "", retry_csrf: str = "", reprocess_csrf: str = "", product_intelligence=None, regulatory_assessment=None, error: str | None = None, notice: str | None = None, field_errors: Mapping[int, str] | None = None, field_input_values: Mapping[int, str] | None = None) -> str:
+def render_operation_detail(*, request, identity, entitlement=None, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], alias_csrf: str = "", retry_csrf: str = "", reprocess_csrf: str = "", applicability_csrf: str = "", applicability_sources=(), recorded_applicability=None, applicability_read_unavailable: bool = False, product_intelligence=None, regulatory_assessment=None, error: str | None = None, notice: str | None = None, field_errors: Mapping[int, str] | None = None, field_input_values: Mapping[int, str] | None = None) -> str:
     attention_fields, auto_supported_fields, settled_fields = _review_field_groups_with_semantic_evidence(identity, detail)
     progress = processing_view(detail)
     product_intelligence = _product_intelligence_for_detail(identity, detail, product_intelligence)
@@ -1062,8 +1062,16 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
     )
     applicability_preview = preview_applicability(
         detail,
-        entry_type=request.query_params.get("entry_type", ""),
-        bamboo_origin=request.query_params.get("bamboo_origin", ""),
+        entry_type=request.query_params.get(
+            "entry_type",
+            recorded_applicability.entry_type
+            if recorded_applicability is not None and recorded_applicability.current else "",
+        ),
+        bamboo_origin=request.query_params.get(
+            "bamboo_origin",
+            recorded_applicability.bamboo_origin
+            if recorded_applicability is not None and recorded_applicability.current else "",
+        ),
     )
     audit_events = list_operation_events(
         organization_id=identity.organization_id,
@@ -1100,6 +1108,15 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
         audit_events=audit_events,
         readiness_summary=readiness_summary,
         applicability_preview=applicability_preview,
+        applicability_csrf=applicability_csrf,
+        applicability_hts_confirmed=(
+            len([f for f in detail.fields if f.field_name == "hts_code"]) == 1
+            and all(f.status == "CONFIRMED" and f.effective_value
+                    for f in detail.fields if f.field_name == "hts_code")
+        ),
+        applicability_sources=applicability_sources,
+        recorded_applicability=recorded_applicability,
+        applicability_read_unavailable=applicability_read_unavailable,
         business_reference=_business_reference(detail),
         business_supplier_name=_business_supplier_name(detail),
         business_title=_business_title(detail),

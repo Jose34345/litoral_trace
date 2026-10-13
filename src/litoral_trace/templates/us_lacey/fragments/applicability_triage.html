@@ -55,4 +55,86 @@
       <a class="text-emerald-800 underline" target="_blank" rel="noopener noreferrer" href="https://www.aphis.usda.gov/plant-imports/lacey-act/implementation-schedule">Official HTS schedule</a>
     </div>
   </div>
+
+  <div class="mt-4 border-t border-slate-200 pt-4" data-applicability-authorized-review>
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h3 class="text-sm font-bold text-slate-900">Record your source-backed review</h3>
+        <p class="mt-1 text-xs leading-5 text-slate-600">After evaluating the scenario, inspect an original PDF and record your review. This creates an immutable, current-source-linked audit entry, <strong>not a filing waiver</strong>.</p>
+      </div>
+      {% if recorded_applicability %}
+        {% if recorded_applicability.current %}
+        <span class="rounded-lg bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-800">Review recorded · current evidence</span>
+        {% else %}
+        <span class="rounded-lg bg-amber-50 px-2 py-1 text-xs font-bold text-amber-900">Review stale · inspect again</span>
+        {% endif %}
+      {% endif %}
+    </div>
+    {% if request.query_params.get('applicability_recorded') == '1' %}
+      <p class="mt-2 text-xs font-bold text-emerald-800" role="status">The evidence-linked human review was recorded. Filing authorization is unchanged.</p>
+    {% endif %}
+    {% if recorded_applicability %}
+    <p class="mt-2 text-xs text-slate-600" data-applicability-audit>
+      Recorded scenario: HTS {{ recorded_applicability.hts10 }} · Entry {{ recorded_applicability.entry_type }} · Bamboo {{ recorded_applicability.bamboo_origin or 'n/a' }} · {{ recorded_applicability.filename or 'Previous source revision' }} p.{{ recorded_applicability.source_page }}{% if recorded_applicability.botanical_filename %} · Supplier origin: {{ recorded_applicability.botanical_filename }}{% endif %}.
+      {% if not recorded_applicability.current %}<strong>Current evidence changed or expired. This prior decision cannot substitute for a new review.</strong>{% endif %}
+    </p>
+    {% endif %}
+    {% if applicability_read_unavailable %}
+    <p role="alert" class="mt-2 text-xs font-semibold text-amber-900">Applicability audit evidence is temporarily unavailable. Recording a determination is disabled until the source-set status can be verified.</p>
+    {% endif %}
+    <form class="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4" action="/operations/{{ detail.public_id }}/applicability/attest" method="post" data-applicability-review-form>
+      <input type="hidden" name="csrf_token" value="{{ applicability_csrf }}">
+      <input type="hidden" name="entry_type" value="{{ applicability_preview.entry_type }}">
+      <input type="hidden" name="bamboo_origin" value="{{ applicability_preview.bamboo_origin }}">
+      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_115px]" data-applicability-source-block>
+        <label class="text-xs font-bold text-slate-700">Original source used for this determination
+          <select class="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3 text-xs" name="source_document_id" required data-applicability-source-select>
+            <option value="">Choose an original PDF</option>
+            {% for source in applicability_sources %}
+            <option value="{{ source.id }}" data-source-file="{{ source.filename }}" {% if not source.is_primary_candidate or not source.page_available %}disabled{% endif %}>
+              {{ source.filename }} · {{ source.classification }}{% if not source.page_available %} (not currently available as PDF){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="text-xs font-bold text-slate-700">PDF page
+          <input type="number" min="1" max="10000" name="source_page" value="1" required class="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm">
+        </label>
+      </div>
+      <button type="button" class="text-xs font-bold text-emerald-800 underline disabled:text-slate-400" data-applicability-inspect-selected data-source-inspect disabled>Inspect selected PDF</button>
+      {% if applicability_preview.is_bamboo and applicability_preview.bamboo_origin in ('CULTIVATED','WILD') %}
+      <div class="rounded-lg border border-emerald-200 bg-white p-3" data-applicability-source-block>
+        <p class="text-xs font-semibold text-slate-800">Independent supplier evidence for {{ applicability_preview.bamboo_origin|lower }} bamboo</p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_115px]">
+          <label class="text-xs text-slate-700">Supplier-origin PDF
+            <select name="botanical_document_id" class="mt-1 w-full rounded-lg border border-slate-300 p-3 text-xs" required data-applicability-source-select>
+              <option value="">Choose supplier evidence</option>
+              {% for source in applicability_sources %}
+              <option value="{{ source.id }}" data-source-file="{{ source.filename }}" {% if not source.is_primary_candidate or not source.page_available or source.classification != 'Supplier evidence' %}disabled{% endif %}>{{ source.filename }} · {{ source.classification }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="text-xs text-slate-700">Page <input name="botanical_page" type="number" min="1" max="10000" value="1" required class="mt-1 w-full rounded-lg border border-slate-300 p-3 text-xs"></label>
+        </div>
+        <button type="button" class="mt-2 text-xs font-bold text-emerald-800 underline disabled:text-slate-400" data-applicability-inspect-selected data-source-inspect disabled>Inspect supplier source</button>
+      </div>
+      {% endif %}
+      <p class="text-[11px] text-slate-600">Derived worksheets are not accepted as independent evidence for this review. For a cultivated-bamboo claim, supplier-origin documentation is required.</p>
+      <label class="flex items-start gap-2 text-xs text-slate-700">
+        <input type="checkbox" name="explicitly_confirmed" value="yes" required class="mt-0.5">
+        <span>I inspected the selected original entry documentation and, where an origin claim is made, the separate supplier source. The evidence supports the recorded entry type and bamboo status for this shipment. I understand this remains advisory and does not authorize customs filing.</span>
+      </label>
+      <button type="submit" class="lt-btn lt-btn--primary" {% if not applicability_preview.entry_type or applicability_read_unavailable or not applicability_hts_confirmed or applicability_preview.hts_status == 'MISSING_OR_INVALID' or (applicability_sources|selectattr('page_available')|selectattr('is_primary_candidate')|list|length == 0) %}disabled{% endif %}>
+        Record reviewed determination
+      </button>
+      {% if applicability_read_unavailable %}
+      <p class="text-xs text-amber-800">Source-set verification is unavailable. Retry later.</p>
+      {% elif not applicability_preview.entry_type or applicability_preview.hts_status == 'MISSING_OR_INVALID' or not applicability_hts_confirmed %}
+      <p class="text-xs text-amber-800">Confirm the HTS in shipment review and evaluate an entry-type scenario before recording this decision.</p>
+      {% elif applicability_sources|selectattr('page_available')|selectattr('is_primary_candidate')|list|length == 0 %}
+      <p class="text-xs text-amber-800">No inspectable original PDF remains in the current source set. Add original evidence before recording an attestation.</p>
+      {% endif %}
+    </form>
+  </div>
+
 </section>
