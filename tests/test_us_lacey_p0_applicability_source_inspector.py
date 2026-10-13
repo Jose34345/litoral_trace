@@ -120,7 +120,8 @@ def test_source_inspector_and_applicability_render_contracts():
     assert 'name="entry_type"' in app
     assert "never" not in app or "not" in app
     assert 'window.location.origin' in js
-    assert 'event.key === "Escape"' in js
+    assert 'root.addEventListener("cancel"' in js
+    assert "root.showModal()" in js
     assert "prefers-reduced-motion:reduce" in css
     assert "180ms" in css
     assert "document.register" not in js
