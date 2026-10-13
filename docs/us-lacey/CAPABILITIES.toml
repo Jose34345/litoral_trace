@@ -658,3 +658,19 @@ tests = [
   "tests/test_us_lacey_v2lab_review_bridge_postgres.py"
 ]
 notes = "P0/P1 Shipments is the primary authenticated work surface for allowlisted V2LAB- operations. Exact tenant-scoped V2 source-set, authority, required-input and current-document reads drive the visible next actions. The same shared V2 review fragment and unchanged V2 CSRF/atomic decision endpoints power both the Shipments cockpit and the dedicated audit dossier. Legacy reconciled/verified badges are never promoted into V2 authority; the legacy HTMX review is not simultaneously mounted for owner-only lab shipments. Missing current V2 case fails closed without falling back to legacy approvals. Document uploads, secondary reprocessing, gate status, a visibly incomplete draft and deferred audit records remain accessible; final package issuance in private lab stays disabled. Ordinary production shipments retain their original authority and writer flow until explicitly released."
+
+[capabilities.us_lacey_inline_fast_review_p14_p15]
+status = "IMPLEMENTED_PENDING_GATES"
+owner = "web + us_lacey"
+authority = "explicit_human_review_existing_writer"
+implementation = [
+  "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html",
+  "src/litoral_trace/templates/us_lacey/operation_detail.html"
+]
+tests = [
+  "tests/test_us_lacey_fast_review_p14_p15.py",
+  "tests/test_us_lacey_review_ux_normalization.py",
+  "tests/test_us_lacey_review_route_contracts.py",
+  "tests/test_us_lacey_pre_entry_document_review.py"
+]
+notes = "P1.4 offers inline current evidence, source/document page and extraction confidence for unique candidates, with a first-class explicit Accept & next form carrying candidate_id to the existing tenant-scoped review writer. Multiple competing candidates remain explicitly selectable; no candidate or invalid/unlinked candidate has no direct Accept control. HTMX advances focus only after a successful server response has removed the pending field. P1.5 compacts review counts and folds the previous full-height stepper, removes the bottom sticky overlay, and keeps documents, compliance, CSRF, PPQ and audit gates unchanged. A displayed candidate, even with high confidence, is never automatic human authority."
