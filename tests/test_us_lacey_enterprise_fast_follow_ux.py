@@ -130,7 +130,8 @@ def test_sticky_master_action_bar_keeps_primary_workflow_actions_visible():
     workspace = WORKSPACE.read_text(encoding="utf-8")
     styles = DESIGN.read_text(encoding="utf-8")
 
-    assert "lt-sticky-action-bar" in workspace
+    assert "data-review-next-controls" in workspace
+    assert "lt-sticky-action-bar" not in workspace
     assert "Confirm All" in workspace
     assert "Proceed to Final Confirmation" in workspace
     assert "Review next item" in workspace
