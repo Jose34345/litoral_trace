@@ -639,3 +639,22 @@ tests = [
   "tests/test_assurance_v2_golden_postgres.py"
 ]
 notes = "Current and prior human-reviewed values are compared with original doc ID, current link ID, exact document version, SHA-256, source-set fingerprint, current supported claim and value. Reprocessing unchanged source versions retains any already-valid current-authority decisions; approvals from a different source revision are NEVER silently copied. Matching previous decisions are shown as eligible for ONE explicit grouped reconfirmation. Changed/missing/conflicting evidence is fail-closed. Effort metrics count actual grouped audit events and coverage; review seconds are bounded client-focused observations, not authoritative time savings. PDF print style suppresses app chrome and avoids giant unbreakable boxes."
+
+[capabilities.us_lacey_unified_shipment_cockpit]
+status = "OWNER_LAB_ONLY"
+owner = "web + us_lacey"
+authority = "read_only_projection_over_existing_v2_commands"
+implementation = [
+  "src/litoral_trace/web/shipment_v2_unified.py",
+  "src/litoral_trace/web/us_lacey_operational_views.py",
+  "src/litoral_trace/templates/us_lacey/operation_detail.html",
+  "src/litoral_trace/templates/us_lacey/assurance_v2_case.html",
+  "src/litoral_trace/templates/us_lacey/fragments/assurance_unified_actions.html"
+]
+tests = [
+  "tests/test_us_lacey_unified_shipment_cockpit.py",
+  "tests/test_assurance_v2_ui_contract.py",
+  "tests/test_assurance_v2_golden_postgres.py",
+  "tests/test_us_lacey_v2lab_review_bridge_postgres.py"
+]
+notes = "P0/P1 Shipments is the primary authenticated work surface for allowlisted V2LAB- operations. Exact tenant-scoped V2 source-set, authority, required-input and current-document reads drive the visible next actions. The same shared V2 review fragment and unchanged V2 CSRF/atomic decision endpoints power both the Shipments cockpit and the dedicated audit dossier. Legacy reconciled/verified badges are never promoted into V2 authority; the legacy HTMX review is not simultaneously mounted for owner-only lab shipments. Missing current V2 case fails closed without falling back to legacy approvals. Document uploads, secondary reprocessing, gate status, a visibly incomplete draft and deferred audit records remain accessible; final package issuance in private lab stays disabled. Ordinary production shipments retain their original authority and writer flow until explicitly released."
