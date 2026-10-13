@@ -124,8 +124,8 @@
       <button type="submit" class="lt-btn lt-btn--primary" {% if not applicability_preview.entry_type or not applicability_hts_confirmed or applicability_preview.hts_status == 'MISSING_OR_INVALID' or (applicability_sources|selectattr('page_available')|selectattr('is_primary_candidate')|list|length == 0) %}disabled{% endif %}>
         Record reviewed determination
       </button>
-      {% if not applicability_preview.entry_type or applicability_preview.hts_status == 'MISSING_OR_INVALID' %}
-      <p class="text-xs text-amber-800">Complete the HTS and evaluate an entry-type scenario first.</p>
+      {% if not applicability_preview.entry_type or applicability_preview.hts_status == 'MISSING_OR_INVALID' or not applicability_hts_confirmed %}
+      <p class="text-xs text-amber-800">Confirm the HTS in shipment review and evaluate an entry-type scenario before recording this decision.</p>
       {% elif applicability_sources|selectattr('page_available')|selectattr('is_primary_candidate')|list|length == 0 %}
       <p class="text-xs text-amber-800">No inspectable original PDF remains in the current source set. Add original evidence before recording an attestation.</p>
       {% endif %}
