@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from jinja2 import Environment
 from litoral_trace.us_lacey.quick_review_eligibility import quick_accept_eligible
+from litoral_trace.us_lacey.document_evidence_class import classify_document
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT / "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
@@ -45,6 +46,7 @@ def _render_field(field):
         missing_guidance=lambda *_: "Upload original evidence",
         action_status=lambda *_: "Needs confirmation",
         quick_accept_eligible=quick_accept_eligible,
+        source_class_for_filename=classify_document,
         button=lambda text, **kwargs: '<button type="submit">' + text + '</button>',
     )
 
@@ -61,7 +63,7 @@ def test_single_current_candidate_has_inline_accept_with_exact_id_and_low_confid
     assert 'name="csrf_token"' in html
     assert '/review/actions/fields/991' in html
     assert 'name="action" value="accept"' in html
-    assert "Document register" in html
+    assert "Inspect original PDF" in html
 
 
 def test_distinct_candidates_stay_explicit_and_never_auto_select():
