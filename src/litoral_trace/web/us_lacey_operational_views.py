@@ -1036,7 +1036,7 @@ def _source_class_for_detail(detail):
     return for_filename
 
 
-def render_operation_detail(*, request, identity, entitlement=None, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], alias_csrf: str = "", retry_csrf: str = "", reprocess_csrf: str = "", product_intelligence=None, regulatory_assessment=None, error: str | None = None, notice: str | None = None, field_errors: Mapping[int, str] | None = None, field_input_values: Mapping[int, str] | None = None) -> str:
+def render_operation_detail(*, request, identity, entitlement=None, detail, engine2_dossier, upload_csrf: str, complete_csrf: str, review_csrf: Mapping[int, str], alias_csrf: str = "", retry_csrf: str = "", reprocess_csrf: str = "", applicability_csrf: str = "", applicability_sources=(), recorded_applicability=None, product_intelligence=None, regulatory_assessment=None, error: str | None = None, notice: str | None = None, field_errors: Mapping[int, str] | None = None, field_input_values: Mapping[int, str] | None = None) -> str:
     attention_fields, auto_supported_fields, settled_fields = _review_field_groups_with_semantic_evidence(identity, detail)
     progress = processing_view(detail)
     product_intelligence = _product_intelligence_for_detail(identity, detail, product_intelligence)
@@ -1100,6 +1100,9 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
         audit_events=audit_events,
         readiness_summary=readiness_summary,
         applicability_preview=applicability_preview,
+        applicability_csrf=applicability_csrf,
+        applicability_sources=applicability_sources,
+        recorded_applicability=recorded_applicability,
         business_reference=_business_reference(detail),
         business_supplier_name=_business_supplier_name(detail),
         business_title=_business_title(detail),
