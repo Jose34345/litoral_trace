@@ -101,9 +101,9 @@ def test_document_intake_teaches_complete_pack_and_reprocessing():
     assert 'href="/operations/new"' in operations
     assert best_practice in detail
     assert best_practice in new_operation
-    assert "Need to add more documents?" in detail
+    assert "Use Add evidence for new files" in detail
     assert "Add evidence & reprocess" in detail
-    assert "Reprocessing may update auto-resolved fields, evidence, and remaining exceptions." in detail
+    assert "creates a new source revision and may require reconfirmation" in detail
 
 
 def test_advanced_evidence_uses_customer_safe_missing_language():
