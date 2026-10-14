@@ -1,5 +1,5 @@
 {# Advisory what-if model only. User selections never silently change regulatory gates. #}
-<section id="applicability" class="lt-card mt-5 scroll-mt-36 border border-slate-200 p-5" data-applicability-preview data-status="{{ applicability_preview.status }}">
+<section id="applicability" class="lt-card mt-5 scroll-mt-36 border border-slate-200 p-5" data-applicability-preview data-status="{{ applicability_preview.status }}" data-source-revision="{{ applicability_evidence_cards[0].source_set_fingerprint if applicability_evidence_cards else '' }}">
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div>
       <p class="text-[11px] font-bold uppercase tracking-widest text-emerald-700">First · Declaration applicability</p>
@@ -109,14 +109,14 @@
         <p class="mt-1 text-[11px] text-slate-600">Choose the original document that supports the customs procedure. A document category does not authorize the determination by itself.</p>
         <div class="mt-2 grid gap-2 sm:grid-cols-2" data-evidence-card-list>
           {% for card in applicability_evidence_cards if not card.is_supplier_evidence %}
-          <div class="lt-evidence-card {{ 'lt-evidence-card--unavailable' if not card.is_selectable else '' }}" data-evidence-card data-source-id="{{ card.source_id }}">
+          <div class="lt-evidence-card {{ 'lt-evidence-card--unavailable' if not card.is_selectable else '' }}" data-evidence-card data-source-id="{{ card.source_id }}" data-source-revision="{{ card.source_set_fingerprint }}">
             <label class="lt-evidence-card__body">
               <input type="radio" name="source_document_id" value="{{ card.source_id }}" required {% if not card.is_selectable %}disabled{% endif %}>
               <strong>{{ card.filename }}</strong>
               <small>Page {{ card.page }} · {{ card.classification }}</small>
               <small>{{ card.review_scope }} · {{ card.availability }}</small>
             </label>
-            {% if card.is_selectable %}<button type="button" class="lt-evidence-card__preview" data-source-inspect data-source-url="/operations/{{ detail.public_id }}/source/{{ card.source_id }}" data-source-page="{{ card.page }}" data-source-label="{{ card.filename }}" data-source-locator="{{ card.review_scope }} · page {{ card.page }}">Preview</button>{% endif %}
+            {% if card.is_selectable %}<button type="button" class="lt-evidence-card__preview" data-source-inspect data-source-revision="{{ card.source_set_fingerprint }}" data-source-url="/operations/{{ detail.public_id }}/source/{{ card.source_id }}" data-source-page="{{ card.page }}" data-source-label="{{ card.filename }}" data-source-locator="{{ card.review_scope }} · page {{ card.page }}">Preview</button>{% endif %}
           </div>
           {% endfor %}
         </div>
@@ -130,9 +130,9 @@
         <p class="text-[11px] text-slate-600">A separate original supplier document is required. An Arrival Notice cannot establish botanical cultivation.</p>
         <div class="mt-2 grid gap-2 sm:grid-cols-2" data-evidence-card-list>
           {% for card in applicability_evidence_cards if card.is_supplier_evidence %}
-          <div class="lt-evidence-card {{ 'lt-evidence-card--unavailable' if not card.is_selectable else '' }}" data-evidence-card data-source-id="{{ card.source_id }}">
+          <div class="lt-evidence-card {{ 'lt-evidence-card--unavailable' if not card.is_selectable else '' }}" data-evidence-card data-source-id="{{ card.source_id }}" data-source-revision="{{ card.source_set_fingerprint }}">
             <label class="lt-evidence-card__body"><input type="radio" name="botanical_document_id" value="{{ card.source_id }}" required {% if not card.is_selectable %}disabled{% endif %}><strong>{{ card.filename }}</strong><small>Page {{ card.page }} · {{ card.classification }}</small><small>{{ card.availability }}</small></label>
-            {% if card.is_selectable %}<button type="button" class="lt-evidence-card__preview" data-source-inspect data-source-url="/operations/{{ detail.public_id }}/source/{{ card.source_id }}" data-source-page="{{ card.page }}" data-source-label="{{ card.filename }}" data-source-locator="Supplier cultivation evidence · page {{ card.page }}">Preview</button>{% endif %}
+            {% if card.is_selectable %}<button type="button" class="lt-evidence-card__preview" data-source-inspect data-source-revision="{{ card.source_set_fingerprint }}" data-source-url="/operations/{{ detail.public_id }}/source/{{ card.source_id }}" data-source-page="{{ card.page }}" data-source-label="{{ card.filename }}" data-source-locator="Supplier cultivation evidence · page {{ card.page }}">Preview</button>{% endif %}
           </div>
           {% endfor %}
         </div>

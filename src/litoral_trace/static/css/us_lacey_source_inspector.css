@@ -20,6 +20,9 @@
 @media (max-width:850px) { .lt-source-inspector__panel { width:100%; } .lt-source-inspector__fallback { flex-wrap:wrap; } }
 @media (prefers-reduced-motion:reduce) { .lt-source-inspector__panel { transition:none!important; } }
 
+/* The hidden attribute must override card/listbox layout display rules. */
+.lt-evidence-preview[hidden], .lt-entry-selector__option[hidden] { display:none!important; }
+
 /* Compact, progressive-enhancement entry guidance. The native select remains a
    keyboard-safe form control and the searchable list is a navigation aid. */
 .lt-entry-selector { border:1px solid #cbd5e1; border-radius:10px; background:#fff; padding:8px; }

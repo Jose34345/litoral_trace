@@ -9,6 +9,9 @@ on:
       - src/litoral_trace/templates/**
       - src/litoral_trace/static/src/**
       - src/litoral_trace/static/dist/app.css
+      - src/litoral_trace/static/css/us_lacey_source_inspector.css
+      - src/litoral_trace/static/js/us_lacey_source_inspector.js
+      - tests/js/test_us_lacey_source_inspector_p0.cjs
   workflow_dispatch:
 
 permissions:
@@ -34,6 +37,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Test authorized PDF session and renderer concurrency
+        run: node --test tests/js/test_us_lacey_source_inspector_p0.cjs
 
       - name: Rebuild Tailwind CSS from tracked templates
         run: npm run build:css

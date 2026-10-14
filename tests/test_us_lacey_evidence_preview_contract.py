@@ -63,3 +63,29 @@ def test_local_pdf_renderer_contract_exposes_real_page_and_zoom_controls() -> No
     assert "data-pdf-zoom-in" in inspector
     assert "data-pdf-next-page" in inspector
     assert "copyPdfJs" in vendor_build
+
+
+def test_closed_popover_and_filtered_entry_types_override_author_display_rules() -> None:
+    css = (ROOT / "src/litoral_trace/static/css/us_lacey_source_inspector.css").read_text(encoding="utf-8")
+    assert ".lt-evidence-preview[hidden]" in css
+    assert ".lt-entry-selector__option[hidden]" in css
+    assert "display:none!important" in css
+
+
+def test_zoom_placeholder_does_not_change_initial_shipment_progress_contract() -> None:
+    inspector = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/source_inspector.html").read_text(encoding="utf-8")
+    js = (ROOT / "src/litoral_trace/static/js/us_lacey_source_inspector.js").read_text(encoding="utf-8")
+    assert "data-pdf-zoom>Zoom —</span>" in inspector
+    assert "data-pdf-zoom>100%</span>" not in inspector
+    assert "this.controls.zoom.textContent" in js
+
+
+def test_evidence_session_key_tracks_current_source_set_and_lifecycle() -> None:
+    html = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/applicability_triage.html").read_text(encoding="utf-8")
+    js = (ROOT / "src/litoral_trace/static/js/us_lacey_source_inspector.js").read_text(encoding="utf-8")
+    assert 'data-source-revision="{{ card.source_set_fingerprint }}"' in html
+    assert "this.pending?.key === key" in js
+    assert 'document.body.addEventListener("htmx:beforeSwap"' in js
+    assert 'window.addEventListener("pagehide"' in js
+    assert '"visibilitychange"' in js
+    assert "MutationObserver" in js
