@@ -141,6 +141,8 @@ class PdfEvidenceRenderer {
   }
   bindSmartEntrySelector();
   const canvas = root.querySelector("[data-inspector-canvas]");
+  const preview = document.querySelector("[data-evidence-preview]");
+  const previewCanvas = preview?.querySelector("[data-preview-canvas]");
   const title = root.querySelector("[data-inspector-title]");
   const locator = root.querySelector("[data-inspector-locator]");
   const external = root.querySelector("[data-inspector-external]");
@@ -153,9 +155,15 @@ class PdfEvidenceRenderer {
     page:root.querySelector("[data-pdf-page-number]"),
     zoom:root.querySelector("[data-pdf-zoom]"),
   });
+  const previewRenderer = previewCanvas ? new PdfEvidenceRenderer(previewCanvas, {
+    previous:{disabled:true}, next:{disabled:true}, page:{textContent:""}, zoom:{textContent:""},
+  }) : null;
   window.LitoralEvidenceSession = evidenceSession;
   let returnFocus = null;
   let closeTimer = null;
+  let previewTimer = null;
+  let previewCloseTimer = null;
+  let previewButton = null;
   const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const sourceUrl = (raw) => {
     if (!raw) return null;
@@ -178,6 +186,37 @@ class PdfEvidenceRenderer {
     status.hidden = !message;
     status.classList.toggle("is-error", isError);
   };
+  const mobileViewport = () => window.matchMedia("(max-width: 850px)").matches;
+  function closePreview() {
+    window.clearTimeout(previewTimer);
+    if (!preview || preview.hidden) return;
+    preview.classList.remove("is-open");
+    window.clearTimeout(previewCloseTimer);
+    previewCloseTimer = window.setTimeout(() => { preview.hidden = true; previewRenderer?.destroy(); if (!root.open) evidenceSession.release(); }, reduced() ? 0 : 160);
+  }
+  function positionPreview(button) {
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(620, window.innerWidth - 24);
+    const height = Math.min(window.innerHeight * .72, 680);
+    const left = rect.right + width + 12 <= window.innerWidth ? rect.right + 10 : Math.max(12, rect.left - width - 10);
+    const top = Math.min(Math.max(12, rect.top), window.innerHeight - height - 12);
+    Object.assign(preview.style, {left:`${left}px`, top:`${top}px`});
+  }
+  async function openPreview(button) {
+    if (mobileViewport() || !preview || !previewRenderer) return;
+    const url = sourceUrl(button.getAttribute("data-source-url")); if (!url) return;
+    previewButton = button; positionPreview(button); preview.hidden = false;
+    preview.querySelector("[data-preview-title]").textContent = button.getAttribute("data-source-label") || "Original PDF";
+    preview.querySelector("[data-preview-meta]").textContent = "Loading verified original…";
+    window.requestAnimationFrame(() => preview.classList.add("is-open"));
+    try {
+      const page = Number.parseInt(button.getAttribute("data-source-page") || "1", 10) || 1;
+      const resource = await evidenceSession.acquire({key:url.pathname, url:url.href});
+      if (previewButton !== button || preview.hidden) return;
+      await previewRenderer.open(resource.objectUrl, page);
+      preview.querySelector("[data-preview-meta]").textContent = `Page ${page} · ${button.getAttribute("data-source-locator") || "Original evidence"}`;
+    } catch (error) { if (error.name !== "AbortError") { preview.querySelector("[data-preview-meta]").textContent = errorMessage(error); } }
+  }
   root.querySelector("[data-pdf-previous-page]").addEventListener("click", () => renderer.previousPage());
   root.querySelector("[data-pdf-next-page]").addEventListener("click", () => renderer.nextPage());
   root.querySelector("[data-pdf-zoom-in]").addEventListener("click", () => renderer.setZoom(renderer.zoom + .2));
@@ -207,7 +246,7 @@ class PdfEvidenceRenderer {
     external.href = url.href;
     renderer.destroy();
     setStatus("Loading verified original…");
-    if (!root.open) root.showModal();
+    if (!root.open) { if (mobileViewport()) root.showModal(); else root.show(); }
     window.requestAnimationFrame(() => root.classList.add("is-open"));
     closeButton.focus({preventScroll:true});
     try {
@@ -250,5 +289,17 @@ class PdfEvidenceRenderer {
     if (launch) { event.preventDefault(); open(launch); }
     else if (event.target.closest("[data-source-inspector-close]") || event.target === root) close();
   });
+  document.querySelectorAll("[data-evidence-card]").forEach((card) => {
+    const button = card.querySelector("[data-source-inspect]");
+    if (!button) return;
+    card.addEventListener("pointerenter", () => { if (window.matchMedia("(hover:hover) and (pointer:fine)").matches) { window.clearTimeout(previewCloseTimer); previewTimer = window.setTimeout(() => openPreview(button), 180); } });
+    card.addEventListener("pointerleave", () => { window.clearTimeout(previewTimer); previewCloseTimer = window.setTimeout(closePreview, 250); });
+    card.addEventListener("focusin", () => { window.clearTimeout(previewCloseTimer); previewTimer = window.setTimeout(() => openPreview(button), 180); });
+    card.addEventListener("focusout", () => { previewCloseTimer = window.setTimeout(closePreview, 250); });
+  });
+  preview?.addEventListener("pointerenter", () => window.clearTimeout(previewCloseTimer));
+  preview?.addEventListener("pointerleave", () => { previewCloseTimer = window.setTimeout(closePreview, 250); });
+  preview?.querySelector("[data-preview-pin]")?.addEventListener("click", () => { if (previewButton) { closePreview(); open(previewButton); } });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && preview && !preview.hidden) { event.preventDefault(); closePreview(); } });
   root.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
 })();
