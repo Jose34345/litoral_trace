@@ -128,10 +128,51 @@ test("destroy invalidates a delayed getPage so a stale page cannot redraw", asyn
   let releasePage;
   x.renderer.pdf.getPage=()=>new Promise((resolve)=> {releasePage=resolve;});
   const result=x.renderer.renderPage();
-  await Promise.resolve(); // allow getPage to begin
+  for (let i=0; i<5 && !releasePage; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(typeof releasePage, "function");
   x.renderer.destroy();
   releasePage({cleanup:()=>{},getViewport:()=>{throw Error("stale draw");}});
   await result;
   assert.equal(x.controls.page.textContent,"");
   assert.equal(x.canvas.width,0);
+});
+
+test("switching PDFs waits for old canvas render cancellation to settle", async () => {
+  const x=fakeRenderer();
+  let active=0;
+  let cancelOld;
+  let markStarted;
+  const started=new Promise(resolve => {markStarted=resolve;});
+  x.renderer.pdf.getPage=async () => ({
+    getViewport:()=>({width:200,height:300}),
+    cleanup:()=>{},
+    render:()=>{
+      active+=1;
+      markStarted();
+      return {
+        promise:new Promise((_resolve,reject) => { cancelOld=() => {
+          setTimeout(() => {active-=1;reject({name:"RenderingCancelledException"});},10);
+        };}),
+        cancel:()=>cancelOld(),
+      };
+    },
+  });
+  const oldRender=x.renderer.renderPage();
+  await started;
+  x.renderer.destroy();
+  x.renderer.pdf={
+    numPages:2,
+    destroy:async()=>{},
+    getPage:async()=>({
+      getViewport:()=>({width:120,height:160}),
+      cleanup:()=>{},
+      render:()=>{
+        assert.equal(active,0,"older PDF render was still using the canvas");
+        return {promise:Promise.resolve(),cancel:()=>{}};
+      },
+    }),
+  };
+  await Promise.all([oldRender,x.renderer.renderPage()]);
+  assert.equal(x.controls.page.textContent,"Page 1 of 2");
+  x.renderer.destroy();
 });

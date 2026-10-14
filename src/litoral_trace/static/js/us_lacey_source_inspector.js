@@ -67,6 +67,7 @@ class PdfEvidenceRenderer {
     this.zoom = 1;
     this.renderTask = null;
     this.renderPromise = null;
+    this.renderBarrier = Promise.resolve();
     this.generation = 0;
     this.renderGeneration = 0;
   }
@@ -102,7 +103,7 @@ class PdfEvidenceRenderer {
     if (!pdf) return Promise.resolve();
     const generation = this.generation;
     const renderGeneration = ++this.renderGeneration;
-    const previous = this.renderPromise;
+    const previous = this.renderPromise || this.renderBarrier;
     const requestedPage = this.page;
     const requestedZoom = this.zoom;
     this.renderTask?.cancel();
@@ -151,6 +152,10 @@ class PdfEvidenceRenderer {
   destroy() {
     ++this.generation;
     ++this.renderGeneration;
+    // Keep the canvas fenced until an older document's render actually settles.
+    if (this.renderPromise) {
+      this.renderBarrier = Promise.allSettled([this.renderBarrier, this.renderPromise]);
+    }
     this.renderTask?.cancel();
     this.renderTask = null;
     if (this.loadingTask) void this.loadingTask.destroy().catch(() => {});
