@@ -38,7 +38,7 @@ On coarse pointers there is no simulated hover: a first touch/click pins the ins
 
 ### Pinned inspector
 
-Clicking a card, preview or explicit action opens a modal right-side inspector. At desktop widths it takes 55–65% of the viewport, leaving an approximately 40/60 review-to-document composition visible; below the responsive threshold it becomes full width. It is the only state that uses dialog focus handling and Escape-to-close.
+Clicking a card, preview or explicit action opens a nonmodal right-side inspector at desktop widths so the review remains interactive and visible beside the document. It takes 55–65% of the viewport, leaving an approximately 40/60 review-to-document composition visible; below the responsive threshold it becomes a full-width modal dialog with focus handling and Escape-to-close.
 
 Its compact header shows the document filename, page, classification and availability. PDF content dominates. Close, open in new tab, page previous/next and zoom controls must operate against the actual viewer rather than merely change labels.
 
