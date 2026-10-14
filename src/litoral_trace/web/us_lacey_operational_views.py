@@ -37,6 +37,7 @@ from litoral_trace.web.shipment_v2_unified import (
     is_private_v2_shipment, unified_v2_review_context,
 )
 from litoral_trace.web.us_lacey_entry_type_options import entry_type_options
+from litoral_trace.web.us_lacey_evidence_cards import evidence_cards
 from litoral_trace.web.templates import templates
 
 
@@ -1117,6 +1118,7 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
                     for f in detail.fields if f.field_name == "hts_code")
         ),
         applicability_sources=applicability_sources,
+        applicability_evidence_cards=evidence_cards(tuple(applicability_sources)),
         recorded_applicability=recorded_applicability,
         applicability_read_unavailable=applicability_read_unavailable,
         business_reference=_business_reference(detail),

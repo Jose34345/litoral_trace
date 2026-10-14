@@ -104,38 +104,40 @@
       <input type="hidden" name="csrf_token" value="{{ applicability_csrf }}">
       <input type="hidden" name="entry_type" value="{{ applicability_preview.entry_type }}">
       <input type="hidden" name="bamboo_origin" value="{{ applicability_preview.bamboo_origin }}">
-      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_115px]" data-applicability-source-block>
-        <label class="text-xs font-bold text-slate-700">Original source used for this determination
-          <select class="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3 text-xs" name="source_document_id" required data-applicability-source-select>
-            <option value="">Choose an original PDF</option>
-            {% for source in applicability_sources %}
-            <option value="{{ source.id }}" data-source-file="{{ source.filename }}" {% if not source.is_primary_candidate or not source.page_available %}disabled{% endif %}>
-              {{ source.filename }} · {{ source.classification }}{% if not source.page_available %} (not currently available as PDF){% endif %}
-            </option>
-            {% endfor %}
-          </select>
-        </label>
-        <label class="text-xs font-bold text-slate-700">PDF page
+      <fieldset data-applicability-source-block>
+        <legend class="text-xs font-bold text-slate-700">Customs entry evidence</legend>
+        <p class="mt-1 text-[11px] text-slate-600">Choose the original document that supports the customs procedure. A document category does not authorize the determination by itself.</p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-2" data-evidence-card-list>
+          {% for card in applicability_evidence_cards if not card.is_supplier_evidence %}
+          <div class="lt-evidence-card {{ 'lt-evidence-card--unavailable' if not card.is_selectable else '' }}" data-evidence-card data-source-id="{{ card.source_id }}">
+            <label class="lt-evidence-card__body">
+              <input type="radio" name="source_document_id" value="{{ card.source_id }}" required {% if not card.is_selectable %}disabled{% endif %}>
+              <strong>{{ card.filename }}</strong>
+              <small>Page {{ card.page }} · {{ card.classification }}</small>
+              <small>{{ card.review_scope }} · {{ card.availability }}</small>
+            </label>
+            {% if card.is_selectable %}<button type="button" class="lt-evidence-card__preview" data-source-inspect data-source-url="/operations/{{ detail.public_id }}/source/{{ card.source_id }}" data-source-page="{{ card.page }}" data-source-label="{{ card.filename }}" data-source-locator="{{ card.review_scope }} · page {{ card.page }}">Preview</button>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        <label class="mt-3 block text-xs font-bold text-slate-700">PDF page
           <input type="number" min="1" max="10000" name="source_page" value="1" required class="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm">
         </label>
-      </div>
-      <button type="button" class="text-xs font-bold text-emerald-800 underline disabled:text-slate-400" data-applicability-inspect-selected data-source-inspect disabled>Inspect selected PDF</button>
+      </fieldset>
       {% if applicability_preview.is_bamboo and applicability_preview.bamboo_origin in ('CULTIVATED','WILD') %}
-      <div class="rounded-lg border border-emerald-200 bg-white p-3" data-applicability-source-block>
-        <p class="text-xs font-semibold text-slate-800">Independent supplier evidence for {{ applicability_preview.bamboo_origin|lower }} bamboo</p>
-        <div class="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_115px]">
-          <label class="text-xs text-slate-700">Supplier-origin PDF
-            <select name="botanical_document_id" class="mt-1 w-full rounded-lg border border-slate-300 p-3 text-xs" required data-applicability-source-select>
-              <option value="">Choose supplier evidence</option>
-              {% for source in applicability_sources %}
-              <option value="{{ source.id }}" data-source-file="{{ source.filename }}" {% if not source.is_primary_candidate or not source.page_available or source.classification != 'Supplier evidence' %}disabled{% endif %}>{{ source.filename }} · {{ source.classification }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label class="text-xs text-slate-700">Page <input name="botanical_page" type="number" min="1" max="10000" value="1" required class="mt-1 w-full rounded-lg border border-slate-300 p-3 text-xs"></label>
+      <fieldset class="rounded-lg border border-emerald-200 bg-white p-3" data-applicability-source-block>
+        <legend class="px-1 text-xs font-semibold text-slate-800">Supplier cultivation evidence for {{ applicability_preview.bamboo_origin|lower }} bamboo</legend>
+        <p class="text-[11px] text-slate-600">A separate original supplier document is required. An Arrival Notice cannot establish botanical cultivation.</p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-2" data-evidence-card-list>
+          {% for card in applicability_evidence_cards if card.is_supplier_evidence %}
+          <div class="lt-evidence-card {{ 'lt-evidence-card--unavailable' if not card.is_selectable else '' }}" data-evidence-card data-source-id="{{ card.source_id }}">
+            <label class="lt-evidence-card__body"><input type="radio" name="botanical_document_id" value="{{ card.source_id }}" required {% if not card.is_selectable %}disabled{% endif %}><strong>{{ card.filename }}</strong><small>Page {{ card.page }} · {{ card.classification }}</small><small>{{ card.availability }}</small></label>
+            {% if card.is_selectable %}<button type="button" class="lt-evidence-card__preview" data-source-inspect data-source-url="/operations/{{ detail.public_id }}/source/{{ card.source_id }}" data-source-page="{{ card.page }}" data-source-label="{{ card.filename }}" data-source-locator="Supplier cultivation evidence · page {{ card.page }}">Preview</button>{% endif %}
+          </div>
+          {% endfor %}
         </div>
-        <button type="button" class="mt-2 text-xs font-bold text-emerald-800 underline disabled:text-slate-400" data-applicability-inspect-selected data-source-inspect disabled>Inspect supplier source</button>
-      </div>
+        <label class="mt-3 block text-xs text-slate-700">Page <input name="botanical_page" type="number" min="1" max="10000" value="1" required class="mt-1 w-full rounded-lg border border-slate-300 p-3 text-xs"></label>
+      </fieldset>
       {% endif %}
       <p class="text-[11px] text-slate-600">Derived worksheets are not accepted as independent evidence for this review. For a cultivated-bamboo claim, supplier-origin documentation is required.</p>
       <label class="flex items-start gap-2 text-xs text-slate-700">
