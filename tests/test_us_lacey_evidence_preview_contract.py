@@ -1,4 +1,8 @@
 from litoral_trace.us_lacey.regulatory.applicability.attestation import ApplicabilitySource
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_evidence_cards_distinguish_primary_supplier_derived_and_unavailable_sources() -> None:
@@ -30,3 +34,17 @@ def test_derived_worksheet_is_never_presented_as_primary_evidence() -> None:
 
     assert card.is_selectable is False
     assert card.review_scope == "Supporting context only"
+
+
+def test_ephemeral_evidence_session_contract_has_no_persistent_pdf_cache() -> None:
+    js = (ROOT / "src/litoral_trace/static/js/us_lacey_source_inspector.js").read_text()
+
+    assert "class EvidenceSession" in js
+    assert "AbortController" in js
+    assert 'credentials:"same-origin"' in js
+    assert 'cache:"no-store"' in js
+    assert "URL.revokeObjectURL" in js
+    assert "sessionStorage" not in js
+    assert "localStorage" not in js
+    for status in ("401", "403", "404", "409", "503"):
+        assert status in js

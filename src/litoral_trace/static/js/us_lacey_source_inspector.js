@@ -1,3 +1,51 @@
+/* PDF bytes stay only in a live, same-origin inspection session. */
+class EvidenceSession {
+  constructor() {
+    this.active = null;
+    this.abortController = null;
+    this.token = 0;
+  }
+
+  async acquire({key, url}) {
+    if (this.active?.key === key) return this.active;
+    this.invalidate();
+    const token = ++this.token;
+    const controller = new AbortController();
+    this.abortController = controller;
+    let response;
+    try {
+      response = await fetch(url, {
+        credentials:"same-origin", cache:"no-store", signal:controller.signal,
+        headers:{Accept:"application/pdf"},
+      });
+    } catch (error) {
+      if (error.name === "AbortError") throw error;
+      throw new Error("NETWORK");
+    }
+    if (token !== this.token) throw new DOMException("Stale evidence request", "AbortError");
+    if (!response.ok) throw new Error(String(response.status));
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
+    if (!contentType.startsWith("application/pdf")) throw new Error("INVALID_DOCUMENT");
+    const objectUrl = URL.createObjectURL(await response.blob());
+    if (token !== this.token) {
+      URL.revokeObjectURL(objectUrl);
+      throw new DOMException("Stale evidence request", "AbortError");
+    }
+    this.active = {key, url, objectUrl};
+    return this.active;
+  }
+
+  release() { this.invalidate(); }
+
+  invalidate() {
+    this.abortController?.abort();
+    this.abortController = null;
+    if (this.active?.objectUrl) URL.revokeObjectURL(this.active.objectUrl);
+    this.active = null;
+    this.token += 1;
+  }
+}
+
 /* Native <dialog> ensures inert background/focus containment (W3C WAI-ARIA). */
 (() => {
   const root = document.querySelector("[data-source-inspector]");
@@ -49,9 +97,33 @@
   const locator = root.querySelector("[data-inspector-locator]");
   const external = root.querySelector("[data-inspector-external]");
   const closeButton = root.querySelector("[data-source-inspector-close]");
+  const status = root.querySelector("[data-inspector-status]");
+  const evidenceSession = new EvidenceSession();
+  window.LitoralEvidenceSession = evidenceSession;
   let returnFocus = null;
   let closeTimer = null;
   const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const sourceUrl = (raw) => {
+    if (!raw) return null;
+    const url = new URL(raw, window.location.href);
+    return url.origin === window.location.origin
+      && /^\/operations\/[0-9a-f-]{36}\/source\/[0-9]+$/.test(url.pathname) ? url : null;
+  };
+  const errorMessage = (error) => ({
+    "401":"Your session has ended. Sign in again to inspect this original.",
+    "403":"You do not have access to this original document.",
+    "404":"Original document unavailable. Add a new source to continue.",
+    "409":"Evidence changed. Review the current version before confirming.",
+    "503":"Original document is temporarily unavailable. Try again shortly.",
+    "INVALID_DOCUMENT":"The authorized response was not a PDF document.",
+    "NETWORK":"The document could not be reached. Check your connection and try again.",
+  })[error?.message] || "The document could not be opened safely.";
+  const setStatus = (message, isError = false) => {
+    if (!status) return;
+    status.textContent = message;
+    status.hidden = !message;
+    status.classList.toggle("is-error", isError);
+  };
 
   function close() {
     if (!root.open) return;
@@ -60,16 +132,14 @@
     closeTimer = window.setTimeout(() => {
       root.close();
       frame.src = "about:blank";
+      evidenceSession.release();
       returnFocus?.focus?.({preventScroll:true});
       returnFocus = null;
     }, reduced() ? 0 : 180);
   }
-  function open(button) {
-    const raw = button.getAttribute("data-source-url");
-    if (!raw) return;
-    const url = new URL(raw, window.location.href);
-    if (url.origin !== window.location.origin
-        || !/^\/operations\/[0-9a-f-]{36}\/source\/[0-9]+$/.test(url.pathname)) return;
+  async function open(button) {
+    const url = sourceUrl(button.getAttribute("data-source-url"));
+    if (!url) return;
     const page = Number.parseInt(button.getAttribute("data-source-page") || "1", 10);
     url.hash = "page=" + (Number.isInteger(page) && page > 0 && page <= 10000 ? page : 1);
     window.clearTimeout(closeTimer);
@@ -77,10 +147,22 @@
     title.textContent = button.getAttribute("data-source-label") || "Original PDF";
     locator.textContent = button.getAttribute("data-source-locator") || "Check the source page.";
     external.href = url.href;
-    frame.src = url.href;
+    frame.src = "about:blank";
+    setStatus("Loading verified original…");
     if (!root.open) root.showModal();
     window.requestAnimationFrame(() => root.classList.add("is-open"));
     closeButton.focus({preventScroll:true});
+    try {
+      const resource = await evidenceSession.acquire({key:url.pathname, url:url.href});
+      const current = sourceUrl(button.getAttribute("data-source-url"));
+      if (!current || resource.key !== current.pathname || !root.open) return;
+      frame.src = resource.objectUrl + "#page=" + (Number.isInteger(page) && page > 0 && page <= 10000 ? page : 1);
+      setStatus("");
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      frame.src = "about:blank";
+      setStatus(errorMessage(error), true);
+    }
   }
   document.addEventListener("change", (event) => {
     const select = event.target.closest("[data-applicability-source-select]");

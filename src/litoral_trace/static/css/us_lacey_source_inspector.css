@@ -8,6 +8,8 @@
 .lt-source-inspector__close:hover { background:#f1f5f9; }
 .lt-source-inspector__body { flex:1; min-height:0; display:flex; flex-direction:column; }
 .lt-source-inspector__body iframe { border:0; background:#f1f5f9; width:100%; flex:1; min-height:220px; }
+.lt-source-inspector__status { margin:0; padding:10px 15px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:12px; }
+.lt-source-inspector__status.is-error { color:#991b1b; background:#fef2f2; }
 .lt-source-inspector__fallback { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:9px 15px; border-top:1px solid #e2e8f0; color:#64748b; font-size:11px; line-height:1.5; }
 .lt-source-inspector__fallback a { color:#047857; font-weight:700; white-space:nowrap; text-decoration:underline; }
 @media (max-width:850px) { .lt-source-inspector__panel { width:100%; } .lt-source-inspector__fallback { flex-wrap:wrap; } }
