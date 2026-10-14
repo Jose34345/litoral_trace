@@ -3,6 +3,47 @@
   const root = document.querySelector("[data-source-inspector]");
   if (!root || window.__ltSourceInspectorBound) return;
   window.__ltSourceInspectorBound = true;
+  const smartEntry = document.querySelector("[data-smart-entry-selector]");
+
+  function bindSmartEntrySelector() {
+    if (!smartEntry) return;
+    const nativeSelect = smartEntry.querySelector("[data-entry-type]");
+    const search = smartEntry.querySelector("[data-entry-search]");
+    const current = smartEntry.querySelector("[data-entry-current]");
+    const options = Array.from(smartEntry.querySelectorAll("[data-entry-option]"));
+    let activeIndex = -1;
+    const visibleOptions = () => options.filter((option) => !option.hidden);
+    const select = (code, focusOption = false) => {
+      const changed = nativeSelect.value !== code;
+      nativeSelect.value = code;
+      if (changed) nativeSelect.dispatchEvent(new Event("change", {bubbles:true}));
+      options.forEach((option) => option.setAttribute("aria-selected", String(option.dataset.entryCode === code)));
+      const selected = options.find((option) => option.dataset.entryCode === code);
+      current.textContent = selected ? selected.innerText.replace(/\s+/g, " ").trim() : "Entry type not confirmed.";
+      if (focusOption && selected) selected.focus({preventScroll:true});
+    };
+    options.forEach((option) => option.addEventListener("click", () => select(option.dataset.entryCode || "", false)));
+    search.addEventListener("input", () => {
+      const query = search.value.trim().toLowerCase();
+      options.forEach((option) => { option.hidden = !!query && !option.dataset.entrySearchText.toLowerCase().includes(query); });
+      activeIndex = -1;
+    });
+    search.addEventListener("keydown", (event) => {
+      const visible = visibleOptions();
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        activeIndex = (activeIndex + (event.key === "ArrowDown" ? 1 : -1) + visible.length) % visible.length;
+        visible[activeIndex]?.focus({preventScroll:true});
+      } else if (event.key === "Enter" && visible.length === 1) {
+        event.preventDefault(); select(visible[0].dataset.entryCode || "", false);
+      } else if (event.key === "Escape") {
+        search.value = ""; options.forEach((option) => { option.hidden = false; }); search.blur();
+      }
+    });
+    nativeSelect.addEventListener("change", () => select(nativeSelect.value || "", false));
+    select(nativeSelect.value || "", false);
+  }
+  bindSmartEntrySelector();
   const frame = root.querySelector("[data-inspector-frame]");
   const title = root.querySelector("[data-inspector-title]");
   const locator = root.querySelector("[data-inspector-locator]");

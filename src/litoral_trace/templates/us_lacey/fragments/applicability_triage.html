@@ -18,14 +18,32 @@
       {{ applicability_preview.hts10 or 'Not established' }}
       </span>
     </label>
-    <label class="text-xs font-semibold text-slate-700">CBP entry type · scenario
-      <select name="entry_type" class="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm" data-entry-type>
-        <option value="">Choose entry type</option>
-        {% for code, title in [('01','01 · Formal consumption'),('02','02 · Quota / visa'),('03','03 · AD/CVD'),('06','06 · Foreign-trade zone'),('07','07 · AD/CVD + quota'),('11','11 · Informal'),('12','12 · Informal quota'),('13','13 · International mail'),('21','21 · Warehouse'),('22','22 · Re-warehouse'),('23','23 · Temporary import'),('31','31 · Warehouse withdrawal'),('32','32 · Withdrawal quota'),('34','34 · Withdrawal AD/CVD'),('38','38 · Withdrawal combined'),('52','52 · Government'),('86','86 · Informal de minimis')] %}
-        <option value="{{ code }}" {% if applicability_preview.entry_type == code %}selected{% endif %}>{{ title }}</option>
+    <div class="text-xs font-semibold text-slate-700" data-smart-entry-selector>
+      <span>How is this shipment entering the U.S.?</span>
+      <span class="mt-1 block text-[11px] font-normal text-slate-500">This is usually shown on your customs entry paperwork. Your broker can confirm it.</span>
+      <div class="lt-entry-selector mt-1" data-entry-combobox>
+        <input type="search" class="lt-entry-selector__search" placeholder="Search by entry type or CBP code" autocomplete="off" data-entry-search aria-label="Search entry types" aria-controls="entry-type-options-{{ detail.public_id }}">
+        <p class="lt-entry-selector__current" data-entry-current aria-live="polite">{% if applicability_preview.entry_type %}Entry type {{ applicability_preview.entry_type }} selected{% else %}Entry type not confirmed.{% endif %}</p>
+        <div class="lt-entry-selector__options" id="entry-type-options-{{ detail.public_id }}" role="listbox" aria-label="CBP entry types" data-entry-options>
+          <button type="button" role="option" aria-selected="{{ 'true' if not applicability_preview.entry_type else 'false' }}" class="lt-entry-selector__option" data-entry-option data-entry-code="" data-entry-search-text="not sure unknown broker">
+            <span>I'm not sure</span><small>Ask your customs broker to confirm the entry type.</small>
+          </button>
+          {% for option in entry_type_options %}
+          <button type="button" role="option" aria-selected="{{ 'true' if applicability_preview.entry_type == option.code else 'false' }}" class="lt-entry-selector__option" data-entry-option data-entry-code="{{ option.code }}" data-entry-search-text="{{ option.code }} {{ option.label }} {{ option.official_title }} {{ option.group }}">
+            <span>{{ option.label }} <b>CBP {{ option.code }}</b></span>
+            <small>{{ option.description }}{% if option.caution %} {{ option.caution }}{% endif %}</small>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      <select name="entry_type" class="mt-2 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm" data-entry-type aria-label="CBP entry type scenario">
+        <option value="">I'm not sure — Entry type not confirmed</option>
+        {% for option in entry_type_options %}
+        <option value="{{ option.code }}" {% if applicability_preview.entry_type == option.code %}selected{% endif %}>{{ option.code }} · {{ option.official_title }}</option>
         {% endfor %}
       </select>
-    </label>
+      <span class="mt-1 block text-[11px] font-normal text-slate-500">Entry type describes the customs procedure used to enter the goods. It is not the product's HTS classification.</span>
+    </div>
     {% if applicability_preview.is_bamboo %}
     <label class="text-xs font-semibold text-slate-700">Bamboo cultivation · scenario
       <select name="bamboo_origin" class="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm">
