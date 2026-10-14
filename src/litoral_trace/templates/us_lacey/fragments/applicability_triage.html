@@ -1,5 +1,5 @@
 {# Advisory what-if model only. User selections never silently change regulatory gates. #}
-<section id="applicability" class="lt-card mt-5 scroll-mt-36 border border-slate-200 p-5" data-applicability-preview data-status="{{ applicability_preview.status }}">
+<section id="applicability" class="lt-card mt-5 scroll-mt-36 border border-slate-200 p-5" data-applicability-preview data-status="{{ applicability_preview.status }}" data-source-revision="{{ applicability_evidence_cards[0].source_set_fingerprint if applicability_evidence_cards else '' }}">
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div>
       <p class="text-[11px] font-bold uppercase tracking-widest text-emerald-700">First · Declaration applicability</p>
@@ -18,14 +18,32 @@
       {{ applicability_preview.hts10 or 'Not established' }}
       </span>
     </label>
-    <label class="text-xs font-semibold text-slate-700">CBP entry type · scenario
-      <select name="entry_type" class="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm" data-entry-type>
-        <option value="">Choose entry type</option>
-        {% for code, title in [('01','01 · Formal consumption'),('02','02 · Quota / visa'),('03','03 · AD/CVD'),('06','06 · Foreign-trade zone'),('07','07 · AD/CVD + quota'),('11','11 · Informal'),('12','12 · Informal quota'),('13','13 · International mail'),('21','21 · Warehouse'),('22','22 · Re-warehouse'),('23','23 · Temporary import'),('31','31 · Warehouse withdrawal'),('32','32 · Withdrawal quota'),('34','34 · Withdrawal AD/CVD'),('38','38 · Withdrawal combined'),('52','52 · Government'),('86','86 · Informal de minimis')] %}
-        <option value="{{ code }}" {% if applicability_preview.entry_type == code %}selected{% endif %}>{{ title }}</option>
+    <div class="text-xs font-semibold text-slate-700" data-smart-entry-selector>
+      <span>How is this shipment entering the U.S.?</span>
+      <span class="mt-1 block text-[11px] font-normal text-slate-500">This is usually shown on your customs entry paperwork. Your broker can confirm it.</span>
+      <div class="lt-entry-selector mt-1" data-entry-combobox>
+        <input type="search" class="lt-entry-selector__search" placeholder="Search by entry type or CBP code" autocomplete="off" data-entry-search aria-label="Search entry types" aria-controls="entry-type-options-{{ detail.public_id }}">
+        <p class="lt-entry-selector__current" data-entry-current aria-live="polite">{% if applicability_preview.entry_type %}Entry type {{ applicability_preview.entry_type }} selected{% else %}Entry type not confirmed.{% endif %}</p>
+        <div class="lt-entry-selector__options" id="entry-type-options-{{ detail.public_id }}" role="listbox" aria-label="CBP entry types" data-entry-options>
+          <button type="button" role="option" aria-selected="{{ 'true' if not applicability_preview.entry_type else 'false' }}" class="lt-entry-selector__option" data-entry-option data-entry-code="" data-entry-search-text="not sure unknown broker">
+            <span>I'm not sure</span><small>Ask your customs broker to confirm the entry type.</small>
+          </button>
+          {% for option in entry_type_options %}
+          <button type="button" role="option" aria-selected="{{ 'true' if applicability_preview.entry_type == option.code else 'false' }}" class="lt-entry-selector__option" data-entry-option data-entry-code="{{ option.code }}" data-entry-search-text="{{ option.code }} {{ option.label }} {{ option.official_title }} {{ option.group }}">
+            <span>{{ option.label }} <b>CBP {{ option.code }}</b></span>
+            <small>{{ option.description }}{% if option.caution %} {{ option.caution }}{% endif %}</small>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      <select name="entry_type" class="mt-2 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm" data-entry-type aria-label="CBP entry type scenario">
+        <option value="">I'm not sure — Entry type not confirmed</option>
+        {% for option in entry_type_options %}
+        <option value="{{ option.code }}" {% if applicability_preview.entry_type == option.code %}selected{% endif %}>{{ option.code }} · {{ option.official_title }}</option>
         {% endfor %}
       </select>
-    </label>
+      <span class="mt-1 block text-[11px] font-normal text-slate-500">Entry type describes the customs procedure used to enter the goods. It is not the product's HTS classification.</span>
+    </div>
     {% if applicability_preview.is_bamboo %}
     <label class="text-xs font-semibold text-slate-700">Bamboo cultivation · scenario
       <select name="bamboo_origin" class="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm">
@@ -86,38 +104,40 @@
       <input type="hidden" name="csrf_token" value="{{ applicability_csrf }}">
       <input type="hidden" name="entry_type" value="{{ applicability_preview.entry_type }}">
       <input type="hidden" name="bamboo_origin" value="{{ applicability_preview.bamboo_origin }}">
-      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_115px]" data-applicability-source-block>
-        <label class="text-xs font-bold text-slate-700">Original source used for this determination
-          <select class="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3 text-xs" name="source_document_id" required data-applicability-source-select>
-            <option value="">Choose an original PDF</option>
-            {% for source in applicability_sources %}
-            <option value="{{ source.id }}" data-source-file="{{ source.filename }}" {% if not source.is_primary_candidate or not source.page_available %}disabled{% endif %}>
-              {{ source.filename }} · {{ source.classification }}{% if not source.page_available %} (not currently available as PDF){% endif %}
-            </option>
-            {% endfor %}
-          </select>
-        </label>
-        <label class="text-xs font-bold text-slate-700">PDF page
+      <fieldset data-applicability-source-block>
+        <legend class="text-xs font-bold text-slate-700">Customs entry evidence</legend>
+        <p class="mt-1 text-[11px] text-slate-600">Choose the original document that supports the customs procedure. A document category does not authorize the determination by itself.</p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-2" data-evidence-card-list>
+          {% for card in applicability_evidence_cards if not card.is_supplier_evidence %}
+          <div class="lt-evidence-card {{ 'lt-evidence-card--unavailable' if not card.is_selectable else '' }}" data-evidence-card data-source-id="{{ card.source_id }}" data-source-revision="{{ card.source_set_fingerprint }}">
+            <label class="lt-evidence-card__body">
+              <input type="radio" name="source_document_id" value="{{ card.source_id }}" required {% if not card.is_selectable %}disabled{% endif %}>
+              <strong>{{ card.filename }}</strong>
+              <small>Page {{ card.page }} · {{ card.classification }}</small>
+              <small>{{ card.review_scope }} · {{ card.availability }}</small>
+            </label>
+            {% if card.is_selectable %}<button type="button" class="lt-evidence-card__preview" data-source-inspect data-source-revision="{{ card.source_set_fingerprint }}" data-source-url="/operations/{{ detail.public_id }}/source/{{ card.source_id }}" data-source-page="{{ card.page }}" data-source-label="{{ card.filename }}" data-source-locator="{{ card.review_scope }} · page {{ card.page }}">Preview</button>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        <label class="mt-3 block text-xs font-bold text-slate-700">PDF page
           <input type="number" min="1" max="10000" name="source_page" value="1" required class="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm">
         </label>
-      </div>
-      <button type="button" class="text-xs font-bold text-emerald-800 underline disabled:text-slate-400" data-applicability-inspect-selected data-source-inspect disabled>Inspect selected PDF</button>
+      </fieldset>
       {% if applicability_preview.is_bamboo and applicability_preview.bamboo_origin in ('CULTIVATED','WILD') %}
-      <div class="rounded-lg border border-emerald-200 bg-white p-3" data-applicability-source-block>
-        <p class="text-xs font-semibold text-slate-800">Independent supplier evidence for {{ applicability_preview.bamboo_origin|lower }} bamboo</p>
-        <div class="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_115px]">
-          <label class="text-xs text-slate-700">Supplier-origin PDF
-            <select name="botanical_document_id" class="mt-1 w-full rounded-lg border border-slate-300 p-3 text-xs" required data-applicability-source-select>
-              <option value="">Choose supplier evidence</option>
-              {% for source in applicability_sources %}
-              <option value="{{ source.id }}" data-source-file="{{ source.filename }}" {% if not source.is_primary_candidate or not source.page_available or source.classification != 'Supplier evidence' %}disabled{% endif %}>{{ source.filename }} · {{ source.classification }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label class="text-xs text-slate-700">Page <input name="botanical_page" type="number" min="1" max="10000" value="1" required class="mt-1 w-full rounded-lg border border-slate-300 p-3 text-xs"></label>
+      <fieldset class="rounded-lg border border-emerald-200 bg-white p-3" data-applicability-source-block>
+        <legend class="px-1 text-xs font-semibold text-slate-800">Supplier cultivation evidence for {{ applicability_preview.bamboo_origin|lower }} bamboo</legend>
+        <p class="text-[11px] text-slate-600">A separate original supplier document is required. An Arrival Notice cannot establish botanical cultivation.</p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-2" data-evidence-card-list>
+          {% for card in applicability_evidence_cards if card.is_supplier_evidence %}
+          <div class="lt-evidence-card {{ 'lt-evidence-card--unavailable' if not card.is_selectable else '' }}" data-evidence-card data-source-id="{{ card.source_id }}" data-source-revision="{{ card.source_set_fingerprint }}">
+            <label class="lt-evidence-card__body"><input type="radio" name="botanical_document_id" value="{{ card.source_id }}" required {% if not card.is_selectable %}disabled{% endif %}><strong>{{ card.filename }}</strong><small>Page {{ card.page }} · {{ card.classification }}</small><small>{{ card.availability }}</small></label>
+            {% if card.is_selectable %}<button type="button" class="lt-evidence-card__preview" data-source-inspect data-source-revision="{{ card.source_set_fingerprint }}" data-source-url="/operations/{{ detail.public_id }}/source/{{ card.source_id }}" data-source-page="{{ card.page }}" data-source-label="{{ card.filename }}" data-source-locator="Supplier cultivation evidence · page {{ card.page }}">Preview</button>{% endif %}
+          </div>
+          {% endfor %}
         </div>
-        <button type="button" class="mt-2 text-xs font-bold text-emerald-800 underline disabled:text-slate-400" data-applicability-inspect-selected data-source-inspect disabled>Inspect supplier source</button>
-      </div>
+        <label class="mt-3 block text-xs text-slate-700">Page <input name="botanical_page" type="number" min="1" max="10000" value="1" required class="mt-1 w-full rounded-lg border border-slate-300 p-3 text-xs"></label>
+      </fieldset>
       {% endif %}
       <p class="text-[11px] text-slate-600">Derived worksheets are not accepted as independent evidence for this review. For a cultivated-bamboo claim, supplier-origin documentation is required.</p>
       <label class="flex items-start gap-2 text-xs text-slate-700">

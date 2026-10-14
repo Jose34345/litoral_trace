@@ -44,6 +44,7 @@ class ApplicabilitySource:
     classification: str
     is_primary_candidate: bool
     page_available: bool
+    source_set_fingerprint: str = ""
 
 
 @dataclass(frozen=True)
@@ -129,6 +130,7 @@ def read_applicability_evidence(
                 is_primary_candidate=_usable_source(link, vault),
                 page_available=str(vault.content_type).lower() == "application/pdf"
                                 and _usable_source(link, vault),
+                source_set_fingerprint=str(revision.source_set_fingerprint),
             )
             for link, vault in rows
         )

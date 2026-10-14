@@ -1,3 +1,7 @@
+<section class="lt-evidence-preview" data-evidence-preview hidden aria-label="Original evidence preview">
+  <header><div><strong data-preview-title>Original PDF</strong><small data-preview-meta>Loading verified original…</small></div><button type="button" data-preview-pin>Open full inspector</button></header>
+  <div class="lt-evidence-preview__canvas"><canvas data-preview-canvas aria-label="Original PDF preview"></canvas></div>
+</section>
 <dialog class="lt-source-inspector" data-source-inspector aria-labelledby="source-inspector-title">
   <section class="lt-source-inspector__panel" aria-label="Original source PDF inspector">
     <header class="lt-source-inspector__header">
@@ -9,7 +13,17 @@
       <button type="button" class="lt-source-inspector__close" data-source-inspector-close aria-label="Close source inspector">×</button>
     </header>
     <div class="lt-source-inspector__body">
-      <iframe data-inspector-frame title="Verified original PDF page" loading="lazy" referrerpolicy="same-origin" src="about:blank"></iframe>
+      <p class="lt-source-inspector__status" role="status" data-inspector-status hidden></p>
+      <div class="lt-source-inspector__toolbar" aria-label="PDF controls">
+        <button type="button" data-pdf-previous-page aria-label="Previous page">Previous</button>
+        <span data-pdf-page-number>Page —</span>
+        <button type="button" data-pdf-next-page aria-label="Next page">Next</button>
+        <span class="lt-source-inspector__toolbar-spacer"></span>
+        <button type="button" data-pdf-zoom-out aria-label="Zoom out">−</button>
+        <span data-pdf-zoom>Zoom —</span>
+        <button type="button" data-pdf-zoom-in aria-label="Zoom in">+</button>
+      </div>
+      <div class="lt-source-inspector__canvas-wrap" data-pdf-canvas-wrap><canvas data-inspector-canvas aria-label="Verified original PDF page"></canvas></div>
       <div class="lt-source-inspector__fallback">
         <span>Originals may expire under your retention policy. If unavailable, request the original; a worksheet is not independent evidence.</span>
         <a href="#" target="_blank" rel="noopener noreferrer" data-inspector-external>Open original in new tab</a>
