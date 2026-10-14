@@ -48,3 +48,18 @@ def test_ephemeral_evidence_session_contract_has_no_persistent_pdf_cache() -> No
     assert "localStorage" not in js
     for status in ("401", "403", "404", "409", "503"):
         assert status in js
+
+
+def test_local_pdf_renderer_contract_exposes_real_page_and_zoom_controls() -> None:
+    js = (ROOT / "src/litoral_trace/static/js/us_lacey_source_inspector.js").read_text()
+    inspector = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/source_inspector.html").read_text()
+    vendor_build = (ROOT / "scripts/copy_frontend_vendor.mjs").read_text()
+
+    assert "class PdfEvidenceRenderer" in js
+    assert "pdf.min.mjs" in js
+    assert "pdf.worker.min.mjs" in js
+    assert "renderPage" in js
+    assert "setZoom" in js
+    assert "data-pdf-zoom-in" in inspector
+    assert "data-pdf-next-page" in inspector
+    assert "copyPdfJs" in vendor_build

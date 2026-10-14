@@ -46,6 +46,54 @@ class EvidenceSession {
   }
 }
 
+class PdfEvidenceRenderer {
+  constructor(canvas, controls) {
+    this.canvas = canvas;
+    this.controls = controls;
+    this.pdf = null;
+    this.page = 1;
+    this.zoom = 1;
+    this.renderTask = null;
+  }
+
+  async open(objectUrl, page = 1) {
+    this.destroy();
+    const pdfjs = await import("/static/vendor/pdfjs/pdf.min.mjs");
+    pdfjs.GlobalWorkerOptions.workerSrc = "/static/vendor/pdfjs/pdf.worker.min.mjs";
+    this.pdf = await pdfjs.getDocument({url:objectUrl}).promise;
+    this.page = Math.min(Math.max(1, page), this.pdf.numPages);
+    await this.renderPage();
+  }
+
+  async renderPage() {
+    if (!this.pdf) return;
+    this.renderTask?.cancel();
+    const pdfPage = await this.pdf.getPage(this.page);
+    const viewport = pdfPage.getViewport({scale:this.zoom});
+    const context = this.canvas.getContext("2d", {alpha:false});
+    this.canvas.width = Math.ceil(viewport.width);
+    this.canvas.height = Math.ceil(viewport.height);
+    this.renderTask = pdfPage.render({canvasContext:context, viewport});
+    await this.renderTask.promise;
+    this.controls.page.textContent = `Page ${this.page} of ${this.pdf.numPages}`;
+    this.controls.zoom.textContent = `${Math.round(this.zoom * 100)}%`;
+    this.controls.previous.disabled = this.page <= 1;
+    this.controls.next.disabled = this.page >= this.pdf.numPages;
+  }
+
+  async nextPage() { if (this.pdf && this.page < this.pdf.numPages) { this.page += 1; await this.renderPage(); } }
+  async previousPage() { if (this.pdf && this.page > 1) { this.page -= 1; await this.renderPage(); } }
+  async setZoom(nextZoom) { if (this.pdf) { this.zoom = Math.min(2.5, Math.max(.65, nextZoom)); await this.renderPage(); } }
+  destroy() {
+    this.renderTask?.cancel();
+    this.renderTask = null;
+    this.pdf?.destroy();
+    this.pdf = null;
+    this.canvas.width = 0;
+    this.canvas.height = 0;
+  }
+}
+
 /* Native <dialog> ensures inert background/focus containment (W3C WAI-ARIA). */
 (() => {
   const root = document.querySelector("[data-source-inspector]");
@@ -92,13 +140,19 @@ class EvidenceSession {
     select(nativeSelect.value || "", false);
   }
   bindSmartEntrySelector();
-  const frame = root.querySelector("[data-inspector-frame]");
+  const canvas = root.querySelector("[data-inspector-canvas]");
   const title = root.querySelector("[data-inspector-title]");
   const locator = root.querySelector("[data-inspector-locator]");
   const external = root.querySelector("[data-inspector-external]");
   const closeButton = root.querySelector("[data-source-inspector-close]");
   const status = root.querySelector("[data-inspector-status]");
   const evidenceSession = new EvidenceSession();
+  const renderer = new PdfEvidenceRenderer(canvas, {
+    previous:root.querySelector("[data-pdf-previous-page]"),
+    next:root.querySelector("[data-pdf-next-page]"),
+    page:root.querySelector("[data-pdf-page-number]"),
+    zoom:root.querySelector("[data-pdf-zoom]"),
+  });
   window.LitoralEvidenceSession = evidenceSession;
   let returnFocus = null;
   let closeTimer = null;
@@ -124,6 +178,10 @@ class EvidenceSession {
     status.hidden = !message;
     status.classList.toggle("is-error", isError);
   };
+  root.querySelector("[data-pdf-previous-page]").addEventListener("click", () => renderer.previousPage());
+  root.querySelector("[data-pdf-next-page]").addEventListener("click", () => renderer.nextPage());
+  root.querySelector("[data-pdf-zoom-in]").addEventListener("click", () => renderer.setZoom(renderer.zoom + .2));
+  root.querySelector("[data-pdf-zoom-out]").addEventListener("click", () => renderer.setZoom(renderer.zoom - .2));
 
   function close() {
     if (!root.open) return;
@@ -131,7 +189,7 @@ class EvidenceSession {
     window.clearTimeout(closeTimer);
     closeTimer = window.setTimeout(() => {
       root.close();
-      frame.src = "about:blank";
+      renderer.destroy();
       evidenceSession.release();
       returnFocus?.focus?.({preventScroll:true});
       returnFocus = null;
@@ -147,7 +205,7 @@ class EvidenceSession {
     title.textContent = button.getAttribute("data-source-label") || "Original PDF";
     locator.textContent = button.getAttribute("data-source-locator") || "Check the source page.";
     external.href = url.href;
-    frame.src = "about:blank";
+    renderer.destroy();
     setStatus("Loading verified original…");
     if (!root.open) root.showModal();
     window.requestAnimationFrame(() => root.classList.add("is-open"));
@@ -156,11 +214,11 @@ class EvidenceSession {
       const resource = await evidenceSession.acquire({key:url.pathname, url:url.href});
       const current = sourceUrl(button.getAttribute("data-source-url"));
       if (!current || resource.key !== current.pathname || !root.open) return;
-      frame.src = resource.objectUrl + "#page=" + (Number.isInteger(page) && page > 0 && page <= 10000 ? page : 1);
+      await renderer.open(resource.objectUrl, Number.isInteger(page) && page > 0 && page <= 10000 ? page : 1);
       setStatus("");
     } catch (error) {
       if (error.name === "AbortError") return;
-      frame.src = "about:blank";
+      renderer.destroy();
       setStatus(errorMessage(error), true);
     }
   }
