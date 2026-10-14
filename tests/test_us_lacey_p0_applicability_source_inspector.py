@@ -93,7 +93,7 @@ def test_current_pdf_integrity_rejects_modified_content_without_leak(monkeypatch
     class Materialized:
         document = SimpleNamespace(sha256="different", content_type="application/pdf")
         def close(self): closed.append(True)
-    monkeypatch.setattr(inspector, "VaultService", lambda: SimpleNamespace(
+    monkeypatch.setattr(inspector, "_current_lacey_vault", lambda: SimpleNamespace(
         materialize_verified_download=lambda **kw: Materialized()
     ))
     with pytest.raises(HTTPException) as exc:
@@ -125,3 +125,44 @@ def test_source_inspector_and_applicability_render_contracts():
     assert "prefers-reduced-motion:reduce" in css
     assert "180ms" in css
     assert "document.register" not in js
+
+
+
+def test_source_pdf_vault_uses_lacey_postgres_and_lacey_storage(monkeypatch):
+    """Never use the legacy Vault SQLite session or generic S3 configuration."""
+    sentinel_storage = object()
+    seen = {}
+    monkeypatch.setattr(inspector, "build_us_lacey_storage_settings", lambda: sentinel_storage)
+
+    def fake_vault(**kwargs):
+        seen.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(inspector, "VaultService", fake_vault)
+    result = inspector._current_lacey_vault()
+
+    assert result is not None
+    assert seen["session_factory"] is inspector.get_us_lacey_db_session
+    assert seen["storage_settings"] is sentinel_storage
+
+
+def test_source_pdf_vault_metadata_sql_error_returns_503_not_raw_500(monkeypatch):
+    """Malformed/unavailable metadata should fail closed with a recoverable error."""
+    from sqlalchemy.exc import OperationalError
+
+    monkeypatch.setattr(inspector, "_resolve_current_source_document",
+                        lambda **kw: {"vault_public_id": "abc", "sha256": "expected"})
+
+    def raise_metadata_error(**_kw):
+        raise OperationalError("SELECT vault_documents", {}, Exception("metadata unavailable"))
+
+    monkeypatch.setattr(inspector, "_current_lacey_vault",
+                        lambda: SimpleNamespace(materialize_verified_download=raise_metadata_error))
+    with pytest.raises(HTTPException) as exc:
+        inspector.stream_current_pdf(
+            identity=SimpleNamespace(organization_id=99, user_id=11, email="review@example.com"),
+            operation_public_id="7b1f1bb5-a299-4f3c-8e33-57f58fb71381",
+            assurance_document_id=23,
+        )
+    assert exc.value.status_code == 503
+    assert "unavailable" in exc.value.detail.lower()

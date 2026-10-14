@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy.exc import SQLAlchemyError
 from litoral_trace.services.vault import (
     VaultService, VaultConflictError, VaultIntegrityError, VaultNotFoundError,
     VaultPersistenceError, VaultStorageOperationError, VaultValidationError,
@@ -16,7 +17,21 @@ from litoral_trace.services.audit import (
 )
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
+from litoral_trace.us_lacey.storage import build_us_lacey_storage_settings
 from litoral_trace.web.us_lacey_assurance_v2_runtime import _resolve_current_source_document
+
+
+def _current_lacey_vault() -> VaultService:
+    """Bind original downloads to the Lacey PostgreSQL and S3 configuration.
+
+    VaultService's default factory belongs to the separate legacy product and
+    can silently resolve to SQLite in the Lacey runtime. Never use that default
+    for documents linked to a finalized U.S. Lacey source set.
+    """
+    return VaultService(
+        session_factory=get_us_lacey_db_session,
+        storage_settings=build_us_lacey_storage_settings(),
+    )
 
 
 def stream_current_pdf(*, identity, operation_public_id: str, assurance_document_id: int):
@@ -30,7 +45,7 @@ def stream_current_pdf(*, identity, operation_public_id: str, assurance_document
     if current is None:
         raise HTTPException(404, "Current source PDF unavailable. Re-upload original evidence if required.")
     try:
-        verified = VaultService().materialize_verified_download(
+        verified = _current_lacey_vault().materialize_verified_download(
             organization_id=int(identity.organization_id),
             document_id=current["vault_public_id"],
         )
@@ -38,7 +53,7 @@ def stream_current_pdf(*, identity, operation_public_id: str, assurance_document
         raise HTTPException(404, "Original PDF is no longer available.") from None
     except (VaultIntegrityError, VaultConflictError):
         raise HTTPException(409, "Original PDF integrity changed.") from None
-    except (VaultPersistenceError, VaultStorageOperationError):
+    except (VaultPersistenceError, VaultStorageOperationError, SQLAlchemyError):
         raise HTTPException(503, "Original source is temporarily unavailable.") from None
 
     if (verified.document.sha256 != current["sha256"]
