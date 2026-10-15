@@ -157,15 +157,16 @@
       </form>
       {% endif %}
 
+      {% if not derived_only %}
       <button
         type="button"
         class="lt-btn lt-btn--secondary"
-        {% if derived_only %}hidden{% endif %}
         data-override-open
         data-override-field="{{ field.id }}"
         aria-haspopup="dialog"
         aria-controls="review-override-{{ field.id }}"
       >{% if field.field_name == "filing_entry_reference" %}Enter verified number{% else %}Enter verified value{% endif %}</button>
+      {% endif %}
       {% if field.field_name == "filing_entry_reference" %}
       <button type="button" class="lt-btn lt-btn--ghost" data-review-keep-pending data-keep-pending-field="{{ field.id }}">Keep pending</button>
       {% endif %}
