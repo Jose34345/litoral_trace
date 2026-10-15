@@ -18,7 +18,7 @@ class SourceRows:
 
 
 def test_worksheet_filename_cannot_become_original_by_declared_role():
-    db = SourceRows(("COMMERCIAL_INVOICE", "05_Entry_Preparation_Worksheet_Shipment2.pdf"))
+    db = SourceRows(("COMMERCIAL_INVOICE", "05_Entry_Preparation_Worksheet_Shipment2.pdf", "available", None))
     authority = reviewed_source_class(
         db, organization_id=43, operation_id=9, assurance_document_id=81,
     )
@@ -34,7 +34,7 @@ def test_worksheet_filename_cannot_become_original_by_declared_role():
 
 
 def test_derived_role_overrides_misleading_original_filename():
-    db = SourceRows(("ENTRY_WORKSHEET", "commercial_invoice.pdf"))
+    db = SourceRows(("ENTRY_WORKSHEET", "commercial_invoice.pdf", "available", None))
     assert not is_independent_review_source(
         db, organization_id=7, operation_id=8, assurance_document_id=21,
     )
@@ -51,7 +51,7 @@ def test_absent_and_superseded_document_fail_closed():
 
 
 def test_current_original_document_is_eligible_for_human_inspection():
-    db = SourceRows(("COMMERCIAL_INVOICE", "invoice.pdf"))
+    db = SourceRows(("COMMERCIAL_INVOICE", "invoice.pdf", "available", None))
     assert is_independent_review_source(
         db, organization_id=7, operation_id=8, assurance_document_id=21,
     )
@@ -70,3 +70,14 @@ def test_quick_accept_fails_closed_for_known_worksheet_even_if_ppq_valid():
     assert not quick_accept_eligible(field, candidate)
     field.source_filename = "supplier_plant_material_declaration.pdf"
     assert quick_accept_eligible(field, candidate)
+
+
+def test_expired_original_cannot_authorize_a_new_human_decision():
+    for record in (
+        ("COMMERCIAL_INVOICE", "invoice.pdf", "delete_pending", None),
+        ("COMMERCIAL_INVOICE", "invoice.pdf", "available", "deleted"),
+    ):
+        db = SourceRows(record)
+        assert not is_independent_review_source(
+            db, organization_id=7, operation_id=8, assurance_document_id=21,
+        )
