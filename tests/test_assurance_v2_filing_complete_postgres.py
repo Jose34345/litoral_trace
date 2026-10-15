@@ -1,8 +1,8 @@
 """Isolated PDF + portal + worker + human decisions -> authorized final dossier.
 
 Never treats shipment/client references as customs entry numbers. The seventh
-original Pack 1 documents cannot supply that required identifier. An eighth,
-visibly test-only, fabricated *fixture* document is generated here to prove
+original Pack 1 documents cannot supply that required identifier. Additional,
+visibly test-only, fabricated *fixture* documents are generated here to prove
 the complete mechanism, never to impersonate real customer or CBP evidence.
 """
 from __future__ import annotations
@@ -103,6 +103,20 @@ def _test_only_entry_source() -> bytes:
     )
 
 
+def _test_only_arrival_source() -> bytes:
+    """Independent (fictional) carrier notice, never a prep worksheet."""
+    return _pdf_fixture(
+        "CARRIER ARRIVAL NOTICE - SYNTHETIC ACCEPTANCE FIXTURE",
+        "SYNTHETIC TEST DATA - NOT VALID FOR CUSTOMS OR FILING",
+        "Shipment reference HHI-IMP-2026-1047",
+        "B/L HBL-XMN-LAX-261012-047",
+        "Expected U.S. arrival 2026-11-29",
+        "Estimated arrival date: 2026-11-29",
+        "ETA 2026-11-29",
+        "Port of arrival LOS ANGELES CA",
+    )
+
+
 def _csrf(client, op_id):
     return us_lacey_csrf_token(
         session_token=client.cookies.get("us_lacey_session"),
@@ -164,11 +178,29 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
             )},
         )
         assert added.status_code == 303, added.text
-        for index in range(8):
+        # The preparation worksheet in Pack 1 is NOT independent ETA
+        # evidence. Supply a separate fictional carrier-origin notice to
+        # exercise the successful source-backed review path.
+        arrival_detail = client.get(operation_path)
+        arrival = client.post(
+            f"{operation_path}/upload",
+            data={
+                "csrf_token": _csrf_for(
+                    arrival_detail.text, f"{operation_path}/upload"
+                ),
+                "document_role": "OTHER",
+            },
+            files={"document": (
+                "SYNTHETIC_CARRIER_ARRIVAL_NOTICE_NOT_FOR_FILING.pdf",
+                _test_only_arrival_source(), "application/pdf",
+            )},
+        )
+        assert arrival.status_code == 303, arrival.text
+        for index in range(9):
             result = process_one_us_lacey_job(worker_id=f"v2-final-{suffix}-{index}")
             assert result.claimed and result.job_status == "COMPLETED", result
         case = read_tenant_assurance_case(organization_id=org_id, operation_public_id=op_id)
-        assert case is not None and len(case.documents) == 8
+        assert case is not None and len(case.documents) == 9
         assert not evaluate_filing_gate(case).ready
         assert any(
             item["field_name"] == "filing_entry_reference"
@@ -437,7 +469,7 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
         )).ready
 
         # True concurrent source-document mutation: the real issuer owns and
-        # locks all eight physical PDF dependencies. Hold that transaction
+        # locks all nine physical PDF dependencies. Hold that transaction
         # during actual package construction, then attempt to withdraw the
         # eighth PDF from a second tenant-scoped PostgreSQL connection.
         # The mutation must TIME OUT rather than winning against a package
