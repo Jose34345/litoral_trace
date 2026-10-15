@@ -314,6 +314,12 @@ def review_us_lacey_field(
             else source_selection.assurance_document_id if source_selection is not None
             else field.source_assurance_document_id
         )
+        if normalized_action in {"accept", "edit"} and review_doc_id is None:
+            if field.extractor != "reusable-supplier-evidence":
+                raise UsLaceyReviewError(
+                    "No current original source is linked to this value. "
+                    "Upload supporting evidence before confirming it."
+                )
         if normalized_action in {"accept", "edit"} and review_doc_id is not None:
             source_class = reviewed_source_class(
                 session, organization_id=org_id, operation_id=operation.id,
