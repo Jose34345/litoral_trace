@@ -55,4 +55,4 @@ def is_independent_review_source(
         session, organization_id=organization_id, operation_id=operation_id,
         assurance_document_id=assurance_document_id,
     )
-    return source is not None and source.code != "DERIVED_PREPARATION"
+    return source is not None and source.code in {"COMMERCIAL_SOURCE", "SUPPLIER_SOURCE"}
