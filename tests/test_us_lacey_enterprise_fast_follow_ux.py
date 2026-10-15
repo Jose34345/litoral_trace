@@ -134,7 +134,7 @@ def test_sticky_master_action_bar_keeps_primary_workflow_actions_visible():
     assert "lt-sticky-action-bar" not in workspace
     assert "Confirm All" in workspace
     assert "Proceed to Final Confirmation" in workspace
-    assert "Review next item" in workspace
+    assert "Go to first issue" in workspace
     assert "position: sticky" in styles
     assert "backdrop-filter: blur(14px)" in styles
 
