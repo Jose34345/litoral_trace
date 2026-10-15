@@ -219,7 +219,7 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
                 "csrf_token": _csrf_for(
                     source_detail.text, f"{operation_path}/upload"
                 ),
-                "document_role": "SUPPLIER_DECLARATION",
+                "document_role": "OTHER",
             },
             files={"document": (
                 "SYNTHETIC_SUPPLIER_MANUFACTURER_CONFIRMATION_NOT_FOR_FILING.pdf",
