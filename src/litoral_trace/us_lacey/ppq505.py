@@ -178,7 +178,9 @@ def normalize_arrival_date(value: object) -> PpqValidation:
     else:
         text = str(value).strip()
         parsed = None
-        for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m-%d-%Y"):
+        # Source-claim text normalization may replace date separators with
+        # spaces; exact numeric Y M D remains deterministic, not an inference.
+        for fmt in ("%Y-%m-%d", "%Y %m %d", "%m/%d/%Y", "%m-%d-%Y"):
             try:
                 parsed = datetime.strptime(text, fmt).date()
                 break
