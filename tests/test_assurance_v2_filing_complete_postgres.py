@@ -145,6 +145,9 @@ def _test_only_broker_hts_source() -> bytes:
         "HTS Number 4419.19.9010",
         "HTS Code 4419199010",
         "U.S. Harmonized Tariff Classification 4419.19.9010",
+        "Commercial invoice amount USD 15000.00",
+        "Entered value USD 15000.00",
+        "Total entered value USD 15000.00",
     )
 
 
