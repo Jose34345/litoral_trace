@@ -339,7 +339,8 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
                 selected = (matching or original_source_claims)[0]["id"]
             else:
                 pytest.fail(
-                    f"No independent original for {name}; derived-only claims must stay pending"
+                    f"No valid independent original for {name}; "
+                    f"available_candidates={[(c.get('id'), c.get('document_id'), c.get('value')) for c in all_candidates]}"
                 )
             decision = client.post(
                 f"/assurance-v2/operations/{op_id}/decisions",
