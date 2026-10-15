@@ -23,6 +23,7 @@ from litoral_trace.db.models import AssuranceDocument, VaultDocument
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.assurance_v2_issuance import issue_locked_assurance_package
+from litoral_trace.us_lacey.document_evidence_class import classify_document
 import litoral_trace.us_lacey.assurance_v2_issuance as issuance_module
 
 import litoral_trace.us_lacey.ingestion as ingestion_module
@@ -269,19 +270,41 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
             issue = pending_fields[0]
             name = issue["field_name"]
             field = next(f for f in current.fields if str(f"field:{f['id']}") == issue["id"])
-            supported_sources = [
-                candidate for candidate in issue.get("candidates") or ()
+            documents_by_id = {str(doc["id"]): doc for doc in current.documents}
+            def is_independent_source(candidate):
+                doc = documents_by_id.get(str(candidate.get("document_id") or ""))
+                return bool(
+                    doc and classify_document(
+                        str(doc["name"]), str(doc["role"])
+                    ).code != "DERIVED_PREPARATION"
+                )
+            all_candidates = issue.get("candidates") or ()
+            original_source_claims = [
+                candidate for candidate in all_candidates
                 if str(candidate.get("id", "")).startswith("source:")
+                and is_independent_source(candidate)
+            ]
+            original_legacy = [
+                candidate for candidate in all_candidates
+                if str(candidate.get("id", "")).startswith("legacy:")
+                and is_independent_source(candidate)
             ]
             if name in {"filing_entry_reference", "merchandise_description"}:
-                assert len(supported_sources) == 1, (name, issue)
-                selected = supported_sources[0]["id"]
-            elif field.get("value"):
-                selected = f"legacy:{field['id']}"
-            elif supported_sources:
-                selected = supported_sources[0]["id"]
+                assert len(original_source_claims) == 1, (name, issue)
+                selected = original_source_claims[0]["id"]
+            elif original_legacy:
+                selected = original_legacy[0]["id"]
+            elif original_source_claims:
+                matching = [
+                    candidate for candidate in original_source_claims
+                    if str(candidate.get("value") or "").lower()
+                    == str(field.get("value") or "").lower()
+                ]
+                selected = (matching or original_source_claims)[0]["id"]
             else:
-                pytest.fail(f"Missing original evidence for required field: {name}")
+                pytest.fail(
+                    f"No independent original for {name}; derived-only claims must stay pending"
+                )
             decision = client.post(
                 f"/assurance-v2/operations/{op_id}/decisions",
                 json={
