@@ -24,6 +24,7 @@ from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.assurance_v2_issuance import issue_locked_assurance_package
 from litoral_trace.us_lacey.document_evidence_class import classify_document
+from litoral_trace.us_lacey.ppq505 import validate_ppq_value
 import litoral_trace.us_lacey.assurance_v2_issuance as issuance_module
 
 import litoral_trace.us_lacey.ingestion as ingestion_module
@@ -315,6 +316,9 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
                 candidate for candidate in all_candidates
                 if str(candidate.get("id", "")).startswith("source:")
                 and is_independent_source(candidate)
+                and validate_ppq_value(
+                    name, candidate.get("value")
+                ).status.value == "VALID"
             ]
             original_legacy = [
                 candidate for candidate in all_candidates
@@ -346,7 +350,11 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
                     "reason": "Reviewed exact synthetic source and current shipment context",
                 },
             )
-            assert decision.status_code == 202, (name, decision.text)
+            assert decision.status_code == 202, (
+                name, selected,
+                [c.get("value") for c in original_source_claims],
+                decision.text,
+            )
             reviewed_names.add(name)
         else:
             pytest.fail("Human review queue failed to reach completion")
