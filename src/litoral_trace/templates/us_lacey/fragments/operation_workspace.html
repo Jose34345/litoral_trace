@@ -81,7 +81,7 @@
       {% if source_class.code == 'DERIVED_PREPARATION' %}
       <p class="text-[11px] font-semibold text-amber-800" data-worksheet-not-authority>Not verified - independent original required</p>
       {% elif not quick_accept_eligible(field, one) %}
-      <p class="text-[11px] text-amber-800">Check the original evidence before accepting this value.</p>
+      <p class="text-[11px] text-amber-800">Value cannot be accepted directly. Check its validity or provide supporting evidence.</p>
       {% endif %}
     </div>
     {% elif field.candidates|length > 1 %}
