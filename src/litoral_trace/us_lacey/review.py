@@ -51,6 +51,7 @@ from litoral_trace.us_lacey.assurance_v2_review_adapter import (
 )
 from litoral_trace.us_lacey.identity_memory import resolve_operation_identity_memory
 from litoral_trace.us_lacey.review_telemetry import ReviewTelemetry
+from litoral_trace.us_lacey.review_source_authority import reviewed_source_class
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS,
     PPQ505_PLANT_FIELDS,
@@ -305,6 +306,28 @@ def review_us_lacey_field(
                 else (field.normalized_value or field.original_value)
             )
         )
+        # Recheck the CURRENT tenant-owned document within the human review
+        # transaction. A derived worksheet may propose a fact but may not
+        # independently authorize either ACCEPT or EDIT.
+        review_doc_id = (
+            selected_candidate.source_assurance_document_id if selected_candidate is not None
+            else source_selection.assurance_document_id if source_selection is not None
+            else field.source_assurance_document_id
+        )
+        if review_doc_id is not None:
+            source_class = reviewed_source_class(
+                session, organization_id=org_id, operation_id=operation.id,
+                assurance_document_id=review_doc_id,
+            )
+            if source_class is None:
+                raise UsLaceyReviewError(
+                    "The referenced source is no longer current. Reprocess before reviewing."
+                )
+            if source_class.code == "DERIVED_PREPARATION":
+                raise UsLaceyReviewError(
+                    "A preparation worksheet cannot independently verify this value. "
+                    "Upload an original commercial or supplier document and review its evidence."
+                )
         before = {
             "field_id": field.id,
             "field_name": field.field_name,
