@@ -128,8 +128,8 @@ def _test_only_manufacturer_source() -> bytes:
         "Proposed manufacturer ID CNFUZLON88JIN",
         "Manufacturer MID CNFUZLON88JIN",
         "SKU BAM-COAST-04",
-        "Article solid bamboo coasters",
-        "Plant material quantity 288 kg",
+        "Article / Component: solid bamboo coasters",
+        "Quantity of plant material 384 kg",
     )
 
 
@@ -141,7 +141,7 @@ def _test_only_broker_hts_source() -> bytes:
         "Shipment HHI-IMP-2026-1047",
         "Invoice LSBH-CI-261001",
         "SKU BAM-COAST-04",
-        "Article solid bamboo coasters",
+        "Article / Component: solid bamboo coasters",
         "HTS Number 4419.19.9010",
         "HTS Code 4419199010",
         "U.S. Harmonized Tariff Classification 4419.19.9010",
