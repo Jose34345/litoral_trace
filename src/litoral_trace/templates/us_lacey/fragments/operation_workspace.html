@@ -74,7 +74,7 @@
         data-source-page="{{ one.source_page or 1 }}"
         data-source-label="{{ candidate_filename or 'Document ' ~ one.source_document_id }}"
         data-source-locator="{{ 'Source locator: ' ~ one.source_locator if one.source_locator else 'PDF page ' ~ (one.source_page or 1) ~ ' · Compare the original before confirming.' }}"
-      >{{ 'View worksheet' if source_class.code == 'DERIVED_PREPARATION' else 'Inspect source PDF' }} · p. {{ one.source_page or 1 }}</button>
+      >{{ 'View worksheet' if source_class.code == 'DERIVED_PREPARATION' else 'Inspect original PDF' }} · p. {{ one.source_page or 1 }}</button>
       {% else %}
       <a href="#documents" class="text-xs text-emerald-800 underline">Document register</a>
       {% endif %}
