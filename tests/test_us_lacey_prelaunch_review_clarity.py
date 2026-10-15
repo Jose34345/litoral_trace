@@ -65,9 +65,9 @@ def test_review_workspace_is_exception_first():
     source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
 
     assert "Review decisions" in source
-    assert "Check the original source, then accept the value or request evidence." in source
-    assert "Unconfirmed values remain pending." in source
-    assert "Review only missing facts, conflicting values and evidence that needs your decision." in source
+    assert "Review the unresolved values." in source
+    assert "Items without original supporting evidence remain pending." in source
+    assert "Each item shows what is missing and the action needed." in source
     assert "Request original evidence" in source
     assert "Auto-Resolved Data" in source
     assert "default_review_tab" in source

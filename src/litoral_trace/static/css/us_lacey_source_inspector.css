@@ -49,3 +49,66 @@
 .lt-evidence-preview button { border:0; background:transparent; color:#047857; font-size:11px; font-weight:700; text-decoration:underline; white-space:nowrap; }.lt-evidence-preview__canvas { flex:1; overflow:auto; padding:12px; background:#e2e8f0; text-align:center; }.lt-evidence-preview__canvas canvas { margin:0 auto; background:white; box-shadow:0 1px 5px rgba(15,23,42,.2); }
 @media (min-width:851px) { .lt-source-inspector { pointer-events:none; } .lt-source-inspector__panel { width:clamp(560px,60vw,1100px); pointer-events:auto; } .lt-source-inspector::backdrop { background:transparent; } }
 @media (prefers-reduced-motion:reduce) { .lt-evidence-preview { transition:none!important; } }
+
+
+/* Review UX 2026-10: one native entry type control and a compact source chooser. */
+.lt-entry-native {
+  box-sizing:border-box;
+  display:block;
+  min-height:44px;
+  max-width:100%;
+  font-weight:600;
+  background-color:#fff;
+  color:#0f172a;
+}
+.lt-entry-native:focus-visible, .lt-evidence-page:focus-visible {
+  outline:2px solid #047857;
+  outline-offset:2px;
+}
+.lt-entry-guide { max-width:36ch; line-height:1.5; }
+.lt-attestation-details { border:0; }
+.lt-attestation-summary {
+  display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between;
+  gap:8px; cursor:pointer; color:#065f46; font-size:13px; font-weight:700;
+  padding:12px 14px; border-radius:10px; border:1px solid #d1fae5;
+  background:#f0fdf4; list-style:none;
+}
+.lt-attestation-summary::-webkit-details-marker { display:none; }
+.lt-attestation-summary::after { content:"+"; font-size:18px; line-height:1; margin-left:auto; }
+.lt-attestation-details[open] .lt-attestation-summary::after { content:"−"; }
+.lt-attestation-summary span { font-size:11px; color:#475569; font-weight:500; margin-left:0; }
+.lt-attestation-summary:focus-visible { outline:2px solid #047857; outline-offset:2px; }
+
+.lt-evidence-card {
+  display:flex; align-items:center; gap:12px; min-width:0;
+  min-height:66px; padding:12px 13px; border:1px solid #dce4ec;
+  border-radius:12px; background:#fff;
+}
+.lt-evidence-card__body {
+  display:flex; align-items:center; flex:1; min-width:0;
+  gap:10px; cursor:pointer;
+}
+.lt-evidence-card__body input[type="radio"] { flex:0 0 auto; accent-color:#047857; width:16px; height:16px; }
+.lt-evidence-card__copy { display:block; min-width:0; flex:1; }
+.lt-evidence-card__copy strong {
+  display:block; font-size:12px; line-height:1.5;
+  font-weight:650; overflow-wrap:anywhere; white-space:normal;
+}
+.lt-evidence-card__copy small {
+  display:block; margin-top:3px; font-size:11px; color:#64748b; line-height:1.4;
+}
+.lt-evidence-card__preview {
+  flex:0 0 auto; font-size:12px; font-weight:700;
+  color:#047857; text-decoration:none; border:1px solid #a7f3d0;
+  padding:7px 10px; border-radius:8px;
+}
+.lt-evidence-card__preview:hover,.lt-evidence-card__preview:focus-visible {
+  background:#ecfdf5; outline-offset:2px;
+}
+.lt-evidence-card--unavailable { background:#f8fafc; border-style:dashed; }
+.lt-evidence-card--unavailable .lt-evidence-card__copy strong { color:#64748b; }
+@media (max-width:650px) {
+  .lt-evidence-card { gap:6px; padding:10px; }
+  .lt-evidence-card__preview { padding:6px 8px; }
+  .lt-attestation-summary span { flex-basis:100%; }
+}
