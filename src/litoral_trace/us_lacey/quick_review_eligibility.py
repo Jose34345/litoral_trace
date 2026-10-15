@@ -7,6 +7,7 @@ that a person must decide) is not mistaken for an invalid PPQ value.
 from __future__ import annotations
 
 from litoral_trace.us_lacey.ppq505 import PpqValidationStatus, validate_ppq_value
+from litoral_trace.us_lacey.document_evidence_class import classify_document
 
 
 def quick_accept_eligible(field, candidate) -> bool:
@@ -19,6 +20,14 @@ def quick_accept_eligible(field, candidate) -> bool:
         return False
     if str(getattr(field, "status", "")).upper() == "CONFLICT":
         return False
+    # Presentation guard only; the transaction writer rechecks DB role/Vault.
+    filename = str(getattr(field, "source_filename", "") or "")
+    if filename and (
+        str(getattr(field, "source_assurance_document_id", None))
+        == str(getattr(candidate, "source_document_id", None))
+    ):
+        if classify_document(filename).code == "DERIVED_PREPARATION":
+            return False
     if not getattr(candidate, "id", None) or not getattr(candidate, "source_document_id", None):
         return False
     if str(getattr(candidate, "decision", "PENDING") or "PENDING").upper() in {"REJECTED", "SELECTED"}:
