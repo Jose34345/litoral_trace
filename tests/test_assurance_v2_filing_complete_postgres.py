@@ -280,61 +280,10 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
             for item in case.candidate_observations
         )
 
-        # Regression: Pack 1 has B/L ...047, while the artificial entry
-        # document contains ...041. A reviewer choosing the explicitly
-        # sourced ...047 candidate through the legacy workspace must be
-        # journaled with the candidate's CURRENT document and locator.
-        # The runtime session has autoflush=False: without flushing the
-        # selected source fields BEFORE V2 journaling this returns a generic
-        # review error and leaves the field stuck in REVIEW.
-        session = get_us_lacey_db_session()
-        try:
-            set_tenant_db_context(session, org_id)
-            candidate_row = session.execute(text("""
-                SELECT c.id AS candidate_id, f.id AS field_id
-                FROM public.us_lacey_field_candidates c
-                JOIN public.us_lacey_operation_fields f
-                  ON f.id = c.operation_field_id
-                 AND f.organization_id = c.organization_id
-                JOIN public.us_lacey_operations o
-                  ON o.id = f.operation_id
-                 AND o.organization_id = f.organization_id
-                WHERE o.public_id = CAST(:op_id AS uuid)
-                  AND o.organization_id = :organization_id
-                  AND f.field_name = 'bill_of_lading'
-                  AND c.normalized_value = 'HBL-XMN-LAX-261012-047'
-                ORDER BY c.id
-                LIMIT 1
-            """), {"op_id": op_id, "organization_id": org_id}).mappings().one()
-            bol_field_id = int(candidate_row["field_id"])
-            bol_candidate_id = int(candidate_row["candidate_id"])
-        finally:
-            session.close()
-        original_review = client.get(operation_path)
-        post_action = f"{operation_path}/review/fields/{bol_field_id}"
-        accepted = client.post(post_action, data={
-            "csrf_token": us_lacey_csrf_token(
-                session_token=client.cookies.get("us_lacey_session"),
-                purpose=f"review:{op_id}:{bol_field_id}",
-            ),
-            "action": "accept", "candidate_id": str(bol_candidate_id),
-        })
-        assert accepted.status_code == 303, accepted.text
-        session = get_us_lacey_db_session()
-        try:
-            set_tenant_db_context(session, org_id)
-            reviewed_source = session.execute(text("""
-                SELECT human_value, field_status, source_assurance_document_id,
-                       source_locator
-                FROM public.us_lacey_operation_fields
-                WHERE organization_id = :organization_id AND id = :field_id
-            """), {"organization_id": org_id, "field_id": bol_field_id}).mappings().one()
-            assert reviewed_source["human_value"] == 'HBL-XMN-LAX-261012-047'
-            assert reviewed_source["field_status"] == "MATCHED"
-            assert reviewed_source["source_assurance_document_id"] is not None
-            assert reviewed_source["source_locator"]
-        finally:
-            session.close()
+        # The historical B/L candidate review regression is exercised in
+        # test_pack1_bol_source_review_without_extra_documents below. Adding
+        # many artificial original sources can change the candidate ranking,
+        # and must not make the unrelated full-issuance contract brittle.
 
         if case.identities and case.identities[0]["status"] == "REVIEW_REQUIRED":
             identity = case.identities[0]
@@ -644,3 +593,117 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
         finally:
             _set_source_status("available")
         assert client.get(f"{artifact_url}/manifest").status_code == 200
+
+
+def test_pack1_bol_source_review_without_extra_documents(monkeypatch):
+    """Original Pack 1 B/L candidate must bind to its current physical source."""
+    _configure(monkeypatch)
+    monkeypatch.setenv("US_LACEY_ENGINE2_MODE", "SHADOW")
+    monkeypatch.setenv("US_LACEY_ASSURANCE_V2_MODE", "SHADOW")
+    monkeypatch.setenv("US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL", "ON")
+    reset_us_lacey_engine_state()
+    reset_us_lacey_worker_engine_state()
+    storage = MemoryObjectStorage()
+    monkeypatch.setattr(ingestion_module, "get_us_lacey_storage_client", lambda: storage)
+    monkeypatch.setattr(worker_module, "get_us_lacey_storage_client", lambda: storage)
+    delivered = {}
+    monkeypatch.setattr(portal_module, "send_us_lacey_verification_email",
+                        lambda **kwargs: delivered.update(kwargs))
+    suffix = uuid4().hex[:12]
+    email = f"v2-bol-{suffix}@example.com"
+    password = f"Test-{uuid4().hex}-Aa1!"
+    configure_assurance_v2_shadow(portal_module.app, mode="SHADOW", enable_commands=True)
+
+    with TestClient(portal_module.app, follow_redirects=False) as client:
+        signup = client.post("/signup", data={
+            "legal_name": f"V2 BOL Source {suffix}", "business_type": "IMPORTER",
+            "admin_name": "Synthetic Reviewer", "admin_email": email,
+            "password": password, "accept_terms": "yes", "accept_privacy": "yes",
+            "accept_beta": "yes",
+        })
+        assert signup.status_code == 201, signup.text
+        assert client.get(f"/verify-email?token={delivered['verification_token']}").status_code == 303
+        org_id = _organization_id_for_email(email)
+        _activate_account(org_id)
+        assert client.post("/login", data={"email": email, "password": password}).status_code == 303
+        create = client.get("/operations/new")
+        operation = client.post("/operations/new", data={
+            "csrf_token": _csrf_for(create.text, "/operations/new"),
+            "client_reference": f"SYNTHETIC-BOL-{suffix}",
+        })
+        assert operation.status_code == 303, operation.text
+        operation_path = operation.headers["location"]
+        op_id = operation_path.rsplit("/", 1)[-1]
+        _upload_pack(client, operation_path, "pack1")
+        extra_pdf = _test_only_entry_source()
+        assert extra_pdf.startswith(b"%PDF")
+        detail = client.get(operation_path)
+        added = client.post(
+            f"{operation_path}/upload",
+            data={"csrf_token": _csrf_for(detail.text, f"{operation_path}/upload"),
+                  "document_role": "OTHER"},
+            files={"document": (
+                "SYNTHETIC_ENTRY_NUMBER_CONFIRMATION_NOT_FOR_FILING.pdf",
+                extra_pdf, "application/pdf",
+            )},
+        )
+        assert added.status_code == 303, added.text
+        for index in range(8):
+            job = process_one_us_lacey_job(worker_id=f"v2-bol-{suffix}-{index}")
+            assert job.claimed and job.job_status == "COMPLETED", job
+        # Regression: Pack 1 has B/L ...047, while the artificial entry
+        # document contains ...041. A reviewer choosing the explicitly
+        # sourced ...047 candidate through the legacy workspace must be
+        # journaled with the candidate's CURRENT document and locator.
+        # The runtime session has autoflush=False: without flushing the
+        # selected source fields BEFORE V2 journaling this returns a generic
+        # review error and leaves the field stuck in REVIEW.
+        session = get_us_lacey_db_session()
+        try:
+            set_tenant_db_context(session, org_id)
+            candidate_row = session.execute(text("""
+                SELECT c.id AS candidate_id, f.id AS field_id
+                FROM public.us_lacey_field_candidates c
+                JOIN public.us_lacey_operation_fields f
+                  ON f.id = c.operation_field_id
+                 AND f.organization_id = c.organization_id
+                JOIN public.us_lacey_operations o
+                  ON o.id = f.operation_id
+                 AND o.organization_id = f.organization_id
+                WHERE o.public_id = CAST(:op_id AS uuid)
+                  AND o.organization_id = :organization_id
+                  AND f.field_name = 'bill_of_lading'
+                  AND c.normalized_value = 'HBL-XMN-LAX-261012-047'
+                ORDER BY c.id
+                LIMIT 1
+            """), {"op_id": op_id, "organization_id": org_id}).mappings().one()
+            bol_field_id = int(candidate_row["field_id"])
+            bol_candidate_id = int(candidate_row["candidate_id"])
+        finally:
+            session.close()
+        original_review = client.get(operation_path)
+        post_action = f"{operation_path}/review/fields/{bol_field_id}"
+        accepted = client.post(post_action, data={
+            "csrf_token": us_lacey_csrf_token(
+                session_token=client.cookies.get("us_lacey_session"),
+                purpose=f"review:{op_id}:{bol_field_id}",
+            ),
+            "action": "accept", "candidate_id": str(bol_candidate_id),
+        })
+        assert accepted.status_code == 303, accepted.text
+        session = get_us_lacey_db_session()
+        try:
+            set_tenant_db_context(session, org_id)
+            reviewed_source = session.execute(text("""
+                SELECT human_value, field_status, source_assurance_document_id,
+                       source_locator
+                FROM public.us_lacey_operation_fields
+                WHERE organization_id = :organization_id AND id = :field_id
+            """), {"organization_id": org_id, "field_id": bol_field_id}).mappings().one()
+            assert reviewed_source["human_value"] == 'HBL-XMN-LAX-261012-047'
+            assert reviewed_source["field_status"] == "MATCHED"
+            assert reviewed_source["source_assurance_document_id"] is not None
+            assert reviewed_source["source_locator"]
+        finally:
+            session.close()
+
