@@ -74,12 +74,14 @@
         data-source-page="{{ one.source_page or 1 }}"
         data-source-label="{{ candidate_filename or 'Document ' ~ one.source_document_id }}"
         data-source-locator="{{ 'Source locator: ' ~ one.source_locator if one.source_locator else 'PDF page ' ~ (one.source_page or 1) ~ ' · Compare the original before confirming.' }}"
-      >Inspect original PDF · p. {{ one.source_page or 1 }}</button>
+      >{{ 'View worksheet' if source_class.code == 'DERIVED_PREPARATION' else 'Inspect source PDF' }} · p. {{ one.source_page or 1 }}</button>
       {% else %}
       <a href="#documents" class="text-xs text-emerald-800 underline">Document register</a>
       {% endif %}
-      {% if not quick_accept_eligible(field, one) %}
-      <p class="text-[11px] text-amber-800">Value cannot be accepted directly. Check its validity or provide supporting evidence.</p>
+      {% if source_class.code == 'DERIVED_PREPARATION' %}
+      <p class="text-[11px] font-semibold text-amber-800" data-worksheet-not-authority>Not verified - independent original required</p>
+      {% elif not quick_accept_eligible(field, one) %}
+      <p class="text-[11px] text-amber-800">Check the original evidence before accepting this value.</p>
       {% endif %}
     </div>
     {% elif field.candidates|length > 1 %}
@@ -130,10 +132,16 @@
     <span class="lt-review-status {% if field.status in ['MISSING', 'CONFLICT'] %}lt-review-status--blocking{% else %}lt-review-status--confirmation{% endif %}" data-action-status>{{ action_status(field) }}</span>
   </td>
   <td class="px-4 py-3">
+    {% set derived_only = field.source_filename and source_class_for_filename(field.source_filename).code == 'DERIVED_PREPARATION' %}
     <div class="flex min-w-[11rem] flex-wrap gap-2">
+      {% if derived_only %}
+      <button type="button" class="lt-btn lt-btn--primary" data-request-evidence
+        data-field-name="{{ field.field_name }}" data-field-label="{{ field.label }}"
+        data-field-guidance="{{ missing_guidance(field.field_name) }}">Request original evidence</button>
+      {% endif %}
       {% if field.candidates|length == 1 %}
       {% set one = field.candidates[0] %}
-      {% if quick_accept_eligible(field, one) %}
+      {% if not derived_only and quick_accept_eligible(field, one) %}
       <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="accept" data-quick-accept>
         <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
         <input type="hidden" name="action" value="accept">
@@ -141,7 +149,7 @@
         {{ button("Accept & next", variant="primary", button_type="submit") }}
       </form>
       {% endif %}
-      {% elif field.proposed_value and not field.candidates and (field.source_assurance_document_id or field.provenance == 'reused_evidence') %}
+      {% elif not derived_only and field.proposed_value and not field.candidates and (field.source_assurance_document_id or field.provenance == 'reused_evidence') %}
       <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="accept" data-quick-accept>
         <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
         <input type="hidden" name="action" value="accept">
@@ -152,6 +160,7 @@
       <button
         type="button"
         class="lt-btn lt-btn--secondary"
+        {% if derived_only %}hidden{% endif %}
         data-override-open
         data-override-field="{{ field.id }}"
         aria-haspopup="dialog"
@@ -160,7 +169,9 @@
       {% if field.field_name == "filing_entry_reference" %}
       <button type="button" class="lt-btn lt-btn--ghost" data-review-keep-pending data-keep-pending-field="{{ field.id }}">Keep pending</button>
       {% endif %}
+      {% if not derived_only %}
       <button type="button" class="lt-btn lt-btn--ghost" data-request-evidence data-field-name="{{ field.field_name }}" data-field-label="{{ field.label }}" data-field-guidance="{{ missing_guidance(field.field_name) }}">Request evidence</button>
+      {% endif %}
 
       {% if field.field_name == "percent_recycled" %}
       <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="not-required">
@@ -321,7 +332,7 @@
       {% if combined_action_count > 0 %}
       <div class="mb-4">
         <h2 class="text-base font-bold text-slate-950">Exception work queue</h2>
-        <p class="mt-1 text-xs text-slate-600">Only missing information, review-required evidence, or genuinely conflicting evidence appears here. Blocking regulatory information requirements are mirrored into the same queue. Conflicts represent genuinely different supported values and remain explicit until a human decision is recorded. Every resolution remains auditable.</p>
+        <p class="mt-1 text-xs text-slate-600">Review only missing facts, conflicting values and evidence that needs your decision. Confirmed values remain auditable.</p>
       </div>
       <div id="action-required-fields" class="grid gap-5" data-action-required-list>
         {% for line_reference, fields in attention_fields|groupby("line_reference") %}
