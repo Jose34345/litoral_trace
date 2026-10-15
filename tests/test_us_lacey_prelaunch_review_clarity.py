@@ -67,7 +67,8 @@ def test_review_workspace_is_exception_first():
     assert "Review decisions" in source
     assert "Check the original source, then accept the value or request evidence." in source
     assert "Unconfirmed values remain pending." in source
-    assert "Only missing information, review-required evidence, or genuinely conflicting evidence appears here." in source
+    assert "Review only missing facts, conflicting values and evidence that needs your decision." in source
+    assert "Request original evidence" in source
     assert "Auto-Resolved Data" in source
     assert "default_review_tab" in source
     assert "initiallySelected?.dataset.reviewTabButton" in source
