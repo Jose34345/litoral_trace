@@ -182,3 +182,25 @@ def test_backend_review_contract_is_reused_not_bypassed():
         'V2 review source set is stale.',
     ):
         assert invariant in source
+
+
+def test_derived_only_pack2_field_requests_original_instead_of_accept():
+    field = _field(name="plant_quantity", proposed="288",
+                   candidates=[_candidate(value="288")])
+    field.source_filename = "05_Entry_Preparation_Worksheet_Shipment2.pdf"
+    html = _render_field(field)
+    assert "Derived worksheet" in html
+    assert 'data-worksheet-not-authority' in html
+    assert "Request original evidence" in html
+    assert "View worksheet" in html
+    assert 'data-quick-accept' not in html
+    assert "Accept &amp; next" not in html
+
+
+def test_original_document_preserves_explicit_quick_review():
+    field = _field(name="plant_quantity", proposed="288",
+                   candidates=[_candidate(value="288")])
+    field.source_filename = "supplier_material_origin.pdf"
+    html = _render_field(field)
+    assert 'data-quick-accept' in html
+    assert "Request original evidence" not in html
