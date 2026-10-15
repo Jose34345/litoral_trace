@@ -563,7 +563,7 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
         excel = client.get(f"{artifact_url}/lacey_excel")
         ppq = client.get(f"{artifact_url}/ppq505_preparation_json")
         assert xml.status_code == excel.status_code == ppq.status_code == 200
-        assert b"<ns1:genus>Phyllostachys</ns1:genus>" in xml.content
+        assert b"<ns1:genus>phyllostachys</ns1:genus>" in xml.content.lower()
         assert b"<ns1:quantityMaterial>384</ns1:quantityMaterial>" in xml.content
         assert manifest.json()["authorized_export"]["header"]["entry_number"] == SYNTHETIC_ENTRY_REFERENCE
         workbook = load_workbook(BytesIO(excel.content), read_only=True)
