@@ -74,7 +74,7 @@ def test_workspace_offers_safe_bulk_confirmation_but_keeps_conflicts_explicit():
     assert "Confirm All Auto-Resolved Data" in source
     assert "Pending <span" in source
     assert "Auto-Resolved Data" in source
-    assert "genuinely different supported values" in source.lower()
+    assert "Review only missing facts, conflicting values and evidence" in source
     assert "field.status in ['MISSING', 'CONFLICT']" in source
     assert "Regulatory Analysis" in source
 
