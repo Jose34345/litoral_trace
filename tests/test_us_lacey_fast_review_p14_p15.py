@@ -56,9 +56,9 @@ def test_single_current_candidate_has_inline_accept_with_exact_id_and_low_confid
     assert 'data-inline-candidate="11"' in html
     assert 'value="11"' in html
     assert 'name="candidate_id"' in html
-    assert "Extraction confidence 50.0%" in html or "Extraction confidence 50%" in html
+    assert "Extraction confidence" not in html  # scores are reserved for technical audit
     assert 'data-quick-accept' in html
-    assert "Accept &amp; next" in html
+    assert "Confirm value" in html
     assert 'data-multiple-candidates' not in html
     assert 'name="csrf_token"' in html
     assert '/review/actions/fields/991' in html
@@ -107,7 +107,7 @@ def test_review_required_metadata_is_human_decision_not_invalid_ppq():
     assert quick_accept_eligible(field, field.candidates[0])
     html = _render_field(field)
     assert 'data-quick-accept' in html
-    assert "Accept &amp; next" in html
+    assert "Confirm value" in html
     assert "Value cannot be accepted directly." not in html
 
 
@@ -133,7 +133,7 @@ def test_six_field_pack2_contract_keeps_entry_pending_and_no_implicit_approval()
         html = _render_field(_field(name=name, proposed=value,
                                    candidates=[_candidate(value=value)]))
         assert value in html
-        assert "Accept &amp; next" in html
+        assert "Confirm value" in html
     entry = _render_field(_field(name="filing_entry_reference", proposed=None,
                                 candidates=(), source_id=None))
     assert "Keep pending" in entry
@@ -194,7 +194,7 @@ def test_derived_only_pack2_field_requests_original_instead_of_accept():
     assert "Request original evidence" in html
     assert "View worksheet" in html
     assert 'data-quick-accept' not in html
-    assert "Accept &amp; next" not in html
+    assert "Confirm value" not in html
 
 
 def test_original_document_preserves_explicit_quick_review():

@@ -6,7 +6,7 @@
 {% set audit_events = audit_events|default(()) %}
 {% block lacey_title %}Review shipment{% endblock %}
 {% block head_extra %}{{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', path='/css/us_lacey_source_inspector.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='/css/us_lacey_source_inspector.css') }}?v=20261015-ux4">
 {% if private_v2|default(false) %}<link rel="stylesheet" href="{{ url_for('static', path='/css/assurance_v2_case.css') }}">{% endif %}{% endblock %}
 {% block lacey_content %}
 {% set bulk_upload_rejection = error and error.startswith("This file contains multiple shipments.") %}
@@ -86,8 +86,8 @@
       <h2 class="mt-1 text-lg font-bold text-amber-900">Current V2 evidence unavailable</h2>
       <p class="mt-1 text-sm text-slate-600">No legacy approval substitutes for an unavailable V2 authority state.</p>
       {% else %}
-      <h2 class="mt-1 text-lg font-bold text-slate-950">Next step · review outstanding evidence</h2>
-      <p class="mt-1 text-sm text-slate-600">Only approved, source-backed values can contribute to final preparation.</p>
+      <h2 class="mt-1 text-lg font-bold text-slate-950">Review the pending evidence</h2>
+      <p class="mt-1 text-sm text-slate-600">Resolve only the pending items below. Each decision remains linked to its source.</p>
       {% endif %}
     </div>
     <span class="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">{% if private_v2 %}Private lab · Filing disabled{% else %}{{ readiness_summary.overall }}{% endif %}</span>
@@ -122,10 +122,6 @@
   {% endif %}
 </section>
 
-{% if not private_v2 and not bulk_upload_rejection and processing.terminal and not processing.failed %}
-{% include "us_lacey/fragments/applicability_triage.html" %}
-{% endif %}
-
 {# A rejected upload is request-local feedback. Do not mix it with stale analysis
    or a previous processing failure from documents already stored on the operation. #}
 {% if private_v2 %}
@@ -155,6 +151,10 @@
 {% endif %}
 {% elif not bulk_upload_rejection %}
 <div id="processing-status" class="lt-scroll-target mt-6">{% include "us_lacey/fragments/processing_fragment.html" %}</div>
+{% endif %}
+
+{% if not private_v2 and not bulk_upload_rejection and processing.terminal and not processing.failed %}
+{% include "us_lacey/fragments/applicability_triage.html" %}
 {% endif %}
 
 <section class="lt-card scroll-mt-36 p-5" id="documents">
@@ -341,5 +341,5 @@
 {% endif %}
 {% if private_v2 %}<script src="{{ url_for('static', path='/js/assurance_v2_case.js') }}" defer></script>{% endif %}
 {% include "us_lacey/fragments/source_inspector.html" %}
-<script src="{{ url_for('static', path='/js/us_lacey_source_inspector.js') }}" defer></script>
+<script src="{{ url_for('static', path='/js/us_lacey_source_inspector.js') }}?v=20261015-ux4" defer></script>
 {% endblock %}

@@ -62,11 +62,11 @@
       <p class="text-[11px] text-slate-700">
         {% if field.source_filename and field.source_assurance_document_id == one.source_document_id %}{{ field.source_filename }}{% elif one.source_document_id %}Document {{ one.source_document_id }}{% else %}No linked document{% endif %}{% if one.source_page %} · p. {{ one.source_page }}{% endif %}
       </p>
-      <p class="text-[11px] text-slate-500">Extraction confidence {{ (one.confidence * 100)|round(0) }}%</p>
+      {# Extraction scores belong in advanced evidence analysis, not the action list. #}
       {% set candidate_filename = field.source_filename if field.source_assurance_document_id == one.source_document_id else '' %}
       {% set source_class = source_class_for_filename(candidate_filename) %}
       <p class="text-[11px] {{ 'text-amber-800' if source_class.code == 'DERIVED_PREPARATION' else 'text-slate-600' }}" data-source-authority="{{ source_class.code }}">
-        <strong>{{ source_class.label }}</strong>{% if source_class.code == 'DERIVED_PREPARATION' %} · Trace to original commercial or supplier evidence{% endif %}
+        <strong>{{ source_class.label }}</strong>
       </p>
       {% if one.source_document_id %}
       <button type="button" class="text-xs font-bold text-emerald-800 underline" data-source-inspect
@@ -79,7 +79,7 @@
       <a href="#documents" class="text-xs text-emerald-800 underline">Document register</a>
       {% endif %}
       {% if source_class.code == 'DERIVED_PREPARATION' %}
-      <p class="text-[11px] font-semibold text-amber-800" data-worksheet-not-authority>Not verified - independent original required</p>
+      <p class="text-[11px] font-semibold text-amber-800" data-worksheet-not-authority>Original document needed</p>
       {% elif not quick_accept_eligible(field, one) %}
       <p class="text-[11px] text-amber-800">Value cannot be accepted directly. Check its validity or provide supporting evidence.</p>
       {% endif %}
@@ -135,7 +135,7 @@
     {% set derived_only = field.source_filename and source_class_for_filename(field.source_filename).code == 'DERIVED_PREPARATION' %}
     <div class="flex min-w-[11rem] flex-wrap gap-2">
       {% if derived_only %}
-      <button type="button" class="lt-btn lt-btn--primary" data-request-evidence
+      <button type="button" class="lt-btn lt-btn--secondary" data-request-evidence
         data-field-name="{{ field.field_name }}" data-field-label="{{ field.label }}"
         data-field-guidance="{{ missing_guidance(field.field_name) }}">Request original evidence</button>
       {% endif %}
@@ -146,14 +146,14 @@
         <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
         <input type="hidden" name="action" value="accept">
         <input type="hidden" name="candidate_id" value="{{ one.id }}">
-        {{ button("Accept & next", variant="primary", button_type="submit") }}
+        {{ button("Confirm value", variant="primary", button_type="submit") }}
       </form>
       {% endif %}
       {% elif not derived_only and field.proposed_value and not field.candidates and (field.source_assurance_document_id or field.provenance == 'reused_evidence') %}
       <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="accept" data-quick-accept>
         <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
         <input type="hidden" name="action" value="accept">
-        {{ button("Accept & next", variant="primary", button_type="submit") }}
+        {{ button("Confirm value", variant="primary", button_type="submit") }}
       </form>
       {% endif %}
 
@@ -249,7 +249,7 @@
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="min-w-0">
         <h2 id="quality-output-title" class="text-lg font-bold tracking-tight text-slate-950">Review decisions</h2>
-        <p class="mt-1 text-xs text-slate-600">Check the original source, then accept the value or request evidence. Unconfirmed values remain pending.</p>
+        <p class="mt-1 text-xs text-slate-600">Review the unresolved values. Items without original supporting evidence remain pending.</p>
       </div>
       <p class="text-xs text-slate-500" data-provenance-summary>
         <span data-current-shipment-count>{{ provenance_summary.current_shipment_count }} from shipment</span>
@@ -262,13 +262,12 @@
       <span data-review-kpi="confirmed"><strong>{{ settled_fields|length }}</strong> confirmed</span>
       <span data-review-kpi="documents"><strong>{{ detail.document_count }}</strong> documents</span>
     </div>
-  </section>
-  <div class="flex flex-wrap items-center justify-end gap-2" data-sticky-action-bar data-review-next-controls role="region" aria-label="Review navigation and confirmation">
+  <div class="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-3" data-sticky-action-bar data-review-next-controls role="region" aria-label="Review navigation and confirmation">
     <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
       {% if combined_action_count > 0 %}
         {% if attention_fields %}
         <a href="#review-field-{{ attention_fields[0].id }}" class="lt-btn lt-btn--primary" data-focus-next-required>
-          <i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span>Review next item</span>
+          <i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span>Go to first issue</span>
         </a>
         {% else %}
         <a href="#regulatory-action-{{ regulatory_action_items[0].get('action_id') }}" class="lt-btn lt-btn--primary" data-focus-next-required>
@@ -298,6 +297,7 @@
       {% endif %}
     </div>
   </div>
+  </section>
 
   {% set default_review_tab = "action" if combined_action_count > 0 else ("resolved" if auto_supported_fields else "confirmed") %}
   <section class="lt-card overflow-hidden">
@@ -333,7 +333,7 @@
       {% if combined_action_count > 0 %}
       <div class="mb-4">
         <h2 class="text-base font-bold text-slate-950">Exception work queue</h2>
-        <p class="mt-1 text-xs text-slate-600">Review only missing facts, conflicting values and evidence that needs your decision. Confirmed values remain auditable.</p>
+        <p class="mt-1 text-xs text-slate-600">Each item shows what is missing and the action needed.</p>
       </div>
       <div id="action-required-fields" class="grid gap-5" data-action-required-list>
         {% for line_reference, fields in attention_fields|groupby("line_reference") %}
@@ -435,7 +435,7 @@
         <div class="mt-4 flex flex-wrap justify-end gap-2">
           <button type="button" class="lt-btn lt-btn--secondary" data-request-evidence-close><i class="fa-regular fa-clock" aria-hidden="true"></i><span>Keep pending</span></button>
           <button type="button" class="lt-btn lt-btn--secondary" data-request-evidence-copy-button><i class="fa-regular fa-copy" aria-hidden="true"></i><span>Copy request</span></button>
-          <button type="button" class="lt-btn lt-btn--primary" data-request-evidence-add><i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i><span>Add evidence</span></button>
+          <button type="button" class="lt-btn lt-btn--secondary" data-request-evidence-add><i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i><span>Add evidence</span></button>
         </div>
       </div>
     </dialog>

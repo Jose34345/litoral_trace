@@ -181,6 +181,9 @@ class PdfEvidenceRenderer {
     const search = smartEntry.querySelector("[data-entry-search]");
     const current = smartEntry.querySelector("[data-entry-current]");
     const options = Array.from(smartEntry.querySelectorAll("[data-entry-option]"));
+    // Native select is the single, accessible entry-type control; the former
+    // duplicated searchable list is intentionally no longer rendered.
+    if (!nativeSelect || !search || !current || options.length === 0) return;
     let activeIndex = -1;
     const visibleOptions = () => options.filter((option) => !option.hidden);
     const select = (code, focusOption = false) => {
