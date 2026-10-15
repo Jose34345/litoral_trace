@@ -178,12 +178,13 @@ owner = "us_lacey"
 authority = "human_confirmed"
 implementation = [
   "src/litoral_trace/us_lacey/review.py",
+  "src/litoral_trace/us_lacey/review_source_authority.py",
   "src/litoral_trace/us_lacey/bulk_review.py",
   "src/litoral_trace/us_lacey/ai_review.py",
   "src/litoral_trace/us_lacey/ai_suggestions.py"
 ]
 tests = ["tests"]
-notes = "Reviewer actions must remain explicit and auditable. Future exception-first review should extend this capability."
+notes = "Reviewer actions remain explicit and auditable. Current tenant-owned source role/Vault metadata must block derivative-only worksheet acceptance in individual and bulk review; this does not make a filename positively authoritative."
 
 [capabilities.ppq505_and_exports]
 status = "ACTIVE"
