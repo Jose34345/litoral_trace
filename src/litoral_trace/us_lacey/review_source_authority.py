@@ -25,6 +25,8 @@ def reviewed_source_class(
         select(
             UsLaceyOperationDocument.document_role,
             VaultDocument.original_filename,
+            VaultDocument.status,
+            VaultDocument.deleted_at,
         )
         .join(
             AssuranceDocument,
@@ -43,7 +45,9 @@ def reviewed_source_class(
             UsLaceyOperationDocument.is_current.is_(True),
         )
     ).first()
-    return classify_document(str(row[1] or ""), str(row[0] or "")) if row else None
+    if not row or str(row[2]) != "available" or row[3] is not None:
+        return None
+    return classify_document(str(row[1] or ""), str(row[0] or ""))
 
 
 def is_independent_review_source(
