@@ -118,6 +118,21 @@ def _test_only_arrival_source() -> bytes:
     )
 
 
+def _test_only_manufacturer_source() -> bytes:
+    """Independent fictional manufacturer notice with exact product identity."""
+    return _pdf_fixture(
+        "SUPPLIER MANUFACTURER IDENTIFICATION CONFIRMATION",
+        "SYNTHETIC TEST DATA - NOT VALID FOR CUSTOMS OR FILING",
+        "Manufacturer LONGSHENG BAMBOO HOUSEWARES CO LTD",
+        "Manufacturer ID CNFUZLON88JIN",
+        "Proposed manufacturer ID CNFUZLON88JIN",
+        "Manufacturer MID CNFUZLON88JIN",
+        "SKU BAM-COAST-04",
+        "Article solid bamboo coasters",
+        "Plant material quantity 288 kg",
+    )
+
+
 def _csrf(client, op_id):
     return us_lacey_csrf_token(
         session_token=client.cookies.get("us_lacey_session"),
@@ -197,11 +212,26 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
             )},
         )
         assert arrival.status_code == 303, arrival.text
-        for index in range(9):
+        source_detail = client.get(operation_path)
+        manufacturer_source = client.post(
+            f"{operation_path}/upload",
+            data={
+                "csrf_token": _csrf_for(
+                    source_detail.text, f"{operation_path}/upload"
+                ),
+                "document_role": "SUPPLIER_DECLARATION",
+            },
+            files={"document": (
+                "SYNTHETIC_SUPPLIER_MANUFACTURER_CONFIRMATION_NOT_FOR_FILING.pdf",
+                _test_only_manufacturer_source(), "application/pdf",
+            )},
+        )
+        assert manufacturer_source.status_code == 303, manufacturer_source.text
+        for index in range(10):
             result = process_one_us_lacey_job(worker_id=f"v2-final-{suffix}-{index}")
             assert result.claimed and result.job_status == "COMPLETED", result
         case = read_tenant_assurance_case(organization_id=org_id, operation_public_id=op_id)
-        assert case is not None and len(case.documents) == 9
+        assert case is not None and len(case.documents) == 10
         assert not evaluate_filing_gate(case).ready
         assert any(
             item["field_name"] == "filing_entry_reference"
@@ -478,7 +508,7 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
         )).ready
 
         # True concurrent source-document mutation: the real issuer owns and
-        # locks all nine physical PDF dependencies. Hold that transaction
+        # locks all ten physical PDF dependencies. Hold that transaction
         # during actual package construction, then attempt to withdraw the
         # eighth PDF from a second tenant-scoped PostgreSQL connection.
         # The mutation must TIME OUT rather than winning against a package
