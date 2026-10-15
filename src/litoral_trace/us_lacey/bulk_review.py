@@ -35,6 +35,7 @@ from litoral_trace.us_lacey.operations import UsLaceyOperationNotFound
 from litoral_trace.us_lacey.ppq505 import validate_ppq_value
 from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
 from litoral_trace.us_lacey.review import UsLaceyReviewError
+from litoral_trace.us_lacey.review_source_authority import is_independent_review_source
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +165,26 @@ def accept_supported_us_lacey_fields(
                 continue
             if field.id in conflicted_field_ids:
                 continue
+
+            # Batch acceptance is never a back door around the individual
+            # review's document-authority check.
+            primary_id = field.source_assurance_document_id
+            if field.extractor != "reusable-supplier-evidence":
+                if primary_id is not None:
+                    if not is_independent_review_source(
+                        session, organization_id=org_id, operation_id=operation.id,
+                        assurance_document_id=primary_id,
+                    ):
+                        continue
+                else:
+                    if not any(
+                        is_independent_review_source(
+                            session, organization_id=org_id, operation_id=operation.id,
+                            assurance_document_id=c.source_assurance_document_id,
+                        )
+                        for c in candidates_by_field.get(int(field.id), ())
+                    ):
+                        continue
 
             proposed = field.normalized_value or field.original_value
             if proposed is None or not str(proposed).strip():

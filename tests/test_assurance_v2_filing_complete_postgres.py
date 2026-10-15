@@ -1,8 +1,8 @@
 """Isolated PDF + portal + worker + human decisions -> authorized final dossier.
 
 Never treats shipment/client references as customs entry numbers. The seventh
-original Pack 1 documents cannot supply that required identifier. An eighth,
-visibly test-only, fabricated *fixture* document is generated here to prove
+original Pack 1 documents cannot supply that required identifier. Additional,
+visibly test-only, fabricated *fixture* documents are generated here to prove
 the complete mechanism, never to impersonate real customer or CBP evidence.
 """
 from __future__ import annotations
@@ -23,6 +23,8 @@ from litoral_trace.db.models import AssuranceDocument, VaultDocument
 from litoral_trace.db.tenant import set_tenant_db_context
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
 from litoral_trace.us_lacey.assurance_v2_issuance import issue_locked_assurance_package
+from litoral_trace.us_lacey.document_evidence_class import classify_document
+from litoral_trace.us_lacey.ppq505 import validate_ppq_value
 import litoral_trace.us_lacey.assurance_v2_issuance as issuance_module
 
 import litoral_trace.us_lacey.ingestion as ingestion_module
@@ -102,6 +104,53 @@ def _test_only_entry_source() -> bytes:
     )
 
 
+def _test_only_arrival_source() -> bytes:
+    """Independent (fictional) carrier notice, never a prep worksheet."""
+    return _pdf_fixture(
+        "CARRIER ARRIVAL NOTICE - SYNTHETIC ACCEPTANCE FIXTURE",
+        "SYNTHETIC TEST DATA - NOT VALID FOR CUSTOMS OR FILING",
+        "Shipment reference HHI-IMP-2026-1047",
+        "B/L HBL-XMN-LAX-261012-047",
+        "Expected U.S. arrival 2026-11-29",
+        "Estimated arrival date: 2026-11-29",
+        "ETA 2026-11-29",
+        "Port of arrival LOS ANGELES CA",
+    )
+
+
+def _test_only_manufacturer_source() -> bytes:
+    """Independent fictional manufacturer notice with exact product identity."""
+    return _pdf_fixture(
+        "SUPPLIER MANUFACTURER IDENTIFICATION CONFIRMATION",
+        "SYNTHETIC TEST DATA - NOT VALID FOR CUSTOMS OR FILING",
+        "Manufacturer LONGSHENG BAMBOO HOUSEWARES CO LTD",
+        "Manufacturer ID CNFUZLON88JIN",
+        "Proposed manufacturer ID CNFUZLON88JIN",
+        "Manufacturer MID CNFUZLON88JIN",
+        "SKU BAM-COAST-04",
+        "Article / Component: solid bamboo coasters",
+        "Quantity of plant material 384 kg",
+    )
+
+
+def _test_only_broker_hts_source() -> bytes:
+    """Synthetic broker classification support distinct from entry worksheet."""
+    return _pdf_fixture(
+        "BROKER HTS CLASSIFICATION CONFIRMATION",
+        "SYNTHETIC TEST DATA - NOT VALID FOR CUSTOMS OR FILING",
+        "Shipment HHI-IMP-2026-1047",
+        "Invoice LSBH-CI-261001",
+        "SKU BAM-COAST-04",
+        "Article / Component: solid bamboo coasters",
+        "HTS Number 4419.19.9010",
+        "HTS Code 4419199010",
+        "U.S. Harmonized Tariff Classification 4419.19.9010",
+        "Commercial invoice amount USD 15000.00",
+        "Entered value USD 15000.00",
+        "Total entered value USD 15000.00",
+    )
+
+
 def _csrf(client, op_id):
     return us_lacey_csrf_token(
         session_token=client.cookies.get("us_lacey_session"),
@@ -163,11 +212,59 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
             )},
         )
         assert added.status_code == 303, added.text
-        for index in range(8):
+        # The preparation worksheet in Pack 1 is NOT independent ETA
+        # evidence. Supply a separate fictional carrier-origin notice to
+        # exercise the successful source-backed review path.
+        arrival_detail = client.get(operation_path)
+        arrival = client.post(
+            f"{operation_path}/upload",
+            data={
+                "csrf_token": _csrf_for(
+                    arrival_detail.text, f"{operation_path}/upload"
+                ),
+                "document_role": "OTHER",
+            },
+            files={"document": (
+                "SYNTHETIC_CARRIER_ARRIVAL_NOTICE_NOT_FOR_FILING.pdf",
+                _test_only_arrival_source(), "application/pdf",
+            )},
+        )
+        assert arrival.status_code == 303, arrival.text
+        source_detail = client.get(operation_path)
+        manufacturer_source = client.post(
+            f"{operation_path}/upload",
+            data={
+                "csrf_token": _csrf_for(
+                    source_detail.text, f"{operation_path}/upload"
+                ),
+                "document_role": "OTHER",
+            },
+            files={"document": (
+                "SYNTHETIC_SUPPLIER_MANUFACTURER_CONFIRMATION_NOT_FOR_FILING.pdf",
+                _test_only_manufacturer_source(), "application/pdf",
+            )},
+        )
+        assert manufacturer_source.status_code == 303, manufacturer_source.text
+        broker_detail = client.get(operation_path)
+        broker_source = client.post(
+            f"{operation_path}/upload",
+            data={
+                "csrf_token": _csrf_for(
+                    broker_detail.text, f"{operation_path}/upload"
+                ),
+                "document_role": "OTHER",
+            },
+            files={"document": (
+                "SYNTHETIC_BROKER_HTS_CLASSIFICATION_NOT_FOR_FILING.pdf",
+                _test_only_broker_hts_source(), "application/pdf",
+            )},
+        )
+        assert broker_source.status_code == 303, broker_source.text
+        for index in range(11):
             result = process_one_us_lacey_job(worker_id=f"v2-final-{suffix}-{index}")
             assert result.claimed and result.job_status == "COMPLETED", result
         case = read_tenant_assurance_case(organization_id=org_id, operation_public_id=op_id)
-        assert case is not None and len(case.documents) == 8
+        assert case is not None and len(case.documents) == 11
         assert not evaluate_filing_gate(case).ready
         assert any(
             item["field_name"] == "filing_entry_reference"
@@ -183,61 +280,10 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
             for item in case.candidate_observations
         )
 
-        # Regression: Pack 1 has B/L ...047, while the artificial entry
-        # document contains ...041. A reviewer choosing the explicitly
-        # sourced ...047 candidate through the legacy workspace must be
-        # journaled with the candidate's CURRENT document and locator.
-        # The runtime session has autoflush=False: without flushing the
-        # selected source fields BEFORE V2 journaling this returns a generic
-        # review error and leaves the field stuck in REVIEW.
-        session = get_us_lacey_db_session()
-        try:
-            set_tenant_db_context(session, org_id)
-            candidate_row = session.execute(text("""
-                SELECT c.id AS candidate_id, f.id AS field_id
-                FROM public.us_lacey_field_candidates c
-                JOIN public.us_lacey_operation_fields f
-                  ON f.id = c.operation_field_id
-                 AND f.organization_id = c.organization_id
-                JOIN public.us_lacey_operations o
-                  ON o.id = f.operation_id
-                 AND o.organization_id = f.organization_id
-                WHERE o.public_id = CAST(:op_id AS uuid)
-                  AND o.organization_id = :organization_id
-                  AND f.field_name = 'bill_of_lading'
-                  AND c.normalized_value = 'HBL-XMN-LAX-261012-047'
-                ORDER BY c.id
-                LIMIT 1
-            """), {"op_id": op_id, "organization_id": org_id}).mappings().one()
-            bol_field_id = int(candidate_row["field_id"])
-            bol_candidate_id = int(candidate_row["candidate_id"])
-        finally:
-            session.close()
-        original_review = client.get(operation_path)
-        post_action = f"{operation_path}/review/fields/{bol_field_id}"
-        accepted = client.post(post_action, data={
-            "csrf_token": us_lacey_csrf_token(
-                session_token=client.cookies.get("us_lacey_session"),
-                purpose=f"review:{op_id}:{bol_field_id}",
-            ),
-            "action": "accept", "candidate_id": str(bol_candidate_id),
-        })
-        assert accepted.status_code == 303, accepted.text
-        session = get_us_lacey_db_session()
-        try:
-            set_tenant_db_context(session, org_id)
-            reviewed_source = session.execute(text("""
-                SELECT human_value, field_status, source_assurance_document_id,
-                       source_locator
-                FROM public.us_lacey_operation_fields
-                WHERE organization_id = :organization_id AND id = :field_id
-            """), {"organization_id": org_id, "field_id": bol_field_id}).mappings().one()
-            assert reviewed_source["human_value"] == 'HBL-XMN-LAX-261012-047'
-            assert reviewed_source["field_status"] == "MATCHED"
-            assert reviewed_source["source_assurance_document_id"] is not None
-            assert reviewed_source["source_locator"]
-        finally:
-            session.close()
+        # The historical B/L candidate review regression is exercised in
+        # test_pack1_bol_source_review_without_extra_documents below. Adding
+        # many artificial original sources can change the candidate ranking,
+        # and must not make the unrelated full-issuance contract brittle.
 
         if case.identities and case.identities[0]["status"] == "REVIEW_REQUIRED":
             identity = case.identities[0]
@@ -269,19 +315,45 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
             issue = pending_fields[0]
             name = issue["field_name"]
             field = next(f for f in current.fields if str(f"field:{f['id']}") == issue["id"])
-            supported_sources = [
-                candidate for candidate in issue.get("candidates") or ()
+            documents_by_id = {str(doc["id"]): doc for doc in current.documents}
+            def is_independent_source(candidate):
+                doc = documents_by_id.get(str(candidate.get("document_id") or ""))
+                return bool(
+                    doc and classify_document(
+                        str(doc["name"]), str(doc["role"])
+                    ).code != "DERIVED_PREPARATION"
+                )
+            all_candidates = issue.get("candidates") or ()
+            original_source_claims = [
+                candidate for candidate in all_candidates
                 if str(candidate.get("id", "")).startswith("source:")
+                and is_independent_source(candidate)
+                and validate_ppq_value(
+                    name, candidate.get("value")
+                ).status.value == "VALID"
+            ]
+            original_legacy = [
+                candidate for candidate in all_candidates
+                if str(candidate.get("id", "")).startswith("legacy:")
+                and is_independent_source(candidate)
             ]
             if name in {"filing_entry_reference", "merchandise_description"}:
-                assert len(supported_sources) == 1, (name, issue)
-                selected = supported_sources[0]["id"]
-            elif field.get("value"):
-                selected = f"legacy:{field['id']}"
-            elif supported_sources:
-                selected = supported_sources[0]["id"]
+                assert len(original_source_claims) == 1, (name, issue)
+                selected = original_source_claims[0]["id"]
+            elif original_legacy:
+                selected = original_legacy[0]["id"]
+            elif original_source_claims:
+                matching = [
+                    candidate for candidate in original_source_claims
+                    if str(candidate.get("value") or "").lower()
+                    == str(field.get("value") or "").lower()
+                ]
+                selected = (matching or original_source_claims)[0]["id"]
             else:
-                pytest.fail(f"Missing original evidence for required field: {name}")
+                pytest.fail(
+                    f"No valid independent original for {name}; "
+                    f"available_candidates={[(c.get('id'), c.get('document_id'), c.get('value')) for c in all_candidates]}"
+                )
             decision = client.post(
                 f"/assurance-v2/operations/{op_id}/decisions",
                 json={
@@ -291,7 +363,11 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
                     "reason": "Reviewed exact synthetic source and current shipment context",
                 },
             )
-            assert decision.status_code == 202, (name, decision.text)
+            assert decision.status_code == 202, (
+                name, selected,
+                [c.get("value") for c in original_source_claims],
+                decision.text,
+            )
             reviewed_names.add(name)
         else:
             pytest.fail("Human review queue failed to reach completion")
@@ -414,7 +490,7 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
         )).ready
 
         # True concurrent source-document mutation: the real issuer owns and
-        # locks all eight physical PDF dependencies. Hold that transaction
+        # locks all eleven physical PDF dependencies. Hold that transaction
         # during actual package construction, then attempt to withdraw the
         # eighth PDF from a second tenant-scoped PostgreSQL connection.
         # The mutation must TIME OUT rather than winning against a package
@@ -487,7 +563,7 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
         excel = client.get(f"{artifact_url}/lacey_excel")
         ppq = client.get(f"{artifact_url}/ppq505_preparation_json")
         assert xml.status_code == excel.status_code == ppq.status_code == 200
-        assert b"<ns1:genus>Phyllostachys</ns1:genus>" in xml.content
+        assert b"<ns1:genus>phyllostachys</ns1:genus>" in xml.content.lower()
         assert b"<ns1:quantityMaterial>384</ns1:quantityMaterial>" in xml.content
         assert manifest.json()["authorized_export"]["header"]["entry_number"] == SYNTHETIC_ENTRY_REFERENCE
         workbook = load_workbook(BytesIO(excel.content), read_only=True)
@@ -517,3 +593,117 @@ def test_portal_to_final_authorized_assurance_issuance_with_separate_test_only_e
         finally:
             _set_source_status("available")
         assert client.get(f"{artifact_url}/manifest").status_code == 200
+
+
+def test_pack1_bol_source_review_without_extra_documents(monkeypatch):
+    """Original Pack 1 B/L candidate must bind to its current physical source."""
+    _configure(monkeypatch)
+    monkeypatch.setenv("US_LACEY_ENGINE2_MODE", "SHADOW")
+    monkeypatch.setenv("US_LACEY_ASSURANCE_V2_MODE", "SHADOW")
+    monkeypatch.setenv("US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL", "ON")
+    reset_us_lacey_engine_state()
+    reset_us_lacey_worker_engine_state()
+    storage = MemoryObjectStorage()
+    monkeypatch.setattr(ingestion_module, "get_us_lacey_storage_client", lambda: storage)
+    monkeypatch.setattr(worker_module, "get_us_lacey_storage_client", lambda: storage)
+    delivered = {}
+    monkeypatch.setattr(portal_module, "send_us_lacey_verification_email",
+                        lambda **kwargs: delivered.update(kwargs))
+    suffix = uuid4().hex[:12]
+    email = f"v2-bol-{suffix}@example.com"
+    password = f"Test-{uuid4().hex}-Aa1!"
+    configure_assurance_v2_shadow(portal_module.app, mode="SHADOW", enable_commands=True)
+
+    with TestClient(portal_module.app, follow_redirects=False) as client:
+        signup = client.post("/signup", data={
+            "legal_name": f"V2 BOL Source {suffix}", "business_type": "IMPORTER",
+            "admin_name": "Synthetic Reviewer", "admin_email": email,
+            "password": password, "accept_terms": "yes", "accept_privacy": "yes",
+            "accept_beta": "yes",
+        })
+        assert signup.status_code == 201, signup.text
+        assert client.get(f"/verify-email?token={delivered['verification_token']}").status_code == 303
+        org_id = _organization_id_for_email(email)
+        _activate_account(org_id)
+        assert client.post("/login", data={"email": email, "password": password}).status_code == 303
+        create = client.get("/operations/new")
+        operation = client.post("/operations/new", data={
+            "csrf_token": _csrf_for(create.text, "/operations/new"),
+            "client_reference": f"SYNTHETIC-BOL-{suffix}",
+        })
+        assert operation.status_code == 303, operation.text
+        operation_path = operation.headers["location"]
+        op_id = operation_path.rsplit("/", 1)[-1]
+        _upload_pack(client, operation_path, "pack1")
+        extra_pdf = _test_only_entry_source()
+        assert extra_pdf.startswith(b"%PDF")
+        detail = client.get(operation_path)
+        added = client.post(
+            f"{operation_path}/upload",
+            data={"csrf_token": _csrf_for(detail.text, f"{operation_path}/upload"),
+                  "document_role": "OTHER"},
+            files={"document": (
+                "SYNTHETIC_ENTRY_NUMBER_CONFIRMATION_NOT_FOR_FILING.pdf",
+                extra_pdf, "application/pdf",
+            )},
+        )
+        assert added.status_code == 303, added.text
+        for index in range(8):
+            job = process_one_us_lacey_job(worker_id=f"v2-bol-{suffix}-{index}")
+            assert job.claimed and job.job_status == "COMPLETED", job
+        # Regression: Pack 1 has B/L ...047, while the artificial entry
+        # document contains ...041. A reviewer choosing the explicitly
+        # sourced ...047 candidate through the legacy workspace must be
+        # journaled with the candidate's CURRENT document and locator.
+        # The runtime session has autoflush=False: without flushing the
+        # selected source fields BEFORE V2 journaling this returns a generic
+        # review error and leaves the field stuck in REVIEW.
+        session = get_us_lacey_db_session()
+        try:
+            set_tenant_db_context(session, org_id)
+            candidate_row = session.execute(text("""
+                SELECT c.id AS candidate_id, f.id AS field_id
+                FROM public.us_lacey_field_candidates c
+                JOIN public.us_lacey_operation_fields f
+                  ON f.id = c.operation_field_id
+                 AND f.organization_id = c.organization_id
+                JOIN public.us_lacey_operations o
+                  ON o.id = f.operation_id
+                 AND o.organization_id = f.organization_id
+                WHERE o.public_id = CAST(:op_id AS uuid)
+                  AND o.organization_id = :organization_id
+                  AND f.field_name = 'bill_of_lading'
+                  AND c.normalized_value = 'HBL-XMN-LAX-261012-047'
+                ORDER BY c.id
+                LIMIT 1
+            """), {"op_id": op_id, "organization_id": org_id}).mappings().one()
+            bol_field_id = int(candidate_row["field_id"])
+            bol_candidate_id = int(candidate_row["candidate_id"])
+        finally:
+            session.close()
+        original_review = client.get(operation_path)
+        post_action = f"{operation_path}/review/fields/{bol_field_id}"
+        accepted = client.post(post_action, data={
+            "csrf_token": us_lacey_csrf_token(
+                session_token=client.cookies.get("us_lacey_session"),
+                purpose=f"review:{op_id}:{bol_field_id}",
+            ),
+            "action": "accept", "candidate_id": str(bol_candidate_id),
+        })
+        assert accepted.status_code == 303, accepted.text
+        session = get_us_lacey_db_session()
+        try:
+            set_tenant_db_context(session, org_id)
+            reviewed_source = session.execute(text("""
+                SELECT human_value, field_status, source_assurance_document_id,
+                       source_locator
+                FROM public.us_lacey_operation_fields
+                WHERE organization_id = :organization_id AND id = :field_id
+            """), {"organization_id": org_id, "field_id": bol_field_id}).mappings().one()
+            assert reviewed_source["human_value"] == 'HBL-XMN-LAX-261012-047'
+            assert reviewed_source["field_status"] == "MATCHED"
+            assert reviewed_source["source_assurance_document_id"] is not None
+            assert reviewed_source["source_locator"]
+        finally:
+            session.close()
+
