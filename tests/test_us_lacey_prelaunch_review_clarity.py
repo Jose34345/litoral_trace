@@ -64,9 +64,10 @@ def test_document_dossier_does_not_claim_final_preparation_readiness():
 def test_review_workspace_is_exception_first():
     source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
 
-    assert "Review decisions" in source
-    assert "Review the unresolved values." in source
-    assert "Items without original supporting evidence remain pending." in source
+    # The pending queue now begins without a second introductory card.
+    assert "Review decisions" not in source
+    assert 'id="review-summary"' in source
+    assert "data-review-kpis" in source
     assert "Each item shows what is missing and the action needed." in source
     assert "Request original evidence" in source
     assert "Auto-Resolved Data" in source
@@ -80,8 +81,8 @@ def test_review_kpis_and_tabs_follow_operational_priority():
     action_kpi = source.index('data-review-kpi="action"')
     resolved_kpi = source.index('data-review-kpi="resolved"')
     confirmed_kpi = source.index('data-review-kpi="confirmed"')
-    documents_kpi = source.index('data-review-kpi="documents"')
-    assert action_kpi < resolved_kpi < confirmed_kpi < documents_kpi
+    assert action_kpi < resolved_kpi < confirmed_kpi
+    assert 'data-review-kpi="documents"' not in source
 
     action_tab = source.index('data-review-tab-button="action"')
     resolved_tab = source.index('data-review-tab-button="resolved"')
