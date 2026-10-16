@@ -85,6 +85,9 @@
       {% elif private_v2 %}
       <h2 class="mt-1 text-lg font-bold text-amber-900">Current V2 evidence unavailable</h2>
       <p class="mt-1 text-sm text-slate-600">No legacy approval substitutes for an unavailable V2 authority state.</p>
+      {% elif not detail.documents %}
+      <h2 class="mt-1 text-lg font-bold text-slate-950" data-first-value-heading>Add shipment documents to begin</h2>
+      <p class="mt-1 text-sm text-slate-600">Upload an invoice, packing list or supplier evidence to start an evidence-backed review.</p>
       {% elif not processing.terminal %}
       <h2 class="mt-1 text-lg font-bold text-slate-950" data-first-value-heading>Analyzing shipment documents</h2>
       <p class="mt-1 text-sm text-slate-600">Your documents were received. The review queue becomes available when processing finishes.</p>
@@ -98,11 +101,13 @@
       <p class="mt-1 text-sm text-slate-600">Verify only unresolved information. Every decision stays linked to its source.</p>
       {% endif %}
     </div>
-    <span class="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">{% if private_v2 %}Private lab · Filing disabled{% elif processing.failed %}NEEDS ATTENTION{% elif not processing.terminal %}PROCESSING{% else %}{{ readiness_summary.overall }}{% endif %}</span>
+    <span class="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">{% if private_v2 %}Private lab · Filing disabled{% elif not detail.documents %}UPLOAD DOCUMENTS{% elif processing.failed %}NEEDS ATTENTION{% elif not processing.terminal %}PROCESSING{% else %}{{ readiness_summary.overall }}{% endif %}</span>
   </div>
   <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3" data-first-value-actions>
     <div class="flex flex-wrap items-center gap-4 text-xs text-slate-600" data-unified-overview-counts>
-      {% if not private_v2 and processing.terminal and not processing.failed %}
+      {% if not private_v2 and not detail.documents %}
+      <span role="status" data-first-value-empty>Evidence required before analysis</span>
+      {% elif not private_v2 and processing.terminal and not processing.failed %}
       <span><strong class="text-slate-900">{{ readiness_summary.exception_count }}</strong> unresolved</span>
       {% elif not private_v2 and not processing.terminal %}
       <span role="status" data-first-value-processing>Processing in progress · review counts will update</span>
@@ -115,7 +120,9 @@
       <span>Source revision <strong>{{ unified_v2.case.source_set_revision }}</strong></span>
       {% endif %}
     </div>
-    {% if not private_v2 and not processing.terminal %}
+    {% if not private_v2 and not detail.documents %}
+    <a href="#documents" class="lt-btn lt-btn--primary inline-flex min-h-10 items-center px-4 text-xs font-bold" data-first-value-upload>Add documents</a>
+    {% elif not private_v2 and not processing.terminal %}
     <span class="inline-flex min-h-10 items-center rounded-lg bg-slate-100 px-4 text-xs font-semibold text-slate-600" role="status" data-first-value-wait>Preparing the review queue…</span>
     {% elif not private_v2 and processing.failed %}
     <a href="#processing-status" class="lt-btn lt-btn--secondary inline-flex min-h-10 items-center px-4 text-xs font-bold" data-first-value-issue>View processing issue</a>

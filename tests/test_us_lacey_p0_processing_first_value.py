@@ -31,3 +31,13 @@ def test_review_only_after_source_set_is_terminal_and_valid():
     assert "processing.terminal and not processing.failed" in TPL
     assert 'data-first-value-actions' in TPL
     Environment().parse(TPL)
+
+
+def test_empty_shipment_guides_upload_instead_of_analyzing_nonexistent_files():
+    summary = TPL[TPL.index('<section id="shipment-summary"'):TPL.index("</section>", TPL.index('<section id="shipment-summary"'))]
+    assert '{% elif not detail.documents %}' in summary
+    assert 'Add shipment documents to begin' in summary
+    assert 'UPLOAD DOCUMENTS' in summary
+    assert 'data-first-value-empty' in summary
+    assert 'data-first-value-upload' in summary
+    assert 'href="#documents"' in summary
