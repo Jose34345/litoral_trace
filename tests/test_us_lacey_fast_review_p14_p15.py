@@ -162,7 +162,8 @@ def test_p15_reduces_duplicate_status_and_sticky_obstruction():
     assert 'data-review-kpi="action"' in text
     assert 'data-review-kpi="confirmed"' in text
     assert 'data-review-kpi="resolved"' in text
-    assert 'data-review-kpi="documents"' in text
+    assert 'data-review-kpi="documents"' not in text
+    assert 'id="review-summary"' in text
     assert "need attention before generating the declaration package." not in text
     assert "Workflow stages · view progress" in detail
     assert 'data-workflow-stage-details' in detail
