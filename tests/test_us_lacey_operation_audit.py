@@ -265,7 +265,7 @@ def test_global_audit_log_navigation_and_operation_summary_contract():
     ).read_text(encoding="utf-8")
 
     assert 'href="/audit-log"' in base
-    assert ">Audit Log<" in base
+    assert ">Activity Log<" in base
     assert "fa-clock-rotate-left" in base
     assert '@app.get("/audit-log"' in app
     for column in ("Time", "Shipment", "Actor", "Event", "Details"):
