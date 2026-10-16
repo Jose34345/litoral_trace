@@ -30,10 +30,12 @@ def test_public_workflow_does_not_auto_activate_lab():
     assert '{% if private_v2 %}' in TEMPLATE
     assert 'Private V2 lab' in TEMPLATE
     assert 'unified_v2' in TEMPLATE
-    # A laboratory visibility gate remains intentional and must not be removed
-    # in order to present a commercially polished interface.
+    # Private V2 cases keep their authority banner. The sidebar is not an
+    # entry point to an experimental capability for prospects.
     nav = (ROOT / "src/litoral_trace/templates/us_lacey/base.html").read_text(encoding="utf-8")
-    assert "state.assurance_v2_lab_org_ids" in nav
+    assert 'href="/assurance-v2"' not in nav
+    assert "Assurance V2 Lab" not in nav
+    assert "Private V2 lab" in TEMPLATE
 
 
 def test_jinja_syntax_compiles():

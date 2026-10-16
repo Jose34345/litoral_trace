@@ -122,7 +122,7 @@ def test_terminal_workspace_hydrates_rule_scoped_regulatory_panel(monkeypatch):
     assert "Provide quantity / mass evidence" not in html
     assert "ACTION REQUIRED: Missing quantity or mass information." not in html
     assert 'data-action-required-count>0<' in html
-    assert 'data-action-tab-count>0<' in html
+    assert 'data-action-tab-count data-action-required-count>0<' in html
     assert 'id="workflow-stepper"' in html
     assert 'id="shipment-readiness-card"' in html
     assert 'id="species-status"' in html

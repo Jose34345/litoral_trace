@@ -12,8 +12,8 @@ def test_enterprise_ux_91_100_contract() -> None:
 
     assert '@app.get("/trust"' in pilot
     assert 'href="/trust"' in base
-    assert "Trust &amp; Controls" in base
-    assert "label: 'Trust & Controls'" in base
+    assert ">Data &amp; Security</span>" in base
+    assert "label: 'Data & Security'" in base
 
     assert "Workspace isolated" in trust
     assert "Customer-facing records are scoped to the active organization" in trust
