@@ -11,18 +11,18 @@ Commit: feature branch `feat/lacey-market-backed-p0-20261015` (exact merged SHA 
 | Importer public sample opens | PASS (render smoke only) | Edge 1440/390, GET /try/importer HTTP 200, no page errors/overflow | Low; QA. Not a successful full click-through |
 | Broker public sample opens | PASS (render smoke only) | Edge 1440/390, GET /try/broker HTTP 200, no page errors/overflow | Low; QA. Not a successful full click-through |
 | Sandbox landing | PASS (render smoke only) | Edge 1440/390 GET /sandbox/start HTTP 200, form present, no JS page errors | Low; QA. Not proof first upload succeeds |
-| First own shipment end-to-end | NOT RUN | Needs permitted synthetic upload, processing and review in isolated evaluation tenant | **BLOCKING**, Product/QA |
-| Reprocess and outputs end-to-end | NOT RUN | Needs first shipment and export gate, no fake READY | **BLOCKING**, QA |
-| Pack 2 goldens local | PARTIAL | 11 passed; 2 skipped due to lack of isolated PostgreSQL integration database | **BLOCKING until PostgreSQL CI success**, QA |
+| First own shipment end-to-end | PARTIAL | Anonymous consent + synthetic invoice upload accepted on production; terminal review not observed | **BLOCKING** until full terminal verification, Product/QA |
+| Reprocess and outputs end-to-end | NOT RUN | Production synthetic Pack2 accepted, final export and reprocess not exercised | **BLOCKING**, QA |
+| Pack 2 goldens local | PASS CI / PARTIAL live | Local 11 passed + 2 skipped; PostgreSQL Gate success; six synthetic PDFs uploaded live but review terminal not observed | **BLOCKING** terminal live QA, QA |
 | Exception-first UX (template contract) | PASS locally | 4 new tests, dynamic pending count, source caveat retained | QA |
 | Review, evaluation, sandbox, outreach unit suite | PASS locally | 74 passed, 1 unrelated deprecation warning | QA |
 | PDF visual regression | NOT RUN in authenticated UI for this branch | Existing PR #452 previous smoke tested; ensure no regressions in PR gate | Medium; Frontend QA |
-| Tenant isolation / RLS | NOT RUN with current branch PostgreSQL CI | Required before merge | **BLOCKING**, Security |
+| Tenant isolation / RLS | PASS CI | PostgreSQL Gate success on b326e267, including tenant isolation and RLS checks; live cross-tenant QA not attempted | Security |
 | Four-hour original retention | PARTIAL | Sandbox cleanup pytest passed locally; production cleanup schedule not re-audited | **BLOCKING**, SRE |
 | Evaluation five-operation policy | PARTIAL | Evaluation pytest green; live full limit scenario not executed | **BLOCKING**, Product |
 | No unauthorized experimental lab access | PARTIAL | Template limits lab to configured org IDs; live external tenant check not performed | **BLOCKING**, Security |
-| Frontend CSS and Python CI | NOT RUN remote for this branch | PR checks must be success on exact commit | **BLOCKING**, Engineering |
-| Worker and web same merged commit | NOT RUN for this branch | Compare deployedSHA in Northflank after merge | **BLOCKING**, SRE |
+| Frontend CSS and Python CI | PASS | GitHub CI and CSS Drift Gate success on source PR #453 | Engineering |
+| Worker and web same merged commit | PASS | Northflank web + worker COMPLETED at b326e267, health/ready 200 | SRE |
 | Admin signal classification | PARTIAL | Repo tracks raw hits separately from human signals; restricted admin walkthrough not performed | Medium; Commercial Ops |
 | Support reply routing | NOT RUN | Verify a real incoming/outgoing support message; don't create misleading auto-confirmations | **BLOCKING**, Commercial Ops |
 | Accurate boundaries | PASS static | "No automatic ACE/LAWGS submission" preserved, samples marked synthetic | Product/Compliance |
@@ -48,3 +48,7 @@ Do not enable public paid-customer rollout with a failed RLS, cross-tenant, evid
 4. Validate first-use UX with external testers, one importer + broker minimum initially. Mark tests as observed, not simulated.
 5. Review legal positioning under HQ H350722 and commercial support mailbox.
 6. Prepare ~6–8 qualified prospects with individual referral links, **no outreach sends authorized here**.
+
+## Follow-up production QA
+
+See [market-launch-operational-qa-p0.md](./market-launch-operational-qa-p0.md). Six Pack 2 synthetic PDFs processed as sequential child jobs. A premature actionable count was visible during processing. Fix under review: no review count or enabled review CTA before terminal evidence. **The release remains NO-GO for general paid outreach** pending terminal first-use, retention verification, specialist customs-business legal review and buyer research.
