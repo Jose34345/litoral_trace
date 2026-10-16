@@ -138,11 +138,12 @@ def test_workspace_shows_reuse_summary_and_field_badge(monkeypatch):
         review_csrf={3: "review-country"},
     )
 
-    assert "1 from shipment" in html
-    assert "1 reused" in html
-    assert "1</strong> pending" in html
-    assert 'data-provenance-summary' in html
-    assert 'data-reused-evidence-count' in html
+    # Verified reuse remains visible at the field/source, without a second
+    # summary card repeating the shipment overview counts.
+    assert 'data-provenance-summary' not in html
+    assert 'data-reused-evidence-count' not in html
+    assert 'data-action-tab-count' in html
+    assert 'data-auto-resolved-field="2"' in html
     assert "Reused from verified supplier evidence" in html
     assert "Source: Verified supplier evidence from a prior shipment" in html
     assert 'data-auto-resolved-field="2"' in html
