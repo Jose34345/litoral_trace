@@ -27,35 +27,31 @@
       <section class="lt-nav-section mb-3">
         <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Workspace</p>
         <div class="space-y-1">
-          <a href="/operations" {% if current_path.startswith('/operations') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-briefcase" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Shipments</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{{ entitlement.evaluation_completed_operations ~ '/' ~ entitlement.evaluation_total_operations if evaluation_mode else 'Queue' }}</span></a>
-          {% if identity is defined and identity and request.scope.get('app') and identity.organization_id in (request.scope['app'].state.assurance_v2_lab_org_ids|default(())) %}
-          <a href="/assurance-v2" {% if current_path.startswith('/assurance-v2') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-flask" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Assurance V2 Lab</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-400">Test only</span></a>
-          {% endif %}
+          <a href="/operations" {% if current_path.startswith('/operations') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-briefcase" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Shipments</span>{% if evaluation_mode %}<span class="text-[10px] font-semibold text-slate-400">{{ entitlement.evaluation_completed_operations }} / {{ entitlement.evaluation_total_operations }}</span>{% endif %}</a>
           <a href="/evidence" {% if current_path.startswith('/evidence') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
             <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-folder-open" aria-hidden="true"></i></span>
-            <span class="min-w-0 flex-1 truncate">Evidence</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Source</span>
+            <span class="min-w-0 flex-1 truncate">Documents</span>
           </a>
           <a href="/suppliers" {% if current_path.startswith('/suppliers') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
             <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-building-circle-check" aria-hidden="true"></i></span>
-            <span class="min-w-0 flex-1 truncate">Suppliers</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Memory</span>
+            <span class="min-w-0 flex-1 truncate">Suppliers</span>
           </a>
           <a href="/audit-log" {% if current_path.startswith('/audit-log') %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
             <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i></span>
-            <span class="min-w-0 flex-1 truncate">Audit Log</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-400">Enabled</span>
+            <span class="min-w-0 flex-1 truncate">Activity Log</span>
           </a>
         </div>
       </section>
       <section class="lt-nav-section mb-3">
-        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Regulatory</p>
+        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Compliance</p>
         <div class="space-y-1">
-          <a href="/regulatory" {% if current_path == '/regulatory' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Regulatory Analysis</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Rules v4</span></a>
-          <a href="/trust" {% if current_path == '/trust' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Trust &amp; Controls</span><span class="text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-400">Active</span></a>
-          <a href="/legal/product-use-terms" {% if current_path == '/legal/product-use-terms' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-file-contract" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Product Use Terms</span></a>
+          <a href="/regulatory" {% if current_path == '/regulatory' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Lacey Review</span></a>
+          <a href="/trust" {% if current_path == '/trust' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Data &amp; Security</span></a>
         </div>
       </section>
       {% if evaluation_mode %}
       <section class="lt-nav-section">
-        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Evaluation</p>
+        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Account</p>
         <div class="space-y-1">
           <div class="flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-medium text-slate-400">
             <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid {{ 'fa-shield-halved' if entitlement.evaluation_claimed else 'fa-hourglass-half' }}" aria-hidden="true"></i></span>
@@ -69,13 +65,16 @@
       </section>
       {% else %}
       <section class="lt-nav-section">
-        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Organization</p>
+        <p class="lt-nav-section__label mb-2 px-3 text-[10px] font-bold uppercase">Account</p>
         <div class="space-y-1">
           <a href="/billing" {% if current_path == '/billing' %}aria-current="page"{% endif %} class="lt-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium"><span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-receipt" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Billing</span></a>
           {# Settings remains hidden until a real customer settings route exists. #}
         </div>
       </section>
       {% endif %}
+      <a href="/legal/product-use-terms" {% if current_path == '/legal/product-use-terms' %}aria-current="page"{% endif %} class="lt-nav-link group mt-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium">
+        <span class="lt-nav-icon flex h-7 w-7 items-center justify-center text-sm"><i class="fa-solid fa-file-contract" aria-hidden="true"></i></span><span class="min-w-0 flex-1 truncate">Terms</span>
+      </a>
     </nav>
 
     <div class="lt-sidebar__footer shrink-0 border-t p-3">
@@ -105,7 +104,7 @@
         {% endif %}
         {% else %}
         <div class="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-300">
-          <span>Operations remaining</span>
+          <span>Operations left</span>
           <span>{{ entitlement.remaining_operations }} / {{ entitlement.monthly_operation_limit }}</span>
         </div>
         <progress class="lt-usage-progress mt-2" max="{{ entitlement.monthly_operation_limit }}" value="{{ entitlement.used_operations }}" aria-label="Monthly operation usage"></progress>
@@ -158,7 +157,7 @@
           {% endif %}
         </div>
         <div class="relative mx-auto hidden w-full max-w-xl md:block" data-command-palette>
-          <label class="relative block"><span class="sr-only">Jump to workspace section</span><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i><input id="lt-command-search" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-20 text-xs text-slate-800 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20" placeholder="Jump to shipments, suppliers, regulatory, audit…" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="lt-command-results" aria-label="Workspace quick navigation"><span id="lt-command-shortcut" class="lt-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" aria-hidden="true">Ctrl K</span></label>
+          <label class="relative block"><span class="sr-only">Jump to workspace section</span><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" aria-hidden="true"></i><input id="lt-command-search" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-20 text-xs text-slate-800 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20" placeholder="Search shipments, documents, suppliers…" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="lt-command-results" aria-label="Workspace quick navigation"><span id="lt-command-shortcut" class="lt-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" aria-hidden="true">Ctrl K</span></label>
           <div id="lt-command-results" class="absolute left-0 right-0 top-full z-50 mt-2 hidden overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl" role="listbox" aria-label="Workspace destinations" data-command-results></div>
         </div>
         <div class="ml-auto flex items-center gap-2">
@@ -245,13 +244,13 @@
   const destinations = [
     {label: 'Shipments', description: 'Open the compliance work queue', terms: ['operations', 'shipment', 'shipments', 'queue', 'workspace'], href: '/operations', icon: 'fa-briefcase'},
     {label: 'New shipment', description: 'Start a shipment evidence pack', terms: ['new', 'create', 'upload', 'shipment'], href: '/operations/new', icon: 'fa-plus'},
-    {label: 'Evidence', description: 'Inspect reusable supplier evidence', terms: ['evidence', 'documents', 'source', 'claims'], href: '/evidence', icon: 'fa-folder-open'},
+    {label: 'Documents', description: 'Review source documents and supplier evidence', terms: ['evidence', 'documents', 'source', 'claims'], href: '/evidence', icon: 'fa-folder-open'},
     {label: 'Suppliers', description: 'Open supplier compliance memory', terms: ['suppliers', 'supplier', 'vendor', 'memory', 'reusable evidence'], href: '/suppliers', icon: 'fa-building-circle-check'},
-    {label: 'Regulatory Analysis', description: 'Inspect active U.S. Lacey controls', terms: ['regulatory', 'regulatory analysis', 'ruleset', 'hts', 'aphis'], href: '/regulatory', icon: 'fa-scale-balanced'},
-    {label: 'Trust & Controls', description: 'Review data handling and workspace assurance', terms: ['trust', 'security', 'controls', 'privacy', 'retention', 'tenant'], href: '/trust', icon: 'fa-shield-halved'},
-    {label: 'Audit Log', description: 'Open the immutable activity history', terms: ['audit log', 'audit', 'activity', 'system of record', 'history'], href: '/audit-log', icon: 'fa-clock-rotate-left'},
+    {label: 'Lacey Review', description: 'Review Lacey requirements', terms: ['regulatory', 'regulatory analysis', 'ruleset', 'hts', 'aphis'], href: '/regulatory', icon: 'fa-scale-balanced'},
+    {label: 'Data & Security', description: 'View data protection and evidence handling', terms: ['trust', 'security', 'controls', 'privacy', 'retention', 'tenant'], href: '/trust', icon: 'fa-shield-halved'},
+    {label: 'Activity Log', description: 'Review shipment activity and decisions', terms: ['audit log', 'audit', 'activity', 'system of record', 'history'], href: '/audit-log', icon: 'fa-clock-rotate-left'},
     {% if not evaluation_mode %}{label: 'Billing', description: 'Manage the production subscription', terms: ['billing', 'subscription', 'payment'], href: '/billing', icon: 'fa-receipt'},{% endif %}
-    {label: 'Product Use Terms', description: 'Review product and filing boundaries', terms: ['product use', 'terms', 'compliance'], href: '/legal/product-use-terms', icon: 'fa-file-contract'},
+    {label: 'Terms', description: 'Review product use and filing boundaries', terms: ['product use', 'terms', 'compliance'], href: '/legal/product-use-terms', icon: 'fa-file-contract'},
     {label: 'Privacy', description: 'Review privacy terms', terms: ['privacy', 'data'], href: '/legal/privacy', icon: 'fa-shield-halved'}
   ];
   let activeIndex = -1;
