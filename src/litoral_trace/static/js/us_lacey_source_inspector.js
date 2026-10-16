@@ -56,6 +56,19 @@ class EvidenceSession {
   }
 }
 
+/* Warm one local PDF.js module while the reviewer is idle. No source bytes are prefetched.
+   Loading the module and fetching authorized bytes run concurrently on first inspection. */
+let pdfModulePromise = null;
+function loadPdfModule() {
+  if (!pdfModulePromise) {
+    pdfModulePromise = import("/static/vendor/pdfjs/pdf.min.mjs").then((pdfjs) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = "/static/vendor/pdfjs/pdf.worker.min.mjs";
+      return pdfjs;
+    }).catch((error) => { pdfModulePromise = null; throw error; });
+  }
+  return pdfModulePromise;
+}
+
 /* Page rendering is serialized; stale async work never touches the active canvas. */
 class PdfEvidenceRenderer {
   constructor(canvas, controls) {
@@ -70,14 +83,13 @@ class PdfEvidenceRenderer {
     this.renderBarrier = Promise.resolve();
     this.generation = 0;
     this.renderGeneration = 0;
+    this.viewportContainer = canvas.parentElement;
   }
-
   async open(objectUrl, page = 1) {
     this.destroy();
     const generation = this.generation;
-    const pdfjs = await import("/static/vendor/pdfjs/pdf.min.mjs");
+    const pdfjs = await loadPdfModule();
     if (generation !== this.generation) return;
-    pdfjs.GlobalWorkerOptions.workerSrc = "/static/vendor/pdfjs/pdf.worker.min.mjs";
     const loadingTask = pdfjs.getDocument({url:objectUrl});
     this.loadingTask = loadingTask;
     let pdf;
@@ -115,11 +127,30 @@ class PdfEvidenceRenderer {
       if (!isCurrent()) return;
       const pdfPage = await pdf.getPage(requestedPage);
       if (!isCurrent()) { pdfPage.cleanup?.(); return; }
-      const viewport = pdfPage.getViewport({scale:requestedZoom});
+      const natural = pdfPage.getViewport({scale:1});
+      // A fitted page is more useful than a gigantic canvas clipped on both sides.
+      // When no container dimensions are available (e.g. deterministic JS tests),
+      // preserve the natural PDF scale exactly.
+      const available = this.viewportContainer?.clientWidth || 0;
+      const fitted = available > 0
+        ? Math.max(.02, Math.min(1.65, (available - 40) / Math.max(1, natural.width)))
+        : 1;
+      const viewport = pdfPage.getViewport({scale:fitted * requestedZoom});
       const context = this.canvas.getContext("2d", {alpha:false});
-      this.canvas.width = Math.ceil(viewport.width);
-      this.canvas.height = Math.ceil(viewport.height);
-      const task = pdfPage.render({canvasContext:context, viewport});
+      // Cap backing-store pixels to prevent frozen scroll / GPU exhaustion on
+      // high DPI, scanned PDFs or multi-page documents.
+      const deviceScale = Math.max(1, Math.min(1.6, (typeof window === "undefined" ? 1 : window.devicePixelRatio) || 1));
+      const maxPixelScale = Math.sqrt(12_000_000 / Math.max(1, viewport.width * viewport.height));
+      const rasterScale = available > 0 ? Math.min(deviceScale, maxPixelScale) : 1;
+      const scale = Math.max(.1, rasterScale);
+      this.canvas.width = Math.max(1, Math.ceil(viewport.width * scale));
+      this.canvas.height = Math.max(1, Math.ceil(viewport.height * scale));
+      if (this.canvas.style) {
+        this.canvas.style.width = `${Math.round(viewport.width)}px`;
+        this.canvas.style.height = `${Math.round(viewport.height)}px`;
+      }
+      const task = pdfPage.render({canvasContext:context, viewport,
+        transform:[scale, 0, 0, scale, 0, 0]});
       this.renderTask = task;
       try {
         await task.promise;
@@ -165,6 +196,7 @@ class PdfEvidenceRenderer {
     this.renderPromise = null;
     this.canvas.width = 0;
     this.canvas.height = 0;
+    if (this.canvas.style) { this.canvas.style.width = ""; this.canvas.style.height = ""; }
   }
 }
 
@@ -173,6 +205,16 @@ class PdfEvidenceRenderer {
   const root = document.querySelector("[data-source-inspector]");
   if (!root || window.__ltSourceInspectorBound) return;
   window.__ltSourceInspectorBound = true;
+  // Portaling both layers to <body> isolates them from scroll containers,
+  // HTMX-transformed ancestors and sticky navigation stacking contexts.
+  const previewPortal = document.querySelector("[data-evidence-preview]");
+  if (root.parentElement !== document.body) document.body.appendChild(root);
+  if (previewPortal && previewPortal.parentElement !== document.body) document.body.appendChild(previewPortal);
+  if (document.querySelector("[data-source-inspect]")) {
+    const warm = () => void loadPdfModule().catch(() => {});
+    if ("requestIdleCallback" in window) window.requestIdleCallback(warm, {timeout:3500});
+    else window.setTimeout(warm, 900);
+  }
   const smartEntry = document.querySelector("[data-smart-entry-selector]");
 
   function bindSmartEntrySelector() {
@@ -218,7 +260,7 @@ class PdfEvidenceRenderer {
   }
   bindSmartEntrySelector();
   const canvas = root.querySelector("[data-inspector-canvas]");
-  const preview = document.querySelector("[data-evidence-preview]");
+  const preview = previewPortal;
   const previewCanvas = preview?.querySelector("[data-preview-canvas]");
   const title = root.querySelector("[data-inspector-title]");
   const locator = root.querySelector("[data-inspector-locator]");
@@ -279,41 +321,43 @@ class PdfEvidenceRenderer {
     window.clearTimeout(previewCloseTimer);
     if (!preview || preview.hidden) return;
     preview.classList.remove("is-open");
-    previewCloseTimer = window.setTimeout(() => {
-      preview.hidden = true;
-      previewRenderer?.destroy();
-      if (!root.open) evidenceSession.release();
-    }, reduced() ? 0 : 160);
+    preview.hidden = true;
+    previewRenderer?.destroy();
+    if (!root.open) evidenceSession.release();
   }
-  function positionPreview(button) {
-    const rect = button.getBoundingClientRect();
-    const width = Math.min(620, window.innerWidth - 24);
-    const height = Math.min(window.innerHeight * .72, 680);
-    const left = rect.right + width + 12 <= window.innerWidth ? rect.right + 10 : Math.max(12, rect.left - width - 10);
-    const top = Math.min(Math.max(12, rect.top), window.innerHeight - height - 12);
-    Object.assign(preview.style, {left:`${left}px`, top:`${top}px`});
+  function positionPreview() {
+    // Stay fixed to the viewport, not to a document row that may scroll away.
+    // Placement and size are owned by responsive CSS.
+    preview.style.removeProperty("top");
+    preview.style.removeProperty("left");
   }
   async function openPreview(button) {
-    if (mobileViewport() || !preview || !previewRenderer) return;
+    if (mobileViewport() || root.open || !preview || !previewRenderer) return;
     const url = sourceUrl(button.getAttribute("data-source-url")); if (!url) return;
     const previewRequest = ++previewGeneration;
     window.clearTimeout(previewCloseTimer);
     previewButton = button;
-    positionPreview(button);
+    positionPreview();
     preview.hidden = false;
+    preview.dataset.viewerState = "loading";
     preview.querySelector("[data-preview-title]").textContent = button.getAttribute("data-source-label") || "Original PDF";
     preview.querySelector("[data-preview-meta]").textContent = "Loading verified original…";
     window.requestAnimationFrame(() => { if (previewRequest === previewGeneration) preview.classList.add("is-open"); });
     try {
       const page = Number.parseInt(button.getAttribute("data-source-page") || "1", 10) || 1;
-      const resource = await evidenceSession.acquire({key:sourceKey(button,url), url:url.href});
+      const [resource] = await Promise.all([
+        evidenceSession.acquire({key:sourceKey(button,url), url:url.href}),
+        loadPdfModule(),
+      ]);
       if (previewRequest !== previewGeneration || preview.hidden) return;
       await previewRenderer.open(resource.objectUrl, page);
       if (previewRequest !== previewGeneration || preview.hidden) return;
       preview.querySelector("[data-preview-meta]").textContent = `Page ${previewRenderer.page} · ${button.getAttribute("data-source-locator") || "Original evidence"}`;
+      preview.dataset.viewerState = "ready";
     } catch (error) {
       if (previewRequest === previewGeneration && error.name !== "AbortError") {
         preview.querySelector("[data-preview-meta]").textContent = errorMessage(error);
+        preview.dataset.viewerState = "error";
       }
     }
   }
@@ -354,18 +398,26 @@ class PdfEvidenceRenderer {
     locator.textContent = button.getAttribute("data-source-locator") || "Check the source page.";
     external.href = url.href;
     renderer.destroy();
+    root.dataset.viewerState = "loading";
     setStatus("Loading verified original…");
     if (!root.open) { if (mobileViewport()) root.showModal(); else root.show(); }
     window.requestAnimationFrame(() => root.classList.add("is-open"));
     closeButton.focus({preventScroll:true});
     try {
-      const resource = await evidenceSession.acquire({key, url:url.href});
+      const [resource] = await Promise.all([
+        evidenceSession.acquire({key, url:url.href}),
+        loadPdfModule(),
+      ]);
       if (!root.open || key !== activeInspectorKey || resource.key !== key) return;
       await renderer.open(resource.objectUrl, Number.isInteger(page) && page > 0 && page <= 10000 ? page : 1);
-      if (key === activeInspectorKey) setStatus("");
+      if (key === activeInspectorKey && root.open) {
+        root.dataset.viewerState = "ready";
+        setStatus("");
+      }
     } catch (error) {
       if (error.name === "AbortError" || key !== activeInspectorKey) return;
       renderer.destroy();
+      root.dataset.viewerState = "error";
       setStatus(errorMessage(error), true);
     }
   }
@@ -398,35 +450,39 @@ class PdfEvidenceRenderer {
     else if (event.target.closest("[data-source-inspector-close]") || event.target === root) close();
   });
   // Delegation survives HTMX replacement of evidence cards and inspector controls.
-  const fromCard = (target) => target?.closest?.("[data-evidence-card]");
-  const startPreviewIntent = (card) => {
-    const button = card?.querySelector("[data-source-inspect]");
-    if (!button) return;
+  const hoverSurface = (target) => target?.closest?.("[data-evidence-card]")
+    || target?.closest?.("[data-source-inspect]");
+  const surfaceButton = (surface) => surface?.matches("[data-source-inspect]")
+    ? surface : surface?.querySelector("[data-source-inspect]");
+  const startPreviewIntent = (button) => {
+    if (!button || root.open) return;
+    // Moving between elements inside the same card is not a new hover intent.
+    if (button === previewButton && preview && !preview.hidden) return;
     window.clearTimeout(previewCloseTimer);
     window.clearTimeout(previewTimer);
-    previewTimer = window.setTimeout(() => openPreview(button), 180);
+    previewTimer = window.setTimeout(() => openPreview(button), 220);
   };
   const schedulePreviewClose = () => {
     window.clearTimeout(previewTimer);
     window.clearTimeout(previewCloseTimer);
-    previewCloseTimer = window.setTimeout(closePreview, 250);
+    previewCloseTimer = window.setTimeout(closePreview, 400);
   };
   document.addEventListener("pointerover", (event) => {
     if (!window.matchMedia("(hover:hover) and (pointer:fine)").matches) return;
-    const card = fromCard(event.target);
-    if (card && !card.contains(event.relatedTarget)) startPreviewIntent(card);
+    const surface = hoverSurface(event.target);
+    if (surface && !surface.contains(event.relatedTarget)) startPreviewIntent(surfaceButton(surface));
   });
   document.addEventListener("pointerout", (event) => {
-    const card = fromCard(event.target);
-    if (card && !card.contains(event.relatedTarget)) schedulePreviewClose();
+    const surface = hoverSurface(event.target);
+    if (surface && !surface.contains(event.relatedTarget)) schedulePreviewClose();
   });
   document.addEventListener("focusin", (event) => {
-    const card = fromCard(event.target);
-    if (card && !card.contains(event.relatedTarget)) startPreviewIntent(card);
+    const surface = hoverSurface(event.target);
+    if (surface && !surface.contains(event.relatedTarget)) startPreviewIntent(surfaceButton(surface));
   });
   document.addEventListener("focusout", (event) => {
-    const card = fromCard(event.target);
-    if (card && !card.contains(event.relatedTarget)) schedulePreviewClose();
+    const surface = hoverSurface(event.target);
+    if (surface && !surface.contains(event.relatedTarget)) schedulePreviewClose();
   });
   preview?.addEventListener("pointerenter", () => window.clearTimeout(previewCloseTimer));
   preview?.addEventListener("pointerleave", () => { previewCloseTimer = window.setTimeout(closePreview, 250); });
@@ -436,6 +492,10 @@ class PdfEvidenceRenderer {
     if (!preview.contains(event.relatedTarget)) schedulePreviewClose();
   });
   preview?.querySelector("[data-preview-pin]")?.addEventListener("click", () => { if (previewButton) { closePreview(); open(previewButton); } });
+  preview?.querySelector("[data-preview-close]")?.addEventListener("click", closePreview);
+  // Page scrolling does not cancel a pinned inspector. Lightweight hover
+  // previews close on navigation, never by destroying the pinned PDF.
+  window.addEventListener("scroll", () => { if (!root.open) closePreview(); }, {passive:true});
   document.addEventListener("keydown", (event) => { if (event.key === "Escape" && preview && !preview.hidden) { event.preventDefault(); closePreview(); } });
   root.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
   const discardSourceState = () => {
@@ -454,7 +514,13 @@ class PdfEvidenceRenderer {
     returnFocus = null;
   };
   // Never reuse an inspected source after a refreshed evidence generation.
-  document.body.addEventListener("htmx:beforeSwap", discardSourceState);
+  document.body.addEventListener("htmx:beforeSwap", (event) => {
+    const target = event.detail?.target;
+    if (!(target instanceof Element)) return;
+    const sourceScope = "#operation-workspace, #applicability, #documents, [data-applicability-preview], [data-evidence-card]";
+    if (target.matches(sourceScope) || target.querySelector(sourceScope)) discardSourceState();
+    // Status polling and unrelated HTMX swaps must not erase a pinned PDF.
+  });
   window.addEventListener("pagehide", discardSourceState);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") discardSourceState();

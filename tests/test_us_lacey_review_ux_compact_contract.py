@@ -33,8 +33,8 @@ def test_review_is_primary_navigation_and_advanced_attestation_is_progressive():
 
 
 def test_versioned_css_and_legible_document_cards():
-    assert "us_lacey_source_inspector.css') }}?v=20261015-ux4" in OP
-    assert "us_lacey_source_inspector.js') }}?v=20261015-ux4" in OP
+    assert "us_lacey_source_inspector.css') }}?v=20261016-pdf5" in OP
+    assert "us_lacey_source_inspector.js') }}?v=20261016-pdf5" in OP
     assert 'class="lt-evidence-card__copy"' in APP
     assert "overflow-wrap:anywhere" in CSS
     assert ".lt-attestation-summary" in CSS

@@ -176,3 +176,30 @@ test("switching PDFs waits for old canvas render cancellation to settle", async 
   assert.equal(x.controls.page.textContent,"Page 1 of 2");
   x.renderer.destroy();
 });
+
+
+test("fit-to-width renders bounded page canvas without reloading the source", async () => {
+  const x=fakeRenderer();
+  x.renderer.viewportContainer={clientWidth:280};
+  await x.renderer.renderPage();
+  assert.equal(x.canvas.width,240); // (280 - 40) / natural 200 = 1.2
+  assert.equal(x.canvas.height,360);
+  await x.renderer.setZoom(1.4);
+  assert.equal(x.canvas.width,336);
+  assert.equal(x.controls.zoom.textContent,"140%");
+  x.renderer.destroy();
+});
+
+test("a huge scanned page has a bounded backing-store pixel count", async () => {
+  const x=fakeRenderer();
+  x.renderer.viewportContainer={clientWidth:1000};
+  x.renderer.pdf.getPage=async () => ({
+    getViewport:({scale})=>({width:18000*scale,height:24000*scale}),
+    cleanup:()=>{},
+    render:()=>({promise:Promise.resolve(),cancel:()=>{}}),
+  });
+  await x.renderer.renderPage();
+  assert.ok(x.canvas.width * x.canvas.height <= 12_050_000,
+    'raster area ' + (x.canvas.width*x.canvas.height) + ' exceeded allocation budget');
+  x.renderer.destroy();
+});

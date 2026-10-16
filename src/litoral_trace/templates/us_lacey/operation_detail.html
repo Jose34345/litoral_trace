@@ -6,7 +6,7 @@
 {% set audit_events = audit_events|default(()) %}
 {% block lacey_title %}Review shipment{% endblock %}
 {% block head_extra %}{{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', path='/css/us_lacey_source_inspector.css') }}?v=20261015-ux4">
+<link rel="stylesheet" href="{{ url_for('static', path='/css/us_lacey_source_inspector.css') }}?v=20261016-pdf5">
 {% if private_v2|default(false) %}<link rel="stylesheet" href="{{ url_for('static', path='/css/assurance_v2_case.css') }}">{% endif %}{% endblock %}
 {% block lacey_content %}
 {% set bulk_upload_rejection = error and error.startswith("This file contains multiple shipments.") %}
@@ -341,5 +341,5 @@
 {% endif %}
 {% if private_v2 %}<script src="{{ url_for('static', path='/js/assurance_v2_case.js') }}" defer></script>{% endif %}
 {% include "us_lacey/fragments/source_inspector.html" %}
-<script src="{{ url_for('static', path='/js/us_lacey_source_inspector.js') }}?v=20261015-ux4" defer></script>
+<script src="{{ url_for('static', path='/js/us_lacey_source_inspector.js') }}?v=20261016-pdf5" defer></script>
 {% endblock %}

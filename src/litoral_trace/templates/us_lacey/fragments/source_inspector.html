@@ -1,6 +1,15 @@
-<section class="lt-evidence-preview" data-evidence-preview hidden aria-label="Original evidence preview">
-  <header><div><strong data-preview-title>Original PDF</strong><small data-preview-meta>Loading verified original…</small></div><button type="button" data-preview-pin>Open full inspector</button></header>
-  <div class="lt-evidence-preview__canvas"><canvas data-preview-canvas aria-label="Original PDF preview"></canvas></div>
+<section class="lt-evidence-preview" data-evidence-preview data-viewer-state="loading" hidden role="region" aria-label="Evidence quick preview">
+  <header>
+    <div><strong data-preview-title>Original PDF</strong><small data-preview-meta role="status">Loading verified original…</small></div>
+    <div class="lt-evidence-preview__actions">
+      <button type="button" data-preview-pin>Expand</button>
+      <button type="button" data-preview-close aria-label="Dismiss PDF preview">Close</button>
+    </div>
+  </header>
+  <div class="lt-evidence-preview__canvas">
+    <div class="lt-pdf-loading" data-preview-loading aria-hidden="true"><span class="lt-pdf-loading__spinner"></span><span>Preparing evidence preview…</span></div>
+    <canvas data-preview-canvas aria-label="Original PDF preview"></canvas>
+  </div>
 </section>
 <dialog class="lt-source-inspector" data-source-inspector aria-labelledby="source-inspector-title">
   <section class="lt-source-inspector__panel" aria-label="Original source PDF inspector">
@@ -23,7 +32,13 @@
         <span data-pdf-zoom>Zoom —</span>
         <button type="button" data-pdf-zoom-in aria-label="Zoom in">+</button>
       </div>
-      <div class="lt-source-inspector__canvas-wrap" data-pdf-canvas-wrap><canvas data-inspector-canvas aria-label="Verified original PDF page"></canvas></div>
+      <div class="lt-source-inspector__canvas-wrap" data-pdf-canvas-wrap>
+        <div class="lt-pdf-loading" data-inspector-loading aria-hidden="true">
+          <span class="lt-pdf-loading__spinner"></span>
+          <span>Preparing verified PDF…</span>
+        </div>
+        <canvas data-inspector-canvas aria-label="Verified original PDF page"></canvas>
+      </div>
       <div class="lt-source-inspector__fallback">
         <span>Originals may expire under your retention policy. If unavailable, request the original; a worksheet is not independent evidence.</span>
         <a href="#" target="_blank" rel="noopener noreferrer" data-inspector-external>Open original in new tab</a>
