@@ -55,7 +55,7 @@ def test_shipment_workspace_is_readiness_first_and_upload_is_modal() -> None:
     assert "Shipment readiness" in readiness
     assert "Exceptions:" in readiness
     assert "Country of harvest" in country
-    assert "reused from verified supplier evidence" in template
+    assert "View verified supplier evidence" in template
     assert "Inspect source" in template
     assert "Add evidence" in template
     assert 'id="add-evidence-dialog"' in template
