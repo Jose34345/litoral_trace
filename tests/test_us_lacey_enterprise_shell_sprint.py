@@ -15,7 +15,7 @@ def test_enterprise_shell_exposes_only_real_navigation() -> None:
     assert 'href="/suppliers"' in source
     assert ">Suppliers<" in source
     assert 'href="/audit-log"' in source
-    assert ">Audit Log<" in source
+    assert ">Activity Log<" in source
     assert 'href="/billing"' in source
     assert 'href="/legal/product-use-terms"' in source
     assert ">Evidence<" in source
