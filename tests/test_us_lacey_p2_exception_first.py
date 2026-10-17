@@ -128,7 +128,7 @@ def test_exception_first_workspace_exposes_tabs_and_bulk_confirmation():
     assert "data-review-tab-button" in template
     assert "data-review-tab-panel" in template
     assert "data-review-line=" in template
-    assert "Confirm All Auto-Resolved Data" in template
+    assert "Confirm Supported Fields" in template
     assert '{% include "us_lacey/fragments/export_declaration_package.html" %}' in template
 
 
