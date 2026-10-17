@@ -38,7 +38,7 @@ def test_auto_resolved_uses_exact_current_document_id_and_same_inspector_as_pend
     assert 'href="/evidence"' in WORKSPACE
     assert 'data-source-inspect' in WORKSPACE
     # Reused claims with no current document must never inherit a shipment PDF URL.
-    reused_section = WORKSPACE.split('{% if field.provenance == "reused_evidence" %}\\n                <a',1)
+    reused_section = WORKSPACE.split('<a class="inline-flex text-xs font-bold text-emerald-800 underline" href="/evidence" data-reused-evidence-inspect>', 1)
     assert len(reused_section) == 2
     assert '{% elif field.source_assurance_document_id and field.source_page %}' in reused_section[1]
 
