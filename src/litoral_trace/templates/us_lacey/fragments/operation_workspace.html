@@ -450,17 +450,24 @@
               </td>
               <td class="px-4 py-3"><span class="rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">{{ (field.confidence * 100)|round(1) }}%</span></td>
               <td class="px-4 py-3">
-                <details>
-                  <summary class="cursor-pointer text-xs font-bold text-emerald-700">Inspect evidence</summary>
-                  <div class="mt-2 max-w-sm rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    {% if field.provenance == "reused_evidence" %}
-                    <p class="text-[11px] text-slate-600">Source: Verified supplier evidence from a prior shipment.</p>
-                    {% else %}
-                    <p class="text-[11px] text-slate-600">Source: Document evidence{% if field.source_page %} · Page{% if ',' in (field.source_page|string) %}s{% endif %} {{ field.source_page }}{% endif %}</p>
-                    {% endif %}
-                    {% if field.source_locator %}<p class="mt-1 break-all text-[10px] text-slate-400">{{ field.source_locator }}</p>{% endif %}
-                  </div>
-                </details>
+                {% if field.provenance == "reused_evidence" %}
+                <a class="inline-flex text-xs font-bold text-emerald-800 underline" href="/evidence" data-reused-evidence-inspect>
+                  View verified supplier evidence
+                </a>
+                <p class="mt-1 max-w-xs text-[11px] text-slate-500">
+                  Historical evidence record. The original PDF can be opened only while retained and authorized.
+                </p>
+                {% elif field.source_assurance_document_id and field.source_page %}
+                {% set resolved_source_page = (field.source_page|string).split(',')[0]|trim %}
+                <button type="button" class="text-xs font-bold text-emerald-800 underline" data-source-inspect
+                  data-source-url="/operations/{{ detail.public_id }}/source/{{ field.source_assurance_document_id }}"
+                  data-source-page="{{ resolved_source_page if resolved_source_page.isdigit() else 1 }}"
+                  data-source-label="{{ field.source_filename or 'Shipment source PDF' }}"
+                  data-source-locator="{{ 'Source locator: ' ~ field.source_locator if field.source_locator else 'Inspect the original document before confirming.' }}"
+                >Inspect source PDF · p. {{ resolved_source_page if resolved_source_page.isdigit() else 1 }}</button>
+                {% else %}
+                <span class="text-xs text-slate-500" data-auto-source-unavailable>No current source PDF linked</span>
+                {% endif %}
               </td>
             </tr>
             {% endfor %}
