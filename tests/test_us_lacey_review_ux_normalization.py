@@ -156,7 +156,7 @@ def test_exception_first_workspace_has_four_tabs_and_htmx_actions():
     assert "Auto-Resolved Data" in template
     assert "Confirmed <span" in template
     assert "Regulatory Analysis" in template
-    assert "Confirm All Auto-Resolved Data" in template
+    assert "Confirm Supported Fields" in template
     assert 'hx-target="#operation-workspace"' in template
     assert '/review/actions/fields/' in template
     assert '/review/actions/accept-supported' in template
@@ -206,8 +206,9 @@ def test_exception_first_ui_polish_uses_quiet_enterprise_surfaces():
     assert "ring-emerald-600/20" in workspace
     assert "ring-amber-600/20" in workspace
     assert "Save verified value" in workspace
-    assert "Inspect evidence" in workspace
-    assert "Source: Document evidence" in workspace
+    assert "Inspect source PDF" in workspace
+    assert "data-source-inspect" in workspace
+    assert "data-auto-source-unavailable" in workspace
     assert "semantically equivalent source observations were reconciled" not in workspace
 
     assert "U.S. Lacey ruleset" not in regulatory
