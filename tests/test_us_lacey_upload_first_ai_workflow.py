@@ -71,7 +71,7 @@ def test_workspace_offers_safe_bulk_confirmation_but_keeps_conflicts_explicit():
     source = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
     assert "/review/actions/accept-supported" in source
     assert "/review/actions/fields/" in source
-    assert "Confirm All Auto-Resolved Data" in source
+    assert "Confirm Supported Fields" in source
     assert "Pending <span" in source
     assert "Auto-Resolved Data" in source
     assert "Each item shows what is missing and the action needed." in source
