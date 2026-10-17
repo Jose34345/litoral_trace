@@ -1,148 +1,296 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Start with supplier documents, not a manually prepared Lacey spreadsheet. Litoral Trace extracts, compares and preserves evidence for review before filing.">
-  <title>Litoral Trace | From shipment documents to Lacey-ready data</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/css/lacey_beta.css') }}">
-</head>
-<body>
-<a class="skip" href="#main-content">Skip to content</a>
-<header class="header">
-  <div class="container header-in">
-    <a class="brand" href="/lacey"><span class="mark">▲</span><span><strong>Litoral Trace</strong><small>Document preparation for import operations</small></span></a>
-    <nav class="nav" aria-label="Primary">
-      <a class="navlink" href="#difference">Why it is different</a>
-      <a class="navlink" href="/lacey/demo">See sample</a>
-      <a class="btn btn-dark" href="#private-beta">Test one shipment</a>
-    </nav>
-  </div>
-</header>
-<main id="main-content">
-<section class="hero">
-  <div class="container hero-grid">
-    <div>
-      <span class="pill">Private Beta · Lacey Act Phase VII</span>
-      <h1>Stop manually preparing Lacey spreadsheets.</h1>
-      <p class="lead">Start with the shipment documents you already receive. Litoral Trace extracts the available data, compares the files, keeps every value tied to its source and shows what is missing or inconsistent before filing.</p>
-      <div class="actions">
-        <a class="btn btn-primary" href="/lacey/demo" data-event="lacey_demo_open">See a sample shipment →</a>
-        <a class="btn btn-outline" href="#private-beta">Test one completed shipment</a>
+{% extends "us_lacey/marketing_base.html" %}
+{% from "components/ui.html" import badge, button, status_badge %}
+
+{% block title %}Litoral Trace — U.S. Lacey Act Compliance Infrastructure{% endblock %}
+{% block head_extra %}
+<meta name="description" content="Lacey compliance infrastructure for wood and plant-product supply chains: supplier evidence, product composition, species, country of harvest, exception review and declaration-ready work products.">
+<link rel="canonical" href="https://lacey.litoraltrace.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Litoral Trace">
+<meta property="og:title" content="Litoral Trace — U.S. Lacey Act Compliance Infrastructure">
+<meta property="og:description" content="Lacey compliance infrastructure for wood and plant-product supply chains: supplier evidence, product composition, species, country of harvest, exception review and declaration-ready work products.">
+<meta property="og:url" content="https://lacey.litoraltrace.com/">
+<meta property="og:image" content="https://lacey.litoraltrace.com/static/img/litoral-trace-lacey-og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="627">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:alt" content="Litoral Trace U.S. Lacey Act Compliance Infrastructure">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Litoral Trace — U.S. Lacey Act Compliance Infrastructure">
+<meta name="twitter:description" content="Lacey compliance infrastructure for wood and plant-product supply chains: supplier evidence, product composition, species, country of harvest, exception review and declaration-ready work products.">
+<meta name="twitter:image" content="https://lacey.litoraltrace.com/static/img/litoral-trace-lacey-og.png">
+{% endblock %}
+
+{% block content %}
+<section class="bg-slate-950 px-4 py-14 text-white sm:px-6 lg:px-8 lg:py-16">
+  <div class="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.02fr_0.98fr]">
+    <div class="max-w-3xl">
+      <span class="lt-badge lt-badge--positive">Built for import compliance teams</span>
+      <h1 class="mt-5 text-4xl font-bold tracking-tight text-white sm:text-5xl">U.S. Lacey Act Compliance Infrastructure</h1>
+      <p class="mt-5 max-w-2xl text-xl font-semibold leading-8 text-slate-200">Turn supplier evidence, BOM data and shipment documents into review-ready Lacey data.</p>
+      <p class="mt-4 max-w-xl text-base leading-7 text-slate-400">Reconcile species, country of harvest, quantities and supporting evidence. Surface only the missing facts and conflicts that require human review.</p>
+      <div class="mt-8 flex flex-wrap gap-3">
+        <a href="/demo" class="lt-btn lt-btn--primary lacey-demo-link" aria-label="Run a synthetic U.S. Lacey sample shipment"><i class="fa-solid fa-play" aria-hidden="true"></i><span>Run a sample shipment</span></a>
+        {{ button("Analyze my documents", "/sandbox/start", "secondary", "fa-file-import", extra_classes="lacey-sandbox-link", aria_label="Analyze my documents in the four-hour sandbox") }}
       </div>
-      <div class="trust"><span>No ERP access</span><span>Historical shipment is enough</span><span>Sensitive data can be redacted</span></div>
+      <div class="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-xs font-semibold text-slate-400">
+        <span><i class="fa-solid fa-check mr-2 text-emerald-400" aria-hidden="true"></i>Source-linked evidence</span>
+        <span><i class="fa-solid fa-check mr-2 text-emerald-400" aria-hidden="true"></i>Human review gates</span>
+        <span><i class="fa-solid fa-check mr-2 text-emerald-400" aria-hidden="true"></i>Exception-first workflow</span>
+      </div>
     </div>
-    <div class="mock" aria-label="Illustrative shipment review">
-      <div class="mock-head"><div><strong>Shipment document review</strong><div style="color:#64748b;font-size:10px;margin-top:4px">Illustrative private-beta example</div></div><span class="demo-badge">REVIEW</span></div>
-      <div class="mock-body">
-        <div class="docs">
-          <div class="doc"><b>Commercial Invoice</b><small>PDF · shipment/value</small></div>
-          <div class="doc"><b>Supplier Sheet</b><small>XLSX · species data</small></div>
-          <div class="doc"><b>Packing List</b><small>PDF · quantity</small></div>
+
+    <section class="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl" aria-label="Illustrative Operations Command Center">
+      <header class="flex items-center justify-between gap-4 border-b border-slate-700 px-4 py-3">
+        <div class="flex items-center gap-3">
+          <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-300"><i class="fa-solid fa-briefcase" aria-hidden="true"></i></span>
+          <div>
+            <h2 class="text-xs font-bold text-white">Operations Command Center</h2>
+            <p class="mt-0.5 text-[10px] text-slate-500">Compliance workspace · production view</p>
+          </div>
         </div>
-        <div class="status-list">
-          <div class="status-row"><span>Genus / species <small style="display:block;color:#64748b">Supplier Sheet</small></span><span class="tag ok">MATCHED</span></div>
-          <div class="status-row"><span>Shipment reference <small style="display:block;color:#64748b">Invoice ↔ B/L</small></span><span class="tag ok">MATCHED</span></div>
-          <div class="status-row"><span>Plant quantity <small style="display:block;color:#64748b">5,000 kg ↔ 4,850 kg</small></span><span class="tag review">REVIEW</span></div>
-          <div class="status-row"><span>Country of harvest <small style="display:block;color:#64748b">No supporting value</small></span><span class="tag missing">MISSING</span></div>
+        <span class="rounded-full border border-emerald-700/70 bg-emerald-950/60 px-2.5 py-1 text-[10px] font-bold text-emerald-300">LIVE WORKFLOW</span>
+      </header>
+      <div class="p-4">
+        <div class="grid grid-cols-4 gap-2">
+          {% for value, label in [("10", "open"), ("3", "needs review"), ("4", "ready to export"), ("18", "completed")] %}
+          <article class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5">
+            <p class="text-xl font-bold text-white">{{ value }}</p>
+            <p class="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">{{ label }}</p>
+          </article>
+          {% endfor %}
+        </div>
+        <div class="mt-3 overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
+          <div class="grid grid-cols-[1.5fr_1fr_.55fr_.8fr] gap-2 border-b border-slate-700 bg-slate-900 px-3 py-2 text-[9px] font-bold uppercase tracking-wide text-slate-500">
+            <span>Reference</span><span>Supplier</span><span>Docs</span><span>Readiness</span>
+          </div>
+          {% for reference, supplier, docs, state in [
+            ("Entry 2026-18472", "Northwest Timber Co.", "7", "READY"),
+            ("B/L MAEU8471932", "Atlantic Wood Supply", "5", "REVIEW"),
+            ("PO-7784", "Pacific Panels Ltd.", "9", "READY")
+          ] %}
+          <div class="grid grid-cols-[1.5fr_1fr_.55fr_.8fr] items-center gap-2 border-b border-slate-800 px-3 py-3 text-[10px] last:border-0">
+            <span class="font-semibold text-slate-200">{{ reference }}</span>
+            <span class="truncate text-slate-400">{{ supplier }}</span>
+            <span class="text-slate-400">{{ docs }}</span>
+            <span>{% if state == "READY" %}<span class="rounded-full bg-emerald-950 px-2 py-1 font-bold text-emerald-300">READY</span>{% else %}<span class="rounded-full bg-amber-950 px-2 py-1 font-bold text-amber-300">REVIEW</span>{% endif %}</span>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="mt-3 flex items-center justify-between gap-4 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5">
+          <div>
+            <p class="text-[10px] font-bold text-slate-200">Verified supplier evidence memory</p>
+            <p class="mt-0.5 text-[9px] text-slate-500">12 reusable claims · validity tracked across shipments</p>
+          </div>
+          <span class="text-[10px] font-bold text-emerald-300">SYSTEM OF RECORD</span>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 </section>
 
-<section class="section soft" id="difference">
-  <div class="container">
-    <div class="kicker">Start before the spreadsheet</div>
-    <h2>The manual work often happens before validation.</h2>
-    <p class="sub">A validation tool can check structured data, but someone may still have to read invoices, packing lists, supplier sheets and certificates first. Litoral Trace is designed to reduce that document-to-data work.</p>
-    <div class="flow-compare">
-      <div class="flow-card manual">
-        <h3>Manual preparation</h3>
-        <div class="flow-step"><span class="num">1</span><span>Receive PDFs, spreadsheets and certificates</span></div>
-        <div class="flow-step"><span class="num">2</span><span>Open each file and find the relevant values</span></div>
-        <div class="flow-step"><span class="num">3</span><span>Copy the values into a structured spreadsheet</span></div>
-        <div class="flow-step"><span class="num">4</span><span>Check and prepare the data for filing</span></div>
+<section id="trust" class="border-b border-slate-200 bg-white px-4 py-10 sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-7xl">
+    <div class="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
+      <div>
+        <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Built for U.S. Lacey Act preparation</p>
+        <h2 class="mt-3 text-2xl font-bold tracking-tight text-slate-950">Operational evidence, not black-box answers.</h2>
+        <p class="mt-3 text-sm leading-6 text-slate-600">Every preparation decision stays tied to evidence, review state, and the shipment record that produced it.</p>
       </div>
-      <div class="flow-card highlight">
-        <h3>With Litoral Trace</h3>
-        <div class="flow-step"><span class="num">1</span><span>Upload the shipment documents you already receive</span></div>
-        <div class="flow-step"><span class="num">2</span><span>Extract available values with source references</span></div>
-        <div class="flow-step"><span class="num">3</span><span>Compare documents and surface conflicts or missing data</span></div>
-        <div class="flow-step"><span class="num">4</span><span>Export reviewed structured data for the next step</span></div>
+      <div class="grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+        {% for icon, title, copy in [
+          ("fa-layer-group", "Multi-document reconciliation", "Invoice, transport, customs and supplier records resolved together."),
+          ("fa-leaf", "Taxonomy normalization", "Commercial species terms normalized into reviewable botanical data."),
+          ("fa-triangle-exclamation", "Exception-first review", "Missing facts and conflicts are isolated instead of buried in complete records."),
+          ("fa-link", "Source-linked evidence", "Resolved values remain traceable to documents and evidence provenance."),
+          ("fa-user-check", "Human verification gates", "Material outputs remain reviewable before downstream use."),
+          ("fa-file-code", "Structured export", "Generate review-ready LAWGS XML work products after preparation is complete.")
+        ] %}
+        <article class="border-l-2 border-slate-200 pl-4">
+          <div class="flex items-center gap-2 text-sm font-bold text-slate-950"><i class="fa-solid {{ icon }} text-emerald-700" aria-hidden="true"></i><span>{{ title }}</span></div>
+          <p class="mt-2 text-xs leading-5 text-slate-500">{{ copy }}</p>
+        </article>
+        {% endfor %}
       </div>
     </div>
   </div>
 </section>
 
-<section class="section">
-  <div class="container">
-    <div class="kicker">What the system does</div>
-    <h2>Less re-keying. More review where it matters.</h2>
-    <div class="grid3">
-      <div class="card"><h3>Extract</h3><p>Read invoices, spreadsheets and supporting PDFs and create structured candidates for fields that are actually present.</p></div>
-      <div class="card"><h3>Compare</h3><p>Check whether quantities, shipment references, species/origin data and other values agree across the available documents.</p></div>
-      <div class="card"><h3>Preserve evidence</h3><p>Keep every candidate linked to its source so a reviewer can see where the information came from instead of trusting a black box.</p></div>
-    </div>
-    <div class="demo-strip dark">
-      <div><h3>See the workflow with a synthetic shipment.</h3><p>The sample intentionally contains missing data and a quantity conflict. It shows the behavior we want to validate with real U.S. shipment files.</p></div>
-      <a class="btn btn-primary" href="/lacey/demo" data-event="lacey_demo_open">Run sample shipment →</a>
+<section id="workflow" class="bg-slate-50 px-4 py-14 sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-7xl">
+    <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Evidence to review-ready data</p>
+    <h2 class="mt-3 max-w-4xl text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">One controlled workflow for recurring Lacey preparation.</h2>
+    <p class="mt-4 max-w-2xl text-base leading-7 text-slate-600">Keep the source set intact, reconcile regulatory data, resolve exceptions and export only after review.</p>
+
+    <div class="mt-9 grid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:grid-cols-5">
+      {% for number, title, copy in [
+        ("01", "Upload", "Shipment and supplier evidence"),
+        ("02", "Reconcile", "Cross-document values"),
+        ("03", "Resolve", "Taxonomy and structured fields"),
+        ("04", "Review", "Exceptions and missing evidence"),
+        ("05", "Export", "Review-ready declaration package")
+      ] %}
+      <article class="relative border-b border-slate-200 p-5 last:border-0 md:border-b-0 md:border-r">
+        <p class="text-xs font-black tracking-[0.14em] text-emerald-700">{{ number }}</p>
+        <h3 class="mt-4 text-base font-bold text-slate-950">{{ title }}</h3>
+        <p class="mt-2 text-xs leading-5 text-slate-500">{{ copy }}</p>
+        {% if not loop.last %}<i class="fa-solid fa-arrow-right absolute right-[-0.55rem] top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-slate-200 bg-white p-1.5 text-[10px] text-slate-400 md:block" aria-hidden="true"></i>{% endif %}
+      </article>
+      {% endfor %}
     </div>
   </div>
 </section>
 
-<section class="section dark" id="private-beta">
-  <div class="container beta">
+<section id="evidence" class="bg-white px-4 py-14 sm:px-6 lg:px-8">
+  <div class="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+    <section class="lt-card h-full p-8">
+      <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Supplier evidence</p>
+      <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950">Know what is missing before filing.</h2>
+      <p class="mt-4 max-w-xl text-base leading-7 text-slate-600">One shipment-level view of the evidence state, with every ready value still tied to its source.</p>
+      <div class="mt-7 grid gap-5">
+        {% for icon, title, copy in [
+          ("fa-circle-check", "Complete evidence", "Ready values stay traceable to source."),
+          ("fa-triangle-exclamation", "Conflicting evidence", "Differences are sent to review."),
+          ("fa-circle-xmark", "Missing evidence", "Gaps are visible before downstream filing work.")
+        ] %}
+        <div class="flex gap-3"><span class="mt-1 text-emerald-700" aria-hidden="true"><i class="fa-solid {{ icon }}"></i></span><div><p class="text-sm font-bold text-slate-950">{{ title }}</p><p class="mt-1 text-sm leading-6 text-slate-600">{{ copy }}</p></div></div>
+        {% endfor %}
+      </div>
+      <p class="mt-7 text-sm font-semibold text-slate-700">Review gaps, not complete records.</p>
+    </section>
+
+    <section class="lt-card h-full p-6" aria-label="Illustrative supplier evidence checklist">
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <div><h3 class="text-lg font-bold text-slate-950">Sample shipment · Evidence status</h3><p class="mt-1 text-xs text-slate-500">One view of what is ready, what needs review and what is still missing.</p></div>
+        <p class="text-xs font-semibold text-slate-500">5 ready · 1 review · 1 missing</p>
+      </div>
+      <div class="mt-5 grid gap-2">
+        {% for label, state in [("Commercial invoice", "READY"), ("Packing list", "READY"), ("Bill of lading", "READY"), ("Species declaration", "READY"), ("Harvest affidavit", "REVIEW"), ("Country-of-harvest evidence", "MISSING"), ("Supplier questionnaire", "READY")] %}
+        <div class="flex items-center justify-between gap-4 py-2"><span class="text-sm font-semibold text-slate-700">{{ label }}</span>{{ status_badge(state) }}</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</section>
+
+<section id="taxonomy" class="bg-slate-50 px-4 py-14 sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-7xl">
+    <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Taxonomy and conflicts</p>
+    <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Resolve species. Preserve the evidence.</h2>
+    <div class="mt-8 grid gap-5 lg:grid-cols-2">
+      <section class="lt-card h-full p-6">
+        <p class="text-sm font-bold text-slate-950">Taxonomy resolution</p>
+        <div class="mt-6 grid gap-6 sm:grid-cols-2">
+          <div><p class="text-sm font-medium text-slate-500">Supplier term</p><p class="mt-2 text-2xl font-bold text-slate-950">White Oak</p></div>
+          <div><p class="text-sm font-medium text-slate-500">Resolved taxonomy</p><p class="mt-2 text-2xl font-bold text-slate-950">Quercus alba</p></div>
+        </div>
+        <p class="mt-7 text-sm text-slate-500">Evidence source <span class="font-semibold text-slate-700">supplier_species.xlsx · row 18</span></p>
+      </section>
+      <section class="lt-card h-full p-6">
+        <div class="flex items-center justify-between gap-4"><p class="text-sm font-bold text-slate-950">Conflict handling</p>{{ badge("REVIEW REQUIRED", "warning") }}</div>
+        <p class="mt-3 max-w-xl text-base leading-7 text-slate-600">When sources disagree, both values remain visible for human review.</p>
+        <div class="mt-6 grid gap-6 sm:grid-cols-2">
+          <div><p class="text-sm font-medium text-slate-500">Supplier species sheet</p><p class="mt-2 text-xl font-bold text-slate-950">Quercus alba</p></div>
+          <div><p class="text-sm font-medium text-slate-500">Product specification</p><p class="mt-2 text-xl font-bold text-slate-950">Quercus rubra</p></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+
+
+<section id="security" class="border-y border-slate-200 bg-slate-950 px-4 py-14 text-white sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-7xl">
+    <div class="grid gap-10 lg:grid-cols-[0.8fr_1.2fr]">
+      <div>
+        <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-400">Security &amp; data handling</p>
+        <h2 class="mt-3 text-3xl font-bold tracking-tight text-white">Built around tenant boundaries and evidence integrity.</h2>
+        <p class="mt-4 max-w-xl text-sm leading-6 text-slate-400">The production service preserves organization scoping, PostgreSQL row-level security, least-privilege runtime roles, private evidence storage and encrypted transport.</p>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2">
+        {% for icon, title, copy in [
+          ("fa-building-shield", "Tenant isolation", "Organization-owned records remain tenant-scoped with PostgreSQL RLS and FORCE RLS controls."),
+          ("fa-lock", "Protected transport & storage", "TLS protects application transport and evidence is kept in private object storage."),
+          ("fa-hourglass-half", "Ephemeral evaluation sandbox", "Sandbox tenants and uploaded data are scheduled for destruction after four hours unless explicit support-debug consent applies."),
+          ("fa-brain", "No customer-document training pipeline", "Litoral Trace processes customer documents for the requested compliance workflow; the product does not operate a customer-document model-training pipeline.")
+        ] %}
+        <article class="rounded-xl border border-slate-800 bg-slate-900 p-5">
+          <i class="fa-solid {{ icon }} text-emerald-400" aria-hidden="true"></i>
+          <h3 class="mt-3 text-sm font-bold text-white">{{ title }}</h3>
+          <p class="mt-2 text-xs leading-5 text-slate-400">{{ copy }}</p>
+        </article>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="lawgs-output" class="bg-slate-50 px-4 py-14 sm:px-6 lg:px-8">
+  <div class="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
     <div>
-      <div class="kicker">Private validation</div>
-      <h2>Test one completed historical shipment.</h2>
-      <p>We are looking for a small number of U.S. customs brokers and import teams willing to show us one completed shipment so we can measure how much document-to-data work is still manual.</p>
-      <p>No live entry is needed. Client names, prices and other sensitive information can be redacted.</p>
-    </div>
-    <form class="form-card" id="lacey-beta-form" novalidate>
-      <div class="form-grid">
-        <div class="field full"><label for="work_email">Work email</label><input id="work_email" name="work_email" type="email" autocomplete="email" required placeholder="you@company.com"></div>
-        <div class="field"><label for="role">Role</label><select id="role" name="role" required><option value="">Select</option><option>Customs Broker</option><option>Import Compliance</option><option>Importer</option><option>Other</option></select></div>
-        <div class="field"><label for="volume">Approx. Lacey entries / month</label><select id="volume" name="volume" required><option value="">Select</option><option>1–10</option><option>11–50</option><option>51–200</option><option>200+</option><option>Not sure</option></select></div>
-        <div class="field"><label for="workflow">Current workflow</label><select id="workflow" name="workflow" required><option value="">Select</option><option>Supplier spreadsheets</option><option>Email + PDFs</option><option>ERP</option><option>Broker portal</option><option>Mixed</option></select></div>
-        <div class="field"><label for="willingness">Test one historical shipment?</label><select id="willingness" name="willingness" required><option value="">Select</option><option>Yes</option><option>Maybe</option><option>No</option></select></div>
+      <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Preparation output</p>
+      <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950">From reviewed evidence to structured LAWGS XML.</h2>
+      <p class="mt-4 max-w-xl text-base leading-7 text-slate-600">After human confirmation, Litoral Trace generates a review-ready XML work product and an audit workbook while preserving source context. Export does not itself submit a filing to ACE or LAWGS.</p>
+      <div class="mt-6 grid gap-3 text-sm text-slate-700">
+        <span><i class="fa-solid fa-check mr-2 text-emerald-700"></i>Human-reviewed values only</span>
+        <span><i class="fa-solid fa-check mr-2 text-emerald-700"></i>Source-linked evidence trail</span>
+        <span><i class="fa-solid fa-check mr-2 text-emerald-700"></i>Read-only preview before download</span>
       </div>
-      <button class="btn btn-primary" type="submit">Request a written private-beta review</button>
-      <div class="meta">No sales call is required. The next step can be handled by email. Litoral Trace does not file declarations or make legal compliance determinations.</div>
-      <div class="success" id="form-success" aria-live="polite">Your email client should open with a prepared message. If it does not, write to {{ commercial_email }}.</div>
-    </form>
+    </div>
+    <div class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-xl">
+      <div class="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+        <div><p class="text-xs font-bold text-white">LAWGS XML · review-ready work product</p><p class="mt-0.5 text-[10px] text-slate-500">Illustrative output structure</p></div>
+        <span class="rounded-full bg-emerald-950 px-2.5 py-1 text-[10px] font-bold text-emerald-300">VALIDATED</span>
+      </div>
+      <pre class="overflow-x-auto p-5 text-[11px] leading-5 text-slate-300"><code>&lt;LaceyDeclaration&gt;
+  &lt;EntryNumber&gt;2026-18472&lt;/EntryNumber&gt;
+  &lt;BillOfLading&gt;MAEU8471932&lt;/BillOfLading&gt;
+  &lt;PlantMaterial&gt;
+    &lt;Genus&gt;Quercus&lt;/Genus&gt;
+    &lt;Species&gt;alba&lt;/Species&gt;
+    &lt;CountryOfHarvest&gt;US&lt;/CountryOfHarvest&gt;
+    &lt;Quantity unit="KG"&gt;1840&lt;/Quantity&gt;
+  &lt;/PlantMaterial&gt;
+&lt;/LaceyDeclaration&gt;</code></pre>
+    </div>
   </div>
 </section>
-</main>
-<footer class="footer"><div class="container footer-in"><div><strong>Litoral Trace</strong><p>Document preparation, evidence and operational review for complex import workflows.</p></div><div><a href="mailto:{{ commercial_email }}">{{ commercial_email }}</a><p>Litoral Trace is preparation and evidence software. It does not file declarations, provide legal advice, certify Lacey Act compliance, or guarantee acceptance by APHIS, CBP, ACE or LAWGS.</p></div></div></footer>
-<script>
-(() => {
-  const endpoint='/lacey/event';
-  const sendEvent=(event)=>fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({event}),keepalive:true}).catch(()=>{});
-  sendEvent('lacey_visit');
-  document.querySelectorAll('[data-event]').forEach(el=>el.addEventListener('click',()=>sendEvent(el.dataset.event)));
-  const form=document.getElementById('lacey-beta-form');
-  let started=false;
-  form.addEventListener('focusin',()=>{if(!started){started=true;sendEvent('lacey_form_start')}});
-  form.addEventListener('submit',(e)=>{
-    e.preventDefault();
-    if(!form.checkValidity()){form.reportValidity();return;}
-    const fd=new FormData(form);
-    const body=[
-      'Hello Litoral Trace,','',
-      'I would like to discuss the Lacey Act private beta.','',
-      `Work email: ${fd.get('work_email')}`,
-      `Role: ${fd.get('role')}`,
-      `Approx. Lacey entries / month: ${fd.get('volume')}`,
-      `Current workflow: ${fd.get('workflow')}`,
-      `Willing to test one completed historical shipment: ${fd.get('willingness')}`,'',
-      'Please reply by email. A call is not required.'
-    ].join('\n');
-    sendEvent('lacey_form_submit');
-    document.getElementById('form-success').classList.add('visible');
-    window.location.href=`mailto:{{ commercial_email }}?subject=${encodeURIComponent('Lacey private beta — historical shipment')}&body=${encodeURIComponent(body)}`;
-  });
-})();
-</script>
-</body>
-</html>
+
+<section id="pricing" class="bg-white px-4 py-14 sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-7xl">
+    <div class="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+      <div>
+        <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Professional plan</p>
+        <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-950">Operational compliance infrastructure without enterprise procurement friction.</h2>
+        <p class="mt-4 max-w-xl text-base leading-7 text-slate-600">Start with a production workspace, secure Paddle billing, and a clear monthly operation allowance.</p>
+      </div>
+      <section class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-xl">
+        <div class="grid gap-6 p-7 sm:grid-cols-[1fr_auto] sm:items-end">
+          <div><p class="text-xs font-bold uppercase tracking-[0.14em] text-emerald-400">Litoral Trace Professional</p><p class="mt-3 text-4xl font-bold">USD 149<span class="text-base font-medium text-slate-400">/month</span></p><p class="mt-2 text-sm text-slate-400">Up to 100 Lacey operations per month.</p></div>
+          <a href="/signup" class="lt-btn lt-btn--primary justify-center"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span>Create account</span></a>
+        </div>
+        <div class="grid gap-2 border-t border-slate-800 px-7 py-5 text-xs text-slate-300 sm:grid-cols-2">
+          <span><i class="fa-solid fa-check mr-2 text-emerald-400"></i>Document intelligence and reconciliation</span>
+          <span><i class="fa-solid fa-check mr-2 text-emerald-400"></i>Exception-first human review</span>
+          <span><i class="fa-solid fa-check mr-2 text-emerald-400"></i>Supplier evidence reuse</span>
+          <span><i class="fa-solid fa-check mr-2 text-emerald-400"></i>LAWGS XML preparation work product</span>
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+
+<section id="evaluate" class="bg-slate-950 px-4 py-12 text-white sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-4xl text-center">
+    <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-400">Evaluate the workflow</p>
+    <h2 class="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">See Litoral Trace analyze a sample shipment.</h2>
+    <p class="mx-auto mt-4 max-w-2xl text-base leading-7 text-slate-300">Synthetic data. No upload required.</p>
+    <div class="mt-7 flex flex-wrap justify-center gap-3">
+      <a href="/demo" class="lt-btn lt-btn--primary lacey-demo-link" aria-label="Run the synthetic U.S. Lacey sample shipment"><i class="fa-solid fa-play" aria-hidden="true"></i><span>Run a sample shipment</span></a>
+      {{ button("Analyze my documents", "/sandbox/start", "secondary", "fa-file-import", extra_classes="lacey-sandbox-link", aria_label="Analyze my documents in the four-hour sandbox") }}
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block body_scripts %}<script>(()=>{const endpoint='/event';const sendEvent=(event)=>fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({event}),keepalive:true}).catch(()=>{});sendEvent('lacey_visit');document.querySelectorAll('[data-event],.lacey-sandbox-link,.lacey-demo-link').forEach(el=>el.addEventListener('click',()=>sendEvent(el.dataset.event||'lacey_cta_click')));})();</script>{% endblock %}

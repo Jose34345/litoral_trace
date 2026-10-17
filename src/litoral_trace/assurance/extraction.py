@@ -346,11 +346,30 @@ _LABEL_VALUE_RE = re.compile(
 )
 _TEXTUAL_DATE_RE = re.compile(r"[A-Za-zÀ-ÿ]")
 
+_TAXONOMY_COMMERCIAL_STOP_WORDS = frozenset(
+    {
+        "BOARD",
+        "BOARDS",
+        "CUTTING",
+        "LUMBER",
+        "PALLET",
+        "PALLETS",
+        "WOOD",
+        "WOODEN",
+    }
+)
+
 
 def _fold(value: object) -> str:
     text = unicodedata.normalize("NFKD", str(value or "").lower())
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def _has_commercial_taxonomy_stop_word(value: object) -> bool:
+    sanitized = str(value or "").replace(",", " ").replace("-", " ").upper()
+    words = frozenset(sanitized.split())
+    return bool(words & _TAXONOMY_COMMERCIAL_STOP_WORDS)
 
 
 def _document_search_text(filename: str, parsed: ParsedDocument) -> str:
@@ -511,6 +530,8 @@ def _candidate_from_table(
     confidence: float,
 ) -> ExtractedCandidate | None:
     if value is None:
+        return None
+    if field_name == "species" and _has_commercial_taxonomy_stop_word(value):
         return None
     try:
         original, normalized = _normalize_candidate(field_name, value)
