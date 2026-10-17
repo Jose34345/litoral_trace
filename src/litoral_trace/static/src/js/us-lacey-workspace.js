@@ -320,6 +320,29 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  const firstReview = event.target.closest?.("[data-jump-first-review]");
+  if (firstReview) {
+    const firstCard = pendingReviewCards()[0];
+    if (firstCard) {
+      event.preventDefault();
+      // Preserve a deep-linkable destination and avoid sticky toolbar overlap.
+      firstCard.style.scrollMarginTop = "11.5rem";
+      window.history.replaceState(null, "", "#" + firstCard.id);
+      firstCard.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+        block: "start",
+      });
+      const nextControl = firstCard.querySelector("[data-review-entry-input], button:not([disabled]), a[href]");
+      if (nextControl) {
+        window.setTimeout(() => nextControl.focus({ preventScroll: true }), 200);
+      } else {
+        firstCard.tabIndex = -1;
+        window.setTimeout(() => firstCard.focus({ preventScroll: true }), 200);
+      }
+    }
+    return;
+  }
+
   const nextRequired = event.target.closest?.("[data-focus-next-required]");
   if (nextRequired) {
     event.preventDefault();

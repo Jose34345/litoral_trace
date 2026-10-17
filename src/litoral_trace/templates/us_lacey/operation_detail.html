@@ -108,7 +108,6 @@
       {% if not private_v2 and not detail.documents %}
       <span role="status" data-first-value-empty>Evidence required before analysis</span>
       {% elif not private_v2 and processing.terminal and not processing.failed %}
-      <span class="text-slate-600">Review the remaining evidence below</span>
       {% elif not private_v2 and not processing.terminal %}
       <span role="status" data-first-value-processing>Processing in progress · review counts will update</span>
       {% endif %}
@@ -127,7 +126,7 @@
     {% elif not private_v2 and processing.failed %}
     <a href="#processing-status" class="lt-btn lt-btn--secondary inline-flex min-h-10 items-center px-4 text-xs font-bold" data-first-value-issue>View processing issue</a>
     {% else %}
-    <a href="#operation-workspace" class="lt-btn lt-btn--primary inline-flex min-h-10 items-center justify-center px-4 text-xs font-bold" data-first-value-cta>
+    <a href="#review-summary" class="lt-btn lt-btn--primary inline-flex min-h-10 items-center justify-center px-4 text-xs font-bold" data-first-value-cta data-jump-first-review>
       {% if not private_v2 and readiness_summary.exception_count > 0 %}Review {{ readiness_summary.exception_count }} pending item{{ '' if readiness_summary.exception_count == 1 else 's' }}{% else %}Open evidence review{% endif %}
     </a>
     {% endif %}
