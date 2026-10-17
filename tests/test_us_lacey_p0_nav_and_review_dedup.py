@@ -11,7 +11,7 @@ REVIEW = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/operation_works
 def test_sidebar_uses_trader_names_and_preserves_destination_paths():
     for href, label in (
         ("/operations", "Shipments"),
-        ("/evidence", "Documents"),
+        ("/evidence", "Supplier Evidence"),
         ("/suppliers", "Suppliers"),
         ("/audit-log", "Activity Log"),
         ("/regulatory", "Lacey Review"),

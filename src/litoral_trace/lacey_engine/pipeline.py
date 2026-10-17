@@ -605,6 +605,26 @@ def _resolve_logical_document(
     """Extract and resolve candidates from exactly one logical document."""
 
     extracted = _extract(layout)
+    # A packing list's explicit single-SKU bamboo net mass is an observable
+    # quantity, not shipping gross weight and never a filing approval.
+    from litoral_trace.lacey_engine.packing_net_material_mass import extract_packing_plant_net_mass
+
+    packing_mass = extract_packing_plant_net_mass(
+        layout, document_type=section.document_type,
+    )
+    if packing_mass is not None:
+        extracted["plant_quantity"].append(
+            _candidate(
+                "plant_quantity", packing_mass.amount, packing_mass.source_block,
+                "Plant Quantity SKU " + packing_mass.sku,
+            )
+        )
+        extracted["metric_unit"].append(
+            _candidate(
+                "metric_unit", packing_mass.unit, packing_mass.source_block,
+                "Plant Unit SKU " + packing_mass.sku,
+            )
+        )
 
     def make(
         raw: RawCandidate,

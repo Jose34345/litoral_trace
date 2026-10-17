@@ -137,7 +137,12 @@ def semantic_normalize(field_key: str, value: object) -> str:
         if mass:
             return mass
         number = re.search(r"-?[0-9][0-9,]*(?:\.[0-9]+)?", raw)
-        return number.group(0).replace(",", "") if number else fold_text(raw)
+        if number:
+            # Comparison identity only: 288.0 and 288.00 are the same mass.
+            # Raw values and original source spans remain unchanged for audit.
+            amount = Decimal(number.group(0).replace(",", "")).normalize()
+            return format(amount, "f")
+        return fold_text(raw)
     if key == "entered_value":
         match = re.fullmatch(r"\s*(?:(USD|EUR|CAD|GBP|AUD|JPY)\s*)?\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*", raw, re.I)
         if match:
