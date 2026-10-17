@@ -145,5 +145,6 @@ def test_workspace_shows_reuse_summary_and_field_badge(monkeypatch):
     assert 'data-action-tab-count' in html
     assert 'data-auto-resolved-field="2"' in html
     assert "Reused from verified supplier evidence" in html
-    assert "Source: Verified supplier evidence from a prior shipment" in html
+    assert "View verified supplier evidence" in html
+    assert "Historical evidence record" in html
     assert 'data-auto-resolved-field="2"' in html
