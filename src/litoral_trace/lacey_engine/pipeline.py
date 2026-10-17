@@ -616,13 +616,13 @@ def _resolve_logical_document(
         extracted["plant_quantity"].append(
             _candidate(
                 "plant_quantity", packing_mass.amount, packing_mass.source_block,
-                "Plant Quantity Component " + packing_mass.sku,
+                "Plant Quantity SKU " + packing_mass.sku,
             )
         )
         extracted["metric_unit"].append(
             _candidate(
                 "metric_unit", packing_mass.unit, packing_mass.source_block,
-                "Plant Unit Component " + packing_mass.sku,
+                "Plant Unit SKU " + packing_mass.sku,
             )
         )
 

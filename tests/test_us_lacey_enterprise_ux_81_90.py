@@ -19,7 +19,7 @@ def test_enterprise_ux_81_90_contract() -> None:
     assert "aria-activedescendant" in base
     assert "No workspace destination matches this search." in base
 
-    for label in ("Shipments", "New shipment", "Documents", "Suppliers", "Lacey Review", "Activity Log"):
+    for label in ("Shipments", "New shipment", "Supplier Evidence", "Suppliers", "Lacey Review", "Activity Log"):
         assert f"label: '{label}'" in base
     assert "{% if not evaluation_mode %}{label: 'Billing'" in base
 

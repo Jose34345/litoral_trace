@@ -14,7 +14,7 @@ A customer-facing menu link named `Documents` pointed to `/evidence`, which is a
    - explicit product material is solid bamboo, a single `Total bamboo net mass N KG` line exists, and `Net bamboo M KG per carton; gross G KG per carton` is explicit;
    - counts are positive, carton × sets-per-carton matches total sets, carton × net-per-carton exactly equals net total and gross-per-carton is not lower than net-per-carton.
    - Otherwise **abstain**; never substitute a gross mass, volume, cartons, shipment total from mixed lines or inferred quantity.
-4. Plant quantity/unit retain original packing-list PDF page/block/source text and explicit SKU comparison context. Decimal comparison normalizes `288.0` and `288.00` to one comparison identity **without altering original raw values or stored provenance**. No canonical writes, DB updates, authority override or auto-filing logic in this patch.
+4. Plant quantity/unit retain original packing-list PDF page/block/source text and the exact single-SKU label; they do not manufacture cross-document component identity. Decimal comparison groups `288.0` and `288.00` to one comparison identity while the canonical display keeps an original source spelling; raw values and provenance remain unchanged. No canonical writes, DB updates, authority override or auto-filing logic in this patch.
 
 ## Acceptance / limitations
 

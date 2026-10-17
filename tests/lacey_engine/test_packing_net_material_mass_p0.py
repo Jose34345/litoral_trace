@@ -98,12 +98,13 @@ def test_pack2_six_document_reconciliation_has_no_false_mass_precision_conflict(
     quantity = result.canonical_fields["plant_quantity"]
     unit = result.canonical_fields["metric_unit"]
     assert quantity.state is ReconciliationState.SUPPORTED_MULTIPLE
-    assert [value.value for value in quantity.values] == ["288"]
+    assert [value.value for value in quantity.values] == ["288.0"]
     assert [value.value for value in unit.values] == ["KG"]
     assert any(
         entry.candidate.provenance.source_text == "Total bamboo net mass 288.00 KG"
         and entry.document_id == "test-2"
-        and entry.component_key == "bam-coast-04"
+        and entry.component_key is None
+        and "SKU BAM-COAST-04" in entry.candidate.raw.label
         for entry in quantity.supporting_evidence
     )
     assert not any("gross mass" in entry.candidate.provenance.source_text.casefold()

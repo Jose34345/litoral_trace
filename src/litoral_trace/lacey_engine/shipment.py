@@ -296,6 +296,10 @@ def _canonical_display_value(
     items: list[ShipmentEvidence],
 ) -> str:
     """Keep comparison identities out of customer/audit values."""
+    if field_key == "plant_quantity":
+        # Decimal comparison keys group identical quantities, but published
+        # values must keep an original source spelling (e.g. 30.000).
+        return items[0].normalized_value
     if field_key == "species" and comparison_key.startswith("TAXON:"):
         representative = max(
             items,
