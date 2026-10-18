@@ -16,8 +16,9 @@ def test_terminal_htmx_workspace_refreshes_server_readiness_instead_of_stale_pro
     assert 'data-processing-terminal="{{ \'true\' if processing.terminal else \'false\' }}"' in POLL
     assert 'data-readiness-summary' in DETAIL
     assert 'data-first-value-processing' in DETAIL
-    assert 'target.hasAttribute("data-review-tabs")' in JS
-    assert 'target.dataset.processingTerminal === "true"' in JS
+    assert '#operation-workspace[data-review-tabs]' in JS
+    assert '#processing-panel[data-processing-terminal="true"]' in JS
+    assert 'document.addEventListener("htmx:afterSettle"' in JS
     assert 'synchronizeTerminalOverview' in JS
     assert 'fetch(window.location.href' in JS
     assert 'cache: "no-store"' in JS
@@ -25,7 +26,7 @@ def test_terminal_htmx_workspace_refreshes_server_readiness_instead_of_stale_pro
     assert 'current.replaceWith(document.importNode(next, true))' in JS
     assert 'next.querySelector("[data-first-value-processing]")' in JS
     assert 'Refresh results' in JS
-    assert '?v=20261017-postprocessing-p0' in BASE
+    assert '?v=20261018-review-state-p1' in BASE
 
 
 def test_auto_resolved_uses_exact_current_document_id_and_same_inspector_as_pending():

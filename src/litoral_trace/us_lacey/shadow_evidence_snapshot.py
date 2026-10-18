@@ -101,6 +101,21 @@ class SnapshotBuildResult:
     metrics: SnapshotMetrics
 
 
+def _non_authoritative_shadow_document_type(semantic_type: str, operation_role: str) -> str:
+    """Do not replay Assurance V1 keyword INVOICE guesses as Lacey document facts.
+
+    Legacy universal extraction can label a packing list or B/L as INVOICE
+    because those documents reference an invoice. UNKNOWN is deliberately
+    safer than granting a different class to a current unclassified upload.
+    This metadata does not establish documentary authority.
+    """
+    semantic = str(semantic_type or "UNKNOWN").strip().upper()
+    role = str(operation_role or "UNKNOWN").strip().upper()
+    if semantic == "INVOICE" and role != "COMMERCIAL_INVOICE":
+        return "UNKNOWN"
+    return semantic
+
+
 @dataclass(frozen=True, slots=True)
 class _DocumentSource:
     operation_document_id: int
@@ -441,7 +456,10 @@ def _load_document_sources(
                 fields=fields,
                 source_sha256=vault_document.sha256,
                 document_role=operation_document.document_role,
-                document_type=assurance_document.semantic_document_type,
+                document_type=_non_authoritative_shadow_document_type(
+                    assurance_document.semantic_document_type,
+                    operation_document.document_role,
+                ),
                 version_number=operation_document.version_number,
             )
         )

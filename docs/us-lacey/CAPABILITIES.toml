@@ -179,12 +179,13 @@ authority = "human_confirmed"
 implementation = [
   "src/litoral_trace/us_lacey/review.py",
   "src/litoral_trace/us_lacey/review_source_authority.py",
+  "src/litoral_trace/us_lacey/paired_review.py",
   "src/litoral_trace/us_lacey/bulk_review.py",
   "src/litoral_trace/us_lacey/ai_review.py",
   "src/litoral_trace/us_lacey/ai_suggestions.py"
 ]
 tests = ["tests"]
-notes = "Reviewer actions remain explicit and auditable. Current tenant-owned source role/Vault metadata must block derivative-only worksheet acceptance in individual and bulk review; this does not make a filename positively authoritative."
+notes = "Reviewer actions remain explicit and auditable. Current tenant-owned source role/Vault metadata must block derivative-only worksheet acceptance in individual and bulk review; a filename never grants positive authority. The stable paired quantity/unit action reuses the existing per-field review writer within one locked transaction and requires same current packing document, line, page, unambiguous values and immutable evidence locators."
 
 [capabilities.ppq505_and_exports]
 status = "ACTIVE"
