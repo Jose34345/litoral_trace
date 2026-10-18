@@ -131,6 +131,10 @@ def collect_source_claims(
         extraction_run_id=f"engine2:{operation_document_id}:{digest}",
     )
     claims = []
+    from litoral_trace.lacey_engine.packing_net_material_mass import (
+        extract_packing_plant_net_mass,
+    )
+
     for logical in bundle.documents:
         source = SourceEvidenceDocument(
             document_id=f"{operation_document_id}:{logical.logical_document_id}",
@@ -198,6 +202,60 @@ def collect_source_claims(
             claims.append(projected)
             if len(claims) > MAX_SOURCE_CLAIMS:
                 raise ValueError("Assurance V2 source claims exceeded processing budget")
+
+        # A literal plant NET mass from a single-SKU packing list may be
+        # absent from a cached Engine2 resolution's winning candidates.
+        # Observe it independently from the SAME original parsed layout,
+        # with a replayable physical span. This is NOT regulatory approval.
+        net_mass = extract_packing_plant_net_mass(
+            logical.resolution.layout, document_type=logical.document_type,
+        )
+        if net_mass is not None:
+            for field_name, literal_value in (
+                ("plant_quantity", net_mass.amount),
+                ("metric_unit", net_mass.unit),
+            ):
+                extractor = "packing_net_mass_exact"
+                raw = RawCandidate(
+                    field_key=field_name,
+                    raw_text=literal_value,
+                    normalized_value=literal_value,
+                    source_block=net_mass.source_block,
+                    evidence_class=EvidenceClass.EXPLICIT,
+                    extractor_name=extractor,
+                    extractor_version="1.0.0",
+                )
+                candidate = AdmittedCandidate(
+                    raw=raw,
+                    provenance=Provenance(
+                        filename=bundle.filename,
+                        page=net_mass.source_block.page,
+                        bbox=net_mass.source_block.bbox,
+                        block_id=net_mass.source_block.block_id,
+                        source_text=net_mass.source_block.text,
+                        extractor_name=extractor,
+                        extractor_version="1.0.0",
+                        evidence_class=EvidenceClass.EXPLICIT,
+                    ),
+                    score=1.0,
+                    document_type=logical.document_type,
+                )
+                claim = from_engine2_candidate(
+                    candidate, context=context, document=source,
+                )
+                if (claim.support_status.value != "SUPPORTED"
+                        or not verify_claim_anchor(claim, source)):
+                    raise ValueError("Packing net bamboo mass lacks literal original PDF span")
+                projected = _project_claim(
+                    claim, document_id=assurance_document_id,
+                    operation_document_id=operation_document_id,
+                )
+                # Keep a separate typed, exact physical-source observation.
+                # Generic Engine2 candidates cannot prove the same net-mass
+                # semantics, even if they share the printed value.
+                claims.append(projected)
+                if len(claims) > MAX_SOURCE_CLAIMS:
+                    raise ValueError("Assurance V2 source claims exceeded processing budget")
 
     return {
         "schema_version": ASSURANCE_CLAIMS_SNAPSHOT_VERSION,

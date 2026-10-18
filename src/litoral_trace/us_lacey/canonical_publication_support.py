@@ -352,6 +352,16 @@ def publish_source_linked_review_candidates(
         UsLaceyOperationField.operation_id == operation_id,
         UsLaceyOperationField.field_name.in_(_DOCUMENTARY_REVIEW_FIELDS),
     )).all()
+    # Current Vault + operation-role classification is a negative authority
+    # boundary: never re-source a pending original document as another original.
+    # Filename detection can identify a derivative, but cannot grant approval.
+    from litoral_trace.us_lacey.document_evidence_class import classify_document
+    source_classes = {
+        int(link.assurance_document_id): classify_document(
+            vault.original_filename, link.document_role,
+        ).code
+        for link, vault in source_rows
+    }
     source_to_assurance = {int(link.id): int(link.assurance_document_id)
                            for link, _ in source_rows}
     operation_by_assurance = {int(link.assurance_document_id): int(link.id)
@@ -360,8 +370,24 @@ def publish_source_linked_review_candidates(
     for target in targets:
         if (_field_has_human_review(target)
                 or str(target.human_value or "").strip()
-                or str(target.normalized_value or target.original_value or "").strip()
                 or target.field_status == "NOT_REQUIRED"):
+            continue
+        current_value = str(target.normalized_value or target.original_value or "").strip()
+        # The canonical reviewer already has a machine-only worksheet candidate.
+        # A current corroborated original PDF may REPLACE ITS PRIMARY SOURCE only
+        # when the quantity/unit is identical and still needs human review.
+        # This is never a silent correction, bulk acceptance or filing approval.
+        replacing_machine_worksheet = bool(
+            current_value
+            and target.field_scope == "PLANT_LINE"
+            and target.field_name in {"plant_quantity", "metric_unit"}
+            and target.field_status == "REVIEW"
+            and target.extractor == "canonical-shipment-truth"
+            and target.source_assurance_document_id is not None
+            and source_classes.get(int(target.source_assurance_document_id))
+                == "DERIVED_PREPARATION"
+        )
+        if current_value and not replacing_machine_worksheet:
             continue
         ref = str(target.merchandise_line_reference or "")
         if target.field_scope == "PLANT_LINE":
@@ -411,13 +437,38 @@ def publish_source_linked_review_candidates(
         if not eligible or len({value for _claim, _doc, value in eligible}) != 1:
             # Genuine conflicting values or ambiguous scope MUST abstain.
             continue
+        original_net_mass = [
+            row for row in eligible
+            if (row[0].get("source_claim") or {}).get("extractor_name")
+            == "packing_net_mass_exact"
+        ]
+        if replacing_machine_worksheet:
+            # The only overridable facts are two exact single-SKU plant facts
+            # with ONE dedicated source witness from an ORIGINAL packing list.
+            # No value change; merely prefer its verifiable provenance over the
+            # already pending derivative worksheet.
+            if (len(original_net_mass) != 1
+                    or original_net_mass[0][0]["assurance_document_id"]
+                    == target.source_assurance_document_id
+                    or source_classes.get(
+                        original_net_mass[0][0]["assurance_document_id"]
+                    ) not in {"COMMERCIAL_SOURCE", "UNVERIFIED_COMMERCIAL"}):
+                continue
+            previous = validate_ppq_value(target.field_name, current_value)
+            if (previous.status.value != "VALID"
+                    or previous.normalized_value != original_net_mass[0][2]):
+                continue
         chosen_value = eligible[0][2]
         evidence = tuple(CanonicalEvidence(
             candidate_id=str(claim["id"]),
             document_id=str(operation_document_id),
             field_key=target.field_name,
             normalized_value=value,
-            source_authority=0.5, candidate_score=0.5,
+            source_authority=(
+                0.95 if (claim.get("source_claim") or {}).get("extractor_name")
+                == "packing_net_mass_exact" else 0.5
+            ),
+            candidate_score=0.5,
             source_page=claim["source_locator"].get("page"),
             source_text=str(claim.get("raw_value") or value),
             line_key=ref if expected_sku is not None else None,

@@ -13,6 +13,9 @@ from types import SimpleNamespace
 from typing import Mapping, Sequence
 
 from litoral_trace.lacey_engine.domain import BundleResolution
+from litoral_trace.lacey_engine.packing_net_material_mass import (
+    extract_packing_plant_net_mass,
+)
 from litoral_trace.us_lacey.pdf_documentary_identity import discover_single_product_pdf_identity
 from litoral_trace.us_lacey.single_sku_recovery import _explicit_document_skus
 
@@ -88,6 +91,19 @@ def bind_documentary_claims(
         return 0
     sku_docs = {i for i, (lines, _) in docs.items()
                 if _explicit_document_skus(lines) == frozenset({identity.sku})}
+    # Carton tables encode SKU as a row value, not as a literal "SKU: ..."
+    # phrase. Include them as corroboration only when the existing strict
+    # packing parser independently proves a single SKU, solid bamboo,
+    # exact carton arithmetic and an explicitly printed NET bamboo mass.
+    for item in parsed_documents:
+        if len(item.bundle.documents) != 1:
+            continue
+        doc = item.bundle.documents[0]
+        mass = extract_packing_plant_net_mass(
+            doc.resolution.layout, document_type=doc.document_type,
+        )
+        if mass is not None and mass.sku == identity.sku:
+            sku_docs.add(item.assurance_document_id)
     supplier_docs = {
         f.assurance_document_id for f in identity.virtual_fields
         if f.field_name == "supplier_address"

@@ -121,3 +121,62 @@ def test_source_document_hash_mismatch_abstains():
         line_references=["1"],
     ) == 0
     assert snapshots == original
+
+
+def test_pack2_packing_net_mass_has_current_original_sku_bound_candidate():
+    """Real PDFs: source locator, invoice-line and supplier witnesses must all agree."""
+    snapshots, parsed = _packet("pack2")
+    assert bind_documentary_claims(
+        snapshots=snapshots, parsed_documents=parsed, line_references=["1"],
+    ) >= 2
+    packing = snapshots[1]
+    exact = [
+        c for c in packing["claims"]
+        if c.get("extractor_name") == "packing_net_mass_exact"
+    ]
+    assert {(c["field_name"], c["original_value"]) for c in exact} == {
+        ("plant_quantity", "288.00"), ("metric_unit", "KG"),
+    }
+    assert all(
+        c["support_status"] == "SUPPORTED"
+        and c["association_status"] == "DOCUMENT_EXACT_SINGLE_SKU"
+        and c["sku"] == "BAM-COAST-04"
+        and c["line_reference"] == "1"
+        and c["candidate_state"] == "CANDIDATE"
+        and c["source_locator"]["page"] == 1
+        for c in exact
+    )
+    assert all(
+        packing["assurance_document_id"]
+        in {row["document_id"] for row in c["documentary_binding"]["sku_documents"]}
+        for c in exact
+    )
+    hashes = {x["assurance_document_id"]: x["original_sha256"] for x in snapshots}
+    binding = ResolvedDocumentBinding(
+        organization_id=11, operation_id=22, source_set_revision_id=33,
+        source_set_fingerprint="f" * 64, generation=1,
+        assurance_document_id=packing["assurance_document_id"],
+        operation_document_id=packing["operation_document_id"],
+        document_version_number=1, original_sha256=packing["original_sha256"],
+    )
+    for claim in exact:
+        adapted = to_authority_candidate_snapshot(
+            claim, binding=binding, current_document_hashes=hashes,
+        )
+        assert adapted.state == "CANDIDATE"
+        assert adapted.support_status == "SUPPORTED"
+        assert adapted.association_status == "DOCUMENT_EXACT_SINGLE_SKU"
+        with pytest.raises(ValueError):
+            to_authority_candidate_snapshot(
+                claim, binding=binding,
+                current_document_hashes={**hashes, packing["assurance_document_id"]: "a"*64},
+            )
+
+
+def test_mass_binding_abstains_without_unique_current_line_and_keeps_snapshot_intact():
+    snapshots, parsed = _packet("pack2")
+    old = deepcopy(snapshots)
+    assert bind_documentary_claims(
+        snapshots=snapshots, parsed_documents=parsed, line_references=["1", "2"],
+    ) == 0
+    assert snapshots == old
