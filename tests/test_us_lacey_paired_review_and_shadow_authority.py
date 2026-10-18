@@ -89,3 +89,4 @@ def test_review_pair_uses_authenticated_single_action_and_two_field_journals():
     assert 'data-pre-entry-waiting' in html
     assert 'hx-post="/operations/{{ detail.public_id }}/review/actions/mass-pair"' in html
     assert "htmx:afterSettle" in js and "data-processing-terminal" in js
+    assert "Review could not be saved. Check the reason shown above." in js

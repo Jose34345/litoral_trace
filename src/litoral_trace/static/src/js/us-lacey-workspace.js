@@ -466,6 +466,12 @@ document.addEventListener("htmx:afterSwap", (event) => {
   const fieldCard = transition.fieldId
     ? target.querySelector(`[data-review-field-id="${transition.fieldId}"]`)
     : null;
+  // A bulk validation failure renders a workspace-level alert (no field ID).
+  // Never show a success toast merely because HTMX swapped an error fragment.
+  if (target.querySelector('.lt-alert--danger[role="alert"]')) {
+    showToast("Review could not be saved. Check the reason shown above.", "danger");
+    return;
+  }
   const inlineError = fieldCard?.querySelector("[data-inline-field-error]");
   if (inlineError) {
     fieldCard.classList.remove("lt-validation-shake");
