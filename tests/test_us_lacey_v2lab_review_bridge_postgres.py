@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from litoral_trace.db.models import (
+    AssuranceDocument, VaultDocument, UsLaceyOperationDocument, UsLaceyOperation,
     UsLaceyOperationField, UsLaceyOperationProductLink,
     UsLaceyPpqPlantLine, UsLaceySourceSetRevision,
     UsLaceySupplier, UsLaceySupplierProduct,
@@ -27,7 +28,7 @@ TARGETS = {
 }
 
 
-def _fixture(factory):
+def _fixture(factory, *, extra_original=False):
     org, op_id, link_id, assurance_id, _vault, _sha = create_test_graph(factory)
     db = tenant_session(factory, org)
     line = UsLaceyPpqPlantLine(
@@ -61,6 +62,35 @@ def _fixture(factory):
         display_name="Bamboo coaster set", normalized_name="bamboo coaster set",
     )
     db.add(product)
+    if extra_original:
+        # Existing pending source is demonstrably a DERIVED worksheet, not
+        # just any already populated canonical-review field.
+        db.get(VaultDocument, _vault).original_filename = (
+            "05_Entry_Preparation_Worksheet_Shipment2.pdf"
+        )
+        db.get(UsLaceyOperationDocument, link_id).document_role = "ENTRY_WORKSHEET"
+        db.get(UsLaceyOperation, op_id).document_count = 2
+        vault = VaultDocument(
+            organization_id=org, original_filename="02_Packing_List_Shipment2.pdf",
+            content_type="application/pdf", size_bytes=100,
+            sha256="b" * 64, object_key=f"synthetic-pdf/{uuid4().hex}",
+            storage_backend="s3", storage_bucket="synthetic-tests",
+            document_type="OTHER_EVIDENCE", status="available",
+        )
+        db.add(vault)
+        db.flush()
+        source = AssuranceDocument(
+            organization_id=org, vault_document_id=vault.id,
+            semantic_document_type="UNKNOWN", type_confidence=0.0,
+            processing_status="UPLOADED",
+        )
+        db.add(source)
+        db.flush()
+        db.add(UsLaceyOperationDocument(
+            organization_id=org, operation_id=op_id,
+            assurance_document_id=source.id, version_number=1,
+            document_role="UNKNOWN", is_current=True,
+        ))
     db.commit()
     db.close()
     revision = seal_current_source_set(
@@ -160,4 +190,124 @@ def test_bridge_abstains_on_ambiguous_or_untrusted_line(
         db, organization_id=org, operation_id=op_id,
     ) == 0
     assert db.get(UsLaceyOperationField, fields["plant_quantity"]).normalized_value is None
+    db.close()
+
+
+@pytest.mark.parametrize("field_name,current_value", [
+    ("plant_quantity", "288"),
+    ("metric_unit", "kg"),
+])
+def test_pack2_original_replaces_same_value_machine_review_source_only(
+    engine2_postgres_session_factory, monkeypatch, field_name, current_value,
+):
+    factory = engine2_postgres_session_factory
+    org, op_id, worksheet_id, fields = _fixture(factory, extra_original=True)
+    db = tenant_session(factory, org)
+    original_id = db.scalars(
+        select(UsLaceyOperationDocument.assurance_document_id).where(
+            UsLaceyOperationDocument.operation_id == op_id,
+            UsLaceyOperationDocument.assurance_document_id != worksheet_id,
+        )
+    ).one()
+    row = db.get(UsLaceyOperationField, fields[field_name])
+    row.original_value = current_value
+    row.normalized_value = current_value
+    row.field_status = "REVIEW"
+    row.validation_status = "REVIEW_REQUIRED"
+    row.source_assurance_document_id = worksheet_id
+    row.extractor = "canonical-shipment-truth"
+    observations = (
+        _claim(field_name, current_value, worksheet_id, suffix=21),
+        {
+            **_claim(field_name, current_value, original_id, suffix=22),
+            "source_claim": {"extractor_name": "packing_net_mass_exact"},
+        },
+    )
+    monkeypatch.setattr(
+        "litoral_trace.us_lacey.assurance_v2_case_reader._source_claim_observations",
+        lambda *_args, **_kwargs: observations,
+    )
+    assert publish_source_linked_review_candidates(
+        db, organization_id=org, operation_id=op_id,
+    ) == 1
+    db.flush()
+    assert row.source_assurance_document_id == original_id
+    assert row.normalized_value == current_value
+    assert row.field_status == "REVIEW"
+    assert row.validation_status == "REVIEW_REQUIRED"
+    assert row.reviewed_at is None and row.human_value is None
+    assert publish_source_linked_review_candidates(
+        db, organization_id=org, operation_id=op_id,
+    ) == 0
+    db.rollback()
+    db.close()
+
+
+@pytest.mark.parametrize("alteration", [
+    "conflicting_value", "unsupported", "wrong_sku", "wrong_line",
+    "human_reviewed", "value_changed", "already_found", "duplicate_original",
+    "current_source_is_original", "new_source_is_worksheet",
+])
+def test_original_provenance_never_replaces_without_exact_safe_review_conditions(
+    engine2_postgres_session_factory, monkeypatch, alteration,
+):
+    from datetime import datetime, timezone
+    factory = engine2_postgres_session_factory
+    org, op_id, worksheet_id, fields = _fixture(factory, extra_original=True)
+    db = tenant_session(factory, org)
+    original_id = db.scalars(
+        select(UsLaceyOperationDocument.assurance_document_id).where(
+            UsLaceyOperationDocument.operation_id == op_id,
+            UsLaceyOperationDocument.assurance_document_id != worksheet_id,
+        )
+    ).one()
+    target = db.get(UsLaceyOperationField, fields["plant_quantity"])
+    target.original_value = "288.0"
+    target.normalized_value = "288"
+    target.field_status = "REVIEW"
+    target.validation_status = "REVIEW_REQUIRED"
+    target.source_assurance_document_id = worksheet_id
+    target.extractor = "canonical-shipment-truth"
+    new = {
+        **_claim("plant_quantity", "288", original_id, suffix=32),
+        "source_claim": {"extractor_name": "packing_net_mass_exact"},
+    }
+    if alteration == "conflicting_value":
+        new["normalized_value"] = "289"
+    if alteration == "unsupported":
+        new["support_status"] = "UNSUPPORTED"
+    if alteration == "wrong_sku":
+        new["sku"] = "OTHER-SKU"
+    if alteration == "wrong_line":
+        new["line_reference"] = "2"
+    if alteration == "human_reviewed":
+        target.reviewed_at = datetime.now(timezone.utc)
+        target.human_value = "288"
+    if alteration == "value_changed":
+        target.normalized_value = "287"
+    if alteration == "already_found":
+        target.field_status = "FOUND"
+    claims = (
+        _claim("plant_quantity", "288", worksheet_id, suffix=31), new,
+    )
+    if alteration == "duplicate_original":
+        claims += ({**new, "id": "f" * 64},)
+    if alteration == "current_source_is_original":
+        source = db.get(AssuranceDocument, worksheet_id)
+        db.get(VaultDocument, source.vault_document_id).original_filename = "invoice.pdf"
+        db.scalars(select(UsLaceyOperationDocument).where(
+            UsLaceyOperationDocument.assurance_document_id == worksheet_id
+        )).one().document_role = "COMMERCIAL_INVOICE"
+    if alteration == "new_source_is_worksheet":
+        source = db.get(AssuranceDocument, original_id)
+        db.get(VaultDocument, source.vault_document_id).original_filename = "worksheet.pdf"
+    monkeypatch.setattr(
+        "litoral_trace.us_lacey.assurance_v2_case_reader._source_claim_observations",
+        lambda *_args, **_kwargs: claims,
+    )
+    assert publish_source_linked_review_candidates(
+        db, organization_id=org, operation_id=op_id,
+    ) == 0
+    assert target.source_assurance_document_id == worksheet_id
+    db.rollback()
     db.close()
