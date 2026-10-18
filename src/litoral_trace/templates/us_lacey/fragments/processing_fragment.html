@@ -25,6 +25,7 @@
 {% else %}
 <div
   id="processing-panel"
+  data-processing-terminal="{{ 'true' if processing.terminal else 'false' }}"
   {% if not processing.terminal %}
   hx-get="/operations/{{ detail.public_id }}/processing-fragment"
   hx-trigger="every 2s"

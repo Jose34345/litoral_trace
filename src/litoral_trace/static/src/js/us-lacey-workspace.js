@@ -399,10 +399,58 @@ document.addEventListener("htmx:beforeRequest", (event) => {
   };
 });
 
+let refreshingPostProcessingOverview = false;
+
+// The processing poll swaps the workspace, not the static shipment summary.
+// Refresh just the server-rendered summary when the terminal workspace arrives;
+// never guess readiness or trust a client-side extraction counter.
+const synchronizeTerminalOverview = async () => {
+  const current = document.querySelector("#shipment-summary");
+  if (!current?.querySelector("[data-first-value-processing]") || refreshingPostProcessingOverview) return;
+  refreshingPostProcessingOverview = true;
+  try {
+    const response = await fetch(window.location.href, {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { Accept: "text/html" },
+    });
+    if (!response.ok) throw new Error("Current review status unavailable");
+    const responseText = await response.text();
+    const rendered = new DOMParser().parseFromString(responseText, "text/html");
+    const next = rendered.querySelector("#shipment-summary");
+    if (!next || next.querySelector("[data-first-value-processing]")) {
+      throw new Error("Final review state not available yet");
+    }
+    current.replaceWith(document.importNode(next, true));
+    const liveNav = document.querySelector('a[href="#operation-workspace"]');
+    const freshNav = rendered.querySelector('a[href="#operation-workspace"]');
+    if (liveNav && freshNav) liveNav.textContent = freshNav.textContent;
+  } catch (_) {
+    // Never leave the user with an unqualified permanent "Processing" state.
+    const original = document.querySelector("#shipment-summary [data-first-value-processing]");
+    if (original) {
+      original.textContent = "Results are available. Refresh this page to update the status.";
+      const refreshLink = document.createElement("a");
+      refreshLink.href = window.location.href;
+      refreshLink.className = "ml-2 font-bold underline text-emerald-800";
+      refreshLink.textContent = "Refresh results";
+      original.appendChild(refreshLink);
+    }
+  } finally {
+    refreshingPostProcessingOverview = false;
+  }
+};
+
 document.addEventListener("htmx:afterSwap", (event) => {
   initializeFastFollowUx(event.target || document);
 
   const target = event.detail?.target || event.target;
+  if (
+    (target?.id === "operation-workspace" && target.hasAttribute("data-review-tabs"))
+    || (target?.id === "processing-panel" && target.dataset.processingTerminal === "true")
+  ) {
+    void synchronizeTerminalOverview();
+  }
   if (target?.id !== "operation-workspace") return;
   if (!pendingReviewTransition) return;
 
