@@ -311,3 +311,89 @@ def test_original_provenance_never_replaces_without_exact_safe_review_conditions
     assert target.source_assurance_document_id == worksheet_id
     db.rollback()
     db.close()
+
+
+@pytest.mark.parametrize("scenario", ["atomic_success", "second_field_failure", "stale_value", "derived_source"])
+def test_pack2_single_click_plant_mass_review_is_atomic_and_fail_closed(
+    engine2_postgres_session_factory, monkeypatch, scenario,
+):
+    """PostgreSQL gate: no partial field approval and no authority from worksheet."""
+    from datetime import datetime, timezone
+    from litoral_trace.us_lacey import paired_review
+    from litoral_trace.us_lacey.review import UsLaceyReviewError
+
+    factory = engine2_postgres_session_factory
+    org, op_id, worksheet_id, fields = _fixture(factory, extra_original=True)
+    db = tenant_session(factory, org)
+    original_id = db.scalars(
+        select(UsLaceyOperationDocument.assurance_document_id).where(
+            UsLaceyOperationDocument.operation_id == op_id,
+            UsLaceyOperationDocument.assurance_document_id != worksheet_id,
+        )
+    ).one()
+    for name, value, locator in (
+        ("plant_quantity", "288", "canonical:1:quantity"),
+        ("metric_unit", "kg", "canonical:1:unit"),
+    ):
+        field = db.get(UsLaceyOperationField, fields[name])
+        field.original_value = value
+        field.normalized_value = value
+        field.field_status = "REVIEW"
+        field.validation_status = "REVIEW_REQUIRED"
+        field.extractor = "canonical-shipment-truth"
+        field.source_assurance_document_id = (
+            worksheet_id if scenario == "derived_source" else original_id
+        )
+        field.source_page = 1
+        field.source_locator = locator
+    op_uuid = str(db.get(UsLaceyOperation, op_id).public_id)
+    db.commit()
+    db.close()
+    monkeypatch.setattr(paired_review, "review_journal_enabled", lambda *_: False)
+    call_sessions = []
+
+    def human_review(*, _session, _defer_commit, field_id, **_kwargs):
+        assert _defer_commit
+        call_sessions.append(id(_session))
+        if scenario == "second_field_failure" and len(call_sessions) == 2:
+            raise UsLaceyReviewError("Second field refused")
+        field = _session.get(UsLaceyOperationField, field_id)
+        field.field_status = "MATCHED"
+        field.validation_status = "VALID"
+        field.human_value = field.normalized_value
+        field.reviewed_at = datetime.now(timezone.utc)
+        _session.flush()
+
+    monkeypatch.setattr(paired_review, "review_us_lacey_field", human_review)
+    action = lambda: paired_review.confirm_plant_mass_pair(
+        organization_id=org, operation_public_id=op_uuid, user_id=1,
+        user_email="reviewer@example.test", quantity_id=fields["plant_quantity"],
+        unit_id=fields["metric_unit"],
+        expected_quantity="289" if scenario == "stale_value" else "288",
+        expected_unit="kg", quantity_locator="canonical:1:quantity",
+        unit_locator="canonical:1:unit",
+        session_factory=lambda: tenant_session(factory, org),
+    )
+    if scenario == "atomic_success":
+        assert action() == 2
+        assert len(call_sessions) == 2 and len(set(call_sessions)) == 1
+    else:
+        with pytest.raises(UsLaceyReviewError):
+            action()
+    db = tenant_session(factory, org)
+    statuses = {
+        name: (db.get(UsLaceyOperationField, fields[name]).field_status,
+               db.get(UsLaceyOperationField, fields[name]).human_value)
+        for name in ("plant_quantity", "metric_unit")
+    }
+    db.close()
+    if scenario == "atomic_success":
+        assert statuses == {
+            "plant_quantity": ("MATCHED", "288"),
+            "metric_unit": ("MATCHED", "kg"),
+        }
+    else:
+        assert statuses == {
+            "plant_quantity": ("REVIEW", None),
+            "metric_unit": ("REVIEW", None),
+        }

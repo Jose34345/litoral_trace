@@ -179,6 +179,8 @@ def review_us_lacey_field(
     reason_code: str | None = None,
     expected_source_set_fingerprint: str | None = None,
     expected_case_fingerprint: str | None = None,
+    _session=None,
+    _defer_commit: bool = False,
 ) -> UsLaceyReviewResult:
     """Accept, edit or explicitly mark one preparation field as not required.
 
@@ -208,7 +210,7 @@ def review_us_lacey_field(
             "Source-claim selection requires an authenticated, fenced ACCEPT with reviewer reason."
         )
 
-    session = get_us_lacey_db_session()
+    session = _session if _session is not None else get_us_lacey_db_session()
     try:
         set_tenant_db_context(session, org_id)
         operation = _operation(
@@ -570,7 +572,12 @@ def review_us_lacey_field(
                 "source_page": field.source_page,
             },
         )
-        session.commit()
+        if _defer_commit:
+            if _session is None:
+                raise UsLaceyReviewError("Deferred review requires an owned transaction.")
+            session.flush()
+        else:
+            session.commit()
         return UsLaceyReviewResult(
             field_id=field.id,
             field_status=field.field_status,
@@ -586,7 +593,8 @@ def review_us_lacey_field(
         session.rollback()
         raise UsLaceyReviewError("Unable to save this review decision.") from exc
     finally:
-        session.close()
+        if _session is None:
+            session.close()
 
 
 _AUTO_CONFIRMABLE_FIELD_STATUSES = (

@@ -426,10 +426,17 @@ const synchronizeTerminalOverview = async () => {
     const freshNav = rendered.querySelector('a[href="#operation-workspace"]');
     if (liveNav && freshNav) liveNav.textContent = freshNav.textContent;
   } catch (_) {
-    // Never leave the user with an unqualified permanent "Processing" state.
+    // The terminal workspace is authoritative, but an unavailable overview
+    // refresh must not leave the page claiming processing is still running.
     const original = document.querySelector("#shipment-summary [data-first-value-processing]");
     if (original) {
-      original.textContent = "Results are available. Refresh this page to update the status.";
+      original.textContent = "The review is available. Refresh to update the summary.";
+      const summary = original.closest("#shipment-summary");
+      const heading = summary?.querySelector("[data-first-value-heading]");
+      if (heading) heading.textContent = "Review available; summary update needed";
+      const processingBadge = [...(summary?.querySelectorAll("span") || [])]
+        .find((badge) => badge.textContent.trim() === "PROCESSING");
+      if (processingBadge) processingBadge.textContent = "UPDATE NEEDED";
       const refreshLink = document.createElement("a");
       refreshLink.href = window.location.href;
       refreshLink.className = "ml-2 font-bold underline text-emerald-800";
@@ -445,10 +452,9 @@ document.addEventListener("htmx:afterSwap", (event) => {
   initializeFastFollowUx(event.target || document);
 
   const target = event.detail?.target || event.target;
-  if (
-    (target?.id === "operation-workspace" && target.hasAttribute("data-review-tabs"))
-    || (target?.id === "processing-panel" && target.dataset.processingTerminal === "true")
-  ) {
+  // outerHTML swaps may report the DETACHED old target. Inspect the
+  // attached DOM instead, once the terminal fragment has been inserted.
+  if (document.querySelector('#operation-workspace[data-review-tabs], #processing-panel[data-processing-terminal="true"]')) {
     void synchronizeTerminalOverview();
   }
   if (target?.id !== "operation-workspace") return;
@@ -460,6 +466,12 @@ document.addEventListener("htmx:afterSwap", (event) => {
   const fieldCard = transition.fieldId
     ? target.querySelector(`[data-review-field-id="${transition.fieldId}"]`)
     : null;
+  // A bulk validation failure renders a workspace-level alert (no field ID).
+  // Never show a success toast merely because HTMX swapped an error fragment.
+  if (target.querySelector('.lt-alert--danger[role="alert"]')) {
+    showToast("Review could not be saved. Check the reason shown above.", "danger");
+    return;
+  }
   const inlineError = fieldCard?.querySelector("[data-inline-field-error]");
   if (inlineError) {
     fieldCard.classList.remove("lt-validation-shake");
@@ -491,6 +503,17 @@ document.addEventListener("htmx:afterSwap", (event) => {
   if (cards.length) {
     const index = Math.max(0, Math.min(transition.previousIndex, cards.length - 1));
     window.requestAnimationFrame(() => focusReviewCard(cards[index]));
+  }
+});
+
+document.addEventListener("htmx:afterSettle", () => {
+  if (document.querySelector('#operation-workspace[data-review-tabs], #processing-panel[data-processing-terminal="true"]')) {
+    void synchronizeTerminalOverview();
+  }
+});
+window.addEventListener("pageshow", () => {
+  if (document.querySelector('#operation-workspace[data-review-tabs]')) {
+    void synchronizeTerminalOverview();
   }
 });
 

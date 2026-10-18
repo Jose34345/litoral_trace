@@ -93,6 +93,7 @@ from litoral_trace.us_lacey.review import (
     finish_document_review_awaiting_entry,
     review_us_lacey_field,
 )
+from litoral_trace.us_lacey.paired_review import confirm_plant_mass_pair
 from litoral_trace.us_lacey.review_telemetry import parse_review_telemetry
 from litoral_trace.us_lacey.sandbox import (
     UsLaceySandboxError,
@@ -1737,6 +1738,69 @@ def operation_review_action_fragment(
             return _operation_error_page(request, "Operation not found.", status_code=404)
 
 
+@app.post("/operations/{operation_public_id}/review/mass-pair", response_class=HTMLResponse)
+@app.post("/operations/{operation_public_id}/review/actions/mass-pair", response_class=HTMLResponse)
+def operation_review_mass_pair(
+    operation_public_id: str,
+    request: Request,
+    quantity_id: int = Form(...),
+    unit_id: int = Form(...),
+    expected_quantity: str = Form(...),
+    expected_unit: str = Form(...),
+    quantity_locator: str = Form(...),
+    unit_locator: str = Form(...),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    """One explicit human action, two independently audited fields, atomic."""
+    identity = None
+    htmx = request.headers.get("HX-Request", "").lower() == "true"
+    try:
+        identity, _entitlement = _operational_mutation_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose=f"complete:{operation_public_id}",
+            submitted_token=csrf_token,
+        )
+        confirm_plant_mass_pair(
+            organization_id=identity.organization_id,
+            operation_public_id=operation_public_id,
+            user_id=identity.user_id,
+            user_email=identity.email,
+            quantity_id=quantity_id,
+            unit_id=unit_id,
+            expected_quantity=expected_quantity,
+            expected_unit=expected_unit,
+            quantity_locator=quantity_locator,
+            unit_locator=unit_locator,
+        )
+        if htmx:
+            return _workspace_fragment(
+                request=request, identity=identity, operation_public_id=operation_public_id,
+                us_session=us_session or "",
+            )
+        return RedirectResponse(f"/operations/{operation_public_id}", status_code=303)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    except (UsLaceyCsrfError, UsLaceyReviewError, UsLaceyOperationNotFound) as exc:
+        if identity is None:
+            return _operation_error_page(request, "Review could not be saved.", status_code=403)
+        try:
+            if htmx:
+                return _workspace_fragment(
+                    request=request, identity=identity, operation_public_id=operation_public_id,
+                    us_session=us_session or "", error=str(exc),
+                )
+            return _detail_page(
+                request=request, identity=identity, operation_public_id=operation_public_id,
+                us_session=us_session or "", error=str(exc), status_code=409,
+            )
+        except UsLaceyOperationNotFound:
+            return _operation_error_page(request, "Operation not found.", status_code=404)
+
+
 @app.post(
     "/operations/{operation_public_id}/review/accept-supported",
     response_class=HTMLResponse,
@@ -1755,12 +1819,17 @@ def operation_review_accept_supported(
             purpose=f"complete:{operation_public_id}",
             submitted_token=csrf_token,
         )
-        accept_supported_us_lacey_fields(
+        bulk_result = accept_supported_us_lacey_fields(
             organization_id=identity.organization_id,
             operation_public_id=operation_public_id,
             user_id=identity.user_id,
             user_email=identity.email,
         )
+        if bulk_result.accepted_count == 0:
+            raise UsLaceyReviewError(
+                "No fields have eligible independent evidence for bulk confirmation. "
+                "Inspect each original source and review the remaining fields individually."
+            )
         safe_record_outreach_event(
             session_token=us_session or "",
             organization_id=identity.organization_id,
@@ -1804,12 +1873,17 @@ def operation_review_accept_supported_fragment(
             purpose=f"complete:{operation_public_id}",
             submitted_token=csrf_token,
         )
-        accept_supported_us_lacey_fields(
+        bulk_result = accept_supported_us_lacey_fields(
             organization_id=identity.organization_id,
             operation_public_id=operation_public_id,
             user_id=identity.user_id,
             user_email=identity.email,
         )
+        if bulk_result.accepted_count == 0:
+            raise UsLaceyReviewError(
+                "No fields have eligible independent evidence for bulk confirmation. "
+                "Inspect each original source and review the remaining fields individually."
+            )
         safe_record_outreach_event(
             session_token=us_session or "",
             organization_id=identity.organization_id,

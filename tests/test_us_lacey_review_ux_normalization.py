@@ -154,7 +154,7 @@ def test_exception_first_workspace_has_four_tabs_and_htmx_actions():
     assert "Review decisions" not in template
     assert "Confirm value" in template
     assert "Auto-Resolved Data" in template
-    assert "Confirmed <span" in template
+    assert "Confirmed fields <span" in template
     assert "Regulatory Analysis" in template
     assert "Confirm Supported Fields" in template
     assert 'hx-target="#operation-workspace"' in template

@@ -68,7 +68,7 @@ def test_review_workspace_is_exception_first():
     assert "Review decisions" not in source
     assert 'id="review-summary"' in source
     assert "data-review-kpis" in source
-    assert "Each item shows what is missing and the action needed." in source
+    assert "Counts represent individual fields, not reviewer clicks." in source
     assert "Request original evidence" in source
     assert "Auto-Resolved Data" in source
     assert "default_review_tab" in source
