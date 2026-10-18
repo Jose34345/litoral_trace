@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from litoral_trace.us_lacey.paired_review import _validated_pair
+from litoral_trace.us_lacey.paired_review import _validated_pair, _is_packing_list_filename
 from litoral_trace.us_lacey.review import UsLaceyReviewError
 from litoral_trace.us_lacey.document_evidence_class import classify_document
 from litoral_trace.us_lacey.shadow_evidence_snapshot import (
@@ -90,3 +90,15 @@ def test_review_pair_uses_authenticated_single_action_and_two_field_journals():
     assert 'hx-post="/operations/{{ detail.public_id }}/review/actions/mass-pair"' in html
     assert "htmx:afterSettle" in js and "data-processing-terminal" in js
     assert "Review could not be saved. Check the reason shown above." in js
+
+
+@pytest.mark.parametrize(("filename", "expected"), [
+    ("02_Packing_List_Shipment2.pdf", True),
+    ("packing-list.pdf", True),
+    ("PACKING LIST 2026.pdf", True),
+    ("05_Entry_Preparation_Worksheet_Shipment2.pdf", False),
+    ("notpacking_list.pdf", False),
+    ("commercial_invoice.pdf", False),
+])
+def test_packing_filename_recognizes_pack2_without_authorizing_worksheets(filename, expected):
+    assert _is_packing_list_filename(filename) is expected

@@ -24,6 +24,14 @@ from litoral_trace.us_lacey.review import UsLaceyReviewError, review_us_lacey_fi
 from litoral_trace.us_lacey.review_source_authority import reviewed_source_class
 
 
+def _is_packing_list_filename(filename: str) -> bool:
+    """Require a delimited packing-list label, including 02_Packing_List_..."""
+    return bool(re.search(
+        r"(?:^|[^a-z])packing[\s_-]+list(?:[^a-z]|$)",
+        str(filename or "").casefold(),
+    ))
+
+
 def _validated_pair(fields: tuple, *, expected: tuple[str, str],
                     locators: tuple[str, str]) -> None:
     if len(fields) != 2 or {f.field_name for f in fields} != {"plant_quantity", "metric_unit"}:
@@ -129,7 +137,7 @@ def confirm_plant_mass_pair(
                    VaultDocument.status == "available",
                    VaultDocument.deleted_at.is_(None))).scalar_one_or_none()
         filename = str(filename or "")
-        if not re.search(r"\bpacking[\s_-]+list\b", filename.casefold()):
+        if not _is_packing_list_filename(filename):
             raise UsLaceyReviewError("Inspect the original packing list and confirm separately.")
         for field in (quantity, unit):
             conflicts = db.scalar(select(func.count(ReconciliationIssue.id)).where(
