@@ -6,6 +6,8 @@
 {% set field_input_values = field_input_values|default({}) %}
 {% set regulatory_action_items = regulatory_action_items|default(()) %}
 {% set combined_action_count = (attention_fields|length) + (regulatory_action_items|length) %}
+{% set future_entry_fields = attention_fields|selectattr('field_name', 'equalto', 'filing_entry_reference')|rejectattr('proposed_value')|list %}
+{% set non_entry_attention_count = (attention_fields|length) - (future_entry_fields|length) %}
 {% macro friendly_status(value) %}{% set labels = {"MISSING":"Missing information", "CONFLICT":"Conflicting information", "SUPPORTED":"Auto-resolved", "SUPPORTED MULTIPLE":"Auto-resolved", "SUPPORTED_MULTIPLE":"Auto-resolved", "FOUND":"Auto-resolved", "MATCHED":"Confirmed", "NOT_REQUIRED":"Not required", "REVIEW":"Needs review"} %}{{ labels.get(value, value|replace("_", " ")|title) }}{% endmacro %}
 {% macro review_telemetry_inputs() %}<input type="hidden" name="review_started_at" data-review-started-at><input type="hidden" name="review_elapsed_seconds" data-review-elapsed-seconds><input type="hidden" name="review_modified_field_ids" data-review-modified-field-ids>{% endmacro %}
 
@@ -57,15 +59,7 @@
   </td>
   <td class="px-4 py-3">
     {% if field.id in paired_review_ids %}
-    <div class="max-w-sm space-y-1">
-      <p class="text-[11px] text-slate-700">{{ field.source_filename }} · p. {{ field.source_page }}</p>
-      <p class="text-[11px] font-semibold text-slate-600">Same original packing list as the paired value</p>
-      <button type="button" class="text-xs font-bold text-emerald-800 underline" data-source-inspect
-        data-source-url="/operations/{{ detail.public_id }}/source/{{ field.source_assurance_document_id }}"
-        data-source-page="{{ field.source_page }}"
-        data-source-label="{{ field.source_filename }}"
-        data-source-locator="Inspect this value in the original packing list.">Inspect original PDF</button>
-    </div>
+    <p class="max-w-sm text-[11px] text-slate-600" data-paired-source>Same packing list, page {{ field.source_page }}. Use the shared PDF inspector above.</p>
     {% elif field.candidates|length == 1 %}
     {% set one = field.candidates[0] %}
     <div data-inline-candidate="{{ one.id }}" class="max-w-sm space-y-1">
@@ -139,12 +133,15 @@
     {% endif %}
   </td>
   <td class="px-4 py-3">
-    <span class="lt-review-status {% if field.status in ['MISSING', 'CONFLICT'] %}lt-review-status--blocking{% else %}lt-review-status--confirmation{% endif %}" data-action-status>{{ action_status(field) }}</span>
+    {% set derived_only = field.source_filename and source_class_for_filename(field.source_filename).code == 'DERIVED_PREPARATION' %}
+    <span class="lt-review-status {% if field.status in ['MISSING', 'CONFLICT'] or derived_only %}lt-review-status--blocking{% else %}lt-review-status--confirmation{% endif %}" data-action-status>{% if derived_only %}Original required{% elif field.field_name == 'filing_entry_reference' and not field.proposed_value %}Pending for filing{% else %}{{ action_status(field) }}{% endif %}</span>
   </td>
   <td class="px-4 py-3">
     {% set derived_only = field.source_filename and source_class_for_filename(field.source_filename).code == 'DERIVED_PREPARATION' %}
     <div class="flex min-w-[11rem] flex-wrap gap-2">
-      {% if derived_only %}
+      {% if field.id in paired_review_ids %}
+      <span class="text-[11px] font-semibold text-slate-600" data-paired-primary-action>Confirm together above</span>
+      {% elif derived_only %}
       <button type="button" class="lt-btn lt-btn--secondary" data-request-evidence
         data-field-name="{{ field.field_name }}" data-field-label="{{ field.label }}"
         data-field-guidance="{{ missing_guidance(field.field_name) }}">Request original evidence</button>
@@ -170,17 +167,17 @@
       {% if not derived_only %}
       <button
         type="button"
-        class="lt-btn lt-btn--secondary"
+        class="{{ 'lt-btn lt-btn--ghost' if field.id in paired_review_ids else 'lt-btn lt-btn--secondary' }}"
         data-override-open
         data-override-field="{{ field.id }}"
         aria-haspopup="dialog"
         aria-controls="review-override-{{ field.id }}"
-      >{% if field.field_name == "filing_entry_reference" %}Enter verified number{% else %}Enter verified value{% endif %}</button>
+      >{% if field.field_name == "filing_entry_reference" %}Enter verified number{% elif field.id in paired_review_ids %}Correct this value{% else %}Enter verified value{% endif %}</button>
       {% endif %}
       {% if field.field_name == "filing_entry_reference" %}
       <button type="button" class="lt-btn lt-btn--ghost" data-review-keep-pending data-keep-pending-field="{{ field.id }}">Keep pending</button>
       {% endif %}
-      {% if not derived_only %}
+      {% if not derived_only and field.id not in paired_review_ids and field.field_name != "filing_entry_reference" %}
       <button type="button" class="lt-btn lt-btn--ghost" data-request-evidence data-field-name="{{ field.field_name }}" data-field-label="{{ field.label }}" data-field-guidance="{{ missing_guidance(field.field_name) }}">Request evidence</button>
       {% endif %}
 
@@ -301,7 +298,10 @@
       {% if combined_action_count > 0 %}
       <div class="mb-4">
         <h2 class="text-base font-bold text-slate-950">Exception work queue</h2>
-        <p class="mt-1 text-xs text-slate-600">Counts represent individual fields, not reviewer clicks. Related values may be confirmed together after inspecting their source. A future CBP entry number remains pending until issued.</p>
+        {% if future_entry_fields %}
+        <p class="mt-1 text-xs text-slate-600" data-review-phase-counts><strong>{{ non_entry_attention_count }} document field{{ '' if non_entry_attention_count == 1 else 's' }} to review</strong> · {{ future_entry_fields|length }} CBP entry number{{ '' if future_entry_fields|length == 1 else 's' }} pending for filing{% if regulatory_action_items %} · {{ regulatory_action_items|length }} regulatory blocker{{ '' if regulatory_action_items|length == 1 else 's' }}{% endif %}.</p>
+        {% endif %}
+        <p class="mt-1 text-xs text-slate-600">Counts represent individual fields, not reviewer clicks. Related values can be confirmed together after checking the original PDF. Filing requirements remain mandatory even when their information is not yet available.</p>
       </div>
       <div id="action-required-fields" class="grid gap-5" data-action-required-list>
         {% for line_reference, fields in attention_fields|groupby("line_reference") %}
