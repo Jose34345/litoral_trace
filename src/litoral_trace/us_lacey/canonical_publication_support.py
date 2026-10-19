@@ -374,13 +374,15 @@ def publish_source_linked_review_candidates(
             continue
         current_value = str(target.normalized_value or target.original_value or "").strip()
         # The canonical reviewer already has a machine-only worksheet candidate.
-        # A current corroborated original PDF may REPLACE ITS PRIMARY SOURCE only
-        # when the quantity/unit is identical and still needs human review.
-        # This is never a silent correction, bulk acceptance or filing approval.
+        # A current corroborated original PDF may REPLACE ITS PRIMARY SOURCE
+        # only for a strictly verified identical value still awaiting review.
+        # Dedicated invoice extended-value observations are checked against
+        # the worksheet, just as net mass is checked against the packing list.
+        # This is never a silent approval, allocation or filing authorization.
         replacing_machine_worksheet = bool(
             current_value
             and target.field_scope == "PLANT_LINE"
-            and target.field_name in {"plant_quantity", "metric_unit"}
+            and target.field_name in {"plant_quantity", "metric_unit", "entered_value"}
             and target.field_status == "REVIEW"
             and target.extractor == "canonical-shipment-truth"
             and target.source_assurance_document_id is not None
@@ -442,7 +444,27 @@ def publish_source_linked_review_candidates(
             if (row[0].get("source_claim") or {}).get("extractor_name")
             == "packing_net_mass_exact"
         ]
-        if replacing_machine_worksheet:
+        original_invoice_value = [
+            row for row in eligible
+            if (row[0].get("source_claim") or {}).get("extractor_name")
+            == "invoice_line_extended_value_exact"
+        ]
+        if replacing_machine_worksheet and target.field_name == "entered_value":
+            # Exactly one original, corroborated line-local invoice observation.
+            # A worksheet's matching number is NOT its own evidence of value.
+            if (len(original_invoice_value) != 1
+                    or original_invoice_value[0][0]["assurance_document_id"]
+                    == target.source_assurance_document_id
+                    or source_classes.get(
+                        original_invoice_value[0][0]["assurance_document_id"]
+                    ) not in {"COMMERCIAL_SOURCE", "UNVERIFIED_COMMERCIAL"}):
+                continue
+            previous = validate_ppq_value(target.field_name, current_value)
+            if (previous.status.value != "VALID"
+                    or previous.normalized_value != original_invoice_value[0][2]):
+                continue
+            eligible = original_invoice_value
+        elif replacing_machine_worksheet:
             # The only overridable facts are two exact single-SKU plant facts
             # with ONE dedicated source witness from an ORIGINAL packing list.
             # No value change; merely prefer its verifiable provenance over the
@@ -466,7 +488,8 @@ def publish_source_linked_review_candidates(
             normalized_value=value,
             source_authority=(
                 0.95 if (claim.get("source_claim") or {}).get("extractor_name")
-                == "packing_net_mass_exact" else 0.5
+                in {"packing_net_mass_exact", "invoice_line_extended_value_exact"}
+                else 0.5
             ),
             candidate_score=0.5,
             source_page=claim["source_locator"].get("page"),

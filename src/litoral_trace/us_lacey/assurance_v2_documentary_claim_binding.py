@@ -16,6 +16,9 @@ from litoral_trace.lacey_engine.domain import BundleResolution
 from litoral_trace.lacey_engine.packing_net_material_mass import (
     extract_packing_plant_net_mass,
 )
+from litoral_trace.lacey_engine.commercial_invoice_line_value import (
+    extract_invoice_line_extended_value,
+)
 from litoral_trace.us_lacey.pdf_documentary_identity import discover_single_product_pdf_identity
 from litoral_trace.us_lacey.single_sku_recovery import _explicit_document_skus
 
@@ -103,6 +106,16 @@ def bind_documentary_claims(
             doc.resolution.layout, document_type=doc.document_type,
         )
         if mass is not None and mass.sku == identity.sku:
+            sku_docs.add(item.assurance_document_id)
+        # The explicit invoice line itself proves a single SKU/line when
+        # both exact extended-value arithmetic and printed total reconcile.
+        # Never allow a second SKU or unmatched row reference to bind.
+        invoice_line = extract_invoice_line_extended_value(
+            doc.resolution.layout, document_type=doc.document_type,
+        )
+        if (invoice_line is not None
+                and invoice_line.sku == identity.sku
+                and invoice_line.line_reference == identity.line_reference):
             sku_docs.add(item.assurance_document_id)
     supplier_docs = {
         f.assurance_document_id for f in identity.virtual_fields
