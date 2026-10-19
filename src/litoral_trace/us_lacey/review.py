@@ -177,6 +177,8 @@ def review_us_lacey_field(
     candidate_id: int | None = None,
     source_claim_id: str | None = None,
     reason_code: str | None = None,
+    context_description_field_id: int | None = None,
+    context_source_locator: str | None = None,
     expected_source_set_fingerprint: str | None = None,
     expected_case_fingerprint: str | None = None,
     _session=None,
@@ -253,15 +255,39 @@ def review_us_lacey_field(
                 or current_case.authority_fingerprint() != expected_case_fingerprint
             ):
                 raise UsLaceyReviewError("V2 review case authority is stale.")
-        field = session.scalar(
-            select(UsLaceyOperationField).where(
-                UsLaceyOperationField.organization_id == org_id,
-                UsLaceyOperationField.operation_id == operation.id,
-                UsLaceyOperationField.id == int(field_id),
-            )
+        field_query = select(UsLaceyOperationField).where(
+            UsLaceyOperationField.organization_id == org_id,
+            UsLaceyOperationField.operation_id == operation.id,
+            UsLaceyOperationField.id == int(field_id),
         )
+        if context_description_field_id is not None or context_source_locator is not None:
+            field_query = field_query.with_for_update()
+        field = session.scalar(field_query)
         if field is None:
             raise UsLaceyReviewError("Review field was not found for this operation.")
+        original_context = None
+        if context_description_field_id is not None or context_source_locator is not None:
+            if (
+                context_description_field_id is None or not context_source_locator
+                or normalized_action != "edit" or candidate_id is not None
+                or source_claim_id is not None or v2_journal_active
+                or len(str(reason_code or "").strip()) < 15
+            ):
+                raise UsLaceyReviewError(
+                    "Review the original packing description and explain the component decision."
+                )
+            from litoral_trace.us_lacey.article_context_review import (
+                validate_article_original_context,
+            )
+            try:
+                original_context = validate_article_original_context(
+                    session, organization_id=org_id, operation_id=operation.id,
+                    article_field=field,
+                    description_field_id=int(context_description_field_id),
+                    expected_locator=str(context_source_locator),
+                )
+            except (ValueError, TypeError) as exc:
+                raise UsLaceyReviewError(str(exc)) from exc
         if (
             v2_journal_active and normalized_action == "edit"
             and not field.source_assurance_document_id
@@ -314,7 +340,10 @@ def review_us_lacey_field(
         review_doc_id = (
             selected_candidate.source_assurance_document_id if selected_candidate is not None
             else source_selection.assurance_document_id if source_selection is not None
-            else field.source_assurance_document_id
+            else (
+                original_context.document_id if original_context is not None
+                else field.source_assurance_document_id
+            )
         )
         if normalized_action == "accept" and review_doc_id is None:
             if field.extractor != "reusable-supplier-evidence":
@@ -341,6 +370,8 @@ def review_us_lacey_field(
             "field_name": field.field_name,
             "field_status": field.field_status,
             "effective_value": field.human_value or proposed,
+            "source_assurance_document_id": field.source_assurance_document_id,
+            "source_locator": field.source_locator,
         }
         if normalized_action == "accept":
             if proposed is None or not str(proposed).strip():
@@ -375,6 +406,16 @@ def review_us_lacey_field(
             field.validation_status = "VALID"
             field.validation_error = None
             field.not_required_reason_code = None
+            if original_context is not None:
+                # This is HUMAN-INTERPRETED CONTEXT, not an extracted
+                # exact-match component. The worksheet proposal is retained
+                # in original_value; the reviewer and original PDF describe
+                # why the corrected value has independent support.
+                field.source_assurance_document_id = original_context.document_id
+                field.source_page = original_context.page
+                field.source_locator = original_context.locator
+                field.extractor = "human-reviewed-original-context"
+                field.extractor_version = "1"
         else:
             normalized_reason = str(reason_code or "").strip().upper()
             context_field = session.scalar(
@@ -465,9 +506,16 @@ def review_us_lacey_field(
             "v2_verified_memory" if v2_promoted else "v2_decision_only"
         ) if v2_journal_active else "not_applicable"
         promotion_promoted = v2_promoted
+        if original_context is not None:
+            promotion_reason = "contextual_human_review_not_promoted"
+            promotion_promoted = False
         # V2 owns promotion through a source-bound human decision. Never run
         # the legacy promoter in parallel or create two competing authorities.
-        if normalized_action in {"accept", "edit"} and not v2_journal_active:
+        if (
+            normalized_action in {"accept", "edit"}
+            and not v2_journal_active
+            and original_context is None
+        ):
             try:
                 # Reusable memory is an additive optimization, not part of the
                 # regulatory review transaction's availability contract. A savepoint
@@ -541,12 +589,26 @@ def review_us_lacey_field(
                 "resolved_conflict_count": len(open_issues),
                 "reusable_evidence_promoted": promotion_promoted,
                 "reusable_evidence_promotion_reason": promotion_reason,
+                "contextual_original_document_id": (
+                    original_context.document_id if original_context is not None else None
+                ),
+                "contextual_proposal_document_id": (
+                    before["source_assurance_document_id"] if original_context is not None else None
+                ),
+                "contextual_original_field_id": (
+                    original_context.description_field_id if original_context is not None else None
+                ),
+                "contextual_review_reason": (
+                    str(reason_code).strip() if original_context is not None else None
+                ),
             },
             before_data=before,
             after_data={
                 "field_status": field.field_status,
                 "effective_value": field.human_value or proposed,
                 "operation_status": operation_status,
+                "source_assurance_document_id": field.source_assurance_document_id,
+                "source_locator": field.source_locator,
             },
             detail="U.S. document-preparation field reviewed by a customer user.",
         )
@@ -570,6 +632,18 @@ def review_us_lacey_field(
                     else "Source document"
                 ),
                 "source_page": field.source_page,
+                "contextual_original_document_id": (
+                    original_context.document_id if original_context is not None else None
+                ),
+                "contextual_proposal_document_id": (
+                    before["source_assurance_document_id"] if original_context is not None else None
+                ),
+                "contextual_original_field_id": (
+                    original_context.description_field_id if original_context is not None else None
+                ),
+                "contextual_review_reason": (
+                    str(reason_code).strip() if original_context is not None else None
+                ),
             },
         )
         if _defer_commit:

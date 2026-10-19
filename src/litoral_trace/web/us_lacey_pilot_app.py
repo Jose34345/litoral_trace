@@ -1639,6 +1639,8 @@ def operation_review_submit(
     value: str = Form(""),
     candidate_id: int | None = Form(None),
     reason_code: str = Form(""),
+    context_description_field_id: int | None = Form(None),
+    context_source_locator: str | None = Form(None),
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
@@ -1659,6 +1661,8 @@ def operation_review_submit(
             value=value or None,
             candidate_id=candidate_id,
             reason_code=reason_code or None,
+            context_description_field_id=context_description_field_id,
+            context_source_locator=context_source_locator,
         )
         return RedirectResponse(f"/operations/{operation_public_id}", status_code=303)
     except UsLaceyPortalAuthError:
@@ -1692,6 +1696,8 @@ def operation_review_action_fragment(
     value: str = Form(""),
     candidate_id: int | None = Form(None),
     reason_code: str = Form(""),
+    context_description_field_id: int | None = Form(None),
+    context_source_locator: str | None = Form(None),
     csrf_token: str = Form(...),
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
@@ -1713,6 +1719,8 @@ def operation_review_action_fragment(
             value=value or None,
             candidate_id=candidate_id,
             reason_code=reason_code or None,
+            context_description_field_id=context_description_field_id,
+            context_source_locator=context_source_locator,
         )
         return _workspace_fragment(
             request=request,

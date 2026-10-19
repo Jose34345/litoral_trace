@@ -179,13 +179,14 @@ authority = "human_confirmed"
 implementation = [
   "src/litoral_trace/us_lacey/review.py",
   "src/litoral_trace/us_lacey/review_source_authority.py",
+  "src/litoral_trace/us_lacey/article_context_review.py",
   "src/litoral_trace/us_lacey/paired_review.py",
   "src/litoral_trace/us_lacey/bulk_review.py",
   "src/litoral_trace/us_lacey/ai_review.py",
   "src/litoral_trace/us_lacey/ai_suggestions.py"
 ]
 tests = ["tests"]
-notes = "Reviewer actions remain explicit and auditable. Current tenant-owned source role/Vault metadata must block derivative-only worksheet acceptance in individual and bulk review; a filename never grants positive authority. The stable paired quantity/unit action reuses the existing per-field review writer within one locked transaction and requires same current packing document, line, page, unambiguous values and immutable evidence locators."
+notes = "Reviewer actions remain explicit and auditable. A worksheet alone cannot authorize a field. The paired quantity/unit action uses one explicit human decision with two audited fields. Article / Component may show contextual original packing-list description only for one same-source plant line; an authenticated reviewer must provide a value and a documented reason. The current source set, provenance, tenant and reviewer decision remain fenced; a filename alone never grants positive authority. Assurance V2 experimental mode remains disabled."
 
 [capabilities.ppq505_and_exports]
 status = "ACTIVE"
