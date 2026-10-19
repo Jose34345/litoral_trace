@@ -482,3 +482,180 @@ def test_invoice_original_resourcing_preserves_human_review_and_fails_closed(
         ) == 0
     db.rollback()
     db.close()
+
+
+@pytest.mark.parametrize("scenario", [
+    "valid", "stale_locator", "cross_line", "second_line",
+    "worksheet_context", "missing_unit", "reviewed", "not_current",
+])
+def test_article_context_p0_requires_current_original_same_line(
+    engine2_postgres_session_factory, scenario,
+):
+    from datetime import datetime, timezone
+    from litoral_trace.us_lacey.article_context_review import validate_article_original_context
+    factory = engine2_postgres_session_factory
+    org, op_id, worksheet_id, ids = _fixture(factory, extra_original=True)
+    db = tenant_session(factory, org)
+    original_id = db.scalars(select(UsLaceyOperationDocument.assurance_document_id).where(
+        UsLaceyOperationDocument.operation_id == op_id,
+        UsLaceyOperationDocument.assurance_document_id != worksheet_id,
+    )).one()
+    article = db.get(UsLaceyOperationField, ids["article_component"])
+    article.field_status = "REVIEW"
+    article.source_assurance_document_id = worksheet_id
+    article.normalized_value = "solid bamboo coasters"
+    context = db.get(UsLaceyOperationField, ids["merchandise_description"])
+    context.normalized_value = "retail boxed 4 piece solid bamboo coaster sets"
+    context.field_status = "REVIEW"
+    context.source_assurance_document_id = original_id
+    context.source_page = 1
+    context.source_locator = "canonical:shipment:original-description"
+    for name, val in (("plant_quantity", "288"), ("metric_unit", "kg")):
+        f = db.get(UsLaceyOperationField, ids[name])
+        f.field_status = "REVIEW"
+        f.normalized_value = val
+        f.source_assurance_document_id = original_id
+        f.source_page = 1
+        f.source_locator = "canonical:1:mass" if name == "plant_quantity" else "canonical:1:unit"
+    if scenario == "cross_line":
+        db.get(UsLaceyOperationField, ids["plant_quantity"]).merchandise_line_reference = "2"
+    elif scenario == "second_line":
+        db.add(UsLaceyPpqPlantLine(
+            organization_id=org, operation_id=op_id, line_reference="2", ordinal=2,
+        ))
+    elif scenario == "worksheet_context":
+        context.source_assurance_document_id = worksheet_id
+    elif scenario == "missing_unit":
+        db.get(UsLaceyOperationField, ids["metric_unit"]).source_locator = None
+    elif scenario == "reviewed":
+        article.reviewed_at = datetime.now(timezone.utc)
+    elif scenario == "not_current":
+        db.scalars(select(UsLaceyOperationDocument).where(
+            UsLaceyOperationDocument.operation_id == op_id,
+            UsLaceyOperationDocument.assurance_document_id == original_id,
+        )).one().is_current = False
+    db.flush()
+    expected_locator = (
+        "stale" if scenario == "stale_locator"
+        else "canonical:shipment:original-description"
+    )
+    if scenario == "valid":
+        selected = validate_article_original_context(
+            db, organization_id=org, operation_id=op_id, article_field=article,
+            description_field_id=context.id, expected_locator=expected_locator,
+        )
+        assert selected.document_id == original_id
+        assert selected.description_field_id == context.id
+        assert article.human_value is None and article.field_status == "REVIEW"
+    else:
+        with pytest.raises(ValueError):
+            validate_article_original_context(
+                db, organization_id=org, operation_id=op_id, article_field=article,
+                description_field_id=context.id, expected_locator=expected_locator,
+            )
+    db.rollback()
+    db.close()
+
+
+@pytest.mark.parametrize("reason_valid", [True, False])
+def test_article_original_context_human_decision_is_audited_not_automatic(
+    engine2_postgres_session_factory, monkeypatch, reason_valid,
+):
+    """One original descriptive witness + same SKU mass, explicit reviewer only."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+    from litoral_trace.db.models import User, UsLaceyOperationEvent
+    from litoral_trace.us_lacey import review as review_module
+
+    factory = engine2_postgres_session_factory
+    org, op_id, worksheet_id, ids = _fixture(factory, extra_original=True)
+    db = tenant_session(factory, org)
+    original_id = db.scalars(select(UsLaceyOperationDocument.assurance_document_id).where(
+        UsLaceyOperationDocument.operation_id == op_id,
+        UsLaceyOperationDocument.assurance_document_id != worksheet_id,
+    )).one()
+    target = db.get(UsLaceyOperationField, ids["article_component"])
+    target.field_status = "REVIEW"
+    target.validation_status = "REVIEW_REQUIRED"
+    target.original_value = "solid bamboo coasters"
+    target.normalized_value = "solid bamboo coasters"
+    target.source_assurance_document_id = worksheet_id
+    target.source_page = 1
+    target.source_locator = "canonical:worksheet:original-proposal"
+
+    desc = db.get(UsLaceyOperationField, ids["merchandise_description"])
+    desc.field_status = "REVIEW"
+    desc.normalized_value = "retail boxed 4 piece solid bamboo coaster sets"
+    desc.source_assurance_document_id = original_id
+    desc.source_locator = "canonical:shipment:original-description"
+    desc.source_page = 1
+    for name, value in (("plant_quantity", "288"), ("metric_unit", "kg")):
+        field = db.get(UsLaceyOperationField, ids[name])
+        field.normalized_value = value
+        field.field_status = "REVIEW"
+        field.source_assurance_document_id = original_id
+        field.source_page = 1
+        field.source_locator = "canonical:1:" + name
+    suffix = uuid4().hex[:10]
+    reviewer = User(organization_id=org, username="pack2-" + suffix,
+                    email="pack2-" + suffix + "@example.test",
+                    password_hash="test-only", role="cliente")
+    db.add(reviewer)
+    db.flush()
+    reviewer_id = reviewer.id
+    operation_uuid = db.get(UsLaceyOperation, op_id).public_id
+    db.commit()
+    db.close()
+
+    monkeypatch.setattr(review_module, "review_journal_enabled", lambda *a, **k: False)
+    monkeypatch.setattr(review_module, "get_us_lacey_db_session", lambda: tenant_session(factory, org))
+    monkeypatch.setattr(review_module, "promote_reviewed_field",
+                        lambda *a, **k: pytest.fail("No memory promotion from contextual review"))
+    monkeypatch.setattr(review_module, "reconcile_entered_value_invariant", lambda *a, **k: None)
+    monkeypatch.setattr(review_module, "refresh_regulatory_assessment_snapshot_for_review", lambda *a, **k: None)
+    monkeypatch.setattr(review_module, "refresh_us_lacey_operation_status",
+                        lambda *a, **k: "REVIEW_REQUIRED")
+    monkeypatch.setattr(review_module, "_counts", lambda *a, **k: (5, 0, 0))
+    audits = []
+    monkeypatch.setattr(review_module, "record_audit_event",
+                        lambda *a, **k: audits.append(k))
+    reason = ("I checked the retail bamboo coaster description in the original packing list."
+              if reason_valid else "ok")
+    invoke = lambda: review_module.review_us_lacey_field(
+        organization_id=org, operation_public_id=operation_uuid,
+        field_id=ids["article_component"], user_id=reviewer_id,
+        user_email="pack2-" + suffix + "@example.test",
+        action="edit", value="solid bamboo coasters",
+        reason_code=reason,
+        context_description_field_id=ids["merchandise_description"],
+        context_source_locator="canonical:shipment:original-description",
+    )
+    if reason_valid:
+        assert invoke().field_status == "MATCHED"
+    else:
+        with pytest.raises(review_module.UsLaceyReviewError):
+            invoke()
+    db = tenant_session(factory, org)
+    stored = db.get(UsLaceyOperationField, ids["article_component"])
+    event_rows = db.scalars(select(UsLaceyOperationEvent).where(
+        UsLaceyOperationEvent.operation_id == op_id,
+        UsLaceyOperationEvent.event_type == "HUMAN_REVIEW",
+    )).all()
+    if reason_valid:
+        assert stored.field_status == "MATCHED"
+        assert stored.human_value == "solid bamboo coasters"
+        assert stored.original_value == "solid bamboo coasters"
+        assert stored.source_assurance_document_id == original_id
+        assert stored.source_locator == "canonical:shipment:original-description"
+        assert stored.extractor == "human-reviewed-original-context"
+        assert stored.reviewed_by_user_id == reviewer_id
+        assert len(event_rows) == 1
+        assert event_rows[0].details["contextual_original_document_id"] == original_id
+        assert event_rows[0].details["contextual_review_reason"] == reason
+        assert audits and audits[0]["metadata"]["contextual_original_field_id"] == ids["merchandise_description"]
+    else:
+        assert stored.field_status == "REVIEW"
+        assert stored.human_value is None
+        assert stored.source_assurance_document_id == worksheet_id
+        assert event_rows == []
+    db.close()

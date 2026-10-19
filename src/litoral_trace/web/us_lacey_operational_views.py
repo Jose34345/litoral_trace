@@ -1027,6 +1027,9 @@ def render_new_operation(*, request, identity, entitlement, csrf_token: str, err
     return _render(request, "new_operation", identity=identity, entitlement=entitlement, csrf_token=csrf_token, error=error)
 
 
+from litoral_trace.us_lacey.article_context_review import contexts_for_detail
+
+
 def _source_class_for_detail(detail):
     by_name = {
         str(document.filename).casefold(): document.document_role
@@ -1095,6 +1098,7 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
         review_csrf=review_csrf,
         quick_accept_eligible=quick_accept_eligible,
         source_class_for_filename=_source_class_for_detail(detail),
+        article_original_contexts=contexts_for_detail(detail),
         alias_csrf=alias_csrf,
         retry_csrf=retry_csrf,
         reprocess_csrf=reprocess_csrf,
@@ -1199,6 +1203,7 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         review_csrf=review_csrf,
         quick_accept_eligible=quick_accept_eligible,
         source_class_for_filename=_source_class_for_detail(detail),
+        article_original_contexts=contexts_for_detail(detail),
         field_errors=dict(field_errors or {}),
         field_input_values=dict(field_input_values or {}),
         attention_fields=attention_fields,
