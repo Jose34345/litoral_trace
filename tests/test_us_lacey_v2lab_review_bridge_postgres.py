@@ -397,3 +397,88 @@ def test_pack2_single_click_plant_mass_review_is_atomic_and_fail_closed(
             "plant_quantity": ("REVIEW", None),
             "metric_unit": ("REVIEW", None),
         }
+
+
+@pytest.mark.parametrize("adversarial", [
+    "valid_original", "value_disagreement", "wrong_sku", "wrong_line",
+    "human_reviewed", "duplicate_original", "worksheet_only",
+    "source_not_invoice", "wrong_primary_source", "already_confirmed",
+])
+def test_invoice_original_resourcing_preserves_human_review_and_fails_closed(
+    engine2_postgres_session_factory, monkeypatch, adversarial,
+):
+    """Invoice review source swap: one verified line amount, no automatic approval."""
+    from datetime import datetime, timezone
+    factory = engine2_postgres_session_factory
+    org, op_id, worksheet_id, fields = _fixture(factory, extra_original=True)
+    db = tenant_session(factory, org)
+    original_id = db.scalars(select(UsLaceyOperationDocument.assurance_document_id).where(
+        UsLaceyOperationDocument.operation_id == op_id,
+        UsLaceyOperationDocument.assurance_document_id != worksheet_id,
+    )).one()
+    invoice = db.get(AssuranceDocument, original_id)
+    db.get(VaultDocument, invoice.vault_document_id).original_filename = (
+        "01_Commercial_Invoice_Shipment2.pdf"
+    )
+    target = db.get(UsLaceyOperationField, fields["entered_value"])
+    target.original_value = "11250"
+    target.normalized_value = "11250"
+    target.field_status = "REVIEW"
+    target.validation_status = "REVIEW_REQUIRED"
+    target.source_assurance_document_id = worksheet_id
+    target.extractor = "canonical-shipment-truth"
+    source = {
+        **_claim("entered_value", "USD 11,250.00", original_id, suffix=502),
+        "source_claim": {"extractor_name": "invoice_line_extended_value_exact"},
+    }
+    if adversarial == "value_disagreement":
+        source["normalized_value"] = "USD 12,250.00"
+    if adversarial == "wrong_sku":
+        source["sku"] = "OTHER-SKU-01"
+    if adversarial == "wrong_line":
+        source["line_reference"] = "2"
+    if adversarial == "human_reviewed":
+        target.reviewed_at = datetime.now(timezone.utc)
+        target.human_value = "11250"
+    if adversarial == "already_confirmed":
+        target.field_status = "MATCHED"
+    if adversarial == "source_not_invoice":
+        db.get(VaultDocument, invoice.vault_document_id).original_filename = (
+            "05_Entry_Preparation_Worksheet_Shipment2.pdf"
+        )
+    if adversarial == "wrong_primary_source":
+        target.source_assurance_document_id = original_id
+    observations = (
+        _claim("entered_value", "11250", worksheet_id, suffix=501),
+        source,
+    )
+    if adversarial == "duplicate_original":
+        observations += ({**source, "id": "f" * 64},)
+    if adversarial == "worksheet_only":
+        observations = observations[:1]
+    monkeypatch.setattr(
+        "litoral_trace.us_lacey.assurance_v2_case_reader._source_claim_observations",
+        lambda *_args, **_kwargs: observations,
+    )
+    expected = 1 if adversarial == "valid_original" else 0
+    assert publish_source_linked_review_candidates(
+        db, organization_id=org, operation_id=op_id,
+    ) == expected
+    db.flush()
+    assert target.field_status == (
+        "MATCHED" if adversarial == "already_confirmed" else "REVIEW"
+    )
+    assert target.source_assurance_document_id == (
+        original_id if adversarial == "valid_original" else
+        original_id if adversarial == "wrong_primary_source" else worksheet_id
+    )
+    assert target.normalized_value == "11250"
+    assert (target.reviewed_at is not None) == (adversarial == "human_reviewed")
+    if adversarial == "valid_original":
+        assert target.human_value is None
+        assert target.validation_status == "REVIEW_REQUIRED"
+        assert publish_source_linked_review_candidates(
+            db, organization_id=org, operation_id=op_id,
+        ) == 0
+    db.rollback()
+    db.close()

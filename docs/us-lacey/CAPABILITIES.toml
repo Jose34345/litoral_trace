@@ -526,6 +526,7 @@ status = "RC_NO_GO"
 owner = "lacey_engine + us_lacey"
 authority = "observation"
 implementation = [
+  "src/litoral_trace/lacey_engine/commercial_invoice_line_value.py",
   "src/litoral_trace/lacey_engine/labeled_pdf_fields.py",
   "src/litoral_trace/us_lacey/assurance_v2_claim_ingestion.py",
   "src/litoral_trace/us_lacey/assurance_v2_documentary_claim_binding.py",
@@ -533,6 +534,9 @@ implementation = [
 ]
 tests = [
   "tests/test_assurance_v2_labeled_pdf_fields.py",
+  "tests/lacey_engine/test_pack2_invoice_line_extended_value_p0.py",
+  "tests/test_assurance_v2_documentary_claim_binding.py",
+  "tests/test_us_lacey_v2lab_review_bridge_postgres.py",
   "tests/test_assurance_v2_golden_postgres.py",
   "tests/test_assurance_v2_filing_complete_postgres.py"
 ]

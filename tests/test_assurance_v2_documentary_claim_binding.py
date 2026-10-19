@@ -180,3 +180,58 @@ def test_mass_binding_abstains_without_unique_current_line_and_keeps_snapshot_in
         snapshots=snapshots, parsed_documents=parsed, line_references=["1", "2"],
     ) == 0
     assert snapshots == old
+
+
+def test_pack2_commercial_invoice_extended_value_is_original_bound_review_candidate():
+    snapshots, parsed = _packet("pack2")
+    invoice = snapshots[0]
+    candidates = [
+        c for c in invoice["claims"]
+        if c["field_name"] == "entered_value"
+        and c.get("extractor_name") == "invoice_line_extended_value_exact"
+    ]
+    assert len(candidates) == 1
+    claim = candidates[0]
+    assert claim["original_value"] == "USD 11,250.00"
+    assert claim["support_status"] == "SUPPORTED"
+    assert claim["source_locator"]["kind"] == "TEXT_SPAN"
+    assert claim["source_locator"]["page"] == 1
+    assert claim["candidate_state"] == "CANDIDATE"
+    assert claim["association_status"] == "UNBOUND"
+    assert bind_documentary_claims(
+        snapshots=snapshots, parsed_documents=parsed, line_references=["1"],
+    ) > 0
+    assert claim["association_status"] == "DOCUMENT_EXACT_SINGLE_SKU"
+    assert claim["line_reference"] == "1" and claim["sku"] == "BAM-COAST-04"
+    assert claim["documentary_binding"]["claim_document_id"] == invoice["assurance_document_id"]
+    hashes = {s["assurance_document_id"]: s["original_sha256"] for s in snapshots}
+    binding = ResolvedDocumentBinding(
+        organization_id=11, operation_id=22, source_set_revision_id=33,
+        source_set_fingerprint="f" * 64, generation=1,
+        assurance_document_id=invoice["assurance_document_id"],
+        operation_document_id=invoice["operation_document_id"],
+        document_version_number=1, original_sha256=invoice["original_sha256"],
+    )
+    accepted = to_authority_candidate_snapshot(
+        claim, binding=binding, current_document_hashes=hashes,
+    )
+    assert accepted.state == "CANDIDATE"
+    assert accepted.support_status == "SUPPORTED"
+    assert accepted.association_status == "DOCUMENT_EXACT_SINGLE_SKU"
+    with pytest.raises(ValueError):
+        to_authority_candidate_snapshot(
+            claim, binding=binding, current_document_hashes={
+                **hashes, invoice["assurance_document_id"]: "a" * 64,
+            },
+        )
+
+
+def test_pack2_invoice_claim_does_not_bind_to_wrong_plant_line():
+    snapshots, parsed = _packet("pack2")
+    assert bind_documentary_claims(
+        snapshots=snapshots, parsed_documents=parsed, line_references=["2"],
+    ) == 0
+    exact = [c for c in snapshots[0]["claims"]
+             if c.get("extractor_name") == "invoice_line_extended_value_exact"]
+    assert len(exact) == 1
+    assert exact[0]["association_status"] == "UNBOUND"
