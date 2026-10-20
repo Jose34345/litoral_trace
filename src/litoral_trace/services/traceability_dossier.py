@@ -112,24 +112,130 @@ def _pretty_json_bytes(value: Any) -> bytes:
     ).encode("utf-8")
 
 
+def _split_top_level_commas(value: str) -> list[str]:
+    parts: list[str] = []
+    start = 0
+    depth = 0
+    for index, char in enumerate(value):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return []
+        elif char == "," and depth == 0:
+            part = value[start:index].strip()
+            if not part:
+                return []
+            parts.append(part)
+            start = index + 1
+    if depth != 0:
+        return []
+    tail = value[start:].strip()
+    if not tail:
+        return []
+    parts.append(tail)
+    return parts
+
+
+def _strip_outer_parentheses(value: str) -> str | None:
+    text = value.strip()
+    if len(text) < 2 or text[0] != "(" or text[-1] != ")":
+        return None
+    depth = 0
+    for index, char in enumerate(text):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return None
+            if depth == 0 and index != len(text) - 1:
+                return None
+    if depth != 0:
+        return None
+    return text[1:-1].strip()
+
+
+def _parse_wkt_ring(value: str) -> list[list[float]] | None:
+    inner = _strip_outer_parentheses(value)
+    if inner is None:
+        return None
+
+    coordinates: list[list[float]] = []
+    for token in _split_top_level_commas(inner):
+        fields = token.split()
+        if len(fields) < 2:
+            return None
+        try:
+            longitude = float(fields[0])
+            latitude = float(fields[1])
+        except ValueError:
+            return None
+        coordinates.append([longitude, latitude])
+
+    if len(coordinates) < 4 or coordinates[0] != coordinates[-1]:
+        return None
+    return coordinates
+
+
+def _parse_polygon_body(value: str) -> list[list[list[float]]] | None:
+    inner = _strip_outer_parentheses(value)
+    if inner is None:
+        return None
+
+    rings: list[list[list[float]]] = []
+    for ring_text in _split_top_level_commas(inner):
+        ring = _parse_wkt_ring(ring_text)
+        if ring is None:
+            return None
+        rings.append(ring)
+    return rings or None
+
+
+def _geometry_from_polygon_wkt(value: str) -> dict[str, Any] | None:
+    match = re.fullmatch(
+        r"\s*(POLYGON|MULTIPOLYGON)\s*(\(.*\))\s*",
+        value,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return None
+
+    geometry_type = match.group(1).upper()
+    body = match.group(2)
+
+    if geometry_type == "POLYGON":
+        rings = _parse_polygon_body(body)
+        if rings is None:
+            return None
+        return {"type": "Polygon", "coordinates": rings}
+
+    outer = _strip_outer_parentheses(body)
+    if outer is None:
+        return None
+
+    polygons: list[list[list[list[float]]]] = []
+    for polygon_text in _split_top_level_commas(outer):
+        polygon = _parse_polygon_body(polygon_text)
+        if polygon is None:
+            return None
+        polygons.append(polygon)
+    if not polygons:
+        return None
+    return {"type": "MultiPolygon", "coordinates": polygons}
+
+
 def _geometry_from_lote(
     lote: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str | None]:
     polygon_wkt = _text(lote.get("polygon_wkt"))
     if polygon_wkt:
-        try:
-            from shapely import wkt
-            from shapely.geometry import mapping
-
-            geometry = mapping(wkt.loads(polygon_wkt))
-            geometry_type = str(geometry.get("type") or "")
-            if geometry_type in {"Polygon", "MultiPolygon"}:
-                return dict(geometry), None
-            return dict(geometry), "SOURCE_GEOMETRY_NON_POLYGON"
-        except Exception:
-            # Keep a visible warning and use only a real point if coordinates
-            # exist. Never synthesize a polygon from invalid source evidence.
-            pass
+        geometry = _geometry_from_polygon_wkt(polygon_wkt)
+        if geometry is not None:
+            return geometry, None
+        # Keep a visible warning and use only a real point if coordinates
+        # exist. Never synthesize a polygon from invalid source evidence.
 
     latitude = _number(lote.get("latitud"))
     longitude = _number(lote.get("longitud"))

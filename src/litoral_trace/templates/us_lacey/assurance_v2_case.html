@@ -1,0 +1,220 @@
+{% extends "us_lacey/base.html" %}
+{% block lacey_title %}Assurance Case{% endblock %}
+{% block head_extra %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/assurance_v2_case.css') }}">
+{% endblock %}
+{% block lacey_content %}
+{% if request.scope.get('app') and (request.scope['app'].state.assurance_v2_lab_org_ids|default(())) %}
+<div class="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-bold text-amber-950">PRIVATE ASSURANCE V2 LAB — NOT FOR CUSTOMS FILING. Test data only. <a href="/assurance-v2" class="text-emerald-800 underline">Return to test shipments</a>. Package issuance is disabled.</div>
+{% endif %}
+<div class="assurance-shell" data-assurance-case data-operation="{{ case.operation_id }}" data-csrf="{{ csrf_token }}">
+  <header class="assurance-header">
+    <div>
+      <div class="eyebrow">LITORAL TRACE / SHIPMENT REVIEW</div>
+      <h1>Review shipment</h1>
+      <p class="subtext">We checked your documents. Review the few items that still need your judgment.</p>
+    </div>
+    <div class="filing-state {{ 'ready' if gate.ready else 'blocked' }}" aria-live="polite">
+      <span class="state-label">{{ "Preparation authorized" if gate.ready else "Review required" }}</span>
+      <small>{{ "Current checks passed" if gate.ready else "Complete the outstanding reviews and information" }}</small>
+    </div>
+  </header>
+  {% include "us_lacey/fragments/assurance_unified_actions.html" %}
+  <details class="assurance-full-review" id="full-assurance-details">
+    <summary>Explore evidence and audit records (advanced)</summary>
+  <div class="context-row">
+    <span>Operation <strong>{{ case.operation_id }}</strong></span>
+    <span>Source set <code>{{ case.source_set_fingerprint[:16] }}</code></span>
+    <span>Revision {{ case.source_set_revision }}</span>
+    <span>Ruleset {{ case.ruleset_version }}</span>
+  </div>
+  <p class="assurance-evidence-help">These records explain the system’s checks. They are not extra approvals. Open one section at a time to investigate an unresolved item.</p>
+  <div class="assurance-evidence-sections" id="technical-workspace">
+
+      <details class="panel assurance-evidence-section" id="required">
+        <summary class="assurance-evidence-summary"><span class="assurance-evidence-title">Required declaration inputs</span><span class="assurance-evidence-count">{{ required_evidence.verified }}/{{ required_evidence.total }} verified · {{ required_evidence.missing }} missing · {{ required_evidence.review }} awaiting review</span></summary>
+        <p class="muted">This checklist explains what still needs evidence or reviewer confirmation. It does not authorize a filing or replace regulatory checks.</p>
+        <p class="muted">{{ required_evidence.review }} fields need review; {{ required_evidence.missing }} lack sufficient current source evidence.</p>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Required field</th><th>Scope</th><th>Current value</th><th>Next action</th></tr></thead>
+          <tbody>{% for item in required_evidence.rows %}
+          <tr>
+            <td><strong>{{ item.label }}</strong><small>{{ item.field_name }}</small></td>
+            <td>{{ 'Shipment' if item.line_reference == '__shipment__' else 'Line ' ~ item.line_reference }}</td>
+            <td>{{ item.value or 'Not established' }}</td>
+            <td>
+              <span class="tag {{ 'green' if item.status == 'VERIFIED' else 'amber' if item.status != 'MISSING_EVIDENCE' else 'red' }}">{{ item.status.replace('_', ' ') }}</span>
+              <small>{{ item.guidance }}</small>
+            </td>
+          </tr>{% endfor %}</tbody>
+        </table></div>
+      </details>
+      <details class="panel assurance-evidence-section" id="exceptions">
+        <summary class="assurance-evidence-summary"><span class="assurance-evidence-title">Individual exception records</span><span class="assurance-evidence-count">{{ case.exceptions|length }} diagnostics · not separate tasks</span></summary>
+        {% if not case.exceptions %}<p class="empty">No exception records supplied by the authority service.</p>{% endif %}
+        {% for ex in case.exceptions %}
+        <details class="exception exception-disclosure" id="exception-{{ ex.id }}">
+          <summary class="exception-title">
+            <div><span class="field-label">{{ ex.field_name }}</span> <span class="muted">/ {{ ex.line_reference or 'shipment' }}</span>
+            <h3>{{ ex.reason or 'Review required' }}</h3></div>
+            <span class="tag {{ 'red' if ex.blocking else 'neutral' }}">{{ 'BLOCKING' if ex.blocking else ex.status }}</span>
+          </summary>
+          <p class="muted">Entity: {{ ex.entity_ref or 'Identity not resolved' }}</p>
+          <div class="candidate-list">
+            {% for candidate in ex.candidates or [] %}
+            <div class="candidate">
+              <div><span class="tag amber">CANDIDATE · NOT CONFIRMED</span><strong>{{ candidate.value or 'Missing value' }}</strong></div>
+              <div class="muted">{{ candidate.document_name or candidate.document_id or 'Unknown document' }}{% if candidate.page %} · p. {{ candidate.page }}{% endif %}{% if candidate.locator %} · {{ candidate.locator }}{% endif %}</div>
+              {% if candidate.url %}<a class="source-link" href="{{ candidate.url }}" target="_blank" rel="noopener noreferrer">View original source ↗</a>{% else %}<span class="muted">Document link unavailable</span>{% endif %}
+              {% if candidate.evidence_id %}<div class="muted">Evidence ref <code>{{ candidate.evidence_id }}</code></div>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% if ex.pending_candidates %}
+          <div class="candidate-list" data-awaiting-identity="{{ ex.line_reference }}">
+            <p class="muted"><strong>Source values found — confirm supplier / SKU / line identity first.</strong> These PDF observations are not missing evidence and cannot be accepted until the identity is confirmed below.</p>
+            {% for candidate in ex.pending_candidates %}
+            <div class="candidate">
+              <div><span class="tag amber">SOURCE FOUND · IDENTITY PENDING</span><strong>{{ candidate.value }}</strong></div>
+              <div class="muted">Document {{ candidate.document_id }}{% if candidate.page %} · p. {{ candidate.page }}{% endif %}</div>
+            </div>
+            {% endfor %}
+            <a class="source-link" href="#identities">Confirm line identity ↓</a>
+          </div>
+          {% endif %}
+          {% if ex.source_diagnostic %}<p class="muted">Diagnostic: {{ ex.source_diagnostic }}. No verified shipment-line binding; supply or corroborate the source before accepting it.</p>{% endif %}
+          {% if ex.historical_evidence %}<div class="historical-evidence"><span class="tag purple">HISTORICAL MEMORY · VERIFY STATUS</span> {{ ex.historical_evidence }}</div>{% endif %}
+          {% if ex.id.startswith('field:') %}
+          <form class="decision-form" data-exception="{{ ex.id }}">
+            <label>Review action
+              <select name="action" required>
+                <option value="ACCEPT">Accept supported candidate</option>
+                <option value="CORRECT">Correct value</option>
+              </select>
+            </label>
+            <label>Source candidate
+              <select name="candidate_id">
+                <option value="">Current field value (if available)</option>
+                {% for candidate in ex.candidates or [] %}
+                <option value="{{ candidate.id }}">{{ candidate.value or 'Missing' }} · source {{ candidate.document_name or candidate.document_id or 'unknown' }}{% if candidate.page %}, p. {{ candidate.page }}{% endif %}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Correction (only for Correct)<input name="value" placeholder="Reviewed value"></label>
+            <label>Reason / justification<input name="reason" placeholder="Reason and supporting evidence"></label>
+            <button type="submit">Send to review authority</button>
+            <div role="status" class="decision-result" aria-live="polite"></div>
+          </form>
+          {% else %}<p class="muted">This exception requires source correction before field review.</p>{% endif %}
+        </details>
+        {% endfor %}
+      </details>
+      <details class="panel assurance-evidence-section" id="documents">
+        <summary class="assurance-evidence-summary"><span class="assurance-evidence-title">Original document manifest</span><span class="assurance-evidence-count">{{ case.documents|length }} sources and version records</span></summary>
+        <div class="table-scroll"><table><thead><tr><th>Document</th><th>Version</th><th>SHA-256</th><th>Source</th></tr></thead><tbody>
+        {% for doc in case.documents %}<tr><td>{{ doc.name or doc.id }}<small>{{ doc.role or 'Unclassified' }}</small></td><td>{{ doc.version }}</td><td><code>{{ doc.sha256[:24] if doc.sha256 else 'Missing' }}…</code></td><td>{% if doc.url %}<a href="{{ doc.url }}" target="_blank" rel="noopener noreferrer">Open original ↗</a>{% else %}Unavailable{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+      </details>
+      <details class="panel assurance-evidence-section" id="claims">
+        <summary class="assurance-evidence-summary"><span class="assurance-evidence-title">Source observations and field authority</span><span class="assurance-evidence-count">{{ case.candidate_observations|length }} observations · {{ case.fields|length }} fields</span></summary>
+        <h3>Source linked observations</h3>
+        <p class="muted">These are parser observations from the current document set. Source support does not grant human authority.</p>
+        <div class="table-scroll"><table><thead><tr><th>Field / entity</th><th>Original → normalized</th><th>Support</th><th>Current source</th></tr></thead><tbody>
+        {% for claim in case.candidate_observations %}
+        <tr><td><strong>{{ claim.field_name }}</strong><small>{{ claim.subject_id or claim.entity_identity or 'Unresolved entity' }}</small></td>
+          <td>{{ claim.original_value or '—' }} → {{ claim.normalized_value or '—' }}</td>
+          <td><span class="tag {{ 'blue' if claim.support_status == 'SUPPORTED' else 'amber' }}">{{ 'SOURCE SUPPORTED' if claim.support_status == 'SUPPORTED' else claim.support_status }}</span></td>
+          <td>{% if claim.url %}<a href="{{ claim.url }}" target="_blank" rel="noopener noreferrer">Open original ↗</a>{% else %}Unavailable{% endif %}
+          <small>{{ claim.source_locator or '' }}</small></td></tr>
+        {% else %}<tr><td colspan="4">No current source observations. Check the source claim exception.</td></tr>{% endfor %}
+        </tbody></table></div>
+        <h3>Authority state</h3>
+        <div class="table-scroll"><table><thead><tr><th>Entity / field</th><th>Value</th><th>Authority</th><th>Evidence</th></tr></thead><tbody>
+        {% for item in case.fields %}
+        <tr><td><strong>{{ item.name }}</strong><small>{{ item.line_reference }}</small></td><td>{{ item.value or '—' }}</td>
+          <td>{% if item.authority == 'SUPPORTED' %}<span class="tag blue">SOURCE SUPPORTED</span>
+          {% elif item.authority == 'HUMAN_CONFIRMED' %}<span class="tag green">HUMAN DECISION</span>
+          {% elif item.authority == 'VERIFIED_REUSE' %}<span class="tag purple">VERIFIED MEMORY</span>
+          {% else %}<span class="tag amber">CANDIDATE / UNRESOLVED</span>{% endif %}</td>
+          <td><code>{{ (item.evidence_ids or [])|join(', ') or 'No evidence ref' }}</code></td>
+        </tr>{% endfor %}
+        </tbody></table></div>
+      </details>
+      <details class="panel assurance-evidence-section" id="identities">
+        <summary class="assurance-evidence-summary"><span class="assurance-evidence-title">Supplier and product identity</span><span class="assurance-evidence-count">{{ case.identities|length }} line bindings</span></summary>
+        {% for identity in case.identities %}<div class="simple-row"><div><strong>Line {{ identity.line_reference }} · {{ identity.supplier_name or ("Supplier #" ~ identity.supplier_id) }}</strong><small>{{ identity.product_name or "Product" }} · SKU {{ identity.sku or "unavailable" }} · link method {{ identity.link_method or "unknown" }}</small><small>Exact SKU recognition is a candidate identity until an authorized reviewer confirms this supplier/product/line relationship.</small></div><span class="tag {{ "green" if identity.status == "HUMAN_CONFIRMED" else "amber" }}">{{ identity.status|replace("_"," ") }}</span></div>
+        {% if identity.status == 'REVIEW_REQUIRED' %}
+        <p class="muted">An exact line identity confirmation is still required. <a href="#identity-action-panel">Return to the primary identity action</a>.</p>
+        {% endif %}{% endfor %}
+      </details>
+      <details class="panel assurance-evidence-section" id="decisions">
+        <summary class="assurance-evidence-summary"><span class="assurance-evidence-title">Recorded human decisions</span><span class="assurance-evidence-count">{{ case.decisions|length }} audit records</span></summary>
+        {% for decision in case.decisions %}<div class="simple-row"><div><strong>{{ decision.action }}</strong> · {{ decision.field_name }} <small>{{ decision.actor_id }} · {{ decision.decided_at }} · {{ decision.id }}</small></div><span class="tag green">AUDITABLE DECISION</span></div>{% else %}<p class="empty">No human decisions recorded in this snapshot.</p>{% endfor %}
+      </details>
+      <details class="panel assurance-evidence-section" id="memory">
+        <summary class="assurance-evidence-summary"><span class="assurance-evidence-title">Historical evidence and reuse</span><span class="assurance-evidence-count">{{ case.reuses|length }} evidence records</span></summary>
+        <p class="muted">ELIGIBLE means an evidence record matches the current supplier and SKU; it has not been authorized for this source set. VERIFIED means a current, explicit reviewer authorization with original provenance.</p>
+        {% for reuse in case.reuses %}
+        <div class="simple-row"><div><strong>{{ reuse.field_name }} · {{ reuse.value }}</strong><small>Line {{ reuse.line_reference }} · historical source {{ reuse.origin_document_id }} · {% if reuse.status == 'VERIFIED' %}verified by {{ reuse.verified_by }} · valid until {{ reuse.valid_until }}{% else %}review required before application{% endif %}</small></div><span class="tag purple">{{ reuse.status }}</span></div>
+        {% if reuse.status == 'ELIGIBLE' %}
+        <form class="reuse-form" data-memory="{{ reuse.id }}" data-field="{{ reuse.field_name }}" data-line="{{ reuse.line_reference }}">
+          <label>Reason for applying this exact historical evidence<input name="reason" maxlength="180" required placeholder="I reviewed the supplier, SKU, line and original source"></label>
+          <button type="submit">Authorize reuse for this line</button>
+          <div class="reuse-result" role="status" aria-live="polite"></div>
+        </form>
+        {% endif %}
+        {% else %}<p class="empty">No reused evidence included in this shipment.</p>{% endfor %}
+      </details>
+      <details class="panel assurance-evidence-section" id="rules">
+        <summary class="assurance-evidence-summary"><span class="assurance-evidence-title">Regulatory rule diagnostics</span><span class="assurance-evidence-count">{{ case.rules|length }} rule results</span></summary>
+        {% for rule in case.rules %}<div class="simple-row"><div><strong>{{ rule.id }}</strong><small>{{ rule.version }} · {{ rule.inputs_fingerprint }}</small></div><span class="tag {{ 'red' if rule.blocking and rule.status not in ['PASS','NOT_APPLICABLE'] else 'neutral' }}">{{ rule.status }}</span></div>{% else %}<p class="empty">Regulatory assessment unavailable.</p>{% endfor %}
+        <p class="muted footnote">Rules are scope-limited assessments. PASS does not establish overall customs compliance.</p>
+      </details>
+      <details class="panel assurance-evidence-section" id="export">
+        <summary class="assurance-evidence-summary"><span class="assurance-evidence-title">Readiness checks and preparation</span><span class="assurance-evidence-count">{{ gate.blockers|length }} gate findings</span></summary>
+        {% if gate.ready %}
+        <p>All snapshot authority checks passed. Issuance persists an immutable package containing exact XML/XLSX bytes and a source manifest. No filing submission is performed.</p>
+        {% if (request.app.state.assurance_v2_lab_org_ids|default(())) %}
+        <p><strong>Private laboratory:</strong> issuing a filing-ready package is disabled. This result is only a readiness simulation.</p>
+        {% else %}
+        <button type="button" id="issue-package">Issue reproducible assurance package</button>
+        {% endif %}
+        {% elif gate.blockers|length == 1 and gate.blockers[0].code == "EXPORT_NOT_AUTHORIZED" %}
+        <p>Document, identity, decision, and regulatory checks passed. A signed-in reviewer must explicitly authorize this exact source-set and case fingerprint before a final package can be issued.</p>
+        {% if request.scope.get('app') and (request.scope['app'].state.assurance_v2_lab_org_ids|default(())) %}
+        <p><strong>Private lab:</strong> export authorization and issuance remain disabled. This is an evidence review simulation, not a filing-ready result.</p>
+        {% else %}
+        <form id="authorize-export-form" class="export-authorization-form">
+          <label for="export-authorization-reason">Reason for issuing this specific evidence-backed package</label>
+          <textarea id="export-authorization-reason" name="reason" maxlength="1000" rows="3" required placeholder="I reviewed the evidence, identities, decisions and regulatory readiness for this shipment."></textarea>
+          <label for="export-authorization-confirm">
+            <input type="checkbox" id="export-authorization-confirm" name="explicit_confirmation" required>
+            I authorize preparation of this exact case. This is not a CBP/APHIS submission.
+          </label>
+          <button type="submit">Record explicit export authorization</button>
+          <div class="authorization-result" role="status" aria-live="polite"></div>
+        </form>
+        {% endif %}
+        {% else %}
+        <p>Final XML is disabled. Gate findings are grouped by cause; several findings may refer to the same field and do not mean separate document errors.</p>
+        <div class="gate-groups" data-assurance-blocker-groups>
+        {% for category, findings in gate.blockers|groupby('code') %}
+          <details class="gate-group">
+            <summary><strong>{{ category }}</strong> · {{ findings|length }} related checks</summary>
+            <ul>{% for b in findings %}<li>{{ b.subject }}</li>{% endfor %}</ul>
+          </details>
+        {% endfor %}
+        </div>
+        <a class="draft-link" href="/assurance-v2/operations/{{ case.operation_id }}/draft.xlsx">Export visibly marked incomplete draft (XLSX)</a>
+        {% endif %}
+        <div id="package-result" role="status" aria-live="polite"></div>
+      </details>
+  </div>
+  </details>
+</div>
+{% endblock %}
+{% block body_scripts %}
+{{ super() }}
+<script src="{{ url_for('static', path='/js/assurance_v2_case.js') }}" defer></script>
+{% endblock %}

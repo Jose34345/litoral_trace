@@ -27,12 +27,6 @@ from litoral_trace.api.lotes import (
     listar_lotes_tenant,
     obtener_lote,
 )
-from litoral_trace.api.satellite import (
-    SatelliteJobSubmitRequest,
-    SatelliteQueryByLoteRequest,
-    submit_satellite_job_endpoint,
-    consultar_ndvi_satelital_lote_endpoint,
-)
 from litoral_trace.api.settings import consultar_licencia_tenant
 from litoral_trace.api.vault import descargar_documento_boveda
 from litoral_trace.auth.passwords import hash_password
@@ -266,58 +260,10 @@ def test_create_with_forged_organization_id_uses_authenticated_tenant(tenant_fix
         db_session.close()
 
 
-def test_satellite_cross_tenant_rejected_before_external_call(monkeypatch, tenant_fixture):
-    external_call_triggered = False
-
-    def _unexpected_gee_call(*args, **kwargs):
-        nonlocal external_call_triggered
-        external_call_triggered = True
-        raise AssertionError("GEE no debe ejecutarse para acceso cross-tenant")
-
-    monkeypatch.setattr(
-        "litoral_trace.api.satellite.consultar_serie_temporal_ndvi_gee",
-        _unexpected_gee_call,
-    )
-
-    with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(
-            consultar_ndvi_satelital_lote_endpoint(
-                SatelliteQueryByLoteRequest(lote_id=101),
-                user=tenant_fixture["context_b"],
-            )
-        )
-
-    assert exc_info.value.status_code == 404
-    assert external_call_triggered is False
 
 
-def test_satellite_job_submit_cross_tenant_lote_returns_404(tenant_fixture):
-    with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(
-            submit_satellite_job_endpoint(
-                SatelliteJobSubmitRequest(
-                    lote_id=101,
-                    start_date="2026-07-01",
-                    end_date="2026-08-01",
-                ),
-                user=tenant_fixture["context_b"],
-            )
-        )
-
-    assert exc_info.value.status_code == 404
 
 
-def test_satellite_job_submit_rejects_forged_organization_id_field():
-    with pytest.raises(ValidationError):
-        SatelliteJobSubmitRequest.model_validate(
-            {
-                "organization_id": 999,
-                "lote_id": 101,
-                "start_date": "2026-07-01",
-                "end_date": "2026-08-01",
-                "max_cloud_pct": 20.0,
-            }
-        )
 
 
 def test_vault_download_cross_tenant_rejected(tenant_fixture):

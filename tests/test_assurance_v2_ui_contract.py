@@ -1,0 +1,458 @@
+"""Standalone UI contract: only authority gateway owns decisions."""
+from __future__ import annotations
+
+from dataclasses import replace
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.testclient import TestClient
+from fastapi.staticfiles import StaticFiles
+
+from litoral_trace.us_lacey.exporters.assurance_v2_package import MemoryPackageStore, issue_assurance_package
+from litoral_trace.web.us_lacey_assurance_v2_views import (
+    WorkspacePrincipal, create_assurance_v2_router,
+)
+from test_assurance_v2_outputs_core import OPERATION_ID, make_case, authorize
+
+
+def make_client(case=None, *, test_issue_enabled=True, test_authorization_enabled=False,
+                test_reuse_enabled=False, test_identity_enabled=False):
+    case = case or make_case()
+    receipts: list[dict[str, str]] = []
+    store = MemoryPackageStore()
+    app = FastAPI()
+    # Production mounts the shared static app; the inherited Jinja shell
+    # resolves its CSS/favicon through url_for("static", ...).
+    static_dir = Path(__file__).resolve().parents[1] / "src/litoral_trace/static"
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    def principal(request: Request) -> WorkspacePrincipal:
+        tenant = request.headers.get("X-Demo-Tenant")
+        if not tenant:
+            raise HTTPException(401, "Authentication required")
+        return WorkspacePrincipal(organization_id=int(tenant),
+                                  actor_id="user:42", csrf_token="fixture-csrf")
+
+    def read(principal: WorkspacePrincipal, operation_id: str):
+        if principal.organization_id == case.organization_id and operation_id == case.operation_id:
+            return case
+        return None
+
+    def gateway(principal: WorkspacePrincipal, operation_id: str, command: dict[str, str]):
+        receipts.append(command)
+        return {"status": "PENDING_AUTHORITY", "request_id": "fixture-request-1"}
+
+    def fixture_issue(principal: WorkspacePrincipal, operation_id: str,
+                      expected_source_set_fingerprint: str, expected_case_fingerprint: str):
+        # This fixture's local MemoryPackageStore is NOT the production gateway.
+        # A real gateway must re-read, lock, and persist atomically in PostgreSQL.
+        assert expected_source_set_fingerprint == case.source_set_fingerprint
+        assert expected_case_fingerprint == case.authority_fingerprint()
+        package = issue_assurance_package(case)
+        store.save(organization_id=principal.organization_id,
+                   operation_id=operation_id, package=package)
+        return {"status": "FILING_READY", "package_fingerprint": package.fingerprint,
+                "submitted_to_agency": False}
+
+    def fixture_authorize(principal: WorkspacePrincipal, operation_id: str,
+                          expected_source_set_fingerprint: str, expected_case_fingerprint: str,
+                          reason: str, explicit_confirmation: bool):
+        nonlocal case
+        # Synthetic fixture only; production authority persists a separately
+        # confirmed audit event and rechecks the same case under DB locks.
+        assert principal.organization_id == case.organization_id
+        assert operation_id == case.operation_id
+        assert expected_source_set_fingerprint == case.source_set_fingerprint
+        assert expected_case_fingerprint == case.authority_fingerprint()
+        assert explicit_confirmation is True and reason
+        case = authorize(case)
+        return case.export_authorization
+
+    def fixture_reuse(principal: WorkspacePrincipal, operation_id: str, command: dict):
+        receipts.append(command)
+        return {"status": "VERIFIED_REUSE", "field_name": command["field_name"]}
+
+    def fixture_identity(principal: WorkspacePrincipal, operation_id: str, command: dict):
+        receipts.append(command)
+        return {"status": "HUMAN_CONFIRMED", "line_reference": command["line_reference"]}
+
+    app.include_router(create_assurance_v2_router(
+        principal_for=principal,
+        case_for=read,
+        decision_gateway=gateway,
+        csrf_verify=lambda principal, token: token == principal.csrf_token,
+        package_store=store,
+        issue_gateway=fixture_issue if test_issue_enabled else None,
+        authorization_gateway=fixture_authorize if test_authorization_enabled else None,
+        reuse_gateway=fixture_reuse if test_reuse_enabled else None,
+        identity_gateway=fixture_identity if test_identity_enabled else None,
+        document_link_for=lambda principal, op, doc, page:
+            f"/operations/{op}/documents/{doc}" + (f"?page={page}" if page else ""),
+    ))
+    return TestClient(app), receipts
+
+
+def test_reuse_application_requires_csrf_and_explicit_eligible_memory():
+    case = replace(make_case(approved=False), reuses=({
+        "id": "memory-1", "status": "ELIGIBLE", "field_name": "species",
+        "line_reference": "LINE-1", "value": "rubra",
+    },))
+    client, receipts = make_client(case, test_reuse_enabled=True)
+    url = f"/assurance-v2/operations/{OPERATION_ID}/reuses"
+    command = {"csrf_token": "fixture-csrf", "memory_id": "memory-1",
+               "field_name": "species", "line_reference": "LINE-1",
+               "reason": "Reviewed historical evidence for this line"}
+    assert client.post(url, json={**command, "csrf_token": "wrong"},
+                       headers={"X-Demo-Tenant": "11"}).status_code == 403
+    assert client.post(url, json={**command, "memory_id": "other"},
+                       headers={"X-Demo-Tenant": "11"}).status_code == 422
+    assert client.post(url, json=command,
+                       headers={"X-Demo-Tenant": "12"}).status_code == 404
+    response = client.post(url, json=command, headers={"X-Demo-Tenant": "11"})
+    assert response.status_code == 202
+    assert receipts[0]["expected_case_fingerprint"] == case.authority_fingerprint()
+    assert receipts[0]["expected_source_set_fingerprint"] == case.source_set_fingerprint
+
+
+def test_identity_confirmation_requires_exact_line_product_and_csrf():
+    case = replace(make_case(approved=False), identities=({
+        "line_reference": "LINE-1", "supplier_id": 7, "product_id": 12,
+        "sku": "OAK-1", "status": "REVIEW_REQUIRED",
+    },))
+    client, receipts = make_client(case, test_identity_enabled=True)
+    url = f"/assurance-v2/operations/{OPERATION_ID}/identities"
+    command = {"csrf_token": "fixture-csrf", "line_reference": "LINE-1",
+               "supplier_id": 7, "product_id": 12,
+               "reason": "Reviewed supplier, SKU and line source"}
+    assert client.post(url, json={**command, "csrf_token": "bad"},
+                       headers={"X-Demo-Tenant": "11"}).status_code == 403
+    assert client.post(url, json={**command, "supplier_id": 8},
+                       headers={"X-Demo-Tenant": "11"}).status_code == 422
+    response = client.post(url, json=command, headers={"X-Demo-Tenant": "11"})
+    assert response.status_code == 202
+    assert receipts[0]["expected_case_fingerprint"] == case.authority_fingerprint()
+
+
+def test_ui_separates_candidate_supported_human_and_memory_and_links_origin():
+    case = make_case()
+    field = list(case.fields)
+    field[0] = {**field[0], "authority": "CANDIDATE"}
+    field[1] = {**field[1], "authority": "HUMAN_CONFIRMED"}
+    field[2] = {**field[2], "authority": "VERIFIED_REUSE"}
+    ex = {
+        "id": "ex-1", "field_name": "genus", "line_reference": "LINE-1",
+        "entity_ref": "sup-us-1/prod-oak", "blocking": True,
+        "status": "OPEN", "reason": "Conflicting species",
+        "historical_evidence": "hist-1, expiring 2030",
+        "candidates": [{"id": "cand-1", "value": "Quercus",
+                        "document_id": "doc-invoice", "document_name": "Invoice",
+                        "page": 2, "locator": "p2:span:7", "evidence_id": "ev1"}],
+    }
+    client, _ = make_client(authorize(replace(case, fields=tuple(field), exceptions=(ex,))))
+    html = client.get(f"/assurance-v2/operations/{OPERATION_ID}",
+                      headers={"X-Demo-Tenant": "11"})
+    assert html.status_code == 200
+    for label in ["CANDIDATE · NOT CONFIRMED", "SOURCE SUPPORTED",
+                  "HUMAN DECISION", "VERIFIED MEMORY", "HISTORICAL MEMORY",
+                  "View original source", "Review required", "SHA-256"]:
+        assert label in html.text
+    assert f"/operations/{OPERATION_ID}/documents/doc-invoice?page=2" in html.text
+    assert "Conflicting species" in html.text
+
+
+def test_review_action_never_mutates_frontend_truth_and_requires_csrf():
+    case = authorize(replace(make_case(), exceptions=({
+        "id": "ex-1", "field_name": "genus", "status": "OPEN",
+        "blocking": True, "line_reference": "LINE-1", "candidates": [],
+    },)))
+    client, sent = make_client(case)
+    url = f"/assurance-v2/operations/{OPERATION_ID}/decisions"
+    command = {"csrf_token": "fixture-csrf", "exception_id": "ex-1",
+               "action": "CORRECT", "value": "Quercus",
+               "reason": "Reviewed supplier certificate"}
+    assert client.post(url, json={**command, "csrf_token": "invalid"},
+                       headers={"X-Demo-Tenant": "11"}).status_code == 403
+    assert client.post(url, json=command, headers={"X-Demo-Tenant": "12"}).status_code == 404
+    response = client.post(url, json=command, headers={"X-Demo-Tenant": "11"})
+    assert response.status_code == 202
+    assert response.json()["status"] == "PENDING_AUTHORITY"
+    assert sent[0]["expected_source_set_fingerprint"] == case.source_set_fingerprint
+    assert sent[0]["expected_case_fingerprint"] == case.authority_fingerprint()
+    assert case.fields[0]["value"] == "2026-10-25"
+
+
+def test_ui_offers_only_review_actions_supported_by_runtime():
+    case = replace(make_case(), exceptions=(
+        {"id": "field:1", "field_name": "genus", "status": "OPEN",
+         "blocking": True, "line_reference": "LINE-1", "candidates": []},
+        {"id": "source:claims-invalid", "status": "OPEN", "blocking": True,
+         "reason": "SOURCE_CLAIMS_INVALID", "candidates": []},
+    ))
+    client, _ = make_client(case)
+    html = client.get(f"/assurance-v2/operations/{OPERATION_ID}",
+                      headers={"X-Demo-Tenant": "11"})
+    assert html.status_code == 200
+    assert html.text.count('class="decision-form"') == 1
+    assert '<option value="ACCEPT">' in html.text
+    assert '<option value="CORRECT">' in html.text
+    assert '<option value="REJECT">' not in html.text
+    assert '<option value="REQUEST_EVIDENCE">' not in html.text
+
+
+def test_authorized_package_endpoints_are_tenant_scoped_and_reproducible():
+    client, _ = make_client()
+    base = f"/assurance-v2/operations/{OPERATION_ID}"
+    headers = {"X-Demo-Tenant": "11"}
+    assert client.get(base).status_code == 401
+    response = client.post(base + "/issue", json={"csrf_token": "fixture-csrf"}, headers=headers)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["submitted_to_agency"] is False
+    fp = result["package_fingerprint"]
+    xml = client.get(base + "/packages/" + fp + "/lawgs_xml", headers=headers)
+    assert xml.status_code == 200
+    assert xml.headers["X-Assurance-Status"] == "FILING_READY"
+    assert b"merchandiseList" in xml.content
+    xlsx = client.get(base + "/packages/" + fp + "/lacey_excel", headers=headers)
+    assert xlsx.status_code == 200
+    assert client.get(base + "/packages/" + fp + "/lacey_excel", headers=headers).content == xlsx.content
+    ppq = client.get(base + "/packages/" + fp + "/ppq505_preparation_json", headers=headers)
+    assert ppq.status_code == 200
+    assert ppq.json()["schema_version"] == "ppq505-preparation-v2"
+    manifest = client.get(base + "/packages/" + fp + "/manifest", headers=headers)
+    assert manifest.status_code == 200
+    assert manifest.json()["case"]["documents"][0]["sha256"] == "a" * 64
+    assert client.get(base + "/packages/" + fp + "/lawgs_xml",
+                      headers={"X-Demo-Tenant": "12"}).status_code == 404
+
+
+def test_blocked_final_output_provides_only_watermarked_draft():
+    case = authorize(replace(make_case(), exceptions=({
+        "id": "ex-pending", "field_name": "species", "status": "OPEN",
+        "blocking": True, "line_reference": "LINE-1",
+    },)))
+    client, _ = make_client(case)
+    base = f"/assurance-v2/operations/{OPERATION_ID}"
+    headers = {"X-Demo-Tenant": "11"}
+    response = client.post(base + "/issue", json={"csrf_token": "fixture-csrf"}, headers=headers)
+    assert response.status_code == 409
+    assert response.json()["status"] == "BLOCKED"
+    draft = client.get(base + "/draft.xlsx", headers=headers)
+    assert draft.status_code == 200
+    assert draft.headers["X-Assurance-Status"] == "DRAFT"
+    assert "INCOMPLETE_DRAFT" in draft.headers["content-disposition"]
+
+
+
+def test_production_router_cannot_issue_ready_case_without_atomic_gateway():
+    client, _ = make_client(test_issue_enabled=False)
+    response = client.post(
+        f"/assurance-v2/operations/{OPERATION_ID}/issue",
+        json={"csrf_token": "fixture-csrf"},
+        headers={"X-Demo-Tenant": "11"},
+    )
+    assert response.status_code == 503
+    assert "Atomic Assurance V2 issuance is not enabled" in response.text
+
+
+
+def test_export_authorization_requires_authenticated_explicit_human_action():
+    case = make_case(approved=False)
+    client, _ = make_client(case, test_authorization_enabled=True)
+    base = f"/assurance-v2/operations/{OPERATION_ID}"
+    headers = {"X-Demo-Tenant": "11"}
+    html = client.get(base, headers=headers)
+    assert html.status_code == 200
+    assert 'id="authorize-export-form"' in html.text
+    assert 'name="explicit_confirmation"' in html.text
+    assert 'name="reason"' in html.text
+    assert client.post(base + "/authorize-export", json={
+        "csrf_token": "fixture-csrf", "reason": "Reviewed source documents",
+        "explicit_confirmation": True,
+    }).status_code == 401
+    assert client.post(base + "/authorize-export", json={
+        "csrf_token": "wrong", "reason": "Reviewed source documents",
+        "explicit_confirmation": True,
+    }, headers=headers).status_code == 403
+    assert client.post(base + "/authorize-export", json={
+        "csrf_token": "fixture-csrf", "reason": "Reviewed source documents",
+    }, headers=headers).status_code == 422
+    assert client.post(base + "/authorize-export", json={
+        "csrf_token": "fixture-csrf", "reason": "",
+        "explicit_confirmation": True,
+    }, headers=headers).status_code == 422
+    answer = client.post(base + "/authorize-export", json={
+        "csrf_token": "fixture-csrf", "reason": "Reviewed source documents",
+        "explicit_confirmation": True,
+    }, headers=headers)
+    assert answer.status_code == 200
+    assert answer.json()["status"] == "AUTHORIZED"
+    updated = client.get(base, headers=headers)
+    assert updated.status_code == 200
+    assert 'id="issue-package"' in updated.text
+    assert 'id="authorize-export-form"' not in updated.text
+
+
+def test_no_explicit_authorization_gateway_never_grants_export():
+    client, _ = make_client(make_case(approved=False))
+    headers = {"X-Demo-Tenant": "11"}
+    resp = client.post(f"/assurance-v2/operations/{OPERATION_ID}/authorize-export",
+                       json={"csrf_token": "fixture-csrf",
+                             "reason": "Review complete", "explicit_confirmation": True},
+                       headers=headers)
+    assert resp.status_code == 503
+    assert "not enabled" in resp.text
+
+
+def test_authorization_gateway_cannot_override_missing_required_review():
+    case = make_case(approved=False)
+    fields = list(case.fields)
+    fields[0] = {**fields[0], "authority": "CANDIDATE"}
+    client, _ = make_client(
+        replace(case, fields=tuple(fields)), test_authorization_enabled=True,
+    )
+    resp = client.post(f"/assurance-v2/operations/{OPERATION_ID}/authorize-export",
+                       json={"csrf_token": "fixture-csrf",
+                             "reason": "Review complete", "explicit_confirmation": True},
+                       headers={"X-Demo-Tenant": "11"})
+    assert resp.status_code == 409
+    assert any(b["code"] == "UNSUPPORTED_CLAIM" for b in resp.json()["blockers"])
+
+
+def test_pack2_evidence_sections_are_independently_collapsed_by_default():
+    # One source-backed action remains visible; 9 technical areas are separate
+    # disclosures rather than one giant expanded checklist/exception ledger.
+    case = make_case()
+    client, _ = make_client(case)
+    response = client.get(
+        f"/assurance-v2/operations/{OPERATION_ID}",
+        headers={"X-Demo-Tenant": str(case.organization_id)},
+    )
+    assert response.status_code == 200
+    html = response.text
+    for section in (
+        "required", "exceptions", "documents", "claims", "identities",
+        "decisions", "memory", "rules", "export",
+    ):
+        assert f'class="panel assurance-evidence-section" id="{section}"' in html
+    assert html.count('class="panel assurance-evidence-section"') == 9
+    assert 'class="assurance-full-review" id="full-assurance-details"' in html
+    assert 'Explore evidence and audit records (advanced)' in html
+    assert 'These records explain the system' in html
+    assert 'id="required" open' not in html
+    assert 'id="exceptions" open' not in html
+    assert html.count('class="exception exception-disclosure"') == len(case.exceptions)
+    # Fixture has no field:* exception; the conditional writer form must still
+    # exist in the template and is rendered by the separate field-action test.
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "src/litoral_trace/templates/us_lacey/assurance_v2_case.html"
+    ).read_text(encoding="utf-8")
+    assert 'class="decision-form"' in template
+    assert 'data-exception="{{ ex.id }}"' in template
+
+
+def test_task_links_reveal_nested_evidence_without_global_expand():
+    # An anchor to #identities or a field exception must open its parent
+    # <details> elements, including on direct URLs and browser back/forward.
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "src/litoral_trace/static/js/assurance_v2_case.js"
+    ).read_text(encoding="utf-8")
+    assert "function revealEvidenceAnchor(id)" in script
+    assert "if (node.tagName === 'DETAILS') node.open = true;" in script
+    assert "window.addEventListener('hashchange', revealEvidenceHash)" in script
+    assert "revealEvidenceHash();" in script
+    assert "scrollIntoView({block:'start'})" in script
+
+
+def test_p13_identity_review_is_executable_on_primary_screen_once():
+    case = replace(make_case(approved=False), identities=({
+        "line_reference": "LINE-1", "supplier_id": 7, "product_id": 12,
+        "supplier_name": "LONGSHENG", "product_name": "Bamboo coaster",
+        "sku": "BAM-COAST-04", "status": "REVIEW_REQUIRED",
+    },))
+    client, _ = make_client(case, test_identity_enabled=True)
+    response = client.get(
+        f"/assurance-v2/operations/{OPERATION_ID}",
+        headers={"X-Demo-Tenant": "11"},
+    )
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="identity-action-panel"' in html
+    assert 'href="#identity-action-panel"' in html
+    assert html.count('class="identity-form"') == 1
+    assert 'data-supplier="7" data-product="12"' in html
+    assert 'name="reason"' in html
+    assert 'Confirm exact identity' in html
+    assert html.index('id="identity-action-panel"') < html.index('id="full-assurance-details"')
+    assert html.index('class="identity-form"') < html.index('id="identities"')
+    # Documentary audit continues to carry exact supplier/SKU information.
+    assert 'BAM-COAST-04' in html
+    assert 'id="identities"' in html
+    assert 'Return to the primary identity action' in html
+
+
+def test_p13_pack2_missing_entry_is_explained_without_changing_filing_gate():
+    case = make_case(approved=False)
+    fields = tuple(field for field in case.fields
+                   if field["name"] != "filing_entry_reference")
+    case = replace(case, fields=fields)
+    client, _ = make_client(case)
+    response = client.get(
+        f"/assurance-v2/operations/{OPERATION_ID}",
+        headers={"X-Demo-Tenant": "11"},
+    )
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="missing-evidence-panel"' in html
+    assert 'href="#missing-evidence-panel"' in html
+    assert 'Entry Number is required for final PPQ 505 preparation' in html
+    assert 'do not invent one' in html
+    assert 'Required declaration inputs' in html
+    # A missing Entry Number is explained, never automatically synthesized.
+    assert 'id="export"' in html
+    from litoral_trace.us_lacey.exporters.assurance_v2 import evaluate_filing_gate
+    gate = evaluate_filing_gate(case)
+    assert not gate.ready
+    assert any(
+        b.code == "MISSING_REQUIRED_FIELD"
+        and "filing_entry_reference" in b.subject
+        for b in gate.blockers
+    )
+
+
+def test_p13_batch_review_is_compact_and_authorization_contract_unchanged():
+    # Candidate values never become authorized merely because a checkbox is
+    # toggled, even when "select all" is present.
+    client, _ = make_client(make_case(approved=False))
+    response = client.get(
+        f"/assurance-v2/operations/{OPERATION_ID}",
+        headers={"X-Demo-Tenant": "11"},
+    )
+    assert response.status_code == 200
+    html = response.text
+    # This fully supported fixture has no eligible unresolved PDF candidates:
+    # batch authorizations are intentionally absent, not automatically offered.
+    assert 'id="batch-review-form"' not in html
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "src/litoral_trace/templates/us_lacey/fragments/assurance_unified_actions.html"
+    ).read_text(encoding="utf-8")
+    assert 'class="assurance-batch-table"' in template
+    assert 'data-select-inspected' in template
+    assert 'data-batch-selected-count' in template
+    assert 'name="explicit_confirmation"' in template
+    assert 'data-batch-review' in template
+    assert 'class="assurance-nav"' not in html
+    assert 'id="technical-workspace"' in html
+    assert 'Why final preparation remains blocked' in html
+    assert 'diagnostic categories' in html
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "src/litoral_trace/static/js/assurance_v2_case.js"
+    ).read_text(encoding="utf-8")
+    assert "querySelector('[data-select-inspected]')" in script
+    assert "const selected = [...batchForm.querySelectorAll('.batch-review-checkbox:checked')]" in script
+    assert "explicit_confirmation: true" in script
+    assert "post('/batch-review'" in script
