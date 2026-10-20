@@ -355,11 +355,11 @@ def _load_batch_import_detail_page(
 async def render_home_view(
     request: Request,
 ):
-    """Render the English-language Argentina-founded corporate homepage."""
+    """Render the legacy public corporate homepage until its host is separately reviewed."""
 
     return render_web_template(
         request,
-        "public/international_home.html",
+        "public/home.html",
         user=None,
     )
 

@@ -7,7 +7,7 @@ measuring only aggregate, non-PII funnel events.
 from __future__ import annotations
 
 from fastapi import APIRouter, Form, Request, status
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from prometheus_client import Counter
 
 from litoral_trace.web.templates import render_template
@@ -53,17 +53,10 @@ def render_lacey_landing(request: Request) -> HTMLResponse:
     return _no_store(response)
 
 
-def render_corporate_landing(request: Request) -> HTMLResponse:
-    """Render the corporate site without creating another hosting service."""
-    return _no_store(
-        render_template(request, "public/international_home.html", {})
-    )
-
-
-@router.get("/corporate", response_class=HTMLResponse, include_in_schema=False)
-async def render_public_corporate_preview(request: Request) -> HTMLResponse:
-    """Public preview before the apex domain is attached to Northflank."""
-    return render_corporate_landing(request)
+@router.get("/corporate", include_in_schema=False)
+async def redirect_retired_corporate_preview() -> RedirectResponse:
+    """Keep old shared links working without exposing a second landing."""
+    return RedirectResponse(url="/", status_code=301)
 
 
 @router.get("/company", response_class=HTMLResponse, include_in_schema=False)

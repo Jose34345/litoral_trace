@@ -85,3 +85,11 @@ These are anonymous HTTP checks only; they do **not** validate real checkout, hu
 - This audit does not claim a vulnerability assessment, PCI/SOC 2 status, live payment settlement or legal certification.
 
 Update this file whenever release topology, canonical branch, commercial billing or actual domain ownership changes. Prefer timestamped evidence over inferred completeness.
+
+## 10. Commercial website design decision — 2026-10-20
+
+Founder reviewed the enterprise Lacey landing and the experimental Northflank `/corporate` homepage side by side. The existing official `lacey.litoraltrace.com/` landing is the accepted visual design; it must **not** be replaced or redesigned as part of Argentina/U.S. outreach.
+
+Follow-up: the duplicate `/corporate` page and its standalone home template are retired; historical requests for `/corporate` redirect permanently to `/` instead of serving another homepage. The apex-host content override is removed. The official marketing footer adds only `Based in Argentina`, without claiming a U.S. office, city, legal entity, or incorporation. Public Company and Security pages remain accessible. The apex `litoraltrace.com` project is explicitly deferred.
+
+This dated decision supersedes the corporate-preview and apex-routing recommendations described in sections 6–8 of the original audit. Do not reintroduce those features without a new explicit product decision.
