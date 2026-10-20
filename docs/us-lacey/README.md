@@ -2,6 +2,10 @@
 
 This directory is the current navigation/control plane for agents and engineers working on the U.S. Lacey product.
 
+## Current production snapshot
+
+For the verified Northflank deployment topology, public-domain state, recent PRs, billing signals and unresolved operational access, read [Production state audit — 2026-10-20](PRODUCTION_STATE_AUDIT_2026-10-20.md). Do not confuse a green GitHub deploy status with authenticated Northflank administrative access.
+
 ## Read order
 
 For the opt-in Assurance V2 authority work, read `ASSURANCE_V2_CONTRACT.md` and `ASSURANCE_V2_IMPLEMENTATION.md` alongside the canonical documentation below. Release and manual staging controls: `ASSURANCE_V2_RELEASE_RUNBOOK.md`. V2 is not production-active without the PostgreSQL/RLS and integration gates.

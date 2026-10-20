@@ -3,12 +3,13 @@
 {% block title %}Litoral Trace | Argentina-founded software for U.S. import compliance{% endblock %}
 {% block head_extra %}
 <meta name="description" content="Argentina-founded B2B software for U.S. Lacey Act import documentation, source-linked evidence and auditable human review.">
-<link rel="canonical" href="https://lacey.litoraltrace.com{{ request.url.path }}">
+{% set corporate_origin = 'https://litoraltrace.com' if request.url.hostname in ('litoraltrace.com', 'www.litoraltrace.com') else 'https://lacey.litoraltrace.com' %}
+<link rel="canonical" href="{{ corporate_origin }}{{ request.url.path }}">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Litoral Trace">
 <meta property="og:title" content="Litoral Trace | U.S. import compliance software">
 <meta property="og:description" content="Built in Argentina. Focused on U.S. Lacey Act documentation and review.">
-<meta property="og:url" content="https://lacey.litoraltrace.com{{ request.url.path }}">
+<meta property="og:url" content="{{ corporate_origin }}{{ request.url.path }}">
 <meta name="twitter:card" content="summary">
 {% endblock %}
 {% block shell %}
