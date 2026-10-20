@@ -53,6 +53,20 @@ def render_lacey_landing(request: Request) -> HTMLResponse:
     return _no_store(response)
 
 
+@router.get("/company", response_class=HTMLResponse, include_in_schema=False)
+async def render_public_company(request: Request) -> HTMLResponse:
+    """Unauthenticated corporate identity for prospective customers."""
+    response = render_template(request, "public/international_company.html", {})
+    return _no_store(response)
+
+
+@router.get("/security", response_class=HTMLResponse, include_in_schema=False)
+async def render_public_security(request: Request) -> HTMLResponse:
+    """Unauthenticated security overview; separate from the signed-in /trust page."""
+    response = render_template(request, "public/international_trust.html", {})
+    return _no_store(response)
+
+
 @router.get("/lacey", response_class=HTMLResponse, include_in_schema=False)
 async def render_lacey_legacy_landing(request: Request) -> HTMLResponse:
     """Keep the historical /lacey URL available during the domain cutover."""

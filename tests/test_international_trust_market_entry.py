@@ -28,7 +28,7 @@ def test_international_templates_compile_and_have_clear_paths():
     lbase = (ROOT / "us_lacey/marketing_base.html").read_text(encoding="utf8")
     assert '<html lang="en"' in base
     assert "Argentina-founded" in home and "Argentina" in company
-    assert "/company" in base and "/trust" in base and "/trust" in home
+    assert "/company" in base and "/security" in base and "/trust" in home
     assert "https://lacey.litoraltrace.com/demo" in home
     assert "https://lacey.litoraltrace.com/sandbox/start" in home
     assert "comercial@litoraltrace.com" in base and "support@litoraltrace.com" in company
@@ -37,8 +37,8 @@ def test_international_templates_compile_and_have_clear_paths():
     assert "SYNTHETIC SAMPLE" in lacey
     assert "LIVE WORKFLOW" not in lacey
     assert "not real customer activity" in lacey
-    assert "https://litoraltrace.com/company" in lbase
-    assert "https://litoraltrace.com/trust" in lbase
+    assert 'href="/company"' in lbase
+    assert 'href="/security"' in lbase
 
 
 def test_company_and_trust_routes_render_public_no_auth(monkeypatch):
@@ -88,4 +88,23 @@ def test_public_routes_render_full_html_with_static_urls():
         assert '<html lang="en"' in response.text
         assert 'href="https://lacey.litoraltrace.com/' in response.text
         assert 'href="/company"' in response.text
-        assert 'href="/trust"' in response.text
+        assert 'href="/security"' in response.text
+
+
+def test_public_company_and_security_on_lacey_domain():
+    """The live marketing navigation must not land on 404 or require a login."""
+    from fastapi.testclient import TestClient
+    from litoral_trace.web.lacey_experiment_app import app
+    client = TestClient(app)
+    for path, expected in (
+        ("/company", "Independent by design."),
+        ("/security", "Evidence belongs to the right customer."),
+    ):
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 200, (path, response.status_code)
+        assert expected in response.text
+        assert '<html lang="en"' in response.text
+        assert 'href="/company"' in response.text
+        assert 'href="/security"' in response.text
+        assert "https://lacey.litoraltrace.com" in response.text
+        assert response.headers["cache-control"] == "no-store, max-age=0"
