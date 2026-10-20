@@ -1,6 +1,6 @@
 # Litoral Trace — Production state and Northflank audit
-**Audit date:** 2026-10-20 (Argentina)  
-**Scope:** current U.S. Lacey production, commercial readiness and corporate-domain routing.  
+**Audit date:** 2026-10-20 (Argentina)
+**Scope:** current U.S. Lacey production, commercial readiness and corporate-domain routing.
 **Authority order:** active production HTTP/DNS → GitHub deployment SHA and CI → PostgreSQL read-only checks → code/migrations → historical notes.
 
 ## 1. Canonical product and infrastructure
