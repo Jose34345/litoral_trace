@@ -25,11 +25,7 @@ from litoral_trace.us_lacey.portal_auth import (
     UsLaceyPortalAuthError,
     resolve_us_lacey_session,
 )
-from litoral_trace.web.lacey_gtm import (
-    render_corporate_landing,
-    render_lacey_landing,
-    router as lacey_router,
-)
+from litoral_trace.web.lacey_gtm import render_lacey_landing, router as lacey_router
 from litoral_trace.web.us_lacey_free_app import app
 from litoral_trace.web.us_lacey_intelligent_workflow import router as intelligent_workflow_router
 from litoral_trace.web.us_lacey_impersonation import router as impersonation_router
@@ -114,9 +110,5 @@ async def _serve_public_landing_at_root(request: Request, call_next):
     if request.method == "GET" and request.url.path == "/":
         if request.cookies.get(US_LACEY_SESSION_COOKIE):
             return await call_next(request)
-        # Content-only routing. Do not infer identity, authorization or tenants
-        # from the Host header. The apex domain is not attached to Northflank yet.
-        if request.url.hostname in {"litoraltrace.com", "www.litoraltrace.com"}:
-            return render_corporate_landing(request)
         return render_lacey_landing(request)
     return await call_next(request)
