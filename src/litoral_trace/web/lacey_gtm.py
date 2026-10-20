@@ -53,6 +53,19 @@ def render_lacey_landing(request: Request) -> HTMLResponse:
     return _no_store(response)
 
 
+def render_corporate_landing(request: Request) -> HTMLResponse:
+    """Render the corporate site without creating another hosting service."""
+    return _no_store(
+        render_template(request, "public/international_home.html", {})
+    )
+
+
+@router.get("/corporate", response_class=HTMLResponse, include_in_schema=False)
+async def render_public_corporate_preview(request: Request) -> HTMLResponse:
+    """Public preview before the apex domain is attached to Northflank."""
+    return render_corporate_landing(request)
+
+
 @router.get("/company", response_class=HTMLResponse, include_in_schema=False)
 async def render_public_company(request: Request) -> HTMLResponse:
     """Unauthenticated corporate identity for prospective customers."""
