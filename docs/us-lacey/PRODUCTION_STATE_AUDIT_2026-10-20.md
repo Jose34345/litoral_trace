@@ -6,7 +6,7 @@
 ## 1. Canonical product and infrastructure
 - Product: U.S. Lacey Act **shipment-document preparation and human review**, for U.S. importers and customs brokers. No automatic ACE/LAWGS submission, legal advice, or compliance certification. Don't market the synthetic sample as real customers.
 - Source of truth branch: `feature/us-lacey-pilot-platform` in `Jose34345/litoral_trace`. The `main` branch is a divergent legacy/backup line; **do not merge it into Lacey or deploy it as the current product**.
-- Current confirmed deployed SHA at audit: `3988b94ca3dd801ac8790c492040cb56d2cceb4c` (PR #464), following `9825906053ec2a9ce951c8810f6fe7d6b6971827` (PR #463).
+- Initial deployed SHA at audit: `3988b94ca3dd801ac8790c492040cb56d2cceb4c` (PR #464), following `9825906053ec2a9ce951c8810f6fe7d6b6971827` (PR #463). **Post-release confirmed deployment:** `74d97fc9f82009f75a57dce85d64880a27165702` (PR #466, 2026-10-20).
 - Public product origin: `https://lacey.litoraltrace.com`. DNS resolves through Northflank-managed hostnames. GitHub recorded **success** deployment statuses for web and worker on the current SHA.
 - Application: FastAPI modular monolith; `src/litoral_trace/web/us_lacey_unified_app.py` composes public marketing, portal, sandbox, payment, operations and admin routes. `us_lacey_free_app.py` provides portal primitives. Internal worker operates separately.
 - Database: Supabase PostgreSQL project `Litoral Trace US Lacey` in `us-east-1`, reported `ACTIVE_HEALTHY` on 2026-10-20. Strict organization boundaries and RLS are essential.
@@ -30,13 +30,14 @@ These are anonymous HTTP checks only; they do **not** validate real checkout, hu
 - Installed desktop CLI: `@northflank/cli 0.13.0`.
 - Two saved CLI contexts: `litoraltrace` and an auto-login team context. **Both returned HTTP 401 Unauthorized** when requesting the project list on 2026-10-20.
 - The contexts were restored to the initial active selection after testing. No token values were read out or published.
-- A fresh interactive `northflank login` is required before auditing **actual project/service settings**, ingress custom-domain ownership, environment, build branch, scaling, release rollout, and worker metrics.
+- A fresh interactive `northflank login` is required before auditing **actual project/service settings**, ingress custom-domain ownership, environment, build branch, scaling, release rollout, and worker metrics. The interactive browser authorization was opened on HP-JDL on 2026-10-20; it is **not complete** until CLI project listing succeeds.
 - Do not infer service-level health or certificate readiness solely from GitHub deployment status.
 - **Do not change DNS** or attach the corporate apex until the relevant Northflank project and ingress are authenticated and checked.
 
 ## 4. Commercial and database read-only snapshot
 - Postgres project is `ACTIVE_HEALTHY`; table listing reported RLS enabled on operational/commercial tables (RLS FORCE and correct policies require gate/DB contract checks).
 - `us_lacey_operations`: 33 records: 24 `REVIEW_REQUIRED`, 7 `COMPLETED`, 2 `NEW`. Mixed QA/internal data; **not** a customer success rate.
+- SQL inspection confirmed `relforcerowsecurity=true` for operations, operation documents, audit events, payments, subscriptions and supplier evidence. `us_lacey_outreach_sessions` has RLS enabled but `FORCE` disabled; observed policies targeted `litoral_trace_platform_definer`, with no direct `anon`/`authenticated` grants shown. **Review owner-bypass implications before making any security claim; no public exposure was demonstrated.**
 - `us_lacey_subscriptions`: one `PENDING` row.
 - `us_lacey_payments`: one `PENDING` row. **No confirmed received payment** based on the queried state.
 - Outreach: 22 links, 33 sessions and 38 events in corresponding tables; visits/clicks do not establish human prospect interest. Earlier funnel audit found no confirmed external sandbox activation; re-audit before claiming new traction.
@@ -56,7 +57,7 @@ These are anonymous HTTP checks only; they do **not** validate real checkout, hu
 ## 6. What this sprint has actually delivered
 - PR #463: synthetic samples clearly identified; corporate Company and Trust templates; Lacey marketing identity alignment. Merged and deployed.
 - PR #464: public `/company` and `/security` on Lacey rather than non-existent external links. Merged and **HTTP 200 verified**.
-- Current Northflank-only candidate: public `/corporate` preview and apex-aware corporate landing. Until a verified custom-domain binding exists, it **does not** mean `litoraltrace.com` is hosted by Northflank.
+- PR #466 **released**: `https://lacey.litoraltrace.com/corporate` responds HTTP 200 with the international corporate page, while `https://lacey.litoraltrace.com/`, Company, Security, Demo, Sandbox, Login and Health continue returning HTTP 200. Exact host-aware root routing was unit-tested for apex and Lacey hosts; live apex-host routing remains unverified because the domain is **not yet attached** to Northflank.
 - Legacy PR #465 targets the separate `p2-enterprise-production` history; do not merge it as a shortcut for the Northflank domain.
 
 ## 7. Release and migration gates
@@ -77,7 +78,7 @@ These are anonymous HTTP checks only; they do **not** validate real checkout, hu
 
 ## 9. Integrity / unresolved evidence
 - Administrative Northflank read access: **NOT VERIFIED** (CLI HTTP 401).
-- `litoraltrace.com` routing to Northflank: **NOT ACTIVE** as of this audit.
+- `litoraltrace.com` routing to Northflank: **NOT ACTIVE** as of this audit. Legacy corporate DNS/hosting was left unchanged.
 - Validated paid customer: **NONE CONFIRMED**.
 - Verified buyer adoption: **NONE CONFIRMED**.
 - Product liveness, public Lacey pages and PostgreSQL project: **OBSERVED HEALTHY**.
