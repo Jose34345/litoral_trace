@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block html_open %}<html lang="en" class="h-full bg-white">{% endblock %}
+{% block title %}Litoral Trace | Argentina-founded software for U.S. import compliance{% endblock %}
+{% block head_extra %}
+<meta name="description" content="Argentina-founded B2B software for U.S. Lacey Act import documentation, source-linked evidence and auditable human review.">
+<link rel="canonical" href="https://litoraltrace.com{{ request.url.path }}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Litoral Trace">
+<meta property="og:title" content="Litoral Trace | U.S. import compliance software">
+<meta property="og:description" content="Built in Argentina. Focused on U.S. Lacey Act documentation and review.">
+<meta property="og:url" content="https://litoraltrace.com{{ request.url.path }}">
+<meta name="twitter:card" content="summary">
+{% endblock %}
+{% block shell %}
+<a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold">Skip to main content</a>
+<div class="min-h-full bg-white text-slate-900">
+  <header class="border-b border-slate-200 bg-white">
+    <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8">
+      <a href="/" class="flex items-center gap-3" aria-label="Litoral Trace home">
+        <img src="{{ url_for('static', path='/img/logo.svg') }}" alt="" width="40" height="40" class="h-10 w-10">
+        <span><span class="block text-lg font-bold tracking-tight">Litoral Trace</span><span class="block text-xs font-medium text-emerald-700">Argentina-founded · U.S. import compliance</span></span>
+      </a>
+      <nav class="flex flex-wrap items-center gap-4 text-sm font-semibold text-slate-700" aria-label="Corporate navigation">
+        <a href="/#product" class="hover:text-emerald-700">Product</a>
+        <a href="/company" class="hover:text-emerald-700">Company</a>
+        <a href="/trust" class="hover:text-emerald-700">Security &amp; trust</a>
+        <a href="https://lacey.litoraltrace.com/demo" class="hover:text-emerald-700">Sample</a>
+        <a href="https://lacey.litoraltrace.com/sandbox/start" class="rounded-lg bg-slate-950 px-4 py-2.5 text-white hover:bg-slate-800">Try the workflow</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main-content" tabindex="-1">{% block content %}{% endblock %}</main>
+  <footer class="border-t border-slate-800 bg-slate-950 text-slate-300">
+    <div class="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 md:grid-cols-2 lg:px-8">
+      <div>
+        <p class="font-bold text-white">Litoral Trace</p>
+        <p class="mt-2 max-w-lg text-sm leading-6">Independent, Argentina-founded software focused on U.S. import-document preparation, human review and traceable evidence.</p>
+        <p class="mt-3 text-xs leading-5 text-slate-400">Software assistance only. No legal advice, automatic compliance certification or government filing on your behalf.</p>
+      </div>
+      <div class="flex flex-wrap content-start gap-x-5 gap-y-3 text-sm md:justify-end">
+        <a href="/company" class="hover:text-white">Company</a>
+        <a href="/trust" class="hover:text-white">Security &amp; trust</a>
+        <a href="https://lacey.litoraltrace.com/legal/terms" class="hover:text-white">Terms</a>
+        <a href="https://lacey.litoraltrace.com/legal/privacy" class="hover:text-white">Privacy</a>
+        <a href="https://lacey.litoraltrace.com/legal/refunds" class="hover:text-white">Refunds</a>
+        <a href="mailto:comercial@litoraltrace.com" class="font-semibold text-emerald-400">comercial@litoraltrace.com</a>
+      </div>
+    </div>
+  </footer>
+</div>
+{% endblock %}
