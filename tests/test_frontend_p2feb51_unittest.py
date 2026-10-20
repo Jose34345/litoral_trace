@@ -71,7 +71,7 @@ def test_root_renders_public_home_template(monkeypatch):
 
     assert response.status_code == 200
     assert captured == {
-        "name": "public/home.html",
+        "name": "public/international_home.html",
         "user": None,
     }
 

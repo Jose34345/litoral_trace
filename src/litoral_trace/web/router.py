@@ -355,12 +355,28 @@ def _load_batch_import_detail_page(
 async def render_home_view(
     request: Request,
 ):
-    """Render the public Litoral Trace corporate homepage."""
+    """Render the English-language Argentina-founded corporate homepage."""
 
     return render_web_template(
         request,
-        "public/home.html",
+        "public/international_home.html",
         user=None,
+    )
+
+
+@router.get("/company", response_class=HTMLResponse, include_in_schema=False)
+async def render_company_view(request: Request):
+    """Public, transparent corporate identity for prospective U.S. buyers."""
+    return render_web_template(
+        request, "public/international_company.html", user=None,
+    )
+
+
+@router.get("/trust", response_class=HTMLResponse, include_in_schema=False)
+async def render_corporate_trust_view(request: Request):
+    """Public security overview; links to authoritative U.S. Lacey policies."""
+    return render_web_template(
+        request, "public/international_trust.html", user=None,
     )
 
 
