@@ -3,13 +3,12 @@
 ## Current priority
 The commercial priority is the U.S. Lacey workflow. Preserve the stable document/evidence pipeline while evolving the product toward Product Intelligence, BOM/composition, taxonomy resolution, deterministic regulatory rules, exception-first human review, and source-linked review packages.
 
-## Task-scoped context loading
-- Always follow this file and the nearest nested `AGENTS.md` for files being changed. Start with the relevant code, existing tests and a scoped search; do not pre-read the entire documentation tree for every task.
-- For changes to U.S. Lacey behavior or authority, look up the affected capability/owner in the relevant `[capabilities.*]` section of `docs/us-lacey/CAPABILITIES.toml`; consult the applicable `docs/us-lacey/INVARIANTS.md` rules and the relevant row of `docs/us-lacey/TEST_MATRIX.md`.
-- Read `docs/us-lacey/ARCHITECTURE.md` when ownership or module boundaries are in question; `PIPELINE.md` for processing flow or source-set changes; `DATA_MODEL.md` for persistence/RLS changes; `ROADMAP.md` only for prioritization; `README.md` to locate other canonical documents.
-- Read Assurance V2 contracts/runbooks only for an Assurance V2 change. Read the production-state audit and release documentation when diagnosing or authorizing a deployment. Do not activate experimental V2 functionality as part of unrelated tasks.
-- For isolated presentation, tests-only or documentation work, inspect direct dependencies and applicable guardrails; do not automatically load all architecture documents.
-- Read only relevant sections when a document is large. These routing rules never relax the non-negotiable engineering rules below.
+## Selective context loading
+Read this guide and the nearest nested `AGENTS.md`. Search relevant code/tests first; never load all canonical docs by default.
+- Behavior/authority change: inspect the matching `[capabilities.*]` entry in `docs/us-lacey/CAPABILITIES.toml`, relevant `INVARIANTS.md` clauses and `TEST_MATRIX.md` row.
+- Ownership or architecture: consult relevant `ARCHITECTURE.md` sections. Processing/source-set flow: `PIPELINE.md`. Schema/RLS: `DATA_MODEL.md`. Priority: `ROADMAP.md`. Other docs: `README.md`.
+- Assurance V2: read its contracts/runbook only when changing V2; do not activate experimental features. Production-state/release docs: only for deployment work.
+- Localized UI, tests or docs: inspect the affected files and direct contracts, not the entire architecture. All safety rules below still apply.
 
 ## Repository authority map
 - `src/litoral_trace/lacey_engine/`: document understanding, routing, extraction candidates, source authority, specialist orchestration, line binding and fusion.
@@ -36,17 +35,14 @@ The commercial priority is the U.S. Lacey workflow. Preserve the stable document
 12. Do not introduce microservices, queues, databases, AI agents, or dependencies unless the current commercial goal requires them.
 
 ## Change discipline
-For a change to domain behavior, data contracts or authority, identify its capability owner, dependencies, authority level and relevant tests before implementation. Update the capability map and canonical docs when introducing a genuinely new capability or changing an existing contract; do not rewrite architecture docs for an unrelated small fix.
-
-For U.S. Lacey changes, use a dedicated branch/worktree. Do not implement directly on the target production branch. Keep changes small enough to review and revert independently.
+For domain/authority changes, identify the owning capability, dependencies and required tests. Update the capability map/docs only when changing contracts or adding capabilities, not for unrelated small fixes.
+Use a dedicated branch/worktree for U.S. Lacey work. Never implement directly on the target production branch; keep diffs reviewable and reversible.
 
 ## Validation
-CI currently uses Python 3.11 and runs syntax compilation, Alembic head validation and the pytest suite. Run the narrowest relevant tests first; expand coverage according to affected contracts and risk. Before merge, require the broader U.S. Lacey/PostgreSQL gates for changes affecting persistence, RLS, workers, source sets, canonical truth or exports. Docs-only edits need structural review, not a gratuitous full runtime test run.
+CI uses Python 3.11, syntax compilation, Alembic head and pytest. Run targeted tests first; broaden by impact. Persistence, RLS, workers, source sets, canonical truth and exports require their PostgreSQL/release gates before merge. Documentation-only changes need structural review, not full runtime tests.
 
-## Context and output efficiency
-- Use repository search to locate owners and tests before opening large files; prefer bounded file ranges and concise error traces to full log dumps.
-- Do not re-read unchanged material or repeat instructions already in these guides. Reuse established code and tests; introduce subagents only for genuinely independent investigations.
-- In the final response, report concise findings, changed paths, verification performed and blockers (GO/NO-GO). Never claim unrun tests, releases or LIVE status. Keep user-facing reports in Spanish.
+## Efficient tools and reporting
+Search by symbol/path before reading large files; bound logs and traces. Avoid rereading unchanged content and duplicating these instructions in prompts. Use subagents only for independent work. Report diagnosis, changed paths, actual tests and blockers (GO/NO-GO) concisely in Spanish. Never claim unrun tests or unverified LIVE deployments.
 
 ## Documentation authority
 `docs/us-lacey/` describes the current architecture. Historical plans elsewhere in the repository may explain why something exists, but they do not override current code, migrations, tests, or the canonical documentation in `docs/us-lacey/`.
