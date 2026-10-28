@@ -34,4 +34,6 @@ An extraction result, AI result, specialist result, or fused candidate is still 
 ## Current commercial direction
 Future BOM/product-composition parsing may consume this engine, but reusable product structure should not be hidden inside an AI specialist. Future taxonomy/regulatory decision logic should remain explicit, versionable and auditable rather than being embedded solely in model prompts.
 
-Read root `AGENTS.md` and `docs/us-lacey/` canonical docs before changes.
+## Selective reading and verification
+Follow root `AGENTS.md` and the guardrails above. Find the affected capability in `CAPABILITIES.toml`, relevant `INVARIANTS.md` clauses and focused `TEST_MATRIX.md` row. Read `ARCHITECTURE.md`/`PIPELINE.md` only when boundaries or runtime contracts change.
+Run targeted `tests/lacey_engine/` first, then canonical/cross-document or broader gates when publication may be affected. Avoid full-doc reads and unbounded test logs.

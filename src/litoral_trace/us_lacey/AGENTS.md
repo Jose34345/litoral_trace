@@ -67,5 +67,6 @@ When changing `regulatory/rules/` or Regulatory Assessment persistence:
 6. prove source-set supersession to STALE and negative cross-tenant RLS behavior;
 7. run general CI and U.S. Lacey PostgreSQL Gate before merge.
 
-## Required reading
-Read root `AGENTS.md`, then `docs/us-lacey/ARCHITECTURE.md`, `CAPABILITIES.toml`, `INVARIANTS.md`, and `TEST_MATRIX.md` before changing this package.
+## Selective reading and verification
+Follow root `AGENTS.md` and the protected boundaries above. For behavior/authority changes consult only the matching `CAPABILITIES.toml` entry, applicable `INVARIANTS.md` clauses and `TEST_MATRIX.md` row. Open `ARCHITECTURE.md` for ownership, `PIPELINE.md` for source-set flow and `DATA_MODEL.md` for persistence changes; none requires full pre-reading for local fixes.
+Search relevant code and tests first. Keep taxonomy/regulatory checklists above mandatory, including CI/PostgreSQL gates before merge.
