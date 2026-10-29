@@ -242,15 +242,23 @@ def test_real_import_info_consignee_address_contract(real_import_info_bundle):
 def test_real_import_info_gate1_regression_fixture(real_import_info_bundle):
     bundle = real_import_info_bundle
     assert bundle.page_count == 8
+    assert len(bundle.documents) > 1
     assert len({doc.logical_document_id for doc in bundle.documents}) == len(bundle.documents)
     assert [page for doc in bundle.documents for page in range(doc.page_start, doc.page_end + 1)] == list(range(1, 9))
     for doc in bundle.documents:
         assert doc.resolution.filename == doc.parent_filename == bundle.filename
+        assert doc.document_type is doc.resolution.document_type
+        blocks = {block.block_id: block for block in doc.resolution.layout.blocks}
+        assert blocks
+        assert all(doc.page_start <= block.page <= doc.page_end for block in blocks.values())
         for field in doc.resolution.fields.values():
             for candidate in field.candidates:
                 assert doc.page_start <= candidate.provenance.page <= doc.page_end
                 assert candidate.provenance.filename == bundle.filename
                 assert candidate.provenance.source_text == candidate.raw.source_block.text
+                assert candidate.provenance.block_id in blocks
+                assert candidate.provenance.source_text == blocks[candidate.provenance.block_id].text
+                assert candidate.raw.source_block == blocks[candidate.provenance.block_id]
     logical = _real_import_info_detail(bundle)
     resolution = logical.resolution
     _assert_real_consignee_name(logical)

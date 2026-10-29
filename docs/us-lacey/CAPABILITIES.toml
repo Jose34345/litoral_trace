@@ -161,8 +161,11 @@ implementation = [
   "src/litoral_trace/us_lacey/canonical_shipment_truth.py",
   "src/litoral_trace/us_lacey/canonical_publication_support.py"
 ]
-tests = ["tests/lacey_engine/test_canonical_shipment_truth.py"]
-notes = "Central publication boundary. Do not write around it from AI/specialist/product-intelligence/regulatory-assessment paths."
+tests = [
+  "tests/lacey_engine/test_canonical_shipment_truth.py",
+  "tests/lacey_engine/test_canonical_structural_group_compatibility.py"
+]
+notes = "Central publication boundary. Do not write around it from AI/specialist/product-intelligence/regulatory-assessment paths. Structural equivalence classes must preserve distinct source rows per document; an incompatible transitive class abstains as a whole, retaining every source-local identity and its evidence rather than choosing a partial matching. Rejected line identities and their shipment description remain REVIEW_REQUIRED; existing value conflicts stay visible and cannot be automatically resolved by publication."
 
 [capabilities.customer_projection]
 status = "ACTIVE"
