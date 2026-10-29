@@ -100,3 +100,11 @@ Local evidence bundle: `%TEMP%/litoral_di01_20261028_223155/` (JUnit, exact comm
 red/green logs and before/after JSON). The bundle and private source PDF are not
 included in Git. Revert the isolated implementation commit to roll back the fix;
 no schema rollback is needed.
+
+## Acceptance after integrated DI-03
+
+The historical PDF blocker is closed by integrated DI-03, not an extra extractor
+change in DI-01. The non-destructive integration with e5b25d6 preserves the
+original branch/local test. See docs/us-lacey/DI01_DI03_INTEGRATION_ACCEPTANCE.md
+for the four-way comparison, real-PDF contracts, independent review and current
+local CI/PostgreSQL results. PR publication is authorized; merge/deploy are not.
