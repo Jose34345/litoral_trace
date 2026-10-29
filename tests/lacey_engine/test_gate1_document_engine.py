@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 from types import SimpleNamespace
 import sys
 
@@ -12,7 +13,7 @@ from litoral_trace.lacey_engine.domain import (
 )
 import litoral_trace.lacey_engine.layout_parser as layout_parser
 from litoral_trace.lacey_engine.layout_parser import layout_from_key_value_rows
-from litoral_trace.lacey_engine.pipeline import _extract, process_document
+from litoral_trace.lacey_engine.pipeline import _extract, process_bundle, process_document
 from litoral_trace.lacey_engine.classifier import classify
 from litoral_trace.lacey_engine.segmentation import segment
 from litoral_trace.lacey_engine.domain import DocumentType
@@ -166,11 +167,93 @@ def test_field_status_invariants_reject_impossible_states():
         ResolvedField("container_number", FieldStatus.CONFLICT, None, None, ())
 
 
-def test_real_import_info_gate1_regression_fixture():
-    fixture = Path(__file__).parents[1] / "fixtures" / "import_info_wood_brokerage_real.pdf"
+# The original golden retained the street/city/state/postal components but
+# omitted literal Country Code US on page 5 (p5-l19, repeated at p5-l27).
+_LEGACY_REAL_CONSIGNEE_ADDRESS = "SUITE 130 5285 MEADOWS RD LAKE OSWE; LAKE OSWEGO, OR 97035"
+
+
+@pytest.fixture(scope="module")
+def real_import_info_bundle():
+    external_fixture = os.environ.get("LITORAL_TRACE_REAL_IMPORT_INFO_PDF")
+    fixture = Path(external_fixture) if external_fixture else (
+        Path(__file__).parents[1] / "fixtures" / "import_info_wood_brokerage_real.pdf"
+    )
     if not fixture.exists():
+        if external_fixture:
+            pytest.fail("Explicit real-PDF fixture path does not exist")
         pytest.skip(f"REAL_FIXTURE_NOT_AVAILABLE: {fixture}")
-    resolution = process_document(filename=fixture.name, content=fixture.read_bytes(), role_hint="SUPPLIER_SHEET")
+    return process_bundle(filename=fixture.name, content=fixture.read_bytes(), role_hint="SUPPLIER_SHEET")
+
+
+def _real_import_info_detail(bundle):
+    matches = [doc for doc in bundle.documents
+               if doc.resolution.field("bill_of_lading").effective_value == "MAEU274342495"]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def _assert_real_consignee_name(logical):
+    field = logical.resolution.field("consignee_name")
+    assert field.status is FieldStatus.MATCHED
+    assert field.effective_value == "WOOD BROKERAGE INTERNATIONAL"
+    assert all(candidate.raw.normalized_value == field.effective_value for candidate in field.candidates)
+    assert any(candidate.provenance.block_id == "p5-l14" for candidate in field.candidates)
+
+
+def _assert_real_consignee_address(logical):
+    field = logical.resolution.field("consignee_address")
+    assert field.status is FieldStatus.MATCHED
+    blocks = {block.block_id: block for block in logical.resolution.layout.blocks}
+    assert logical.page_start <= 5 <= logical.page_end
+    # Assert source field labels and the country corroboration without
+    # reprinting the private PDF's street/city/postal source lines in Git.
+    labels = {
+        "p5-l15": "Address Line 1 ",
+        "p5-l16": "City ",
+        "p5-l17": "State Province ",
+        "p5-l18": "Zip Code ",
+        "p5-l19": "Country Code ",
+        "p5-l27": "Country Code ",
+    }
+    for block_id, label in labels.items():
+        assert blocks[block_id].text.startswith(label)
+    assert blocks["p5-l19"].text == blocks["p5-l27"].text == "Country Code US"
+    expected = _LEGACY_REAL_CONSIGNEE_ADDRESS + "; US"
+    assert field.effective_value == expected
+    # Preserve the previous body verbatim; the country is a documented component.
+    assert field.effective_value.rsplit("; ", 1) == [_LEGACY_REAL_CONSIGNEE_ADDRESS, "US"]
+    winner = field.winning_candidate
+    assert winner.raw.raw_text == winner.raw.normalized_value == expected
+    assert winner.raw.evidence_class is EvidenceClass.DERIVED
+    assert winner.provenance.page == 5
+    assert winner.provenance.block_id in {"p5-l15", "p5-l23"}
+    assert winner.provenance.source_text == blocks[winner.provenance.block_id].text
+    assert winner.provenance.bbox == blocks[winner.provenance.block_id].bbox
+
+
+def test_real_import_info_consignee_name_contract(real_import_info_bundle):
+    _assert_real_consignee_name(_real_import_info_detail(real_import_info_bundle))
+
+
+def test_real_import_info_consignee_address_contract(real_import_info_bundle):
+    _assert_real_consignee_address(_real_import_info_detail(real_import_info_bundle))
+
+
+def test_real_import_info_gate1_regression_fixture(real_import_info_bundle):
+    bundle = real_import_info_bundle
+    assert bundle.page_count == 8
+    assert len({doc.logical_document_id for doc in bundle.documents}) == len(bundle.documents)
+    assert [page for doc in bundle.documents for page in range(doc.page_start, doc.page_end + 1)] == list(range(1, 9))
+    for doc in bundle.documents:
+        assert doc.resolution.filename == doc.parent_filename == bundle.filename
+        for field in doc.resolution.fields.values():
+            for candidate in field.candidates:
+                assert doc.page_start <= candidate.provenance.page <= doc.page_end
+                assert candidate.provenance.filename == bundle.filename
+                assert candidate.provenance.source_text == candidate.raw.source_block.text
+    logical = _real_import_info_detail(bundle)
+    resolution = logical.resolution
+    _assert_real_consignee_name(logical)
     expected = {
         "estimated_arrival_date": "2026-09-01",
         "bill_of_lading": "MAEU274342495",
@@ -190,8 +273,7 @@ def test_real_import_info_gate1_regression_fixture():
         assert winner.provenance.source_text
         assert winner.provenance.extractor_name
         assert winner.provenance.extractor_version
-    assert resolution.field("consignee_address").status is FieldStatus.MATCHED
-    assert resolution.field("consignee_address").effective_value == "SUITE 130 5285 MEADOWS RD LAKE OSWE; LAKE OSWEGO, OR 97035"
+    _assert_real_consignee_address(logical)
     for key in ("filing_entry_reference", "manufacturer_id", "hts_code", "country_of_harvest"):
         assert resolution.field(key).status is FieldStatus.MISSING
     description = resolution.field("description")
@@ -199,7 +281,7 @@ def test_real_import_info_gate1_regression_fixture():
     assert "PINUS RADIATA TIMBER" in description.effective_value
     assert "Opening(s) at one end or both ends." not in description.effective_value
     assert resolution.field("plant_quantity").status is FieldStatus.MISSING
-    shipment = process_shipment(documents=[ShipmentDocumentInput("golden-001", fixture.name, resolution=resolution)])
+    shipment = process_shipment(documents=[ShipmentDocumentInput(f"golden-001:{logical.logical_document_id}", logical.parent_filename, resolution=resolution)])
     assert shipment.canonical_fields["description"].state in {ReconciliationState.SUPPORTED, ReconciliationState.SUPPORTED_MULTIPLE}
     assert any("PINUS RADIATA TIMBER" in value.value for value in shipment.canonical_fields["description"].values)
     assert shipment.canonical_fields["country_of_harvest"].state is ReconciliationState.MISSING

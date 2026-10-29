@@ -4,7 +4,7 @@ Use this as a routing guide. Exact test names evolve; search existing tests befo
 
 | Capability changed | Minimum focused validation | Broader validation |
 |---|---|---|
-| `lacey_engine` classification/parsing | relevant `tests/lacey_engine/` tests | general CI pytest |
+| `lacey_engine` classification/parsing | relevant `tests/lacey_engine/` tests; party-label boundaries: `test_inline_party_labels.py`; independent real-PDF name/address and integral contracts in `test_gate1_document_engine.py` (see `DI03_PARSER_ACCEPTANCE.md`) | general CI pytest |
 | AI routing/provider/shadow | AI architecture/routing/shadow/resilience tests under `tests/lacey_engine/` | general CI pytest |
 | specialist routing/fusion | specialist + line-binding/fusion tests | general CI pytest |
 | cross-document identity | `tests/lacey_engine/test_cross_document_line_identity.py` and fail-closed companion | general CI pytest |
