@@ -283,6 +283,10 @@ _INLINE_LABELED_FIELDS: tuple[tuple[str, str], ...] = tuple(
             ("consignee address", "Consignee Address"),
             ("importer name", "Importer"),
             ("shipper", "Shipper"),
+            ("consignee name", "Consignee Name"),
+            ("shipper name", "Shipper Name"),
+            ("shipper / embarcador", "Shipper / Embarcador"),
+            ("embarcador", "Embarcador"),
             ("consignee", "Consignee"),
             ("manufacturer", "Manufacturer"),
             ("supplier", "Supplier"),
@@ -301,13 +305,36 @@ _INLINE_LABELED_FIELDS: tuple[tuple[str, str], ...] = tuple(
 def _inline_labeled_pair(block) -> tuple[str, str] | None:
     if block.block_type not in {"TEXT_LINE", "OCR_LINE"}:
         return None
+    # Respect the parsed label boundary, including a company starting with
+    # "Name" under a generic Consignee label. Still parse the text independently
+    # so a genuinely different value remains a conflict.
+    prefixes = _INLINE_LABELED_FIELDS
     text = " ".join(str(block.text or "").split())
-    for prefix, label in _INLINE_LABELED_FIELDS:
-        if text.casefold().startswith(prefix + " "):
-            value = text[len(prefix):].strip()
+    parsed_label = " ".join(str(block.key_text or "").split())
+    if block.value_text is not None and any(
+        pattern.fullmatch(parsed_label)
+        for pattern in (_CONSIGNEE_NAME_LABEL, _SHIPPER_NAME_LABEL, _IMPORTER_NAME_LABEL)
+    ) and re.match(re.escape(parsed_label) + r"(?:\s|[:#]|$)", text, re.I):
+        prefixes = ((parsed_label.casefold(), parsed_label),)
+    for prefix, label in prefixes:
+        party_label = any(
+            pattern.fullmatch(label)
+            for pattern in (_CONSIGNEE_NAME_LABEL, _SHIPPER_NAME_LABEL, _IMPORTER_NAME_LABEL)
+        )
+        if party_label and text.casefold().rstrip(" :#") == prefix:
+            return None  # Complete heading without a value; do not try a shorter label.
+        match = (
+            re.fullmatch(
+                r"\s*/\s*".join(re.escape(part.strip()) for part in prefix.split("/"))
+                + r"(?:\s*[:#]\s*|\s+)(.+)", text, re.I,
+            )
+            if party_label else None
+        )
+        if match is not None or (not party_label and text.casefold().startswith(prefix + " ")):
+            value = match.group(1).strip() if match is not None else text[len(prefix):].strip()
             # Do not mistake Supplier address, Shipper address or Manufacturer
             # SKU/reference headings for names merely because they share a prefix.
-            if label in {"Supplier", "Manufacturer", "Shipper", "Consignee"} and re.match(
+            if label in {"Supplier", "Manufacturer", "Shipper", "Shipper Name", "Consignee", "Consignee Name"} and re.match(
                 r"^(address|contact|order|reference|sku|id|reviewer|specification|declaration|botanical|harvest|product|legal|raw-material|identification|and|declared|of)\b",
                 value,
                 re.I,
@@ -493,14 +520,24 @@ def _extract(layout):
             found["bill_of_lading"].append(_candidate("bill_of_lading", match.group("value").upper(), block, match.group("label")))
         for match in re.finditer(r"\b(?:Current\s+)?Container(?:\s+(?:Number|No\.?)?)?\s*[:#-]?\s*([A-Z]{4}\d{7})\b", text, re.I):
             found["container_number"].append(_candidate("container_number", match.group(1).upper(), block, "Container Number"))
-        for match in re.finditer(r"\bConsignee(?:\s+Name)?\s*[:#-]?\s*([A-Z][A-Z &.'-]{3,80})", text):
-            name = party_core(match.group(1))
-            if name:
-                found["consignee_name"].append(_candidate("consignee_name", name, block, "Consignee Name"))
-        for match in re.finditer(r"(?m)^\s*(?:Shipper|Embarcador)\s*(?:/\s*Embarcador)?\s*[:#-]?\s*([A-Z][A-Za-z0-9 &.,'()-]{3,100})", text):
-            name = party_core(match.group(1))
-            if name and _valid_party_candidate(name):
-                found["shipper_name"].append(_candidate("shipper_name", name, block, "Shipper"))
+        # Do not reinterpret a complete party label with a shorter legacy regex.
+        # All explicit pairs above are retained, including genuine disagreements.
+        if not any(
+            _CONSIGNEE_NAME_LABEL.fullmatch(" ".join((key or "").split()))
+            for key, _ in pairs
+        ) and not _CONSIGNEE_NAME_LABEL.fullmatch(text.strip().rstrip(" :#")):
+            for match in re.finditer(r"\bConsignee(?:\s+Name)?\s*[:#-]?\s*([A-Z][A-Z &.'-]{3,80})", text):
+                name = party_core(match.group(1))
+                if name:
+                    found["consignee_name"].append(_candidate("consignee_name", name, block, "Consignee Name"))
+        if not any(
+            _SHIPPER_NAME_LABEL.fullmatch(" ".join((key or "").split()))
+            for key, _ in pairs
+        ) and not _SHIPPER_NAME_LABEL.fullmatch(text.strip().rstrip(" :#")):
+            for match in re.finditer(r"(?m)^\s*(?:Shipper|Embarcador)\s*(?:/\s*Embarcador)?\s*[:#-]?\s*([A-Z][A-Za-z0-9 &.,'()-]{3,100})", text):
+                name = party_core(match.group(1))
+                if name and _valid_party_candidate(name):
+                    found["shipper_name"].append(_candidate("shipper_name", name, block, "Shipper"))
         for match in re.finditer(r"(?P<label>Commodity Description|Cargo Description\s+\d+|Description of Goods|Goods Description|Merchandise Description)\s*[:#-]?\s*(?P<value>[^\n]{1,240})", text, re.I):
             value = " ".join(match.group("value").split())
             if _valid_description_candidate(value):
