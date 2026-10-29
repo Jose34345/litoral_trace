@@ -205,12 +205,19 @@ def _assert_real_consignee_address(logical):
     assert field.status is FieldStatus.MATCHED
     blocks = {block.block_id: block for block in logical.resolution.layout.blocks}
     assert logical.page_start <= 5 <= logical.page_end
-    assert blocks["p5-l15"].text == "Address Line 1 SUITE 130 5285 MEADOWS RD LAKE OSWE"
-    assert blocks["p5-l16"].text == "City LAKE OSWEGO"
-    assert blocks["p5-l17"].text == "State Province OR"
-    assert blocks["p5-l18"].text == "Zip Code 97035"
-    assert blocks["p5-l19"].text == "Country Code US"
-    assert blocks["p5-l27"].text == "Country Code US"
+    # Assert source field labels and the country corroboration without
+    # reprinting the private PDF's street/city/postal source lines in Git.
+    labels = {
+        "p5-l15": "Address Line 1 ",
+        "p5-l16": "City ",
+        "p5-l17": "State Province ",
+        "p5-l18": "Zip Code ",
+        "p5-l19": "Country Code ",
+        "p5-l27": "Country Code ",
+    }
+    for block_id, label in labels.items():
+        assert blocks[block_id].text.startswith(label)
+    assert blocks["p5-l19"].text == blocks["p5-l27"].text == "Country Code US"
     expected = _LEGACY_REAL_CONSIGNEE_ADDRESS + "; US"
     assert field.effective_value == expected
     # Preserve the previous body verbatim; the country is a documented component.
