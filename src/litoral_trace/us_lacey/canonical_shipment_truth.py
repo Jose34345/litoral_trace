@@ -85,6 +85,7 @@ class CanonicalPlantLineTruth:
     ordinal_hint: int | None
     taxon_key: str | None
     fields: Mapping[str, CanonicalFieldTruth]
+    identity_review_required: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,7 +321,7 @@ def _structural_merchandise_groups(
     *,
     merchandise_keys: tuple[str, ...],
     evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
-) -> tuple[dict[str, str], dict[str, frozenset[str]]]:
+) -> tuple[dict[str, str], dict[str, frozenset[str]], frozenset[str]]:
     """Collapse source rows using relational/sequential evidence, never HTS+taxon.
 
     Engine 2 emits document-local row identities.  Commercial documents can describe
@@ -437,9 +438,27 @@ def _structural_merchandise_groups(
     for key in merchandise_keys:
         members_by_root[find(key)].add(key)
 
+    # Pairwise document checks are insufficient: A-C and B-C can put two
+    # distinct rows from A/B's shared document in the same transitive class.
+    # Validate the complete class before exposing any union. Abstain as a whole
+    # rather than retaining an arbitrary partial matching chosen by input order.
+    compatible_groups: list[set[str]] = []
+    ambiguous_members: set[str] = set()
+    for members in members_by_root.values():
+        documents = [
+            document_id
+            for member in members
+            for document_id in documents_by_line[member]
+        ]
+        if len(documents) != len(set(documents)):
+            ambiguous_members.update(members)
+            compatible_groups.extend({member} for member in sorted(members))
+        else:
+            compatible_groups.append(members)
+
     member_to_rep: dict[str, str] = {}
     rep_to_members: dict[str, frozenset[str]] = {}
-    for members in members_by_root.values():
+    for members in compatible_groups:
         representative = sorted(
             members,
             key=lambda key: (
@@ -452,7 +471,7 @@ def _structural_merchandise_groups(
         rep_to_members[representative] = frozen
         for member in frozen:
             member_to_rep[member] = representative
-    return member_to_rep, rep_to_members
+    return member_to_rep, rep_to_members, frozenset(ambiguous_members)
 
 
 def _authoritative_description_evidence(
@@ -749,6 +768,7 @@ def _apply_single_line_entered_value_inference(
             ordinal_hint=line.ordinal_hint,
             taxon_key=line.taxon_key,
             fields=fields,
+            identity_review_required=line.identity_review_required,
         )
     ]
 
@@ -781,6 +801,8 @@ def _composed_merchandise_description(
         if len(values) > 1 or len(evidence) > 1
         else CanonicalTruthState.SUPPORTED
     )
+    if any(line.identity_review_required for line in plant_lines):
+        state = CanonicalTruthState.REVIEW_REQUIRED
     return CanonicalFieldTruth(
         field_name="merchandise_description",
         state=state,
@@ -984,7 +1006,7 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
             ),
         )
     )
-    member_to_rep, rep_to_members = _structural_merchandise_groups(
+    member_to_rep, rep_to_members, ambiguous_line_keys = _structural_merchandise_groups(
         merchandise_keys=source_merchandise_keys,
         evidence_by_field=evidence_by_field,
     )
@@ -1118,6 +1140,17 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
                                   or line_key.startswith(_REVIEW_ONLY_SOURCE_LINE_PREFIX)),
                 )
 
+        identity_review_required = line_key in ambiguous_line_keys
+        if identity_review_required:
+            # Agreement on a value cannot resolve an ambiguous line identity.
+            # Keep explicit conflicts/missing evidence, and retain all provenance.
+            line_fields = {
+                name: (
+                    field if field.state in {CanonicalTruthState.CONFLICT, CanonicalTruthState.MISSING}
+                    else replace(field, state=CanonicalTruthState.REVIEW_REQUIRED)
+                )
+                for name, field in line_fields.items()
+            }
         line_truths.append(
             CanonicalPlantLineTruth(
                 entity_key=line_key,
@@ -1128,6 +1161,7 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
                     else None
                 ),
                 fields=line_fields,
+                identity_review_required=identity_review_required,
             )
         )
 
@@ -1605,6 +1639,13 @@ def _resolvable_field_names(truth: CanonicalShipmentTruth) -> frozenset[str]:
                 for line in truth.plant_lines
             )
         )
+    # A shipment aggregate or an unrelated resolved line must not close a
+    # conflict while any affected source-local line still lacks identity.
+    names.difference_update(
+        field_name
+        for line in truth.plant_lines if line.identity_review_required
+        for field_name in line.fields
+    )
     return frozenset(names)
 
 

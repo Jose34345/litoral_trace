@@ -300,3 +300,74 @@ def test_canonical_publication_never_overwrites_human_review(
     assert genus.field_status == "MATCHED"
     assert genus.normalized_value == "PINUS"
     session.close()
+
+
+def test_canonical_publication_preserves_ambiguous_structural_class_cardinality(
+    engine2_postgres_session_factory,
+):
+    from tests.lacey_engine.test_canonical_structural_group_compatibility import _payload
+    from tests.us_lacey_engine2_postgres import add_test_document
+
+    factory = engine2_postgres_session_factory
+    org, operation_id, first_link, first_assurance, _, _ = create_test_graph(
+        factory, role="COMMERCIAL_INVOICE", content=b"DI01 source document one"
+    )
+    second_link, second_assurance, _, _ = add_test_document(
+        factory, organization_id=org, operation_id=operation_id,
+        role="PACKING_LIST", filename="DI01-packing.pdf",
+        content=b"DI01 source document two",
+    )
+    payload = _payload((
+        (first_link, 1, 1, "Solid wood trays", None),
+        (first_link, 2, 1, "Wooden chopping boards", None),
+        (second_link, 1, 1, "Solid wood trays", None),
+    ))
+    session = tenant_session(factory, org)
+    session.add(UsLaceyEngineShipmentRun(
+        organization_id=org, operation_id=operation_id,
+        engine_version="di01-regression", ruleset_version="di01-regression",
+        schema_version="lacey_shipment_resolution_v1",
+        source_set_fingerprint=hashlib.sha256(f"di01:{org}:{operation_id}".encode()).hexdigest(),
+        document_count=2, readiness="REVIEW_REQUIRED", resolution_json=payload,
+    ))
+    operation = session.get(UsLaceyOperation, operation_id)
+    conflict = ReconciliationIssue(
+        organization_id=org,
+        operation_reference=f"us_lacey:{operation.public_id}",
+        fingerprint=hashlib.sha256(f"di01-conflict:{org}:{operation_id}".encode()).hexdigest(),
+        rule_code="US_LACEY_FIELD_CONFLICT", severity="BLOCKING", status="OPEN",
+        field_name="hts_code", left_document_id=first_assurance,
+        right_document_id=second_assurance, left_source="source row A",
+        right_source="source row B", left_value="4419199010", right_value="4419199010",
+        explanation="Documentary line identity is ambiguous despite equal HTS.",
+    )
+    session.add(conflict)
+    session.commit()
+
+    result = publish_canonical_shipment_truth(
+        session, organization_id=org, operation_id=operation_id,
+    )
+    session.commit()
+    lines = session.scalars(select(UsLaceyPpqPlantLine).where(
+        UsLaceyPpqPlantLine.organization_id == org,
+        UsLaceyPpqPlantLine.operation_id == operation_id,
+    )).all()
+    hts_fields = session.scalars(select(UsLaceyOperationField).where(
+        UsLaceyOperationField.organization_id == org,
+        UsLaceyOperationField.operation_id == operation_id,
+        UsLaceyOperationField.field_name == "hts_code",
+        UsLaceyOperationField.plant_line_id.is_not(None),
+    )).all()
+    assert result.line_count == 3
+    assert len(lines) == 3
+    assert len({line.line_reference for line in lines}) == 3
+    assert len(hts_fields) == 3
+    assert {field.field_status for field in hts_fields} == {"REVIEW"}
+    assert {field.validation_status for field in hts_fields} == {"REVIEW_REQUIRED"}
+    session.refresh(conflict)
+    assert conflict.status == "OPEN"
+    assert result.resolved_conflict_count == 0
+    assert {field.normalized_value for field in hts_fields} == {"4419199010"}
+    assert sum(field.source_assurance_document_id == first_assurance for field in hts_fields) == 2
+    assert sum(field.source_assurance_document_id == second_assurance for field in hts_fields) == 1
+    session.close()
