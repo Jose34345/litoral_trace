@@ -520,13 +520,32 @@ def _extract(layout):
             found["bill_of_lading"].append(_candidate("bill_of_lading", match.group("value").upper(), block, match.group("label")))
         for match in re.finditer(r"\b(?:Current\s+)?Container(?:\s+(?:Number|No\.?)?)?\s*[:#-]?\s*([A-Z]{4}\d{7})\b", text, re.I):
             found["container_number"].append(_candidate("container_number", match.group(1).upper(), block, "Container Number"))
-        # Do not reinterpret a complete party label with a shorter legacy regex.
-        # All explicit pairs above are retained, including genuine disagreements.
-        if not any(
-            _CONSIGNEE_NAME_LABEL.fullmatch(" ".join((key or "").split()))
-            for key, _ in pairs
-        ) and not _CONSIGNEE_NAME_LABEL.fullmatch(text.strip().rstrip(" :#")):
+        # A single source line may contain multiple explicit consignees.
+        # Suppress only the first legacy match when its source occurrence was
+        # already consumed by the structured/inline label parser. Never skip
+        # other occurrences in that same block: they may be true conflicts.
+        inline_consignee = (
+            inline_pair is not None
+            and _CONSIGNEE_NAME_LABEL.fullmatch(inline_pair[0]) is not None
+        )
+        parsed_label = " ".join(str(block.key_text or "").split())
+        parsed_value = " ".join(str(block.value_text or "").split())
+        structured_same_source = (
+            bool(parsed_value)
+            and _CONSIGNEE_NAME_LABEL.fullmatch(parsed_label) is not None
+            and re.match(
+                re.escape(parsed_label) + r"(?:\s*[:#]\s*|\s+)"
+                + re.escape(parsed_value) + r"(?=$|[\s;,])",
+                text,
+                re.I,
+            ) is not None
+        )
+        if not _CONSIGNEE_NAME_LABEL.fullmatch(text.strip().rstrip(" :#")):
             for match in re.finditer(r"\bConsignee(?:\s+Name)?\s*[:#-]?\s*([A-Z][A-Z &.'-]{3,80})", text):
+                if not text[:match.start()].strip() and (
+                    inline_consignee or structured_same_source
+                ):
+                    continue
                 name = party_core(match.group(1))
                 if name:
                     found["consignee_name"].append(_candidate("consignee_name", name, block, "Consignee Name"))
