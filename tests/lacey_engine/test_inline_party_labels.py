@@ -135,3 +135,28 @@ def test_valid_alternate_text_label_preserves_structured_disagreement(field, str
 def test_bilingual_shipper_label_keeps_only_the_company_value(label):
     block = LayoutBlock("p1-l1", 1, None, f"{label} ACME EXPORTS LLC", "TEXT_LINE")
     assert [c.normalized_value for c in _extract(ParsedLayout((block,), 1))["shipper_name"]] == ["ACME EXPORTS LLC"]
+
+
+def test_multiple_consignee_labels_in_one_text_block_remain_conflict(monkeypatch):
+    """Fallback must preserve the second distinct source label, not hide it."""
+    block = LayoutBlock(
+        "p1-l1", 1, None,
+        "Consignee: ACME LLC 42 Main Street; Consignee: OTHER LLC 10 Second Street",
+        "TEXT_LINE",
+    )
+    found = _extract(ParsedLayout((block,), 1))["consignee_name"]
+    assert {c.normalized_value for c in found} == {"ACME LLC", "OTHER LLC"}
+    assert all(c.source_block is block for c in found)
+
+    monkeypatch.setattr(
+        "litoral_trace.lacey_engine.pipeline.parse_layout",
+        lambda *_: ParsedLayout((block,), 1),
+    )
+    resolved = process_document(filename="two-consignees.pdf", content=b"synthetic")
+    field = resolved.field("consignee_name")
+    assert field.status is FieldStatus.CONFLICT
+    assert field.effective_value is None
+    assert {c.raw.normalized_value for c in field.candidates} == {
+        "ACME LLC", "OTHER LLC",
+    }
+    assert {c.provenance.block_id for c in field.candidates} == {"p1-l1"}
