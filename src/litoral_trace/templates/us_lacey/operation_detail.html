@@ -6,6 +6,7 @@
 {% set audit_events = audit_events|default(()) %}
 {% block lacey_title %}Review shipment{% endblock %}
 {% block head_extra %}{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/shipment_workspace.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='/css/us_lacey_source_inspector.css') }}?v=20261016-pdf5">
 {% if private_v2|default(false) %}<link rel="stylesheet" href="{{ url_for('static', path='/css/assurance_v2_case.css') }}">{% endif %}{% endblock %}
 {% block lacey_content %}
@@ -20,9 +21,8 @@
       <span class="font-semibold text-slate-700">{{ business_supplier_name }}</span>
       {% else %}
       {{ lt_badge("REVIEW REQUIRED", "Supplier unresolved") }}
+      <a href="#documents" class="font-semibold text-emerald-800 underline" data-supplier-evidence-action>Add supplier evidence</a>
       {% endif %}
-      <span aria-hidden="true">·</span>
-      <span>{{ business_reference }}</span>
       <span aria-hidden="true">·</span>
       <span>{{ detail.document_count }} document{{ '' if detail.document_count == 1 else 's' }}</span>
       <span aria-hidden="true">·</span>
@@ -32,7 +32,10 @@
       {% endif %}
       <span>Last processed {{ relative_time(detail.updated_at if detail.updated_at is defined else None) }}</span>
     </div>
-    <p class="mt-2 text-[11px] text-slate-400">Immutable operation ID · {{ detail.public_id }}</p>
+    <details class="lt-shipment-identity"><summary>Shipment details and activity</summary>
+      <p>Immutable operation ID <code data-operation-id-value>{{ detail.public_id }}</code><button type="button" class="lt-btn lt-btn--ghost" data-copy-operation-id>Copy ID</button></p>
+      <a href="#activity-audit-log" data-open-shipment-audit>Audit trail</a>
+    </details>
   </div>
 </header>
 {% if private_v2 %}
@@ -65,94 +68,14 @@
 </details>
 {% endif %}
 
-<nav class="sticky top-16 z-20 -mx-1 mb-5 overflow-x-auto rounded-xl border border-slate-200 bg-white/95 px-2 py-2 shadow-sm backdrop-blur" aria-label="Shipment workspace sections" data-shipment-section-nav>
-  <div class="flex min-w-max items-center gap-1">
-    <a href="#shipment-summary" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700">Overview</a>
-    <a href="#operation-workspace" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700">Review{% if private_v2 and unified_v2.available %} · {{ unified_v2.review_workspace.tasks|length }} groups{% elif not private_v2 and processing.terminal and not processing.failed %} · {{ readiness_summary.exception_count }} items{% endif %}</a>
-    <a href="#documents" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700">Documents · {{ detail.document_count }}</a>
-    <a href="#declaration-package" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700">Compliance &amp; package</a>
-    <a href="#activity-audit-log" class="rounded-lg px-3 py-2 text-xs font-bold text-slate-700">Audit trail</a>
-  </div>
+<nav class="lt-shipment-nav" aria-label="Shipment workspace sections" data-shipment-section-nav>
+  <a href="#operation-workspace">Review</a>
+  <a href="#documents">Documents</a>
+  <a href="#declaration-package">Package</a>
 </nav>
 
-<section id="shipment-summary" class="lt-card scroll-mt-36 border border-slate-200 p-4 sm:p-5" data-readiness-summary>
-  <div class="flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700">Shipment overview</p>
-      {% if private_v2 and unified_v2.available %}
-      <h2 class="mt-1 text-lg font-bold text-slate-950">Source-linked review required</h2>
-      <p class="mt-1 text-sm text-slate-600">Review the source-linked actions below; extracted values are not automatically human-approved.</p>
-      {% elif private_v2 %}
-      <h2 class="mt-1 text-lg font-bold text-amber-900">Current V2 evidence unavailable</h2>
-      <p class="mt-1 text-sm text-slate-600">No legacy approval substitutes for an unavailable V2 authority state.</p>
-      {% elif not detail.documents %}
-      <h2 class="mt-1 text-lg font-bold text-slate-950" data-first-value-heading>Add shipment documents to begin</h2>
-      <p class="mt-1 text-sm text-slate-600">Upload an invoice, packing list or supplier evidence to start an evidence-backed review.</p>
-      {% elif not processing.terminal %}
-      <h2 class="mt-1 text-lg font-bold text-slate-950" data-first-value-heading>Analyzing shipment documents</h2>
-      <p class="mt-1 text-sm text-slate-600">Your documents were received. The review queue becomes available when processing finishes.</p>
-      {% elif processing.failed %}
-      <h2 class="mt-1 text-lg font-bold text-amber-900" data-first-value-heading>Document analysis needs attention</h2>
-      <p class="mt-1 text-sm text-slate-600">Processing did not complete. Inspect the processing status before reviewing extracted information.</p>
-      {% else %}
-      <h2 class="mt-1 text-lg font-bold text-slate-950" data-first-value-heading>
-        {% if readiness_summary.exception_count > 0 %}{{ readiness_summary.exception_count }} item{{ '' if readiness_summary.exception_count == 1 else 's' }} need review{% else %}Review available shipment evidence{% endif %}
-      </h2>
-      <p class="mt-1 text-sm text-slate-600">Verify only unresolved information. Every decision stays linked to its source.</p>
-      {% endif %}
-    </div>
-    <span class="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">{% if private_v2 %}Private lab · Filing disabled{% elif not detail.documents %}UPLOAD DOCUMENTS{% elif processing.failed %}NEEDS ATTENTION{% elif not processing.terminal %}PROCESSING{% else %}{{ readiness_summary.overall }}{% endif %}</span>
-  </div>
-  <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3" data-first-value-actions>
-    <div class="flex flex-wrap items-center gap-4 text-xs text-slate-600" data-unified-overview-counts>
-      {% if not private_v2 and not detail.documents %}
-      <span role="status" data-first-value-empty>Evidence required before analysis</span>
-      {% elif not private_v2 and processing.terminal and not processing.failed %}
-      {% elif not private_v2 and not processing.terminal %}
-      <span role="status" data-first-value-processing>Processing in progress · review counts will update</span>
-      {% endif %}
-
-      {% if not private_v2 and processing.terminal and not processing.failed and reused_evidence_summary and reused_evidence_summary.claim_count %}
-      <span><strong class="text-emerald-800">{{ reused_evidence_summary.claim_count }}</strong> verified claims reused</span>
-      {% endif %}
-      {% if private_v2 and unified_v2.available %}
-      <span>Source revision <strong>{{ unified_v2.case.source_set_revision }}</strong></span>
-      {% endif %}
-    </div>
-    {% if not private_v2 and not detail.documents %}
-    <a href="#documents" class="lt-btn lt-btn--primary inline-flex min-h-10 items-center px-4 text-xs font-bold" data-first-value-upload>Add documents</a>
-    {% elif not private_v2 and not processing.terminal %}
-    <span class="inline-flex min-h-10 items-center rounded-lg bg-slate-100 px-4 text-xs font-semibold text-slate-600" role="status" data-first-value-wait>Preparing the review queue…</span>
-    {% elif not private_v2 and processing.failed %}
-    <a href="#processing-status" class="lt-btn lt-btn--secondary inline-flex min-h-10 items-center px-4 text-xs font-bold" data-first-value-issue>View processing issue</a>
-    {% else %}
-    <a href="#review-summary" class="lt-btn lt-btn--primary inline-flex min-h-10 items-center justify-center px-4 text-xs font-bold" data-first-value-cta data-jump-first-review>
-      {% if not private_v2 and readiness_summary.exception_count > 0 %}Review {{ readiness_summary.exception_count }} pending item{{ '' if readiness_summary.exception_count == 1 else 's' }}{% else %}Open evidence review{% endif %}
-    </a>
-    {% endif %}
-  </div>
-  <p class="mt-2 text-[11px] text-slate-500" data-human-filing-boundary>Preparation support only: your authorized team remains responsible for final review and filing. No automatic ACE / LAWGS submission.</p>
-  {% if not private_v2 and processing.terminal and not processing.failed and reused_evidence_summary and reused_evidence_summary.claim_count %}
-  <details class="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-600" data-reuse-memory-summary>
-    <summary class="cursor-pointer font-semibold">View verified supplier evidence · Inspect source</summary>
-    {% if reused_evidence_summary.sources %}
-    {% set source = reused_evidence_summary.sources[0] %}
-    <p class="mt-2">{{ source.supplier_name }} · {{ source.product_name }} · valid until {{ source.valid_until.strftime("%b %d, %Y") }}</p>
-    <a href="/evidence#evidence-{{ source.public_id }}" class="text-emerald-700 underline">Inspect source</a>
-    {% endif %}
-  </details>
-  {% endif %}
-  {% if not private_v2 and processing.terminal and not processing.failed %}
-  <details class="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-600">
-    <summary class="cursor-pointer font-semibold">Detailed preparation status</summary>
-    <div class="mt-3 grid gap-0 lg:grid-cols-3">
-      {% include "us_lacey/fragments/shipment_readiness_status.html" %}
-      {% include "us_lacey/fragments/species_status.html" %}
-      {% include "us_lacey/fragments/country_status.html" %}
-    </div>
-  </details>
-  {% endif %}
-</section>
+{% set summary_oob = false %}
+{% include "us_lacey/fragments/shipment_workspace_summary.html" %}
 
 {# A rejected upload is request-local feedback. Do not mix it with stale analysis
    or a previous processing failure from documents already stored on the operation. #}
@@ -186,7 +109,10 @@
 {% endif %}
 
 {% if not private_v2 and not bulk_upload_rejection and processing.terminal and not processing.failed %}
+<div data-applicability-staging></div>
+<div id="shipment-applicability-slot" data-applicability-package-source>
 {% include "us_lacey/fragments/applicability_triage.html" %}
+</div>
 {% endif %}
 
 <section class="lt-card scroll-mt-36 p-5" id="documents">
@@ -377,6 +303,7 @@
 <script>window.setTimeout(function () { window.location.reload(); }, 8000);</script>
 {% endif %}
 {% if private_v2 %}<script src="{{ url_for('static', path='/js/assurance_v2_case.js') }}" defer></script>{% endif %}
+<script src="{{ url_for('static', path='/js/shipment_workspace.js') }}" defer></script>
 {% include "us_lacey/fragments/source_inspector.html" %}
 <script src="{{ url_for('static', path='/js/us_lacey_source_inspector.js') }}?v=20261016-pdf5" defer></script>
 {% endblock %}

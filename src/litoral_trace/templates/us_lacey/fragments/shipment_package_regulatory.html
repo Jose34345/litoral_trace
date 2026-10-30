@@ -1,0 +1,7 @@
+{% from "components/ui.html" import empty_state %}
+<details id="review-panel-regulatory" class="lt-package-regulatory" data-package-regulatory data-review-tab-panel="regulatory">
+  <summary id="package-regulatory-title">Regulatory Analysis ? preparation requirements</summary>
+  <p class="text-xs text-slate-600">Rule-specific analysis for audit and preparation. It does not represent an overall legal compliance determination.</p>
+  {% if regulatory_assessment %}{% include "us_lacey/fragments/regulatory_assessment_card.html" %}{% else %}{{ empty_state("Regulatory analysis is not available yet", icon="fa-scale-balanced") }}{% endif %}
+  <div data-package-applicability-slot></div>
+</details>

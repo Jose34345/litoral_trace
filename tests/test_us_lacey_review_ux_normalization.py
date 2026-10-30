@@ -138,7 +138,7 @@ def test_merchandise_description_pool_rejects_golden_packet_structural_noise():
     assert groups[0].representative.id == 99
 
 
-def test_exception_first_workspace_has_four_tabs_and_htmx_actions():
+def test_review_filters_and_package_regulatory_preserve_htmx_actions():
     template = Path(
         "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html"
     ).read_text(encoding="utf-8")
@@ -150,12 +150,14 @@ def test_exception_first_workspace_has_four_tabs_and_htmx_actions():
     assert 'data-review-tab-panel="action"' in template
     assert 'data-review-tab-panel="resolved"' in template
     assert 'data-review-tab-panel="confirmed"' in template
-    assert 'data-review-tab-panel="regulatory"' in template
+    regulatory = Path("src/litoral_trace/templates/us_lacey/fragments/shipment_package_regulatory.html").read_text(encoding="utf-8")
+    assert 'data-review-tab-panel="regulatory"' in regulatory
+    assert 'data-review-filter-bar' in template
     assert "Review decisions" not in template
     assert "Confirm value" in template
     assert "Auto-Resolved Data" in template
     assert "Confirmed fields <span" in template
-    assert "Regulatory Analysis" in template
+    assert "Regulatory Analysis" in regulatory
     assert "Confirm Supported Fields" in template
     assert 'hx-target="#operation-workspace"' in template
     assert '/review/actions/fields/' in template
