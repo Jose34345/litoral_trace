@@ -550,3 +550,31 @@ def test_multi_sku_anchor_keeps_literal_quoted_evidence_but_abstains_from_sku():
     bound = bind_line_items((verified,))[0]
     assert bound.line_item_key.startswith("ROW:")
     assert evaluate_verified_candidate_admission((bound,)).admitted_candidates == (bound,)
+
+
+def test_multi_sku_anchor_rejects_quote_cut_from_another_sku_occurrence():
+    """A matching SKU elsewhere in a row cannot validate a suffix-only quote."""
+    from litoral_trace.lacey_engine.sku_identity import has_aligned_source_sku_quote
+
+    source = "SKU ACT-18 SKU OTHER-ACT-18 Species Pinus taeda"
+    quote = "ACT-18 Species Pinus taeda"
+    assert not has_aligned_source_sku_quote("ACT-18", quote, source)
+    original, _ = _verified(source, supplied_sku="ACT-18", table=True)
+    original = replace(original, candidate=replace(original.candidate, source_text=quote))
+    block = LayoutBlock("b1", 1, None, source, "TEXT_LINE", table_id="botanical", row_index=2)
+    resolution = DocumentResolution(
+        "synthetic.pdf", "fixture", EngineDocumentType.SPECIES_DECLARATION,
+        1.0, ParsedLayout((block,), 1), {},
+    )
+    candidate = _verify_candidates((original,), resolutions={original.document_id: resolution})[0]
+    assert candidate.source_sku_identity_blocked
+    assert candidate.source_line_key is None
+    assert not candidate.candidate.evidence_verified
+    assert bind_line_items((candidate,))[0].line_item_key.startswith("ROW:")
+
+
+def test_multi_sku_aligned_quote_keeps_evidence_not_global_identity():
+    from litoral_trace.lacey_engine.sku_identity import has_aligned_source_sku_quote
+    source = "SKU OTHER-ACT-18 SKU ACT-18 Species Pinus taeda"
+    quote = "SKU ACT-18 Species Pinus taeda"
+    assert has_aligned_source_sku_quote("ACT-18", quote, source)
