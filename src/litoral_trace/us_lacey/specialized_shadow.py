@@ -14,7 +14,7 @@ import time
 from typing import Mapping
 from uuid import UUID
 
-from litoral_trace.lacey_engine.sku_identity import has_aligned_source_sku_quote, has_exact_source_identity, has_unsupported_source_sku, is_sku_token, normalize_sku, observed_source_skus
+from litoral_trace.lacey_engine.sku_identity import has_aligned_source_sku_quote, has_complete_source_sku_token, has_exact_source_identity, has_unsupported_source_sku, is_sku_token, observed_source_skus
 from litoral_trace.lacey_engine.ai_providers import AIProviderConfig
 from litoral_trace.lacey_engine.ai_shadow import AICandidate, AIExtractionResult, AIShadowError, verify_ai_evidence
 from litoral_trace.lacey_engine.domain import BoundingBox, DocumentResolution, EvidenceClass
@@ -214,11 +214,9 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
             sidecar_sku
             and not sidecar_sku.isdecimal()
             and is_sku_token(sidecar_sku)
-            and normalize_sku(sidecar_sku) in candidate.source_text.translate(
-                str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-            )
+            and has_complete_source_sku_token(sidecar_sku, candidate.source_text)
         ):
-            quoted_skus.add(normalize_sku(sidecar_sku))
+            quoted_skus.add(sidecar_sku.strip().upper())
         source_sku_identity_blocked = envelope.source_sku_identity_blocked or (
             candidate.evidence_verified
             and any(
