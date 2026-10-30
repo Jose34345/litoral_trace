@@ -647,6 +647,10 @@
 
   {% include "us_lacey/fragments/export_declaration_package.html" %}
 
+  {# Only a current, source-linked dossier is useful in the customer workspace.
+     Preserve non-current availability for diagnostics without presenting empty
+     internal processing details as a customer-facing report. #}
+  {% if engine2_dossier.availability == "CURRENT" %}
   <details id="engine2-dossier" class="lt-card p-6" data-engine2-dossier data-engine2-availability="{{ engine2_dossier.availability }}">
     <summary class="cursor-pointer text-sm font-semibold text-slate-700">Advanced evidence details</summary>
     <div class="mt-4">
@@ -711,8 +715,11 @@
       <p class="mt-5 text-xs text-slate-500">This document-evidence analysis is not a legal compliance determination; the human-reviewed preparation record remains authoritative. Litoral Trace does not submit this operation to ACE or LAWGS.</p>
     </div>
   </details>
+  {% else %}
+  <span hidden data-engine2-not-current data-engine2-availability="{{ engine2_dossier.availability }}"></span>
+  {% endif %}
 
-  <p class="px-1 text-[11px] text-slate-500">Preparation only · No automatic submission to ACE or LAWGS.</p>
+  <p class="px-1 text-[11px] text-slate-500">Preparation only · No automatic submission to ACE or LAWGS. This is not a legal compliance determination.</p>
 </div>
 
 <script>
