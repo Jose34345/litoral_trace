@@ -205,28 +205,32 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
         checked = verify_ai_evidence(engine2=resolution, ai=singleton)
         candidate = checked.candidates[0]
         anchors = _identity_source_anchors(envelope, resolution=resolution, candidate=candidate)
+        quoted_skus = observed_source_skus(candidate.source_text)
         source_sku_identity_blocked = envelope.source_sku_identity_blocked or (
             candidate.evidence_verified
             and any(
                 has_unsupported_source_sku(text)
                 or len(observed_source_skus(text)) > 1
+                or (
+                    bool(quoted_skus)
+                    and bool(observed_source_skus(text))
+                    and not quoted_skus.issubset(observed_source_skus(text))
+                )
                 for text in anchors
             )
         )
-        quoted_skus = observed_source_skus(candidate.source_text)
-        if candidate.evidence_verified and len(quoted_skus) == 1:
-            quoted_sku = next(iter(quoted_skus))
+        if candidate.evidence_verified and quoted_skus:
             if not anchors or not all(
-                has_aligned_source_sku_quote(quoted_sku, candidate.source_text, text)
-                and (
-                    len(observed_source_skus(text)) > 1
-                    or has_exact_source_identity(quoted_sku, text)
+                all(
+                    has_aligned_source_sku_quote(sku, candidate.source_text, text)
+                    for sku in quoted_skus
                 )
                 for text in anchors
             ):
-                # Never admit an altered partial SKU. In a verified source with
-                # multiple contradictory SKU labels, a literal bounded token
-                # remains evidence but cannot grant packet-global line identity.
+                # A cited SKU must be a complete token at its quoted occurrence.
+                # Global source identity is checked separately: a contradictory
+                # or unsupported source SKU preserves valid literal evidence but
+                # forces a row-local identity and forbids global SKU binding.
                 candidate = replace(candidate, evidence_verified=False)
         line_key, table_id, row_index = _verified_row_sidecar(
             envelope,
