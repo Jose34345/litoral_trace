@@ -638,3 +638,28 @@ def test_multi_and_unsupported_source_sku_preserve_only_aligned_literal_quote(
     assert bound.line_item_key.startswith("ROW:")
     admitted = evaluate_verified_candidate_admission((bound,)).admitted_candidates
     assert admitted == ((bound,) if evidence_ok else ())
+
+
+@pytest.mark.parametrize("source,expected", [
+    ("SKU ABC123 Species Pinus taeda", True),
+    ("SKU ABC123 Legacy OTHER-ABC123 Species Pinus taeda", False),
+])
+def test_alphanumeric_sidecar_quote_needs_original_token_boundaries(source, expected):
+    """ABC123 in an unsupported longer alias cannot be cited as global ABC123."""
+    quote = "ABC123 Species Pinus taeda"
+    original, _ = _verified(source, supplied_sku="ABC123", table=True)
+    original = replace(original, candidate=replace(original.candidate, source_text=quote))
+    block = LayoutBlock("b1", 1, None, source, "TEXT_LINE", table_id="botanical", row_index=2)
+    resolution = DocumentResolution(
+        "synthetic.pdf", "fixture", EngineDocumentType.SPECIES_DECLARATION,
+        1.0, ParsedLayout((block,), 1), {},
+    )
+    checked = _verify_candidates((original,), resolutions={original.document_id: resolution})[0]
+    assert checked.candidate.evidence_verified is expected
+    bound = bind_line_items((checked,))[0]
+    admitted = evaluate_verified_candidate_admission((bound,)).admitted_candidates
+    if expected:
+        assert bound.line_item_key == "SKU:ABC123"
+        assert admitted == (bound,)
+    else:
+        assert bound not in admitted
