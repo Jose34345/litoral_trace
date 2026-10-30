@@ -578,3 +578,24 @@ def test_multi_sku_aligned_quote_keeps_evidence_not_global_identity():
     source = "SKU OTHER-ACT-18 SKU ACT-18 Species Pinus taeda"
     quote = "SKU ACT-18 Species Pinus taeda"
     assert has_aligned_source_sku_quote("ACT-18", quote, source)
+
+
+def test_single_source_sku_cannot_validate_quote_from_longer_legacy_alias():
+    """A real SKU elsewhere in the anchor must not endorse a sliced alias."""
+    from litoral_trace.lacey_engine.sku_identity import has_aligned_source_sku_quote
+
+    source = "SKU ACT-18 Legacy OTHER-ACT-18 Species Pinus taeda"
+    quote = "ACT-18 Species Pinus taeda"
+    assert not has_aligned_source_sku_quote("ACT-18", quote, source)
+    original, _ = _verified(source, supplied_sku="ACT-18", table=True)
+    original = replace(original, candidate=replace(original.candidate, source_text=quote))
+    block = LayoutBlock("b1", 1, None, source, "TEXT_LINE", table_id="botanical", row_index=2)
+    resolution = DocumentResolution(
+        "synthetic.pdf", "fixture", EngineDocumentType.SPECIES_DECLARATION,
+        1.0, ParsedLayout((block,), 1), {},
+    )
+    checked = _verify_candidates((original,), resolutions={original.document_id: resolution})[0]
+    assert not checked.candidate.evidence_verified
+    assert checked.candidate.source_text == quote
+    bound = bind_line_items((checked,))[0]
+    assert checked not in evaluate_verified_candidate_admission((bound,)).admitted_candidates
