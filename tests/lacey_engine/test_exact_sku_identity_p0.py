@@ -458,3 +458,70 @@ def test_verified_negative_identity_metadata_survives_payload_and_cache_roundtri
     assert bind_line_items((rebound,))[0].line_item_key.startswith("FP:")
     payload["candidates"][0]["source_sku_identity_blocked"] = "false"
     assert _rehydrate_cached_run((payload,), documents=(document,), computation_fingerprint="synthetic") is None
+
+
+@pytest.mark.parametrize("table", [False, True])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_two_explicit_contradictory_source_skus_cannot_reconcile_to_other_product(table, reverse):
+    """A verified contradictory row must not become a global SKU by matching descriptions."""
+    value = "Solid wood tray"
+    candidates = []
+    for document, raw in [
+        (1, "SKU ACT-18 SKU OTHER-ACT-18 Description Solid wood tray"),
+        (2, "SKU OTHER-ACT-18 Description Solid wood tray"),
+    ]:
+        original, _ = _verified(raw, supplied_sku="OTHER-ACT-18", table=table, document=document)
+        original = replace(
+            original, document_type=DocumentType.COMMERCIAL_INVOICE,
+            specialist=SpecialistRole.COMMERCIAL_LINES,
+            candidate=replace(original.candidate, field_key="description", value=value, normalized_value=value),
+        )
+        block = LayoutBlock(
+            "b1", 1, None, raw, "TEXT_LINE",
+            table_id="botanical" if table else None,
+            row_index=2 if table else None,
+        )
+        resolution = DocumentResolution(
+            "synthetic.pdf", "fixture", EngineDocumentType.COMMERCIAL_INVOICE,
+            1.0, ParsedLayout((block,), 1), {},
+        )
+        verified = _verify_candidates((original,), resolutions={original.document_id: resolution})[0]
+        assert verified.candidate.evidence_verified
+        candidates.append(verified)
+    if reverse:
+        candidates.reverse()
+    bound = bind_line_items(tuple(candidates))
+    conflicting = next(item for item in bound if item.document_id == UUID(int=1))
+    other = next(item for item in bound if item.document_id == UUID(int=2))
+    assert conflicting.source_sku_identity_blocked
+    assert conflicting.source_line_key is None
+    assert conflicting.line_item_key.startswith("ROW:" if table else "FP:")
+    assert other.line_item_key == "SKU:OTHER-ACT-18"
+    admission = evaluate_verified_candidate_admission(bound)
+    assert other in admission.admitted_candidates
+    assert (conflicting in admission.admitted_candidates) is table
+    if table:
+        assert len(fuse_candidates(admission.admitted_candidates).fused_candidates) == 2
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_taxonomy_match_alone_never_supplies_an_unbound_commercial_sku(reverse):
+    """Chair and tray may share Pinus taeda, but not a product identity."""
+    chair, _ = _verified("Description Solid wood chair with Pinus taeda", document=1, table=True)
+    chair = replace(
+        chair, source_line_key=None, document_type=DocumentType.COMMERCIAL_INVOICE,
+        specialist=SpecialistRole.COMMERCIAL_LINES,
+        candidate=replace(
+            chair.candidate, field_key="description",
+            value="Solid wood chair with Pinus taeda",
+            normalized_value="Solid wood chair with Pinus taeda",
+        ),
+    )
+    genus = _verified("SKU ACT-TRAY-18 Genus Pinus", document=2)[1]
+    genus = replace(genus, candidate=replace(genus.candidate, field_key="genus", value="Pinus", normalized_value="Pinus"))
+    species = _verified("SKU ACT-TRAY-18 Species taeda", document=2)[1]
+    items = (chair, genus, species)
+    bound = bind_line_items(tuple(reversed(items)) if reverse else items)
+    chair_bound = next(item for item in bound if item.document_id == UUID(int=1))
+    assert chair_bound.line_item_key.startswith("ROW:")
+    assert {item.line_item_key for item in bound if item.document_id == UUID(int=2)} == {"SKU:ACT-TRAY-18"}
