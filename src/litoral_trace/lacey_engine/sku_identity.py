@@ -89,6 +89,51 @@ def has_complete_source_sku_token(identity: str, text: str) -> bool:
 
 
 
+
+def has_aligned_source_sku_quote(identity: str, quote: str, source: str) -> bool:
+    """Require the exact SKU token at the literal occurrence quoted in source.
+
+    Finding an independent occurrence of the SKU elsewhere in a source row is
+    insufficient: a quote may begin inside a longer contradictory SKU token.
+    This verifies literal provenance only; it never authorizes global identity.
+    """
+    token = identity.strip()
+    if not is_sku_token(token) or not token:
+        return False
+    quote_text = " ".join(quote.split())
+    source_text = " ".join(source.split())
+    if not quote_text or not source_text:
+        return False
+    ascii_upper = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    needle = quote_text.translate(ascii_upper)
+    haystack = source_text.translate(ascii_upper)
+    sku = token.translate(ascii_upper)
+    delimiters = frozenset(" :;,()[]{}")
+
+    quote_start = 0
+    while True:
+        q = needle.find(sku, quote_start)
+        if q < 0:
+            return False
+        q_end = q + len(sku)
+        if (q == 0 or needle[q - 1] in delimiters) and (
+            q_end == len(needle) or needle[q_end] in delimiters
+        ):
+            source_start = 0
+            while True:
+                occurrence = haystack.find(needle, source_start)
+                if occurrence < 0:
+                    break
+                start, end = occurrence + q, occurrence + q_end
+                if (start == 0 or haystack[start - 1] in delimiters) and (
+                    end == len(haystack) or haystack[end] in delimiters
+                ):
+                    return True
+                source_start = occurrence + 1
+        quote_start = q + 1
+
+
+
 def has_exact_source_identity(identity: str, text: str) -> bool:
     """Require a complete token, and reject contradictory explicit source SKUs.
 
