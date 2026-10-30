@@ -525,3 +525,28 @@ def test_taxonomy_match_alone_never_supplies_an_unbound_commercial_sku(reverse):
     chair_bound = next(item for item in bound if item.document_id == UUID(int=1))
     assert chair_bound.line_item_key.startswith("ROW:")
     assert {item.line_item_key for item in bound if item.document_id == UUID(int=2)} == {"SKU:ACT-TRAY-18"}
+
+
+def test_multi_sku_anchor_keeps_literal_quoted_evidence_but_abstains_from_sku():
+    """Preserve the source claim; reject only its ambiguous product identity."""
+    from litoral_trace.lacey_engine.sku_identity import has_complete_source_sku_token
+
+    full = "SKU OTHER-ACT-18 SKU ACT-18 Species Pinus taeda"
+    quote = "SKU ACT-18 Species Pinus taeda"
+    assert has_complete_source_sku_token("ACT-18", full)
+    assert not has_complete_source_sku_token("ACT-18", "SKU OTHER-ACT-18 Species Pinus taeda")
+    original, _ = _verified(full, supplied_sku="ACT-18", table=True)
+    original = replace(original, candidate=replace(original.candidate, source_text=quote))
+    block = LayoutBlock("b1", 1, None, full, "TEXT_LINE", table_id="botanical", row_index=2)
+    resolution = DocumentResolution(
+        "synthetic.pdf", "fixture", EngineDocumentType.SPECIES_DECLARATION,
+        1.0, ParsedLayout((block,), 1), {},
+    )
+    verified = _verify_candidates((original,), resolutions={original.document_id: resolution})[0]
+    assert verified.candidate.evidence_verified
+    assert verified.candidate.source_text == quote
+    assert verified.source_sku_identity_blocked
+    assert verified.source_line_key is None
+    bound = bind_line_items((verified,))[0]
+    assert bound.line_item_key.startswith("ROW:")
+    assert evaluate_verified_candidate_admission((bound,)).admitted_candidates == (bound,)
