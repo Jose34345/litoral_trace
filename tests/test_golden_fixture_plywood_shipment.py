@@ -174,6 +174,24 @@ def test_golden_fixture_complete_shipment_is_exception_first(monkeypatch):
     assert special_assessments
     assert all(item.get("status") != "FAIL" for item in special_assessments)
 
+    # Issue 473: the complete three-source worker path must preserve separate
+    # party components even when Engine 2 abstains on the XLSX source. These are
+    # proposals, never automatic human decisions or independent filing authority.
+    by_name = {field.field_name: field for field in detail.fields if field.scope == "SHIPMENT"}
+    expected_documentary_values = {
+        "consignee_name": "Atlantic Home Goods Distribution Inc.",
+        "consignee_address": "825 Portside Logistics Pkwy., Pooler, GA 31322, United States",
+        "merchandise_description": "Sawn wood boards, wooden shipping crates, and solid-wood dining chairs.",
+    }
+    for name, expected in expected_documentary_values.items():
+        field = by_name[name]
+        assert field.effective_value == expected
+        assert field.source_assurance_document_id is not None
+        assert field.source_locator
+        assert field.reviewed_by_user_id is None
+        assert field.reviewed_at is None
+        assert not any(candidate.decision == "SELECTED" for candidate in field.candidates)
+
     # Acceptance gate 4: only true missing/conflicting fields reach Action Required.
     action_required = [
         field

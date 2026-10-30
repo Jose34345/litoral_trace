@@ -30,6 +30,7 @@ from litoral_trace.db.models import (
     UsLaceySourceSetRevision,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.lacey_engine.documentary_review_rows import documentary_review_rows
 from litoral_trace.us_lacey.candidate_normalization import (
     TaxonomicComparisonContext,
     candidate_comparison_key,
@@ -1330,6 +1331,7 @@ def project_assurance_document_to_us_lacey(
             )
             .order_by(ExtractedDocumentField.id.asc())
         ).all()
+        extracted = documentary_review_rows(extracted)
         table_header_sets: dict[int, set[str]] = {}
         for row in extracted:
             match = _RAW_TABLE_FIELD.match(str(row.field_name or ""))
