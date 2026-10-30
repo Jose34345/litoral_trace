@@ -62,13 +62,17 @@ def test_shipment_workspace_is_readiness_first_and_upload_is_modal() -> None:
     assert "lt-upload-dropzone" not in template
 
 
-def test_exception_review_is_matrix_based_and_auditable() -> None:
+def test_exception_review_is_task_based_and_auditable() -> None:
     template = (
         TEMPLATES / "us_lacey" / "fragments" / "operation_workspace.html"
     ).read_text(encoding="utf-8")
     assert "Exception work queue" in template
-    for column in ("Field", "Proposed value", "Evidence", "Status", "Decision"):
-        assert column in template
+    task_fragment = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/exception_task_queue.html").read_text(encoding="utf-8")
+    assert "exception_task_queue.html" in template
+    assert "data-exception-task" in task_fragment
+    assert "data-task-category" in task_fragment
+    assert "data-review-field" in template
+    assert "data-source-inspect" in template
     for action in ("Accept", "Enter verified value", "Request evidence", "Mark not applicable"):
         assert action in template
     assert "Resolved by Litoral Trace" in template
