@@ -599,3 +599,42 @@ def test_single_source_sku_cannot_validate_quote_from_longer_legacy_alias():
     assert checked.candidate.source_text == quote
     bound = bind_line_items((checked,))[0]
     assert bound not in evaluate_verified_candidate_admission((bound,)).admitted_candidates
+
+
+@pytest.mark.parametrize("source,quote,evidence_ok", [
+    (
+        "SKU ACT#18 Legacy ACT-18 Species Pinus taeda",
+        "ACT-18 Species Pinus taeda",
+        True,
+    ),
+    (
+        "SKU OTHER-ACT-18 Legacy ACT-18 Species Pinus taeda",
+        "ACT-18 Species Pinus taeda",
+        True,
+    ),
+    (
+        "SKU OTHER-ACT-18 SKU BCT-19 Species Pinus taeda",
+        "ACT-18 SKU BCT-19 Species Pinus taeda",
+        False,
+    ),
+])
+def test_multi_and_unsupported_source_sku_preserve_only_aligned_literal_quote(
+    source, quote, evidence_ok,
+):
+    """Keep real citations, reject clipped aliases, always abstain from global SKU."""
+    original, _ = _verified(source, supplied_sku="ACT-18", table=True)
+    original = replace(original, candidate=replace(original.candidate, source_text=quote))
+    block = LayoutBlock("b1", 1, None, source, "TEXT_LINE", table_id="botanical", row_index=2)
+    resolution = DocumentResolution(
+        "synthetic.pdf", "fixture", EngineDocumentType.SPECIES_DECLARATION,
+        1.0, ParsedLayout((block,), 1), {},
+    )
+    checked = _verify_candidates((original,), resolutions={original.document_id: resolution})[0]
+    assert checked.source_sku_identity_blocked
+    assert checked.source_line_key is None
+    assert checked.candidate.evidence_verified is evidence_ok
+    assert checked.candidate.source_text == quote
+    bound = bind_line_items((checked,))[0]
+    assert bound.line_item_key.startswith("ROW:")
+    admitted = evaluate_verified_candidate_admission((bound,)).admitted_candidates
+    assert admitted == ((bound,) if evidence_ok else ())
