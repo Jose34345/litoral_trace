@@ -62,14 +62,18 @@ def test_operations_is_command_center_and_upload_is_compact() -> None:
     assert 'name="documents"' in intake
 
 
-def test_review_workspace_uses_matrix_auditability_and_reuse_memory() -> None:
+def test_review_workspace_uses_tasks_auditability_and_reuse_memory() -> None:
     source = (
         TEMPLATES / "us_lacey" / "fragments" / "operation_workspace.html"
     ).read_text(encoding="utf-8")
     assert "lt-enterprise-review" in source
     assert "Exception work queue" in source
-    for column in ("Proposed value", "Evidence", "Status", "Decision"):
-        assert column in source
+    task_fragment = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/exception_task_queue.html").read_text(encoding="utf-8")
+    assert "exception_task_queue.html" in source
+    assert "data-exception-task" in task_fragment
+    assert "data-task-category" in task_fragment
+    assert "data-review-field" in source
+    assert "data-source-inspect" in source
     for action in ("Accept", "Override", "Request evidence", "Mark not applicable"):
         assert action in source
     assert "Resolved by Litoral Trace" in source

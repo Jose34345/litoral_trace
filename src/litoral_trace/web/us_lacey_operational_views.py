@@ -18,6 +18,7 @@ from litoral_trace.us_lacey.ppq505 import (
     canonical_ppq_value_key,
 )
 from litoral_trace.us_lacey.quick_review_eligibility import quick_accept_eligible
+from litoral_trace.us_lacey.exception_task_queue import exception_task_groups
 from litoral_trace.us_lacey.document_evidence_class import classify_document
 from litoral_trace.us_lacey.regulatory.applicability.triage import preview_applicability
 from litoral_trace.us_lacey.product_intelligence_snapshot import (
@@ -1099,6 +1100,10 @@ def render_operation_detail(*, request, identity, entitlement=None, detail, engi
         quick_accept_eligible=quick_accept_eligible,
         source_class_for_filename=_source_class_for_detail(detail),
         article_original_contexts=contexts_for_detail(detail),
+        exception_task_groups=exception_task_groups(
+            attention_fields, source_class=_source_class_for_detail(detail),
+            article_contexts=contexts_for_detail(detail),
+        ),
         alias_csrf=alias_csrf,
         retry_csrf=retry_csrf,
         reprocess_csrf=reprocess_csrf,
@@ -1206,6 +1211,10 @@ def render_operation_workspace(*, request, identity, detail, engine2_dossier, co
         quick_accept_eligible=quick_accept_eligible,
         source_class_for_filename=_source_class_for_detail(detail),
         article_original_contexts=contexts_for_detail(detail),
+        exception_task_groups=exception_task_groups(
+            attention_fields, source_class=_source_class_for_detail(detail),
+            article_contexts=contexts_for_detail(detail),
+        ),
         field_errors=dict(field_errors or {}),
         field_input_values=dict(field_input_values or {}),
         attention_fields=attention_fields,

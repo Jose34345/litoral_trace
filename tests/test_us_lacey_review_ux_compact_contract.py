@@ -22,7 +22,15 @@ def test_one_entry_type_control_never_renders_unbounded_alternative_list():
 
 
 def test_review_is_primary_navigation_and_advanced_attestation_is_progressive():
-    assert OP.index('id="shipment-summary"') < OP.index('id="processing-status"') < OP.index('fragments/applicability_triage.html')
+    # The compact summary is an include; applicability is moved into Package by
+    # the existing shell script while its evidence-backed form remains intact.
+    assert OP.index('fragments/shipment_workspace_summary.html') < OP.index('id="processing-status"')
+    assert 'href="#operation-workspace"' in OP and 'href="#declaration-package"' in OP
+    regulatory = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/shipment_package_regulatory.html").read_text(encoding="utf-8")
+    shell = (ROOT / "src/litoral_trace/static/js/shipment_workspace.js").read_text(encoding="utf-8")
+    assert 'data-package-applicability-slot' in regulatory
+    assert 'slot.append(source)' in shell
+    assert 'fragments/applicability_triage.html' in OP
     assert 'data-applicability-authorized-review' in APP
     assert 'class="lt-attestation-details"' in APP
     assert 'Record an evidence-backed determination' in APP

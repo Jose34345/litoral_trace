@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import re
 from types import SimpleNamespace
 
 from litoral_trace.web import shipment_v2_unified as unified
@@ -79,7 +80,7 @@ def test_unavailable_v2_authority_never_falls_back_to_legacy(monkeypatch):
     assert "fragments/assurance_unified_actions.html" in markup
 
 
-def test_single_review_surface_and_five_navigation_regions():
+def test_single_review_surface_three_primary_sections_and_secondary_audit():
     op = OP_TEMPLATE.read_text(encoding="utf-8")
     v2 = V2_TEMPLATE.read_text(encoding="utf-8")
     actions = SHARED.read_text(encoding="utf-8")
@@ -90,11 +91,16 @@ def test_single_review_surface_and_five_navigation_regions():
     assert 'data-batch-review' in actions
     assert 'class="identity-form"' in actions
     assert 'name="explicit_confirmation"' in actions
-    for route in ("#shipment-summary", "#operation-workspace", "#documents",
-                  "#declaration-package", "#activity-audit-log"):
-        assert route in op
+    nav = re.search(r"<nav[^>]*data-shipment-section-nav.*?</nav>", op, re.S).group()
+    assert re.findall(r'href="([^"]+)"', nav) == [
+        "#operation-workspace", "#documents", "#declaration-package",
+    ]
+    assert 'href="#activity-audit-log"' in op
+    summary = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/shipment_workspace_summary.html").read_text(encoding="utf-8")
+    assert 'shipment_workspace_summary.html' in op
+    assert 'id="shipment-summary"' in summary  # legacy destination remains available
     assert 'data-private-v2-boundary' in op
-    assert 'data-unified-overview-counts' in op
+    assert 'data-unified-overview-counts' in summary
     assert 'data-v2-compliance-package' in op
     assert 'data-unified-audit' in op
     assert 'data-secondary-reprocess' in op

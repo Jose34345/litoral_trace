@@ -1,28 +1,35 @@
 """Market-backed first-value P0: present truthful source-linked work, never filing authority."""
 from pathlib import Path
+
+import pytest
 from jinja2 import Environment
+from tests.test_us_lacey_p0_processing_first_value import _render_summary
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = (ROOT / "src/litoral_trace/templates/us_lacey/operation_detail.html").read_text(encoding="utf-8")
 
 
-def test_first_value_surface_uses_live_pending_count_not_a_demo_literal():
-    assert 'data-first-value-heading' in TEMPLATE
-    assert 'readiness_summary.exception_count' in TEMPLATE
-    assert 'data-first-value-cta' in TEMPLATE
+@pytest.mark.parametrize("pending", [0, 1, 9, 73])
+def test_first_value_surface_uses_live_pending_count_not_a_demo_literal(pending):
+    rendered = _render_summary(pending=pending, reused_claim_count=3)
+    assert 'shipment_workspace_summary.html' in TEMPLATE
+    assert 'data-first-value-heading' in rendered
+    assert f'data-workspace-count="pending">{pending}<' in rendered
+    assert 'data-first-value-cta' in rendered
+    assert 'href="#review-summary"' in rendered
     assert 'href="#operation-workspace"' in TEMPLATE
-    assert 'item{{' in TEMPLATE
-    assert "4 items need your review" not in TEMPLATE
-    assert 'verified claims reused' in TEMPLATE
-    assert 'reused_evidence_summary.claim_count' in TEMPLATE
+    assert "4 items need your review" not in rendered
+    assert '3 verified claims reused' in rendered
+    assert 'href="/evidence"' in rendered
 
 
 def test_source_claim_authority_and_filing_boundary_remain_visible():
-    assert 'data-human-filing-boundary' in TEMPLATE
-    assert 'No automatic ACE / LAWGS submission.' in TEMPLATE
-    assert 'source documents' in TEMPLATE
-    assert 'data-readiness-summary' in TEMPLATE
-    assert 'readiness_summary.overall' in TEMPLATE
+    rendered = _render_summary()
+    assert 'data-human-filing-boundary' in rendered
+    assert 'No automatic ACE / LAWGS submission.' in rendered
+    assert 'source documents' in rendered
+    assert 'data-readiness-summary' in rendered
+    assert 'NOT READY' in rendered
     assert 'data-private-v2-boundary' in TEMPLATE
 
 
