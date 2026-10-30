@@ -20,6 +20,7 @@ from .domain import (
 )
 from .errors import LaceyEngineError, UnsupportedDocumentDomainError
 from .layout_parser import parse_layout
+from .party_source import complete_party_source
 from .ranking import resolve
 from .segmentation import (
     classify_pdf_first_page_domain,
@@ -33,7 +34,7 @@ from .semantic_graph import (
     valid_mid_value,
 )
 
-ENGINE_VERSION = "lacey-engine-2.6.3"
+ENGINE_VERSION = "lacey-engine-2.6.4"
 _FIELDS = (
     "estimated_arrival_date",
     "bill_of_lading",
@@ -62,7 +63,7 @@ _FIELDS = (
     "percent_recycled",
 )
 _MERCHANDISE_DESCRIPTION_LABEL = re.compile(
-    r"(?:merchandise description|commodity description|cargo description(?:\s+\d+)?|description of goods|goods description)",
+    r"(?:description of merchandise|merchandise description|commodity description|cargo description(?:\s+\d+)?|description of goods|goods description)",
     re.I,
 )
 _IMPORTER_NAME_LABEL = re.compile(r"(?:importer|importer name|importer of record|importer of record name)", re.I)
@@ -238,7 +239,8 @@ def _plant_quantity_row_keys(layout, table_ids: frozenset[str]) -> frozenset[tup
     return frozenset(rows)
 
 
-def _append_party(found, *, target: str, address_target: str, value: str, block, label: str) -> None:
+def _append_party(found, *, target: str, address_target: str, value: str, block, label: str, layout) -> None:
+    value, block = complete_party_source(layout, block, label=label, value=value)
     name = party_core(value)
     if name and _valid_party_candidate(name):
         found[target].append(_candidate(target, name, block, label))
@@ -279,6 +281,7 @@ _INLINE_LABELED_FIELDS: tuple[tuple[str, str], ...] = tuple(
             ("currency", "Currency"),
             ("article / component", "Article / Component"),
             ("product name", "Merchandise Description"),
+            ("description of merchandise", "Description of Merchandise"),
             ("importer address", "Importer Address"),
             ("consignee address", "Consignee Address"),
             ("importer name", "Importer"),
@@ -382,8 +385,8 @@ def _extract(layout):
             elif re.fullmatch(r"(?:current )?container(?: number| no\.?)?", lower):
                 found["container_number"].append(_candidate("container_number", value.upper(), block, key))
             elif lower == "importer of record / consignee":
-                _append_party(found, target="importer_name", address_target="importer_address", value=value, block=block, label="Importer")
-                _append_party(found, target="consignee_name", address_target="consignee_address", value=value, block=block, label="Consignee")
+                _append_party(found, target="importer_name", address_target="importer_address", value=value, block=block, layout=layout, label="Importer")
+                _append_party(found, target="consignee_name", address_target="consignee_address", value=value, block=block, layout=layout, label="Consignee")
             elif lower in {"supplier / manufacturer", "manufacturer / supplier"}:
                 # This is a shared explicit legal name, not an importer address.
                 name = party_core(value)
@@ -391,11 +394,11 @@ def _extract(layout):
                     found["supplier_name"].append(_candidate("supplier_name", name, block, "Supplier"))
                     found["manufacturer_name"].append(_candidate("manufacturer_name", name, block, "Manufacturer"))
             elif _IMPORTER_NAME_LABEL.fullmatch(key) and "address" not in lower:
-                _append_party(found, target="importer_name", address_target="importer_address", value=value, block=block, label=key)
+                _append_party(found, target="importer_name", address_target="importer_address", value=value, block=block, layout=layout, label=key)
             elif re.fullmatch(r"importer(?:'s)? address|importer address", lower):
                 found["importer_address"].append(_candidate("importer_address", value, block, key))
             elif _CONSIGNEE_NAME_LABEL.fullmatch(key) and "address" not in lower:
-                _append_party(found, target="consignee_name", address_target="consignee_address", value=value, block=block, label=key)
+                _append_party(found, target="consignee_name", address_target="consignee_address", value=value, block=block, layout=layout, label=key)
             elif re.fullmatch(r"consignee(?:'s)? address|consignee address", lower):
                 found["consignee_address"].append(_candidate("consignee_address", value, block, key))
             elif _COUNTRY_OF_ORIGIN_LABEL.fullmatch(key):

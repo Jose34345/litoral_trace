@@ -5,7 +5,7 @@ from .garbage_patterns import is_label_garbage
 
 _CONTAINER = re.compile(r"^[A-Z]{4}\d{7}$")
 _MERCHANDISE_DESCRIPTION_LABEL = re.compile(
-    r"(?:merchandise description|commodity description|cargo description(?:\s+\d+)?|description of goods|goods description)",
+    r"(?:description of merchandise|merchandise description|commodity description|cargo description(?:\s+\d+)?|description of goods|goods description)",
     re.I,
 )
 

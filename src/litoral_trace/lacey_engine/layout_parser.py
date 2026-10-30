@@ -1,6 +1,7 @@
 """One-pass layout extraction that retains PDF coordinates and table relationships."""
 from __future__ import annotations
 
+from dataclasses import replace
 from io import BytesIO
 from pathlib import PurePath
 
@@ -221,13 +222,28 @@ def _pdf_layout(content: bytes) -> ParsedLayout:
                     if text:
                         blocks.append(LayoutBlock(f"p{page_number}-w{word_number}", page_number, _bbox(word), text, "WORD"))
                 for table_number, table in enumerate(page.find_tables() or [], start=1):
-                    blocks.extend(
-                        _table_blocks(
-                            page_number=page_number,
-                            table_number=table_number,
-                            rows=table.extract() or [],
-                        )
+                    rows = table.extract() or []
+                    table_blocks = _table_blocks(
+                        page_number=page_number, table_number=table_number, rows=rows,
                     )
+                    # A complete key/value cell and its wrapped visual lines are
+                    # two renderings of one physical source. Retain row geometry
+                    # so extraction can prove that relationship, never by prefix
+                    # similarity across unrelated rows or pages.
+                    physical_rows = [
+                        row for cells, row in zip(rows, getattr(table, "rows", ()))
+                        if any(_text(cell) for cell in (cells or []))
+                    ]
+                    for block in table_blocks:
+                        if (
+                            block.structure_type is LayoutStructureType.KEY_VALUE_TABLE
+                            and block.row_index is not None
+                            and block.row_index < len(physical_rows)
+                        ):
+                            block = replace(
+                                block, bbox=BoundingBox(*physical_rows[block.row_index].bbox),
+                            )
+                        blocks.append(block)
                 # Mixed PDFs need OCR only for pages without digital layout.
                 if len(blocks) == page_start:
                     blocks.extend(_ocr_blocks(content, {page_number}))
