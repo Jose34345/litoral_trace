@@ -206,7 +206,12 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
         candidate = checked.candidates[0]
         anchors = _identity_source_anchors(envelope, resolution=resolution, candidate=candidate)
         source_sku_identity_blocked = envelope.source_sku_identity_blocked or (
-            candidate.evidence_verified and any(has_unsupported_source_sku(text) for text in anchors)
+            candidate.evidence_verified
+            and any(
+                has_unsupported_source_sku(text)
+                or len(observed_source_skus(text)) > 1
+                for text in anchors
+            )
         )
         quoted_skus = observed_source_skus(candidate.source_text)
         if candidate.evidence_verified and len(quoted_skus) == 1:
