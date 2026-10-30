@@ -217,10 +217,10 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
         if candidate.evidence_verified and len(quoted_skus) == 1:
             quoted_sku = next(iter(quoted_skus))
             if not anchors or not all(
-                (
-                    has_aligned_source_sku_quote(quoted_sku, candidate.source_text, text)
-                    if len(observed_source_skus(text)) > 1
-                    else has_exact_source_identity(quoted_sku, text)
+                has_aligned_source_sku_quote(quoted_sku, candidate.source_text, text)
+                and (
+                    len(observed_source_skus(text)) > 1
+                    or has_exact_source_identity(quoted_sku, text)
                 )
                 for text in anchors
             ):
