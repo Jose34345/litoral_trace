@@ -1,0 +1,36 @@
+/* Operation-local exception task presentation; no review authority lives here. */
+.lt-task-category { min-width:0; display:grid; gap:12px; }
+.lt-task-category__title { font-size:13px; font-weight:750; color:#334155; display:flex; flex-wrap:wrap; gap:8px; }
+.lt-task-category__title span,.lt-exception-task h4 span { font-size:11px; font-weight:500; color:#64748b; }
+.lt-exception-task { min-width:0; border:1px solid #dbe3ec; border-radius:12px; background:white; overflow-wrap:anywhere; padding:14px; }
+.lt-exception-task__header h4 { font-size:14px; font-weight:750; color:#0f172a; }
+.lt-exception-task__header p,.lt-task-preview p { margin:5px 0; font-size:12px; line-height:1.5; color:#475569; }
+.lt-task-owner { color:#64748b; }
+.lt-task-preview { margin:12px 0; padding:9px 12px; border-radius:8px; background:#f8fafc; }
+.lt-task-preview span { display:block; color:#64748b; font-size:11px; }
+.lt-exception-field { min-width:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:10px 16px; padding:12px 0; border-top:1px solid #f1f5f9; }
+.lt-exception-field__part { min-width:0; }
+.lt-exception-field__part:nth-child(3) { grid-column:1 / -1; grid-row:3; }
+.lt-exception-field__part:nth-child(4) { grid-column:1; grid-row:2; }
+.lt-exception-field__part:nth-child(5) { grid-column:2; grid-row:2; }
+.lt-exception-field__actions { display:flex; flex-wrap:wrap; gap:8px; align-items:start; }
+.lt-task-secondary { flex-basis:100%; }
+.lt-task-secondary summary,.lt-task-evidence summary { cursor:pointer; color:#047857; font-size:12px; font-weight:650; }
+.lt-task-secondary[open] { display:flex; flex-wrap:wrap; gap:8px; }
+.lt-task-secondary[open] summary { margin-bottom:8px; }
+.lt-task-fields { margin-top:12px; }
+.lt-task-expand { display:inline-block; cursor:pointer; font-size:12px; font-weight:700; color:#047857; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; }
+.lt-task-expand--primary { color:white; background:#047857; border-color:#047857; }
+.lt-exception-field .lt-btn { white-space:normal; max-width:100%; }
+@media(max-width:640px) {
+  .lt-exception-field { display:flex; flex-direction:column; }
+  .lt-exception-field__part:nth-child(3) { order:5; }
+  .lt-exception-task { padding:12px; }
+  .lt-exception-field__actions { width:100%; }
+}
+@media(min-width:1200px) {
+  #operation-workspace { max-width:var(--lt-task-inspector-width,100%); }
+  #operation-workspace[style*="--lt-task-inspector-width"] .lt-exception-field { display:flex; flex-direction:column; }
+}
+
+.lt-task-source-link { display:block; text-align:left; margin-bottom:8px; font-size:12px; font-weight:650; color:#047857; text-decoration:underline; overflow-wrap:anywhere; }

@@ -31,33 +31,43 @@
   "percent_recycled":"When applicable, likely source: supplier/manufacturer material-composition declaration."
 } %}{{ guidance.get(field_name, "Add a supporting document or enter this value only if you can verify it.") }}{% endmacro %}
 
-{% macro action_field(field, review_order, paired_review_ids=(), article_context=none) %}
+{% macro action_field(field, review_order, paired_review_ids=(), article_context=none, grouped=false) %}
 {% set action_url = "/operations/" ~ detail.public_id ~ "/review/fields/" ~ field.id %}
 {% set htmx_action_url = "/operations/" ~ detail.public_id ~ "/review/actions/fields/" ~ field.id %}
 {% set field_csrf = review_csrf.get(field.id, "") %}
-<tr
+<article
   id="review-field-{{ field.id }}"
-  class="border-b border-slate-100 align-top last:border-b-0"
+  class="lt-exception-field"
   data-review-field
   data-review-field-id="{{ field.id }}"
   data-review-field-name="{{ field.field_name }}"
+  data-review-line="{{ field.line_reference }}"
   data-review-order="{{ review_order }}"
   data-review-status="{{ field.status }}"
   data-review-required="true"
 >
-  <td class="px-4 py-3">
+  <div class="lt-exception-field__part">
     <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">{% if field.scope == "SHIPMENT" %}Shipment{% else %}Plant line {{ field.line_reference }}{% endif %}</p>
     <p class="mt-1 text-xs font-bold text-slate-950">{{ field.label }}</p>
-  </td>
-  <td class="px-4 py-3">
+  </div>
+  <div class="lt-exception-field__part">
     {% if field.proposed_value %}
     <p class="text-xs font-semibold text-slate-900">{{ field.proposed_value }}</p>
     {% else %}
     <p class="text-xs font-semibold text-amber-800">Not found</p>
     <p class="mt-1 max-w-xs text-[11px] leading-4 text-slate-500">{{ missing_guidance(field.field_name) }}</p>
     {% endif %}
-  </td>
-  <td class="px-4 py-3">
+  </div>
+  <div class="lt-exception-field__part">
+    {% if field.id not in paired_review_ids and field.candidates|length == 1 and field.candidates[0].source_document_id %}
+    {% set source = field.candidates[0] %}
+    <button type="button" class="lt-task-source-link" data-source-inspect
+      data-source-url="/operations/{{ detail.public_id }}/source/{{ source.source_document_id }}"
+      data-source-page="{{ (source.source_page|string).split(',')[0]|trim if source.source_page else 1 }}"
+      data-source-label="{{ field.source_filename or 'Document ' ~ source.source_document_id }}"
+      data-source-locator="{{ source.source_locator or 'Compare the original before confirming.' }}">{{ field.source_filename or 'Open evidence' }} - p. {{ source.source_page or 1 }}</button>
+    {% endif %}
+    <details class="lt-task-evidence" {% if field.status == "CONFLICT" %}open{% endif %}><summary>Evidence and source details</summary>
     {% if article_context %}
     <div class="max-w-sm space-y-1" data-article-original-context>
       <p class="text-[11px] font-semibold text-slate-800">Original packing description (context, not verified component)</p>
@@ -100,7 +110,7 @@
       {% endif %}
     </div>
     {% elif field.candidates|length > 1 %}
-    <details class="max-w-sm" data-multiple-candidates>
+    <details class="max-w-sm" data-multiple-candidates {% if field.status == "CONFLICT" %}open{% endif %}>
       <summary class="cursor-pointer text-xs font-bold text-emerald-700">Compare {{ field.candidates|length }} candidates</summary>
       <div class="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
         {% if field.candidates %}
@@ -117,12 +127,14 @@
                 data-source-locator="{{ 'Source locator: ' ~ candidate.source_locator if candidate.source_locator else 'Compare original PDF page before choosing a candidate.' }}"
               >Inspect PDF source</button>
               {% endif %}
+              {% if quick_accept_eligible(field, candidate) %}
               <form class="mt-2" method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="accept">
                 <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
                 <input type="hidden" name="action" value="accept">
                 <input type="hidden" name="candidate_id" value="{{ candidate.id }}">
                 {{ button("Accept", variant="secondary", button_type="submit") }}
               </form>
+              {% endif %}
             </div>
           {% endfor %}
           </div>
@@ -142,22 +154,23 @@
     {% else %}
     <p class="text-[11px] text-slate-600">No current linked source candidate.</p>
     {% endif %}
-  </td>
-  <td class="px-4 py-3">
+    </details>
+  </div>
+  <div class="lt-exception-field__part">
     {% set derived_only = field.source_filename and source_class_for_filename(field.source_filename).code == 'DERIVED_PREPARATION' %}
     <span class="lt-review-status {% if field.status in ['MISSING', 'CONFLICT'] or (derived_only and not article_context) %}lt-review-status--blocking{% else %}lt-review-status--confirmation{% endif %}" data-action-status>{% if derived_only and article_context %}Review original{% elif derived_only %}Original required{% elif field.field_name == 'filing_entry_reference' and not field.proposed_value %}Pending for filing{% else %}{{ action_status(field) }}{% endif %}</span>
-  </td>
-  <td class="px-4 py-3">
+  </div>
+  <div class="lt-exception-field__part">
     {% set derived_only = field.source_filename and source_class_for_filename(field.source_filename).code == 'DERIVED_PREPARATION' %}
-    <div class="flex min-w-[11rem] flex-wrap gap-2">
+    <div class="lt-exception-field__actions">
       {% if field.id in paired_review_ids %}
       <span class="text-[11px] font-semibold text-slate-600" data-paired-primary-action>Confirm together above</span>
       {% elif derived_only and article_context %}
       <span class="text-[11px] text-slate-600">Human decision required</span>
       {% elif derived_only %}
-      <button type="button" class="lt-btn lt-btn--secondary" data-request-evidence
+      <button type="button" class="lt-btn {{ 'lt-btn--secondary' if grouped else 'lt-btn--primary' }}" data-request-evidence
         data-field-name="{{ field.field_name }}" data-field-label="{{ field.label }}"
-        data-field-guidance="{{ missing_guidance(field.field_name) }}">Request original evidence</button>
+        data-field-guidance="{{ missing_guidance(field.field_name) }}">Prepare evidence request<span class="sr-only"> - Request original evidence</span></button>
       {% endif %}
       {% if field.candidates|length == 1 %}
       {% set one = field.candidates[0] %}
@@ -166,17 +179,26 @@
         <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
         <input type="hidden" name="action" value="accept">
         <input type="hidden" name="candidate_id" value="{{ one.id }}">
-        {{ button("Confirm value", variant="primary", button_type="submit") }}
+        {{ button("Confirm value", variant="secondary" if grouped else "primary", button_type="submit") }}
       </form>
       {% endif %}
-      {% elif not derived_only and field.id not in paired_review_ids and field.proposed_value and not field.candidates and (field.source_assurance_document_id or field.provenance == 'reused_evidence') %}
+      {% elif field.status != 'CONFLICT' and not derived_only and field.id not in paired_review_ids and field.proposed_value and not field.candidates and (field.source_assurance_document_id or field.provenance == 'reused_evidence') %}
       <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="accept" data-quick-accept>
         <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
         <input type="hidden" name="action" value="accept">
-        {{ button("Confirm value", variant="primary", button_type="submit") }}
+        {{ button("Confirm value", variant="secondary" if grouped else "primary", button_type="submit") }}
       </form>
       {% endif %}
 
+      {% if (not derived_only or article_context) and not field.proposed_value and not field.candidates and field.id not in paired_review_ids %}
+      <button type="button" class="lt-btn {{ 'lt-btn--secondary' if grouped else 'lt-btn--primary' }}" data-override-open data-override-field="{{ field.id }}" aria-haspopup="dialog" aria-controls="review-override-{{ field.id }}">{{ 'Enter verified number' if field.field_name == 'filing_entry_reference' else 'Enter value' }}</button>
+      {% elif not derived_only and field.candidates and (field.status == 'CONFLICT' or field.candidates|length > 1 or not quick_accept_eligible(field, field.candidates[0])) %}
+      <button type="button" class="lt-btn {{ 'lt-btn--secondary' if grouped else 'lt-btn--primary' }}" data-task-review-evidence>Review evidence</button>
+      {% endif %}
+      {% if derived_only and article_context %}
+      <button type="button" class="lt-btn {{ 'lt-btn--secondary' if grouped else 'lt-btn--primary' }}" data-override-open data-override-field="{{ field.id }}" aria-controls="review-override-{{ field.id }}" aria-haspopup="dialog">Review with packing list</button>
+      {% endif %}
+      <details class="lt-task-secondary"><summary>More actions</summary>
       {% if not derived_only or article_context %}
       <button
         type="button"
@@ -202,6 +224,7 @@
         {{ button("Mark not applicable", variant="ghost", button_type="submit") }}
       </form>
       {% endif %}
+      </details>
     </div>
     {% if field.field_name == "filing_entry_reference" %}
     <p class="mt-2 text-[11px] leading-4 text-slate-600" data-pre-entry-waiting><strong>Later — after CBP entry creation.</strong> Not yet issued by CBP? Keep this field pending. It blocks filing-ready output, not review of the documents already supplied.</p>
@@ -255,8 +278,35 @@
         </form>
       </div>
     </dialog>
-  </td>
-</tr>
+  </div>
+</article>
+{% endmacro %}
+
+{% macro mass_pair(quantity, unit) %}
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3" data-review-group="plant-mass">
+            <div class="min-w-0">
+              <p class="text-xs font-bold text-slate-900">One review: {{ quantity.proposed_value }} {{ unit.proposed_value }} of plant material</p>
+              <p class="mt-1 text-[11px] text-slate-600">Quantity and unit are linked to the same packing list, page {{ quantity.source_page }}. Inspect the original before confirming both values.</p>
+              <button type="button" class="mt-1 text-xs font-bold text-emerald-800 underline" data-source-inspect
+                data-source-url="/operations/{{ detail.public_id }}/source/{{ quantity.source_assurance_document_id }}"
+                data-source-page="{{ quantity.source_page }}"
+                data-source-label="{{ quantity.source_filename }}"
+                data-source-locator="Inspect the original packing list before confirming quantity and unit.">Inspect packing list</button>
+            </div>
+            <form method="post" action="/operations/{{ detail.public_id }}/review/mass-pair"
+                  hx-post="/operations/{{ detail.public_id }}/review/actions/mass-pair"
+                  hx-target="#operation-workspace" hx-swap="outerHTML transition:true"
+                  data-review-action data-review-action-kind="group">
+              <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
+              <input type="hidden" name="quantity_id" value="{{ quantity.id }}">
+              <input type="hidden" name="unit_id" value="{{ unit.id }}">
+              <input type="hidden" name="expected_quantity" value="{{ quantity.proposed_value }}">
+              <input type="hidden" name="expected_unit" value="{{ unit.proposed_value }}">
+              <input type="hidden" name="quantity_locator" value="{{ quantity.source_locator }}">
+              <input type="hidden" name="unit_locator" value="{{ unit.source_locator }}">
+              {{ button("Confirm quantity + unit", variant="primary", button_type="submit") }}
+            </form>
+          </div>
 {% endmacro %}
 
 <div
@@ -267,6 +317,7 @@
   data-review-tabs
   data-review-completed="{{ 'true' if detail.status == 'COMPLETED' else 'false' }}"
 >
+  <link rel="stylesheet" href="{{ url_for('static', path='css/us_lacey_exception_tasks.css') }}?v=20261029-task1">
   {% if error %}
   <section class="lt-alert lt-alert--danger" role="alert">
     <i class="fa-solid fa-circle-exclamation lt-alert__icon" aria-hidden="true"></i>
@@ -326,119 +377,7 @@
         <p class="mt-1 text-xs text-slate-600">Counts represent individual fields, not reviewer clicks. Related values can be confirmed together after checking the original PDF. Filing requirements remain mandatory even when their information is not yet available.</p>
       </div>
       <div id="action-required-fields" class="grid gap-5" data-action-required-list>
-        {% for line_reference, fields in attention_fields|groupby("line_reference") %}
-        {% set quantity = (fields|selectattr('field_name', 'equalto', 'plant_quantity')|list|first)|default(none) %}
-        {% set unit = (fields|selectattr('field_name', 'equalto', 'metric_unit')|list|first)|default(none) %}
-        {% set can_pair = quantity and unit and quantity.status == 'REVIEW' and unit.status == 'REVIEW'
-            and quantity.proposed_value and unit.proposed_value
-            and quantity.source_assurance_document_id and quantity.source_assurance_document_id == unit.source_assurance_document_id
-            and quantity.source_page and quantity.source_page == unit.source_page
-            and quantity.source_locator and unit.source_locator
-            and quantity.source_filename and 'packing_list' in quantity.source_filename|lower
-            and source_class_for_filename(quantity.source_filename).code in ['COMMERCIAL_SOURCE', 'UNVERIFIED_COMMERCIAL']
-            and (quantity.candidates|map(attribute='normalized_value')|unique|list|length) <= 1 and (unit.candidates|map(attribute='normalized_value')|unique|list|length) <= 1 %}
-        <section data-review-line="{{ line_reference }}">
-          {% if can_pair %}
-          <div class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3" data-review-group="plant-mass">
-            <div class="min-w-0">
-              <p class="text-xs font-bold text-slate-900">One review: {{ quantity.proposed_value }} {{ unit.proposed_value }} of plant material</p>
-              <p class="mt-1 text-[11px] text-slate-600">Quantity and unit are linked to the same packing list, page {{ quantity.source_page }}. Inspect the original before confirming both values.</p>
-              <button type="button" class="mt-1 text-xs font-bold text-emerald-800 underline" data-source-inspect
-                data-source-url="/operations/{{ detail.public_id }}/source/{{ quantity.source_assurance_document_id }}"
-                data-source-page="{{ quantity.source_page }}"
-                data-source-label="{{ quantity.source_filename }}"
-                data-source-locator="Inspect the original packing list before confirming quantity and unit.">Inspect packing list</button>
-            </div>
-            <form method="post" action="/operations/{{ detail.public_id }}/review/mass-pair"
-                  hx-post="/operations/{{ detail.public_id }}/review/actions/mass-pair"
-                  hx-target="#operation-workspace" hx-swap="outerHTML transition:true"
-                  data-review-action data-review-action-kind="group">
-              <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
-              <input type="hidden" name="quantity_id" value="{{ quantity.id }}">
-              <input type="hidden" name="unit_id" value="{{ unit.id }}">
-              <input type="hidden" name="expected_quantity" value="{{ quantity.proposed_value }}">
-              <input type="hidden" name="expected_unit" value="{{ unit.proposed_value }}">
-              <input type="hidden" name="quantity_locator" value="{{ quantity.source_locator }}">
-              <input type="hidden" name="unit_locator" value="{{ unit.source_locator }}">
-              {{ button("Confirm quantity + unit", variant="primary", button_type="submit") }}
-            </form>
-          </div>
-          {% endif %}
-          <div class="mb-2 flex items-center justify-between gap-3">
-            <h3 class="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-600">{% if fields[0].scope == "SHIPMENT" %}Shipment fields{% else %}Plant line {{ line_reference }}{% endif %}</h3>
-            <span class="text-[11px] font-semibold text-slate-400">{{ fields|length }} exception{{ '' if fields|length == 1 else 's' }}</span>
-          </div>
-          <div class="overflow-x-auto rounded-xl border border-slate-200">
-            <table class="min-w-[70rem] w-full text-left">
-              <thead class="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-                <tr>
-                  <th class="px-4 py-2.5">Field</th>
-                  <th class="px-4 py-2.5">Proposed value</th>
-                  <th class="px-4 py-2.5">Evidence</th>
-                  <th class="px-4 py-2.5">Status</th>
-                  <th class="px-4 py-2.5">Decision</th>
-                </tr>
-              </thead>
-              <tbody class="bg-white">
-                {% for field in fields %}{{ action_field(field, loop.index, (quantity.id, unit.id) if can_pair else (), article_original_contexts.get(field.id)) }}{% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </section>
-        {% endfor %}
-
-        {% if regulatory_action_items %}
-        <section data-regulatory-action-required-group>
-          <div class="mb-2 flex items-center justify-between gap-3">
-            <h3 class="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-600">Regulatory information requirements</h3>
-            <span class="text-[11px] font-semibold text-slate-400">{{ regulatory_action_items|length }} blocker{{ '' if regulatory_action_items|length == 1 else 's' }}</span>
-          </div>
-          <div class="overflow-x-auto rounded-xl border border-slate-200">
-            <table class="min-w-[62rem] w-full text-left">
-              <thead class="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-                <tr>
-                  <th class="px-4 py-2.5">Line</th>
-                  <th class="px-4 py-2.5">Action required</th>
-                  <th class="px-4 py-2.5">Reason</th>
-                  <th class="px-4 py-2.5">Status</th>
-                  <th class="px-4 py-2.5">Resolution</th>
-                </tr>
-              </thead>
-              <tbody class="bg-white">
-                {% for item in regulatory_action_items %}
-                <tr
-                  id="regulatory-action-{{ item.get('action_id') }}"
-                  class="border-b border-slate-100 align-top last:border-b-0"
-                  data-regulatory-action-required
-                  data-regulatory-action-id="{{ item.get('action_id') }}"
-                >
-                  <td class="px-4 py-3 text-xs font-semibold text-slate-700">{{ item.get('display_subject', 'Shipment') }}</td>
-                  <td class="px-4 py-3">
-                    <p class="text-xs font-bold text-slate-950">ACTION REQUIRED: {{ item.get('blocking_message') }}</p>
-                    <p class="mt-1 text-[11px] text-slate-500">{{ item.get('display_title', 'Regulatory check') }}</p>
-                  </td>
-                  <td class="px-4 py-3 text-xs leading-5 text-slate-700">{{ item.get('display_reason', 'Additional supported information is required') }}</td>
-                  <td class="px-4 py-3">{{ lt_badge("REVIEW REQUIRED", item.get('display_status', 'Needs information')) }}</td>
-                  <td class="px-4 py-3">
-                    {% if item.get('target_field_id') %}
-                    <a href="#review-field-{{ item.get('target_field_id') }}" class="lt-btn lt-btn--secondary">{{ item.get('action_label', 'Provide information') }}</a>
-                    {% else %}
-                    <button
-                      type="button"
-                      class="lt-btn lt-btn--secondary"
-                      data-request-evidence
-                      data-field-label="{{ item.get('display_title', 'Regulatory requirement') }}"
-                      data-field-guidance="{{ item.get('request_guidance', '') }}"
-                    >{{ item.get('action_label', 'Provide information') }}</button>
-                    {% endif %}
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </section>
-        {% endif %}
+        {% include "us_lacey/fragments/exception_task_queue.html" %}
       </div>
       {% else %}
       <div class="py-4 text-xs text-slate-500">The exception queue is clear. Use the active review tab above or continue to the Preparation Package.</div>
@@ -826,6 +765,14 @@
     });
     root.querySelectorAll('[data-override-has-error="true"]').forEach(openOverride);
 
+    root.querySelectorAll("[data-task-review-evidence]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const field = button.closest("[data-review-field]");
+        const evidence = field?.querySelector(".lt-task-evidence");
+        if (evidence) evidence.open = true;
+        field?.querySelector("[data-source-inspect]")?.click();
+      });
+    });
     const requestDialog = root.querySelector("#request-evidence-dialog");
     root.querySelectorAll("[data-request-evidence]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -874,6 +821,30 @@
   if (!window.__ltReviewTabsBound) {
     window.__ltReviewTabsBound = true;
     let pendingQuickAcceptance = null;
+
+    // Fit beside the existing non-modal inspector only when at least 320px of
+    // usable task space remains after the actual shell/sidebar offset.
+    function fitEvidenceWorkspace() {
+      const workspace = document.getElementById("operation-workspace");
+      if (!workspace) return;
+      workspace.style.removeProperty("--lt-task-inspector-width");
+      const inspector = document.querySelector("[data-source-inspector][open]");
+      const panel = inspector?.querySelector(".lt-source-inspector__panel");
+      if (!panel || window.innerWidth <= 850) return;
+      const available = window.innerWidth - parseFloat(getComputedStyle(panel).width)
+        - workspace.getBoundingClientRect().left - 24;
+      if (available >= 320) workspace.style.setProperty("--lt-task-inspector-width", available + "px");
+    }
+    document.addEventListener("click", (event) => {
+      if (event.target.closest?.("[data-source-inspect], [data-source-inspector-close]")) {
+        window.requestAnimationFrame(fitEvidenceWorkspace);
+        window.setTimeout(fitEvidenceWorkspace, 220);
+      }
+    });
+    document.addEventListener("close", fitEvidenceWorkspace, true);
+    window.addEventListener("resize", fitEvidenceWorkspace);
+    document.body.addEventListener("htmx:afterSettle", fitEvidenceWorkspace);
+
 
     // The user's click is not authority: only navigate after an HTMX success
     // whose fresh server-rendered queue no longer contains that pending field.
@@ -926,6 +897,8 @@
         return;
       }
       activateTab(root, "action");
+      const taskDetails = nextField.closest("[data-task-fields]");
+      if (taskDetails) taskDetails.open = true;
       const focusTarget = nextField.querySelector("[data-quick-accept] button, button, a")
         || nextField;
       if (!focusTarget.hasAttribute("tabindex") && focusTarget === nextField) {
@@ -947,8 +920,10 @@
 </script>
 
 
+{% if is_oob_update|default(false) %}
 {% set shell_oob = true %}
 {% include "us_lacey/fragments/workflow_stepper_shell.html" %}
 {% include "us_lacey/fragments/shipment_readiness_status.html" %}
 {% include "us_lacey/fragments/species_status.html" %}
 {% include "us_lacey/fragments/country_status.html" %}
+{% endif %}
