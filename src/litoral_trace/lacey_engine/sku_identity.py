@@ -69,6 +69,26 @@ def observed_source_skus(text: str) -> frozenset[str]:
     return frozenset(seen)
 
 
+
+def has_complete_source_sku_token(identity: str, text: str) -> bool:
+    """Check literal token boundaries without asserting global SKU identity.
+
+    A row may contain multiple contradictory source SKUs. In that case the
+    quoted source token can still be real evidence while the line must abstain
+    from packet-global binding. This predicate never authorizes a SKU key.
+    """
+    token = identity.strip()
+    if not token or not is_sku_token(token):
+        return False
+    comparison_text = " ".join(text.split())
+    return re.search(
+        rf'(?<![^\\s:;,()\\[\\]{{}}]){re.escape(token)}(?=$|{_SOURCE_DELIMITER})',
+        comparison_text,
+        re.IGNORECASE | re.ASCII,
+    ) is not None
+
+
+
 def has_exact_source_identity(identity: str, text: str) -> bool:
     """Require a complete token, and reject contradictory explicit source SKUs.
 
