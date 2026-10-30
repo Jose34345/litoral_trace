@@ -598,4 +598,4 @@ def test_single_source_sku_cannot_validate_quote_from_longer_legacy_alias():
     assert not checked.candidate.evidence_verified
     assert checked.candidate.source_text == quote
     bound = bind_line_items((checked,))[0]
-    assert checked not in evaluate_verified_candidate_admission((bound,)).admitted_candidates
+    assert bound not in evaluate_verified_candidate_admission((bound,)).admitted_candidates
