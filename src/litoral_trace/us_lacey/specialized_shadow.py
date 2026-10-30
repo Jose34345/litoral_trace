@@ -14,7 +14,7 @@ import time
 from typing import Mapping
 from uuid import UUID
 
-from litoral_trace.lacey_engine.sku_identity import has_exact_source_identity, has_unsupported_source_sku, observed_source_skus
+from litoral_trace.lacey_engine.sku_identity import has_complete_source_sku_token, has_exact_source_identity, has_unsupported_source_sku, observed_source_skus
 from litoral_trace.lacey_engine.ai_providers import AIProviderConfig
 from litoral_trace.lacey_engine.ai_shadow import AICandidate, AIExtractionResult, AIShadowError, verify_ai_evidence
 from litoral_trace.lacey_engine.domain import BoundingBox, DocumentResolution, EvidenceClass
@@ -216,9 +216,17 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
         quoted_skus = observed_source_skus(candidate.source_text)
         if candidate.evidence_verified and len(quoted_skus) == 1:
             quoted_sku = next(iter(quoted_skus))
-            if not anchors or not all(has_exact_source_identity(quoted_sku, text) for text in anchors):
-                # A substring quote may start/end inside a different source SKU.
-                # Preserve its literal text for audit, but never admit its claim.
+            if not anchors or not all(
+                (
+                    has_complete_source_sku_token(quoted_sku, text)
+                    if len(observed_source_skus(text)) > 1
+                    else has_exact_source_identity(quoted_sku, text)
+                )
+                for text in anchors
+            ):
+                # Never admit an altered partial SKU. In a verified source with
+                # multiple contradictory SKU labels, a literal bounded token
+                # remains evidence but cannot grant packet-global line identity.
                 candidate = replace(candidate, evidence_verified=False)
         line_key, table_id, row_index = _verified_row_sidecar(
             envelope,
