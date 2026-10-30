@@ -14,7 +14,7 @@ import time
 from typing import Mapping
 from uuid import UUID
 
-from litoral_trace.lacey_engine.sku_identity import has_complete_source_sku_token, has_exact_source_identity, has_unsupported_source_sku, observed_source_skus
+from litoral_trace.lacey_engine.sku_identity import has_aligned_source_sku_quote, has_exact_source_identity, has_unsupported_source_sku, observed_source_skus
 from litoral_trace.lacey_engine.ai_providers import AIProviderConfig
 from litoral_trace.lacey_engine.ai_shadow import AICandidate, AIExtractionResult, AIShadowError, verify_ai_evidence
 from litoral_trace.lacey_engine.domain import BoundingBox, DocumentResolution, EvidenceClass
@@ -218,7 +218,7 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
             quoted_sku = next(iter(quoted_skus))
             if not anchors or not all(
                 (
-                    has_complete_source_sku_token(quoted_sku, text)
+                    has_aligned_source_sku_quote(quoted_sku, candidate.source_text, text)
                     if len(observed_source_skus(text)) > 1
                     else has_exact_source_identity(quoted_sku, text)
                 )
