@@ -218,12 +218,10 @@ def _group_matches_sku(
     if source_descriptions and sku_descriptions and source_descriptions & sku_descriptions:
         return True
 
-    taxonomy = _taxonomy_phrases(sku_group)
-    return any(
-        phrase and phrase in description
-        for description in source_descriptions
-        for phrase in taxonomy
-    )
+    # A botanical name describes material, not commercial product identity.
+    # Never infer a packet-global SKU only because genus/species appear in the
+    # description: several distinct products can contain the same plant.
+    return False
 
 
 def _reconcile_to_unique_sku(
@@ -232,9 +230,8 @@ def _reconcile_to_unique_sku(
     """Canonicalize non-SKU line keys only when one unique SKU is semantically proven.
 
     A line number is local to a document and is therefore never enough to link two
-    documents. Reconciliation requires exact description equality or an explicit
-    genus+species phrase contained in the commercial description. Ambiguous matches
-    remain separate for human review.
+    documents. Reconciliation requires exact description equality; taxonomic
+    overlap is never product identity. Ambiguous matches remain separate for review.
     """
     groups: dict[tuple[str | None, str | None], list[CandidateEnvelope]] = {}
     for envelope in bound:
@@ -258,7 +255,12 @@ def _reconcile_to_unique_sku(
             continue
         # An explicit unsupported SKU already required local identity. Semantic
         # agreement must never undo that abstention later in the same bind pass.
-        if any(item.source_sku_identity_blocked or has_unsupported_source_sku(item.candidate.source_text) for item in source_group):
+        if any(
+            item.source_sku_identity_blocked
+            or has_unsupported_source_sku(item.candidate.source_text)
+            or len(observed_source_skus(item.candidate.source_text)) > 1
+            for item in source_group
+        ):
             continue
         matches = [
             sku_key
