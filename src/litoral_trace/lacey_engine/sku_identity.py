@@ -43,15 +43,18 @@ def is_sku_token(value: str) -> bool:
 
 def has_unsupported_source_sku(text: str) -> bool:
     """An explicit but unsupported SKU forbids falling back to a literal alias."""
-    return any(not is_sku_token(match.group(1)) for match in _RAW_LABELLED_SKU.finditer(text))
+    comparison_text = " ".join(text.split())
+    return any(not is_sku_token(match.group(1)) for match in _RAW_LABELLED_SKU.finditer(comparison_text))
 
 
 def labelled_source_skus(text: str) -> frozenset[str]:
-    return frozenset(normalize_sku(match.group(1)) for match in _LABELLED_SKU.finditer(text))
+    comparison_text = " ".join(text.split())
+    return frozenset(normalize_sku(match.group(1)) for match in _LABELLED_SKU.finditer(comparison_text))
 
 
 def observed_source_skus(text: str) -> frozenset[str]:
     """Return explicit labelled and leading row SKUs, without inferred aliases."""
+    text = " ".join(text.split())
     seen = set(labelled_source_skus(text))
     leading = _LEADING_SOURCE_SKU.search(text)
     if leading:
@@ -73,6 +76,9 @@ def has_exact_source_identity(identity: str, text: str) -> bool:
     not authorize LINE:1 from LINE:11. A row's verified locator remains usable
     even when an invalid or ambiguous SKU sidecar is rejected.
     """
+    # Whitespace normalization is comparison-only. ASCII regex flags still
+    # constrain identifier letters/digits; no source text or SKU is rewritten.
+    text = " ".join(text.split())
     token = identity.strip()
     if has_unsupported_source_sku(text) or not token or not (re.fullmatch(r"[0-9]+", token) or is_sku_token(token)):
         return False

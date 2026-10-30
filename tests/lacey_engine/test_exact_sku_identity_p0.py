@@ -331,3 +331,130 @@ def test_verified_sparse_quote_keeps_explicit_sku_without_requiring_a_separator(
     assert bound.line_item_key == "SKU:" + sku
     assert bound.candidate.source_text == quote
     assert evaluate_verified_candidate_admission((bound,)).admitted_candidates == (bound,)
+
+
+
+@pytest.mark.parametrize("table", [False, True])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("partial_quote", [False, True])
+def test_unsupported_sku_abstention_survives_description_reconciliation_and_admission(table, reverse, partial_quote):
+    value = "Solid wood tray"
+    candidates = []
+    for document, sku in [(1, "ACT#18"), (2, "OTHER-ACT-18")]:
+        raw = "SKU " + sku + " Description " + value
+        original, _ = _verified(raw, supplied_sku=sku, table=table, document=document)
+        original = replace(original, document_type=DocumentType.COMMERCIAL_INVOICE,
+            specialist=SpecialistRole.COMMERCIAL_LINES,
+            candidate=replace(original.candidate, field_key="description", value=value, normalized_value=value,
+                source_text="Description " + value if partial_quote else raw))
+        block = LayoutBlock("b1", 1, None, raw, "TEXT_LINE",
+            table_id="botanical" if table else None, row_index=2 if table else None)
+        resolution = DocumentResolution("synthetic.pdf", "fixture", EngineDocumentType.COMMERCIAL_INVOICE,
+            1.0, ParsedLayout((block,), 1), {})
+        verified = _verify_candidates((original,), resolutions={original.document_id: resolution})[0]
+        assert verified.candidate.evidence_verified
+        candidates.append(verified)
+    if reverse:
+        candidates.reverse()
+    bound = bind_line_items(tuple(candidates))
+    local = next(item for item in bound if item.document_id == UUID(int=1))
+    known = next(item for item in bound if item.document_id == UUID(int=2))
+    assert local.line_item_key.startswith("ROW:" if table else "FP:")
+    assert known.line_item_key == "SKU:OTHER-ACT-18"
+    assert local.candidate.source_text == ("Description " + value if partial_quote else "SKU ACT#18 Description " + value)
+    assert known.candidate.source_text == ("Description " + value if partial_quote else "SKU OTHER-ACT-18 Description " + value)
+    admission = evaluate_verified_candidate_admission(tuple(bound))
+    assert known in admission.admitted_candidates
+    assert (local in admission.admitted_candidates) is table
+    if not table:
+        record = next(record for record in admission.records if record.document_id == local.document_id)
+        assert record.reason.value == "LINE_BINDING_AMBIGUOUS"
+    fused = fuse_candidates(admission.admitted_candidates)
+    assert len(fused.fused_candidates) == (2 if table else 1)
+    assert {item.line_item_key for item in fused.fused_candidates} == (
+        {local.line_item_key, known.line_item_key} if table else {known.line_item_key})
+
+
+@pytest.mark.parametrize("table", [False, True])
+@pytest.mark.parametrize("position", ["before", "after"])
+@pytest.mark.parametrize("space", [chr(160), chr(8239)])
+def test_unicode_whitespace_boundaries_keep_ascii_quote_verified_against_original_anchor(table, position, space):
+    quote = "SKU ACT-TRAY-18 Species Pinus taeda"
+    raw = ("SKU" + space + "ACT-TRAY-18 Species Pinus taeda" if position == "before"
+        else "SKU ACT-TRAY-18" + space + "Species Pinus taeda")
+    original, _ = _verified(quote, table=table)
+    block = LayoutBlock("b1", 1, None, raw, "TEXT_LINE",
+        table_id="botanical" if table else None, row_index=2 if table else None)
+    resolution = DocumentResolution("synthetic.pdf", "fixture", EngineDocumentType.SPECIES_DECLARATION,
+        1.0, ParsedLayout((block,), 1), {})
+    verified = _verify_candidates((original,), resolutions={original.document_id: resolution})[0]
+    assert verified.candidate.evidence_verified
+    assert verified.source_line_key == "ACT-TRAY-18"
+    bound = bind_line_items((verified,))[0]
+    assert bound.line_item_key == "SKU:ACT-TRAY-18"
+    admission = evaluate_verified_candidate_admission((bound,))
+    assert admission.admitted_candidates == (bound,)
+    assert len(fuse_candidates(admission.admitted_candidates).fused_candidates) == 1
+    assert verified.candidate.source_text == quote
+    assert verified.source_span_id == original.source_span_id
+    assert resolution.layout.blocks[0].text == raw
+
+
+def test_unicode_whitespace_never_joins_two_parts_inside_a_sku():
+    from litoral_trace.lacey_engine.sku_identity import has_exact_source_identity
+    for space in (chr(160), chr(8239)):
+        assert not has_exact_source_identity("ACT-TRAY-18", "SKU ACT-" + space + "TRAY-18")
+
+
+
+def test_negative_identity_metadata_defaults_compatible_and_fences_prior_binding_cache(monkeypatch):
+    from litoral_trace.us_lacey import specialized_shadow as shadow
+    original, _ = _verified("SKU ACT-TRAY-18 Species Pinus taeda")
+    assert "source_sku_identity_blocked" in CandidateEnvelope.__dataclass_fields__
+    assert original.source_sku_identity_blocked is False
+    current = shadow.specialized_engine_version(provider="offline", model="fixture")
+    monkeypatch.setattr(shadow, "LINE_BINDING_VERSION", "lacey_document_local_line_binding_v2_exact_sku")
+    previous = shadow.specialized_engine_version(provider="offline", model="fixture")
+    assert current != previous
+
+
+def test_verified_negative_identity_metadata_survives_payload_and_cache_roundtrip():
+    from test_specialized_shadow import _document
+    from litoral_trace.lacey_engine.multi_agent.specialist_runtime import ScopedAIExtractionResult, SourceRowIdentity
+    from litoral_trace.us_lacey.specialized_shadow import (
+        run_specialized_shadow_operation, serialize_specialized_document_run, _rehydrate_cached_run)
+
+    quote = "Description Solid wood tray"
+    raw = "COMMERCIAL INVOICE\nSKU ACT#18 " + quote
+    block = LayoutBlock("b1", 1, None, raw, "TEXT_LINE", table_id="commercial", row_index=1)
+    resolution = DocumentResolution("synthetic.pdf", "fixture", EngineDocumentType.COMMERCIAL_INVOICE,
+        1.0, ParsedLayout((block,), 1), {})
+    document = replace(_document(), engine2_resolution=resolution)
+
+    class Provider:
+        name = "offline"
+        model = "fixture"
+        def extract_scoped(self, *, allowed_fields, **_kwargs):
+            candidates = (AICandidate(field_key="description", value="Solid wood tray",
+                normalized_value="Solid wood tray", evidence_class=EvidenceClass.EXPLICIT,
+                page=1, source_text=quote, confidence=.9, provider=self.name, model=self.model),) if "description" in allowed_fields else ()
+            return ScopedAIExtractionResult(provider=self.name, model=self.model, schema_version="fixture",
+                candidates=candidates, page_count=1, row_identities=(SourceRowIdentity("OTHER-ACT-18", "commercial", 1),) if candidates else ())
+
+    run = run_specialized_shadow_operation(documents=(document,), provider=Provider(), concurrency=1)
+    assert len(run.result.fused_candidates) == 1
+    original = run.result.fused_candidates[0]
+    assert getattr(original, "source_sku_identity_blocked", False) is True
+    assert original.candidate.evidence_verified and original.line_item_key.startswith("ROW:")
+    payload = serialize_specialized_document_run(run=run, document_id=document.document_id, source_set_fingerprint="synthetic")
+    assert payload["candidates"][0]["source_sku_identity_blocked"] is True
+    cached = _rehydrate_cached_run((payload,), documents=(document,), computation_fingerprint="synthetic")
+    assert cached is not None
+    rebound = cached.result.fused_candidates[0]
+    assert rebound.source_sku_identity_blocked is True
+    assert rebound.candidate.source_text == quote
+    assert rebound.line_item_key == original.line_item_key
+    # Rebinding cannot grant a global SKU even if another caller reuses the envelope.
+    assert bind_line_items((rebound,))[0].line_item_key.startswith("FP:")
+    payload["candidates"][0]["source_sku_identity_blocked"] = "false"
+    assert _rehydrate_cached_run((payload,), documents=(document,), computation_fingerprint="synthetic") is None

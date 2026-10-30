@@ -19,7 +19,7 @@ from ..sku_identity import (
 from .contracts import CandidateEnvelope
 
 
-LINE_BINDING_VERSION = "lacey_document_local_line_binding_v2_exact_sku"
+LINE_BINDING_VERSION = "lacey_document_local_line_binding_v3_source_sku_abstention"
 
 
 LINE_SCOPED_FIELDS = frozenset(
@@ -96,7 +96,7 @@ def derive_line_item_key(
     explicit_key = (envelope.source_line_key or "").strip()
     source = " ".join(envelope.candidate.source_text.split()).strip()
     source_skus = observed_source_skus(source)
-    unsupported_source_sku = has_unsupported_source_sku(source)
+    unsupported_source_sku = envelope.source_sku_identity_blocked or has_unsupported_source_sku(source)
     ambiguous_skus = len(source_skus) > 1 or unsupported_source_sku
 
     # A visible source SKU overrides a contradictory sidecar; multiple explicit
@@ -255,6 +255,10 @@ def _reconcile_to_unique_sku(
     for source_scope, source_group in groups.items():
         source_key, document_scope = source_scope
         if source_key is None or source_key.startswith("SKU:"):
+            continue
+        # An explicit unsupported SKU already required local identity. Semantic
+        # agreement must never undo that abstention later in the same bind pass.
+        if any(item.source_sku_identity_blocked or has_unsupported_source_sku(item.candidate.source_text) for item in source_group):
             continue
         matches = [
             sku_key

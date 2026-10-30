@@ -14,7 +14,7 @@ import time
 from typing import Mapping
 from uuid import UUID
 
-from litoral_trace.lacey_engine.sku_identity import has_exact_source_identity, observed_source_skus
+from litoral_trace.lacey_engine.sku_identity import has_exact_source_identity, has_unsupported_source_sku, observed_source_skus
 from litoral_trace.lacey_engine.ai_providers import AIProviderConfig
 from litoral_trace.lacey_engine.ai_shadow import AICandidate, AIExtractionResult, AIShadowError, verify_ai_evidence
 from litoral_trace.lacey_engine.domain import BoundingBox, DocumentResolution, EvidenceClass
@@ -204,9 +204,12 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
         singleton = AIExtractionResult(provider=envelope.candidate.provider, model=envelope.candidate.model, schema_version=SPECIALIZED_SHADOW_SCHEMA_VERSION, candidates=(envelope.candidate,), page_count=resolution.layout.page_count, latency_ms=None)
         checked = verify_ai_evidence(engine2=resolution, ai=singleton)
         candidate = checked.candidates[0]
+        anchors = _identity_source_anchors(envelope, resolution=resolution, candidate=candidate)
+        source_sku_identity_blocked = envelope.source_sku_identity_blocked or (
+            candidate.evidence_verified and any(has_unsupported_source_sku(text) for text in anchors)
+        )
         quoted_skus = observed_source_skus(candidate.source_text)
         if candidate.evidence_verified and len(quoted_skus) == 1:
-            anchors = _identity_source_anchors(envelope, resolution=resolution, candidate=candidate)
             quoted_sku = next(iter(quoted_skus))
             if not anchors or not all(has_exact_source_identity(quoted_sku, text) for text in anchors):
                 # A substring quote may start/end inside a different source SKU.
@@ -217,10 +220,13 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
             resolution=resolution,
             candidate=candidate,
         )
+        if source_sku_identity_blocked:
+            line_key = None
         verified.append(
             replace(
                 envelope,
                 candidate=candidate,
+                source_sku_identity_blocked=source_sku_identity_blocked,
                 source_line_key=line_key,
                 source_table_id=table_id,
                 source_row_index=row_index,
@@ -379,6 +385,7 @@ def serialize_specialized_document_run(*, run: SpecializedShadowRun, document_id
                 "document_type": envelope.document_type.value,
                 "specialist": envelope.specialist.value,
                 "line_item_key": envelope.line_item_key,
+                "source_sku_identity_blocked": envelope.source_sku_identity_blocked,
                 "taxonomy": taxonomy_by_candidate.get(envelope),
             }
             for envelope in envelopes
@@ -419,7 +426,10 @@ def _candidate_envelope(item: Mapping[str, object], *, document_id: UUID, line_i
             confidence=float(item["confidence"]), provider=provider, model=model, bbox=bbox,
             reason=None if item.get("reason") is None else str(item.get("reason")), evidence_verified=bool(item.get("evidence_verified")),
         )
-        return CandidateEnvelope(candidate=candidate, document_id=document_id, document_type=SpecializedDocumentType(str(item["document_type"])), specialist=SpecialistRole(str(item["specialist"])), agent_run_id=UUID(int=0), line_item_key=line_item_key, source_span_id=None)
+        source_sku_identity_blocked = item.get("source_sku_identity_blocked", False)
+        if not isinstance(source_sku_identity_blocked, bool):
+            return None
+        return CandidateEnvelope(candidate=candidate, document_id=document_id, document_type=SpecializedDocumentType(str(item["document_type"])), specialist=SpecialistRole(str(item["specialist"])), agent_run_id=UUID(int=0), line_item_key=line_item_key, source_span_id=None, source_sku_identity_blocked=source_sku_identity_blocked)
     except (KeyError, TypeError, ValueError):
         return None
 

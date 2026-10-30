@@ -88,3 +88,35 @@ Sobre el c?digo congelado posterior a ambos pases de revisi?n: suite general off
 Revisi?n independiente final: **138 passed** incluidos los seis reproducers externos intactos; ambos Important cerrados, sin Critical/Important abiertos conocidos. Sintaxis de 980 archivos Python, TOML, `git diff --check`, 36 blobs de fixtures intactos y Alembic con ?nico head `079_us_lacey_assurance_v2_claim_snapshots` verificados. No se modifican DI-01, DI-03, cach?s, OCR, migraciones, reglas regulatorias ni configuraci?n productiva. Logs, JUnit y manifiestos permanecen fuera de Git.
 
 **GO local de DI-02; integraci?n pendiente de CI/PostgreSQL remotos y revisi?n del PR.** Estos resultados del caso adversarial no constituyen tasas globales de precisi?n ni una medici?n de ahorro de tiempo humano.
+
+
+## Hallazgos remotos PR 475 sobre 8102ea9
+
+Se reprodujeron dos defectos del pase remoto sin reset/rebase ni perdida de cambios. Una descripcion comercial identica hacia que `_reconcile_to_unique_sku` revirtiera el veto de un SKU explicitamente no admitido y promoviera su identidad local al SKU de otro documento. El veto se mantiene ahora tambien durante esa reconciliacion; no se agregan reglas de correspondencia por descripcion. En los tests de cadena completa, ROW conserva su identidad local admitida y ambas entidades sobreviven en fusion; FP conserva su identidad local pero admission lo bloquea por LINE_BINDING_AMBIGUOUS, sin convertirlo en SKU.
+
+El segundo caso usaba whitespace Unicode alrededor de un SKU ASCII completo. La cita con espacio ASCII estaba validada contra la fuente, pero `re.ASCII` restringia los delimitadores whitespace en los helpers. Solo el texto temporal de comparacion normaliza ahora whitespace con split/join; los regex conservan su alfabeto ASCII, las fuentes y citas quedan literales, y whitespace dentro del identificador nunca se concatena para fabricar un SKU.
+
+Rojo previo al runtime: **12 failed, 1 passed, 72 deselected**. Cubre reconciliacion con/sin fila y orden inverso, NBSP y NNBSP antes/despues del SKU, y el control negativo de whitespace interno. Primer cierre P1: **4 passed, 81 deselected**. Verde conjunto focal: **145 passed**, 4.55s. Se aplica el skill receiving-code-review y se verifican los hallazgos antes de corregirlos. Una aprobacion de herramienta interrumpida por cuota no ejecuto el ajuste de whitespace; tras indicacion de continuar se inspecciono el diff existente y se completo unicamente ese ajuste.
+
+Runtime y tests congelados para nueva revision independiente. Sin commits propios, sin merge ni despliegue; gates globales/PostgreSQL/remotos a cargo del coordinador.
+
+
+### Cita parcial: transporte negativo desde el ancla original
+
+La primera correccion del pase remoto conservaba el veto cuando la cita incluia el label SKU, pero la revision independiente demostro el mismo P1 con una cita parcial valida `Description Solid wood tray`: el label no admitido solo existia en el ancla original. El resultado focal previo de 145 pruebas y el gate de 600 passed/5 skipped no cerraban ese caso y quedan supersedidos para el dictamen final.
+
+Se agrega `CandidateEnvelope.source_sku_identity_blocked: bool = False`, metadata negativa compatible, derivada exclusivamente del ancla Engine 2 original verificada. No es una configuracion, flag de activacion ni autoridad positiva. El verificador mantiene evidencia valida, cita literal y procedencia; el veto impide que derive/reconcile concedan una identidad SKU por una descripcion coincidente, aunque la cita no incluya el label. ROW sigue local y admisible cuando esta probado; FP sigue bloqueado por admission como identidad ambigua.
+
+El serializer incluye el booleano y el codec de rehidratacion lo conserva. Un valor mal tipado causa cache miss; no se convierte texto a booleano ni se pierde la senal por normalizacion. El default False conserva constructores anteriores. `LINE_BINDING_VERSION` pasa a `lacey_document_local_line_binding_v3_source_sku_abstention`, consumido por los fences existentes de engine version y computation fingerprint: los artefactos previos v2 no se reutilizan para la nueva semantica. No se modifico el modulo de cache ni su arquitectura.
+
+Auditoria de consumidores: specialist_runtime construye envelopes con el default y no permite al proveedor otorgar autoridad mediante esta metadata; las transformaciones de binding/fusion usan envelopes inmutables/replace; specialized_shadow es el serializer y codec existentes; source claims y proyeccion siguen consumiendo las identidades source-local/evidencia ya verificadas. No se agregan escritores, nuevas claves SKU, nuevas reglas regulatorias ni una procedencia paralela.
+
+Rojo adicional: **6 failed, 4 passed, 92 deselected**, incluyendo cuatro variantes de cita parcial con/sin ROW y orden inverso, default compatible/version fence y codec. El fixture de codec se ajusto para declarar COMMERCIAL INVOICE en su fuente sintetica y activar el router real; se confirmo su rojo por metadata ausente antes del cambio de producto. Verde posterior: **162 passed**, 3.82s, incluyendo los once reproducers externos intactos del pase remoto. Se prueba roundtrip serializer/cache, rebinding del envelope rehidratado, rechazo de tipo incorrecto y que el engine fingerprint v3 difiere de v2. Runtime y tests congelados para repetir gates finales.
+
+Gate ampliado final del pase remoto: **617 passed, 5 skipped**, 33.64s, exit 0, con ambos archivos externos de revision intactos; `git diff --check` exit 0. El primer pase ampliado habia dado 616 passed y un fallo en la lista exacta de campos de CandidateEnvelope: se actualizo ese contrato declarado para el booleano autorizado, agregando checks de default False, inmutabilidad y ausencia del campo en AICandidate, sin quitar validaciones. Revision independiente final: **168 passed**, 1.90s, P1/P2 cerrados y sin Critical/Important abiertos en las invariantes inspeccionadas. Runtime y tests finales congelados; sin commits propios. Los cinco skips siguen siendo tres fixtures privados ausentes y dos casos PostgreSQL Golden Pack 2. Gates globales/PG/remotos finales pendientes del coordinador antes de merge.
+
+### Coordinaci?n: gates del transporte negativo v3
+
+El PostgreSQL aislado posterior a la propagaci?n desde el ancla original aprob? **70 gates + 10 worker/E2E**, cero fallos y cero omisiones. Se revalidaron sintaxis de 980 Python, TOML, Alembic ?nico y 36 fixtures intactos. La revisi?n independiente final (168 pases) incluye los reproducers externos sin modificar, y el gate ampliado final del implementador dio 617 pases/5 omisiones.
+
+La suite general y CI remoto se est?n repitiendo sobre el contrato final, incluido el test de la lista expl?cita de campos de CandidateEnvelope (default False, inmutabilidad y AICandidate intacto). No se presenta el gate anterior como aprobaci?n de esta sem?ntica nueva. **NO-GO para merge hasta adjuntar el resultado general y los checks remotos del SHA actualizado.**

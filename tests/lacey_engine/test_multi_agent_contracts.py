@@ -96,7 +96,12 @@ def test_candidate_envelope_wraps_existing_ai_candidate_without_mutating_it():
         "source_line_key",
         "source_table_id",
         "source_row_index",
+        "source_sku_identity_blocked",
     ]
+    assert envelope.source_sku_identity_blocked is False
+    assert not hasattr(candidate, "source_sku_identity_blocked")
+    with pytest.raises(FrozenInstanceError):
+        envelope.source_sku_identity_blocked = True  # type: ignore[misc]
 
 
 def test_contract_dataclasses_are_frozen_and_slotted():

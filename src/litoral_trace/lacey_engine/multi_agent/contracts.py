@@ -79,6 +79,8 @@ class CandidateEnvelope:
     source_line_key: str | None = None
     source_table_id: str | None = None
     source_row_index: int | None = None
+    # Verified-anchor abstention only; this metadata can never grant SKU authority.
+    source_sku_identity_blocked: bool = False
 
 
 @dataclass(frozen=True, slots=True)

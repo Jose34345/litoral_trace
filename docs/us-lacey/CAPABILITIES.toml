@@ -64,7 +64,7 @@ tests = [
   "tests/lacey_engine/test_cross_document_line_identity_fail_closed.py",
   "tests/lacey_engine/test_exact_sku_identity_p0.py"
 ]
-notes = "Cross-document identity must fail closed when evidence is insufficient. SKU sidecars require complete tokens in the original Engine 2 anchor, never cropped quote substrings or Unicode casefold aliases; label modifiers never become product identities; contradictory explicit labels abstain. Only ASCII case and surrounding whitespace normalize; significant SKU characters (- _ . / +) are preserved through binding, admission and publication preparation."
+notes = "Cross-document identity must fail closed when evidence is insufficient. SKU sidecars require complete tokens in the original Engine 2 anchor, never cropped quote substrings or Unicode casefold aliases; label modifiers never become product identities; explicit negative verified-anchor abstention survives partial quotes, binding, reconciliation and serialization, fenced by line-binding version; contradictory explicit labels abstain. Only ASCII case and surrounding whitespace normalize; significant SKU characters (- _ . / +) are preserved through binding, admission and publication preparation."
 
 [capabilities.ai_shadow]
 status = "SHADOW"
