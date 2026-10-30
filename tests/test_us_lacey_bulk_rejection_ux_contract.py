@@ -56,7 +56,7 @@ def test_bulk_rejection_does_not_mix_request_feedback_with_stale_analysis_ui():
     # stored document. The operation history remains untouched and is visible on
     # the normal operation GET after the customer leaves this request-local state.
     assert '{% elif not bulk_upload_rejection %}' in source
-    assert '{% if not private_v2 and not bulk_upload_rejection and not processing.terminal %}' in source
+    assert '{% if not private_v2 and not bulk_upload_rejection and not processing.terminal and engine2_dossier.availability == "CURRENT" %}' in source
     assert 'id="engine2-dossier"' in source
     processing_fragment = PROCESSING_FRAGMENT.read_text(encoding="utf-8")
     assert 'id="processing-panel"' in processing_fragment
