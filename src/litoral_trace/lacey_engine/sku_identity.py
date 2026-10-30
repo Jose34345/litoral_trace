@@ -82,7 +82,7 @@ def has_complete_source_sku_token(identity: str, text: str) -> bool:
         return False
     comparison_text = " ".join(text.split())
     return re.search(
-        rf'(?<![^\\s:;,()\\[\\]{{}}]){re.escape(token)}(?=$|{_SOURCE_DELIMITER})',
+        rf'(?<![^\s:;,()\[\]{{}}]){re.escape(token)}(?=$|{_SOURCE_DELIMITER})',
         comparison_text,
         re.IGNORECASE | re.ASCII,
     ) is not None
