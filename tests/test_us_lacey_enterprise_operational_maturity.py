@@ -51,12 +51,14 @@ def test_shipment_workspace_is_readiness_first_and_upload_is_modal() -> None:
     country = (fragments / "country_status.html").read_text(encoding="utf-8")
     assert "Shipment system of record" in template
     assert "Last processed" in template
-    assert "shipment_readiness_status.html" in template
+    summary = (fragments / "shipment_workspace_summary.html").read_text(encoding="utf-8")
+    assert "shipment_workspace_summary.html" in template
+    assert "shipment_readiness_status.html" in summary
     assert "Shipment readiness" in readiness
     assert "Exceptions:" in readiness
     assert "Country of harvest" in country
-    assert "View verified supplier evidence" in template
-    assert "Inspect source" in template
+    assert "View verified supplier evidence" in summary
+    assert "Inspect source" in summary
     assert "Add evidence" in template
     assert 'id="add-evidence-dialog"' in template
     assert "lt-upload-dropzone" not in template

@@ -352,7 +352,7 @@
   {% set default_review_tab = "action" if combined_action_count > 0 else ("resolved" if auto_supported_fields else "confirmed") %}
   <section id="review-summary" class="lt-card scroll-mt-36 overflow-hidden" aria-label="Shipment review">
 
-    <nav class="flex overflow-x-auto border-b border-slate-200 px-4" role="tablist" aria-label="Shipment review" data-review-kpis>
+    <nav class="flex overflow-x-auto border-b border-slate-200 px-4" role="tablist" aria-label="Review status filters" data-review-kpis data-review-filter-bar>
       <button id="review-tab-action" type="button" role="tab" aria-selected="{{ 'true' if default_review_tab == 'action' else 'false' }}" aria-controls="review-panel-action" tabindex="{{ '0' if default_review_tab == 'action' else '-1' }}" data-review-tab-button="action" data-review-kpi="action" class="border-b-2 px-4 py-3 text-xs {% if default_review_tab == 'action' %}border-emerald-600 font-bold text-emerald-700{% else %}border-transparent font-semibold text-slate-500{% endif %}">
         Pending fields <span class="ml-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20" data-action-tab-count data-action-required-count>{{ combined_action_count }}</span>
       </button>
@@ -362,10 +362,11 @@
       <button id="review-tab-confirmed" type="button" role="tab" aria-selected="{{ 'true' if default_review_tab == 'confirmed' else 'false' }}" aria-controls="review-panel-confirmed" tabindex="{{ '0' if default_review_tab == 'confirmed' else '-1' }}" data-review-tab-button="confirmed" data-review-kpi="confirmed" class="border-b-2 px-4 py-3 text-xs {% if default_review_tab == 'confirmed' %}border-emerald-600 font-bold text-emerald-700{% else %}border-transparent font-semibold text-slate-500{% endif %}">
         Confirmed fields <span class="ml-1 text-[10px]">{{ settled_fields|length }}</span>
       </button>
-      <button id="review-tab-regulatory" type="button" role="tab" aria-selected="false" aria-controls="review-panel-regulatory" tabindex="-1" data-review-tab-button="regulatory" class="border-b-2 border-transparent px-4 py-3 text-xs font-semibold text-slate-500">
+
+    </nav>
+      <button id="review-tab-regulatory" type="button" hidden aria-selected="false" aria-controls="review-panel-regulatory" tabindex="-1" data-review-tab-button="regulatory" class="border-b-2 border-transparent px-4 py-3 text-xs font-semibold text-slate-500">
         Regulatory Analysis
       </button>
-    </nav>
 
     <div id="review-panel-action" role="tabpanel" aria-labelledby="review-tab-action" data-review-tab-panel="action" class="{% if default_review_tab != 'action' %}hidden {% endif %}p-5">
       {% if combined_action_count > 0 %}
@@ -427,36 +428,11 @@
       </div>
 
       {% if auto_supported_fields %}
-      <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200">
-        <table class="min-w-[62rem] w-full text-left">
-          <thead class="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-            <tr>
-              <th class="px-4 py-2.5">Field</th>
-              <th class="px-4 py-2.5">Resolved value</th>
-              <th class="px-4 py-2.5">Provenance</th>
-              <th class="px-4 py-2.5" title="Extraction confidence is not evidence verification or filing approval">Extraction score</th>
-              <th class="px-4 py-2.5">Evidence</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100 bg-white">
-            {% for field in auto_supported_fields %}
-            <tr data-auto-resolved-field="{{ field.id }}" class="align-top">
-              <td class="px-4 py-3">
-                <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">{% if field.scope == "SHIPMENT" %}Shipment{% else %}Plant line {{ field.line_reference }}{% endif %}</p>
-                <p class="mt-1 text-xs font-bold text-slate-950">{{ field.label }}</p>
-              </td>
-              <td class="px-4 py-3 text-xs font-semibold text-slate-900">{{ field.proposed_value }}</td>
-              <td class="px-4 py-3">
-                {% if field.provenance == "reused_evidence" %}
-                <div data-reused-evidence-label>{{ lt_badge("AUTO-RESOLVED", "Reused from verified supplier evidence") }}</div>
-                <p class="mt-2 max-w-xs text-[11px] leading-4 text-slate-500">Resolved by Litoral Trace · Source: verified supplier evidence history</p>
-                {% else %}
-                <span class="text-xs font-semibold text-slate-700">Current shipment</span>
-                <p class="mt-1 max-w-xs text-[11px] leading-4 text-slate-500">Resolved by Litoral Trace{% if field.source_page %} · Source: shipment document p.{{ field.source_page }}{% endif %}</p>
-                {% endif %}
-              </td>
-              <td class="px-4 py-3"><span class="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600" title="Extraction confidence, not regulatory approval">{{ (field.confidence * 100)|round(1) }}%</span></td>
-              <td class="px-4 py-3">
+      <div class="lt-supported-list" data-compact-supported>
+        {% for field in auto_supported_fields %}
+        <article data-auto-resolved-field="{{ field.id }}" class="lt-supported-item">
+          <div><p class="text-xs text-slate-500">{% if field.scope == "SHIPMENT" %}Shipment{% else %}Plant line {{ field.line_reference }}{% endif %}</p><strong>{{ field.label }}</strong><p class="lt-supported-value">{{ field.proposed_value }}</p></div>
+          <div>
                 {% if field.provenance == "reused_evidence" %}
                 <a class="inline-flex text-xs font-bold text-emerald-800 underline" href="/evidence" data-reused-evidence-inspect>
                   View verified supplier evidence
@@ -475,11 +451,9 @@
                 {% else %}
                 <span class="text-xs text-slate-500" data-auto-source-unavailable>No current source PDF linked</span>
                 {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+              <details><summary>Evidence details</summary><p>Resolved by Litoral Trace ? {{ 'Reused from verified supplier evidence' if field.provenance == 'reused_evidence' else 'Current shipment' }}</p><p title="Extraction confidence is not evidence verification or filing approval">Extraction score: {{ (field.confidence * 100)|round(1) }}%</p></details></div>
+        </article>
+        {% endfor %}
       </div>
       {% else %}
       <div class="mt-5">{{ empty_state("No auto-resolved fields yet", icon="fa-wand-magic-sparkles") }}</div>
@@ -569,17 +543,6 @@
       {% endif %}
     </div>
 
-    <div id="review-panel-regulatory" role="tabpanel" aria-labelledby="review-tab-regulatory" data-review-tab-panel="regulatory" class="hidden p-6">
-      <div class="mb-5">
-        <h2 class="text-lg font-bold text-slate-950">Regulatory Analysis</h2>
-        <p class="mt-1 text-sm text-slate-600">Rule-specific analysis for audit and preparation. It does not represent an overall legal compliance determination.</p>
-      </div>
-      {% if regulatory_assessment %}
-        {% include "us_lacey/fragments/regulatory_assessment_card.html" %}
-      {% else %}
-        {{ empty_state("Regulatory analysis is not available yet", icon="fa-scale-balanced") }}
-      {% endif %}
-    </div>
     {% for field in settled_fields %}<div id="review-field-{{ field.id }}" hidden data-review-resolved="true"></div>{% endfor %}
   </section>
 
@@ -664,6 +627,11 @@
 <script>
 (() => {
   function activateTab(root, name) {
+    if (name === "regulatory") {
+      const panel = root.querySelector("[data-package-regulatory]");
+      if (panel) { panel.open = true; panel.scrollIntoView({block: "start"}); panel.querySelector("summary")?.focus(); }
+      return;
+    }
     root.querySelectorAll("[data-review-tab-button]").forEach((button) => {
       const active = button.dataset.reviewTabButton === name;
       button.setAttribute("aria-selected", active ? "true" : "false");
@@ -676,7 +644,7 @@
       button.classList.toggle("font-semibold", !active);
     });
     root.querySelectorAll("[data-review-tab-panel]").forEach((panel) => {
-      panel.classList.toggle("hidden", panel.dataset.reviewTabPanel !== name);
+      if (panel.dataset.reviewTabPanel !== "regulatory") panel.classList.toggle("hidden", panel.dataset.reviewTabPanel !== name);
     });
   }
 
@@ -923,7 +891,6 @@
 {% if is_oob_update|default(false) %}
 {% set shell_oob = true %}
 {% include "us_lacey/fragments/workflow_stepper_shell.html" %}
-{% include "us_lacey/fragments/shipment_readiness_status.html" %}
-{% include "us_lacey/fragments/species_status.html" %}
-{% include "us_lacey/fragments/country_status.html" %}
+{% set summary_oob = true %}
+{% include "us_lacey/fragments/shipment_workspace_summary.html" %}
 {% endif %}

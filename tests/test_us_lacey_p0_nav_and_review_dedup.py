@@ -5,6 +5,8 @@ from jinja2 import Environment
 ROOT = Path(__file__).resolve().parents[1]
 BASE = (ROOT / "src/litoral_trace/templates/us_lacey/base.html").read_text(encoding="utf-8")
 DETAIL = (ROOT / "src/litoral_trace/templates/us_lacey/operation_detail.html").read_text(encoding="utf-8")
+SUMMARY = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/shipment_workspace_summary.html").read_text(encoding="utf-8")
+REGULATORY = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/shipment_package_regulatory.html").read_text(encoding="utf-8")
 REVIEW = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/operation_workspace.html").read_text(encoding="utf-8")
 
 
@@ -37,10 +39,11 @@ def test_lab_entry_is_not_advertised_but_authority_guards_remain():
 
 
 def test_one_review_summary_and_one_navigation_cta_when_pending():
-    assert 'id="shipment-summary"' in DETAIL
-    assert 'data-first-value-cta' in DETAIL
-    assert "readiness_summary.exception_count" in DETAIL
-    assert "No automatic ACE / LAWGS submission" in DETAIL
+    assert 'shipment_workspace_summary.html' in DETAIL
+    assert 'id="shipment-summary"' in SUMMARY
+    assert 'data-first-value-cta' in SUMMARY
+    assert "readiness_summary.exception_count" in SUMMARY
+    assert "No automatic ACE / LAWGS submission" in SUMMARY
     assert "Review decisions" not in REVIEW
     assert "Go to first issue" not in REVIEW
     assert 'id="review-summary"' in REVIEW
@@ -54,7 +57,7 @@ def test_zero_pending_confirmation_and_source_controls_remain_operational():
     assert 'hx-target="#operation-workspace"' in REVIEW
     assert 'data-review-bulk' in REVIEW
     assert 'data-review-completion-form' in REVIEW
-    assert 'data-review-tab-panel="regulatory"' in REVIEW
+    assert 'data-review-tab-panel="regulatory"' in REGULATORY
     assert "data-action-required-list" in REVIEW
     assert "Request original evidence" in REVIEW
     Environment().parse(BASE)

@@ -41,7 +41,8 @@ def test_operation_alias_is_editable_in_place_without_changing_identity():
     core = OPS_CORE.read_text(encoding="utf-8")
 
     assert 'include "us_lacey/fragments/operation_alias.html"' in detail
-    assert "Immutable operation ID · {{ detail.public_id }}" in detail
+    assert "Immutable operation ID" in detail
+    assert '<code data-operation-id-value>{{ detail.public_id }}</code>' in detail
     assert "data-operation-alias-edit" in alias
     assert "data-operation-alias-form" in alias
     assert 'hx-post="/operations/{{ detail.public_id }}/alias"' in alias

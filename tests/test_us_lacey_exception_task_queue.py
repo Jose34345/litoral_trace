@@ -246,7 +246,9 @@ def test_embedded_queue_does_not_duplicate_status_cards_but_partial_get_updates_
     html=render(monkeypatch,[field(101,"filing_entry_reference")])
     for id in ("workflow-stepper","shipment-readiness-card","species-status","country-status"):
         assert html.count(f'id="{id}"')==1
-    assert html.count('hx-swap-oob="true"')>=4
+    assert html.count('hx-swap-oob="true"') == 1  # workflow only; cards belong to the summary
+    assert html.count('hx-swap-oob="outerHTML"') == 1
+    assert html.count('id="shipment-summary"') == 1
     source=__import__("pathlib").Path(views.__file__).parents[1]/"templates/us_lacey/fragments/operation_workspace.html"
     footer=source.read_text(encoding="utf-8").split('{% set shell_oob = true %}',1)[1]
     assert footer.rstrip().endswith('{% endif %}')

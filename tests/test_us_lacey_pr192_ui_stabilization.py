@@ -13,7 +13,12 @@ def test_exception_first_workspace_uses_one_authoritative_outer_html_swap():
     assert 'id="review-summary"' in template
     assert 'data-action-required-list' in template
     assert 'data-review-tab-panel="resolved"' in template
-    assert 'data-review-tab-panel="regulatory"' in template
+    export = Path("src/litoral_trace/templates/us_lacey/fragments/export_declaration_package.html").read_text(encoding="utf-8")
+    regulatory = Path("src/litoral_trace/templates/us_lacey/fragments/shipment_package_regulatory.html").read_text(encoding="utf-8")
+    assert 'shipment_package_regulatory.html' in export
+    assert 'data-review-tab-panel="regulatory"' in regulatory
+    assert 'id="review-panel-regulatory"' in regulatory
+    assert 'data-package-regulatory' in regulatory
     assert '{% include "us_lacey/fragments/export_declaration_package.html" %}' in template
 
 

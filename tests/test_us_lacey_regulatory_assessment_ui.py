@@ -127,7 +127,9 @@ def test_terminal_workspace_hydrates_rule_scoped_regulatory_panel(monkeypatch):
     assert 'id="shipment-readiness-card"' in html
     assert 'id="species-status"' in html
     assert 'id="country-status"' in html
-    assert html.count('hx-swap-oob="true"') >= 4
+    assert html.count('hx-swap-oob="true"') == 1
+    assert html.count('hx-swap-oob="outerHTML"') == 1
+    assert html.count('id="shipment-summary"') == 1
     assert "does not represent an overall legal compliance determination" in html.lower()
     assert "shipment pass" not in html.lower()
     assert "EXEMPTION_NOT_CLAIMED" not in html

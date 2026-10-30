@@ -1185,7 +1185,8 @@ def render_operation_audit_log(*, request, detail, audit_events) -> str:
 def render_operation_workspace(*, request, identity, detail, engine2_dossier, complete_csrf: str, review_csrf: Mapping[int, str], error: str | None = None, field_errors: Mapping[int, str] | None = None, field_input_values: Mapping[int, str] | None = None, is_oob_update: bool | None = None) -> str:
     attention_fields, auto_supported_fields, settled_fields = _review_field_groups_with_semantic_evidence(identity, detail)
     if is_oob_update is None:
-        # Standalone partials include terminal GET polling as well as POST reviews.
+        # This function returns a standalone fragment, including terminal GET polls.
+        # Full pages include the template directly with no OOB flag.
         is_oob_update = True
 
     progress = processing_view(detail)
