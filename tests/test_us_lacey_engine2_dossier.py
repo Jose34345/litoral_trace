@@ -150,7 +150,12 @@ def test_terminal_workspace_keeps_engine2_dossier_collapsed_for_audit():
 def test_non_current_dossier_states_hide_canonical_values():
     for availability in (Engine2DossierAvailability.DISABLED, Engine2DossierAvailability.NOT_AVAILABLE, Engine2DossierAvailability.STALE, Engine2DossierAvailability.FAILED, Engine2DossierAvailability.INVALID):
         html = _html(Engine2DossierView(availability, fields=(Engine2DossierFieldView("species", "Species", "SUPPORTED", ("radiata",), ()),), safe_status_message="Safe state."))
-        assert f'data-engine2-availability="{availability}"' in html and "Safe state." in html and "radiata" not in html
+        assert f'data-engine2-availability="{availability}"' in html
+        assert "data-engine2-not-current" in html
+        assert 'id="engine2-dossier"' not in html
+        assert "Advanced evidence details" not in html
+        assert "Safe state." not in html
+        assert "radiata" not in html
 
 
 def test_dossier_groups_line_evidence_before_global_cross_line_evidence():
