@@ -14,6 +14,7 @@ import math
 import re
 from typing import Iterable, Mapping, Sequence
 
+from .sku_identity import has_exact_source_identity
 from .domain import AdmittedCandidate, BoundingBox, EvidenceClass, LayoutBlock, ParsedLayout
 from .multi_agent.contracts import CandidateEnvelope
 from .semantic_graph import semantic_normalize
@@ -280,7 +281,7 @@ def _binding(
     text = source_text or ""
     if supplied_key and supplied_key.startswith("SKU:"):
         sku = supplied_key[4:]
-        if sku and re.search(r"(?<![\w./-])" + re.escape(sku) + r"(?![\w./-])", text, re.I):
+        if sku and has_exact_source_identity(sku, text):
             return AssociationStatus.EXPLICIT_SKU, None, sku.upper(), "SKU:" + sku.upper()
     if sheet_cell is not None:
         key = f"{sheet_cell.sheet}:R{sheet_cell.row}"

@@ -13,10 +13,13 @@ import re
 from typing import Mapping, Sequence
 from uuid import UUID
 
+from ..sku_identity import (
+    SKU_TOKEN_PATTERN, has_unsupported_source_sku, is_sku_token, normalize_sku, observed_source_skus,
+)
 from .contracts import CandidateEnvelope
 
 
-LINE_BINDING_VERSION = "lacey_document_local_line_binding_v1"
+LINE_BINDING_VERSION = "lacey_document_local_line_binding_v2_exact_sku"
 
 
 LINE_SCOPED_FIELDS = frozenset(
@@ -43,12 +46,12 @@ class RowLocator:
 
 SourceLocatorKey = tuple[UUID, int, str]
 
-_SKU_LABEL = re.compile(r"\bSKU\s*(?:NO\.?|NUMBER|#|:)?\s*([A-Z0-9][A-Z0-9._/-]{2,})\b", re.I)
+_SKU_END = r"(?=$|[\s:;,()\[\]{}])"
 _LEADING_LINE_AND_SKU = re.compile(
-    r"^\s*(?:LINE\s*)?(\d{1,6})[.)]?\s+([A-Z0-9][A-Z0-9._/-]{2,})\b",
-    re.I,
+    rf"^\s*(?:LINE\s*)?(\d{{1,6}})[.)]?\s+({SKU_TOKEN_PATTERN}){_SKU_END}",
+    re.I | re.ASCII,
 )
-_LEADING_SKU = re.compile(r"^\s*([A-Z0-9]*[A-Z][A-Z0-9]*[-_/][A-Z0-9._/-]*\d[A-Z0-9._/-]*)\b", re.I)
+_LEADING_SKU = re.compile(rf"^\s*({SKU_TOKEN_PATTERN}){_SKU_END}", re.I | re.ASCII)
 _LINE_LABEL = re.compile(
     r"\b(?:LINE|ITEM)\s*(?:NO\.?|NUMBER|#)?\s*[:#]?\s*(\d{1,6})\b",
     re.I,
@@ -90,27 +93,31 @@ def derive_line_item_key(
     if envelope.candidate.field_key not in LINE_SCOPED_FIELDS:
         return None
 
-    explicit_key = " ".join((envelope.source_line_key or "").split()).strip()
-    if explicit_key:
-        if _looks_like_sku(explicit_key):
-            return f"SKU:{_normalize_token(explicit_key)}"
+    explicit_key = (envelope.source_line_key or "").strip()
+    source = " ".join(envelope.candidate.source_text.split()).strip()
+    source_skus = observed_source_skus(source)
+    unsupported_source_sku = has_unsupported_source_sku(source)
+    ambiguous_skus = len(source_skus) > 1 or unsupported_source_sku
+
+    # A visible source SKU overrides a contradictory sidecar; multiple explicit
+    # identifiers cannot choose a packet-global identity by source order.
+    if len(source_skus) == 1 and not ambiguous_skus:
+        return f"SKU:{next(iter(source_skus))}"
+    if not ambiguous_skus and explicit_key:
+        if _looks_like_sku(explicit_key, require_separator=False):
+            return f"SKU:{normalize_sku(explicit_key)}"
         explicit_line = _EXPLICIT_LINE_KEY.fullmatch(explicit_key)
         if explicit_line:
             return f"LINE:{int(explicit_line.group(1))}"
 
-    source = " ".join(envelope.candidate.source_text.split()).strip()
     if source:
-        labelled_sku = _SKU_LABEL.search(source)
-        if labelled_sku:
-            return f"SKU:{_normalize_token(labelled_sku.group(1))}"
-
         leading = _LEADING_LINE_AND_SKU.search(source)
-        if leading and _looks_like_sku(leading.group(2)):
-            return f"SKU:{_normalize_token(leading.group(2))}"
+        if not ambiguous_skus and leading and _looks_like_sku(leading.group(2)):
+            return f"SKU:{normalize_sku(leading.group(2))}"
 
         leading_sku = _LEADING_SKU.search(source)
-        if leading_sku and _looks_like_sku(leading_sku.group(1)):
-            return f"SKU:{_normalize_token(leading_sku.group(1))}"
+        if not ambiguous_skus and leading_sku and _looks_like_sku(leading_sku.group(1)):
+            return f"SKU:{normalize_sku(leading_sku.group(1))}"
 
         labelled_line = _LINE_LABEL.search(source)
         if labelled_line:
@@ -137,7 +144,7 @@ def derive_line_item_key(
 
     if not source:
         return None
-    fingerprint_text = _fingerprintable_text(source)
+    fingerprint_text = _fingerprintable_text(source, preserve_punctuation=unsupported_source_sku)
     if fingerprint_text is None:
         return None
     digest = hashlib.sha256(fingerprint_text.encode("utf-8")).hexdigest()[:24].upper()
@@ -316,21 +323,26 @@ def _normalize_token(value: str) -> str:
     return re.sub(r"[^A-Z0-9._/-]+", "", value.upper()).strip("-_/.")
 
 
-def _looks_like_sku(value: str) -> bool:
-    token = _normalize_token(value)
+def _looks_like_sku(value: str, *, require_separator: bool = True) -> bool:
+    token = normalize_sku(value)
     return (
-        len(token) >= 4
+        is_sku_token(value)
+        and len(token) >= 4
         and bool(re.search(r"[A-Z]", token))
         and bool(re.search(r"\d", token))
-        and any(separator in token for separator in ("-", "_", "/"))
+        and (not require_separator or any(separator in token for separator in ("-", "_", "/", "+")))
     )
 
 
-def _fingerprintable_text(source: str) -> str | None:
+def _fingerprintable_text(source: str, *, preserve_punctuation: bool = False) -> str | None:
     normalized = re.sub(r"[^A-Z0-9]+", " ", source.upper()).strip()
     tokens = normalized.split()
     # A one- or two-token snippet such as "Acacia" or "18,900" is evidence for a
     # value, not reliable evidence for a row identity. Leave it explicitly unbound.
     if len(tokens) < 4 or len(normalized) < 16:
         return None
+    # Unsupported explicit identifiers remain source-local. Their punctuation
+    # distinguishes products even though it cannot establish an admitted SKU.
+    if preserve_punctuation:
+        return normalize_sku(" ".join(source.split()))
     return normalized

@@ -34,6 +34,7 @@ from litoral_trace.lacey_engine.multi_agent.line_binding import (
     LINE_SCOPED_FIELDS,
     line_identity_scope,
 )
+from litoral_trace.lacey_engine.sku_identity import SKU_TOKEN_PATTERN
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
     PPQ505_PLANT_FIELDS,
@@ -54,7 +55,7 @@ _ROW_KEY = re.compile(
     r"T(?P<table>[A-Z0-9._/-]+):R(?P<row>[0-9]+)$"
 )
 _LINE_KEY = re.compile(r"^LINE:[1-9][0-9]*$")
-_SKU_KEY = re.compile(r"^SKU:[A-Z0-9][A-Z0-9._/-]*$", re.IGNORECASE)
+_SKU_KEY = re.compile(rf"^SKU:{SKU_TOKEN_PATTERN}$", re.IGNORECASE | re.ASCII)
 _FINGERPRINT_KEY = re.compile(r"^FP:[A-F0-9]{24,64}$", re.IGNORECASE)
 _BOL_EXPLICIT_LABEL = re.compile(
     r"(?:\bbill[_\s-]+of[_\s-]+lading\b|\b(?:master|house)\s+b\s*/\s*l\b|"

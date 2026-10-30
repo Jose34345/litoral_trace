@@ -36,3 +36,13 @@ These are change constraints, not aspirational copy. If a change needs to violat
 - Strong source-line signatures are frozen before canonical derived-key rewrites so binding is deterministic and independent of field iteration order.
 - A shipment total entered value may seed one line only when there is exactly one resolved declarable line and exactly one supported total; the resulting line value is always REVIEW_REQUIRED.
 - Derived binding keys may exist in the canonical working copy, but raw candidate values, source spans and provenance must remain unchanged.
+
+## Complete source SKU identity (DI-02)
+
+- A SKU sidecar is identity evidence only when the complete token occurs in the verified anchor/row; prefix, suffix and substring matches cannot authorize association. Contradictory explicit SKU labels retain source-local identity rather than choosing one by order.
+- Only ASCII case and surrounding whitespace normalize for SKU comparison. Significant characters, including trailing separators, remain intact. Unsupported token spellings abstain; no punctuation removal creates an alias. Source delimiters are whitespace, colon, comma, semicolon and brackets.
+- A supported source value remains a candidate and may remain unbound to an entity; admission and exact association do not constitute human review or canonical regulatory approval.
+
+- SKU identity checks use the original Engine 2 anchor, not Unicode-casefolded text or an AI quote cropped inside another identifier. Label modifiers No/No./Number/ID never become product identities. Literal quotes and source contents remain unchanged.
+- An explicit unsupported SKU label vetoes packet-global SKU association, including literal Legacy aliases; retain source-local ROW/FP identity and unchanged candidate evidence instead.
+- Source-local FP fallback for an unsupported explicit SKU preserves distinguishing punctuation and Unicode; abstention must not merge distinct source products. A verified explicit sidecar does not require a punctuation separator to retain an admitted alphanumeric SKU.

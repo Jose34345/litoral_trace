@@ -371,3 +371,22 @@ def test_numeric_fragments_of_skus_or_larger_amounts_are_not_source_values(text,
     claim, _ = _claim(text, proposed, field_name="plant_quantity", sku="ACT-TRAY-18")
     assert claim.support_status is SupportStatus.UNSUPPORTED
     assert claim.locator is None
+
+@pytest.mark.parametrize('source_sku', ['ACT-TRAY-18+REV', 'OTHER-ACT-TRAY-18'])
+def test_partial_or_contradictory_sku_is_supported_value_but_not_bound_entity(source_sku):
+    claim, doc = _claim(f'SKU {source_sku} Species Pinus taeda', 'taeda', sku='ACT-TRAY-18')
+    assert claim.support_status is SupportStatus.SUPPORTED
+    assert claim.association_status is AssociationStatus.UNBOUND
+    assert claim.sku is None
+    assert claim.candidate_state == 'CANDIDATE'
+    assert claim.source_set_revision_id == 'revision-7'
+    assert claim.original_document_sha256 == doc.sha256
+    assert verify_claim_anchor(claim, doc)
+
+
+def test_explicit_label_cannot_authorize_different_legacy_sku_in_same_anchor():
+    claim, doc = _claim('SKU OTHER-ACT-TRAY-18 Legacy ACT-TRAY-18 Species Pinus taeda',
+                        'taeda', sku='ACT-TRAY-18')
+    assert claim.support_status is SupportStatus.SUPPORTED
+    assert claim.association_status is AssociationStatus.UNBOUND
+    assert verify_claim_anchor(claim, doc)

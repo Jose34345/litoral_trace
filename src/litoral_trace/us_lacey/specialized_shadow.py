@@ -14,6 +14,7 @@ import time
 from typing import Mapping
 from uuid import UUID
 
+from litoral_trace.lacey_engine.sku_identity import has_exact_source_identity, observed_source_skus
 from litoral_trace.lacey_engine.ai_providers import AIProviderConfig
 from litoral_trace.lacey_engine.ai_shadow import AICandidate, AIExtractionResult, AIShadowError, verify_ai_evidence
 from litoral_trace.lacey_engine.domain import BoundingBox, DocumentResolution, EvidenceClass
@@ -138,6 +139,27 @@ def _row_identity_text(value: object) -> str:
     return " ".join(str(value or "").split()).casefold()
 
 
+def _identity_source_anchors(envelope: CandidateEnvelope, *, resolution: DocumentResolution,
+                             candidate: AICandidate) -> tuple[str, ...]:
+    """Original Engine 2 anchors for identity checks, never a rewritten AI quote."""
+    source = _row_identity_text(candidate.source_text)
+    if not source:
+        return ()
+    blocks = tuple(block for block in resolution.layout.blocks if block.page == candidate.page)
+    if envelope.source_table_id is not None and envelope.source_row_index is not None:
+        row = tuple(block for block in blocks
+                    if _row_identity_text(block.table_id) == _row_identity_text(envelope.source_table_id)
+                    and block.row_index == envelope.source_row_index)
+        raw_row = "\n".join(block.text for block in row)
+        if row and source in _row_identity_text(raw_row):
+            return (raw_row,)
+    anchors = tuple(block.text for block in blocks if source in _row_identity_text(block.text))
+    if anchors:
+        return anchors
+    raw_page = "\n".join(block.text for block in blocks)
+    return (raw_page,) if source in _row_identity_text(raw_page) else ()
+
+
 def _verified_row_sidecar(
     envelope: CandidateEnvelope,
     *,
@@ -157,16 +179,18 @@ def _verified_row_sidecar(
             and _row_identity_text(block.table_id) == _row_identity_text(table_id)
             and block.row_index == row_index
         )
-        row_text = _row_identity_text("\n".join(block.text for block in row_blocks))
+        original_row_text = "\n".join(block.text for block in row_blocks)
+        row_text = _row_identity_text(original_row_text)
         if not row_text or not source_key or source_key not in row_text:
             return None, None, None
-        if line_key is not None and _row_identity_text(line_key) not in row_text:
+        if line_key is not None and not has_exact_source_identity(line_key, original_row_text):
             line_key = None
         return line_key, table_id, row_index
 
     # Partial row locators are not trustworthy. A standalone line key is kept only
     # when the exact key is visibly present in the candidate's verified source text.
-    if line_key is not None and _row_identity_text(line_key) in source_key:
+    anchors = _identity_source_anchors(envelope, resolution=resolution, candidate=candidate)
+    if line_key is not None and anchors and all(has_exact_source_identity(line_key, text) for text in anchors):
         return line_key, None, None
     return None, None, None
 
@@ -180,6 +204,14 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
         singleton = AIExtractionResult(provider=envelope.candidate.provider, model=envelope.candidate.model, schema_version=SPECIALIZED_SHADOW_SCHEMA_VERSION, candidates=(envelope.candidate,), page_count=resolution.layout.page_count, latency_ms=None)
         checked = verify_ai_evidence(engine2=resolution, ai=singleton)
         candidate = checked.candidates[0]
+        quoted_skus = observed_source_skus(candidate.source_text)
+        if candidate.evidence_verified and len(quoted_skus) == 1:
+            anchors = _identity_source_anchors(envelope, resolution=resolution, candidate=candidate)
+            quoted_sku = next(iter(quoted_skus))
+            if not anchors or not all(has_exact_source_identity(quoted_sku, text) for text in anchors):
+                # A substring quote may start/end inside a different source SKU.
+                # Preserve its literal text for audit, but never admit its claim.
+                candidate = replace(candidate, evidence_verified=False)
         line_key, table_id, row_index = _verified_row_sidecar(
             envelope,
             resolution=resolution,

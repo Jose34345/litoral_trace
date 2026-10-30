@@ -6,7 +6,7 @@ Use this as a routing guide. Exact test names evolve; search existing tests befo
 |---|---|---|
 | `lacey_engine` classification/parsing | relevant `tests/lacey_engine/` tests; party-label boundaries: `test_inline_party_labels.py`; independent real-PDF name/address and integral contracts in `test_gate1_document_engine.py` (see `DI03_PARSER_ACCEPTANCE.md`) | general CI pytest |
 | AI routing/provider/shadow | AI architecture/routing/shadow/resilience tests under `tests/lacey_engine/` | general CI pytest |
-| specialist routing/fusion | specialist + line-binding/fusion tests | general CI pytest |
+| specialist routing/fusion | specialist + line-binding/fusion tests + `tests/lacey_engine/test_exact_sku_identity_p0.py` (original audit substring, complete separators, conflicting labels, provenance, admission, fusion and downstream canonical reconciliation) | general CI pytest + U.S. Lacey PostgreSQL Gate before merge |
 | cross-document identity | `tests/lacey_engine/test_cross_document_line_identity.py` and fail-closed companion | general CI pytest |
 | Product Intelligence parser/domain | `tests/product_intelligence/` | general CI pytest + existing Assurance parser regressions |
 | Product Intelligence snapshot/read path | `tests/test_us_lacey_product_intelligence_snapshot.py` + UI tests | general CI + U.S. Lacey PostgreSQL Gate |

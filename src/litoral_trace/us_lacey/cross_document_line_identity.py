@@ -19,6 +19,7 @@ from litoral_trace.us_lacey.single_sku_recovery import bind_single_sku_evidence
 import re
 from typing import Mapping
 
+from litoral_trace.lacey_engine.sku_identity import SKU_TOKEN_PATTERN
 from litoral_trace.us_lacey.ppq505 import PpqValidationStatus, normalize_hts
 
 
@@ -34,7 +35,7 @@ _COMPONENT_FIELDS = (
 )
 _QUANTITATIVE_COMPONENT_FIELDS = frozenset({"plant_quantity", "metric_unit"})
 _TAXON = re.compile(r"^taxon:([^:]+):([^:]+)$", re.IGNORECASE)
-_EXPLICIT_SKU = re.compile(r"^SKU:[A-Z0-9][A-Z0-9._/-]*$", re.IGNORECASE)
+_EXPLICIT_SKU = re.compile(rf"^SKU:{SKU_TOKEN_PATTERN}$", re.IGNORECASE | re.ASCII)
 _EXPLICIT_LINE = re.compile(r"^LINE:(\d{1,6})$", re.IGNORECASE)
 _ROW = re.compile(r"^(?P<document>[^:]+):(?P<table>.+):row:(?P<row>\d+)$", re.IGNORECASE)
 _HTS_SOURCE_VALUE = re.compile(
