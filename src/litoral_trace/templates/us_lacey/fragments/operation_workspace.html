@@ -46,11 +46,11 @@
   data-review-status="{{ field.status }}"
   data-review-required="true"
 >
-  <div class="lt-exception-field__part">
+  <div class="lt-exception-field__part lt-exception-field__identity">
     <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">{% if field.scope == "SHIPMENT" %}Shipment{% else %}Plant line {{ field.line_reference }}{% endif %}</p>
     <p class="mt-1 text-xs font-bold text-slate-950">{{ field.label }}</p>
   </div>
-  <div class="lt-exception-field__part">
+  <div class="lt-exception-field__part lt-exception-field__value">
     {% if field.proposed_value %}
     <p class="text-xs font-semibold text-slate-900">{{ field.proposed_value }}</p>
     {% else %}
@@ -58,7 +58,7 @@
     <p class="mt-1 max-w-xs text-[11px] leading-4 text-slate-500">{{ missing_guidance(field.field_name) }}</p>
     {% endif %}
   </div>
-  <div class="lt-exception-field__part">
+  <div class="lt-exception-field__part lt-exception-field__evidence">
     {% if field.id not in paired_review_ids and field.candidates|length == 1 and field.candidates[0].source_document_id %}
     {% set source = field.candidates[0] %}
     <button type="button" class="lt-task-source-link" data-source-inspect
@@ -156,11 +156,11 @@
     {% endif %}
     </details>
   </div>
-  <div class="lt-exception-field__part">
+  <div class="lt-exception-field__part lt-exception-field__status">
     {% set derived_only = field.source_filename and source_class_for_filename(field.source_filename).code == 'DERIVED_PREPARATION' %}
     <span class="lt-review-status {% if field.status in ['MISSING', 'CONFLICT'] or (derived_only and not article_context) %}lt-review-status--blocking{% else %}lt-review-status--confirmation{% endif %}" data-action-status>{% if derived_only and article_context %}Review original{% elif derived_only %}Original required{% elif field.field_name == 'filing_entry_reference' and not field.proposed_value %}Pending for filing{% else %}{{ action_status(field) }}{% endif %}</span>
   </div>
-  <div class="lt-exception-field__part">
+  <div class="lt-exception-field__part lt-exception-field__decision">
     {% set derived_only = field.source_filename and source_class_for_filename(field.source_filename).code == 'DERIVED_PREPARATION' %}
     <div class="lt-exception-field__actions">
       {% if field.id in paired_review_ids %}
@@ -317,7 +317,7 @@
   data-review-tabs
   data-review-completed="{{ 'true' if detail.status == 'COMPLETED' else 'false' }}"
 >
-  <link rel="stylesheet" href="{{ url_for('static', path='css/us_lacey_exception_tasks.css') }}?v=20261029-task1">
+  
   {% if error %}
   <section class="lt-alert lt-alert--danger" role="alert">
     <i class="fa-solid fa-circle-exclamation lt-alert__icon" aria-hidden="true"></i>

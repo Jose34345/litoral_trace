@@ -8,15 +8,26 @@
 .lt-task-owner { color:#64748b; }
 .lt-task-preview { margin:12px 0; padding:9px 12px; border-radius:8px; background:#f8fafc; }
 .lt-task-preview span { display:block; color:#64748b; font-size:11px; }
-.lt-exception-field { min-width:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:10px 16px; padding:12px 0; border-top:1px solid #f1f5f9; }
+.lt-exception-field { min-width:0; display:grid; grid-template-columns:minmax(0, 0.85fr) minmax(0, 1.15fr); grid-template-areas:"identity value" "status decision" "evidence evidence"; gap:8px 20px; align-items:start; padding:12px 0; border-top:1px solid #e2e8f0; }
 .lt-exception-field__part { min-width:0; }
-.lt-exception-field__part:nth-child(3) { grid-column:1 / -1; grid-row:3; }
-.lt-exception-field__part:nth-child(4) { grid-column:1; grid-row:2; }
-.lt-exception-field__part:nth-child(5) { grid-column:2; grid-row:2; }
+.lt-exception-field__identity{grid-area:identity}
+.lt-exception-field__value{grid-area:value;overflow-wrap:anywhere}
+.lt-exception-field__decision{min-width:0}
+.lt-exception-field__actions{justify-content:flex-start}
+.lt-exception-field__evidence{padding-top:8px}
+.lt-task-category{gap:10px}
+.lt-exception-task{padding:16px}
+.lt-task-evidence{max-width:100%}
+.lt-task-secondary[open]{display:block}
+.lt-task-secondary[open] summary{margin-bottom:8px}
+
+.lt-exception-field__evidence { grid-area:evidence; }
+.lt-exception-field__status { grid-area:status; }
+.lt-exception-field__decision { grid-area:decision; }
 .lt-exception-field__actions { display:flex; flex-wrap:wrap; gap:8px; align-items:start; }
 .lt-task-secondary { flex-basis:100%; }
 .lt-task-secondary summary,.lt-task-evidence summary { cursor:pointer; color:#047857; font-size:12px; font-weight:650; }
-.lt-task-secondary[open] { display:flex; flex-wrap:wrap; gap:8px; }
+.lt-task-secondary[open] { display:block; }
 .lt-task-secondary[open] summary { margin-bottom:8px; }
 .lt-task-fields { margin-top:12px; }
 .lt-task-expand { display:inline-block; cursor:pointer; font-size:12px; font-weight:700; color:#047857; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; }
@@ -24,7 +35,7 @@
 .lt-exception-field .lt-btn { white-space:normal; max-width:100%; }
 @media(max-width:640px) {
   .lt-exception-field { display:flex; flex-direction:column; }
-  .lt-exception-field__part:nth-child(3) { order:5; }
+  .lt-exception-field__evidence { order:5; }
   .lt-exception-task { padding:12px; }
   .lt-exception-field__actions { width:100%; }
 }
@@ -34,3 +45,13 @@
 }
 
 .lt-task-source-link { display:block; text-align:left; margin-bottom:8px; font-size:12px; font-weight:650; color:#047857; text-decoration:underline; overflow-wrap:anywhere; }
+
+/* Stage 1: consistent content flow at reduced widths and with inspector open. */
+@media (max-width:900px){
+ .lt-exception-field{grid-template-columns:minmax(0,1fr);grid-template-areas:"identity" "value" "status" "decision" "evidence";gap:8px}
+ .lt-exception-field__actions{width:100%}
+}
+@media (min-width:1200px){
+ #operation-workspace[style*="--lt-task-inspector-width"] .lt-exception-field{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"identity" "value" "status" "decision" "evidence"}
+}
+.lt-task-source-link{max-width:100%}
