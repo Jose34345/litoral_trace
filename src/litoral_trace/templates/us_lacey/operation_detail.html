@@ -6,36 +6,41 @@
 {% set audit_events = audit_events|default(()) %}
 {% block lacey_title %}Review shipment{% endblock %}
 {% block head_extra %}{{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', path='/css/shipment_workspace.css') }}?v=20261031-firstfold2">
+<link rel="stylesheet" href="{{ url_for('static', path='/css/shipment_workspace.css') }}?v=20261031-workbench1">
 <link rel="stylesheet" href="{{ url_for('static', path='/css/us_lacey_exception_tasks.css') }}?v=20261031-layout1">
-<link rel="stylesheet" href="{{ url_for('static', path='/css/us_lacey_source_inspector.css') }}?v=20261016-pdf5">
+<link rel="stylesheet" href="{{ url_for('static', path='/css/us_lacey_source_inspector.css') }}?v=20261031-workbench1">
 {% if private_v2|default(false) %}<link rel="stylesheet" href="{{ url_for('static', path='/css/assurance_v2_case.css') }}">{% endif %}{% endblock %}
 {% block lacey_content %}
 {% set bulk_upload_rejection = error and error.startswith("This file contains multiple shipments.") %}
 {% set empty_bulk_rejection = bulk_upload_rejection and not detail.documents %}
-<header class="lt-page-header" aria-labelledby="operation-alias-label">
+<header class="lt-page-header lt-workbench-header" aria-labelledby="operation-alias-label" data-evidence-workbench>
   <div class="lt-page-header__copy">
-    <p class="lt-page-header__eyebrow">Shipment system of record</p>
+    <p class="lt-page-header__eyebrow"><a href="/operations" class="lt-workbench-back">Shipments</a> / Shipment review</p>
     {% include "us_lacey/fragments/operation_alias.html" %}
-    <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-slate-500" aria-label="Shipment metadata">
+    <div class="lt-workbench-header__metadata" aria-label="Shipment metadata">
       {% if business_supplier_name %}
       <span class="font-semibold text-slate-700">{{ business_supplier_name }}</span>
       {% else %}
       {{ lt_badge("REVIEW REQUIRED", "Supplier unresolved") }}
       <a href="#documents" class="font-semibold text-emerald-800 underline" data-supplier-evidence-action>Add supplier evidence</a>
       {% endif %}
-      <span aria-hidden="true">·</span>
-      <span>{{ detail.document_count }} document{{ '' if detail.document_count == 1 else 's' }}</span>
-      <span aria-hidden="true">·</span>
-      {% if detail.created_at is defined and detail.created_at %}
-      <span>Created {{ detail.created_at.strftime("%b %d, %Y") }}</span>
-      <span aria-hidden="true">·</span>
-      {% endif %}
-      <span>Last processed {{ relative_time(detail.updated_at if detail.updated_at is defined else None) }}</span>
+      <span aria-hidden="true">·</span><span>{{ detail.document_count }} document{{ '' if detail.document_count == 1 else 's' }}</span>
     </div>
-    <details class="lt-shipment-identity"><summary>Shipment details and activity</summary>
-      <p>Immutable operation ID <code data-operation-id-value>{{ detail.public_id }}</code><button type="button" class="lt-btn lt-btn--ghost" data-copy-operation-id>Copy ID</button></p>
-      <a href="#activity-audit-log" data-open-shipment-audit>Audit trail</a>
+  </div>
+  <div class="lt-workbench-header__actions">
+    <button type="button" class="lt-btn lt-btn--secondary lt-workbench-add-evidence" data-add-documents-trigger>
+      <i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i><span>Add evidence</span>
+    </button>
+    <details class="lt-shipment-identity lt-workbench-more">
+      <summary class="lt-workbench-more__trigger"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i> Details</summary>
+      <div class="lt-workbench-more__panel">
+        <p><strong>Immutable operation ID</strong></p>
+        <p class="lt-workbench-more__id"><code data-operation-id-value>{{ detail.public_id }}</code></p>
+        <button type="button" class="lt-btn lt-btn--ghost" data-copy-operation-id>Copy ID</button>
+        {% if detail.created_at is defined and detail.created_at %}<p>Created {{ detail.created_at.strftime("%b %d, %Y") }}</p>{% endif %}
+        <p>Last processed {{ relative_time(detail.updated_at if detail.updated_at is defined else None) }}</p>
+        <a href="#activity-audit-log" class="font-semibold text-emerald-800 underline" data-open-shipment-audit>View audit trail</a>
+      </div>
     </details>
   </div>
 </header>
@@ -63,16 +68,16 @@
 {% set shell_oob = false %}
 {% set shell_empty_bulk_rejection = empty_bulk_rejection %}
 {% if not private_v2 %}
-<details class="mb-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600" data-workflow-stage-details>
-  <summary class="cursor-pointer font-semibold">Workflow stages · view progress</summary>
+{# Preserve HTMX workflow stepper OOB target, but not a misleading linear wizard. #}
+<div class="lt-workbench-legacy-workflow" data-workflow-stage-details aria-hidden="true">
   {% include "us_lacey/fragments/workflow_stepper_shell.html" %}
-</details>
+</div>
 {% endif %}
 
 <nav class="lt-shipment-nav" aria-label="Shipment workspace sections" data-shipment-section-nav>
-  <a href="#operation-workspace">Review</a>
-  <a href="#documents">Documents</a>
-  <a href="#declaration-package">Package</a>
+  <a href="#operation-workspace" class="lt-shipment-nav__current"><i class="fa-solid fa-list-check" aria-hidden="true"></i> Review</a>
+  <a href="#documents"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Documents</a>
+  <a href="#declaration-package"><i class="fa-solid fa-box-archive" aria-hidden="true"></i> Package</a>
 </nav>
 
 {% set summary_oob = false %}
@@ -283,13 +288,13 @@
 
 <script>
 (() => {
-  const trigger = document.querySelector('[data-add-documents-trigger]');
+  const triggers = document.querySelectorAll('[data-add-documents-trigger]');
   const dialog = document.getElementById('add-evidence-dialog');
-  if (!trigger || !dialog) return;
-  trigger.addEventListener('click', () => {
-    if (typeof dialog.showModal === 'function') dialog.showModal();
-    else dialog.setAttribute('open', '');
-  });
+  if (!triggers.length || !dialog) return;
+  triggers.forEach((trigger) => trigger.addEventListener('click', () => {
+    if (!dialog.open && typeof dialog.showModal === 'function') dialog.showModal();
+    else if (!dialog.open) dialog.setAttribute('open', '');
+  }));
   dialog.querySelectorAll('[data-close-evidence-dialog]').forEach((button) => {
     button.addEventListener('click', () => dialog.close());
   });
@@ -304,7 +309,7 @@
 <script>window.setTimeout(function () { window.location.reload(); }, 8000);</script>
 {% endif %}
 {% if private_v2 %}<script src="{{ url_for('static', path='/js/assurance_v2_case.js') }}" defer></script>{% endif %}
-<script src="{{ url_for('static', path='/js/shipment_workspace.js') }}" defer></script>
+<script src="{{ url_for('static', path='/js/shipment_workspace.js') }}?v=20261031-workbench1" defer></script>
 {% include "us_lacey/fragments/source_inspector.html" %}
-<script src="{{ url_for('static', path='/js/us_lacey_source_inspector.js') }}?v=20261016-pdf5" defer></script>
+<script src="{{ url_for('static', path='/js/us_lacey_source_inspector.js') }}?v=20261031-workbench1" defer></script>
 {% endblock %}

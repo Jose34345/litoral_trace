@@ -67,7 +67,7 @@ def test_review_workspace_uses_tasks_auditability_and_reuse_memory() -> None:
         TEMPLATES / "us_lacey" / "fragments" / "operation_workspace.html"
     ).read_text(encoding="utf-8")
     assert "lt-enterprise-review" in source
-    assert "Exception work queue" in source
+    assert "Needs your attention" in source
     task_fragment = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/exception_task_queue.html").read_text(encoding="utf-8")
     assert "exception_task_queue.html" in source
     assert "data-exception-task" in task_fragment

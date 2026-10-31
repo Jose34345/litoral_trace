@@ -199,7 +199,7 @@ def test_exception_first_ui_polish_uses_quiet_enterprise_surfaces():
         "src/litoral_trace/templates/us_lacey/fragments/regulatory_assessment_card.html"
     ).read_text(encoding="utf-8")
 
-    assert "Exception work queue" in workspace
+    assert "Needs your attention" in workspace
     assert "<table" in workspace
     assert "lt-review-status--blocking" in workspace
     assert "lt-review-status--confirmation" in workspace

@@ -49,7 +49,7 @@ def test_shipment_workspace_is_readiness_first_and_upload_is_modal() -> None:
     fragments = TEMPLATES / "us_lacey" / "fragments"
     readiness = (fragments / "shipment_readiness_status.html").read_text(encoding="utf-8")
     country = (fragments / "country_status.html").read_text(encoding="utf-8")
-    assert "Shipment system of record" in template
+    assert "Shipment review" in template
     assert "Last processed" in template
     summary = (fragments / "shipment_workspace_summary.html").read_text(encoding="utf-8")
     assert "shipment_workspace_summary.html" in template
@@ -68,7 +68,7 @@ def test_exception_review_is_task_based_and_auditable() -> None:
     template = (
         TEMPLATES / "us_lacey" / "fragments" / "operation_workspace.html"
     ).read_text(encoding="utf-8")
-    assert "Exception work queue" in template
+    assert "Needs your attention" in template
     task_fragment = (ROOT / "src/litoral_trace/templates/us_lacey/fragments/exception_task_queue.html").read_text(encoding="utf-8")
     assert "exception_task_queue.html" in template
     assert "data-exception-task" in task_fragment

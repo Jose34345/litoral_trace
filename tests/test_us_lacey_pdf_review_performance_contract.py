@@ -49,5 +49,5 @@ def test_pdf_loading_experience_and_raster_budget() -> None:
 
 
 def test_cache_busted_assets_and_reduced_motion_contract() -> None:
-    assert "?v=20261016-pdf5" in DETAIL
+    assert "?v=20261031-workbench1" in DETAIL
     assert ".lt-pdf-loading__spinner { animation:none; }" in CSS

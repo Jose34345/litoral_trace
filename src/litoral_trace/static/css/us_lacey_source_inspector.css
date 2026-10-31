@@ -254,3 +254,12 @@
 @media (prefers-reduced-motion:reduce) {
   .lt-pdf-loading__spinner { animation:none; }
 }
+
+/* Desktop split review: source remains nonmodal, authorized and source-bound. */
+@media(min-width:1280px) {
+ .lt-source-inspector:not(:modal) { pointer-events:none; }
+ .lt-source-inspector:not(:modal) .lt-source-inspector__panel { pointer-events:auto; width:min(42vw,620px); }
+ .lt-app-shell[data-workbench-inspector-open="true"] .lt-workspace { padding-right:min(42vw,620px); }
+ .lt-app-shell[data-workbench-inspector-open="true"] .lt-exception-field { grid-template-columns:minmax(0,1fr); grid-template-areas:"identity" "value" "status" "decision" "evidence"; gap:.5rem; }
+ .lt-app-shell[data-workbench-inspector-open="true"] .lt-workbench-header__actions { margin-left:0; }
+}
