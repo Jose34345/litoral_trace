@@ -13,6 +13,7 @@ from typing import Callable
 from uuid import UUID
 
 from ..domain import EvidenceClass
+from ..sku_identity import SKU_TOKEN_PATTERN
 from .authority import (
     FIELD_SPECIALIST,
     candidate_identity,
@@ -79,7 +80,7 @@ CandidateAdmissionValidator = Callable[
 ]
 
 
-_SKU_KEY = re.compile(r"^SKU:[A-Z0-9][A-Z0-9._/-]*$", re.IGNORECASE)
+_SKU_KEY = re.compile(rf"^SKU:{SKU_TOKEN_PATTERN}$", re.IGNORECASE | re.ASCII)
 _LINE_KEY = re.compile(r"^LINE:[1-9][0-9]*$")
 _ROW_KEY = re.compile(
     r"^ROW:(?P<document>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"

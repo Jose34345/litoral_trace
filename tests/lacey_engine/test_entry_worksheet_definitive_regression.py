@@ -178,7 +178,7 @@ def _envelope(
     )
 
 
-def test_cross_document_binding_reconciles_line_numbers_to_unique_botanical_skus():
+def test_cross_document_binding_does_not_infer_product_sku_from_botanical_species_only():
     candidates = (
         _envelope(
             "description",
@@ -248,14 +248,17 @@ def test_cross_document_binding_reconciles_line_numbers_to_unique_botanical_skus
         for candidate in bound
     }
 
-    assert actual[("description", "Pinus taeda KD sawn boards")] == "SKU:PT-38"
-    assert actual[("hts_code", "4407110190")] == "SKU:PT-38"
-    assert actual[("entered_value", "18300")] == "SKU:PT-38"
+    # Taxon overlap alone cannot establish that a commercial product row and
+    # a botanical declaration refer to the same SKU. Their source-local LINE
+    # identities remain separate until explicit cross-document evidence exists.
+    assert actual[("description", "Pinus taeda KD sawn boards")] == "LINE:1"
+    assert actual[("hts_code", "4407110190")] == "LINE:1"
+    assert actual[("entered_value", "18300")] == "LINE:1"
     assert actual[("genus", "Pinus")] == "SKU:PT-38"
     assert actual[("species", "Pinus taeda")] == "SKU:PT-38"
 
-    assert actual[("description", "Eucalyptus grandis KD sawn boards")] == "SKU:EG-22"
-    assert actual[("hts_code", "4407990190")] == "SKU:EG-22"
-    assert actual[("entered_value", "12640")] == "SKU:EG-22"
+    assert actual[("description", "Eucalyptus grandis KD sawn boards")] == "LINE:2"
+    assert actual[("hts_code", "4407990190")] == "LINE:2"
+    assert actual[("entered_value", "12640")] == "LINE:2"
     assert actual[("genus", "Eucalyptus")] == "SKU:EG-22"
     assert actual[("species", "Eucalyptus grandis")] == "SKU:EG-22"

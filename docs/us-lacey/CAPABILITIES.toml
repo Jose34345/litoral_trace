@@ -54,15 +54,17 @@ owner = "lacey_engine.multi_agent"
 authority = "inferred"
 implementation = [
   "src/litoral_trace/lacey_engine/multi_agent/line_binding.py",
+  "src/litoral_trace/lacey_engine/sku_identity.py",
   "src/litoral_trace/lacey_engine/multi_agent/fusion.py",
   "src/litoral_trace/lacey_engine/multi_agent/resolver.py",
   "src/litoral_trace/lacey_engine/multi_agent/field_judge.py"
 ]
 tests = [
   "tests/lacey_engine/test_cross_document_line_identity.py",
-  "tests/lacey_engine/test_cross_document_line_identity_fail_closed.py"
+  "tests/lacey_engine/test_cross_document_line_identity_fail_closed.py",
+  "tests/lacey_engine/test_exact_sku_identity_p0.py"
 ]
-notes = "Cross-document identity must fail closed when evidence is insufficient."
+notes = "Cross-document identity must fail closed when evidence is insufficient. SKU sidecars require complete tokens in the original Engine 2 anchor, never cropped quote substrings or Unicode casefold aliases; label modifiers never become product identities; explicit negative verified-anchor abstention survives partial quotes, binding, reconciliation and serialization, fenced by line-binding version; contradictory explicit labels abstain. Only ASCII case and surrounding whitespace normalize; significant SKU characters (- _ . / +) are preserved through binding, admission and publication preparation."
 
 [capabilities.ai_shadow]
 status = "SHADOW"
