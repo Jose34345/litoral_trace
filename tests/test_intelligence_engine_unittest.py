@@ -2,7 +2,7 @@ import unittest
 import json
 
 from litoral_trace.services.mass_balance import evaluar_balance_masas
-from litoral_trace.services.ndvi import calcular_ndvi_simulado, evaluar_deforestacion_eudr
+from litoral_trace.services.compliance import calcular_ndvi_simulado, evaluar_indicador_variacion_biomasa as evaluar_deforestacion_eudr
 from litoral_trace.services.compliance import (
     LEGACY_NON_REGULATORY_PROFILE,
     evaluar_compliance_lote,

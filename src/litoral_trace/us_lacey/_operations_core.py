@@ -1,0 +1,1196 @@
+"""Tenant-scoped operation service for the U.S. Lacey pilot."""
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from uuid import UUID
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from litoral_trace.db.models import (
+    AssuranceDocument,
+    ReconciliationIssue,
+    UsLaceyEvaluation,
+    UsLaceyFieldCandidate,
+    UsLaceyOperation,
+    UsLaceyOperationDocument,
+    UsLaceyOperationField,
+    UsLaceyPpqPlantLine,
+    UsLaceyPpqShipment,
+    UsLaceyPlantDeclaration,
+    UsLaceyProcessingJob,
+    UsLaceyRegulatoryAssessmentSnapshot,
+    UsLaceySourceSetRevision,
+    UsLaceySubscription,
+    VaultDocument,
+)
+from litoral_trace.db.tenant import set_tenant_db_context
+from litoral_trace.us_lacey.audit_trail import (
+    OperationActorType,
+    OperationEventType,
+    append_operation_event,
+)
+from litoral_trace.us_lacey.db import get_us_lacey_db_session
+from litoral_trace.us_lacey.domain import (
+    US_LACEY_REVIEW_FIELDS,
+    UsLaceyFieldStatus,
+    UsLaceyOperationStatus,
+)
+from litoral_trace.us_lacey.regulatory_assessment_snapshot import (
+    RULESET_VERSION,
+    blocking_regulatory_assessments,
+)
+from litoral_trace.us_lacey.ppq505 import (
+    PPQ505_FIELDS_BY_KEY,
+    PPQ505_PLANT_FIELDS,
+    PPQ505_SHIPMENT_FIELDS,
+    PPQ505_SHIPMENT_REFERENCE,
+    validate_ppq_value,
+)
+
+SessionFactory = Callable[[], Session]
+
+
+class UsLaceyOperationError(RuntimeError):
+    pass
+
+
+class UsLaceyOperationNotFound(UsLaceyOperationError):
+    pass
+
+
+class UsLaceyOperationConflict(UsLaceyOperationError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class OperationSnapshot:
+    public_id: UUID
+    client_reference: str
+    status: str
+    document_count: int
+    merchandise_line_count: int
+    missing_field_count: int
+    review_field_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class OperationListItem:
+    public_id: UUID
+    client_reference: str
+    business_reference: str
+    supplier_name: str | None
+    operation_date: date | None
+    status: str
+    document_count: int
+    merchandise_line_count: int
+    exception_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class OperationDocumentView:
+    assurance_public_id: UUID
+    vault_public_id: UUID
+    filename: str
+    document_role: str
+    version_number: int
+    processing_status: str
+    job_status: str | None
+    last_error_code: str | None
+    raw_expires_at: datetime | None = None
+    raw_deleted_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OperationProcessingSnapshot:
+    public_id: UUID
+    status: str
+    documents: tuple[OperationDocumentView, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class OperationFieldView:
+    id: int
+    line_reference: str
+    field_name: str
+    label: str
+    ppq_number: int
+    scope: str
+    proposed_value: str | None
+    effective_value: str | None
+    status: str
+    confidence: float
+    source_assurance_document_id: int | None
+    source_page: int | None
+    source_locator: str | None
+    extractor: str | None
+    extractor_version: str | None
+    reviewed_by_user_id: int | None
+    reviewed_at: datetime | None
+    validation_status: str
+    validation_error: str | None
+    not_required_reason_code: str | None
+    candidates: tuple["FieldCandidateView", ...]
+    provenance: str = "current_shipment"
+    source_filename: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FieldCandidateView:
+    id: int
+    original_value: str
+    normalized_value: str | None
+    validation_status: str
+    validation_error: str | None
+    confidence: float
+    source_document_id: int
+    source_page: int | None
+    source_locator: str | None
+    decision: str
+
+
+@dataclass(frozen=True, slots=True)
+class PlantDeclarationView:
+    line_reference: str
+    ordinal: int
+    genus: str | None
+    species: str | None
+    country_of_harvest: str | None
+    quantity: str | None
+    unit: str | None
+    original_values: dict | None
+    source_assurance_document_id: int | None
+    source_page: int | None
+    source_locator: str | None
+    extractor: str | None
+    extractor_version: str | None
+    confidence: float
+
+
+@dataclass(frozen=True, slots=True)
+class ConflictView:
+    id: int
+    field_name: str | None
+    status: str
+    left_value: str | None
+    right_value: str | None
+    left_document_id: int | None
+    right_document_id: int | None
+    left_source: str
+    right_source: str
+    left_confidence: float | None
+    right_confidence: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class OperationDetail:
+    public_id: UUID
+    client_reference: str
+    importer_name: str | None
+    consignee_name: str | None
+    broker_name: str | None
+    supplier_name: str | None
+    operation_date: date | None
+    status: str
+    document_count: int
+    merchandise_line_count: int
+    review_result: str | None
+    created_at: datetime
+    documents: tuple[OperationDocumentView, ...]
+    fields: tuple[OperationFieldView, ...]
+    plant_declarations: tuple[PlantDeclarationView, ...]
+    conflicts: tuple[ConflictView, ...]
+    updated_at: datetime | None = None
+
+
+_FIELD_LABELS = dict(US_LACEY_REVIEW_FIELDS)
+_UNSET = object()
+
+
+class UsLaceyOperationService:
+    def __init__(self, *, session_factory: SessionFactory | None = None) -> None:
+        self._session_factory = session_factory or get_us_lacey_db_session
+
+    def _session(self, organization_id: int) -> Session:
+        org_id = int(organization_id)
+        if org_id <= 0:
+            raise ValueError("organization_id must be positive")
+        session = self._session_factory()
+        set_tenant_db_context(session, org_id)
+        return session
+
+    @staticmethod
+    def _public_id(value: UUID | str) -> UUID:
+        if isinstance(value, UUID):
+            return value
+        try:
+            return UUID(str(value))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise UsLaceyOperationNotFound("Operation not found.") from exc
+
+    @staticmethod
+    def _normalize_line_references(line_references: Sequence[str] | None) -> tuple[str, ...]:
+        values = tuple(
+            str(value).strip()
+            for value in (line_references or ())
+            if str(value).strip()
+        )
+        if not values:
+            return ()
+        if len(set(values)) != len(values):
+            raise ValueError("Merchandise line references must be unique.")
+        if len(values) > 500:
+            raise ValueError("A single operation cannot contain more than 500 merchandise lines.")
+        return values
+
+    def create_operation(
+        self,
+        *,
+        organization_id: int,
+        created_by_user_id: int | None,
+        client_reference: str,
+        importer_name: str | None = None,
+        consignee_name: str | None = None,
+        broker_name: str | None = None,
+        supplier_name: str | None = None,
+        operation_date: date | None = None,
+        line_references: Sequence[str] | None = None,
+        consume_subscription_slot: bool = False,
+    ) -> OperationSnapshot:
+        reference = str(client_reference or "").strip()
+        if not reference:
+            raise ValueError("client_reference is required")
+        if len(reference) > 255:
+            raise ValueError("client_reference is too long")
+        lines = self._normalize_line_references(line_references)
+        org_id = int(organization_id)
+        session = self._session(org_id)
+        try:
+            existing = session.scalar(
+                select(UsLaceyOperation).where(
+                    UsLaceyOperation.organization_id == org_id,
+                    UsLaceyOperation.client_reference == reference,
+                )
+            )
+            if existing is not None:
+                raise UsLaceyOperationConflict(
+                    "Client reference already exists for this company."
+                )
+
+            subscription: UsLaceySubscription | None = None
+            if consume_subscription_slot:
+                subscription = session.scalar(
+                    select(UsLaceySubscription)
+                    .where(UsLaceySubscription.organization_id == org_id)
+                    .with_for_update()
+                )
+                if subscription is None:
+                    raise UsLaceyOperationConflict("Subscription is not available.")
+                if int(subscription.used_operations) >= int(subscription.monthly_operation_limit):
+                    raise UsLaceyOperationConflict(
+                        "This workspace has reached its current operation limit."
+                    )
+
+                if str(subscription.plan_code) in {"SANDBOX", "EVALUATION"}:
+                    # The subscription row above is already locked FOR UPDATE and is
+                    # unique per organization, so it serializes concurrent operation
+                    # creation for this tenant. Do not lock the evaluation row here:
+                    # the runtime role is intentionally read-only on evaluation state,
+                    # and PostgreSQL requires UPDATE privilege for SELECT ... FOR UPDATE.
+                    evaluation = session.scalar(
+                        select(UsLaceyEvaluation).where(
+                            UsLaceyEvaluation.organization_id == org_id
+                        )
+                    )
+                    if evaluation is None:
+                        raise UsLaceyOperationConflict(
+                            "Evaluation state is not available."
+                        )
+                    evaluation_status = str(evaluation.status)
+                    if evaluation_status in {"EXHAUSTED", "EXPIRED"}:
+                        raise UsLaceyOperationConflict(
+                            "This evaluation is read-only."
+                        )
+                    evaluation_limit = (
+                        1
+                        if evaluation_status == "ANONYMOUS"
+                        else int(evaluation.operation_limit)
+                    )
+                    active_operation_count = int(
+                        session.scalar(
+                            select(func.count(UsLaceyOperation.id)).where(
+                                UsLaceyOperation.organization_id == org_id,
+                                UsLaceyOperation.status != "FAILED",
+                            )
+                        )
+                        or 0
+                    )
+                    if active_operation_count >= evaluation_limit:
+                        if (
+                            evaluation_status == "ANONYMOUS"
+                            and int(evaluation.successful_operations_used) >= 1
+                        ):
+                            raise UsLaceyOperationConflict(
+                                "Save this evaluation to test 4 more shipments."
+                            )
+                        raise UsLaceyOperationConflict(
+                            "This evaluation has no available shipment slots right now."
+                        )
+
+            operation = UsLaceyOperation(
+                organization_id=org_id,
+                created_by_user_id=created_by_user_id,
+                client_reference=reference,
+                importer_name=(str(importer_name).strip()[:255] if importer_name else None),
+                consignee_name=(str(consignee_name).strip()[:255] if consignee_name else None),
+                broker_name=(str(broker_name).strip()[:255] if broker_name else None),
+                supplier_name=(str(supplier_name).strip()[:255] if supplier_name else None),
+                operation_date=operation_date,
+                status=UsLaceyOperationStatus.NEW.value,
+                document_count=0,
+                merchandise_line_count=len(lines),
+            )
+            session.add(operation)
+            session.flush()
+
+            session.add(
+                UsLaceyPpqShipment(
+                    organization_id=org_id,
+                    operation_id=operation.id,
+                )
+            )
+            for field in PPQ505_SHIPMENT_FIELDS:
+                operator_value = None
+                if field.key == "importer_name":
+                    operator_value = operation.importer_name
+                elif field.key == "consignee_name":
+                    operator_value = operation.consignee_name
+                validation = validate_ppq_value(field.key, operator_value)
+                session.add(
+                    UsLaceyOperationField(
+                        organization_id=org_id,
+                        operation_id=operation.id,
+                        merchandise_line_reference=PPQ505_SHIPMENT_REFERENCE,
+                        field_name=field.key,
+                        field_scope="SHIPMENT",
+                        plant_line_id=None,
+                        original_value=operator_value,
+                        normalized_value=validation.normalized_value,
+                        field_status=(
+                            "REVIEW" if operator_value
+                            else ("MATCHED" if field.requirement.value == "OPTIONAL" else "MISSING")
+                        ),
+                        validation_status=validation.status.value,
+                        validation_error=validation.error,
+                        confidence=(1.0 if operator_value else 0.0),
+                        source_locator=(f"operator_metadata:{field.key}" if operator_value else None),
+                        extractor=("operator-entered-metadata" if operator_value else None),
+                        extractor_version=("1" if operator_value else None),
+                    )
+                )
+            for ordinal, line_reference in enumerate(lines, start=1):
+                plant_line = UsLaceyPpqPlantLine(
+                    organization_id=org_id,
+                    operation_id=operation.id,
+                    line_reference=line_reference,
+                    ordinal=ordinal,
+                )
+                session.add(plant_line)
+                session.flush()
+                # A user-supplied plant line is an explicit declaration slot;
+                # it is never inferred from an unrelated shipment field.
+                session.add(
+                    UsLaceyPlantDeclaration(
+                        organization_id=org_id,
+                        plant_line_id=plant_line.id,
+                        ordinal=1,
+                    )
+                )
+                for field in PPQ505_PLANT_FIELDS:
+                    session.add(
+                        UsLaceyOperationField(
+                            organization_id=org_id,
+                            operation_id=operation.id,
+                            merchandise_line_reference=line_reference,
+                            field_name=field.key,
+                            field_scope="PLANT_LINE",
+                            plant_line_id=plant_line.id,
+                            field_status=UsLaceyFieldStatus.MISSING.value,
+                            validation_status="MISSING",
+                            confidence=0.0,
+                        )
+                    )
+            if (
+                subscription is not None
+                and str(subscription.plan_code) not in {"SANDBOX", "EVALUATION"}
+            ):
+                subscription.used_operations = int(subscription.used_operations) + 1
+            append_operation_event(
+                session,
+                organization_id=org_id,
+                operation_id=operation.id,
+                actor_type=(
+                    OperationActorType.USER
+                    if created_by_user_id is not None
+                    else OperationActorType.SYSTEM
+                ),
+                actor_identity=(
+                    f"user:{int(created_by_user_id)}"
+                    if created_by_user_id is not None
+                    else "Litoral Trace"
+                ),
+                event_type=OperationEventType.CREATED,
+                event_key="operation:created",
+                details={
+                    "client_reference": reference,
+                    "merchandise_line_count": len(lines),
+                },
+            )
+            session.commit()
+            return self.get_operation(
+                organization_id=org_id,
+                operation_public_id=operation.public_id,
+            )
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def update_client_reference(
+        self,
+        *,
+        organization_id: int,
+        operation_public_id: UUID | str,
+        client_reference: str,
+    ) -> OperationSnapshot:
+        """Rename one tenant-scoped operation without changing its immutable public id."""
+        reference = str(client_reference or "").strip()
+        if not reference:
+            raise ValueError("Operation name is required.")
+        if len(reference) > 255:
+            raise ValueError("Operation name cannot exceed 255 characters.")
+
+        org_id = int(organization_id)
+        session = self._session(org_id)
+        try:
+            operation = self._get_model(
+                session,
+                organization_id=org_id,
+                operation_public_id=operation_public_id,
+            )
+            existing = session.scalar(
+                select(UsLaceyOperation.id).where(
+                    UsLaceyOperation.organization_id == org_id,
+                    UsLaceyOperation.client_reference == reference,
+                    UsLaceyOperation.id != operation.id,
+                )
+            )
+            if existing is not None:
+                raise UsLaceyOperationConflict(
+                    "That operation name is already in use for this company."
+                )
+            operation.client_reference = reference
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+        return self.get_operation(
+            organization_id=org_id,
+            operation_public_id=operation_public_id,
+        )
+
+    def _get_model(
+        self,
+        session: Session,
+        *,
+        organization_id: int,
+        operation_public_id: UUID | str,
+    ) -> UsLaceyOperation:
+        public_id = self._public_id(operation_public_id)
+        operation = session.scalar(
+            select(UsLaceyOperation).where(
+                UsLaceyOperation.organization_id == organization_id,
+                UsLaceyOperation.public_id == public_id,
+            )
+        )
+        if operation is None:
+            raise UsLaceyOperationNotFound("Operation not found.")
+        return operation
+
+    def get_internal_id(
+        self, *, organization_id: int, operation_public_id: UUID | str
+    ) -> int:
+        session = self._session(organization_id)
+        try:
+            return int(
+                self._get_model(
+                    session,
+                    organization_id=int(organization_id),
+                    operation_public_id=operation_public_id,
+                ).id
+            )
+        finally:
+            session.close()
+
+    def upsert_plant_declaration(
+        self,
+        *,
+        organization_id: int,
+        operation_public_id: UUID | str,
+        line_reference: str,
+        ordinal: int | None = None,
+        genus: str | None | object = _UNSET,
+        species: str | None | object = _UNSET,
+        country_of_harvest: str | None | object = _UNSET,
+        quantity: str | None | object = _UNSET,
+        unit: str | None | object = _UNSET,
+        original_values: dict | None | object = _UNSET,
+        source_assurance_document_id: int | None | object = _UNSET,
+        source_page: int | None | object = _UNSET,
+        source_locator: str | None | object = _UNSET,
+        extractor: str | None | object = _UNSET,
+        extractor_version: str | None | object = _UNSET,
+        confidence: float | object = _UNSET,
+    ) -> PlantDeclarationView:
+        """Create or update exactly one explicit declaration by its line/ordinal identity."""
+        org_id = int(organization_id)
+        reference = str(line_reference or "").strip()
+        if not reference:
+            raise ValueError("line_reference is required")
+        if ordinal is not None and int(ordinal) <= 0:
+            raise ValueError("ordinal must be positive")
+
+        session = self._session(org_id)
+        try:
+            operation = self._get_model(
+                session,
+                organization_id=org_id,
+                operation_public_id=operation_public_id,
+            )
+            plant_line = session.scalar(
+                select(UsLaceyPpqPlantLine)
+                .where(
+                    UsLaceyPpqPlantLine.organization_id == org_id,
+                    UsLaceyPpqPlantLine.operation_id == operation.id,
+                    UsLaceyPpqPlantLine.line_reference == reference,
+                )
+                .with_for_update()
+            )
+            if plant_line is None:
+                raise UsLaceyOperationNotFound("Plant line not found.")
+
+            resolved_ordinal = int(ordinal) if ordinal is not None else int(
+                session.scalar(
+                    select(func.coalesce(func.max(UsLaceyPlantDeclaration.ordinal), 0)).where(
+                        UsLaceyPlantDeclaration.organization_id == org_id,
+                        UsLaceyPlantDeclaration.plant_line_id == plant_line.id,
+                    )
+                ) or 0
+            ) + 1
+            declaration = session.scalar(
+                select(UsLaceyPlantDeclaration)
+                .where(
+                    UsLaceyPlantDeclaration.organization_id == org_id,
+                    UsLaceyPlantDeclaration.plant_line_id == plant_line.id,
+                    UsLaceyPlantDeclaration.ordinal == resolved_ordinal,
+                )
+                .with_for_update()
+            )
+            if declaration is None:
+                declaration = UsLaceyPlantDeclaration(
+                    organization_id=org_id,
+                    plant_line_id=plant_line.id,
+                    ordinal=resolved_ordinal,
+                )
+                session.add(declaration)
+
+            for attribute, value in (
+                ("genus", genus),
+                ("species", species),
+                ("country_of_harvest", country_of_harvest),
+                ("quantity", quantity),
+                ("unit", unit),
+                ("original_values", original_values),
+                ("source_assurance_document_id", source_assurance_document_id),
+                ("source_page", source_page),
+                ("source_locator", source_locator),
+                ("extractor", extractor),
+                ("extractor_version", extractor_version),
+                ("confidence", confidence),
+            ):
+                if value is not _UNSET:
+                    setattr(declaration, attribute, value)
+            session.commit()
+            return PlantDeclarationView(
+                line_reference=reference,
+                ordinal=int(declaration.ordinal),
+                genus=declaration.genus,
+                species=declaration.species,
+                country_of_harvest=declaration.country_of_harvest,
+                quantity=declaration.quantity,
+                unit=declaration.unit,
+                original_values=declaration.original_values,
+                source_assurance_document_id=declaration.source_assurance_document_id,
+                source_page=declaration.source_page,
+                source_locator=declaration.source_locator,
+                extractor=declaration.extractor,
+                extractor_version=declaration.extractor_version,
+                confidence=float(declaration.confidence),
+            )
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def list_operations(
+        self, *, organization_id: int, limit: int = 100
+    ) -> tuple[OperationListItem, ...]:
+        org_id = int(organization_id)
+        safe_limit = max(1, min(int(limit), 500))
+        session = self._session(org_id)
+        try:
+            rows = session.scalars(
+                select(UsLaceyOperation)
+                .where(UsLaceyOperation.organization_id == org_id)
+                .order_by(UsLaceyOperation.created_at.desc(), UsLaceyOperation.id.desc())
+                .limit(safe_limit)
+            ).all()
+            if not rows:
+                return ()
+
+            operation_ids = tuple(int(row.id) for row in rows)
+            exception_counts = {
+                int(operation_id): int(count)
+                for operation_id, count in session.execute(
+                    select(
+                        UsLaceyOperationField.operation_id,
+                        func.count(UsLaceyOperationField.id),
+                    )
+                    .where(
+                        UsLaceyOperationField.organization_id == org_id,
+                        UsLaceyOperationField.operation_id.in_(operation_ids),
+                        UsLaceyOperationField.field_status.in_(("MISSING", "REVIEW", "CONFLICT")),
+                    )
+                    .group_by(UsLaceyOperationField.operation_id)
+                ).all()
+            }
+            regulatory_blocker_counts = {
+                int(operation_id): len(
+                    blocking_regulatory_assessments(dict(payload or {}))
+                )
+                for operation_id, payload in session.execute(
+                    select(
+                        UsLaceyRegulatoryAssessmentSnapshot.operation_id,
+                        UsLaceyRegulatoryAssessmentSnapshot.payload_json,
+                    )
+                    .join(
+                        UsLaceySourceSetRevision,
+                        (
+                            UsLaceySourceSetRevision.id
+                            == UsLaceyRegulatoryAssessmentSnapshot.source_set_revision_id
+                        )
+                        & (
+                            UsLaceySourceSetRevision.organization_id
+                            == UsLaceyRegulatoryAssessmentSnapshot.organization_id
+                        ),
+                    )
+                    .where(
+                        UsLaceyRegulatoryAssessmentSnapshot.organization_id == org_id,
+                        UsLaceyRegulatoryAssessmentSnapshot.operation_id.in_(operation_ids),
+                        UsLaceyRegulatoryAssessmentSnapshot.status == "CURRENT",
+                        UsLaceyRegulatoryAssessmentSnapshot.ruleset_version == RULESET_VERSION,
+                        UsLaceySourceSetRevision.is_current.is_(True),
+                    )
+                ).all()
+            }
+
+            reference_fields = session.scalars(
+                select(UsLaceyOperationField)
+                .where(
+                    UsLaceyOperationField.organization_id == org_id,
+                    UsLaceyOperationField.operation_id.in_(operation_ids),
+                    UsLaceyOperationField.field_name.in_(
+                        ("filing_entry_reference", "bill_of_lading", "supplier_name")
+                    ),
+                )
+                .order_by(UsLaceyOperationField.id.asc())
+            ).all()
+            references_by_operation: dict[int, dict[str, str]] = {}
+            for field in reference_fields:
+                value = field.human_value or field.normalized_value or field.original_value
+                cleaned = str(value or "").strip()
+                if not cleaned:
+                    continue
+                references_by_operation.setdefault(int(field.operation_id), {}).setdefault(
+                    str(field.field_name), cleaned
+                )
+
+            items: list[OperationListItem] = []
+            for row in rows:
+                derived = references_by_operation.get(int(row.id), {})
+                client_reference = str(row.client_reference or "").strip()
+                if client_reference and not client_reference.upper().startswith("INTAKE-"):
+                    business_reference = client_reference
+                elif derived.get("filing_entry_reference"):
+                    business_reference = f"Entry {derived['filing_entry_reference']}"
+                elif derived.get("bill_of_lading"):
+                    business_reference = f"B/L {derived['bill_of_lading']}"
+                else:
+                    business_reference = f"Shipment {str(row.public_id).split('-')[0].upper()}"
+
+                items.append(
+                    OperationListItem(
+                        public_id=row.public_id,
+                        client_reference=row.client_reference,
+                        business_reference=business_reference,
+                        supplier_name=(
+                            row.supplier_name
+                            or derived.get("supplier_name")
+                            or None
+                        ),
+                        operation_date=row.operation_date,
+                        status=(
+                            "REVIEW_REQUIRED"
+                            if regulatory_blocker_counts.get(int(row.id), 0)
+                            else row.status
+                        ),
+                        document_count=int(row.document_count),
+                        merchandise_line_count=int(row.merchandise_line_count),
+                        exception_count=(
+                            exception_counts.get(int(row.id), 0)
+                            + regulatory_blocker_counts.get(int(row.id), 0)
+                        ),
+                        created_at=row.created_at,
+                        updated_at=row.updated_at,
+                    )
+                )
+            return tuple(items)
+        finally:
+            session.close()
+
+    def get_operation(
+        self,
+        *,
+        organization_id: int,
+        operation_public_id: UUID | str,
+    ) -> OperationSnapshot:
+        org_id = int(organization_id)
+        session = self._session(org_id)
+        try:
+            operation = self._get_model(
+                session,
+                organization_id=org_id,
+                operation_public_id=operation_public_id,
+            )
+            missing = session.scalar(
+                select(func.count(UsLaceyOperationField.id)).where(
+                    UsLaceyOperationField.organization_id == org_id,
+                    UsLaceyOperationField.operation_id == operation.id,
+                    UsLaceyOperationField.field_status == UsLaceyFieldStatus.MISSING.value,
+                )
+            ) or 0
+            review = session.scalar(
+                select(func.count(UsLaceyOperationField.id)).where(
+                    UsLaceyOperationField.organization_id == org_id,
+                    UsLaceyOperationField.operation_id == operation.id,
+                    UsLaceyOperationField.field_status == UsLaceyFieldStatus.REVIEW.value,
+                )
+            ) or 0
+            return OperationSnapshot(
+                public_id=operation.public_id,
+                client_reference=operation.client_reference,
+                status=operation.status,
+                document_count=operation.document_count,
+                merchandise_line_count=operation.merchandise_line_count,
+                missing_field_count=int(missing),
+                review_field_count=int(review),
+            )
+        finally:
+            session.close()
+
+    def get_detail(
+        self,
+        *,
+        organization_id: int,
+        operation_public_id: UUID | str,
+    ) -> OperationDetail:
+        org_id = int(organization_id)
+        session = self._session(org_id)
+        try:
+            operation = self._get_model(
+                session,
+                organization_id=org_id,
+                operation_public_id=operation_public_id,
+            )
+            links = session.scalars(
+                select(UsLaceyOperationDocument)
+                .where(
+                    UsLaceyOperationDocument.organization_id == org_id,
+                    UsLaceyOperationDocument.operation_id == operation.id,
+                    UsLaceyOperationDocument.is_current.is_(True),
+                )
+                .order_by(UsLaceyOperationDocument.id.asc())
+            ).all()
+            documents: list[OperationDocumentView] = []
+            document_filename_by_assurance_id: dict[int, str] = {}
+            for link in links:
+                assurance = session.scalar(
+                    select(AssuranceDocument).where(
+                        AssuranceDocument.organization_id == org_id,
+                        AssuranceDocument.id == link.assurance_document_id,
+                    )
+                )
+                if assurance is None:
+                    continue
+                vault = session.scalar(
+                    select(VaultDocument).where(
+                        VaultDocument.organization_id == org_id,
+                        VaultDocument.id == assurance.vault_document_id,
+                    )
+                )
+                if vault is None:
+                    continue
+                document_filename_by_assurance_id[int(assurance.id)] = str(vault.original_filename)
+                job = session.scalar(
+                    select(UsLaceyProcessingJob)
+                    .where(
+                        UsLaceyProcessingJob.organization_id == org_id,
+                        UsLaceyProcessingJob.operation_id == operation.id,
+                        UsLaceyProcessingJob.assurance_document_id == assurance.id,
+                    )
+                    .order_by(UsLaceyProcessingJob.id.desc())
+                )
+                documents.append(
+                    OperationDocumentView(
+                        assurance_public_id=assurance.public_id,
+                        vault_public_id=vault.public_id,
+                        filename=vault.original_filename,
+                        document_role=link.document_role,
+                        version_number=int(link.version_number),
+                        processing_status=assurance.processing_status,
+                        job_status=None if job is None else job.status,
+                        last_error_code=assurance.last_error_code,
+                        raw_expires_at=(
+                            vault.created_at + timedelta(hours=4)
+                            if vault.created_at is not None
+                            else None
+                        ),
+                        raw_deleted_at=vault.deleted_at,
+                    )
+                )
+
+            field_rows = session.scalars(
+                select(UsLaceyOperationField)
+                .where(
+                    UsLaceyOperationField.organization_id == org_id,
+                    UsLaceyOperationField.operation_id == operation.id,
+                )
+                .order_by(
+                    UsLaceyOperationField.merchandise_line_reference.asc(),
+                    UsLaceyOperationField.id.asc(),
+                )
+            ).all()
+            candidate_rows = session.scalars(
+                select(UsLaceyFieldCandidate).where(
+                    UsLaceyFieldCandidate.organization_id == org_id,
+                    UsLaceyFieldCandidate.operation_id == operation.id,
+                ).order_by(UsLaceyFieldCandidate.id.asc())
+            ).all()
+            candidates_by_field: dict[int, list[FieldCandidateView]] = {}
+            for candidate in candidate_rows:
+                candidates_by_field.setdefault(candidate.operation_field_id, []).append(
+                    FieldCandidateView(
+                        id=candidate.id,
+                        original_value=candidate.original_value,
+                        normalized_value=candidate.normalized_value,
+                        validation_status=candidate.validation_status,
+                        validation_error=candidate.validation_error,
+                        confidence=float(candidate.confidence),
+                        source_document_id=candidate.source_assurance_document_id,
+                        source_page=candidate.source_page,
+                        source_locator=candidate.source_locator,
+                        decision=candidate.decision,
+                    )
+                )
+            fields = tuple(
+                OperationFieldView(
+                    id=row.id,
+                    line_reference=row.merchandise_line_reference,
+                    field_name=row.field_name,
+                    label=_FIELD_LABELS.get(row.field_name, row.field_name),
+                    ppq_number=(
+                        PPQ505_FIELDS_BY_KEY[row.field_name].number
+                        if row.field_name in PPQ505_FIELDS_BY_KEY
+                        else 0
+                    ),
+                    scope=row.field_scope,
+                    proposed_value=row.normalized_value or row.original_value,
+                    effective_value=row.human_value or row.normalized_value or row.original_value,
+                    status=row.field_status,
+                    confidence=float(row.confidence),
+                    source_assurance_document_id=row.source_assurance_document_id,
+                    source_page=row.source_page,
+                    source_locator=row.source_locator,
+                    extractor=row.extractor,
+                    extractor_version=row.extractor_version,
+                    reviewed_by_user_id=row.reviewed_by_user_id,
+                    reviewed_at=row.reviewed_at,
+                    validation_status=row.validation_status,
+                    validation_error=row.validation_error,
+                    not_required_reason_code=row.not_required_reason_code,
+                    candidates=tuple(candidates_by_field.get(row.id, ())),
+                    provenance=(
+                        "reused_evidence"
+                        if row.extractor == "reusable-supplier-evidence"
+                        else (
+                            "review_required"
+                            if row.field_status in {"MISSING", "REVIEW", "CONFLICT"}
+                            else "current_shipment"
+                        )
+                    ),
+                    source_filename=(
+                        document_filename_by_assurance_id.get(int(row.source_assurance_document_id))
+                        if row.source_assurance_document_id is not None
+                        else None
+                    ),
+                )
+                for row in field_rows
+            )
+            declaration_rows = session.execute(
+                select(UsLaceyPlantDeclaration, UsLaceyPpqPlantLine.line_reference)
+                .join(
+                    UsLaceyPpqPlantLine,
+                    UsLaceyPpqPlantLine.id == UsLaceyPlantDeclaration.plant_line_id,
+                )
+                .where(
+                    UsLaceyPlantDeclaration.organization_id == org_id,
+                    UsLaceyPpqPlantLine.organization_id == org_id,
+                    UsLaceyPpqPlantLine.operation_id == operation.id,
+                )
+                .order_by(
+                    UsLaceyPpqPlantLine.ordinal.asc(),
+                    UsLaceyPlantDeclaration.ordinal.asc(),
+                )
+            ).all()
+            declarations = tuple(
+                PlantDeclarationView(
+                    line_reference=line_reference,
+                    ordinal=int(declaration.ordinal),
+                    genus=declaration.genus,
+                    species=declaration.species,
+                    country_of_harvest=declaration.country_of_harvest,
+                    quantity=declaration.quantity,
+                    unit=declaration.unit,
+                    original_values=declaration.original_values,
+                    source_assurance_document_id=declaration.source_assurance_document_id,
+                    source_page=declaration.source_page,
+                    source_locator=declaration.source_locator,
+                    extractor=declaration.extractor,
+                    extractor_version=declaration.extractor_version,
+                    confidence=float(declaration.confidence),
+                )
+                for declaration, line_reference in declaration_rows
+            )
+            conflict_rows = session.scalars(
+                select(ReconciliationIssue).where(
+                    ReconciliationIssue.organization_id == org_id,
+                    ReconciliationIssue.operation_reference == f"us_lacey:{operation.public_id}",
+                ).order_by(ReconciliationIssue.id.asc())
+            ).all()
+            conflicts = tuple(
+                ConflictView(
+                    id=issue.id,
+                    field_name=issue.field_name,
+                    status=issue.status,
+                    left_value=issue.left_value,
+                    right_value=issue.right_value,
+                    left_document_id=issue.left_document_id,
+                    right_document_id=issue.right_document_id,
+                    left_source=issue.left_source,
+                    right_source=issue.right_source,
+                    left_confidence=(issue.evidence_json or {}).get("left_confidence"),
+                    right_confidence=(issue.evidence_json or {}).get("right_confidence"),
+                )
+                for issue in conflict_rows
+            )
+            return OperationDetail(
+                public_id=operation.public_id,
+                client_reference=operation.client_reference,
+                importer_name=operation.importer_name,
+                consignee_name=operation.consignee_name,
+                broker_name=operation.broker_name,
+                supplier_name=operation.supplier_name,
+                operation_date=operation.operation_date,
+                status=operation.status,
+                document_count=int(operation.document_count),
+                merchandise_line_count=int(operation.merchandise_line_count),
+                review_result=operation.review_result,
+                created_at=operation.created_at,
+                updated_at=operation.updated_at,
+                documents=tuple(documents),
+                fields=fields,
+                plant_declarations=declarations,
+                conflicts=conflicts,
+            )
+        finally:
+            session.close()
+
+    def get_processing_snapshot(
+        self,
+        *,
+        organization_id: int,
+        operation_public_id: UUID | str,
+    ) -> OperationProcessingSnapshot:
+        """Return only durable processing checkpoints for the polling route."""
+        org_id = int(organization_id)
+        session = self._session(org_id)
+        try:
+            operation = self._get_model(session, organization_id=org_id, operation_public_id=operation_public_id)
+            links = session.scalars(
+                select(UsLaceyOperationDocument).where(
+                    UsLaceyOperationDocument.organization_id == org_id,
+                    UsLaceyOperationDocument.operation_id == operation.id,
+                    UsLaceyOperationDocument.is_current.is_(True),
+                ).order_by(UsLaceyOperationDocument.id.asc())
+            ).all()
+            documents: list[OperationDocumentView] = []
+            for link in links:
+                assurance = session.scalar(select(AssuranceDocument).where(
+                    AssuranceDocument.organization_id == org_id,
+                    AssuranceDocument.id == link.assurance_document_id,
+                ))
+                if assurance is None:
+                    continue
+                job = session.scalar(select(UsLaceyProcessingJob).where(
+                    UsLaceyProcessingJob.organization_id == org_id,
+                    UsLaceyProcessingJob.operation_id == operation.id,
+                    UsLaceyProcessingJob.assurance_document_id == assurance.id,
+                ).order_by(UsLaceyProcessingJob.id.desc()))
+                documents.append(OperationDocumentView(
+                    assurance_public_id=assurance.public_id,
+                    vault_public_id=UUID(int=0),
+                    filename="Source document",
+                    document_role=link.document_role,
+                    version_number=int(link.version_number),
+                    processing_status=assurance.processing_status,
+                    job_status=None if job is None else job.status,
+                    last_error_code=assurance.last_error_code,
+                ))
+            return OperationProcessingSnapshot(public_id=operation.public_id, status=operation.status, documents=tuple(documents))
+        finally:
+            session.close()
+
+    def attach_document(
+        self,
+        *,
+        organization_id: int,
+        operation_public_id: UUID | str,
+        assurance_document_id: int,
+        document_role: str,
+    ) -> int:
+        org_id = int(organization_id)
+        role = str(document_role or "UNKNOWN").strip().upper() or "UNKNOWN"
+        session = self._session(org_id)
+        try:
+            operation = self._get_model(
+                session,
+                organization_id=org_id,
+                operation_public_id=operation_public_id,
+            )
+            assurance_document = session.scalar(
+                select(AssuranceDocument).where(
+                    AssuranceDocument.organization_id == org_id,
+                    AssuranceDocument.id == int(assurance_document_id),
+                )
+            )
+            if assurance_document is None:
+                raise UsLaceyOperationNotFound("Document not found for this company.")
+            vault_document = session.scalar(
+                select(VaultDocument).where(
+                    VaultDocument.organization_id == org_id,
+                    VaultDocument.id == assurance_document.vault_document_id,
+                )
+            )
+
+            current = session.scalar(
+                select(UsLaceyOperationDocument)
+                .where(
+                    UsLaceyOperationDocument.organization_id == org_id,
+                    UsLaceyOperationDocument.operation_id == operation.id,
+                    UsLaceyOperationDocument.document_role == role,
+                    UsLaceyOperationDocument.is_current.is_(True),
+                )
+                .order_by(UsLaceyOperationDocument.version_number.desc())
+            )
+            version = 1
+            if current is not None:
+                if current.assurance_document_id == assurance_document.id:
+                    return current.id
+                version = current.version_number + 1
+                current.is_current = False
+
+            link = UsLaceyOperationDocument(
+                organization_id=org_id,
+                operation_id=operation.id,
+                assurance_document_id=assurance_document.id,
+                document_role=role,
+                version_number=version,
+                is_current=True,
+            )
+            session.add(link)
+            session.flush()
+            operation.document_count = int(
+                session.scalar(
+                    select(func.count(UsLaceyOperationDocument.id)).where(
+                        UsLaceyOperationDocument.organization_id == org_id,
+                        UsLaceyOperationDocument.operation_id == operation.id,
+                        UsLaceyOperationDocument.is_current.is_(True),
+                    )
+                )
+                or 0
+            )
+            append_operation_event(
+                session,
+                organization_id=org_id,
+                operation_id=operation.id,
+                actor_type=(
+                    OperationActorType.USER
+                    if vault_document is not None
+                    and vault_document.created_by_user_id is not None
+                    else OperationActorType.SYSTEM
+                ),
+                actor_identity=(
+                    f"user:{int(vault_document.created_by_user_id)}"
+                    if vault_document is not None
+                    and vault_document.created_by_user_id is not None
+                    else "Litoral Trace"
+                ),
+                event_type=OperationEventType.DOCUMENT_UPLOADED,
+                event_key=f"document:{link.id}:uploaded",
+                details={
+                    "filename": (
+                        str(vault_document.original_filename)[:255]
+                        if vault_document is not None
+                        else "Shipment document"
+                    ),
+                    "document_role": role,
+                    "version_number": version,
+                    "document_count": operation.document_count,
+                },
+            )
+            session.commit()
+            return link.id
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()

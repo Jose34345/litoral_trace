@@ -1,0 +1,121 @@
+{% extends "us_lacey/base.html" %}
+{% set authenticated = true %}
+{% from "us_lacey/_components.html" import lt_badge %}
+
+{% block lacey_title %}Trust & Controls{% endblock %}
+
+{% block lacey_content %}
+{{ page_header(
+    "Trust & Controls",
+    "Workspace assurance",
+    "A concise view of the data-handling, review and traceability controls active in this Litoral Trace workspace.",
+    icon="fa-shield-halved"
+) }}
+
+<section class="grid gap-4 lg:grid-cols-4" aria-label="Workspace control status">
+  <article class="lt-card p-5">
+    <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Environment</p>
+    <p class="mt-2 text-base font-bold text-slate-950">{{ "Evaluation" if entitlement.is_evaluation else "Production" }}</p>
+    <p class="mt-1 text-xs leading-5 text-slate-600">{{ "Temporary or saved evaluation workspace" if entitlement.is_evaluation else "Customer production workspace" }}</p>
+  </article>
+  <article class="lt-card p-5">
+    <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Tenant boundary</p>
+    <p class="mt-2 text-base font-bold text-slate-950">Workspace isolated</p>
+    <p class="mt-1 text-xs leading-5 text-slate-600">Customer-facing records are scoped to the active organization.</p>
+  </article>
+  <article class="lt-card p-5">
+    <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Human review</p>
+    <p class="mt-2 text-base font-bold text-slate-950">Required for final preparation</p>
+    <p class="mt-1 text-xs leading-5 text-slate-600">Automated reconciliation does not replace an authorized review decision.</p>
+  </article>
+  <article class="lt-card p-5">
+    <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Auditability</p>
+    <p class="mt-2 text-base font-bold text-emerald-700">Audit trail enabled</p>
+    <p class="mt-1 text-xs leading-5 text-slate-600">Shipment activity, review decisions and package events remain traceable.</p>
+  </article>
+</section>
+
+<section class="mt-5 grid gap-4 lg:grid-cols-2">
+  <article class="lt-card p-5" data-trust-data-handling>
+    <div class="flex items-start gap-3">
+      <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700" aria-hidden="true"><i class="fa-solid fa-database"></i></span>
+      <div>
+        <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-emerald-700">Data handling</p>
+        <h2 class="mt-1 text-base font-bold text-slate-950">Source evidence and derived results are treated separately</h2>
+      </div>
+    </div>
+    {% if entitlement.is_evaluation %}
+    <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+      <p class="text-xs font-bold text-emerald-950">Raw evaluation source retention: {{ entitlement.evaluation_raw_retention_hours or 4 }} hours</p>
+      <p class="mt-1 text-xs leading-5 text-emerald-900">Uploaded source files are scheduled for physical deletion after the evaluation retention window. Derived evaluation results remain available under the evaluation policy.</p>
+    </div>
+    {% else %}
+    <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <p class="text-xs font-bold text-slate-900">Production evidence remains part of the workspace record</p>
+      <p class="mt-1 text-xs leading-5 text-slate-600">Source evidence is retained according to the production workspace evidence policy so reviewed records remain auditable.</p>
+    </div>
+    {% endif %}
+    <p class="mt-4 text-xs leading-5 text-slate-600"><strong class="font-semibold text-slate-800">Model improvement:</strong> evaluation contribution is off by default. De-identified corrected-field examples are only shared when the evaluator explicitly opts in.</p>
+  </article>
+
+  <article class="lt-card p-5" data-trust-regulatory-versioning>
+    <div class="flex items-start gap-3">
+      <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700" aria-hidden="true"><i class="fa-solid fa-code-branch"></i></span>
+      <div>
+        <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Versioned controls</p>
+        <h2 class="mt-1 text-base font-bold text-slate-950">Regulatory analysis is tied to explicit versions</h2>
+      </div>
+    </div>
+    <dl class="mt-4 grid gap-3 sm:grid-cols-2">
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><dt class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Ruleset</dt><dd class="mt-1 break-all text-xs font-bold text-slate-900">{{ us_lacey_ruleset_version }}</dd></div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><dt class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">HTS catalog</dt><dd class="mt-1 break-all text-xs font-bold text-slate-900">{{ us_lacey_hts_catalog_version }}</dd></div>
+    </dl>
+    <p class="mt-4 text-xs leading-5 text-slate-600">Shipment snapshots preserve the control version used for analysis so later review can distinguish evidence changes from ruleset changes.</p>
+    <a href="/regulatory" class="mt-4 inline-flex items-center gap-2 text-xs font-bold text-emerald-700 hover:text-emerald-900"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i><span>Inspect regulatory controls</span></a>
+  </article>
+</section>
+
+<section class="mt-5 lt-card overflow-hidden" data-trust-control-matrix>
+  <header class="border-b border-slate-200 px-5 py-4">
+    <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Control matrix</p>
+    <h2 class="mt-1 text-base font-bold text-slate-950">Operational assurance at a glance</h2>
+  </header>
+  <div class="overflow-x-auto">
+    <table class="min-w-[58rem] w-full text-left text-xs">
+      <thead class="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+        <tr><th class="px-5 py-3">Control</th><th class="px-5 py-3">Workspace behavior</th><th class="px-5 py-3">Verification surface</th><th class="px-5 py-3">State</th></tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        <tr><td class="px-5 py-3 font-bold text-slate-900">Tenant scoping</td><td class="px-5 py-3 text-slate-600">Customer-facing data is resolved inside the active organization context.</td><td class="px-5 py-3 text-slate-600">Shipments, Evidence, Suppliers, Audit Log</td><td class="px-5 py-3">{{ lt_badge("READY", "Active") }}</td></tr>
+        <tr><td class="px-5 py-3 font-bold text-slate-900">Exception-first review</td><td class="px-5 py-3 text-slate-600">Only unresolved or conflicting evidence remains in the human work queue.</td><td class="px-5 py-3 text-slate-600">Shipment review workspace</td><td class="px-5 py-3">{{ lt_badge("READY", "Active") }}</td></tr>
+        <tr><td class="px-5 py-3 font-bold text-slate-900">Reusable supplier memory</td><td class="px-5 py-3 text-slate-600">Verified supplier/product claims can support future shipments inside their validity window.</td><td class="px-5 py-3 text-slate-600">Evidence and Suppliers</td><td class="px-5 py-3">{{ lt_badge("READY", "Auditable") }}</td></tr>
+        <tr><td class="px-5 py-3 font-bold text-slate-900">Regulatory readiness</td><td class="px-5 py-3 text-slate-600">A shipment cannot be ready while field or blocking regulatory information remains unresolved.</td><td class="px-5 py-3 text-slate-600">Regulatory Analysis</td><td class="px-5 py-3">{{ lt_badge("READY", "Unified") }}</td></tr>
+        <tr><td class="px-5 py-3 font-bold text-slate-900">Filing boundary</td><td class="px-5 py-3 text-slate-600">The product prepares declaration work products; an authorized team controls final submission.</td><td class="px-5 py-3 text-slate-600">Shipment package and Product Use Terms</td><td class="px-5 py-3">{{ lt_badge("REVIEW", "Human controlled") }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="mt-5 grid gap-4 lg:grid-cols-2">
+  <article class="lt-card p-5" data-trust-auditability>
+    <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Traceability</p>
+    <h2 class="mt-2 text-base font-bold text-slate-950">System of record</h2>
+    <p class="mt-2 text-xs leading-5 text-slate-600">Shipment creation, evidence ingestion, automated extraction, human review, evidence reuse and package generation are represented in the audit surface when those events occur.</p>
+    <div class="mt-4 flex flex-wrap gap-2">
+      <a href="/audit-log" class="lt-btn lt-btn--secondary"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>Open Audit Log</span></a>
+      <a href="/operations" class="lt-btn lt-btn--secondary"><i class="fa-solid fa-briefcase" aria-hidden="true"></i><span>View shipments</span></a>
+    </div>
+  </article>
+  <article class="lt-card p-5" data-trust-legal>
+    <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Policies and boundaries</p>
+    <h2 class="mt-2 text-base font-bold text-slate-950">Review the governing product terms</h2>
+    <p class="mt-2 text-xs leading-5 text-slate-600">Legal and product-use pages remain separate from operational status so policy text is not confused with a shipment-specific compliance result.</p>
+    <div class="mt-4 flex flex-wrap gap-2">
+      <a href="/legal/privacy" class="lt-btn lt-btn--ghost">Privacy</a>
+      <a href="/legal/product-use-terms" class="lt-btn lt-btn--ghost">Product Use Terms</a>
+      <a href="/legal/terms" class="lt-btn lt-btn--ghost">Terms</a>
+      <a href="/legal/refunds" class="lt-btn lt-btn--ghost">Refunds</a>
+    </div>
+  </article>
+</section>
+{% endblock %}

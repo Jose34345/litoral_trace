@@ -134,7 +134,7 @@ def test_high_confidence_cuit_creates_and_links_supplier_idempotently():
         assert len(links) == 1
         assert links[0].entity_type == "SUPPLIER"
         assert links[0].entity_reference == f"supplier:{supplier.public_id}"
-        assert links[0].link_method == "EXACT_CUIT"
+        assert links[0].link_method == "EXACT_IDENTIFIER"
 
 
 def test_name_only_reuses_exact_known_supplier_but_never_creates_new_one():

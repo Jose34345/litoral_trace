@@ -1,0 +1,896 @@
+{% from "components/ui.html" import button, empty_state %}
+{% from "us_lacey/_components.html" import lt_badge %}
+{% from "us_lacey/fragments/review_field_macros.html" import action_status %}
+{% set engine2_downstream_annotations = engine2_downstream_annotations|default({}) %}
+{% set field_errors = field_errors|default({}) %}
+{% set field_input_values = field_input_values|default({}) %}
+{% set regulatory_action_items = regulatory_action_items|default(()) %}
+{% set combined_action_count = (attention_fields|length) + (regulatory_action_items|length) %}
+{% set future_entry_fields = attention_fields|selectattr('field_name', 'equalto', 'filing_entry_reference')|rejectattr('proposed_value')|list %}
+{% set non_entry_attention_count = (attention_fields|length) - (future_entry_fields|length) %}
+{% macro friendly_status(value) %}{% set labels = {"MISSING":"Missing information", "CONFLICT":"Conflicting information", "SUPPORTED":"Auto-resolved", "SUPPORTED MULTIPLE":"Auto-resolved", "SUPPORTED_MULTIPLE":"Auto-resolved", "FOUND":"Auto-resolved", "MATCHED":"Confirmed", "NOT_REQUIRED":"Not required", "REVIEW":"Needs review"} %}{{ labels.get(value, value|replace("_", " ")|title) }}{% endmacro %}
+{% macro review_telemetry_inputs() %}<input type="hidden" name="review_started_at" data-review-started-at><input type="hidden" name="review_elapsed_seconds" data-review-elapsed-seconds><input type="hidden" name="review_modified_field_ids" data-review-modified-field-ids>{% endmacro %}
+
+{% macro missing_guidance(field_name) %}{% set guidance = {
+  "estimated_arrival_date":"Likely source: carrier arrival notice, bill of lading, or customs broker.",
+  "filing_entry_reference":"Likely source: importer or customs broker after the entry is created.",
+  "manufacturer_id":"Likely source: importer, customs broker, or manufacturer identification data.",
+  "importer_name":"Likely source: importer or customs entry documents.",
+  "importer_address":"Likely source: importer or customs entry documents.",
+  "consignee_name":"Likely source: bill of lading, arrival notice, or importer records.",
+  "consignee_address":"Likely source: bill of lading, arrival notice, or importer records.",
+  "merchandise_description":"Likely source: commercial invoice, packing list, or bill of lading.",
+  "hts_code":"Likely source: importer or customs broker classification records.",
+  "entered_value":"Likely source: commercial invoice or customs entry documents.",
+  "article_component":"Likely source: product specification, commercial invoice, or supplier declaration.",
+  "genus":"Likely source: supplier, manufacturer, or species declaration.",
+  "species":"Likely source: supplier, manufacturer, or species declaration.",
+  "country_of_harvest":"Likely source: supplier/manufacturer harvest or origin declaration.",
+  "plant_quantity":"Likely source: supplier/manufacturer plant-material declaration.",
+  "metric_unit":"Likely source: the document that states the plant-material quantity.",
+  "percent_recycled":"When applicable, likely source: supplier/manufacturer material-composition declaration."
+} %}{{ guidance.get(field_name, "Add a supporting document or enter this value only if you can verify it.") }}{% endmacro %}
+
+{% macro action_field(field, review_order, paired_review_ids=(), article_context=none, grouped=false) %}
+{% set action_url = "/operations/" ~ detail.public_id ~ "/review/fields/" ~ field.id %}
+{% set htmx_action_url = "/operations/" ~ detail.public_id ~ "/review/actions/fields/" ~ field.id %}
+{% set field_csrf = review_csrf.get(field.id, "") %}
+<article
+  id="review-field-{{ field.id }}"
+  class="lt-exception-field"
+  data-review-field
+  data-review-field-id="{{ field.id }}"
+  data-review-field-name="{{ field.field_name }}"
+  data-review-line="{{ field.line_reference }}"
+  data-review-order="{{ review_order }}"
+  data-review-status="{{ field.status }}"
+  data-review-required="true"
+>
+  <div class="lt-exception-field__part lt-exception-field__identity">
+    <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">{% if field.scope == "SHIPMENT" %}Shipment{% else %}Plant line {{ field.line_reference }}{% endif %}</p>
+    <p class="mt-1 text-xs font-bold text-slate-950">{{ field.label }}</p>
+  </div>
+  <div class="lt-exception-field__part lt-exception-field__value">
+    {% if field.proposed_value %}
+    <p class="text-xs font-semibold text-slate-900">{{ field.proposed_value }}</p>
+    {% else %}
+    <p class="text-xs font-semibold text-amber-800">Not found</p>
+    <p class="mt-1 max-w-xs text-[11px] leading-4 text-slate-500">{{ missing_guidance(field.field_name) }}</p>
+    {% endif %}
+  </div>
+  <div class="lt-exception-field__part lt-exception-field__evidence">
+    {% if field.id not in paired_review_ids and field.candidates|length == 1 and field.candidates[0].source_document_id %}
+    {% set source = field.candidates[0] %}
+    <button type="button" class="lt-task-source-link" data-source-inspect
+      data-source-url="/operations/{{ detail.public_id }}/source/{{ source.source_document_id }}"
+      data-source-page="{{ (source.source_page|string).split(',')[0]|trim if source.source_page else 1 }}"
+      data-source-label="{{ field.source_filename or 'Document ' ~ source.source_document_id }}"
+      data-source-locator="{{ source.source_locator or 'Compare the original before confirming.' }}">{{ field.source_filename or 'Open evidence' }} - p. {{ source.source_page or 1 }}</button>
+    {% endif %}
+    <details class="lt-task-evidence" {% if field.status == "CONFLICT" %}open{% endif %}><summary>Evidence and source details</summary>
+    {% if article_context %}
+    <div class="max-w-sm space-y-1" data-article-original-context>
+      <p class="text-[11px] font-semibold text-slate-800">Original packing description (context, not verified component)</p>
+      <p class="text-xs text-slate-700">{{ article_context.description }}</p>
+      <button type="button" class="text-xs font-bold text-emerald-800 underline" data-source-inspect
+        data-source-url="/operations/{{ detail.public_id }}/source/{{ article_context.document_id }}"
+        data-source-page="{{ article_context.page }}"
+        data-source-label="{{ article_context.filename }}"
+        data-source-locator="Original merchandise description. The reviewer must decide whether this supports the proposed Article / Component.">Inspect packing list · p. {{ article_context.page }}</button>
+      <p class="text-[11px] text-amber-800">Worksheet proposes: {{ field.proposed_value }}. Compare the original before any human decision.</p>
+    </div>
+    {% elif field.id in paired_review_ids %}
+    <p class="max-w-sm text-[11px] text-slate-600" data-paired-source>Same packing list, page {{ field.source_page }}. Use the shared PDF inspector above.</p>
+    {% elif field.candidates|length == 1 %}
+    {% set one = field.candidates[0] %}
+    <div data-inline-candidate="{{ one.id }}" class="max-w-sm space-y-1">
+      <p class="text-[11px] text-slate-700">
+        {% if field.source_filename and field.source_assurance_document_id == one.source_document_id %}{{ field.source_filename }}{% elif one.source_document_id %}Document {{ one.source_document_id }}{% else %}No linked document{% endif %}{% if one.source_page %} · p. {{ one.source_page }}{% endif %}
+      </p>
+      {# Extraction scores belong in advanced evidence analysis, not the action list. #}
+      {% set candidate_filename = field.source_filename if field.source_assurance_document_id == one.source_document_id else '' %}
+      {% set source_class = source_class_for_filename(candidate_filename) %}
+      <p class="text-[11px] {{ 'text-amber-800' if source_class.code == 'DERIVED_PREPARATION' else 'text-slate-600' }}" data-source-authority="{{ source_class.code }}">
+        <strong>{{ source_class.label }}</strong>
+      </p>
+      {% if one.source_document_id %}
+      <button type="button" class="text-xs font-bold text-emerald-800 underline" data-source-inspect
+        data-source-url="/operations/{{ detail.public_id }}/source/{{ one.source_document_id }}"
+        data-source-page="{{ one.source_page or 1 }}"
+        data-source-label="{{ candidate_filename or 'Document ' ~ one.source_document_id }}"
+        data-source-locator="{{ 'Source locator: ' ~ one.source_locator if one.source_locator else 'PDF page ' ~ (one.source_page or 1) ~ ' · Compare the original before confirming.' }}"
+      >{{ 'View worksheet' if source_class.code == 'DERIVED_PREPARATION' else 'Inspect original PDF' }} · p. {{ one.source_page or 1 }}</button>
+      {% else %}
+      <a href="#documents" class="text-xs text-emerald-800 underline">Document register</a>
+      {% endif %}
+      {% if source_class.code == 'DERIVED_PREPARATION' %}
+      <p class="text-[11px] font-semibold text-amber-800" data-worksheet-not-authority>Original document needed</p>
+      {% elif not quick_accept_eligible(field, one) %}
+      <p class="text-[11px] text-amber-800">Value cannot be accepted directly. Check its validity or provide supporting evidence.</p>
+      {% endif %}
+    </div>
+    {% elif field.candidates|length > 1 %}
+    <details class="max-w-sm" data-multiple-candidates {% if field.status == "CONFLICT" %}open{% endif %}>
+      <summary class="cursor-pointer text-xs font-bold text-emerald-700">Compare {{ field.candidates|length }} candidates</summary>
+      <div class="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        {% if field.candidates %}
+          <div class="grid gap-2">
+          {% for candidate in field.candidates %}
+            <div class="rounded-md border border-slate-200 bg-white p-2">
+              <p class="text-xs font-semibold text-slate-900">{{ candidate.normalized_value or candidate.original_value }}</p>
+              <p class="mt-1 text-[10px] text-slate-500">Page {{ candidate.source_page or '—' }} · confidence {{ (candidate.confidence * 100)|round(0) }}%</p>
+              {% if candidate.source_document_id %}
+              <button type="button" class="mt-1 text-xs font-bold text-emerald-800 underline" data-source-inspect
+                data-source-url="/operations/{{ detail.public_id }}/source/{{ candidate.source_document_id }}"
+                data-source-page="{{ candidate.source_page or 1 }}"
+                data-source-label="Document {{ candidate.source_document_id }}"
+                data-source-locator="{{ 'Source locator: ' ~ candidate.source_locator if candidate.source_locator else 'Compare original PDF page before choosing a candidate.' }}"
+              >Inspect PDF source</button>
+              {% endif %}
+              {% if quick_accept_eligible(field, candidate) %}
+              <form class="mt-2" method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="accept">
+                <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
+                <input type="hidden" name="action" value="accept">
+                <input type="hidden" name="candidate_id" value="{{ candidate.id }}">
+                {{ button("Accept", variant="secondary", button_type="submit") }}
+              </form>
+              {% endif %}
+            </div>
+          {% endfor %}
+          </div>
+        {% elif field.source_page %}
+        <p class="text-[11px] text-slate-600">Document evidence · page {{ field.source_page }}{% if field.source_locator %} · {{ field.source_locator }}{% endif %}</p>
+        {% elif field.provenance == "reused_evidence" %}
+        <p class="text-[11px] text-slate-600">Verified supplier evidence from a prior shipment.</p>
+        {% else %}
+        <p class="text-[11px] text-slate-600">No source evidence is currently attached to this field.</p>
+        {% endif %}
+      </div>
+    </details>
+    {% elif field.source_page %}
+    <p class="text-[11px] text-slate-600">Document evidence · page {{ field.source_page }}{% if field.source_locator %} · {{ field.source_locator }}{% endif %}</p>
+    {% elif field.provenance == "reused_evidence" %}
+    <p class="text-[11px] text-slate-600">Verified supplier evidence from a prior shipment.</p>
+    {% else %}
+    <p class="text-[11px] text-slate-600">No current linked source candidate.</p>
+    {% endif %}
+    </details>
+  </div>
+  <div class="lt-exception-field__part lt-exception-field__status">
+    {% set derived_only = field.source_filename and source_class_for_filename(field.source_filename).code == 'DERIVED_PREPARATION' %}
+    <span class="lt-review-status {% if field.status in ['MISSING', 'CONFLICT'] or (derived_only and not article_context) %}lt-review-status--blocking{% else %}lt-review-status--confirmation{% endif %}" data-action-status>{% if derived_only and article_context %}Review original{% elif derived_only %}Original required{% elif field.field_name == 'filing_entry_reference' and not field.proposed_value %}Pending for filing{% else %}{{ action_status(field) }}{% endif %}</span>
+  </div>
+  <div class="lt-exception-field__part lt-exception-field__decision">
+    {% set derived_only = field.source_filename and source_class_for_filename(field.source_filename).code == 'DERIVED_PREPARATION' %}
+    <div class="lt-exception-field__actions">
+      {% if field.id in paired_review_ids %}
+      <span class="text-[11px] font-semibold text-slate-600" data-paired-primary-action>Confirm together above</span>
+      {% elif derived_only and article_context %}
+      <span class="text-[11px] text-slate-600">Human decision required</span>
+      {% elif derived_only %}
+      <button type="button" class="lt-btn {{ 'lt-btn--secondary' if grouped else 'lt-btn--primary' }}" data-request-evidence
+        data-field-name="{{ field.field_name }}" data-field-label="{{ field.label }}"
+        data-field-guidance="{{ missing_guidance(field.field_name) }}">Prepare evidence request<span class="sr-only"> - Request original evidence</span></button>
+      {% endif %}
+      {% if field.candidates|length == 1 %}
+      {% set one = field.candidates[0] %}
+      {% if not derived_only and field.id not in paired_review_ids and quick_accept_eligible(field, one) %}
+      <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="accept" data-quick-accept>
+        <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
+        <input type="hidden" name="action" value="accept">
+        <input type="hidden" name="candidate_id" value="{{ one.id }}">
+        {{ button("Confirm value", variant="secondary" if grouped else "primary", button_type="submit") }}
+      </form>
+      {% endif %}
+      {% elif field.status != 'CONFLICT' and not derived_only and field.id not in paired_review_ids and field.proposed_value and not field.candidates and (field.source_assurance_document_id or field.provenance == 'reused_evidence') %}
+      <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="accept" data-quick-accept>
+        <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
+        <input type="hidden" name="action" value="accept">
+        {{ button("Confirm value", variant="secondary" if grouped else "primary", button_type="submit") }}
+      </form>
+      {% endif %}
+
+      {% if (not derived_only or article_context) and not field.proposed_value and not field.candidates and field.id not in paired_review_ids %}
+      <button type="button" class="lt-btn {{ 'lt-btn--secondary' if grouped else 'lt-btn--primary' }}" data-override-open data-override-field="{{ field.id }}" aria-haspopup="dialog" aria-controls="review-override-{{ field.id }}">{{ 'Enter verified number' if field.field_name == 'filing_entry_reference' else 'Enter value' }}</button>
+      {% elif not derived_only and field.candidates and (field.status == 'CONFLICT' or field.candidates|length > 1 or not quick_accept_eligible(field, field.candidates[0])) %}
+      <button type="button" class="lt-btn {{ 'lt-btn--secondary' if grouped else 'lt-btn--primary' }}" data-task-review-evidence>Review evidence</button>
+      {% endif %}
+      {% if derived_only and article_context %}
+      <button type="button" class="lt-btn {{ 'lt-btn--secondary' if grouped else 'lt-btn--primary' }}" data-override-open data-override-field="{{ field.id }}" aria-controls="review-override-{{ field.id }}" aria-haspopup="dialog">Review with packing list</button>
+      {% endif %}
+      <details class="lt-task-secondary"><summary>More actions</summary>
+      {% if not derived_only or article_context %}
+      <button
+        type="button"
+        class="{{ 'lt-btn lt-btn--ghost' if field.id in paired_review_ids else 'lt-btn lt-btn--secondary' }}"
+        data-override-open
+        data-override-field="{{ field.id }}"
+        aria-haspopup="dialog"
+        aria-controls="review-override-{{ field.id }}"
+      >{% if field.field_name == "filing_entry_reference" %}Enter verified number{% elif field.id in paired_review_ids %}Correct this value{% elif article_context %}Review with packing list{% else %}Enter verified value{% endif %}</button>
+      {% endif %}
+      {% if field.field_name == "filing_entry_reference" %}
+      <button type="button" class="lt-btn lt-btn--ghost" data-review-keep-pending data-keep-pending-field="{{ field.id }}">Keep pending</button>
+      {% endif %}
+      {% if (not derived_only or article_context) and field.id not in paired_review_ids and field.field_name != "filing_entry_reference" %}
+      <button type="button" class="lt-btn lt-btn--ghost" data-request-evidence data-field-name="{{ field.field_name }}" data-field-label="{{ field.label }}" data-field-guidance="{{ missing_guidance(field.field_name) }}">Request evidence</button>
+      {% endif %}
+
+      {% if field.field_name == "percent_recycled" %}
+      <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="not-required">
+        <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
+        <input type="hidden" name="action" value="not_required">
+        <input type="hidden" name="reason_code" value="NOT_PAPER_OR_PAPERBOARD">
+        {{ button("Mark not applicable", variant="ghost", button_type="submit") }}
+      </form>
+      {% endif %}
+      </details>
+    </div>
+    {% if field.field_name == "filing_entry_reference" %}
+    <p class="mt-2 text-[11px] leading-4 text-slate-600" data-pre-entry-waiting><strong>Later — after CBP entry creation.</strong> Not yet issued by CBP? Keep this field pending. It blocks filing-ready output, not review of the documents already supplied.</p>
+    {% endif %}
+    <p class="mt-2 hidden text-[11px] font-semibold text-slate-600" role="status" data-pending-feedback>No value was saved. This field remains pending.</p>
+    {% set field_error = field_errors.get(field.id) %}
+    <dialog
+      id="review-override-{{ field.id }}"
+      class="lt-review-override-dialog"
+      aria-labelledby="review-override-title-{{ field.id }}"
+      aria-describedby="review-override-description-{{ field.id }}"
+      data-override-dialog
+      data-override-field="{{ field.id }}"
+      data-override-has-error="{{ 'true' if field_error else 'false' }}"
+    >
+      <div class="lt-review-override-header">
+        <div>
+          <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Human review · verified value</p>
+          <h2 id="review-override-title-{{ field.id }}" class="mt-1 text-lg font-bold text-slate-950">{{ field.label }}</h2>
+        </div>
+        <button type="button" class="lt-review-override-close" data-override-close aria-label="Close verified value dialog"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      </div>
+      <div class="lt-review-override-body">
+        {% if article_context %}
+        <p id="review-override-description-{{ field.id }}" class="text-sm leading-6 text-slate-700">
+          Compare the packing list description with the proposed component. This is a human interpretation, not automatic proof.
+          Save only if the original supports your decision; otherwise request supplier evidence.
+        </p>
+        {% elif field.field_name == "filing_entry_reference" %}
+        <p id="review-override-description-{{ field.id }}" class="text-sm leading-6 text-slate-600">Only enter a real CBP entry number supplied by the importer or customs broker after the entry is created. If it has not been issued, select <strong>Keep pending</strong>. This does not mark the field complete or waive its filing requirement.</p>
+        {% else %}
+        <p id="review-override-description-{{ field.id }}" class="text-sm leading-6 text-slate-600">Enter a value supported by verified documentation. The original extraction and any human corrections remain auditable.</p>
+        {% endif %}
+        <form method="post" action="{{ action_url }}" hx-post="{{ htmx_action_url }}" hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-action data-review-action-kind="edit">
+          <input type="hidden" name="csrf_token" value="{{ field_csrf }}">
+          <input type="hidden" name="action" value="edit">
+          {% if article_context %}
+          <input type="hidden" name="context_description_field_id" value="{{ article_context.description_field_id }}">
+          <input type="hidden" name="context_source_locator" value="{{ article_context.locator }}">
+          {% endif %}
+          <label class="mt-5 block text-xs font-bold text-slate-700" for="field-{{ field.id }}">{% if field.field_name == "filing_entry_reference" %}Verified CBP entry number{% else %}Verified value{% endif %}</label>
+          <input id="field-{{ field.id }}" class="lt-control mt-2 w-full" name="value" maxlength="4000" required value="{{ field_input_values.get(field.id, field.effective_value or '') }}" autocomplete="off" {% if field_error %}aria-invalid="true" aria-describedby="field-error-{{ field.id }}"{% endif %}>
+          <label class="mt-3 block text-xs font-bold text-slate-700" for="field-reason-{{ field.id }}">Reason for correction</label>
+          <textarea id="field-reason-{{ field.id }}" class="lt-control mt-2 w-full" name="reason_code" rows="2" maxlength="1000" {% if article_context %}required minlength="15"{% endif %} placeholder="Document or evidence checked, and why the value is correct"></textarea>
+          <p class="mt-1 text-[11px] text-slate-500">A review reason is required when Assurance V2 authority journaling is enabled.</p>
+          {% if field_error %}<p id="field-error-{{ field.id }}" class="lt-inline-error mt-2 text-xs font-medium" role="alert" data-inline-field-error>{{ field_error }}</p>{% endif %}
+          <div class="lt-review-override-actions">
+            <button type="button" class="lt-btn lt-btn--secondary" data-override-keep-pending data-keep-pending-field="{{ field.id }}">Keep pending</button>
+            {{ button("Save verified value", variant="primary", button_type="submit") }}
+          </div>
+        </form>
+      </div>
+    </dialog>
+  </div>
+</article>
+{% endmacro %}
+
+{% macro mass_pair(quantity, unit) %}
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3" data-review-group="plant-mass">
+            <div class="min-w-0">
+              <p class="text-xs font-bold text-slate-900">One review: {{ quantity.proposed_value }} {{ unit.proposed_value }} of plant material</p>
+              <p class="mt-1 text-[11px] text-slate-600">Quantity and unit are linked to the same packing list, page {{ quantity.source_page }}. Inspect the original before confirming both values.</p>
+              <button type="button" class="mt-1 text-xs font-bold text-emerald-800 underline" data-source-inspect
+                data-source-url="/operations/{{ detail.public_id }}/source/{{ quantity.source_assurance_document_id }}"
+                data-source-page="{{ quantity.source_page }}"
+                data-source-label="{{ quantity.source_filename }}"
+                data-source-locator="Inspect the original packing list before confirming quantity and unit.">Inspect packing list</button>
+            </div>
+            <form method="post" action="/operations/{{ detail.public_id }}/review/mass-pair"
+                  hx-post="/operations/{{ detail.public_id }}/review/actions/mass-pair"
+                  hx-target="#operation-workspace" hx-swap="outerHTML transition:true"
+                  data-review-action data-review-action-kind="group">
+              <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
+              <input type="hidden" name="quantity_id" value="{{ quantity.id }}">
+              <input type="hidden" name="unit_id" value="{{ unit.id }}">
+              <input type="hidden" name="expected_quantity" value="{{ quantity.proposed_value }}">
+              <input type="hidden" name="expected_unit" value="{{ unit.proposed_value }}">
+              <input type="hidden" name="quantity_locator" value="{{ quantity.source_locator }}">
+              <input type="hidden" name="unit_locator" value="{{ unit.source_locator }}">
+              {{ button("Confirm quantity + unit", variant="primary", button_type="submit") }}
+            </form>
+          </div>
+{% endmacro %}
+
+<div
+  id="operation-workspace"
+  class="lt-enterprise-review scroll-mt-36 space-y-5"
+  tabindex="-1"
+  data-operation-id="{{ detail.public_id }}"
+  data-review-tabs
+  data-review-completed="{{ 'true' if detail.status == 'COMPLETED' else 'false' }}"
+>
+  
+  {% if error %}
+  <section class="lt-alert lt-alert--danger" role="alert">
+    <i class="fa-solid fa-circle-exclamation lt-alert__icon" aria-hidden="true"></i>
+    <div><p class="lt-alert__title">Review action could not be saved</p><p class="lt-alert__message">{{ error }}</p></div>
+  </section>
+  {% endif %}
+
+  {% if combined_action_count == 0 %}
+  <div class="lt-empty-state-transition flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3" data-no-action-required>
+    <p class="text-xs font-semibold text-emerald-900">No pending review items. Confirm the supported data before preparing the package.</p>
+    <div data-review-next-controls role="region" aria-label="Review confirmation">
+      {% if auto_supported_fields %}
+      <form method="post" action="/operations/{{ detail.public_id }}/review/accept-supported"
+            hx-post="/operations/{{ detail.public_id }}/review/actions/accept-supported"
+            hx-target="#operation-workspace" hx-swap="outerHTML transition:true" data-review-bulk>
+        <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
+        {{ button("Confirm All", variant="primary", button_type="submit", icon="fa-check-double") }}
+      </form>
+      {% elif detail.status != "COMPLETED" %}
+      <form method="post" action="/operations/{{ detail.public_id }}/complete" data-review-completion-form>
+        <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
+        {{ review_telemetry_inputs() }}
+        {{ button("Proceed to Final Confirmation", variant="primary", button_type="submit", icon="fa-arrow-right") }}
+      </form>
+      {% else %}
+      <a href="#declaration-package" class="lt-btn lt-btn--primary">View package</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% set default_review_tab = "action" if combined_action_count > 0 else ("resolved" if auto_supported_fields else "confirmed") %}
+  <section id="review-summary" class="lt-card scroll-mt-36 overflow-hidden" aria-label="Shipment review">
+
+    <nav class="flex overflow-x-auto border-b border-slate-200 px-4" role="tablist" aria-label="Review status filters" data-review-kpis data-review-filter-bar>
+      <button id="review-tab-action" type="button" role="tab" aria-selected="{{ 'true' if default_review_tab == 'action' else 'false' }}" aria-controls="review-panel-action" tabindex="{{ '0' if default_review_tab == 'action' else '-1' }}" data-review-tab-button="action" data-review-kpi="action" class="border-b-2 px-4 py-3 text-xs {% if default_review_tab == 'action' %}border-emerald-600 font-bold text-emerald-700{% else %}border-transparent font-semibold text-slate-500{% endif %}">
+        Pending fields <span class="ml-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20" data-action-tab-count data-action-required-count>{{ combined_action_count }}</span>
+      </button>
+      <button id="review-tab-resolved" type="button" role="tab" aria-selected="{{ 'true' if default_review_tab == 'resolved' else 'false' }}" aria-controls="review-panel-resolved" tabindex="{{ '0' if default_review_tab == 'resolved' else '-1' }}" data-review-tab-button="resolved" data-review-kpi="resolved" class="border-b-2 px-4 py-3 text-xs {% if default_review_tab == 'resolved' %}border-emerald-600 font-bold text-emerald-700{% else %}border-transparent font-semibold text-slate-500{% endif %}">
+        Supported fields <span class="ml-1 text-[10px]" data-auto-resolved-count>{{ auto_supported_fields|length }}</span>
+      </button>
+      <button id="review-tab-confirmed" type="button" role="tab" aria-selected="{{ 'true' if default_review_tab == 'confirmed' else 'false' }}" aria-controls="review-panel-confirmed" tabindex="{{ '0' if default_review_tab == 'confirmed' else '-1' }}" data-review-tab-button="confirmed" data-review-kpi="confirmed" class="border-b-2 px-4 py-3 text-xs {% if default_review_tab == 'confirmed' %}border-emerald-600 font-bold text-emerald-700{% else %}border-transparent font-semibold text-slate-500{% endif %}">
+        Confirmed fields <span class="ml-1 text-[10px]">{{ settled_fields|length }}</span>
+      </button>
+
+    </nav>
+      <button id="review-tab-regulatory" type="button" hidden aria-selected="false" aria-controls="review-panel-regulatory" tabindex="-1" data-review-tab-button="regulatory" class="border-b-2 border-transparent px-4 py-3 text-xs font-semibold text-slate-500">
+        Regulatory Analysis
+      </button>
+
+    <div id="review-panel-action" role="tabpanel" aria-labelledby="review-tab-action" data-review-tab-panel="action" class="{% if default_review_tab != 'action' %}hidden {% endif %}p-5">
+      {% if combined_action_count > 0 %}
+      <div class="mb-4">
+        <h2 class="text-base font-bold text-slate-950" data-workbench-queue-title>Needs your attention</h2>
+        {% if future_entry_fields %}
+        <p class="mt-1 text-xs text-slate-600" data-review-phase-counts><strong>{{ non_entry_attention_count }} document field{{ '' if non_entry_attention_count == 1 else 's' }} to review</strong> · {{ future_entry_fields|length }} CBP entry number{{ '' if future_entry_fields|length == 1 else 's' }} pending for filing{% if regulatory_action_items %} · {{ regulatory_action_items|length }} regulatory blocker{{ '' if regulatory_action_items|length == 1 else 's' }}{% endif %}.</p>
+        {% endif %}
+        <details class="lt-workbench-review-help"><summary>How review counts work</summary><p class="mt-1 text-xs text-slate-600">Counts represent individual fields, not reviewer clicks. Related values can be confirmed together after checking the original PDF. Filing requirements remain mandatory even when their information is not yet available.</p></details>
+      </div>
+      <div id="action-required-fields" class="grid gap-5" data-action-required-list>
+        {% include "us_lacey/fragments/exception_task_queue.html" %}
+      </div>
+      {% else %}
+      <div class="py-4 text-xs text-slate-500">The exception queue is clear. Use the active review tab above or continue to the Preparation Package.</div>
+      {% endif %}
+    </div>
+
+    <dialog id="request-evidence-dialog" class="w-[min(36rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/50">
+      <div class="border-b border-slate-200 px-5 py-4">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-amber-700">Evidence request</p>
+            <h2 class="mt-1 text-base font-bold text-slate-950" data-request-evidence-title>Request supporting evidence</h2>
+          </div>
+          <button type="button" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100" data-request-evidence-close aria-label="Close evidence request"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+      </div>
+      <div class="p-5">
+        <p class="text-xs leading-5 text-slate-600" data-request-evidence-guidance>Litoral Trace does not send supplier email on your behalf. Copy this request to your normal evidence workflow and attach the response when available. Closing this dialog leaves the field pending.</p>
+        <textarea class="lt-control mt-4 min-h-32 resize-y text-xs" readonly data-request-evidence-copy></textarea>
+        <div class="mt-4 flex flex-wrap justify-end gap-2">
+          <button type="button" class="lt-btn lt-btn--secondary" data-request-evidence-close><i class="fa-regular fa-clock" aria-hidden="true"></i><span>Keep pending</span></button>
+          <button type="button" class="lt-btn lt-btn--secondary" data-request-evidence-copy-button><i class="fa-regular fa-copy" aria-hidden="true"></i><span>Copy request</span></button>
+          <button type="button" class="lt-btn lt-btn--secondary" data-request-evidence-add><i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i><span>Add evidence</span></button>
+        </div>
+      </div>
+    </dialog>
+
+    <div id="review-panel-resolved" role="tabpanel" aria-labelledby="review-tab-resolved" data-review-tab-panel="resolved" class="{% if default_review_tab != 'resolved' %}hidden {% endif %}p-5">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-slate-950">Auto-Resolved Data</h2>
+          <p class="mt-1 text-sm text-slate-600">Values supported by current documents or previously verified supplier evidence. Inspect the supporting sources before confirming.</p>
+        </div>
+        {% if auto_supported_fields %}
+        <form
+          method="post"
+          action="/operations/{{ detail.public_id }}/review/accept-supported"
+          hx-post="/operations/{{ detail.public_id }}/review/actions/accept-supported"
+          hx-target="#operation-workspace"
+          hx-swap="outerHTML transition:true"
+          data-review-bulk
+        >
+          <input type="hidden" name="csrf_token" value="{{ complete_csrf }}">
+          {{ button("Confirm Supported Fields", variant="primary", button_type="submit", icon="fa-check-double") }}
+        </form>
+        {% endif %}
+      </div>
+
+      {% if auto_supported_fields %}
+      <div class="lt-supported-list" data-compact-supported>
+        {% for field in auto_supported_fields %}
+        <article data-auto-resolved-field="{{ field.id }}" class="lt-supported-item">
+          <div><p class="text-xs text-slate-500">{% if field.scope == "SHIPMENT" %}Shipment{% else %}Plant line {{ field.line_reference }}{% endif %}</p><strong>{{ field.label }}</strong><p class="lt-supported-value">{{ field.proposed_value }}</p></div>
+          <div>
+                {% if field.provenance == "reused_evidence" %}
+                <a class="inline-flex text-xs font-bold text-emerald-800 underline" href="/evidence" data-reused-evidence-inspect>
+                  View verified supplier evidence
+                </a>
+                <p class="mt-1 max-w-xs text-[11px] text-slate-500">
+                  Historical evidence record. The original PDF can be opened only while retained and authorized.
+                </p>
+                {% elif field.source_assurance_document_id and field.source_page %}
+                {% set resolved_source_page = (field.source_page|string).split(',')[0]|trim %}
+                <button type="button" class="text-xs font-bold text-emerald-800 underline" data-source-inspect
+                  data-source-url="/operations/{{ detail.public_id }}/source/{{ field.source_assurance_document_id }}"
+                  data-source-page="{{ resolved_source_page if resolved_source_page.isdigit() else 1 }}"
+                  data-source-label="{{ field.source_filename or 'Shipment source PDF' }}"
+                  data-source-locator="{{ 'Source locator: ' ~ field.source_locator if field.source_locator else 'Inspect the original document before confirming.' }}"
+                >Inspect source PDF · p. {{ resolved_source_page if resolved_source_page.isdigit() else 1 }}</button>
+                {% else %}
+                <span class="text-xs text-slate-500" data-auto-source-unavailable>No current source PDF linked</span>
+                {% endif %}
+              <details><summary>Evidence details</summary><p>Resolved by Litoral Trace ? {{ 'Reused from verified supplier evidence' if field.provenance == 'reused_evidence' else 'Current shipment' }}</p><p title="Extraction confidence is not evidence verification or filing approval">Extraction score: {{ (field.confidence * 100)|round(1) }}%</p></details></div>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="mt-5">{{ empty_state("No auto-resolved fields yet", icon="fa-wand-magic-sparkles") }}</div>
+      {% endif %}
+
+      {% if product_intelligence %}
+      <details class="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4" data-product-composition data-product-intelligence-status="{{ product_intelligence.status }}">
+        <summary class="cursor-pointer text-sm font-semibold text-slate-800">Product composition evidence{% if product_intelligence.component_count is defined %} · {{ product_intelligence.component_count }} components{% endif %}</summary>
+        <div class="mt-4 text-sm text-slate-700">
+          {% if product_intelligence.status == "NOT_APPLICABLE" %}
+          No explicit BOM was detected in the current tabular source set.
+          {% else %}
+          <div class="mb-4 flex flex-wrap gap-4 text-xs text-slate-600">
+            <span><strong>{{ product_intelligence.unique_sku_count }}</strong> SKUs</span>
+            <span><strong>{{ product_intelligence.component_count }}</strong> components</span>
+            <span><strong>{{ product_intelligence.material_count }}</strong> materials</span>
+          </div>
+          <div class="grid gap-3">
+            {% for source in product_intelligence.payload.get('sources', []) %}
+              {% for bom_block in source.get('tables', []) %}
+                {% for composition in bom_block.get('compositions', []) %}
+                <article class="rounded-lg border border-slate-200 bg-white p-3">
+                  <h4 class="font-bold text-slate-950">{{ composition.get('sku', 'Unidentified SKU') }}{% if composition.get('product_name') %} — {{ composition.get('product_name') }}{% endif %}</h4>
+                  {% for component in composition.get('components', []) %}
+                  {% set material = component.get('material') or {} %}
+                  {% set component_source = component.get('source') or material.get('source') or {} %}
+                  <p class="mt-2 text-xs text-slate-600">{{ component.get('description_raw') or 'Component' }} · {{ material.get('name_raw') or material.get('name_normalized') or 'Material not stated' }}</p>
+                  <p class="mt-1 text-xs text-slate-500">Source: {{ source.get('filename', 'source document') }}{% if component_source.get('sheet') %} · {{ component_source.get('sheet') }}{% endif %}{% if component_source.get('row') %} · row {{ component_source.get('row') }}{% endif %}</p>
+                  {% endfor %}
+                </article>
+                {% endfor %}
+              {% endfor %}
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </details>
+      {% endif %}
+    </div>
+
+    <div id="review-panel-confirmed" role="tabpanel" aria-labelledby="review-tab-confirmed" data-review-tab-panel="confirmed" class="{% if default_review_tab != 'confirmed' %}hidden {% endif %}p-5">
+      <div class="mb-5">
+        <h2 class="text-lg font-bold text-slate-950">Confirmed</h2>
+        <p class="mt-1 text-sm text-slate-600">Fields already settled by human review or an explicit preparation rule.</p>
+      </div>
+      {% if settled_fields %}
+      <div class="overflow-x-auto rounded-xl border border-slate-200">
+        <table class="min-w-[58rem] w-full text-left">
+          <thead class="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+            <tr>
+              <th class="px-4 py-2.5">Field</th>
+              <th class="px-4 py-2.5">Confirmed value</th>
+              <th class="px-4 py-2.5">Status</th>
+              <th class="px-4 py-2.5">Audit trail</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 bg-white">
+            {% for field in settled_fields %}
+            <tr data-confirmed-field="{{ field.id }}" class="align-top">
+              <td class="px-4 py-3">
+                <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">{% if field.scope == "SHIPMENT" %}Shipment{% else %}Plant line {{ field.line_reference }}{% endif %}</p>
+                <p class="mt-1 text-xs font-bold text-slate-950">{{ field.label }}</p>
+              </td>
+              <td class="px-4 py-3 text-xs font-semibold text-slate-900">{{ field.effective_value or 'Not applicable' }}</td>
+              <td class="px-4 py-3">
+                <span class="rounded-md bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-inset ring-slate-200">{{ friendly_status(field.status) }}</span>
+                {% if field.provenance == "reused_evidence" %}<div>{{ lt_badge("AUTO-RESOLVED", "Reused from verified supplier evidence", "mt-2") }}</div>{% endif %}
+              </td>
+              <td class="px-4 py-3">
+                {% if field.reviewed_at %}
+                <p class="max-w-sm text-[11px] leading-5 text-slate-500">
+                  Resolved by {% if field.reviewed_by_user_id == identity.user_id %}{{ identity.full_name or identity.email }}{% else %}Authorized reviewer{% endif %}
+                  · {{ field.reviewed_at.strftime("%b %d, %Y %H:%M") }}
+                  · Source: {% if field.provenance == "reused_evidence" %}verified supplier evidence{% elif field.source_filename %}{{ field.source_filename }}{% if field.source_page %} p.{{ field.source_page }}{% endif %}{% elif field.source_page %}shipment document p.{{ field.source_page }}{% else %}reviewed preparation record{% endif %}
+                </p>
+                {% else %}
+                <p class="max-w-sm text-[11px] leading-5 text-slate-500">Settled by preparation rule{% if field.source_page %} · Source: shipment document p.{{ field.source_page }}{% endif %}</p>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      {{ empty_state("No confirmed fields yet", "Confirmed review decisions will appear here.", "fa-circle-check") }}
+      {% endif %}
+    </div>
+
+    {% for field in settled_fields %}<div id="review-field-{{ field.id }}" hidden data-review-resolved="true"></div>{% endfor %}
+  </section>
+
+
+  {% include "us_lacey/fragments/export_declaration_package.html" %}
+
+  {# Only a current, source-linked dossier is useful in the customer workspace.
+     Preserve non-current availability for diagnostics without presenting empty
+     internal processing details as a customer-facing report. #}
+  {% if engine2_dossier.availability == "CURRENT" %}
+  <details id="engine2-dossier" class="lt-card p-6" data-engine2-dossier data-engine2-availability="{{ engine2_dossier.availability }}">
+    <summary class="cursor-pointer text-sm font-semibold text-slate-700">Advanced evidence details</summary>
+    <div class="mt-4">
+      <h2 class="text-lg font-bold text-slate-950">Document evidence analysis</h2>
+      <p class="mt-2 text-sm text-slate-600">Technical evidence remains available for audit and troubleshooting without cluttering the review workflow.</p>
+      {% if engine2_dossier.availability != "CURRENT" %}
+        <p class="mt-4 text-sm text-slate-700">{{ engine2_dossier.safe_status_message }}</p>
+      {% else %}
+        <div class="mt-4">
+          <span data-engine2-readiness="{{ engine2_dossier.readiness }}">Document evidence status: {{ engine2_dossier.readiness|replace("_", " ") }}</span>
+          <p class="mt-1 text-xs text-slate-500">Final preparation readiness is determined by the exception-first review above.</p>
+          <p class="mt-1 text-xs text-slate-500">Supported values here are document-evidence candidates and may not yet be accepted into the declaration.</p>
+          <p class="mt-1 text-xs text-slate-500">NO DIRECT CANDIDATE means Engine 2 did not retain direct document evidence for that technical field. It is not, by itself, a customer action item; later canonical or preparation stages may still resolve it.</p>
+        </div>
+        <div class="mt-5 grid gap-3">
+          {% for field in engine2_dossier.fields %}
+          <article class="rounded-lg border border-slate-200 p-3" data-engine2-field="{{ field.field_key }}" data-engine2-state="{{ field.state }}">
+            <div class="flex flex-wrap items-center gap-2">
+              <strong>{{ field.label }}</strong>
+              {% if field.state == "MISSING" %}
+              <span class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">NO DIRECT CANDIDATE</span>
+              {% else %}
+              <span class="text-sm text-slate-600">{{ field.state|replace("_", " ") }}</span>
+              {% endif %}
+              {% set downstream_note = engine2_downstream_annotations.get(field.field_key) %}
+              {% if field.state == "MISSING" and downstream_note %}
+              <span class="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">{{ downstream_note }}</span>
+              {% endif %}
+            </div>
+            {% if field.values %}<p class="mt-1">{{ field.values|join(", ") }}</p>{% elif field.state == "MISSING" %}<p class="mt-1 text-slate-600">{% if downstream_note %}No direct Engine 2 candidate; the preparation record is resolved downstream.{% else %}No direct Engine 2 candidate.{% endif %}</p>{% else %}<p class="mt-1 text-slate-600">No accepted value</p>{% endif %}
+            {% if field.evidence %}
+            <details class="mt-2"><summary>Evidence ({{ field.evidence|length }})</summary>
+              {% for line_key, line_evidence in field.line_evidence_groups %}
+              <section class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2" data-engine2-line-evidence="{{ line_key }}">
+                <p class="text-xs font-semibold text-slate-700">Line {{ line_key }} evidence</p>
+                {% for evidence in line_evidence %}<p class="mt-1 text-xs" data-engine2-evidence data-engine2-evidence-class="{{ evidence.evidence_class }}" data-engine2-source-page="{{ evidence.page }}"><strong>{{ evidence.source_filename }}</strong> · page {{ evidence.page }} · {{ evidence.evidence_class }}<br>Source: {{ evidence.source_text }}<br>Raw: {{ evidence.raw_text }} · Normalized: {{ evidence.normalized_value }} · score {{ evidence.candidate_score }} · authority {{ evidence.source_authority }} · {{ evidence.scope }} · line {{ evidence.line_key }}{% if evidence.component_key %} · component {{ evidence.component_key }}{% endif %}{% if evidence.bbox %} · bbox {{ evidence.bbox|join(", ") }}{% endif %}</p>{% endfor %}
+              </section>
+              {% endfor %}
+              {% if field.global_evidence %}
+              <section class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2" data-engine2-global-evidence>
+                <p class="text-xs font-semibold text-slate-700">Global / cross-line evidence</p>
+                {% for evidence in field.global_evidence %}<p class="mt-1 text-xs" data-engine2-evidence data-engine2-evidence-class="{{ evidence.evidence_class }}" data-engine2-source-page="{{ evidence.page }}"><strong>{{ evidence.source_filename }}</strong> · page {{ evidence.page }} · {{ evidence.evidence_class }}<br>Source: {{ evidence.source_text }}<br>Raw: {{ evidence.raw_text }} · Normalized: {{ evidence.normalized_value }} · score {{ evidence.candidate_score }} · authority {{ evidence.source_authority }} · {{ evidence.scope }}{% if evidence.component_key %} · component {{ evidence.component_key }}{% endif %}{% if evidence.bbox %} · bbox {{ evidence.bbox|join(", ") }}{% endif %}</p>{% endfor %}
+              </section>
+              {% endif %}
+            </details>
+            {% endif %}
+          </article>
+          {% endfor %}
+        </div>
+        {% if engine2_dossier.issues %}
+        <div class="mt-5 grid gap-3">
+          {% for issue in engine2_dossier.issues %}
+          <article class="rounded-lg border border-amber-200 p-3" data-engine2-issue>
+            <strong>{{ issue.label }}</strong> · {{ issue.severity }} · {{ issue.issue_type }}
+            <p>{{ issue.message }}</p>
+            <p class="text-xs">Human review required: {{ issue.requires_human_review }} · {{ issue.source_filenames|join(", ") }}{% if issue.line_key %} · line {{ issue.line_key }}{% endif %}{% if issue.component_key %} · component {{ issue.component_key }}{% endif %}</p>
+          </article>
+          {% endfor %}
+        </div>
+        {% endif %}
+      {% endif %}
+      <p class="mt-5 text-xs text-slate-500">This document-evidence analysis is not a legal compliance determination; the human-reviewed preparation record remains authoritative. Litoral Trace does not submit this operation to ACE or LAWGS.</p>
+    </div>
+  </details>
+  {% else %}
+  <span hidden data-engine2-not-current data-engine2-availability="{{ engine2_dossier.availability }}"></span>
+  {% endif %}
+
+  <p class="px-1 text-[11px] text-slate-500">Preparation only · No automatic submission to ACE or LAWGS. This is not a legal compliance determination.</p>
+</div>
+
+<script>
+(() => {
+  function activateTab(root, name) {
+    if (name === "regulatory") {
+      const panel = root.querySelector("[data-package-regulatory]");
+      if (panel) { panel.open = true; panel.scrollIntoView({block: "start"}); panel.querySelector("summary")?.focus(); }
+      return;
+    }
+    root.querySelectorAll("[data-review-tab-button]").forEach((button) => {
+      const active = button.dataset.reviewTabButton === name;
+      button.setAttribute("aria-selected", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
+      button.classList.toggle("border-emerald-600", active);
+      button.classList.toggle("text-emerald-700", active);
+      button.classList.toggle("font-bold", active);
+      button.classList.toggle("border-transparent", !active);
+      button.classList.toggle("text-slate-500", !active);
+      button.classList.toggle("font-semibold", !active);
+    });
+    root.querySelectorAll("[data-review-tab-panel]").forEach((panel) => {
+      if (panel.dataset.reviewTabPanel !== "regulatory") panel.classList.toggle("hidden", panel.dataset.reviewTabPanel !== name);
+    });
+  }
+
+  function refreshActionCount(root) {
+    const unresolved = root.querySelectorAll(
+      '[data-action-required-list] [data-review-field], [data-action-required-list] [data-regulatory-action-required]'
+    ).length;
+
+    root.querySelectorAll(
+      "[data-action-required-count], [data-action-tab-count], [data-attention-callout-count]"
+    ).forEach((element) => {
+      element.textContent = String(unresolved);
+    });
+
+    const list = root.querySelector("[data-action-required-list]");
+    if (list && unresolved === 0) {
+      const resolvedCount = Number(
+        root.querySelector('[data-review-tab-button="resolved"] span')?.textContent || "0"
+      );
+      activateTab(root, resolvedCount > 0 ? "resolved" : "confirmed");
+    }
+  }
+
+  function dedupeEngine2Dossier(root) {
+    document.querySelectorAll("#engine2-dossier").forEach((node) => {
+      if (!root.contains(node)) node.remove();
+    });
+  }
+
+  function initialize(root) {
+    if (!root) return;
+    dedupeEngine2Dossier(root);
+    if (root.dataset.tabsInitialized === "true") return;
+    root.dataset.tabsInitialized = "true";
+
+    root.querySelectorAll("[data-review-tab-button]").forEach((button) => {
+      button.addEventListener("click", () => {
+        activateTab(root, button.dataset.reviewTabButton);
+      });
+    });
+
+    const initiallySelected = root.querySelector('[data-review-tab-button][aria-selected="true"]');
+    activateTab(root, initiallySelected?.dataset.reviewTabButton || "action");
+    refreshActionCount(root);
+
+    root.querySelectorAll("[data-regulatory-action-jump]").forEach((link) => {
+      link.addEventListener("click", () => {
+        activateTab(root, "action");
+      });
+    });
+    root.querySelectorAll("[data-pre-entry-review-confirm]").forEach((link) => {
+      link.addEventListener("click", () => {
+        activateTab(root, "resolved");
+      });
+    });
+
+    // Verified values must be entered in a native modal (the browser top layer),
+    // not in an absolutely positioned card clipped by the scrolling evidence table.
+    function openOverride(dialog) {
+      if (!dialog) return;
+      if (typeof dialog.showModal === "function" && !dialog.open) dialog.showModal();
+      else if (!dialog.open) dialog.setAttribute("open", "");
+      dialog.querySelector('input[name="value"]')?.focus({ preventScroll: true });
+    }
+    function closeOverride(dialog) {
+      if (!dialog) return;
+      if (typeof dialog.close === "function" && dialog.open) dialog.close();
+      else dialog.removeAttribute("open");
+    }
+    function keepPending(fieldId) {
+      const row = root.querySelector('[data-review-field-id="' + fieldId + '"]');
+      const message = row?.querySelector("[data-pending-feedback]");
+      if (message) message.classList.remove("hidden");
+      closeOverride(root.querySelector('#review-override-' + fieldId));
+    }
+    root.querySelectorAll("[data-override-open]").forEach((button) => {
+      button.addEventListener("click", () => {
+        openOverride(root.querySelector('#review-override-' + button.dataset.overrideField));
+      });
+    });
+    root.querySelectorAll("[data-override-close]").forEach((button) => {
+      button.addEventListener("click", () => closeOverride(button.closest("[data-override-dialog]")));
+    });
+    root.querySelectorAll("[data-review-keep-pending], [data-override-keep-pending]").forEach((button) => {
+      button.addEventListener("click", () => keepPending(button.dataset.keepPendingField));
+    });
+    root.querySelectorAll('[data-override-has-error="true"]').forEach(openOverride);
+
+    root.querySelectorAll("[data-task-review-evidence]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const field = button.closest("[data-review-field]");
+        const evidence = field?.querySelector(".lt-task-evidence");
+        if (evidence) evidence.open = true;
+        field?.querySelector("[data-source-inspect]")?.click();
+      });
+    });
+    const requestDialog = root.querySelector("#request-evidence-dialog");
+    root.querySelectorAll("[data-request-evidence]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (!requestDialog) return;
+        const title = requestDialog.querySelector("[data-request-evidence-title]");
+        const copy = requestDialog.querySelector("[data-request-evidence-copy]");
+        const fieldLabel = button.dataset.fieldLabel || "required Lacey field";
+        const guidance = button.dataset.fieldGuidance || "Please provide supporting evidence.";
+        const guidanceText = requestDialog.querySelector("[data-request-evidence-guidance]");
+        const isEntryNumber = button.dataset.fieldName === "filing_entry_reference";
+        if (guidanceText) guidanceText.textContent = isEntryNumber
+          ? "This number is normally provided by the importer or customs broker after the customs entry is created. It is not in the uploaded documents. You can leave it pending without entering a made-up value; closing this dialog does not change the field. A final filing-ready package still needs a valid number."
+          : "Litoral Trace does not send messages on your behalf. Copy this request to your usual evidence workflow, then attach the response when it arrives. Closing this dialog leaves the field pending.";
+        if (title) title.textContent = "Request evidence · " + fieldLabel;
+        if (copy) {
+          copy.value =
+            "Please provide current supporting evidence for " + fieldLabel + ".\n\n" +
+            guidance + "\n\n" +
+            "Please include the source document and any relevant supplier/product reference.";
+        }
+        if (typeof requestDialog.showModal === "function") requestDialog.showModal();
+        else requestDialog.setAttribute("open", "");
+      });
+    });
+    requestDialog?.querySelectorAll("[data-request-evidence-close]").forEach((button) => {
+      button.addEventListener("click", () => requestDialog.close());
+    });
+    requestDialog?.querySelector("[data-request-evidence-copy-button]")?.addEventListener("click", async () => {
+      const copy = requestDialog.querySelector("[data-request-evidence-copy]");
+      if (!copy) return;
+      try {
+        await navigator.clipboard.writeText(copy.value);
+      } catch (_) {
+        copy.select();
+        document.execCommand("copy");
+      }
+    });
+    requestDialog?.querySelector("[data-request-evidence-add]")?.addEventListener("click", () => {
+      requestDialog.close();
+      document.querySelector("[data-add-documents-trigger]")?.click();
+    });
+  }
+
+  document.querySelectorAll("[data-review-tabs]").forEach(initialize);
+
+  if (!window.__ltReviewTabsBound) {
+    window.__ltReviewTabsBound = true;
+    let pendingQuickAcceptance = null;
+
+    // Fit beside the existing non-modal inspector only when at least 320px of
+    // usable task space remains after the actual shell/sidebar offset.
+    function fitEvidenceWorkspace() {
+      const workspace = document.getElementById("operation-workspace");
+      if (!workspace) return;
+      workspace.style.removeProperty("--lt-task-inspector-width");
+      const inspector = document.querySelector("[data-source-inspector][open]");
+      const panel = inspector?.querySelector(".lt-source-inspector__panel");
+      if (!panel || window.innerWidth <= 850) return;
+      const available = window.innerWidth - parseFloat(getComputedStyle(panel).width)
+        - workspace.getBoundingClientRect().left - 24;
+      if (available >= 320) workspace.style.setProperty("--lt-task-inspector-width", available + "px");
+    }
+    document.addEventListener("click", (event) => {
+      if (event.target.closest?.("[data-source-inspect], [data-source-inspector-close]")) {
+        window.requestAnimationFrame(fitEvidenceWorkspace);
+        window.setTimeout(fitEvidenceWorkspace, 220);
+      }
+    });
+    document.addEventListener("close", fitEvidenceWorkspace, true);
+    window.addEventListener("resize", fitEvidenceWorkspace);
+    document.body.addEventListener("htmx:afterSettle", fitEvidenceWorkspace);
+
+
+    // The user's click is not authority: only navigate after an HTMX success
+    // whose fresh server-rendered queue no longer contains that pending field.
+    document.body.addEventListener("htmx:beforeRequest", (event) => {
+      const form = event.detail?.elt || event.target;
+      if (!form?.matches?.("[data-quick-accept]")) return;
+      const field = form.closest("[data-review-field]");
+      const workspace = form.closest("[data-review-tabs]");
+      if (!field || !workspace) return;
+      pendingQuickAcceptance = {
+        fieldId: field.dataset.reviewFieldId,
+        operationId: workspace.dataset.operationId,
+        serverSucceeded: false
+      };
+    });
+
+    document.body.addEventListener("htmx:afterRequest", (event) => {
+      const form = event.detail?.elt || event.target;
+      if (!form?.matches?.("[data-quick-accept]") || !pendingQuickAcceptance) return;
+      pendingQuickAcceptance.serverSucceeded = event.detail?.successful === true;
+      if (!pendingQuickAcceptance.serverSucceeded) pendingQuickAcceptance = null;
+    });
+
+    document.body.addEventListener("htmx:afterSettle", () => {
+      const root = document.querySelector("[data-review-tabs]");
+      if (!root) return;
+      root.querySelectorAll('[data-review-resolved="true"]').forEach((node) => node.remove());
+      dedupeEngine2Dossier(root);
+      refreshActionCount(root);
+      if (!pendingQuickAcceptance || !pendingQuickAcceptance.serverSucceeded
+          || pendingQuickAcceptance.operationId !== root.dataset.operationId) return;
+
+      const priorField = root.querySelector(
+        '[data-action-required-list] [data-review-field-id="' +
+        pendingQuickAcceptance.fieldId + '"]'
+      );
+      pendingQuickAcceptance = null;
+      if (priorField) return;  // A validation error left the review unresolved.
+
+      const nextField = root.querySelector(
+        '[data-action-required-list] [data-review-field], ' +
+        '[data-action-required-list] [data-regulatory-action-required]'
+      );
+      if (!nextField) {
+        const summary = root.querySelector("#quality-output-title");
+        if (summary) {
+          summary.tabIndex = -1;
+          summary.focus({preventScroll:true});
+        }
+        return;
+      }
+      activateTab(root, "action");
+      const taskDetails = nextField.closest("[data-task-fields]");
+      if (taskDetails) taskDetails.open = true;
+      const focusTarget = nextField.querySelector("[data-quick-accept] button, button, a")
+        || nextField;
+      if (!focusTarget.hasAttribute("tabindex") && focusTarget === nextField) {
+        focusTarget.tabIndex = -1;
+      }
+      focusTarget.focus({preventScroll:true});
+      nextField.scrollIntoView({behavior:"smooth", block:"center"});
+    });
+
+    document.body.addEventListener("htmx:afterSwap", (event) => {
+      const target = event.target;
+      const root = target?.matches?.("[data-review-tabs]")
+        ? target
+        : target?.querySelector?.("[data-review-tabs]");
+      if (root) initialize(root);
+    });
+  }
+})();
+</script>
+
+
+{% if is_oob_update|default(false) %}
+{% set shell_oob = true %}
+{% include "us_lacey/fragments/workflow_stepper_shell.html" %}
+{% set summary_oob = true %}
+{% include "us_lacey/fragments/shipment_workspace_summary.html" %}
+{% endif %}

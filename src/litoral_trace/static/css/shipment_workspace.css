@@ -1,0 +1,82 @@
+.lt-shipment-nav{display:flex;gap:.5rem;position:sticky;top:4rem;z-index:20;background:white;border:1px solid #e2e8f0;border-radius:.75rem;padding:.5rem;margin:1rem 0}.lt-shipment-nav a{flex:1;text-align:center;padding:.5rem;font-weight:700;font-size:.875rem;color:#065f46}.lt-shipment-summary{border:1px solid #e2e8f0;border-radius:.75rem;background:#fff;padding:1rem;margin-bottom:1rem}.lt-shipment-summary__line{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem}.lt-shipment-summary__counts{display:flex;gap:1rem;font-size:.8rem}.lt-shipment-summary__boundary{font-size:.7rem;color:#64748b;margin-top:.6rem}.lt-shipment-identity{font-size:.75rem;color:#64748b;margin-top:.5rem}.lt-shipment-identity code{overflow-wrap:anywhere}.lt-shipment-status-details,.lt-package-formats,.lt-package-regulatory{margin-top:.75rem;border-top:1px solid #e2e8f0;padding-top:.6rem}.lt-shipment-identity summary,.lt-shipment-status-details summary,.lt-package-formats summary,.lt-package-regulatory summary{cursor:pointer;font-size:.8rem;font-weight:600}.lt-supported-list{display:grid;gap:.6rem;margin-top:1rem}.lt-supported-item{display:grid;grid-template-columns:minmax(0,1fr) minmax(12rem,auto);align-items:start;gap:1rem;border-bottom:1px solid #e2e8f0;padding:.75rem 0;font-size:.8rem}.lt-supported-value{overflow-wrap:anywhere}.lt-supported-item details{font-size:.7rem;color:#64748b;margin-top:.5rem}[data-review-filter-bar]{background:#f8fafc;border-radius:.75rem}.lt-export-card [data-export-unlock-banner]{margin-top:.75rem;padding:.75rem}.lt-export-card [data-export-unlock-banner] .h-10{display:none}@media(max-width:640px){.lt-supported-item{grid-template-columns:minmax(0,1fr)}.lt-shipment-summary__line{align-items:stretch;gap:.6rem}.lt-shipment-summary__counts{gap:.7rem}.lt-shipment-nav{top:0}.lt-shipment-identity p{display:flex;flex-wrap:wrap;gap:.4rem}#review-panel-confirmed table{min-width:0}#review-panel-confirmed thead{display:none}#review-panel-confirmed tr,#review-panel-confirmed td{display:block;width:100%}}
+
+/* Stage 1 structural layout: stable spacing and sticky anchor offsets. */
+.lt-shipment-nav{top:4.5rem;margin:.75rem 0;align-items:stretch;box-shadow:0 1px 2px rgb(15 23 42 / .04)}
+.lt-shipment-nav a{display:inline-flex;align-items:center;justify-content:center;min-height:2.5rem;border-radius:.5rem}
+.lt-shipment-nav a:focus-visible{outline:2px solid var(--lt-focus,#047857);outline-offset:2px}
+.lt-shipment-summary{margin-bottom:0}
+.lt-shipment-summary__line{column-gap:1.5rem;row-gap:.75rem}
+.lt-shipment-summary__counts{flex-wrap:wrap;gap:.5rem 1rem;font-size:.875rem}
+.lt-shipment-summary__boundary{font-size:.75rem;line-height:1.45}
+.lt-shipment-status-details{margin-top:.75rem}
+.lt-shipment-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--lt-border,#e2e8f0);border-radius:.75rem;margin-top:.75rem;overflow:hidden}
+.lt-shipment-status-grid > *{min-width:0;min-height:0;padding:1rem!important;border-bottom:0!important;border-right:1px solid var(--lt-border,#e2e8f0)}
+.lt-shipment-status-grid > :last-child{border-right:0!important}
+.lt-shipment-status-grid > * p{overflow-wrap:anywhere}
+#operation-workspace,#review-summary,#documents,#declaration-package{scroll-margin-top:10rem}
+@media(max-width:900px){
+  .lt-shipment-status-grid{grid-template-columns:1fr}
+  .lt-shipment-status-grid > *{border-right:0!important;border-bottom:1px solid var(--lt-border,#e2e8f0)!important}
+  .lt-shipment-status-grid > :last-child{border-bottom:0!important}
+}
+@media(max-width:640px){
+  .lt-shipment-nav{top:4rem;margin:.5rem 0;padding:.25rem;gap:.25rem}
+  .lt-shipment-nav a{font-size:.8125rem;padding:.5rem .25rem}
+  .lt-shipment-summary__counts{gap:.375rem .75rem}
+  #operation-workspace,#review-summary,#documents,#declaration-package{scroll-margin-top:8.5rem}
+}
+
+/* Operation detail only: the generic .lt-page 1.5rem grid gap combines with
+   child margins and empty HTMX staging elements, pushing the review queue
+   well below the first viewport. Keep all other workspaces unchanged. */
+.lt-page:has(> [data-shipment-section-nav]) { row-gap: .875rem; }
+.lt-page:has(> [data-shipment-section-nav]) > .lt-shipment-nav { margin: 0; }
+.lt-page:has(> [data-shipment-section-nav]) > #processing-status { margin-top: 0; }
+.lt-page:has(> [data-shipment-section-nav]) > [data-applicability-staging]:empty { display: none; }
+.lt-page:has(> [data-shipment-section-nav]) > #shipment-applicability-slot:not(:has(*)) { display: none; }
+
+/* Evidence Review Workbench: compact, task-first, non-destructive presentation. */
+.lt-workbench-header { align-items:center; gap:1rem; }
+.lt-workbench-header .lt-page-header__copy { min-width:0; flex:1 1 28rem; max-width:none; }
+.lt-workbench-header .lt-page-header__eyebrow { color:#047857; }
+.lt-workbench-header__metadata { display:flex; align-items:center; flex-wrap:wrap; gap:.375rem .75rem; margin-top:.625rem; font-size:.75rem; color:#64748b; }
+.lt-workbench-header__actions { display:flex; align-items:center; gap:.5rem; margin-left:auto; }
+.lt-workbench-more { margin:0; color:#334155; position:relative; }
+.lt-workbench-more__trigger { display:inline-flex; min-height:2.5rem; align-items:center; gap:.5rem; border:1px solid #cbd5e1; border-radius:.6rem; background:white; padding:.5rem .85rem; font-size:.8125rem; font-weight:650; cursor:pointer; list-style:none; }
+.lt-workbench-more__trigger::-webkit-details-marker { display:none; }
+.lt-workbench-more__trigger:hover,.lt-workbench-more[open] .lt-workbench-more__trigger { background:#f8fafc; border-color:#94a3b8; }
+.lt-workbench-more__trigger:focus-visible { outline:2px solid #047857; outline-offset:2px; }
+.lt-workbench-more__panel { position:absolute; top:calc(100% + .5rem); right:0; z-index:25; width:min(23rem,calc(100vw - 2rem)); padding:1rem; background:white; border:1px solid #cbd5e1; border-radius:.75rem; box-shadow:0 16px 35px -20px #0f172a; font-size:.75rem; line-height:1.5; }
+.lt-workbench-more__panel > p { margin-bottom:.5rem; }
+.lt-workbench-more__id code { overflow-wrap:anywhere; white-space:normal; }
+.lt-workbench-legacy-workflow { display:none!important; }
+.lt-page:has(> [data-evidence-workbench]) { row-gap:.625rem; }
+.lt-page:has(> [data-evidence-workbench]) > #processing-status { margin-top:0; }
+.lt-shipment-nav { position:sticky; top:4rem; z-index:20; margin:0; min-height:2.85rem; padding:.25rem; background:rgba(255,255,255,.96); border-radius:.65rem; gap:.25rem; box-shadow:none; backdrop-filter:blur(8px); }
+.lt-shipment-nav a { min-height:2.35rem; padding:.35rem .75rem; font-size:.8125rem; gap:.4rem; font-weight:650; color:#475569; }
+.lt-shipment-nav .lt-shipment-nav__current { background:#ecfdf5; color:#065f46; }
+.lt-shipment-nav a:hover { background:#f1f5f9; }
+.lt-shipment-summary { padding:.75rem 1rem; border-color:#d8e0e9; background:white; }
+.lt-shipment-summary__line { column-gap:.75rem; row-gap:.55rem; }
+.lt-shipment-summary__line > strong { color:#0f172a; font-size:.9rem; letter-spacing:-.015em; }
+.lt-shipment-summary__counts { font-size:.8rem; gap:.3rem 1rem; color:#475569; }
+.lt-shipment-summary__counts b { color:#0f172a; }
+.lt-shipment-summary__line [data-first-value-actions] .lt-btn { min-height:2.15rem; padding:.35rem .85rem; font-size:.75rem; }
+.lt-shipment-status-details { margin-top:.625rem; padding-top:.45rem; }
+.lt-shipment-status-details > summary { font-weight:600; font-size:.75rem; color:#64748b; }
+.lt-shipment-summary__boundary { margin-top:.6rem; padding-bottom:.5rem; }
+.lt-workbench-review-help { margin-top:.5rem; font-size:.72rem; color:#64748b; }
+.lt-workbench-review-help summary { cursor:pointer; width:fit-content; }
+.lt-workbench-review-help[open] p { max-width:54rem; }
+#review-panel-action { scroll-margin-top:9rem; }
+@media (max-width:780px) {
+ .lt-workbench-header__actions { width:100%; margin-left:0; justify-content:flex-start; }
+ .lt-workbench-more__panel { left:0; right:auto; }
+ .lt-shipment-summary__line { align-items:flex-start; }
+ .lt-shipment-nav a { flex:1 1 0; padding:.4rem .25rem; font-size:.75rem; }
+ .lt-shipment-nav a i { display:none; }
+}
+@media (max-width:420px) {
+ .lt-workbench-header__actions .lt-btn { min-height:2.3rem; }
+ .lt-workbench-header__metadata { font-size:.7rem; }
+}
