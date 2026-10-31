@@ -24,11 +24,13 @@
   <p class="lt-shipment-summary__boundary" data-human-filing-boundary>Preparation support only: review source documents; your authorized team remains responsible for final review and filing. No automatic ACE / LAWGS submission.</p>
   {% if not private_v2|default(false) and processing.terminal and not processing.failed %}
   <details class="lt-shipment-status-details"><summary>Detailed preparation status</summary>
+    <div class="lt-shipment-status-grid" role="group" aria-label="Shipment preparation checks">
     {% with shell_oob = false %}
     {% include "us_lacey/fragments/shipment_readiness_status.html" %}
     {% include "us_lacey/fragments/species_status.html" %}
     {% include "us_lacey/fragments/country_status.html" %}
     {% endwith %}
+    </div>
     {% if reused_evidence_summary and reused_evidence_summary.claim_count %}<div data-reuse-memory-summary><span>{{ reused_evidence_summary.claim_count }} verified claims reused</span><a href="/evidence">View verified supplier evidence - Inspect source</a></div>{% endif %}
   </details>
   {% endif %}
