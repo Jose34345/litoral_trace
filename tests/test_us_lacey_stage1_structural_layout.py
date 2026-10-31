@@ -35,3 +35,13 @@ def test_css_loads_in_head_and_nav_has_anchor_offsets():
     assert "css/us_lacey_exception_tasks.css" not in fragment
     assert "scroll-margin-top:10rem" in nav
     assert ".lt-shipment-nav a:focus-visible" in nav
+
+
+def test_operation_first_fold_spacing_is_scoped_and_cache_busted():
+    page = (TEMPLATES / "operation_detail.html").read_text(encoding="utf-8")
+    css = (STYLES / "shipment_workspace.css").read_text(encoding="utf-8")
+    assert "shipment_workspace.css') }}?v=20261031-firstfold2" in page
+    assert ".lt-page:has(> [data-shipment-section-nav]) { row-gap: .875rem; }" in css
+    assert "> #processing-status { margin-top: 0; }" in css
+    assert "> [data-applicability-staging]:empty { display: none; }" in css
+    assert "> #shipment-applicability-slot:not(:has(*)) { display: none; }" in css
