@@ -15,7 +15,7 @@
 {% set empty_bulk_rejection = bulk_upload_rejection and not detail.documents %}
 <header class="lt-page-header lt-workbench-header" aria-labelledby="operation-alias-label" data-evidence-workbench>
   <div class="lt-page-header__copy">
-    <p class="lt-page-header__eyebrow">Shipment review</p>
+    <p class="lt-page-header__eyebrow"><a href="/operations" class="lt-workbench-back">Shipments</a> / Shipment review</p>
     {% include "us_lacey/fragments/operation_alias.html" %}
     <div class="lt-workbench-header__metadata" aria-label="Shipment metadata">
       {% if business_supplier_name %}
@@ -309,7 +309,7 @@
 <script>window.setTimeout(function () { window.location.reload(); }, 8000);</script>
 {% endif %}
 {% if private_v2 %}<script src="{{ url_for('static', path='/js/assurance_v2_case.js') }}" defer></script>{% endif %}
-<script src="{{ url_for('static', path='/js/shipment_workspace.js') }}" defer></script>
+<script src="{{ url_for('static', path='/js/shipment_workspace.js') }}?v=20261031-workbench1" defer></script>
 {% include "us_lacey/fragments/source_inspector.html" %}
 <script src="{{ url_for('static', path='/js/us_lacey_source_inspector.js') }}?v=20261031-workbench1" defer></script>
 {% endblock %}
