@@ -34,3 +34,49 @@
 .lt-page:has(> [data-shipment-section-nav]) > #processing-status { margin-top: 0; }
 .lt-page:has(> [data-shipment-section-nav]) > [data-applicability-staging]:empty { display: none; }
 .lt-page:has(> [data-shipment-section-nav]) > #shipment-applicability-slot:not(:has(*)) { display: none; }
+
+/* Evidence Review Workbench: compact, task-first, non-destructive presentation. */
+.lt-workbench-header { align-items:center; gap:1rem; }
+.lt-workbench-header .lt-page-header__copy { min-width:0; flex:1 1 28rem; max-width:none; }
+.lt-workbench-header .lt-page-header__eyebrow { color:#047857; }
+.lt-workbench-header__metadata { display:flex; align-items:center; flex-wrap:wrap; gap:.375rem .75rem; margin-top:.625rem; font-size:.75rem; color:#64748b; }
+.lt-workbench-header__actions { display:flex; align-items:center; gap:.5rem; margin-left:auto; }
+.lt-workbench-more { margin:0; color:#334155; position:relative; }
+.lt-workbench-more__trigger { display:inline-flex; min-height:2.5rem; align-items:center; gap:.5rem; border:1px solid #cbd5e1; border-radius:.6rem; background:white; padding:.5rem .85rem; font-size:.8125rem; font-weight:650; cursor:pointer; list-style:none; }
+.lt-workbench-more__trigger::-webkit-details-marker { display:none; }
+.lt-workbench-more__trigger:hover,.lt-workbench-more[open] .lt-workbench-more__trigger { background:#f8fafc; border-color:#94a3b8; }
+.lt-workbench-more__trigger:focus-visible { outline:2px solid #047857; outline-offset:2px; }
+.lt-workbench-more__panel { position:absolute; top:calc(100% + .5rem); right:0; z-index:25; width:min(23rem,calc(100vw - 2rem)); padding:1rem; background:white; border:1px solid #cbd5e1; border-radius:.75rem; box-shadow:0 16px 35px -20px #0f172a; font-size:.75rem; line-height:1.5; }
+.lt-workbench-more__panel > p { margin-bottom:.5rem; }
+.lt-workbench-more__id code { overflow-wrap:anywhere; white-space:normal; }
+.lt-workbench-legacy-workflow { display:none!important; }
+.lt-page:has(> [data-evidence-workbench]) { row-gap:.625rem; }
+.lt-page:has(> [data-evidence-workbench]) > #processing-status { margin-top:0; }
+.lt-shipment-nav { position:sticky; top:4rem; z-index:20; margin:0; min-height:2.85rem; padding:.25rem; background:rgba(255,255,255,.96); border-radius:.65rem; gap:.25rem; box-shadow:none; backdrop-filter:blur(8px); }
+.lt-shipment-nav a { min-height:2.35rem; padding:.35rem .75rem; font-size:.8125rem; gap:.4rem; font-weight:650; color:#475569; }
+.lt-shipment-nav .lt-shipment-nav__current { background:#ecfdf5; color:#065f46; }
+.lt-shipment-nav a:hover { background:#f1f5f9; }
+.lt-shipment-summary { padding:.75rem 1rem; border-color:#d8e0e9; background:white; }
+.lt-shipment-summary__line { column-gap:.75rem; row-gap:.55rem; }
+.lt-shipment-summary__line > strong { color:#0f172a; font-size:.9rem; letter-spacing:-.015em; }
+.lt-shipment-summary__counts { font-size:.8rem; gap:.3rem 1rem; color:#475569; }
+.lt-shipment-summary__counts b { color:#0f172a; }
+.lt-shipment-summary__line [data-first-value-actions] .lt-btn { min-height:2.15rem; padding:.35rem .85rem; font-size:.75rem; }
+.lt-shipment-status-details { margin-top:.625rem; padding-top:.45rem; }
+.lt-shipment-status-details > summary { font-weight:600; font-size:.75rem; color:#64748b; }
+.lt-shipment-summary__boundary { margin-top:.6rem; padding-bottom:.5rem; }
+.lt-workbench-review-help { margin-top:.5rem; font-size:.72rem; color:#64748b; }
+.lt-workbench-review-help summary { cursor:pointer; width:fit-content; }
+.lt-workbench-review-help[open] p { max-width:54rem; }
+#review-panel-action { scroll-margin-top:9rem; }
+@media (max-width:780px) {
+ .lt-workbench-header__actions { width:100%; margin-left:0; justify-content:flex-start; }
+ .lt-workbench-more__panel { left:0; right:auto; }
+ .lt-shipment-summary__line { align-items:flex-start; }
+ .lt-shipment-nav a { flex:1 1 0; padding:.4rem .25rem; font-size:.75rem; }
+ .lt-shipment-nav a i { display:none; }
+}
+@media (max-width:420px) {
+ .lt-workbench-header__actions .lt-btn { min-height:2.3rem; }
+ .lt-workbench-header__metadata { font-size:.7rem; }
+}
