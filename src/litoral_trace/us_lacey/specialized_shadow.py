@@ -205,7 +205,8 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
         checked = verify_ai_evidence(engine2=resolution, ai=singleton)
         candidate = checked.candidates[0]
         anchors = _identity_source_anchors(envelope, resolution=resolution, candidate=candidate)
-        quoted_skus = set(observed_source_skus(candidate.source_text))
+        explicit_quote_skus = observed_source_skus(candidate.source_text)
+        quoted_skus = set(explicit_quote_skus)
         # An explicit verified sidecar may be alphanumeric without a separator
         # (ABC123). If the quote contains those literal characters, validate
         # their actual source span too; sparse species-only quotes remain valid.
@@ -217,14 +218,19 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
             and has_complete_source_sku_token(sidecar_sku, candidate.source_text)
         ):
             quoted_skus.add(sidecar_sku.strip().upper())
-        # A sidecar SKU added solely to validate quote boundaries is not an
-        # independently observed source identity. Never treat its disagreement
-        # with an explicit source label as proof of a multi-SKU source.
+        # Only SKUs independently observed in the quoted text may establish a
+        # contradiction with the original anchor. A sidecar used solely to
+        # validate token boundaries cannot veto an authoritative source label.
         source_sku_identity_blocked = envelope.source_sku_identity_blocked or (
             candidate.evidence_verified
             and any(
                 has_unsupported_source_sku(text)
                 or len(observed_source_skus(text)) > 1
+                or (
+                    bool(explicit_quote_skus)
+                    and bool(observed_source_skus(text))
+                    and not explicit_quote_skus.issubset(observed_source_skus(text))
+                )
                 for text in anchors
             )
         )
