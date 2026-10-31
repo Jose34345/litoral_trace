@@ -106,7 +106,7 @@ def test_single_review_surface_three_primary_sections_and_secondary_audit():
     assert 'data-secondary-reprocess' in op
     # Legacy stage stepper remains available outside owner-only laboratory.
     assert '{% include "us_lacey/fragments/workflow_stepper_shell.html" %}' in op
-    assert "Workflow stages · view progress" in op
+    assert "lt-workbench-legacy-workflow" in op
     assert "data-workflow-stage-details" in op
 
 

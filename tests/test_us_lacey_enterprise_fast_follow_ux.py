@@ -144,7 +144,7 @@ def test_sticky_master_action_bar_keeps_primary_workflow_actions_visible():
 def test_exception_tasks_keep_blocking_and_confirmation_severity():
     workspace = WORKSPACE.read_text(encoding="utf-8")
 
-    assert "Exception work queue" in workspace
+    assert "Needs your attention" in workspace
     assert "field.proposed_value" in workspace
     assert "data-review-field" in workspace
     assert "data-review-action" in workspace

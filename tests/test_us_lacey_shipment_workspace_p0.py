@@ -72,7 +72,7 @@ def test_post_fragment_has_single_summary_and_no_nested_oob_status_cards(monkeyp
 
 def test_header_collapses_technical_uuid_and_copies_only_that_value():
     source=(TEMPLATES/"us_lacey/operation_detail.html").read_text(encoding="utf-8")
-    header=re.search(r'<header class="lt-page-header".*?</header>',source,re.S).group()
+    header=re.search(r'<header class="lt-page-header lt-workbench-header".*?</header>',source,re.S).group()
     assert 'data-copy-operation-id' in header and 'data-operation-id-value' in header
     assert '<details' in header and 'data-open-shipment-audit' in header
     assert '<span>{{ business_reference }}</span>' not in header
