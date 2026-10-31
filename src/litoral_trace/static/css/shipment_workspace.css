@@ -25,3 +25,12 @@
   .lt-shipment-summary__counts{gap:.375rem .75rem}
   #operation-workspace,#review-summary,#documents,#declaration-package{scroll-margin-top:8.5rem}
 }
+
+/* Operation detail only: the generic .lt-page 1.5rem grid gap combines with
+   child margins and empty HTMX staging elements, pushing the review queue
+   well below the first viewport. Keep all other workspaces unchanged. */
+.lt-page:has(> [data-shipment-section-nav]) { row-gap: .875rem; }
+.lt-page:has(> [data-shipment-section-nav]) > .lt-shipment-nav { margin: 0; }
+.lt-page:has(> [data-shipment-section-nav]) > #processing-status { margin-top: 0; }
+.lt-page:has(> [data-shipment-section-nav]) > [data-applicability-staging]:empty { display: none; }
+.lt-page:has(> [data-shipment-section-nav]) > #shipment-applicability-slot:not(:has(*)) { display: none; }
