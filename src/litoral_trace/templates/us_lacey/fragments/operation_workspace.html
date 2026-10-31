@@ -371,11 +371,11 @@
     <div id="review-panel-action" role="tabpanel" aria-labelledby="review-tab-action" data-review-tab-panel="action" class="{% if default_review_tab != 'action' %}hidden {% endif %}p-5">
       {% if combined_action_count > 0 %}
       <div class="mb-4">
-        <h2 class="text-base font-bold text-slate-950">Exception work queue</h2>
+        <h2 class="text-base font-bold text-slate-950" data-workbench-queue-title>Needs your attention</h2>
         {% if future_entry_fields %}
         <p class="mt-1 text-xs text-slate-600" data-review-phase-counts><strong>{{ non_entry_attention_count }} document field{{ '' if non_entry_attention_count == 1 else 's' }} to review</strong> · {{ future_entry_fields|length }} CBP entry number{{ '' if future_entry_fields|length == 1 else 's' }} pending for filing{% if regulatory_action_items %} · {{ regulatory_action_items|length }} regulatory blocker{{ '' if regulatory_action_items|length == 1 else 's' }}{% endif %}.</p>
         {% endif %}
-        <p class="mt-1 text-xs text-slate-600">Counts represent individual fields, not reviewer clicks. Related values can be confirmed together after checking the original PDF. Filing requirements remain mandatory even when their information is not yet available.</p>
+        <details class="lt-workbench-review-help"><summary>How review counts work</summary><p class="mt-1 text-xs text-slate-600">Counts represent individual fields, not reviewer clicks. Related values can be confirmed together after checking the original PDF. Filing requirements remain mandatory even when their information is not yet available.</p></details>
       </div>
       <div id="action-required-fields" class="grid gap-5" data-action-required-list>
         {% include "us_lacey/fragments/exception_task_queue.html" %}
