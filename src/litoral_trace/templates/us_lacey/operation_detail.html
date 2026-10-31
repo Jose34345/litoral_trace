@@ -6,7 +6,7 @@
 {% set audit_events = audit_events|default(()) %}
 {% block lacey_title %}Review shipment{% endblock %}
 {% block head_extra %}{{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', path='/css/shipment_workspace.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='/css/shipment_workspace.css') }}?v=20261031-firstfold2">
 <link rel="stylesheet" href="{{ url_for('static', path='/css/us_lacey_exception_tasks.css') }}?v=20261031-layout1">
 <link rel="stylesheet" href="{{ url_for('static', path='/css/us_lacey_source_inspector.css') }}?v=20261016-pdf5">
 {% if private_v2|default(false) %}<link rel="stylesheet" href="{{ url_for('static', path='/css/assurance_v2_case.css') }}">{% endif %}{% endblock %}
