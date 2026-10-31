@@ -217,16 +217,14 @@ def _verify_candidates(candidates: tuple[CandidateEnvelope, ...], *, resolutions
             and has_complete_source_sku_token(sidecar_sku, candidate.source_text)
         ):
             quoted_skus.add(sidecar_sku.strip().upper())
+        # A sidecar SKU added solely to validate quote boundaries is not an
+        # independently observed source identity. Never treat its disagreement
+        # with an explicit source label as proof of a multi-SKU source.
         source_sku_identity_blocked = envelope.source_sku_identity_blocked or (
             candidate.evidence_verified
             and any(
                 has_unsupported_source_sku(text)
                 or len(observed_source_skus(text)) > 1
-                or (
-                    bool(quoted_skus)
-                    and bool(observed_source_skus(text))
-                    and not quoted_skus.issubset(observed_source_skus(text))
-                )
                 for text in anchors
             )
         )
