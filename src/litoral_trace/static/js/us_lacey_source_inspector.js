@@ -369,6 +369,7 @@ class PdfEvidenceRenderer {
   function close() {
     if (!root.open) return;
     activeInspectorKey = null;
+    document.querySelector(".lt-app-shell")?.removeAttribute("data-workbench-inspector-open");
     root.classList.remove("is-open");
     window.clearTimeout(closeTimer);
     closeTimer = window.setTimeout(() => {
@@ -401,6 +402,7 @@ class PdfEvidenceRenderer {
     root.dataset.viewerState = "loading";
     setStatus("Loading verified original…");
     if (!root.open) { if (mobileViewport()) root.showModal(); else root.show(); }
+    if (!mobileViewport()) document.querySelector(".lt-app-shell")?.setAttribute("data-workbench-inspector-open", "true");
     window.requestAnimationFrame(() => root.classList.add("is-open"));
     closeButton.focus({preventScroll:true});
     try {
@@ -499,6 +501,7 @@ class PdfEvidenceRenderer {
   document.addEventListener("keydown", (event) => { if (event.key === "Escape" && preview && !preview.hidden) { event.preventDefault(); closePreview(); } });
   root.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
   const discardSourceState = () => {
+    document.querySelector(".lt-app-shell")?.removeAttribute("data-workbench-inspector-open");
     ++previewGeneration;
     previewButton = null;
     window.clearTimeout(previewTimer);
