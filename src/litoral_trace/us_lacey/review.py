@@ -51,7 +51,9 @@ from litoral_trace.us_lacey.assurance_v2_review_adapter import (
 )
 from litoral_trace.us_lacey.identity_memory import resolve_operation_identity_memory
 from litoral_trace.us_lacey.review_telemetry import ReviewTelemetry
-from litoral_trace.us_lacey.review_source_authority import reviewed_source_class
+from litoral_trace.us_lacey.review_source_authority import (
+    is_anchored_human_shipping_source, reviewed_source_class,
+)
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS,
     PPQ505_PLANT_FIELDS,
@@ -365,6 +367,34 @@ def review_us_lacey_field(
                     "A preparation worksheet cannot independently verify this value. "
                     "Upload an original commercial or supplier document and review its evidence."
                 )
+            # A carrier role is mandatory for automatic or bulk corroboration,
+            # but a person may explicitly review an anchored original uploaded
+            # as OTHER. Never grant that exception to supplier/worksheet sources.
+            if field.field_name in {
+                "bill_of_lading", "master_bill_of_lading", "house_bill_of_lading",
+            }:
+                review_source_page = (
+                    selected_candidate.source_page if selected_candidate is not None
+                    else source_selection.page if source_selection is not None
+                    else original_context.page if original_context is not None
+                    else field.source_page
+                )
+                review_source_locator = (
+                    selected_candidate.source_locator if selected_candidate is not None
+                    else source_selection.locator if source_selection is not None
+                    else original_context.locator if original_context is not None
+                    else field.source_locator
+                )
+                if not is_anchored_human_shipping_source(
+                    session, organization_id=org_id, operation_id=operation.id,
+                    assurance_document_id=review_doc_id, field_name=field.field_name,
+                    source_page=review_source_page, source_locator=review_source_locator,
+                ):
+                    raise UsLaceyReviewError(
+                        "This Bill of Lading reference has no eligible, current "
+                        "original shipping source and exact PDF location. "
+                        "A supplier declaration or worksheet alone is insufficient."
+                    )
         before = {
             "field_id": field.id,
             "field_name": field.field_name,

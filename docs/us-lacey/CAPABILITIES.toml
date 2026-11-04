@@ -184,6 +184,9 @@ authority = "human_confirmed"
 implementation = [
   "src/litoral_trace/us_lacey/review.py",
   "src/litoral_trace/us_lacey/review_source_authority.py",
+  "src/litoral_trace/us_lacey/document_field_authority.py",
+  "src/litoral_trace/us_lacey/document_evidence_class.py",
+  "src/litoral_trace/us_lacey/candidate_reconciliation.py",
   "src/litoral_trace/us_lacey/article_context_review.py",
   "src/litoral_trace/us_lacey/paired_review.py",
   "src/litoral_trace/us_lacey/bulk_review.py",
@@ -191,7 +194,7 @@ implementation = [
   "src/litoral_trace/us_lacey/ai_suggestions.py"
 ]
 tests = ["tests"]
-notes = "Reviewer actions remain explicit and auditable. A worksheet alone cannot authorize a field. The paired quantity/unit action uses one explicit human decision with two audited fields. Article / Component may show contextual original packing-list description only for one same-source plant line; an authenticated reviewer must provide a value and a documented reason. The current source set, provenance, tenant and reviewer decision remain fenced; a filename alone never grants positive authority. Assurance V2 experimental mode remains disabled."
+notes = "Reviewer actions remain explicit and auditable. A worksheet alone cannot authorize a field. The paired quantity/unit action uses one explicit human decision with two audited fields. Article / Component may show contextual original packing-list description only for one same-source plant line; an authenticated reviewer must provide a value and a documented reason. Current tenant-owned sources are role-checked per B/L field in individual and batch acceptance; supplier or contradictory document roles cannot independently verify a carrier B/L. The only additional non-confirmed FOUND automation is a high-confidence, unambiguous B/L corroborated by current anchored Bill of Lading and arrival notice with different Vault SHA-256 hashes. A filename alone never grants positive authority; Assurance V2 experimental mode remains disabled."
 
 [capabilities.ppq505_and_exports]
 status = "ACTIVE"
