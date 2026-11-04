@@ -13,6 +13,9 @@ _TITLES = {
     DocumentType.SUPPLIER_DECLARATION: (
         "supplier botanical and harvest declaration",
         "supplier botanical declaration",
+        "botanical supplier declaration",
+        "botanical supplier and harvest declaration",
+        "supplier plant material declaration",
         "supplier declaration",
     ),
     DocumentType.SPECIES_DECLARATION: ("species declaration",),
@@ -41,6 +44,12 @@ def classify(layout: ParsedLayout, role_hint: str | None = None) -> tuple[Docume
     # cite each other within the same source, and raw substring totals can tie.
     # Only standalone text-line headings are authoritative for this tie-break.
     heading_patterns = (
+        ("botanical supplier declaration", DocumentType.SUPPLIER_DECLARATION),
+        ("botanical supplier and harvest declaration", DocumentType.SUPPLIER_DECLARATION),
+        ("supplier botanical and harvest declaration", DocumentType.SUPPLIER_DECLARATION),
+        ("supplier botanical declaration", DocumentType.SUPPLIER_DECLARATION),
+        ("supplier plant material declaration", DocumentType.SUPPLIER_DECLARATION),
+        ("supplier declaration", DocumentType.SUPPLIER_DECLARATION),
         ("commercial invoice", DocumentType.COMMERCIAL_INVOICE),
         ("packing list", DocumentType.PACKING_LIST),
         ("house bill of lading", DocumentType.BILL_OF_LADING),

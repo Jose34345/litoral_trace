@@ -1,13 +1,15 @@
 """Resolve duplicate-value U.S. Lacey review evidence deterministically.
 
-This pass is deliberately non-authoritative. It may turn an unreviewed REVIEW
-field into FOUND only when an OPEN conflict is proven to be metadata-only, but it
-never creates MATCHED. Human confirmation remains the only transition to a
-confirmed declaration value.
+This pass is deliberately non-authoritative. It may turn unreviewed REVIEW
+into FOUND when an OPEN conflict is provably metadata-only, or when one B/L
+reference is corroborated by two distinct, source-linked and hash-distinct
+original shipping document types. It never creates MATCHED; human confirmation
+remains the only transition to a confirmed declaration value.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from sqlalchemy import select
 
@@ -25,6 +27,9 @@ from litoral_trace.us_lacey.candidate_normalization import (
     group_candidate_evidence,
 )
 from litoral_trace.us_lacey.db import get_us_lacey_db_session
+from litoral_trace.us_lacey.review_source_authority import (
+    independent_review_source_identity, is_independent_review_source,
+)
 from litoral_trace.us_lacey.ppq505 import validate_ppq_value
 from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
 
@@ -33,6 +38,53 @@ from litoral_trace.us_lacey.projection import refresh_us_lacey_operation_status
 class DuplicateCandidateReconciliationResult:
     promoted_count: int
     resolved_conflict_count: int
+
+
+def _corroborated_shipping_reference(
+    field: object,
+    rows: list[UsLaceyFieldCandidate],
+    *,
+    current_carrier_source: Callable[[int], tuple[str, str] | None],
+) -> bool:
+    """Machine-support a B/L only with two independent anchored carrier sources.
+
+    This is a FOUND proposal, never MATCHED/confirmed. All other REVIEW fields
+    retain the existing human-review policy.
+    """
+    if (
+        str(getattr(field, "field_name", "")) != "bill_of_lading"
+        or str(getattr(field, "field_status", "")).upper() != "REVIEW"
+        or getattr(field, "reviewed_at", None) is not None
+        or getattr(field, "human_value", None)
+    ):
+        return False
+    source_ids = {getattr(row, "source_assurance_document_id", None) for row in rows}
+    if len(rows) < 2 or len(source_ids) < 2 or None in source_ids:
+        return False
+    corroborating_roles: set[str] = set()
+    distinct_original_hashes: set[str] = set()
+    for row in rows:
+        if (
+            str(getattr(row, "validation_status", "")).upper() != "VALID"
+            or str(getattr(row, "decision", "")).upper() != "PENDING"
+            or float(getattr(row, "confidence", 0) or 0) < 0.95
+            or not getattr(row, "source_page", None)
+            or not str(getattr(row, "source_locator", "") or "").strip()
+        ):
+            return False
+        source_identity = current_carrier_source(int(row.source_assurance_document_id))
+        if source_identity is None:
+            return False
+        role, sha256 = source_identity
+        if role not in {"BILL_OF_LADING", "ARRIVAL_NOTICE"} or len(sha256) != 64:
+            return False
+        corroborating_roles.add(role)
+        distinct_original_hashes.add(sha256)
+    # Two uploads of the same bytes are never independent corroboration.
+    return (
+        corroborating_roles == {"BILL_OF_LADING", "ARRIVAL_NOTICE"}
+        and len(distinct_original_hashes) >= 2
+    )
 
 
 def _same_actual_value(
@@ -169,25 +221,46 @@ def reconcile_duplicate_field_candidates(
                 candidates_by_field=candidates_by_field,
             )
             field_issues = issues_by_field.get(int(field.id), [])
-            if not field_issues:
-                # Duplicate provenance alone is not enough to change REVIEW -> FOUND.
-                # We only repair a conflict that the reconciliation layer explicitly
-                # created for values that are actually identical.
-                continue
-            if any(
-                not _same_actual_value(
-                    field.field_name,
-                    issue.left_value,
-                    issue.right_value,
-                    comparison_context=comparison_context,
-                )
-                for issue in field_issues
-            ):
-                # At least one OPEN issue is a genuine value contradiction.
-                continue
-
             rows = candidates_by_field.get(int(field.id), [])
             if len(rows) < 2:
+                continue
+            if field_issues:
+                if any(
+                    not _same_actual_value(
+                        field.field_name,
+                        issue.left_value,
+                        issue.right_value,
+                        comparison_context=comparison_context,
+                    )
+                    for issue in field_issues
+                ):
+                    # A genuine value contradiction is never auto-resolved.
+                    continue
+            elif not _corroborated_shipping_reference(
+                field,
+                rows,
+                current_carrier_source=lambda doc_id: independent_review_source_identity(
+                    session, organization_id=org_id, operation_id=operation.id,
+                    assurance_document_id=doc_id, field_name=field.field_name,
+                ),
+            ):
+                # No open false-conflict issue: only an exact, high-confidence B/L
+                # corroborated by two independently anchored carrier originals
+                # can become an unconfirmed FOUND proposal.
+                continue
+            if field.field_name in {
+                "bill_of_lading", "master_bill_of_lading", "house_bill_of_lading",
+            } and not all(
+                is_independent_review_source(
+                    session, organization_id=org_id, operation_id=operation.id,
+                    assurance_document_id=row.source_assurance_document_id,
+                    field_name=field.field_name,
+                )
+                for row in rows
+            ):
+                # A botanical declaration may quote a B/L as context; duplicate
+                # references to that declaration cannot automatically resolve a
+                # carrier-issued field. Keep the original REVIEW/CONFLICT state.
                 continue
             groups = group_candidate_evidence(
                 field.field_name,

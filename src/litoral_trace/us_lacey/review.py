@@ -51,7 +51,9 @@ from litoral_trace.us_lacey.assurance_v2_review_adapter import (
 )
 from litoral_trace.us_lacey.identity_memory import resolve_operation_identity_memory
 from litoral_trace.us_lacey.review_telemetry import ReviewTelemetry
-from litoral_trace.us_lacey.review_source_authority import reviewed_source_class
+from litoral_trace.us_lacey.review_source_authority import (
+    is_independent_review_source, reviewed_source_class,
+)
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS,
     PPQ505_PLANT_FIELDS,
@@ -364,6 +366,17 @@ def review_us_lacey_field(
                 raise UsLaceyReviewError(
                     "A preparation worksheet cannot independently verify this value. "
                     "Upload an original commercial or supplier document and review its evidence."
+                )
+            if field.field_name in {
+                "bill_of_lading", "master_bill_of_lading", "house_bill_of_lading",
+            } and not is_independent_review_source(
+                session, organization_id=org_id, operation_id=operation.id,
+                assurance_document_id=review_doc_id, field_name=field.field_name,
+            ):
+                raise UsLaceyReviewError(
+                    "This Bill of Lading reference is not supported by a current carrier "
+                    "Bill of Lading or arrival notice. Inspect and attach the original "
+                    "shipping evidence; a supplier declaration alone is insufficient."
                 )
         before = {
             "field_id": field.id,

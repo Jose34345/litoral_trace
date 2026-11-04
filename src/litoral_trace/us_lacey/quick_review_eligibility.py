@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from litoral_trace.us_lacey.ppq505 import PpqValidationStatus, validate_ppq_value
 from litoral_trace.us_lacey.document_evidence_class import classify_document
+from litoral_trace.us_lacey.document_field_authority import (
+    filename_clearly_incompatible, source_role_supports_field,
+)
 
 
 def quick_accept_eligible(field, candidate) -> bool:
@@ -22,6 +25,18 @@ def quick_accept_eligible(field, candidate) -> bool:
         return False
     # Presentation guard only; the transaction writer rechecks DB role/Vault.
     filename = str(getattr(field, "source_filename", "") or "")
+    field_name = str(getattr(field, "field_name", "") or "")
+    role = getattr(field, "source_document_role", None)
+    if role and not source_role_supports_field(field_name, role, filename):
+        return False
+    if filename_clearly_incompatible(field_name, filename):
+        return False
+    # Never label a different candidate's source with the field's old filename.
+    field_doc_id = getattr(field, "source_assurance_document_id", None)
+    if field_doc_id is not None and str(field_doc_id) != str(
+        getattr(candidate, "source_document_id", None)
+    ):
+        return False
     if filename and (
         str(getattr(field, "source_assurance_document_id", None))
         == str(getattr(candidate, "source_document_id", None))

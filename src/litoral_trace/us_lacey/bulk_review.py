@@ -174,6 +174,7 @@ def accept_supported_us_lacey_fields(
                     if not is_independent_review_source(
                         session, organization_id=org_id, operation_id=operation.id,
                         assurance_document_id=primary_id,
+                        field_name=field.field_name,
                     ):
                         continue
                 else:
@@ -181,6 +182,7 @@ def accept_supported_us_lacey_fields(
                         is_independent_review_source(
                             session, organization_id=org_id, operation_id=operation.id,
                             assurance_document_id=c.source_assurance_document_id,
+                            field_name=field.field_name,
                         )
                         for c in candidates_by_field.get(int(field.id), ())
                     ):

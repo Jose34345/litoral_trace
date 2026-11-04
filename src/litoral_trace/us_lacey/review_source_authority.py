@@ -6,19 +6,22 @@ positive regulatory authority.
 """
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import select
 
 from litoral_trace.db.models import (
     AssuranceDocument, UsLaceyOperationDocument, VaultDocument,
 )
 from litoral_trace.us_lacey.document_evidence_class import classify_document
+from litoral_trace.us_lacey.document_field_authority import source_role_supports_field
 
 
-def reviewed_source_class(
+def _reviewed_source_details(
     session, *, organization_id: int, operation_id: int,
     assurance_document_id: int | None,
 ):
-    """Return source classification only for a current operation-owned document."""
+    """Load role and classification only for a current tenant-owned source."""
     if assurance_document_id is None:
         return None
     row = session.execute(
@@ -27,6 +30,7 @@ def reviewed_source_class(
             VaultDocument.original_filename,
             VaultDocument.status,
             VaultDocument.deleted_at,
+            VaultDocument.sha256,
         )
         .join(
             AssuranceDocument,
@@ -47,16 +51,74 @@ def reviewed_source_class(
     ).first()
     if not row or str(row[2]) != "available" or row[3] is not None:
         return None
-    return classify_document(str(row[1] or ""), str(row[0] or ""))
+    role = str(row[0] or "")
+    filename = str(row[1] or "")
+    fingerprint = str(row[4] or "").lower() if len(row) > 4 else ""
+    return classify_document(filename, role), role, filename, fingerprint
+
+
+def reviewed_source_class(
+    session, *, organization_id: int, operation_id: int,
+    assurance_document_id: int | None,
+):
+    """Return the current operation-owned source classification (if any)."""
+    details = _reviewed_source_details(
+        session, organization_id=organization_id, operation_id=operation_id,
+        assurance_document_id=assurance_document_id,
+    )
+    return details[0] if details is not None else None
+
+
+def independent_review_source_role(
+    session, *, organization_id: int, operation_id: int,
+    assurance_document_id: int | None,
+    field_name: str | None = None,
+) -> str | None:
+    """Return the recorded role of a current, eligible source, not a filename guess."""
+    details = _reviewed_source_details(
+        session, organization_id=organization_id, operation_id=operation_id,
+        assurance_document_id=assurance_document_id,
+    )
+    if details is None:
+        return None
+    source, role, filename, _fingerprint = details
+    if (
+        source.code not in {"COMMERCIAL_SOURCE", "SUPPLIER_SOURCE"}
+        or (field_name is not None and not source_role_supports_field(field_name, role, filename))
+    ):
+        return None
+    return role.strip().upper()
+
+
+def independent_review_source_identity(
+    session, *, organization_id: int, operation_id: int,
+    assurance_document_id: int | None,
+    field_name: str,
+) -> tuple[str, str] | None:
+    """Role plus Vault SHA-256: duplicate uploads are not corroboration."""
+    details = _reviewed_source_details(
+        session, organization_id=organization_id, operation_id=operation_id,
+        assurance_document_id=assurance_document_id,
+    )
+    if details is None:
+        return None
+    source, role, filename, fingerprint = details
+    if (
+        source.code not in {"COMMERCIAL_SOURCE", "SUPPLIER_SOURCE"}
+        or not source_role_supports_field(field_name, role, filename)
+        or re.fullmatch(r"[a-f0-9]{64}", fingerprint) is None
+    ):
+        return None
+    return role.strip().upper(), fingerprint
 
 
 def is_independent_review_source(
     session, *, organization_id: int, operation_id: int,
     assurance_document_id: int | None,
+    field_name: str | None = None,
 ) -> bool:
-    """A missing, stale or worksheet source is not independently supportive."""
-    source = reviewed_source_class(
+    """Source must be current, original, and appropriate for the named field."""
+    return independent_review_source_role(
         session, organization_id=organization_id, operation_id=operation_id,
-        assurance_document_id=assurance_document_id,
-    )
-    return source is not None and source.code in {"COMMERCIAL_SOURCE", "SUPPLIER_SOURCE"}
+        assurance_document_id=assurance_document_id, field_name=field_name,
+    ) is not None
