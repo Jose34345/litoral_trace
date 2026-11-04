@@ -45,4 +45,4 @@ El cambio de DNS/dominio no se realiza en el código. Esta rama **por sí sola n
 
 ## Actualizaciones posteriores
 
-Publicar contenido estático nuevo cambiando únicamente las plantillas públicas, los recursos corporativos o el generador en esta rama. No mezclar cambios comerciales con cambios de backend. La versión de Lacey sigue siendo independiente.
+Para cambiar la landing, editar las plantillas públicas o el generador, ejecutar `python corporate_static/build.py` y confirmar en Git los archivos nuevos de `corporate_static/dist/`. Render publica esa carpeta precompilada sin ejecutar Python: **editar solo plantillas no actualiza la página**. No mezclar cambios comerciales con cambios de backend. La versión de Lacey sigue siendo independiente.
