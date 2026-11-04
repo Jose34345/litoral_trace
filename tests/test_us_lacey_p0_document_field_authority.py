@@ -173,3 +173,32 @@ def test_review_source_identity_requires_current_original_bytes_and_role():
         unknown_hash, organization_id=1, operation_id=2,
         assurance_document_id=3, field_name="bill_of_lading",
     ) is None
+
+
+def test_explicit_human_shipping_review_allows_anchored_unknown_original_only():
+    from litoral_trace.us_lacey.review_source_authority import (
+        is_anchored_human_shipping_source, is_independent_review_source,
+    )
+    kwargs = dict(
+        organization_id=1, operation_id=2, assurance_document_id=3,
+        field_name="bill_of_lading", source_page=1, source_locator="p1:block:8",
+    )
+    original = _Rows(("OTHER", "03_House_BL.pdf", "available", None, "a" * 64))
+    assert is_anchored_human_shipping_source(original, **kwargs)
+    assert not is_independent_review_source(
+        original, organization_id=1, operation_id=2,
+        assurance_document_id=3, field_name="bill_of_lading",
+    )
+    assert not is_anchored_human_shipping_source(
+        original, **{**kwargs, "source_page": None},
+    )
+    assert not is_anchored_human_shipping_source(
+        original, **{**kwargs, "source_locator": ""},
+    )
+    for row in (
+        ("OTHER", "02_Botanical_Supplier_Declaration.pdf", "available", None, "b" * 64),
+        ("SUPPLIER_DECLARATION", "supplier_declaration.pdf", "available", None, "c" * 64),
+        ("OTHER", "entry_preparation_worksheet.pdf", "available", None, "d" * 64),
+        ("OTHER", "03_House_BL.pdf", "delete_pending", None, "e" * 64),
+    ):
+        assert not is_anchored_human_shipping_source(_Rows(row), **kwargs)

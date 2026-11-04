@@ -122,3 +122,36 @@ def is_independent_review_source(
         session, organization_id=organization_id, operation_id=operation_id,
         assurance_document_id=assurance_document_id, field_name=field_name,
     ) is not None
+
+
+def is_anchored_human_shipping_source(
+    session, *, organization_id: int, operation_id: int,
+    assurance_document_id: int | None,
+    field_name: str, source_page: int | None, source_locator: str | None,
+) -> bool:
+    """Permit explicit human B/L review from an original with a real PDF anchor.
+
+    The exact candidate/source remains tenant- and current-revision-fenced.
+    A carrier role is mandatory for *machine* corroboration, not for a human
+    inspecting an original commercial document with an unclassified upload role.
+    Supplier declarations and derived worksheets never qualify.
+    """
+    details = _reviewed_source_details(
+        session, organization_id=organization_id, operation_id=operation_id,
+        assurance_document_id=assurance_document_id,
+    )
+    if details is None or not source_page or not str(source_locator or "").strip():
+        return False
+    source, role, filename, _fingerprint = details
+    if source.code in {
+        "DERIVED_PREPARATION", "ROLE_CONFLICT",
+        "SUPPLIER_SOURCE", "UNVERIFIED_SUPPLIER",
+    }:
+        return False
+    if source.code not in {
+        "COMMERCIAL_SOURCE", "UNVERIFIED_COMMERCIAL", "UNCLASSIFIED",
+    }:
+        return False
+    # Original/current document + exact span + explicit authenticated reviewer
+    # are required here. No automatic, bulk or unanchored promotion is implied.
+    return True
