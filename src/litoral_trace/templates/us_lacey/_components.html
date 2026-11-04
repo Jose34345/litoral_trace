@@ -1,0 +1,68 @@
+{% macro lt_badge(status, text=None, extra_classes='') -%}
+  {% set normalized = (status or 'UNKNOWN')|upper|replace('_', ' ') %}
+  {% set tone = {
+    'READY': 'positive',
+    'AUTO-RESOLVED': 'positive',
+    'AUTO RESOLVED': 'positive',
+    'REVIEW REQUIRED': 'warning',
+    'REVIEW': 'warning',
+    'MISSING': 'danger',
+    'CONFLICT': 'danger'
+  }.get(normalized, 'neutral') %}
+  {% set tone_class = {
+    'positive': 'lt-badge--positive',
+    'warning': 'lt-badge--warning',
+    'danger': 'lt-badge--danger',
+    'neutral': 'lt-badge--neutral'
+  }.get(tone, 'lt-badge--neutral') %}
+  <span class="lt-badge {{ tone_class }} {{ extra_classes }}" data-lt-status="{{ normalized }}">
+    <span class="lt-badge__dot" aria-hidden="true"></span>
+    <span>{{ text or normalized }}</span>
+  </span>
+{%- endmacro %}
+
+{% macro lt_button(variant, text, icon=None, href=None, button_type='button', extra_classes='', disabled=False) -%}
+  {% set variant_class = {
+    'primary': 'lt-btn--primary',
+    'secondary': 'lt-btn--secondary',
+    'ghost': 'lt-btn--ghost',
+    'danger': 'lt-btn--danger'
+  }.get(variant, 'lt-btn--primary') %}
+  {% if href %}
+  <a class="lt-btn {{ variant_class }} {{ extra_classes }}" href="{{ href }}"{% if disabled %} aria-disabled="true" tabindex="-1"{% endif %}>
+    {% if icon %}<i class="fa-solid {{ icon }}" aria-hidden="true"></i>{% endif %}
+    <span>{{ text }}</span>
+  </a>
+  {% else %}
+  <button class="lt-btn {{ variant_class }} {{ extra_classes }}" type="{{ button_type }}"{% if disabled %} disabled{% endif %}>
+    {% if icon %}<i class="fa-solid {{ icon }}" aria-hidden="true"></i>{% endif %}
+    <span>{{ text }}</span>
+  </button>
+  {% endif %}
+{%- endmacro %}
+
+{% macro lt_card(title, content=None, eyebrow=None, extra_classes='') -%}
+  <section class="lt-card {{ extra_classes }}">
+    <header class="border-b border-slate-200 px-5 py-4">
+      {% if eyebrow %}<p class="text-[11px] font-bold uppercase tracking-[0.16em] text-enterprise-emerald">{{ eyebrow }}</p>{% endif %}
+      <h2 class="{% if eyebrow %}mt-1 {% endif %}text-sm font-bold text-slate-950">{{ title }}</h2>
+    </header>
+    <div class="p-5">
+      {% if content is not none %}{{ content }}{% elif caller is defined %}{{ caller() }}{% endif %}
+    </div>
+  </section>
+{%- endmacro %}
+
+{% macro lt_data_table(headers, caption=None, min_width='52rem', extra_classes='') -%}
+  <div class="lt-data-table {{ extra_classes }}">
+    {% if caption %}<p class="sr-only">{{ caption }}</p>{% endif %}
+    <div class="lt-data-table__scroll">
+      <table class="lt-data-table__table lt-data-table__table--lacey">
+        <thead class="lt-data-table__head">
+          <tr>{% for header in headers %}<th scope="col" class="lt-data-table__th">{{ header }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody class="lt-data-table__body">{{ caller() }}</tbody>
+      </table>
+    </div>
+  </div>
+{%- endmacro %}

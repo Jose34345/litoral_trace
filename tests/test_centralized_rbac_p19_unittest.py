@@ -23,12 +23,6 @@ from litoral_trace.api.lotes import (
     crear_lote,
     listar_lotes_tenant,
 )
-from litoral_trace.api.satellite import (
-    SatelliteJobSubmitRequest,
-    SatelliteQueryByLoteRequest,
-    submit_satellite_job_endpoint,
-    consultar_ndvi_satelital_lote_endpoint,
-)
 from litoral_trace.api.settings import (
     InviteDemoUserRequest,
     consultar_licencia_tenant,
@@ -325,35 +319,6 @@ def test_unknown_role_fails_closed_on_authenticated_endpoint():
     assert license_exc.value.status_code == 403
 
 
-def test_satellite_requires_capability_before_external_call(monkeypatch):
-    account = _create_tenant_account(role="cliente")
-    user = _authenticated_context(
-        username=str(account["username"]),
-        password=str(account["password"]),
-    )
-    external_call_triggered = False
-
-    def _unexpected_gee_call(*args, **kwargs):
-        nonlocal external_call_triggered
-        external_call_triggered = True
-        raise AssertionError("GEE no debe ejecutarse sin satellite:run")
-
-    monkeypatch.setattr(
-        "litoral_trace.api.satellite.consultar_serie_temporal_ndvi_gee",
-        _unexpected_gee_call,
-    )
-
-    with pytest.raises(HTTPException) as satellite_exc:
-        _run_guard(Permission.SATELLITE_RUN, user)
-    assert satellite_exc.value.status_code == 403
-    assert external_call_triggered is False
-
-    manager_account = _create_tenant_account(role="manager")
-    manager_user = _authenticated_context(
-        username=str(manager_account["username"]),
-        password=str(manager_account["password"]),
-    )
-    _run_guard(Permission.SATELLITE_RUN, manager_user)
 
 
 def test_superadmin_has_platform_admin_endpoint_access():
@@ -437,53 +402,3 @@ def test_role_downgrade_in_db_revokes_old_admin_capabilities():
     with pytest.raises(HTTPException) as downgrade_exc:
         _run_guard(Permission.LOTE_CREATE, downgraded_context)
     assert downgrade_exc.value.status_code == 403
-
-
-def test_satellite_endpoint_still_runs_for_manager():
-    account = _create_tenant_account(role="manager")
-    user = _authenticated_context(
-        username=str(account["username"]),
-        password=str(account["password"]),
-    )
-
-    _run_guard(Permission.SATELLITE_RUN, user)
-    response = asyncio.run(
-        consultar_ndvi_satelital_lote_endpoint(
-            SatelliteQueryByLoteRequest(lote_id=int(account["lote_id"])),
-            user=user,
-        )
-    )
-
-    assert response.status_code == 200
-
-
-def test_satellite_job_submit_requires_capability():
-    account = _create_tenant_account(role="cliente")
-    user = _authenticated_context(
-        username=str(account["username"]),
-        password=str(account["password"]),
-    )
-
-    with pytest.raises(HTTPException) as satellite_exc:
-        _run_guard(Permission.SATELLITE_RUN, user)
-    assert satellite_exc.value.status_code == 403
-
-    manager_account = _create_tenant_account(role="manager")
-    manager_user = _authenticated_context(
-        username=str(manager_account["username"]),
-        password=str(manager_account["password"]),
-    )
-    _run_guard(Permission.SATELLITE_RUN, manager_user)
-
-    response = asyncio.run(
-        submit_satellite_job_endpoint(
-            SatelliteJobSubmitRequest(
-                lote_id=int(manager_account["lote_id"]),
-                start_date="2026-07-01",
-                end_date="2026-08-01",
-            ),
-            user=manager_user,
-        )
-    )
-
-    assert response.status_code == 202

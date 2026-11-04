@@ -1,0 +1,48 @@
+{% extends "us_lacey/base.html" %}
+{% set authenticated = true %}
+{% block lacey_title %}Evaluation{% endblock %}
+{% block lacey_content %}
+<header class="lt-page-header">
+  <div class="lt-page-header__copy">
+    <p class="lt-page-header__eyebrow">Five-shipment evaluation</p>
+    <h1 class="lt-page-header__title">{{ "Evaluation complete" if entitlement.evaluation_read_only else "Evaluation in progress" }}</h1>
+    <p class="lt-page-header__description">
+      {% if entitlement.evaluation_read_only %}
+      You tested five real shipments. The workspace is now read-only so your results, Suppliers and Audit Log remain available while you decide how to continue.
+      {% else %}
+      Continue testing real shipments with no credit card. Raw documents are deleted after four hours; derived evaluation data stays available while the evaluation is active.
+      {% endif %}
+    </p>
+  </div>
+</header>
+
+<section class="mx-auto max-w-3xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div class="grid gap-4 sm:grid-cols-3">
+    <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Successful shipments</p>
+      <p class="mt-1 text-2xl font-bold text-slate-950">{{ entitlement.used_operations }} / 5</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Raw retention</p>
+      <p class="mt-1 text-2xl font-bold text-slate-950">4 hours</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Credit card</p>
+      <p class="mt-1 text-2xl font-bold text-slate-950">Not required</p>
+    </div>
+  </div>
+
+  {% if entitlement.evaluation_read_only %}
+  <div class="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 p-5">
+    <p class="text-sm font-bold text-slate-950">Your evaluation results remain available</p>
+    <p class="mt-2 text-xs leading-5 text-slate-700">You can continue reviewing Operations, Evidence, Suppliers and the Audit Log. Creating or modifying shipment records is locked until the workspace is upgraded.</p>
+    <a href="/lacey#pricing" class="mt-4 inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800">Continue with Litoral Trace →</a>
+  </div>
+  {% else %}
+  <div class="mt-6 flex flex-wrap items-center gap-3">
+    <a href="/operations/new" class="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800">New evaluation shipment</a>
+    <a href="/operations" class="inline-flex items-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Back to operations</a>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

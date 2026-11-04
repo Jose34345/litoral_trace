@@ -1,0 +1,49 @@
+{# Presentation groups only. Each field still posts its existing independent decision. #}
+{% for group in exception_task_groups %}
+<section class="lt-task-category" data-task-category="{{ group.category }}" aria-labelledby="task-category-{{ group.category }}">
+  <h3 id="task-category-{{ group.category }}" class="lt-task-category__title">{{ group.label }} <span>{{ group.tasks|length }} task{{ '' if group.tasks|length == 1 else 's' }}</span></h3>
+  {% for task in group.tasks %}
+  <section class="lt-exception-task" data-exception-task="{{ task.key }}" aria-labelledby="{{ task.key }}-title">
+    <header class="lt-exception-task__header">
+      <h4 id="{{ task.key }}-title">{{ task.title }} <span>{{ task.fields|length }} field{{ '' if task.fields|length == 1 else 's' }}</span></h4>
+      <p>{{ task.reason }}</p>
+      {% if task.responsibility %}<p class="lt-task-owner">Recommended contact: {{ task.responsibility }}</p>{% endif %}
+    </header>
+    {% if task.fields|length > 1 %}
+    <div class="lt-task-preview">
+      {% for field in task.fields %}<p><strong>{{ field.label }}:</strong> {{ field.proposed_value or 'Missing information' }}{% if field.source_filename %} <span>{{ field.source_filename }}{% if field.source_page %} · p. {{ field.source_page }}{% endif %}</span>{% endif %}</p>{% endfor %}
+    </div>
+    {% endif %}
+    {% set quantity = (task.fields|selectattr('field_name', 'equalto', 'plant_quantity')|list|first)|default(none) %}
+    {% set unit = (task.fields|selectattr('field_name', 'equalto', 'metric_unit')|list|first)|default(none) %}
+    {% set can_pair = quantity and unit and quantity.status == 'REVIEW' and unit.status == 'REVIEW'
+      and quantity.proposed_value and unit.proposed_value
+      and quantity.source_assurance_document_id and quantity.source_assurance_document_id == unit.source_assurance_document_id
+      and quantity.source_page and quantity.source_page == unit.source_page
+      and quantity.source_locator and unit.source_locator
+      and quantity.source_filename and 'packing_list' in quantity.source_filename|lower
+      and source_class_for_filename(quantity.source_filename).code in ['COMMERCIAL_SOURCE', 'UNVERIFIED_COMMERCIAL']
+      and (quantity.candidates|map(attribute='normalized_value')|unique|list|length) <= 1 and (unit.candidates|map(attribute='normalized_value')|unique|list|length) <= 1 %}
+    {% if can_pair %}{{ mass_pair(quantity, unit) }}{% endif %}
+    {% if task.fields|length > 1 %}<details class="lt-task-fields" data-task-fields {% if field_errors %}open{% endif %}><summary class="{{ 'lt-task-expand' if can_pair else 'lt-task-expand lt-task-expand--primary' }}">{{ 'Individual decisions and corrections' if can_pair else 'Review fields' }}</summary>{% endif %}
+      {% for field in task.fields %}{{ action_field(field, loop.index, (quantity.id, unit.id) if can_pair else (), article_original_contexts.get(field.id), task.fields|length > 1) }}{% endfor %}
+    {% if task.fields|length > 1 %}</details>{% endif %}
+  </section>
+  {% endfor %}
+</section>
+{% endfor %}
+{% if regulatory_action_items %}
+<section class="lt-task-category" data-regulatory-action-required-group>
+  <h3 class="lt-task-category__title">Required regulatory information</h3>
+  {% for item in regulatory_action_items %}
+  <article id="regulatory-action-{{ item.get('action_id') }}" class="lt-exception-task" data-regulatory-action-required data-regulatory-action-id="{{ item.get('action_id') }}">
+    <header class="lt-exception-task__header"><h4>{{ item.get('display_subject', 'Shipment') }} — {{ item.get('display_title', 'Regulatory check') }}</h4>
+      <p>{{ item.get('blocking_message') }}</p><p>{{ item.get('display_reason', 'Additional supported information is required') }}</p>
+      {{ lt_badge("REVIEW REQUIRED", item.get('display_status', 'Needs information')) }}
+    </header>
+    {% if item.get('target_field_id') %}<a href="#review-field-{{ item.get('target_field_id') }}" class="lt-btn lt-btn--secondary">{{ item.get('action_label', 'Provide information') }}</a>
+    {% else %}<button type="button" class="lt-btn lt-btn--secondary" data-request-evidence data-field-label="{{ item.get('display_title', 'Regulatory requirement') }}" data-field-guidance="{{ item.get('request_guidance', '') }}">Prepare evidence request</button>{% endif %}
+  </article>
+  {% endfor %}
+</section>
+{% endif %}

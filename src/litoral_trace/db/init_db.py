@@ -1,11 +1,10 @@
-﻿"""Inicializador de Esquema de Base de Datos PostgreSQL / PostGIS y Seeding de SuperAdmin.
+"""Inicializador de Esquema de Base de Datos PostgreSQL y Seeding de SuperAdmin.
 
 WARNING: Alembic es el mecanismo oficial para migrar producciÃ³n.
 Este mÃ³dulo solo debe usarse en desarrollo/local.
 """
 from __future__ import annotations
 import os
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from litoral_trace.config import get_settings
@@ -58,15 +57,7 @@ def inicializar_base_datos_postgis() -> None:
 
     engine = get_engine()
     
-    # 1. Habilitar extensiÃ³n PostGIS en PostgreSQL (se ignora en SQLite)
-    if engine.dialect.name == "postgresql":
-        try:
-            with engine.begin() as conn:
-                conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
-        except Exception as e:
-            print(f"Aviso PostGIS: {e}")
-
-    # 2. Crear todas las tablas definidas en los modelos
+    # Crear todas las tablas definidas en los modelos
     Base.metadata.create_all(bind=engine)
 
     # 3. Seeding de la OrganizaciÃ³n SuperAdmin inicial
@@ -170,5 +161,5 @@ def inicializar_base_datos_postgis() -> None:
 
 if __name__ == "__main__":
     inicializar_base_datos_postgis()
-    print("âœ… Base de Datos PostgreSQL/PostGIS inicializada y sembrada con Ã©xito.")
+    print("âœ… Base de Datos PostgreSQL inicializada y sembrada con Ã©xito.")
 

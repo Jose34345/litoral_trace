@@ -1,0 +1,40 @@
+name: Assurance V2 Private Lab Preflight
+on:
+  pull_request:
+    branches:
+      - feature/us-lacey-pilot-platform
+    paths:
+      - .github/workflows/assurance-v2-lab-preflight.yml
+permissions:
+  contents: read
+jobs:
+  northflank-readonly:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/assurance-v2-private-live-lab-20261012'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read deployed service SHA and V2 state without outputting secrets
+        env:
+          NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json,os,urllib.request,urllib.error
+          key=os.environ.get("NORTHFLANK_API_KEY")
+          if not key:raise SystemExit("TOKEN_MISSING")
+          def get(path):
+              req=urllib.request.Request("https://api.northflank.com"+path,headers={"Authorization":"Bearer "+key,"Accept":"application/json"})
+              try:
+                  with urllib.request.urlopen(req,timeout=17) as rsp:return json.load(rsp).get("data",{})
+              except urllib.error.HTTPError as ex:raise SystemExit("NORTHFLANK_READ_HTTP_"+str(ex.code))
+          for name in ("litoral-trace-web","litoral-trace-worker"):
+              path="/v1/projects/litoral-trace/services/"+name
+              d=get(path)
+              dep=d.get("deployment") or {}
+              internal=dep.get("internal") or {}
+              status=d.get("status") or {}
+              print("NORTHFLANK_SERVICE",name,"TYPE",d.get("serviceType"),"DEPLOYED_SHA",internal.get("deployedSHA"),"BUILD_SHA",internal.get("buildSHA"))
+              print("NORTHFLANK_STATUS",name,"BUILD",status.get("build"),"DEPLOYMENT",status.get("deployment"))
+              env=get(path+"/runtime-environment").get("runtimeEnvironment",{})
+              for field in ("US_LACEY_ASSURANCE_V2_MODE","US_LACEY_ASSURANCE_V2_COMMANDS","US_LACEY_ASSURANCE_V2_REVIEW_JOURNAL"):
+                  print("NORTHFLANK_SAFE_FLAG",name,field,(str(env.get(field) or "").upper().strip() in ("","OFF","DISABLED")))
+          PY

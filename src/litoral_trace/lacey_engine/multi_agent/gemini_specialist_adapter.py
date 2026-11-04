@@ -1,0 +1,235 @@
+"""Scoped Gemini adapter for specialized extraction.
+
+This module deliberately reuses the existing shared HTTP transport, image rendering,
+provider configuration, candidate schema, Gemini response parser, and AI-shadow payload
+conversion. It does not change the legacy ``GeminiInteractionsProvider`` path.
+"""
+from __future__ import annotations
+
+import base64
+from copy import deepcopy
+import json
+import time
+from typing import Mapping
+
+from ..ai_providers import (
+    AIProviderConfig,
+    _CANDIDATE_SCHEMA,
+    _PROMPT,
+    _document_images,
+    _post_json,
+)
+from ..ai_shadow import (
+    AIShadowError,
+    _is_rejected_candidate,
+    extraction_result_from_payload,
+)
+from ..gemini_provider import gemini_output_text, gemini_usage
+from .specialist_runtime import ScopedAIExtractionResult, SourceRowIdentity
+
+
+def _sum_reported(values: list[int | None]) -> int | None:
+    reported = [value for value in values if value is not None]
+    return sum(reported) if reported else None
+
+
+def _optional_text(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(value.split()).strip()
+    return normalized or None
+
+
+def _row_identity_from_payload(payload: Mapping[str, object]) -> SourceRowIdentity | None:
+    line_key = _optional_text(payload.get("source_line_key"))
+    table_id = _optional_text(payload.get("source_table_id"))
+    raw_row_index = payload.get("source_row_index")
+    row_index = (
+        raw_row_index
+        if isinstance(raw_row_index, int) and not isinstance(raw_row_index, bool) and raw_row_index >= 0
+        else None
+    )
+    if line_key is None and table_id is None and row_index is None:
+        return None
+    return SourceRowIdentity(line_key=line_key, table_id=table_id, row_index=row_index)
+
+
+class GeminiSpecialistProvider:
+    """Gemini structured extraction with a closed field set per specialist call."""
+
+    name = "gemini"
+
+    def __init__(self, config: AIProviderConfig) -> None:
+        if not config.allow_external:
+            raise AIShadowError("External AI provider is disabled by policy.")
+        if not config.api_key:
+            raise AIShadowError("Gemini requires US_LACEY_GEMINI_API_KEY or US_LACEY_AI_API_KEY.")
+        self.config = config
+        self.model = config.model
+
+    def extract_scoped(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        pages: tuple[int, ...],
+        allowed_fields: frozenset[str],
+        prompt: str,
+    ) -> ScopedAIExtractionResult:
+        if not pages:
+            return ScopedAIExtractionResult(
+                provider=self.name,
+                model=self.model,
+                schema_version="lacey_ai_shadow_v1",
+                candidates=(),
+                page_count=0,
+                latency_ms=0,
+                row_identities=(),
+            )
+        if min(pages) < 1:
+            raise AIShadowError("Specialist pages must be 1-indexed.")
+        if max(pages) > self.config.max_pages:
+            raise AIShadowError(
+                f"Specialist page {max(pages)} exceeds configured max_pages={self.config.max_pages}."
+            )
+
+        all_images = _document_images(filename, content, max(pages))
+        schema = _scoped_schema(allowed_fields)
+        candidates: list[dict[str, object]] = []
+        input_tokens: list[int | None] = []
+        output_tokens: list[int | None] = []
+        total_tokens: list[int | None] = []
+        started = time.monotonic()
+
+        for page_number in pages:
+            try:
+                image = all_images[page_number - 1]
+            except IndexError as exc:
+                raise AIShadowError(
+                    f"Specialist requested page {page_number}, but the rendered document is shorter."
+                ) from exc
+
+            payload: dict[str, object] = {
+                "model": self.model,
+                "store": False,
+                "input": [
+                    {
+                        "type": "text",
+                        "text": (
+                            _PROMPT
+                            + "\n\nSPECIALIST DOMAIN:\n"
+                            + prompt.strip()
+                            + "\n\nCLOSED FIELD CONTRACT:\n"
+                            + ", ".join(sorted(allowed_fields))
+                            + "\nReturn no field outside that list. "
+                            + "For every candidate from the same physical merchandise row, return "
+                            + "the same exact source_line_key/source_table_id/source_row_index sidecar. "
+                            + "Use null when an identity element is not visible; never infer, reorder, "
+                            + "or copy identity across rows. "
+                            + f"This image is page {page_number}; every candidate page must be {page_number}."
+                        ),
+                    },
+                    {
+                        "type": "image",
+                        "mime_type": "image/png",
+                        "data": base64.b64encode(image).decode("ascii"),
+                    },
+                ],
+                "generation_config": {"thinking_level": "low"},
+                "response_format": {
+                    "type": "text",
+                    "mime_type": "application/json",
+                    "schema": schema,
+                },
+            }
+            response = _post_json(
+                url=self.config.base_url,
+                payload=payload,
+                timeout=self.config.timeout_seconds,
+                headers={"x-goog-api-key": self.config.api_key},
+            )
+            page_input, page_output, page_total = gemini_usage(response)
+            input_tokens.append(page_input)
+            output_tokens.append(page_output)
+            total_tokens.append(page_total)
+            try:
+                page_payload = json.loads(gemini_output_text(response))
+            except json.JSONDecodeError as exc:
+                raise AIShadowError("Gemini specialist structured output is invalid JSON.") from exc
+            if not isinstance(page_payload, dict) or not isinstance(
+                page_payload.get("candidates"), list
+            ):
+                raise AIShadowError("Gemini specialist output is missing candidates.")
+            for item in page_payload["candidates"]:
+                if isinstance(item, dict):
+                    candidate = dict(item)
+                    candidate["page"] = page_number
+                    candidates.append(candidate)
+
+        elapsed = int((time.monotonic() - started) * 1000)
+        accepted_payloads = tuple(
+            item for item in candidates if not _is_rejected_candidate(item)
+        )
+        result = extraction_result_from_payload(
+            payload={"candidates": candidates},
+            provider=self.name,
+            model=self.model,
+            page_count=len(pages),
+            latency_ms=elapsed,
+        )
+        row_identities = tuple(_row_identity_from_payload(item) for item in accepted_payloads)
+        if len(row_identities) != len(result.candidates):
+            raise AIShadowError("Specialist row identity sidecars are not aligned with accepted candidates.")
+        return ScopedAIExtractionResult(
+            provider=result.provider,
+            model=result.model,
+            schema_version=result.schema_version,
+            candidates=result.candidates,
+            page_count=result.page_count,
+            latency_ms=result.latency_ms,
+            input_tokens=_sum_reported(input_tokens),
+            output_tokens=_sum_reported(output_tokens),
+            total_tokens=_sum_reported(total_tokens),
+            row_identities=row_identities,
+        )
+
+
+def _scoped_schema(allowed_fields: frozenset[str]) -> dict[str, object]:
+    if not allowed_fields:
+        raise AIShadowError("Specialist allowed_fields cannot be empty.")
+    schema = deepcopy(_CANDIDATE_SCHEMA)
+    item = schema["properties"]["candidates"]["items"]
+    item_properties = item["properties"]
+    item_properties["field_key"]["enum"] = sorted(allowed_fields)
+    item_properties["source_line_key"] = {
+        "anyOf": [{"type": "string"}, {"type": "null"}],
+        "description": (
+            "Exact visible SKU or line identifier for this same merchandise row. "
+            "Use null when absent; never infer or copy from another row."
+        ),
+    }
+    item_properties["source_table_id"] = {
+        "anyOf": [{"type": "string"}, {"type": "null"}],
+        "description": (
+            "Exact visible/stable table or section identifier containing this row. "
+            "Use null when unavailable; never infer."
+        ),
+    }
+    item_properties["source_row_index"] = {
+        "anyOf": [{"type": "integer", "minimum": 0}, {"type": "null"}],
+        "description": (
+            "Zero-based physical data-row ordinal within source_table_id. "
+            "Use null outside a table; never infer or reorder rows."
+        ),
+    }
+    item["required"].extend(["source_line_key", "source_table_id", "source_row_index"])
+    schema["properties"]["candidates"]["description"] = (
+        "Evidence-backed occurrences for this specialist only. Repeated field keys are expected "
+        "for line-item tables; never merge different rows into one value."
+    )
+    item_properties["source_text"]["description"] = (
+        "Exact supporting text. For commercial tables include the complete source row when "
+        "possible, including SKU or line number and quantity, so deterministic line binding can "
+        "run later without asking the model to invent identity."
+    )
+    return schema
