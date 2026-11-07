@@ -128,3 +128,61 @@ async def test_other_routes_not_affected_by_upload_middleware(monkeypatch):
         lambda: None, lambda _: None,
     )
     assert recorded == ["/login"]
+
+
+def test_dimensionless_golden_xlsx_is_not_rejected_for_iterator_padding():
+    """Real existing synthetic workbook omits worksheet dimension metadata."""
+    from pathlib import Path
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "us_lacey_quality_output"
+        / "03_BOM_Packing_List.xlsx"
+    )
+    budget = ShipmentSpreadsheetLimits(
+        max_bytes=5 * 1024 * 1024,
+        max_rows=5000,
+        max_columns=64,
+        max_cells=100000,
+    )
+    result = enforce_shipment_document_budget(
+        filename=fixture.name, content=fixture.read_bytes(), limits=budget,
+    )
+    assert result.file_kind == "XLSX"
+    assert 0 < result.rows <= budget.max_rows
+    assert 0 < result.columns <= budget.max_columns
+
+
+def test_dimensionless_xlsx_rejects_cell_beyond_column_budget_before_openpyxl(monkeypatch):
+    """A dangerous far-right cell cannot hide outside a bounded iterator window."""
+    from litoral_trace.us_lacey import batch_hardening
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet["A1"] = "Product"
+    worksheet["ZZ2"] = "Hidden extra column"
+    raw = BytesIO()
+    workbook.save(raw)
+
+    # Remove worksheet dimensions as present in our real synthetic golden fixture.
+    # The rejection must come from cell references, not declared metadata.
+    payload = BytesIO()
+    with ZipFile(BytesIO(raw.getvalue()), "r") as source:
+        with ZipFile(payload, "w", compression=ZIP_DEFLATED) as target:
+            for item in source.infolist():
+                data = source.read(item.filename)
+                if item.filename == "xl/worksheets/sheet1.xml":
+                    import re
+                    data = re.sub(rb"<dimension\b[^>]*/>", b"", data)
+                target.writestr(item.filename, data)
+
+    def must_not_parse(*args, **kwargs):
+        raise AssertionError("openpyxl must not parse an overwide sheet")
+
+    monkeypatch.setattr(batch_hardening, "load_workbook", must_not_parse)
+    with pytest.raises(ShipmentBatchRejected) as exc:
+        enforce_shipment_document_budget(
+            filename="wide.xlsx", content=payload.getvalue(), limits=_limits()
+        )
+    assert exc.value.code == DATASET_TOO_COMPLEX

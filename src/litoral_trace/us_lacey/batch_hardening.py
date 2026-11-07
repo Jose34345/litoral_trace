@@ -6,6 +6,8 @@ from io import BytesIO
 import os
 from pathlib import PurePath
 from zipfile import BadZipFile, ZipFile
+import re
+from xml.etree import ElementTree
 from typing import Iterable
 
 from openpyxl import load_workbook
@@ -95,6 +97,50 @@ def inspect_csv_chunks_for_shipment(
     return ShipmentSpreadsheetProfile("CSV", size_bytes, profile.row_count, profile.max_columns, profile.total_cells)
 
 
+_CELL_REF = re.compile(r"^([A-Za-z]+)([1-9][0-9]*)$")
+
+
+def _check_sheet_xml_bounds(archive: ZipFile, name: str, budget: ShipmentSpreadsheetLimits) -> None:
+    """Check occupied cell addresses even when the XLSX omits dimensions.
+
+    A bounded iter_rows(max_col=N+1) cannot detect cells beyond that window;
+    inspect the compressed sheet's actual references before invoking openpyxl.
+    """
+    rows_seen = 0
+    cells_seen = 0
+    row_cells = 0
+    with archive.open(name) as stream:
+        for event, element in ElementTree.iterparse(stream, events=("start", "end")):
+            tag = element.tag.rsplit("}", 1)[-1]
+            if event == "start":
+                if tag == "row":
+                    rows_seen += 1
+                    row_cells = 0
+                    reference = element.attrib.get("r")
+                    if rows_seen > budget.max_rows or (
+                        reference is not None
+                        and (not reference.isdecimal() or int(reference) > budget.max_rows)
+                    ):
+                        raise ShipmentBatchRejected(DATASET_TOO_COMPLEX, _bulk_message())
+                elif tag == "c":
+                    cells_seen += 1
+                    row_cells += 1
+                    if cells_seen > budget.max_cells or row_cells > budget.max_columns:
+                        raise ShipmentBatchRejected(DATASET_TOO_COMPLEX, _bulk_message())
+                    reference = element.attrib.get("r")
+                    if reference:
+                        match = _CELL_REF.fullmatch(reference)
+                        if match is None or int(match.group(2)) > budget.max_rows:
+                            raise ShipmentBatchRejected(DATASET_TOO_COMPLEX, _bulk_message())
+                        col = 0
+                        for letter in match.group(1).upper():
+                            col = col * 26 + ord(letter) - ord("A") + 1
+                            if col > budget.max_columns:
+                                raise ShipmentBatchRejected(DATASET_TOO_COMPLEX, _bulk_message())
+            else:
+                element.clear()
+
+
 def _preflight_xlsx_archive(content: bytes, budget: ShipmentSpreadsheetLimits) -> None:
     """Bound ZIP expansion before openpyxl allocates shared strings or worksheets."""
     expanded_limit = min(128 * 1024 * 1024, max(32 * 1024 * 1024, budget.max_bytes * 20))
@@ -122,9 +168,12 @@ def _preflight_xlsx_archive(content: bytes, budget: ShipmentSpreadsheetLimits) -
                 expanded += member.file_size
                 if expanded > expanded_limit:
                     raise ShipmentBatchRejected(DATASET_TOO_COMPLEX, _bulk_message())
+            for member in members:
+                if member.filename.startswith("xl/worksheets/") and member.filename.endswith(".xml"):
+                    _check_sheet_xml_bounds(archive, member.filename, budget)
     except ShipmentBatchRejected:
         raise
-    except (BadZipFile, OSError, EOFError, ValueError) as exc:
+    except (BadZipFile, OSError, EOFError, ValueError, ElementTree.ParseError) as exc:
         raise ShipmentBatchRejected(
             "INVALID_SHIPMENT_SPREADSHEET", "The XLSX could not be safely opened."
         ) from exc
@@ -148,12 +197,17 @@ def _inspect_xlsx(content: bytes, budget: ShipmentSpreadsheetLimits) -> Shipment
                 max_col=min(worksheet.max_column or budget.max_columns + 1, budget.max_columns + 1),
                 values_only=True,
             ):
-                width = len(row)
-                max_columns = max(max_columns, width)
+                # openpyxl pads to max_col for dimensionless workbooks.
+                # Count only occupied column positions, not padding cells.
+                width = max(
+                    (index for index, value in enumerate(row, start=1) if value not in (None, "")),
+                    default=0,
+                )
                 if width > budget.max_columns:
                     raise ShipmentBatchRejected(DATASET_TOO_COMPLEX, _bulk_message())
-                if not any(value not in (None, "") for value in row):
+                if width == 0:
                     continue
+                max_columns = max(max_columns, width)
                 rows_total += 1
                 cells_total += width
                 if rows_total > budget.max_rows or cells_total > budget.max_cells:
