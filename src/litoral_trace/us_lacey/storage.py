@@ -17,6 +17,16 @@ def us_lacey_max_upload_bytes(environ: Mapping[str, str] | None = None) -> int:
     return limit
 
 
+def us_lacey_max_request_bytes(environ: Mapping[str, str] | None = None) -> int:
+    """Total multipart budget, including framing, enforced before form parsing."""
+    env = os.environ if environ is None else environ
+    per_file = us_lacey_max_upload_bytes(env)
+    limit = int(env.get("US_LACEY_MAX_REQUEST_BYTES", 4 * per_file + 1024 * 1024))
+    if limit < per_file:
+        raise ValueError("Total upload request size must cover one permitted file.")
+    return limit
+
+
 def build_us_lacey_storage_settings(
     environ: Mapping[str, str] | None = None,
 ) -> StorageSettings:

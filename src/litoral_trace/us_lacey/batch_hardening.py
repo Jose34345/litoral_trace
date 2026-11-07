@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from io import BytesIO
 import os
 from pathlib import PurePath
+from zipfile import BadZipFile, ZipFile
 from typing import Iterable
 
 from openpyxl import load_workbook
@@ -94,7 +95,43 @@ def inspect_csv_chunks_for_shipment(
     return ShipmentSpreadsheetProfile("CSV", size_bytes, profile.row_count, profile.max_columns, profile.total_cells)
 
 
+def _preflight_xlsx_archive(content: bytes, budget: ShipmentSpreadsheetLimits) -> None:
+    """Bound ZIP expansion before openpyxl allocates shared strings or worksheets."""
+    expanded_limit = min(128 * 1024 * 1024, max(32 * 1024 * 1024, budget.max_bytes * 20))
+    max_xml_member = 64 * 1024 * 1024
+    expanded = 0
+    try:
+        with ZipFile(BytesIO(content)) as archive:
+            members = archive.infolist()
+            if len(members) > 256 or not members:
+                raise ShipmentBatchRejected(DATASET_TOO_COMPLEX, _bulk_message())
+            names = {member.filename for member in members}
+            if "[Content_Types].xml" not in names or "xl/workbook.xml" not in names:
+                raise ShipmentBatchRejected("INVALID_SHIPMENT_SPREADSHEET", "The XLSX is missing its required structure.")
+            for member in members:
+                name = member.filename.replace("\\", "/")
+                if (
+                    name.startswith("/")
+                    or any(part == ".." for part in name.split("/"))
+                    or member.flag_bits & 1
+                    or member.file_size > max_xml_member
+                    or (member.file_size and member.compress_size == 0)
+                    or member.file_size > max(1, member.compress_size) * 400
+                ):
+                    raise ShipmentBatchRejected(DATASET_TOO_COMPLEX, _bulk_message())
+                expanded += member.file_size
+                if expanded > expanded_limit:
+                    raise ShipmentBatchRejected(DATASET_TOO_COMPLEX, _bulk_message())
+    except ShipmentBatchRejected:
+        raise
+    except (BadZipFile, OSError, EOFError, ValueError) as exc:
+        raise ShipmentBatchRejected(
+            "INVALID_SHIPMENT_SPREADSHEET", "The XLSX could not be safely opened."
+        ) from exc
+
+
 def _inspect_xlsx(content: bytes, budget: ShipmentSpreadsheetLimits) -> ShipmentSpreadsheetProfile:
+    _preflight_xlsx_archive(content, budget)
     rows_total = 0
     max_columns = 0
     cells_total = 0
@@ -104,7 +141,13 @@ def _inspect_xlsx(content: bytes, budget: ShipmentSpreadsheetLimits) -> Shipment
         raise ShipmentBatchRejected("INVALID_SHIPMENT_SPREADSHEET", "The XLSX could not be safely opened.") from exc
     try:
         for worksheet in workbook.worksheets:
-            for row in worksheet.iter_rows(values_only=True):
+            if (worksheet.max_row or 0) > budget.max_rows or (worksheet.max_column or 0) > budget.max_columns:
+                raise ShipmentBatchRejected(DATASET_TOO_COMPLEX, _bulk_message())
+            for row in worksheet.iter_rows(
+                max_row=min(worksheet.max_row or budget.max_rows + 1, budget.max_rows + 1),
+                max_col=min(worksheet.max_column or budget.max_columns + 1, budget.max_columns + 1),
+                values_only=True,
+            ):
                 width = len(row)
                 max_columns = max(max_columns, width)
                 if width > budget.max_columns:
