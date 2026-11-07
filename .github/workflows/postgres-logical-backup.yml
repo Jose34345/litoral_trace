@@ -5,6 +5,19 @@ on:
   schedule:
     - cron: "17 0,12 * * *"
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Database to back up; scheduled runs always use legacy"
+        type: choice
+        required: true
+        default: legacy
+        options:
+          - legacy
+          - us_lacey
+      release_commit:
+        description: "Current deployed U.S. Lacey SHA (required for us_lacey)"
+        type: string
+        required: false
   push:
     branches:
       - main
@@ -27,16 +40,18 @@ jobs:
     timeout-minutes: 30
     environment: production-backup
     env:
-      BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BACKUP_TARGET: ${{ inputs.target || 'legacy' }}
+      BACKUP_REQUESTED_COMMIT: ${{ inputs.release_commit || '' }}
+      BACKUP_DATABASE_URL: ${{ inputs.target == 'us_lacey' && secrets.SUPABASE_MIGRATION_DATABASE_URL || secrets.BACKUP_DATABASE_URL }}
       BACKUP_S3_KMS_KEY_ID: ${{ secrets.BACKUP_S3_KMS_KEY_ID }}
       BACKUP_AWS_ROLE_ARN: ${{ vars.BACKUP_AWS_ROLE_ARN }}
       BACKUP_S3_BUCKET: ${{ vars.BACKUP_S3_BUCKET }}
-      BACKUP_S3_PREFIX: ${{ vars.BACKUP_S3_PREFIX }}
+      BACKUP_S3_PREFIX: ${{ inputs.target == 'us_lacey' && format('{0}/us-lacey', vars.BACKUP_S3_PREFIX) || vars.BACKUP_S3_PREFIX }}
       BACKUP_S3_REGION: ${{ vars.BACKUP_S3_REGION }}
       BACKUP_S3_SSE: ${{ vars.BACKUP_S3_SSE }}
-      BACKUP_RELEASE_COMMIT: ${{ vars.BACKUP_RELEASE_COMMIT }}
-      MIGRATION_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
-      PRE_MIGRATION_SOURCE_RELEASE_COMMIT: ${{ vars.BACKUP_RELEASE_COMMIT }}
+      BACKUP_RELEASE_COMMIT: ${{ inputs.target == 'us_lacey' && inputs.release_commit || vars.BACKUP_RELEASE_COMMIT }}
+      MIGRATION_DATABASE_URL: ${{ inputs.target == 'us_lacey' && secrets.SUPABASE_MIGRATION_DATABASE_URL || secrets.BACKUP_DATABASE_URL }}
+      PRE_MIGRATION_SOURCE_RELEASE_COMMIT: ${{ inputs.target == 'us_lacey' && inputs.release_commit || vars.BACKUP_RELEASE_COMMIT }}
       PRE_MIGRATION_OPERATOR: ${{ github.actor }}
       PRE_MIGRATION_TARGET_ENV: production
       PRE_MIGRATION_MAX_AGE_MINUTES: "120"
@@ -99,6 +114,31 @@ jobs:
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
+
+      - name: Fail closed on wrong U.S. Lacey backup source
+        if: env.BACKUP_TARGET == 'us_lacey'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$BACKUP_REQUESTED_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo 'U.S. Lacey release SHA must be exactly 40 hexadecimal characters'
+            exit 1
+          fi
+          python - <<'PY'
+          import os
+          import psycopg
+
+          source = os.environ['BACKUP_DATABASE_URL'].replace('postgresql+psycopg://', 'postgresql://', 1)
+          with psycopg.connect(source, connect_timeout=15) as db:
+              version = db.execute('SELECT version_num FROM public.alembic_version').fetchone()[0]
+              found = db.execute("SELECT to_regclass('public.us_lacey_evaluations') IS NOT NULL").fetchone()[0]
+          if version not in {
+              '079_us_lacey_assurance_v2_claim_snapshots',
+              '080_us_lacey_evaluation_email_proof',
+          } or not found:
+              raise SystemExit('Backup target is not the expected U.S. Lacey production database')
+          print('us_lacey_backup_source=VERIFIED', version)
+          PY
 
       - name: Initialize backup workdir
         shell: bash
