@@ -418,3 +418,68 @@ def test_security_definer_ownership_and_function_separation(evaluation_fixture):
     assert len(rows) == 5
     assert all(row["prosecdef"] is True for row in rows)
     assert all(row["owner"] == "litoral_trace_platform_definer" for row in rows)
+
+
+def test_verification_challenge_functions_have_no_public_execute_and_reject_unknown_sessions(
+    evaluation_fixture,
+):
+    """Migration 080 must not expose email-claim authority through PUBLIC."""
+    owner = evaluation_fixture["owner"]
+    runtime = evaluation_fixture["runtime"]
+    org_a = int(evaluation_fixture["org_a"])
+    names = {
+        "us_lacey_evaluation_claim_begin",
+        "us_lacey_evaluation_claim_finish",
+    }
+
+    with owner.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT p.proname,
+                       p.prosecdef AS security_definer,
+                       pg_get_userbyid(p.proowner) AS function_owner,
+                       has_function_privilege(
+                           'litoral_trace_app', p.oid, 'EXECUTE'
+                       ) AS runtime_execute,
+                       EXISTS (
+                           SELECT 1 FROM aclexplode(
+                               coalesce(p.proacl, acldefault('f', p.proowner))
+                           ) AS grants
+                           WHERE grants.grantee = 0
+                             AND grants.privilege_type = 'EXECUTE'
+                       ) AS public_execute
+                FROM pg_proc AS p
+                JOIN pg_namespace AS n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public'
+                  AND p.proname IN (
+                      'us_lacey_evaluation_claim_begin',
+                      'us_lacey_evaluation_claim_finish'
+                  )
+                """
+            )
+        ).mappings().all()
+
+    assert {row["proname"] for row in rows} == names
+    assert all(row["security_definer"] for row in rows)
+    assert all(
+        row["function_owner"] == "litoral_trace_platform_definer" for row in rows
+    )
+    assert all(row["runtime_execute"] for row in rows)
+    assert all(not row["public_execute"] for row in rows)
+
+    with pytest.raises(DBAPIError) as exc:
+        with runtime.begin() as conn:
+            _tenant(conn, org_a)
+            conn.execute(
+                text(
+                    "SELECT * FROM public.us_lacey_evaluation_claim_begin("
+                    ":session_hash, :work_email, :challenge_hash)"
+                ),
+                {
+                    "session_hash": "0" * 64,
+                    "work_email": "synthetic-qa@importer.example",
+                    "challenge_hash": "1" * 64,
+                },
+            ).all()
+    assert getattr(exc.value.orig, "sqlstate", None) == "42501"
