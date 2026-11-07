@@ -21,6 +21,9 @@ FINISH_FN = "public.us_lacey_evaluation_claim_finish(text,text)"
 
 
 def _set_platform_role():
+    # 076 revokes public-schema CREATE from the definer after installing
+    # functions. Temporarily grant it for this migration, then revoke again.
+    op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")
     op.execute(
         f"GRANT {PLATFORM_ROLE} TO CURRENT_USER "
         "WITH ADMIN FALSE, INHERIT FALSE, SET TRUE GRANTED BY CURRENT_USER"
@@ -30,6 +33,7 @@ def _set_platform_role():
 
 def _reset_platform_role():
     op.execute("RESET ROLE")
+    op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")
     op.execute(f"REVOKE {PLATFORM_ROLE} FROM CURRENT_USER GRANTED BY CURRENT_USER")
 
 

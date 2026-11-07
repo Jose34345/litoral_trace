@@ -159,7 +159,7 @@ def test_task_queue_uses_real_http_review_handler_and_fresh_server_fragment(monk
     operation = str(detail.public_id)
     calls = []
     csrf_calls = []
-    monkeypatch.setattr(pilot, "_operational_mutation_context", lambda *_: (identity, SimpleNamespace()))
+    monkeypatch.setattr(pilot, "_operational_mutation_context", lambda *_, review_operation_id: (identity, SimpleNamespace()) if review_operation_id == operation else (_ for _ in ()).throw(AssertionError("Incorrect review scope")))
     monkeypatch.setattr(pilot, "UsLaceyOperationService", lambda: SimpleNamespace(get_detail=lambda **_: detail))
     monkeypatch.setattr(pilot, "UsLaceyEngineDossierService", lambda: SimpleNamespace(get_dossier=lambda **_: _engine2()))
     monkeypatch.setattr(pilot, "safe_record_outreach_event", lambda **_: None)

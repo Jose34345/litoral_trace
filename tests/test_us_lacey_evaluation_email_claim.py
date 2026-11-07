@@ -157,3 +157,22 @@ def test_mail_scanner_get_does_not_claim_and_human_post_does(monkeypatch):
     assert post_response.status_code == 303
     assert verified == ["synthetic-link"]
     assert "us_lacey_session=" in post_response.headers["set-cookie"]
+
+
+def test_email_claim_migration_scopes_schema_creation_to_installation():
+    """Migration 076 revoked this privilege; 080 must restore least privilege."""
+    from pathlib import Path
+
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "080_us_lacey_evaluation_email_proof.py"
+    ).read_text(encoding="utf-8")
+    grant = 'op.execute(f"GRANT CREATE ON SCHEMA public TO {PLATFORM_ROLE}")'
+    revoke = 'op.execute(f"REVOKE CREATE ON SCHEMA public FROM {PLATFORM_ROLE}")'
+    assert migration.count(grant) == 1
+    assert migration.count(revoke) == 1
+    assert migration.index(grant) < migration.index('op.execute(f"SET LOCAL ROLE {PLATFORM_ROLE}")')
+    assert migration.index(revoke) > migration.index('op.execute("RESET ROLE")')
+    assert "_reset_platform_role()" in migration
