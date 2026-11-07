@@ -35,7 +35,9 @@
 .lt-exception-field .lt-btn { white-space:normal; max-width:100%; }
 @media(max-width:640px) {
   .lt-exception-field { display:flex; flex-direction:column; }
-  .lt-exception-field__evidence { order:5; }
+  .lt-exception-field__status { order:1; }
+  .lt-exception-field__evidence { order:2; }
+  .lt-exception-field__decision { order:3; }
   .lt-exception-task { padding:12px; }
   .lt-exception-field__actions { width:100%; }
 }
@@ -48,10 +50,21 @@
 
 /* Stage 1: consistent content flow at reduced widths and with inspector open. */
 @media (max-width:900px){
- .lt-exception-field{grid-template-columns:minmax(0,1fr);grid-template-areas:"identity" "value" "status" "decision" "evidence";gap:8px}
+ .lt-exception-field{grid-template-columns:minmax(0,1fr);grid-template-areas:"identity" "value" "status" "evidence" "decision";gap:8px}
  .lt-exception-field__actions{width:100%}
 }
 @media (min-width:1200px){
- #operation-workspace[style*="--lt-task-inspector-width"] .lt-exception-field{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"identity" "value" "status" "decision" "evidence"}
+ #operation-workspace[style*="--lt-task-inspector-width"] .lt-exception-field{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"identity" "value" "status" "evidence" "decision"}
 }
 .lt-task-source-link{max-width:100%}
+
+@media (min-width:1280px) {
+  #operation-workspace:not([style*="--lt-task-inspector-width"]) .lt-exception-field {
+    grid-template-columns:minmax(8rem,1fr) minmax(8rem,1.15fr) minmax(7rem,.8fr) minmax(9rem,1.35fr) minmax(8rem,1fr);
+    grid-template-areas:"identity value status evidence decision";
+    gap:12px;
+  }
+  #operation-workspace:not([style*="--lt-task-inspector-width"]) .lt-exception-field__evidence {
+    padding-top:0;
+  }
+}

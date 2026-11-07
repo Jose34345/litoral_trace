@@ -123,7 +123,7 @@ def test_exception_first_workspace_exposes_tabs_and_bulk_confirmation():
     template = WORKSPACE_TEMPLATE.read_text(encoding="utf-8")
 
     assert "Pending fields <span" in template
-    assert "Auto-Resolved Data" in template
+    assert "Document evidence</h2>" in template
     assert "Regulatory Analysis" in template
     assert "data-review-tab-button" in template
     assert "data-review-tab-panel" in template

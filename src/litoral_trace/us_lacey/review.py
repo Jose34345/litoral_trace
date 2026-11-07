@@ -11,6 +11,7 @@ from uuid import UUID
 from openpyxl import Workbook
 from sqlalchemy import func, select
 
+from litoral_trace.assurance.processing import PARSER_ENGINE
 from litoral_trace.db.models import (
     AssuranceDocument,
     AssuranceV2MemoryLink,
@@ -52,7 +53,10 @@ from litoral_trace.us_lacey.assurance_v2_review_adapter import (
 from litoral_trace.us_lacey.identity_memory import resolve_operation_identity_memory
 from litoral_trace.us_lacey.review_telemetry import ReviewTelemetry
 from litoral_trace.us_lacey.review_source_authority import (
-    is_anchored_human_shipping_source, reviewed_source_class,
+    is_anchored_human_shipping_source, is_independent_review_source, reviewed_source_class,
+)
+from litoral_trace.us_lacey.reusable_evidence import (
+    REUSABLE_EVIDENCE_EXTRACTOR, REUSABLE_FIELD_NAMES,
 )
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS,
@@ -102,17 +106,18 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _operation(session, *, organization_id: int, operation_public_id: UUID | str):
+def _operation(
+    session, *, organization_id: int, operation_public_id: UUID | str, lock: bool = False,
+):
     try:
         public_id = operation_public_id if isinstance(operation_public_id, UUID) else UUID(str(operation_public_id))
     except (ValueError, TypeError, AttributeError) as exc:
         raise UsLaceyOperationNotFound("Operation not found.") from exc
-    operation = session.scalar(
-        select(UsLaceyOperation).where(
-            UsLaceyOperation.organization_id == organization_id,
-            UsLaceyOperation.public_id == public_id,
-        )
+    query = select(UsLaceyOperation).where(
+        UsLaceyOperation.organization_id == organization_id,
+        UsLaceyOperation.public_id == public_id,
     )
+    operation = session.scalar(query.with_for_update() if lock else query)
     if operation is None:
         raise UsLaceyOperationNotFound("Operation not found.")
     return operation
@@ -726,19 +731,28 @@ def accept_supported_us_lacey_fields(
             session,
             organization_id=org_id,
             operation_public_id=operation_public_id,
+            lock=True,
         )
         v2_journal_active = review_journal_enabled(org_id, operation.client_reference)
+        open_conflict = select(ReconciliationIssue.id).where(
+            ReconciliationIssue.organization_id == org_id,
+            ReconciliationIssue.operation_reference == f"us_lacey:{operation.public_id}",
+            ReconciliationIssue.status == "OPEN",
+            ReconciliationIssue.us_lacey_operation_field_id == UsLaceyOperationField.id,
+        ).exists()
         fields = session.scalars(
             select(UsLaceyOperationField)
             .where(
                 UsLaceyOperationField.organization_id == org_id,
                 UsLaceyOperationField.operation_id == operation.id,
                 UsLaceyOperationField.field_status.in_(_AUTO_CONFIRMABLE_FIELD_STATUSES),
+                ~open_conflict,
             )
             .order_by(
                 UsLaceyOperationField.merchandise_line_reference,
                 UsLaceyOperationField.id,
             )
+            .with_for_update()
         ).all()
 
         reviewed_at = _utc_now()
@@ -759,6 +773,25 @@ def accept_supported_us_lacey_fields(
                 extra={"organization_id": org_id, "operation_id": operation.id},
             )
         for field in fields:
+            # Persisted suggestions may predate current field-level source checks.
+            # Verified supplier reuse has its own provenance and no local PDF.
+            reusable = (
+                field.extractor == REUSABLE_EVIDENCE_EXTRACTOR
+                and field.field_name in REUSABLE_FIELD_NAMES
+                and field.source_assurance_document_id is None
+            )
+            if not str(field.source_locator or "").strip():
+                continue
+            if field.field_name == "bill_of_lading" and (field.source_page or 0) < 1:
+                continue
+            if not reusable and not is_independent_review_source(
+                session, organization_id=org_id, operation_id=operation.id,
+                assurance_document_id=field.source_assurance_document_id,
+                field_name=field.field_name,
+                tabular_locator=field.source_locator if field.extractor == PARSER_ENGINE else None,
+            ):
+                continue
+
             proposed = field.normalized_value or field.original_value
             if proposed is None or not str(proposed).strip():
                 raise UsLaceyReviewError(
@@ -902,6 +935,18 @@ def accept_supported_us_lacey_fields(
 PRE_ENTRY_REVIEW_RESULT = "DOCUMENT_REVIEW_COMPLETE_AWAITING_ENTRY"
 
 
+def _require_no_unconfirmed_fields(session, *, organization_id: int, operation_id: int) -> None:
+    unconfirmed = session.scalar(select(UsLaceyOperationField.id).where(
+        UsLaceyOperationField.organization_id == organization_id,
+        UsLaceyOperationField.operation_id == operation_id,
+        UsLaceyOperationField.field_status.in_(_AUTO_CONFIRMABLE_FIELD_STATUSES),
+    ).limit(1))
+    if unconfirmed is not None:
+        raise UsLaceyReviewError(
+            "Confirm the auto-resolved values first. No extracted facts are confirmed implicitly."
+        )
+
+
 def finish_document_review_awaiting_entry(
     *,
     organization_id: int,
@@ -939,15 +984,7 @@ def finish_document_review_awaiting_entry(
             raise UsLaceyReviewError(
                 "Document review can only finish with a genuinely unissued Entry Number as its sole remaining exception."
             )
-        unconfirmed = session.scalar(select(func.count(UsLaceyOperationField.id)).where(
-            UsLaceyOperationField.organization_id == org_id,
-            UsLaceyOperationField.operation_id == operation.id,
-            UsLaceyOperationField.field_status.in_(("FOUND", "SUPPORTED", "SUPPORTED_MULTIPLE")),
-        )) or 0
-        if unconfirmed:
-            raise UsLaceyReviewError(
-                "Confirm the auto-resolved values first. No extracted facts are confirmed implicitly."
-            )
+        _require_no_unconfirmed_fields(session, organization_id=org_id, operation_id=operation.id)
         jobs_blocking = session.scalar(select(func.count(UsLaceyProcessingJob.id)).where(
             UsLaceyProcessingJob.organization_id == org_id,
             UsLaceyProcessingJob.operation_id == operation.id,
@@ -1065,6 +1102,7 @@ def finalize_us_lacey_review(
             session,
             organization_id=org_id,
             operation_public_id=operation_public_id,
+            lock=True,
         )
         # Finalization never trusts a previously-computed reconciliation state. A
         # direct/stale request must recompute the invariant before any completion gate.
@@ -1127,6 +1165,7 @@ def finalize_us_lacey_review(
             raise UsLaceyReviewError(
                 "Resolve every missing field, review item and contradiction before completing review."
             )
+        _require_no_unconfirmed_fields(session, organization_id=org_id, operation_id=operation.id)
 
         regulatory_snapshot = refresh_regulatory_assessment_snapshot_for_review(
             session,
@@ -1232,6 +1271,11 @@ def _export_rows(*, organization_id: int, operation_public_id: UUID | str):
             organization_id=org_id,
             operation_public_id=operation_public_id,
         )
+        # Existing completed operations may predate the confirmation gate.
+        if operation.status == "COMPLETED":
+            _require_no_unconfirmed_fields(session, organization_id=org_id, operation_id=operation.id)
+            if any(_counts(session, organization_id=org_id, operation=operation)):
+                raise UsLaceyReviewError("Preparation package is not ready: unresolved fields or conflicts remain.")
         regulatory_snapshot = refresh_regulatory_assessment_snapshot_for_review(
             session,
             organization_id=org_id,
@@ -1503,6 +1547,14 @@ def export_us_lacey_xlsx(
                 field.reviewed_at.isoformat(),
             ]
         )
+
+    # This preparation workbook contains literal evidence and customer input.
+    # Keep leading '=' characters without letting Excel evaluate them as formulas.
+    for sheet in workbook.worksheets:
+        for row in sheet.iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    cell.data_type = "s"
 
     output = BytesIO()
     workbook.save(output)

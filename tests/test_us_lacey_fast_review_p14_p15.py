@@ -63,7 +63,7 @@ def test_single_current_candidate_has_inline_accept_with_exact_id_and_low_confid
     assert 'name="csrf_token"' in html
     assert '/review/actions/fields/991' in html
     assert 'name="action" value="accept"' in html
-    assert "Inspect original PDF" in html
+    assert "Inspect source PDF" in html
 
 
 def test_distinct_candidates_stay_explicit_and_never_auto_select():

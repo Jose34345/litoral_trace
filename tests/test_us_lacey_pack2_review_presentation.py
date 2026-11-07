@@ -90,3 +90,23 @@ def test_work_queue_counts_are_explicitly_fields_not_automatic_approvals():
     assert "Counts represent individual fields, not reviewer clicks." in source
     assert 'data-action-tab-count data-action-required-count>{{ combined_action_count }}' in source
     Environment().parse(source)
+
+def test_pending_entry_has_one_control_for_its_dialog():
+    field = _field(name="filing_entry_reference", filename="", source_id=None, value=None)
+    html = _field_html(field)
+    assert html.count('aria-controls="review-override-1189"') == 1
+    assert html.count("Enter verified number") == 1
+
+
+def test_candidate_link_does_not_show_filename_from_another_document():
+    field = _field(name="bill_of_lading", filename="02_Botanical_Supplier_Declaration.pdf")
+    field.candidates = (SimpleNamespace(
+        id=23, source_document_id=31, source_page=2, source_locator="p2:bol",
+        normalized_value="TEST-BOL", original_value="TEST-BOL",
+    ),)
+    html = _field_html(field)
+    assert "/source/31" in html
+    assert 'data-source-page="2"' in html
+    assert "02_Botanical_Supplier_Declaration.pdf" not in html
+    assert html.count("data-source-inspect") == 1
+    assert "Confirm value" not in html

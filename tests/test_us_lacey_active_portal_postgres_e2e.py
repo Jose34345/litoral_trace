@@ -178,9 +178,10 @@ def _assert_href(html: str, href: str) -> None:
 
 
 def _csv_bytes() -> bytes:
+    # Supplier tables support plant facts. A carrier reference requires its own original.
     return (
-        "HTS Code,Merchandise Description,Genus,Species,Country of Harvest,Plant Quantity,Metric Unit,Bill of Lading\n"
-        "4407110000,Pine boards,Pinus,Pinus taeda,Brazil,1000,KG,BOL-E2E-9001\n"
+        "HTS Code,Merchandise Description,Genus,Species,Country of Harvest,Plant Quantity,Metric Unit\n"
+        "4407110000,Pine boards,Pinus,Pinus taeda,Brazil,1000,KG\n"
     ).encode("utf-8")
 
 

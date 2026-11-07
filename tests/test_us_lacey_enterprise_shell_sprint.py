@@ -76,7 +76,7 @@ def test_review_workspace_uses_tasks_auditability_and_reuse_memory() -> None:
     assert "data-source-inspect" in source
     for action in ("Accept", "Override", "Request evidence", "Mark not applicable"):
         assert action in source
-    assert "Resolved by Litoral Trace" in source
+    assert "Value detected" in source
     assert "Authorized reviewer" in source
     assert "Preparation Package" in source
     assert "default_review_tab" in source

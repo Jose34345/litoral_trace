@@ -70,7 +70,7 @@ def test_review_workspace_is_exception_first():
     assert "data-review-kpis" in source
     assert "Counts represent individual fields, not reviewer clicks." in source
     assert "Request original evidence" in source
-    assert "Auto-Resolved Data" in source
+    assert "Document evidence</h2>" in source
     assert "default_review_tab" in source
     assert "initiallySelected?.dataset.reviewTabButton" in source
 

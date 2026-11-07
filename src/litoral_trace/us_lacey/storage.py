@@ -9,6 +9,14 @@ from litoral_trace.storage.s3 import Boto3S3ObjectStorage
 from litoral_trace.us_lacey.config import load_us_lacey_runtime_config
 
 
+def us_lacey_max_upload_bytes(environ: Mapping[str, str] | None = None) -> int:
+    env = os.environ if environ is None else environ
+    limit = int(env.get("US_LACEY_MAX_UPLOAD_BYTES", 50 * 1024 * 1024))
+    if limit < 1:
+        raise ValueError("The upload size limit must be positive.")
+    return limit
+
+
 def build_us_lacey_storage_settings(
     environ: Mapping[str, str] | None = None,
 ) -> StorageSettings:
@@ -34,7 +42,7 @@ def build_us_lacey_storage_settings(
         verify_tls=str(env.get("US_LACEY_STORAGE_VERIFY_TLS", "1")).strip().lower()
         not in {"0", "false", "no", "off"},
         key_prefix=runtime.storage_prefix,
-        max_upload_bytes=int(env.get("US_LACEY_MAX_UPLOAD_BYTES", 50 * 1024 * 1024)),
+        max_upload_bytes=us_lacey_max_upload_bytes(env),
         allowed_content_types=(
             "application/pdf",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

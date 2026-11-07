@@ -15,6 +15,14 @@ from litoral_trace.db.models import (
 )
 from litoral_trace.us_lacey.document_evidence_class import classify_document
 from litoral_trace.us_lacey.document_field_authority import source_role_supports_field
+from litoral_trace.us_lacey.ppq505 import PPQ505_PLANT_FIELDS
+
+
+_PLANT_FIELD_KEYS = frozenset(field.key for field in PPQ505_PLANT_FIELDS)
+_TABULAR_MIME_LOCATOR = {
+    "text/csv": "csv:",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "sheet:",
+}
 
 
 def _reviewed_source_details(
@@ -31,6 +39,8 @@ def _reviewed_source_details(
             VaultDocument.status,
             VaultDocument.deleted_at,
             VaultDocument.sha256,
+            VaultDocument.content_type,
+            AssuranceDocument.semantic_document_type,
         )
         .join(
             AssuranceDocument,
@@ -54,7 +64,7 @@ def _reviewed_source_details(
     role = str(row[0] or "")
     filename = str(row[1] or "")
     fingerprint = str(row[4] or "").lower() if len(row) > 4 else ""
-    return classify_document(filename, role), role, filename, fingerprint
+    return classify_document(filename, role), role, filename, fingerprint, row[5], row[6]
 
 
 def reviewed_source_class(
@@ -72,7 +82,7 @@ def reviewed_source_class(
 def independent_review_source_role(
     session, *, organization_id: int, operation_id: int,
     assurance_document_id: int | None,
-    field_name: str | None = None,
+    field_name: str | None = None, tabular_locator: str | None = None,
 ) -> str | None:
     """Return the recorded role of a current, eligible source, not a filename guess."""
     details = _reviewed_source_details(
@@ -81,7 +91,18 @@ def independent_review_source_role(
     )
     if details is None:
         return None
-    source, role, filename, _fingerprint = details
+    source, role, filename, _fingerprint, content_type, semantic_type = details
+    tabular_prefix = _TABULAR_MIME_LOCATOR.get(content_type)
+    if (
+        field_name in _PLANT_FIELD_KEYS
+        and role == "SUPPLIER_SHEET"
+        and semantic_type == "SPREADSHEET"
+        and source.code not in {"DERIVED_PREPARATION", "ROLE_CONFLICT"}
+        and tabular_locator and tabular_prefix
+        and tabular_locator.startswith(tabular_prefix)
+        and re.search(r";data_row:[1-9]\d*;column:[1-9]\d*(?:;|$)", tabular_locator)
+    ):
+        return role
     if (
         source.code not in {"COMMERCIAL_SOURCE", "SUPPLIER_SOURCE"}
         or (field_name is not None and not source_role_supports_field(field_name, role, filename))
@@ -102,7 +123,7 @@ def independent_review_source_identity(
     )
     if details is None:
         return None
-    source, role, filename, fingerprint = details
+    source, role, filename, fingerprint, _, _ = details
     if (
         source.code not in {"COMMERCIAL_SOURCE", "SUPPLIER_SOURCE"}
         or not source_role_supports_field(field_name, role, filename)
@@ -115,12 +136,13 @@ def independent_review_source_identity(
 def is_independent_review_source(
     session, *, organization_id: int, operation_id: int,
     assurance_document_id: int | None,
-    field_name: str | None = None,
+    field_name: str | None = None, tabular_locator: str | None = None,
 ) -> bool:
     """Source must be current, original, and appropriate for the named field."""
     return independent_review_source_role(
         session, organization_id=organization_id, operation_id=operation_id,
         assurance_document_id=assurance_document_id, field_name=field_name,
+        tabular_locator=tabular_locator,
     ) is not None
 
 
@@ -142,7 +164,7 @@ def is_anchored_human_shipping_source(
     )
     if details is None or not source_page or not str(source_locator or "").strip():
         return False
-    source, role, filename, _fingerprint = details
+    source, role, filename, _fingerprint, _, _ = details
     if source.code in {
         "DERIVED_PREPARATION", "ROLE_CONFLICT",
         "SUPPLIER_SOURCE", "UNVERIFIED_SUPPLIER",

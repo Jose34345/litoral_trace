@@ -24,7 +24,8 @@ def test_task_layout_uses_named_slots_not_child_positions():
         assert f"grid-area:{name}" in css
     assert "nth-child(" not in css
     assert 'grid-template-areas:"identity value" "status decision" "evidence evidence"' in css
-    assert 'grid-template-areas:"identity" "value" "status" "decision" "evidence"' in css
+    assert 'grid-template-areas:"identity" "value" "status" "evidence" "decision"' in css
+    assert 'grid-template-areas:"identity value status evidence decision"' in css
 
 
 def test_css_loads_in_head_and_nav_has_anchor_offsets():

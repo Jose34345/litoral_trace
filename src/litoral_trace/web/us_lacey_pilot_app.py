@@ -130,6 +130,7 @@ from litoral_trace.web.us_lacey_operational_views import (
     render_trust_center,
 )
 from litoral_trace.web.us_lacey_source_inspector import stream_current_pdf
+from litoral_trace.web.us_lacey_uploads import read_operation_uploads
 from litoral_trace.web.us_lacey_audit_views import render_audit_log_list
 from litoral_trace.web.us_lacey_evaluation_views import (
     render_evaluation_claim,
@@ -307,18 +308,12 @@ def _workspace_fragment(
         organization_id=identity.organization_id,
         operation_public_id=operation_public_id,
     )
+    # HTMX also loads this fragment automatically after processing.
     safe_record_outreach_event(
         session_token=us_session,
         organization_id=identity.organization_id,
         event_name="REVIEW_REACHED",
         event_key=str(detail.public_id),
-    )
-    safe_record_outreach_event(
-        session_token=us_session,
-        organization_id=identity.organization_id,
-        event_name="PQL_QUALIFIED",
-        event_key="review-reached",
-        metadata={"reason": "review_reached"},
     )
     try:
         engine2_dossier = UsLaceyEngineDossierService().get_dossier(
@@ -1103,6 +1098,8 @@ async def new_operation_submit(
             purpose="operation:create",
             submitted_token=csrf_token,
         )
+        uploads = [upload for upload in (documents or ()) if upload.filename]
+        payloads = await read_operation_uploads(uploads, document_role=document_role) if uploads else ()
         resumable = _anonymous_resumable_operation(
             identity=identity,
             entitlement=entitlement,
@@ -1132,24 +1129,12 @@ async def new_operation_submit(
                 event_key=created_public_id,
             )
 
-        uploads = [upload for upload in (documents or ()) if upload.filename]
-        if uploads:
-            payloads: list[tuple[str, str, bytes, str]] = []
-            for upload in uploads:
-                content = await upload.read()
-                if not content:
-                    raise UsLaceyWorkflowError("The uploaded document is empty.")
-                payloads.append((
-                    upload.filename or "document",
-                    upload.content_type or "application/octet-stream",
-                    content,
-                    document_role,
-                ))
+        if payloads:
             upload_and_enqueue_us_lacey_document_batch(
                 organization_id=identity.organization_id,
                 user_id=identity.user_id,
                 operation_public_id=created_public_id,
-                documents=tuple(payloads),
+                documents=payloads,
             )
             safe_record_outreach_event(
                 session_token=us_session or "",
@@ -1556,6 +1541,13 @@ async def operation_upload_submit(
             purpose=f"upload:{operation_public_id}",
             submitted_token=csrf_token,
         )
+        uploads = list(documents or ())
+        if document is not None:
+            uploads.append(document)
+        if not uploads:
+            raise UsLaceyWorkflowError("Choose at least one shipment or supplier document.")
+        payloads = await read_operation_uploads(uploads, document_role=document_role)
+
         if (
             learning_consent == "accepted"
             and entitlement.evaluation_status == "ANONYMOUS"
@@ -1574,29 +1566,11 @@ async def operation_upload_submit(
                     "us_lacey_evaluation_learning_consent_not_saved",
                     extra={"organization_id": identity.organization_id},
                 )
-        uploads = list(documents or ())
-        if document is not None:
-            uploads.append(document)
-        if not uploads:
-            raise UsLaceyWorkflowError("Choose at least one shipment or supplier document.")
-
-        payloads: list[tuple[str, str, bytes, str]] = []
-        for upload in uploads:
-            content = await upload.read()
-            if not content:
-                raise UsLaceyWorkflowError("The uploaded document is empty.")
-            payloads.append((
-                upload.filename or "document",
-                upload.content_type or "application/octet-stream",
-                content,
-                document_role,
-            ))
-
         upload_and_enqueue_us_lacey_document_batch(
             organization_id=identity.organization_id,
             user_id=identity.user_id,
             operation_public_id=operation_public_id,
-            documents=tuple(payloads),
+            documents=payloads,
         )
         safe_record_outreach_event(
             session_token=us_session or "",
