@@ -48,6 +48,7 @@ on:
       - "alembic/versions/077_us_lacey_outreach_human_signals.py"
       - "alembic/versions/078_us_lacey_assurance_v2_authority.py"
       - "alembic/versions/079_us_lacey_assurance_v2_claim_snapshots.py"
+      - "alembic/versions/080_us_lacey_evaluation_email_proof.py"
       - "src/litoral_trace/db/models/us_lacey_assurance_v2.py"
       - "tests/test_assurance_v2_core_postgres.py"
       - "tests/test_assurance_v2_golden_postgres.py"
@@ -652,7 +653,7 @@ jobs:
           grep -Fx "044_platform_admin_control_plane" /tmp/alembic-downgraded.txt
           python -m alembic upgrade head
           python -m alembic current | tee /tmp/alembic-reupgraded.txt
-          grep -Fx "079_us_lacey_assurance_v2_claim_snapshots (head)" /tmp/alembic-reupgraded.txt
+          grep -Fx "080_us_lacey_evaluation_email_proof (head)" /tmp/alembic-reupgraded.txt
       - name: Prove Assurance V2 migration, append-only RLS and tenant isolation
         env:
           DATABASE_URL: ""

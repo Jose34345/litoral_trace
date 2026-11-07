@@ -29,7 +29,7 @@ Use this as a routing guide. Exact test names evolve; search existing tests befo
 | operation/source-set lifecycle | U.S. Lacey operation/source-set/worker tests under `tests/` | `.github/workflows/us-lacey-postgres-gate.yml` |
 | worker locking/idempotency | worker/job/lock/source-set tests | U.S. Lacey PostgreSQL gate |
 | sandbox retention/physical purge | `tests/test_us_lacey_sandbox_cleanup.py` + `tests/test_us_lacey_worker_supervisor.py` + `tests/test_us_lacey_worker_health.py` | `tests/test_us_lacey_sandbox_cleanup_postgres.py` + U.S. Lacey PostgreSQL gate |
-| product-led sample / five-shipment evaluation | `tests/test_us_lacey_product_led_evaluation.py` + sandbox/portal/worker-health tests | `tests/test_us_lacey_product_led_evaluation_postgres.py` + U.S. Lacey PostgreSQL gate; targeted PostgreSQL acceptance must not skip |
+| product-led sample / five-shipment evaluation | `tests/test_us_lacey_product_led_evaluation.py`, `tests/test_us_lacey_evaluation_email_claim.py`, `tests/test_us_lacey_evaluation_final_slot.py` + sandbox/portal/worker-health tests | `tests/test_us_lacey_product_led_evaluation_postgres.py` + U.S. Lacey PostgreSQL gate; email challenge migration 080 and counted-shipment review require PostgreSQL acceptance before promotion |
 | semantic evidence/snapshots | evidence/text/semantic tests | PostgreSQL migration gate + U.S. Lacey PostgreSQL gate |
 | RLS/tenant-owned persistence | negative cross-tenant/RLS tests | PostgreSQL gates |
 | review/audit behavior | review/bulk-review/audit tests | general CI + relevant PostgreSQL gate |

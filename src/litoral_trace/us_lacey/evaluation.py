@@ -5,11 +5,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import re
+from uuid import UUID
 
 from sqlalchemy import func, select, text
 
 from litoral_trace.db.models import (
     UsLaceyEvaluation,
+    UsLaceyEvaluationOperation,
     UsLaceyOperation,
 )
 from litoral_trace.db.tenant import set_tenant_db_context
@@ -282,6 +284,60 @@ def touch_evaluation_activity(
         raise UsLaceyEvaluationError(
             "Unable to refresh this evaluation right now."
         ) from exc
+    finally:
+        session.close()
+
+
+def can_finish_exhausted_evaluation_operation(
+    *, organization_id: int, operation_public_id: str,
+    session_factory=None,
+) -> bool:
+    """Allow review of an already counted shipment after the fifth success.
+
+    This grant never permits upload, reprocessing, another operation or a
+    completed shipment's mutation; it is scoped to a tenant and counted record.
+    """
+    try:
+        public_id = UUID(str(operation_public_id))
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+    org_id = int(organization_id)
+    factory = session_factory or get_us_lacey_db_session
+    session = factory()
+    try:
+        set_tenant_db_context(session, org_id)
+        evaluation = session.scalar(
+            select(UsLaceyEvaluation).where(
+                UsLaceyEvaluation.organization_id == org_id
+            )
+        )
+        if (
+            evaluation is None
+            or evaluation.status != "EXHAUSTED"
+            or evaluation.inactive_expires_at is None
+        ):
+            return False
+        expiry = evaluation.inactive_expires_at
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        if expiry <= datetime.now(timezone.utc):
+            return False
+        counted = session.scalar(
+            select(UsLaceyEvaluationOperation.id)
+            .join(
+                UsLaceyOperation,
+                (UsLaceyOperation.id == UsLaceyEvaluationOperation.operation_id)
+                & (UsLaceyOperation.organization_id == UsLaceyEvaluationOperation.organization_id),
+            )
+            .where(
+                UsLaceyEvaluationOperation.organization_id == org_id,
+                UsLaceyOperation.public_id == public_id,
+                UsLaceyOperation.status.in_(("READY_FOR_REVIEW", "REVIEW_REQUIRED")),
+            )
+            .limit(1)
+        )
+        return counted is not None
     finally:
         session.close()
 

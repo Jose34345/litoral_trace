@@ -17,6 +17,18 @@ def render_evaluation_upgrade(
     )
 
 
+def render_evaluation_verify(
+    *, request, identity, entitlement, csrf_token: str, verification_token: str,
+) -> str:
+    return templates.get_template("us_lacey/evaluation_verify.html").render(
+        request=request,
+        identity=identity,
+        entitlement=entitlement,
+        csrf_token=csrf_token,
+        verification_token=verification_token,
+    )
+
+
 def render_evaluation_claim(
     *,
     request,
