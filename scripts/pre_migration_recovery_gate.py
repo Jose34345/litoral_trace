@@ -248,6 +248,33 @@ def _major_minor_version(
     )
 
 
+def _verify_postgis_compatibility(
+    *, manifest_version: object, live_version: object, alembic_revision: str,
+) -> None:
+    """Allow deliberate PostGIS removal only for known Lacey schema revisions.
+
+    The independent legacy backup still requires PostGIS version agreement.
+    A single missing value is always a mismatch.
+    """
+    old = str(manifest_version or "").strip()
+    current = str(live_version or "").strip()
+    if not old or not current:
+        if not old and not current and alembic_revision in {
+            "079_us_lacey_assurance_v2_claim_snapshots",
+            "080_us_lacey_evaluation_email_proof",
+        }:
+            return
+        raise RecoveryGateError(
+            "Recovery point PostGIS metadata is missing or inconsistent."
+        )
+    if _major_minor_version(old, label="manifest.postgis_version") != (
+        _major_minor_version(current, label="live.postgis_version")
+    ):
+        raise RecoveryGateError(
+            "Recovery point PostGIS major.minor does not match production."
+        )
+
+
 def _utc_iso(
     value: datetime,
 ) -> str:
@@ -598,19 +625,11 @@ def verify_recovery_gate(
             "Recovery point PostgreSQL major version does not match production."
         )
 
-    manifest_postgis = _major_minor_version(
-        manifest["postgis_version"],
-        label="manifest.postgis_version",
+    _verify_postgis_compatibility(
+        manifest_version=manifest["postgis_version"],
+        live_version=live_metadata.get("postgis_version"),
+        alembic_revision=manifest_alembic,
     )
-    live_postgis = _major_minor_version(
-        live_metadata.get("postgis_version"),
-        label="live.postgis_version",
-    )
-
-    if manifest_postgis != live_postgis:
-        raise RecoveryGateError(
-            "Recovery point PostGIS major.minor does not match production."
-        )
 
     age_seconds = max(
         0,
