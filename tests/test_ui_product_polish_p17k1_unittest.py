@@ -124,31 +124,27 @@ def test_k1_settings_and_platform_use_registered_customer_language() -> None:
     assert "Creá una organización con licencia inicial" in platform
 
 
-def test_k1_file_picker_is_progressive_and_preserves_native_inputs() -> None:
+def test_k1_file_picker_uses_controlled_english_chrome_and_hides_native_input() -> None:
     script = (STATIC_SRC / "js" / "file-input.js").read_text(encoding="utf-8")
-    css = (STATIC_SRC / "mobile-motion.css").read_text(encoding="utf-8")
+    css = (STATIC_SRC / "form-controls.css").read_text(encoding="utf-8")
     base = _template("base.html")
 
     assert 'input[type="file"]' in script
     assert "data-file-input-enhanced" in script
-    assert "Seleccionar archivo" in script
-    assert "Ningún archivo seleccionado" in script
+    assert "Choose file" in script
+    assert "No file selected" in script
+    assert "Seleccionar archivo" not in script
+    assert "Ningún archivo seleccionado" not in script
     assert "htmx:load" in script
     assert "window.getComputedStyle(input)" in script
-    assert 'input.style.margin = "0"' in script
-    assert 'wrapper.style[property] = computed[property]' in script
+    assert 'input.style[property] = "0"' in script
+    assert "wrapper.style[property] = styles[property]" in script
+    assert '.lt-control[type="file"]' in css
     assert ".lt-file-input__native" in css
     assert ".lt-file-input__name" in css
-    native_rule = css.split(".lt-file-input__native {", 1)[1].split("}", 1)[0]
-    assert "position: absolute" in native_rule
-    assert "inset: 0" in native_rule
-    assert "width: 100%" in native_rule
-    assert "height: 100%" in native_rule
-    assert "margin: 0" in native_rule
-    assert "border: 0" in native_rule
-    assert "padding: 0" in native_rule
-    assert "box-sizing: border-box" in native_rule
-    assert "#evidence-title ~ .mt-5" in css
+    assert "clip-path: inset(50%)" in css
+    assert "@media print" in css
+    assert "display: none !important" in css
     assert "path='/src/js/file-input.js'" in base
 
     for name in ("batch_import.html", "vault.html", "traceability_evidence.html"):

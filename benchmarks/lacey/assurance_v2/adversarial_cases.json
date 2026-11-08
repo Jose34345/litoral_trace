@@ -1,0 +1,160 @@
+{
+  "contract_version": "assurance.claim.v1",
+  "description": "Additional adverse source-link checks. Synthetic text/parsed-layout fixtures; no OCR-performance claims.",
+  "cases": [
+    {
+      "id": "multi-sku-a",
+      "field": "species",
+      "source": "SKU ACT-TRAY-18 Especie: Acacia mangium",
+      "value": "Acacia mangium",
+      "sku": "ACT-TRAY-18",
+      "expected_supported": true
+    },
+    {
+      "id": "multi-sku-b",
+      "field": "species",
+      "source": "SKU RUB-CB-32 Especie: Hevea brasiliensis",
+      "value": "Hevea brasiliensis",
+      "sku": "RUB-CB-32",
+      "expected_supported": true
+    },
+    {
+      "id": "country-br",
+      "field": "country_of_harvest",
+      "source": "SKU ACT-TRAY-18 País de colheita: Brasil",
+      "value": "Brasil",
+      "sku": "ACT-TRAY-18",
+      "expected_supported": true
+    },
+    {
+      "id": "country-vn",
+      "field": "country_of_harvest",
+      "source": "SKU RUB-CB-32 País de cosecha: Vietnam",
+      "value": "Vietnam",
+      "sku": "RUB-CB-32",
+      "expected_supported": true
+    },
+    {
+      "id": "fabricated-genus",
+      "field": "genus",
+      "source": "SKU ACT-TRAY-18 Genus: Acacia",
+      "value": "Eucalyptus",
+      "sku": "ACT-TRAY-18",
+      "expected_supported": false
+    },
+    {
+      "id": "fabricated-hts",
+      "field": "hts_code",
+      "source": "SKU ACT-TRAY-18 HTS: 4419.90.9000",
+      "value": "4407.99.0000",
+      "sku": "ACT-TRAY-18",
+      "expected_supported": false
+    },
+    {
+      "id": "historical-species",
+      "field": "species",
+      "source": "SKU ACT-TRAY-18 Species: Pinus radiata",
+      "value": "Pinus radiata",
+      "sku": "ACT-TRAY-18",
+      "historical": true,
+      "expected_supported": false
+    },
+    {
+      "id": "fabricated-country",
+      "field": "country_of_harvest",
+      "source": "SKU ACT-TRAY-18 Country of harvest: Indonesia",
+      "value": "Vietnam",
+      "sku": "ACT-TRAY-18",
+      "expected_supported": false
+    },
+    {
+      "id": "duplicate-qty",
+      "field": "plant_quantity",
+      "source": "Qty: 500 KG\nQty: 500 KG",
+      "value": "500",
+      "quote": "Qty: 500 KG",
+      "expected_supported": false
+    },
+    {
+      "id": "ambiguous-unit",
+      "field": "metric_unit",
+      "source": "Unit: KG\nUnit: KG",
+      "value": "KG",
+      "quote": "Unit: KG",
+      "expected_supported": false
+    },
+    {
+      "id": "valid-unit",
+      "field": "metric_unit",
+      "source": "SKU ACT-TRAY-18 Unit: KG",
+      "value": "KG",
+      "sku": "ACT-TRAY-18",
+      "expected_supported": true
+    },
+    {
+      "id": "valid-hts",
+      "field": "hts_code",
+      "source": "SKU RUB-CB-32 HTS: 4419.90.9000",
+      "value": "4419.90.9000",
+      "sku": "RUB-CB-32",
+      "expected_supported": true
+    },
+    {
+      "id": "ai-inferred",
+      "field": "genus",
+      "source": "SKU ACT-TRAY-18 Genus: Acacia",
+      "value": "Acacia",
+      "sku": "ACT-TRAY-18",
+      "evidence_class": "INFERRED",
+      "expected_supported": false
+    },
+    {
+      "id": "unsupported-qty",
+      "field": "plant_quantity",
+      "source": "SKU ACT-TRAY-18 Qty: 80 KG",
+      "value": "800",
+      "sku": "ACT-TRAY-18",
+      "expected_supported": false
+    },
+    {
+      "id": "explicit-entry",
+      "field": "entered_value",
+      "source": "SKU ACT-TRAY-18 Entered value 18,900.00",
+      "value": "18,900.00",
+      "sku": "ACT-TRAY-18",
+      "expected_supported": true
+    },
+    {
+      "id": "invented-entry",
+      "field": "entered_value",
+      "source": "SKU ACT-TRAY-18 Entered value 18,900.00",
+      "value": "99,999.00",
+      "sku": "ACT-TRAY-18",
+      "expected_supported": false
+    },
+    {
+      "id": "source-pt",
+      "field": "species",
+      "source": "SKU TEK-SRV-04 Espécie Tectona grandis",
+      "value": "Tectona grandis",
+      "sku": "TEK-SRV-04",
+      "expected_supported": true
+    },
+    {
+      "id": "quantity-token-prefix",
+      "field": "plant_quantity",
+      "source": "SKU ACT-TRAY-18 Qty: 5000 KG",
+      "value": "500",
+      "sku": "ACT-TRAY-18",
+      "expected_supported": false
+    },
+    {
+      "id": "genus-token-prefix",
+      "field": "genus",
+      "source": "SKU ACT-TRAY-18 Genus Eucalyptus",
+      "value": "Eucaly",
+      "sku": "ACT-TRAY-18",
+      "expected_supported": false
+    }
+  ]
+}

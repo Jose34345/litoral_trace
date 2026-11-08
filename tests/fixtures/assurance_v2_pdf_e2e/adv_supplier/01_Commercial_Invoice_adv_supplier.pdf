@@ -1,0 +1,636 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<<
+/Producer (pypdf)
+>>
+endobj
+2 0 obj
+<<
+/Type /Pages
+/Count 1
+/Kids [ 4 0 R ]
+>>
+endobj
+3 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+4 0 obj
+<<
+/Contents 5 0 R
+/MediaBox [ 0 0 595.2756 841.8898 ]
+/Resources <<
+/Font 6 0 R
+/ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>>
+/Rotate 0
+/Trans <<
+>>
+/Type /Page
+/Parent 2 0 R
+>>
+endobj
+5 0 obj
+<<
+/Length 9661
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+q
+.737255 .835294 .803922 RG
+n 48.18898 799.3701 m 547.0866 799.3701 l S
+.031373 .47451 .352941 rg
+BT /F2 9 Tf 10.8 TL ET
+BT 1 0 0 1 48.18898 807.874 Tm (LITORAL TRACE  /  SHIPMENT TEST CORPUS) Tj T* ET
+.709804 .74902 .780392 rg
+BT /F2 8 Tf 9.6 TL ET
+BT 1 0 0 1 174.2978 793.7008 Tm (SYNTHETIC TEST DATA - NOT VALID FOR CUSTOMS OR FILING) Tj T* ET
+.384314 .45098 .533333 rg
+BT /F1 8 Tf 9.6 TL ET
+BT 1 0 0 1 48.18898 39.68504 Tm (All organizations, addresses, identifiers and signatures are fictional.) Tj T* ET
+BT 1 0 0 1 521.7346 39.68504 Tm (Page 1) Tj T* ET
+Q
+q
+1 0 0 1 54.18898 762.8661 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 5 Tm /F2 17 Tf 22 TL (COMMERCIAL INVOICE) Tj T* ET
+Q
+Q
+q
+1 0 0 1 54.18898 743.8661 cm
+q
+.384314 .45098 .533333 rg
+BT 1 0 0 1 0 3.5 Tm /F1 7.5 Tf 11 TL (REFERENCE LSBH-CI-261102 | USD / metric units unless specified) Tj T* ET
+Q
+Q
+q
+1 0 0 1 54.18898 606.8661 cm
+q
+1 1 1 rg
+n 0 133 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 114 480 -19 re f*
+1 1 1 rg
+n 0 95 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 76 480 -19 re f*
+1 1 1 rg
+n 0 57 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 38 480 -19 re f*
+1 1 1 rg
+n 0 19 480 -19 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 9 118 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Invoice number) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 118 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (LSBH-CI-261102) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 99 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Invoice date) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 99 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (2026-11-18) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 80 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Purchase order) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 80 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (HHI-PO-261028) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 61 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Customer shipment reference) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 61 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (HHI-IMP-2026-2083) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 42 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Payment terms) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 42 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (NET 30 days from invoice) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 23 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Currency) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 23 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (USD) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 4 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Terms of sale) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 4 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (FOB Xiamen, Incoterms 2020) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+.847059 .886275 .901961 RG
+.5 w
+n 0 0 m 480 0 l S
+Q
+Q
+Q
+q
+1 0 0 1 54.18898 581.8661 cm
+q
+.031373 .47451 .352941 rg
+BT 1 0 0 1 0 3.5 Tm /F2 9.5 Tf 13 TL (SELLER / BUYER / GOODS) Tj T* ET
+Q
+Q
+q
+1 0 0 1 54.18898 413.8661 cm
+q
+1 1 1 rg
+n 0 163 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 144 480 -30 re f*
+1 1 1 rg
+n 0 114 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 95 480 -19 re f*
+1 1 1 rg
+n 0 76 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 57 480 -19 re f*
+1 1 1 rg
+n 0 38 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 19 480 -19 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 9 148 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Supplier / manufacturer) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 148 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (EASTSHORE BAMBOO HOUSEWARES CO., LTD.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 129 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Supplier address) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 118 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 14.3 Tm /F1 7.7 Tf 11 TL (88 Jinghua Industrial Road, Cangshan District, Fuzhou, Fujian 350000, China \(fictional) Tj T* (address\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 99 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Importer of record / consignee) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 99 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (HARBORLINE HOME IMPORTS LLC) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 80 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Importer address) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 80 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (1710 NW Commerce Boulevard, Portland, OR 97209, USA \(fictional address\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 61 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Product / SKU) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 61 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Bamboo coaster set \(4 pieces\) / BAM-COAST-04) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 42 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Country of export) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 42 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (CHINA \(CN\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 23 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Port of loading) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 23 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Xiamen, China \(CNXMN\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 4 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Port of discharge) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 4 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Los Angeles, California, USA \(USLAX\)) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+.847059 .886275 .901961 RG
+.5 w
+n 0 0 m 480 0 l S
+Q
+Q
+Q
+q
+1 0 0 1 54.18898 353.8661 cm
+q
+.07451 .137255 .215686 rg
+n 0 60 486.8976 -19 re f*
+1 1 1 rg
+n 0 41 486.8976 -41 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 9 45 cm
+q
+1 1 1 rg
+BT 1 0 0 1 0 3.5 Tm /F2 7.5 Tf 11 TL (LINE / SKU) Tj T* ET
+Q
+Q
+q
+1 0 0 1 106.3795 45 cm
+q
+1 1 1 rg
+BT 1 0 0 1 0 3.5 Tm /F2 7.5 Tf 11 TL (DESCRIPTION / HTS) Tj T* ET
+Q
+Q
+q
+1 0 0 1 203.7591 45 cm
+q
+1 1 1 rg
+BT 1 0 0 1 0 3.5 Tm /F2 7.5 Tf 11 TL (QTY) Tj T* ET
+Q
+Q
+q
+1 0 0 1 301.1386 45 cm
+q
+1 1 1 rg
+BT 1 0 0 1 0 3.5 Tm /F2 7.5 Tf 11 TL (UNIT VALUE) Tj T* ET
+Q
+Q
+q
+1 0 0 1 398.5181 45 cm
+q
+1 1 1 rg
+BT 1 0 0 1 0 3.5 Tm /F2 7.5 Tf 11 TL (EXTENDED VALUE) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 26 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (1 / BAM-COAST-04) Tj T* ET
+Q
+Q
+q
+1 0 0 1 106.3795 4 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 25.3 Tm /F1 7.7 Tf 11 TL (Bamboo coaster set, 4) Tj T* (pieces; HTS) Tj T* (4419.19.9010) Tj T* ET
+Q
+Q
+q
+1 0 0 1 203.7591 26 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (900 SET) Tj T* ET
+Q
+Q
+q
+1 0 0 1 301.1386 26 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (USD 12.50) Tj T* ET
+Q
+Q
+q
+1 0 0 1 398.5181 26 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (USD 11,250.00) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+.847059 .886275 .901961 RG
+.5 w
+n 0 0 m 486.8976 0 l S
+Q
+Q
+Q
+q
+1 0 0 1 54.18898 328.8661 cm
+q
+.031373 .47451 .352941 rg
+BT 1 0 0 1 0 3.5 Tm /F2 9.5 Tf 13 TL (TOTALS AND SHIPPING) Tj T* ET
+Q
+Q
+q
+1 0 0 1 54.18898 160.8661 cm
+q
+1 1 1 rg
+n 0 163 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 144 480 -19 re f*
+1 1 1 rg
+n 0 125 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 106 480 -19 re f*
+1 1 1 rg
+n 0 87 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 68 480 -19 re f*
+1 1 1 rg
+n 0 49 480 -19 re f*
+.929412 .956863 .956863 rg
+n 0 30 480 -30 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 9 148 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Total merchandise value) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 148 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (USD 11,250.00) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 129 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Packing quantity) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 129 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (75 CARTONS) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 110 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Plant-material quantity) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 110 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (288.0 KG solid bamboo) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 91 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Total gross shipping weight) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 91 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (585.0 KG) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 72 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Total volume) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 72 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (4.125 CBM) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 53 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Bill of lading) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 53 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (HBL-XMN-LAX-261120-083) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 34 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (Container / seal) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 34 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (TGHU6042314 / LSBH-B31405) Tj T* ET
+Q
+Q
+q
+1 0 0 1 9 4 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 14.3 Tm /F1 7.7 Tf 11 TL (Manufacturer identification \(test) Tj T* (MID\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 149 15 cm
+q
+.07451 .137255 .215686 rg
+BT 1 0 0 1 0 3.3 Tm /F1 7.7 Tf 11 TL (CNFUZEAS99JIN) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+.847059 .886275 .901961 RG
+.5 w
+n 0 0 m 480 0 l S
+Q
+Q
+Q
+q
+1 0 0 1 54.18898 148.8661 cm
+q
+.556863 .329412 .113725 rg
+BT 1 0 0 1 0 4 Tm /F2 8 Tf 12 TL (For test use only. The tariff classification and legal applicability require independent verification before any live filing.) Tj T* ET
+Q
+Q
+ 
+
+endstream
+endobj
+6 0 obj
+<<
+/F1 7 0 R
+/F2 8 0 R
+>>
+endobj
+7 0 obj
+<<
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+/Name /F1
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+8 0 obj
+<<
+/BaseFont /Helvetica-Bold
+/Encoding /WinAnsiEncoding
+/Name /F2
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000054 00000 n 
+0000000113 00000 n 
+0000000162 00000 n 
+0000000361 00000 n 
+0000010074 00000 n 
+0000010115 00000 n 
+0000010222 00000 n 
+trailer
+<<
+/Size 9
+/Root 3 0 R
+/Info 1 0 R
+>>
+startxref
+10334
+%%EOF

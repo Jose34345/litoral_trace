@@ -1,0 +1,99 @@
+{
+  "version": "lacey-golden-v1",
+  "corpus_kind": "synthetic_regression",
+  "source_fixture": "tests/fixtures/lacey_router_packet_7_docs.json",
+  "documents_per_variant": 7,
+  "document_count": 105,
+  "variants": [
+    {
+      "variant_id": "en-digital-a",
+      "language": "en",
+      "modality": "digital_text",
+      "transform": "identity"
+    },
+    {
+      "variant_id": "en-digital-b",
+      "language": "en",
+      "modality": "digital_text",
+      "transform": "whitespace"
+    },
+    {
+      "variant_id": "en-digital-c",
+      "language": "en",
+      "modality": "digital_text",
+      "transform": "uppercase_header"
+    },
+    {
+      "variant_id": "en-ocr-a",
+      "language": "en",
+      "modality": "ocr_simulated",
+      "transform": "ocr_layout"
+    },
+    {
+      "variant_id": "en-ocr-b",
+      "language": "en",
+      "modality": "ocr_simulated",
+      "transform": "ocr_punctuation"
+    },
+    {
+      "variant_id": "es-digital-a",
+      "language": "es",
+      "modality": "digital_text",
+      "transform": "identity"
+    },
+    {
+      "variant_id": "es-digital-b",
+      "language": "es",
+      "modality": "digital_text",
+      "transform": "whitespace"
+    },
+    {
+      "variant_id": "es-digital-c",
+      "language": "es",
+      "modality": "digital_text",
+      "transform": "uppercase_header"
+    },
+    {
+      "variant_id": "es-ocr-a",
+      "language": "es",
+      "modality": "ocr_simulated",
+      "transform": "ocr_layout"
+    },
+    {
+      "variant_id": "es-ocr-b",
+      "language": "es",
+      "modality": "ocr_simulated",
+      "transform": "ocr_punctuation"
+    },
+    {
+      "variant_id": "pt-digital-a",
+      "language": "pt",
+      "modality": "digital_text",
+      "transform": "identity"
+    },
+    {
+      "variant_id": "pt-digital-b",
+      "language": "pt",
+      "modality": "digital_text",
+      "transform": "whitespace"
+    },
+    {
+      "variant_id": "pt-digital-c",
+      "language": "pt",
+      "modality": "digital_text",
+      "transform": "uppercase_header"
+    },
+    {
+      "variant_id": "pt-ocr-a",
+      "language": "pt",
+      "modality": "ocr_simulated",
+      "transform": "ocr_layout"
+    },
+    {
+      "variant_id": "pt-ocr-b",
+      "language": "pt",
+      "modality": "ocr_simulated",
+      "transform": "ocr_punctuation"
+    }
+  ]
+}

@@ -63,6 +63,18 @@
   border-color: var(--lt-positive);
 }
 
+/* Reconciliation invariants are operation-level controls, not generic form
+   validation. aria-invalid keeps the state accessible while this selector gives
+   the implicated Entered Value controls a persistent enterprise error treatment. */
+.lt-control[aria-invalid="true"] {
+  border-color: var(--lt-danger);
+  box-shadow: 0 0 0 1px var(--lt-danger);
+}
+
+.lt-control[aria-invalid="true"]:focus {
+  outline-color: var(--lt-danger);
+}
+
 .lt-control[type="search"]::-webkit-search-cancel-button {
   cursor: pointer;
 }
@@ -74,6 +86,64 @@ textarea.lt-control {
 
 select.lt-control {
   appearance: auto;
+}
+
+/* Staged upload forms own their visible file-selection surface. If an older
+   cached enhancer wraps the hidden input, suppress that legacy chrome rather
+   than rendering a second picker below the dropzone. */
+[data-file-staging-form] .lt-file-input {
+  display: none !important;
+}
+
+.lt-file-input {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.lt-file-input__button {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--lt-border);
+  border-radius: var(--lt-radius-md);
+  padding: 0.4375rem 0.75rem;
+  background: var(--lt-surface);
+  color: var(--lt-text-primary);
+  font-size: 0.75rem;
+  font-weight: 750;
+  line-height: 1rem;
+  cursor: pointer;
+}
+
+.lt-file-input__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--lt-text-secondary);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+/* The browser-native file control is never allowed to render product chrome.
+   It stays accessible through its wrapping label while our controlled English
+   button/name surface owns the visible interaction. */
+.lt-control[type="file"],
+.lt-file-input__native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  border: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  opacity: 0 !important;
 }
 
 .lt-check-field {
@@ -135,6 +205,145 @@ select.lt-control {
 
   .lt-form__actions > * {
     width: 100%;
+  }
+}
+
+
+.lt-upload-dropzone {
+  display: flex;
+  min-height: 11rem;
+  cursor: pointer;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--lt-border);
+  border-radius: var(--lt-radius-lg);
+  padding: 2rem;
+  text-align: center;
+  background: var(--lt-surface);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.lt-upload-dropzone:hover,
+.lt-upload-dropzone:focus-visible,
+.lt-upload-dropzone.is-dragging {
+  border-color: #10b981;
+  background: #ecfdf5;
+}
+
+.lt-upload-dropzone:focus-visible {
+  outline: 2px solid #059669;
+  outline-offset: 2px;
+}
+
+.lt-upload-dropzone__icon {
+  display: flex;
+  width: 3rem;
+  height: 3rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  background: #059669;
+  color: #fff;
+}
+
+.lt-upload-dropzone__title {
+  margin-top: 1rem;
+  color: var(--lt-text-primary);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.lt-upload-dropzone__help {
+  margin-top: 0.35rem;
+  color: var(--lt-text-secondary);
+  font-size: 0.75rem;
+}
+
+.lt-upload-staging {
+  margin-top: 1rem;
+  border: 1px solid var(--lt-border);
+  border-radius: var(--lt-radius-lg);
+  background: var(--lt-surface);
+}
+
+.lt-upload-staging__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--lt-border);
+  padding: 0.75rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.lt-upload-staging__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lt-upload-staging__item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--lt-border);
+  padding: 0.75rem 1rem;
+}
+
+.lt-upload-staging__item:last-child {
+  border-bottom: 0;
+}
+
+.lt-upload-staging__info {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.lt-upload-staging__name {
+  max-width: 32rem;
+  overflow: hidden;
+  color: var(--lt-text-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lt-upload-staging__size {
+  flex-shrink: 0;
+  color: var(--lt-text-secondary);
+  font-size: 0.75rem;
+}
+
+.lt-upload-staging__remove {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  color: var(--lt-text-secondary);
+}
+
+.lt-upload-staging__remove:hover {
+  background: #f1f5f9;
+  color: #be123c;
+}
+
+@media print {
+  .lt-file-input,
+  .lt-control[type="file"],
+  .lt-file-input__native {
+    display: none !important;
   }
 }
 

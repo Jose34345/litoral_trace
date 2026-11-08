@@ -175,7 +175,7 @@ def test_frontend_toolchain_is_pinned_and_cdn_free_at_source():
 
     assert package["devDependencies"] == {
         "@fortawesome/fontawesome-free": "6.5.1",
-        "@tailwindcss/cli": "4.3.1",
+        "@tailwindcss/cli": "4.3.0",
         "htmx.org": "2.0.10",
         "leaflet": "1.9.4",
         "tailwindcss": "4.3.1",

@@ -1,0 +1,44 @@
+{% extends "us_lacey/base.html" %}
+{% set authenticated = true %}
+{% block lacey_title %}Assurance V2 Private Lab{% endblock %}
+{% block lacey_content %}
+<header class="lt-page-header">
+  <div class="lt-page-header__copy">
+    <p class="lt-page-header__eyebrow">Litoral Trace / Private Assurance V2 Lab</p>
+    <h1 class="lt-page-header__title">Source-linked evidence testing</h1>
+    <p class="lt-page-header__description">Evaluate document claims, human decisions, supplier identity and controlled memory reuse from inside your existing Litoral Trace account.</p>
+  </div>
+  <div class="lt-page-header__actions">
+    <a href="/operations/new?assurance_v2_lab=1" class="lt-btn lt-btn--primary">New V2 test shipment</a>
+  </div>
+</header>
+<section class="lt-card mb-5 rounded-xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-950" role="status" aria-label="Non-production laboratory notice">
+  <p class="font-bold">PRIVATE LABORATORY ON THE LIVE WEBSITE — NOT FOR FILING</p>
+  <p class="mt-2">This workspace is for controlled evaluation with synthetic or authorized test documents. No automatic ACE, CBP, APHIS or LAWGS submission takes place. Issuance of filing-ready regulatory packages is explicitly disabled.</p>
+  <p class="mt-2">When creating a shipment, set its reference to start with <strong>V2LAB-</strong>, such as <strong>V2LAB-PACK1</strong>. Upload one document pack per shipment; return here to open its Assurance case.</p>
+</section>
+<section class="lt-card p-5" aria-label="Assurance V2 test cases">
+  <div class="mb-4 flex items-center justify-between gap-3">
+    <h2 class="text-lg font-bold text-slate-950">Your private V2 test cases</h2>
+    <a class="text-sm font-bold text-emerald-800 underline" href="/operations">All shipments</a>
+  </div>
+  {% if operations %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-left text-sm">
+      <thead><tr class="border-b border-slate-200"><th class="p-3">Reference</th><th class="p-3">Status</th><th class="p-3">Evidence</th></tr></thead>
+      <tbody>
+      {% for operation in operations %}
+      <tr class="border-b border-slate-100">
+        <td class="p-3 font-semibold">{{ operation.client_reference }}</td>
+        <td class="p-3">{{ operation.status }}</td>
+        <td class="p-3"><a class="font-bold text-emerald-800 underline" href="/assurance-v2/operations/{{ operation.public_id }}">Open Assurance case</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-sm text-slate-600">No V2 test shipments yet. Create your first shipment with a reference beginning with V2LAB-.</p>
+  {% endif %}
+</section>
+{% endblock %}

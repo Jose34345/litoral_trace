@@ -1,0 +1,4 @@
+<div id="species-status" class="border-b border-slate-200 p-5 lg:border-b-0 lg:border-r"{% if shell_oob|default(false) %} hx-swap-oob="true"{% endif %}>
+  <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Species</p>
+  <div class="mt-2">{{ lt_badge("READY" if readiness_summary.species == "VERIFIED" else readiness_summary.species, readiness_summary.species) }}</div>
+</div>

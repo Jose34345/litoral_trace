@@ -126,7 +126,14 @@ def test_p27a3c2_validates_required_config_without_printing_values():
 def test_p27a3c2_uses_private_runner_temp_workspace_and_umask():
     workflow = _workflow_text()
 
-    assert "BACKUP_WORKDIR: ${{ runner.temp }}/litoral-trace-postgres-backup" in workflow
+    # `runner` is not an allowed context in jobs.<job_id>.env. Initialize the
+    # private path after the runner exists and persist it through GITHUB_ENV.
+    assert "BACKUP_WORKDIR: ${{ runner.temp }}" not in workflow
+    assert "Initialize backup workdir" in workflow
+    assert (
+        'echo "BACKUP_WORKDIR=$RUNNER_TEMP/litoral-trace-postgres-backup" '
+        '>> "$GITHUB_ENV"'
+    ) in workflow
     assert 'mkdir -p "$BACKUP_WORKDIR"' in workflow
     assert "umask 077" in workflow
     assert "backups/postgres" not in workflow

@@ -1,0 +1,241 @@
+.assurance-shell{font-family:system-ui,sans-serif;color:#183046;background:#f5f8fa}.assurance-shell{margin:0;font-size:14px}.assurance-shell,.assurance-shell *{box-sizing:border-box}.assurance-shell a{color:#0e618b}.assurance-shell{max-width:1500px;margin:auto;padding:32px}.assurance-shell .assurance-header{display:flex;justify-content:space-between;gap:24px;align-items:center}.assurance-shell h1{font-size:32px;margin:8px 0}.assurance-shell h2{font-size:19px;margin:4px 0}.assurance-shell .eyebrow{font-size:10px;color:#648093;font-weight:bold;letter-spacing:.15em}.assurance-shell .subtext,.assurance-shell .muted,.assurance-shell small,.assurance-shell .footnote{color:#708491}.assurance-shell .filing-state{background:#fff;border:1px solid #d7e1e6;border-left:5px solid #ba5545;border-radius:6px;padding:14px 22px}.assurance-shell .filing-state.ready{border-left-color:#277f65}.assurance-shell .state-label{display:block;font-weight:bold}.assurance-shell .context-row{display:flex;gap:15px;flex-wrap:wrap;margin:28px 0;color:#6b8191}.assurance-shell .context-row span{background:#fff;border:1px solid #dce5e9;padding:10px}.assurance-shell .workspace{display:grid;grid-template-columns:220px minmax(0,1fr);gap:22px}.assurance-shell .assurance-nav{position:sticky;top:12px;align-self:start;display:grid;gap:4px}.assurance-shell .assurance-nav a{text-decoration:none;color:#395569;padding:11px;border-radius:6px}.assurance-shell .assurance-nav a:hover{background:#e5eef2}.assurance-shell .nav-note{font-size:12px;color:#8296a3;padding:16px}.assurance-shell .assurance-main{display:grid;gap:16px;min-width:0}.assurance-shell .panel{background:white;border:1px solid #dee7eb;border-radius:10px;padding:25px}.assurance-shell .section-heading,.assurance-shell .exception-title,.assurance-shell .simple-row{display:flex;justify-content:space-between;align-items:center;gap:15px}.assurance-shell .section-heading{margin-bottom:16px}.assurance-shell .exception,.assurance-shell .simple-row{border-top:1px solid #e5ecef;padding:16px 0}.assurance-shell .exception h3{font-size:15px}.assurance-shell .tag{font-size:10px;font-weight:800;white-space:nowrap;padding:4px 7px;border-radius:4px;background:#f1f4f6;color:#5e7081}.assurance-shell .tag.red{background:#fbece9;color:#a14b41}.assurance-shell .tag.amber{background:#fcf3df;color:#896019}.assurance-shell .tag.blue{background:#e9f4fb;color:#286c8a}.assurance-shell .tag.green{background:#e5f6ee;color:#20724d}.assurance-shell .tag.purple{background:#f1eefa;color:#70548b}.assurance-shell .candidate-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:15px 0}.assurance-shell .candidate{border:1px solid #e1e9ee;background:#fafcfd;border-radius:5px;padding:12px;display:grid;gap:9px}.assurance-shell .candidate strong{display:block;margin-top:8px}.assurance-shell .decision-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:20px 0}.assurance-shell .decision-form label{display:grid;gap:4px;color:#607887}.assurance-shell .decision-form input,.assurance-shell .decision-form select{min-width:0;padding:10px;border:1px solid #ccd8df;border-radius:5px}.assurance-shell .decision-form button,.assurance-shell #issue-package{border:0;background:#173e58;color:white;padding:12px;cursor:pointer;border-radius:5px}.assurance-shell .historical-evidence{background:#f8f6fc;padding:12px}.assurance-shell .table-scroll{overflow:auto}.assurance-shell table{width:100%;border-collapse:collapse}.assurance-shell td,.assurance-shell th{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid #e8eef1;font-size:12px}.assurance-shell th{color:#718391;background:#f7fafb}.assurance-shell td small,.assurance-shell .simple-row small{display:block;margin-top:5px}.assurance-shell code{font-size:11px;overflow-wrap:anywhere}.assurance-shell .blocker-list{columns:2;color:#8b493d}.assurance-shell .blocker-list li{margin:7px 0}@media(max-width:880px){.assurance-shell{padding:16px}.assurance-shell .assurance-header{align-items:flex-start;flex-direction:column}.assurance-shell .workspace{grid-template-columns:1fr}.assurance-shell .assurance-nav{position:static;display:flex;overflow:auto}.assurance-shell .nav-note{display:none}.assurance-shell .decision-form{grid-template-columns:1fr}.assurance-shell .blocker-list{columns:1}}
+/* V2 workspace: keep human actions readable in every locale and viewport. */
+.assurance-shell .simple-row>div{min-width:0;overflow-wrap:anywhere}
+.assurance-shell .identity-form,.assurance-shell .reuse-form,.assurance-shell .export-authorization-form{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;min-width:0;padding:12px 0 20px;margin-bottom:8px;border-bottom:1px solid #e5ecef}
+.assurance-shell .identity-form label,.assurance-shell .reuse-form label,.assurance-shell .export-authorization-form label{display:grid;gap:8px;min-width:0;color:#395569}
+.assurance-shell .identity-form input,.assurance-shell .reuse-form input,.assurance-shell .export-authorization-form textarea{display:block;width:100%;min-width:0;padding:10px 12px;border:1px solid #ccd8df;border-radius:6px;overflow-wrap:anywhere}
+.assurance-shell .identity-form button,.assurance-shell .reuse-form button,.assurance-shell .export-authorization-form button{justify-self:start;max-width:100%;white-space:normal;border:0;border-radius:6px;background:#173e58;color:#fff;padding:10px 16px;cursor:pointer;text-align:center}
+.assurance-shell .identity-form .identity-result,.assurance-shell .reuse-form .reuse-result{min-height:1em;overflow-wrap:anywhere}
+.assurance-shell .source-link{overflow-wrap:anywhere}
+@media print{.assurance-shell{padding:0;font-size:11px;background:#fff}.assurance-shell h1{font-size:22px}.assurance-shell h2{font-size:14px}.assurance-shell .workspace{display:block}.assurance-shell .assurance-nav{display:none}.assurance-shell .assurance-main{display:block}.assurance-shell .assurance-header{gap:12px}.assurance-shell .context-row{margin:10px 0;gap:5px}.assurance-shell .context-row span{padding:5px}.assurance-shell .panel{padding:12px;border-radius:0;margin:10px 0;break-inside:auto}.assurance-shell .panel h2{margin:2px 0}.assurance-shell .section-heading{margin-bottom:8px}.assurance-shell table{table-layout:fixed}.assurance-shell td,.assurance-shell th{padding:6px;font-size:10px;overflow-wrap:anywhere;word-break:break-word}.assurance-shell tr,.assurance-shell .simple-row,.assurance-shell .exception{break-inside:avoid;page-break-inside:avoid}.assurance-shell .simple-row{padding:6px 0}.assurance-shell .identity-form,.assurance-shell .reuse-form,.assurance-shell .export-authorization-form,.assurance-shell button{display:none}.assurance-shell .blocker-list{columns:1}}
+
+/* Exception-first gate diagnostics: one expandable group per distinct reason. */
+.assurance-shell .gate-groups{display:grid;gap:8px}
+.assurance-shell .gate-group{border:1px solid #e1e9ee;border-radius:6px;padding:10px;background:#fbfcfd}
+.assurance-shell .gate-group summary{cursor:pointer;color:#395569}
+.assurance-shell .gate-group ul{margin:12px 0 4px;padding-left:20px;columns:2;overflow-wrap:anywhere}
+.assurance-shell .gate-group li{break-inside:avoid;margin:3px 0}
+@media print{
+  /* App chrome must not obscure the evidence report or print across pages. */
+  header:has([data-lacey-global-search]), [data-shipment-section-nav],
+  .assurance-shell .assurance-nav, .assurance-shell .nav-note{
+    display:none!important;position:static!important
+  }
+  .assurance-shell .assurance-header{position:static!important}
+  .assurance-shell .candidate-list{display:block}
+  .assurance-shell .candidate{padding:6px;margin:6px 0;break-inside:avoid;page-break-inside:avoid}
+  .assurance-shell .exception{break-inside:auto;page-break-inside:auto}
+  .assurance-shell .exception-title{break-after:avoid}
+  .assurance-shell .gate-group{padding:6px;margin-bottom:5px}
+  .assurance-shell .gate-group ul{columns:1}
+  .assurance-shell .source-link,.assurance-shell .decision-form{display:none!important}
+}
+
+/* Progressive disclosure: operational tasks precede detailed audit evidence. */
+.assurance-quick-review{background:#fff;border:1px solid #d8e8e2;border-radius:12px;padding:24px;margin:18px 0 22px;box-shadow:0 4px 20px rgba(12,32,30,.04)}
+.quick-review-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}
+.quick-review-head h2{font-size:1.42rem;font-weight:750;margin:4px 0 5px;color:#112c2b}
+.quick-review-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:20px 0}
+.quick-review-metrics>div{background:#f4f8f7;padding:14px;border-radius:9px}
+.quick-review-metrics strong{display:block;font-size:1.8rem;line-height:1.15;color:#123e35}
+.quick-review-metrics small{display:block;color:#526b65;margin-top:6px}
+.quick-review-actions{display:grid;gap:10px}
+.quick-review-task{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px;border:1px solid #dfebe7;border-radius:9px}
+.quick-review-task p{margin:5px 0 0;font-size:.91rem;color:#566c66}
+.quick-review-task a{white-space:nowrap;padding:9px 13px;background:#00694f;border-radius:7px;color:white;text-decoration:none;font-weight:650}
+.quick-review-task a:hover{background:#00553f}
+.quick-review-note{font-size:.85rem;margin:16px 0 9px;color:#50665e}
+.quick-review-technical{border-top:1px solid #e0eae6;margin-top:14px;padding-top:13px;font-size:.87rem}
+.quick-review-technical summary{cursor:pointer;font-weight:600;color:#405d55}
+@media(max-width:740px){.assurance-quick-review{padding:16px}.quick-review-metrics{gap:7px}.quick-review-metrics>div{padding:10px}.quick-review-metrics strong{font-size:1.38rem}.quick-review-task{align-items:flex-start;flex-direction:column}.quick-review-head{flex-direction:column}}
+@media print{.assurance-quick-review{box-shadow:none;break-inside:avoid}.quick-review-task a{color:#00553f;background:transparent;padding:0}}
+
+.assurance-full-review{margin:12px 0 24px}
+.assurance-full-review>summary{cursor:pointer;display:block;padding:15px 18px;background:#f6f9f8;border:1px solid #d8e8e2;border-radius:9px;font-weight:700;color:#275344}
+.assurance-full-review>summary:hover{background:#ecf5f1}
+.assurance-full-review[open]>summary{margin-bottom:16px}
+@media print{.assurance-full-review>summary{display:none}}
+
+/* Bounded, evidence-first batch decision. Never appear as an automatic approval. */
+.assurance-shell .batch-review-panel{border:1px solid #d4e5df;border-radius:10px;background:#f9fcfa;margin:17px 0;padding:18px}
+.batch-review-heading{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}
+.batch-review-heading strong{font-size:1.06rem;color:#173d32}
+.batch-review-heading p{margin:5px 0 10px;font-size:.87rem;color:#476c5e}
+.batch-review-list{display:grid;gap:8px;margin:10px 0}
+.batch-review-item{display:flex;align-items:center;gap:14px;border:1px solid #dbe9e3;border-radius:8px;padding:11px;background:white;cursor:pointer}
+.batch-review-item input{width:19px;height:19px;accent-color:#087056;flex-shrink:0}
+.batch-review-value{display:flex;flex-direction:column;gap:2px;flex:1;overflow-wrap:anywhere}
+.batch-review-value strong{font-size:.95rem}
+.batch-review-value span{font-size:.9rem}
+.batch-review-value small{font-size:.75rem;color:#527064}
+.batch-review-item .source-link{margin-left:auto;white-space:nowrap;font-size:.82rem;font-weight:700}
+.batch-review-reason{display:block;font-weight:650;font-size:.91rem;margin:14px 0 9px}
+.batch-review-reason textarea{display:block;border:1px solid #bccfc7;border-radius:7px;background:#fff;width:100%;margin-top:5px;padding:10px;color:#163e33;font-size:.88rem}
+.batch-review-consent{display:flex;align-items:flex-start;gap:9px;font-size:.86rem;line-height:1.5;cursor:pointer}
+.batch-review-consent input{margin-top:3px;accent-color:#087056}
+.batch-review-submit{display:flex;align-items:center;gap:14px;margin-top:14px}
+.batch-review-result{font-size:.82rem;color:#566b61}
+@media(max-width:740px){.batch-review-item{flex-wrap:wrap}.batch-review-item .source-link{margin-left:32px}.batch-review-submit{flex-direction:column;align-items:flex-start}}
+@media print{.batch-review-item input,.batch-review-consent,.batch-review-submit{display:none!important}.batch-review-panel{break-inside:avoid}}
+
+/* P1: distinguish prior-review hints and observed work from authority status. */
+.assurance-shell .review-delta-strip,.assurance-shell .review-effort-strip{
+  border:1px solid #d8e6df;border-radius:9px;background:#f6faf8;
+  padding:12px 15px;margin:14px 0;color:#35594b;font-size:.86rem
+}
+.assurance-shell .review-delta-strip p,.assurance-shell .review-effort-strip p{
+  margin:5px 0 0;line-height:1.5;color:#567266
+}
+.assurance-shell .review-effort-strip{display:flex;gap:8px 15px;flex-wrap:wrap}
+.assurance-shell .review-effort-strip strong{width:100%}
+.assurance-shell .review-effort-strip span{border:1px solid #d3e1db;border-radius:5px;padding:5px;background:#fff}
+.assurance-shell .review-effort-strip p{width:100%}
+.assurance-shell .review-delta-marker{color:#00694f;font-weight:700}
+
+/* Source PDF printout is not an interactive webpage. Remove app chrome,
+   eliminate giant unsplittable cards and keep provenance readable. */
+@media print{
+  @page { size:A4; margin:13mm 12mm; }
+  body:has(.assurance-shell) .lt-sidebar,
+  body:has(.assurance-shell) .lt-topbar,
+  body:has(.assurance-shell) .lt-app-overlay,
+  body:has(.assurance-shell) [data-app-drawer-overlay]{
+    display:none!important;
+    position:static!important;
+  }
+  body:has(.assurance-shell) .lt-app-shell,
+  body:has(.assurance-shell) .lt-main,
+  body:has(.assurance-shell) .lt-content-frame,
+  body:has(.assurance-shell) .lt-page{
+    position:static!important;display:block!important;min-height:0!important;
+    max-width:none!important;margin:0!important;padding:0!important;
+    transform:none!important;overflow:visible!important;
+  }
+  .assurance-shell{padding:0!important;max-width:none!important;margin:0!important}
+  .assurance-shell .assurance-header{break-after:avoid;page-break-after:avoid}
+  .assurance-shell .assurance-quick-review{
+    margin:8px 0!important;padding:11px!important;
+    box-shadow:none!important;break-inside:auto!important;page-break-inside:auto!important
+  }
+  .assurance-shell .quick-review-head h2{font-size:17px}
+  .assurance-shell .quick-review-metrics{margin:7px 0 10px;gap:7px}
+  .assurance-shell .quick-review-metrics>div{padding:7px}
+  .assurance-shell .quick-review-metrics strong{font-size:18px}
+  .assurance-shell .quick-review-actions{gap:4px}
+  .assurance-shell .quick-review-task{padding:7px;break-inside:avoid}
+  .assurance-shell .quick-review-task p{font-size:11px}
+  .assurance-shell .batch-review-panel{
+    margin:8px 0!important;padding:8px!important;break-inside:auto!important;
+    page-break-inside:auto!important
+  }
+  .assurance-shell .batch-review-list{
+    grid-template-columns:repeat(2,minmax(0,1fr));gap:5px
+  }
+  .assurance-shell .batch-review-item{
+    min-width:0;padding:6px;break-inside:avoid!important;page-break-inside:avoid!important
+  }
+  .assurance-shell .batch-review-value span{font-size:10px}
+  .assurance-shell .batch-review-value small{font-size:9px}
+  .assurance-shell .batch-review-reason,
+  .assurance-shell .quick-review-note,
+  .assurance-shell .batch-review-consent,
+  .assurance-shell .batch-review-submit,
+  .assurance-shell .quick-review-technical,
+  .assurance-shell .assurance-full-review{display:none!important}
+  .assurance-shell .review-effort-strip,.assurance-shell .review-delta-strip{
+    padding:7px;margin:6px 0;break-inside:avoid
+  }
+}
+
+
+/* P1.2: progressive evidence drill-down. An audit record is not a new task. */
+.assurance-evidence-help{margin:10px 0 14px;color:#567064;line-height:1.5;font-size:.89rem}
+.assurance-shell .assurance-evidence-section{padding:0;min-width:0;scroll-margin-top:18px}
+.assurance-shell .assurance-evidence-section[open]{padding:0 17px 17px}
+.assurance-shell .assurance-evidence-summary{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  cursor:pointer;padding:15px 17px;margin:0;list-style:none;
+  color:#244a3d;line-height:1.4
+}
+.assurance-shell .assurance-evidence-summary::-webkit-details-marker,
+.assurance-shell .exception-disclosure>summary::-webkit-details-marker{display:none}
+.assurance-shell .assurance-evidence-section[open]>.assurance-evidence-summary{
+  border-bottom:1px solid #e3ebe7;margin:0 -17px 15px
+}
+.assurance-shell .assurance-evidence-summary:hover,
+.assurance-shell .exception-disclosure>summary:hover{background:#f4f9f7}
+.assurance-shell .assurance-evidence-title{font-weight:720;flex:1;min-width:170px}
+.assurance-shell .assurance-evidence-count{color:#647f74;font-size:.82rem}
+.assurance-shell .assurance-evidence-summary::after,
+.assurance-shell .exception-disclosure>summary::after{
+  content:"+";font-size:1.15rem;color:#436d5b;font-weight:700;margin-left:5px
+}
+.assurance-shell .assurance-evidence-section[open]>.assurance-evidence-summary::after,
+.assurance-shell .exception-disclosure[open]>summary::after{content:"−"}
+.assurance-shell .exception-disclosure{border:1px solid #e2ebe7;border-radius:8px;padding:0;margin:7px 0;scroll-margin-top:18px}
+.assurance-shell .exception-disclosure>summary{padding:10px 13px;list-style:none;cursor:pointer}
+.assurance-shell .exception-disclosure>summary>div{flex:1;min-width:0}
+.assurance-shell .exception-disclosure>summary h3{margin:3px 0 0;font-size:.85rem}
+.assurance-shell .exception-disclosure[open]{padding:0 13px 13px}
+.assurance-shell .exception-disclosure[open]>summary{margin:0 -13px 10px;border-bottom:1px solid #e5ece9}
+.assurance-shell .assurance-evidence-section:focus-within,
+.assurance-shell .exception-disclosure:focus-within{outline-offset:3px}
+@media(max-width:740px){
+  .assurance-shell .assurance-evidence-summary{padding:13px;gap:6px}
+  .assurance-shell .assurance-evidence-count{width:100%;order:3}
+  .assurance-shell .assurance-evidence-summary::after{margin-left:auto}
+}
+@media print{
+  .assurance-shell .assurance-evidence-section[open]{padding:0 8px 8px}
+  .assurance-shell .assurance-evidence-section>.assurance-evidence-summary{padding:8px 0}
+  .assurance-shell .assurance-evidence-summary::after,
+  .assurance-shell .exception-disclosure>summary::after{display:none}
+}
+
+
+/* P1.3: one executable work surface, not a second administrative dossier. */
+.assurance-shell .assurance-evidence-sections{display:grid;gap:10px;min-width:0}
+.assurance-shell .assurance-action-panel{
+  border:1px solid #d7e7e0;border-radius:10px;padding:15px 18px;margin:12px 0;
+  background:#fafdfb;scroll-margin-top:18px
+}
+.assurance-shell .assurance-action-panel .batch-review-heading strong{font-size:1rem}
+.assurance-shell .assurance-identity-card{
+  border-top:1px solid #e3ece7;padding:12px 0 0;margin-top:12px
+}
+.assurance-shell .assurance-identity-facts{display:flex;flex-wrap:wrap;gap:7px 14px;align-items:baseline}
+.assurance-shell .assurance-identity-facts>span{font-size:.9rem;color:#50665e}
+.assurance-shell .assurance-identity-card .identity-form{margin:6px 0;padding:8px 0;gap:9px;border-bottom:0}
+.assurance-shell .assurance-action-footer{display:flex;gap:16px;align-items:center;justify-content:flex-start;flex-wrap:wrap}
+.assurance-shell .assurance-missing-list{padding-left:20px;margin:12px 0 8px;display:grid;gap:8px}
+.assurance-shell .assurance-missing-list li{line-height:1.45}
+.assurance-shell .assurance-missing-list small{display:block;color:#5a7167}
+.assurance-shell .assurance-batch-intro{font-size:.86rem;line-height:1.5;color:#536c62;margin:10px 0}
+.assurance-shell .assurance-select-all{display:flex;align-items:flex-start;gap:8px;margin:7px 0 12px;font-size:.86rem;color:#254b3b;cursor:pointer}
+.assurance-shell .assurance-select-all input{margin-top:3px;accent-color:#087056}
+.assurance-shell .assurance-batch-table{table-layout:auto;background:#fff;border:1px solid #dce9e3;border-radius:7px}
+.assurance-shell .assurance-batch-table th{font-size:.77rem;white-space:nowrap}
+.assurance-shell .assurance-batch-table td{font-size:.84rem;vertical-align:middle;overflow-wrap:anywhere}
+.assurance-shell .assurance-batch-table td:first-child{width:66px;text-align:center}
+.assurance-shell .assurance-batch-table td:nth-child(2){min-width:145px}
+.assurance-shell .assurance-batch-table td:last-child{min-width:130px}
+.assurance-shell .assurance-batch-table td label{cursor:pointer}
+.assurance-shell .assurance-batch-table input[type=checkbox]{width:18px;height:18px;accent-color:#087056}
+.assurance-shell .assurance-batch-table td small{display:block;font-size:.74rem;color:#617c70}
+.assurance-shell .assurance-selection-count{margin:8px 0;color:#4b6959;font-size:.85rem;font-weight:650}
+.assurance-shell .assurance-diagnostic-categories{display:flex;flex-wrap:wrap;gap:6px 12px;margin:9px 0 12px;padding:0;list-style:none}
+.assurance-shell .assurance-diagnostic-categories li{background:#f1f6f3;padding:5px 8px;border-radius:5px;font-size:.81rem}
+.assurance-shell .quick-review-task{padding:11px 13px;gap:10px}
+.assurance-shell .quick-review-task a{padding:8px 10px}
+@media(max-width:760px){
+  .assurance-shell .assurance-batch-table th,.assurance-shell .assurance-batch-table td{padding:7px}
+  .assurance-shell .assurance-batch-table td:nth-child(2){min-width:135px}
+  .assurance-shell .assurance-batch-table td:last-child{min-width:120px}
+  .assurance-shell .assurance-action-panel{padding:12px}
+}
+@media print{
+  .assurance-shell .assurance-select-all,
+  .assurance-shell .assurance-action-footer,
+  .assurance-shell .assurance-batch-table input[type=checkbox]{display:none!important}
+  .assurance-shell .assurance-action-panel{break-inside:auto;background:#fff}
+}

@@ -1,0 +1,48 @@
+<section class="lt-evidence-preview" data-evidence-preview data-viewer-state="loading" hidden role="region" aria-label="Evidence quick preview">
+  <header>
+    <div><strong data-preview-title>Original PDF</strong><small data-preview-meta role="status">Loading verified original…</small></div>
+    <div class="lt-evidence-preview__actions">
+      <button type="button" data-preview-pin>Expand</button>
+      <button type="button" data-preview-close aria-label="Dismiss PDF preview">Close</button>
+    </div>
+  </header>
+  <div class="lt-evidence-preview__canvas">
+    <div class="lt-pdf-loading" data-preview-loading aria-hidden="true"><span class="lt-pdf-loading__spinner"></span><span>Preparing evidence preview…</span></div>
+    <canvas data-preview-canvas aria-label="Original PDF preview"></canvas>
+  </div>
+</section>
+<dialog class="lt-source-inspector" data-source-inspector aria-labelledby="source-inspector-title">
+  <section class="lt-source-inspector__panel" aria-label="Original source PDF inspector">
+    <header class="lt-source-inspector__header">
+      <div class="min-w-0">
+        <p class="text-[11px] font-bold uppercase tracking-widest text-emerald-700">Source evidence · read-only</p>
+        <h2 id="source-inspector-title" class="mt-1 truncate text-sm font-bold text-slate-950" data-inspector-title>Original PDF</h2>
+        <p class="text-[11px] text-slate-600" data-inspector-locator>Review the page before confirming this value.</p>
+      </div>
+      <button type="button" class="lt-source-inspector__close" data-source-inspector-close aria-label="Close source inspector">×</button>
+    </header>
+    <div class="lt-source-inspector__body">
+      <p class="lt-source-inspector__status" role="status" data-inspector-status hidden></p>
+      <div class="lt-source-inspector__toolbar" aria-label="PDF controls">
+        <button type="button" data-pdf-previous-page aria-label="Previous page">Previous</button>
+        <span data-pdf-page-number>Page —</span>
+        <button type="button" data-pdf-next-page aria-label="Next page">Next</button>
+        <span class="lt-source-inspector__toolbar-spacer"></span>
+        <button type="button" data-pdf-zoom-out aria-label="Zoom out">−</button>
+        <span data-pdf-zoom>Zoom —</span>
+        <button type="button" data-pdf-zoom-in aria-label="Zoom in">+</button>
+      </div>
+      <div class="lt-source-inspector__canvas-wrap" data-pdf-canvas-wrap>
+        <div class="lt-pdf-loading" data-inspector-loading aria-hidden="true">
+          <span class="lt-pdf-loading__spinner"></span>
+          <span>Preparing verified PDF…</span>
+        </div>
+        <canvas data-inspector-canvas aria-label="Verified original PDF page"></canvas>
+      </div>
+      <div class="lt-source-inspector__fallback">
+        <span>Originals may expire under your retention policy. If unavailable, request the original; a worksheet is not independent evidence.</span>
+        <a href="#" target="_blank" rel="noopener noreferrer" data-inspector-external>Open original in new tab</a>
+      </div>
+    </div>
+  </section>
+</dialog>

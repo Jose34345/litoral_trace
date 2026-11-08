@@ -17,8 +17,6 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from shapely import wkt as shapely_wkt
-from shapely.geometry import mapping
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -222,6 +220,11 @@ def _round_coordinates(value: Any) -> Any:
 def _plot_geojson(lote: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
     polygon_wkt = str(lote.get("polygon_wkt") or "").strip()
     if polygon_wkt:
+        try:
+            from shapely import wkt as shapely_wkt
+            from shapely.geometry import mapping
+        except ImportError:
+            return None, "GEOMETRY_ENGINE_UNAVAILABLE"
         try:
             geometry = shapely_wkt.loads(polygon_wkt)
         except Exception:

@@ -236,6 +236,17 @@ async function copyFontAwesome() {
 }
 
 
+async function copyPdfJs() {
+  const sourceDirectory = resolve(nodeModules, "pdfjs-dist", "build");
+  const destinationDirectory = resolve(vendorRoot, "pdfjs");
+  await mkdir(destinationDirectory, {recursive:true});
+  await Promise.all([
+    copyFile(resolve(sourceDirectory, "pdf.min.mjs"), resolve(destinationDirectory, "pdf.min.mjs")),
+    copyFile(resolve(sourceDirectory, "pdf.worker.min.mjs"), resolve(destinationDirectory, "pdf.worker.min.mjs")),
+  ]);
+}
+
+
 await rm(
   vendorRoot,
   {
@@ -255,6 +266,7 @@ await Promise.all([
   copyHtmx(),
   copyLeaflet(),
   copyFontAwesome(),
+  copyPdfJs(),
 ]);
 
 console.log(
@@ -272,3 +284,4 @@ console.log(
 console.log(
   "- Font Awesome 6.5.1",
 );
+console.log("- PDF.js 4.10.38");

@@ -41,10 +41,6 @@ from litoral_trace.api.lotes import (
     crear_lote,
     eliminar_lote,
 )
-from litoral_trace.api.satellite import (
-    SatelliteQueryByLoteRequest,
-    consultar_ndvi_satelital_lote_endpoint,
-)
 from litoral_trace.api.settings import (
     InviteDemoUserRequest,
     generar_invitacion_demo_endpoint,
@@ -1239,7 +1235,7 @@ def test_batch_upload_and_vault_download_emit_audit_events(
     )
 
 
-def test_settings_satellite_and_platform_admin_emit_audit_events(
+def test_settings_and_platform_admin_emit_audit_events(
     monkeypatch,
 ):
     user = _authenticated_context()
@@ -1305,114 +1301,6 @@ def test_settings_satellite_and_platform_admin_emit_audit_events(
         forbidden_values=[
             "prospecto@example.com"
         ],
-    )
-
-    monkeypatch.setattr(
-        (
-            "litoral_trace.api.satellite."
-            "get_cached_satellite_data"
-        ),
-        lambda _cache_key: (
-            None,
-            0,
-        ),
-    )
-    monkeypatch.setattr(
-        (
-            "litoral_trace.api.satellite."
-            "set_cached_satellite_data"
-        ),
-        lambda *_args, **_kwargs: (
-            True,
-            0,
-        ),
-    )
-    monkeypatch.setattr(
-        (
-            "litoral_trace.api.satellite."
-            "consultar_serie_temporal_ndvi_gee"
-        ),
-        lambda **_kwargs: {
-            "status": "success",
-            "gee_connected": False,
-            "gee_initialization_ms": 0,
-            "gee_query_ms": 0,
-            "observations": [
-                {
-                    "observation_date": (
-                        "2026-08-01"
-                    ),
-                    "ndvi_mean": 0.61,
-                    (
-                        "scene_cloud_"
-                        "percentage"
-                    ): 4.0,
-                    (
-                        "valid_pixel_"
-                        "percentage"
-                    ): 97.0,
-                    "satellite": (
-                        "Sentinel-2_TestMock"
-                    ),
-                    "collection": (
-                        "COPERNICUS/"
-                        "S2_SR_HARMONIZED"
-                    ),
-                    "processing_date": (
-                        "2026-08-08T00:00:"
-                        "00+00:00"
-                    ),
-                }
-            ],
-        },
-    )
-
-    satellite_response = asyncio.run(
-        consultar_ndvi_satelital_lote_endpoint(
-            SatelliteQueryByLoteRequest(
-                lote_id=101,
-                start_date="2026-07-01",
-                end_date="2026-08-01",
-            ),
-            request=_build_request(
-                method="POST",
-                path=(
-                    "/api/v1/satellite/ndvi"
-                ),
-                request_id=(
-                    "satellite-success-request"
-                ),
-            ),
-            user=user,
-        )
-    )
-
-    assert (
-        satellite_response.status_code
-        == status.HTTP_200_OK
-    )
-
-    satellite_event = _latest_audit(
-        AuditAction.SATELLITE_NDVI_RUN.value
-    )
-
-    assert (
-        satellite_event.after_data[
-            "outcome"
-        ]
-        == AuditOutcome.SUCCESS.value
-    )
-    assert (
-        satellite_event.after_data[
-            "metadata"
-        ]["total_observations"]
-        == 1
-    )
-    assert (
-        satellite_event.after_data[
-            "metadata"
-        ]["start_date"]
-        == "2026-07-01"
     )
 
     suffix = uuid4().hex[:8]
@@ -1669,78 +1557,4 @@ def test_settings_satellite_and_platform_admin_emit_audit_events(
             "metadata"
         ]["is_active"]
         is False
-    )
-
-
-def test_satellite_unexpected_failure_is_audited_without_error_details(
-    monkeypatch,
-):
-    user = _authenticated_context()
-
-    monkeypatch.setattr(
-        (
-            "litoral_trace.api.satellite."
-            "get_cached_satellite_data"
-        ),
-        lambda _cache_key: (
-            None,
-            0,
-        ),
-    )
-    monkeypatch.setattr(
-        (
-            "litoral_trace.api.satellite."
-            "consultar_serie_temporal_ndvi_gee"
-        ),
-        lambda **_kwargs: (
-            _ for _ in ()
-        ).throw(
-            RuntimeError(
-                "gee secret exploded"
-            )
-        ),
-    )
-
-    with pytest.raises(
-        RuntimeError
-    ):
-        asyncio.run(
-            consultar_ndvi_satelital_lote_endpoint(
-                SatelliteQueryByLoteRequest(
-                    lote_id=101
-                ),
-                request=_build_request(
-                    method="POST",
-                    path=(
-                        "/api/v1/satellite/ndvi"
-                    ),
-                    request_id=(
-                        "satellite-failure-request"
-                    ),
-                ),
-                user=user,
-            )
-        )
-
-    failure_event = _latest_audit(
-        AuditAction.SATELLITE_NDVI_RUN.value
-    )
-
-    assert (
-        failure_event.after_data[
-            "outcome"
-        ]
-        == AuditOutcome.FAILURE.value
-    )
-    assert (
-        failure_event.after_data[
-            "metadata"
-        ]["status_code"]
-        == 500
-    )
-    assert (
-        "gee secret exploded"
-        not in _serialized_audit_event(
-            failure_event
-        )
     )

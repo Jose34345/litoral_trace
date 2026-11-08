@@ -1,7 +1,9 @@
 """Modelo Organization - Entidad raíz multi-tenant."""
 from __future__ import annotations
+from datetime import datetime
+from uuid import UUID
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Text, Boolean
+from sqlalchemy import String, Text, Boolean, DateTime, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from litoral_trace.db.base import Base, TimestampMixin
 
@@ -11,7 +13,6 @@ if TYPE_CHECKING:
     from litoral_trace.db.models.audit_log import AuditLog
     from litoral_trace.db.models.api_key import ApiKey
     from litoral_trace.db.models.license import License
-    from litoral_trace.db.models.satellite_job import SatelliteJob
     from litoral_trace.db.models.user_session import UserSession
 
 class Organization(Base, TimestampMixin):
@@ -25,6 +26,37 @@ class Organization(Base, TimestampMixin):
     tier: Mapped[str] = mapped_column(String(50), nullable=False, default="pro")  # free, pro, enterprise
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_sandbox: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    sandbox_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    support_debug_consent: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    debug_retention_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_as_sandbox: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    sandbox_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    sandbox_converted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    sandbox_attribution_session_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        nullable=True,
+    )
 
     # Relaciones
     users: Mapped[list[User]] = relationship("User", back_populates="organization", cascade="all, delete-orphan")
@@ -32,8 +64,10 @@ class Organization(Base, TimestampMixin):
     audit_logs: Mapped[list[AuditLog]] = relationship("AuditLog", back_populates="organization", cascade="all, delete-orphan")
     api_keys: Mapped[list[ApiKey]] = relationship("ApiKey", back_populates="organization", cascade="all, delete-orphan")
     licenses: Mapped[list[License]] = relationship("License", back_populates="organization", cascade="all, delete-orphan")
-    satellite_jobs: Mapped[list[SatelliteJob]] = relationship("SatelliteJob", back_populates="organization", cascade="all, delete-orphan", overlaps="lote,satellite_jobs")
     sessions: Mapped[list[UserSession]] = relationship("UserSession", back_populates="organization", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
-        return f"<Organization id={self.id} slug='{self.slug}' tier='{self.tier}'>"
+        return (
+            f"<Organization id={self.id} slug='{self.slug}' tier='{self.tier}' "
+            f"is_sandbox={self.is_sandbox}>"
+        )
