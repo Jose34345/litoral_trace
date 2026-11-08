@@ -272,11 +272,11 @@
   "canonical": {
     "shipment_fields": {
       "manufacturer_id": {
-        "state": "SUPPORTED",
+        "state": "REVIEW_REQUIRED",
         "values": [
           "VNMKHOM123HCM"
         ],
-        "publication_status": "FOUND",
+        "publication_status": "REVIEW",
         "issue_types": []
       }
     },
@@ -445,10 +445,10 @@
   },
   "expected_diff": {
     "comparable_slots": 19,
-    "agreement_count": 19,
+    "agreement_count": 18,
     "shadow_supported_but_canonical_missing": 0,
     "canonical_supported_but_shadow_missing": 0,
-    "false_conflict_count": 0,
+    "false_conflict_count": 1,
     "safe_review_count": 0
   }
 }

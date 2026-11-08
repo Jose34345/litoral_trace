@@ -1,0 +1,20 @@
+# Local metadata, development environments and credentials
+**/.git
+**/.venv
+venv
+env
+**/.aws
+**/.env
+**/.env.*
+**/.envrc
+!.env.example
+!.env.assurance-pilot-staging.example
+
+# Local data and PostgreSQL recovery artifacts
+backups/postgres
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*.dump
+**/*.backup
+**/*.sql.gz

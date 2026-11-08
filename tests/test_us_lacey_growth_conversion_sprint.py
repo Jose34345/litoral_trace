@@ -11,11 +11,13 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
+import litoral_trace.web.us_lacey_pilot_app as pilot
 import litoral_trace.web.us_lacey_sandbox as sandbox
 from litoral_trace.us_lacey.growth_attribution import (
     OUTREACH_ATTRIBUTION_COOKIE,
     OutreachAttributionSession,
 )
+from litoral_trace.us_lacey.portal_auth import US_LACEY_SESSION_COOKIE
 from litoral_trace.web.us_lacey_unified_app import app
 
 from pathlib import Path
@@ -101,6 +103,42 @@ def test_public_sample_get_does_not_record_scanner_as_engaged(
     assert "us_lacey_outreach_human_visit.js" in response.text
     assert "Request a 15-minute workflow review" in response.text
     assert "mailto:comercial@litoraltrace.com" in response.text
+
+
+def test_automatic_review_workspace_get_records_reach_without_qualifying_lead(
+    monkeypatch,
+):
+    events = []
+    operation_id = UUID("1f969507-e12b-4c7c-9796-220a5d20a5fb")
+    monkeypatch.setattr(
+        pilot,
+        "_operational_context",
+        lambda _token: (SimpleNamespace(organization_id=7), None),
+    )
+    monkeypatch.setattr(
+        pilot.UsLaceyOperationService,
+        "get_detail",
+        lambda self, **kwargs: SimpleNamespace(public_id=operation_id, fields=()),
+    )
+    monkeypatch.setattr(
+        pilot.UsLaceyEngineDossierService,
+        "get_dossier",
+        lambda self, **kwargs: None,
+    )
+    monkeypatch.setattr(pilot, "render_operation_workspace", lambda **kwargs: "<p>Review</p>")
+    monkeypatch.setattr(pilot, "safe_record_outreach_event", lambda **event: events.append(event))
+
+    client = TestClient(app)
+    client.cookies.set(US_LACEY_SESSION_COOKIE, "synthetic-session")
+    response = client.get(
+        f"/operations/{operation_id}/workspace-fragment?include_product_intelligence=1"
+    )
+
+    assert response.status_code == 200
+    assert response.text == "<p>Review</p>"
+    assert [(event["event_name"], event["event_key"]) for event in events] == [
+        ("REVIEW_REACHED", str(operation_id)),
+    ]
 
 
 def test_browser_visible_sample_post_records_likely_human_and_sample_events(

@@ -40,4 +40,6 @@ def test_enterprise_ux_31_40_contract() -> None:
     # 40: signup/claim is framed as preserving the workspace, not starting over.
     assert "Keep this workspace" in base
     assert "Keep this workspace" in claim
-    assert "Keep this workspace and unlock 4 more shipments" in claim
+    # Verification now precedes the promotion to four additional shipments.
+    assert "Send verification link to my work email" in claim
+    assert "Verify your work email" in claim

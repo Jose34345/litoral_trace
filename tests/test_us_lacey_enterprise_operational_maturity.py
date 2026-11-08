@@ -77,7 +77,7 @@ def test_exception_review_is_task_based_and_auditable() -> None:
     assert "data-source-inspect" in template
     for action in ("Accept", "Enter verified value", "Request evidence", "Mark not applicable"):
         assert action in template
-    assert "Resolved by Litoral Trace" in template
+    assert "Value detected" in template
     assert "Authorized reviewer" in template
     assert 'id="request-evidence-dialog"' in template
     assert "does not send supplier email on your behalf" in template

@@ -141,6 +141,11 @@ _AUTHORITY = {
 }
 
 
+def has_listed_field_source(field_key: str, document_type: str) -> bool:
+    """Identify source types explicitly ranked for this field, excluding the fallback."""
+    return document_type in _AUTHORITY.get(field_key, {})
+
+
 def authority(field_key: str, document_type: DocumentType) -> float:
     # House/master B/L are scoped representations of the same carrier-backed
     # identifier. Their authority must not silently drop to the default score.

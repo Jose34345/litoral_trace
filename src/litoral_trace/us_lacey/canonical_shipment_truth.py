@@ -32,6 +32,7 @@ from litoral_trace.db.models import (
 from litoral_trace.us_lacey.cross_document_line_identity import (
     reconcile_cross_document_line_identity,
 )
+from litoral_trace.us_lacey.document_field_authority import is_extracted_header_source
 from litoral_trace.us_lacey.ppq505 import (
     PPQ505_FIELDS_BY_KEY,
     PPQ505_PLANT_FIELDS,
@@ -69,6 +70,8 @@ class CanonicalEvidence:
     line_key: str | None
     component_key: str | None
     evidence_class: str
+    document_type: str = ""
+    filename: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +80,7 @@ class CanonicalFieldTruth:
     state: CanonicalTruthState
     values: tuple[str, ...]
     evidence: tuple[CanonicalEvidence, ...]
+    primary_source: CanonicalEvidence | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +199,8 @@ def _evidence(row: Mapping, *, fallback_field: str) -> CanonicalEvidence:
         evidence_class=str(
             provenance.get("evidence_class") or raw.get("evidence_class") or ""
         ),
+        document_type=str(_candidate_payload(row).get("document_type") or ""),
+        filename=str(provenance.get("filename") or ""),
     )
 
 
@@ -283,6 +289,58 @@ def _field_truth(
         values=_distinct_values(rows, target_key=target_key),
         evidence=rows,
     )
+
+
+def _evidence_rank(row: CanonicalEvidence) -> tuple[float, float, str]:
+    return row.source_authority, row.candidate_score, row.candidate_id
+
+
+def _guard_shipment_field_source(
+    field: CanonicalFieldTruth,
+    *,
+    aggregate_state: str,
+    evidence_by_field: Mapping[str, tuple[CanonicalEvidence, ...]],
+) -> CanonicalFieldTruth:
+    if field.state in {CanonicalTruthState.CONFLICT, CanonicalTruthState.MISSING}:
+        return field
+    if not field.values:
+        return replace(field, state=CanonicalTruthState.REVIEW_REQUIRED)
+
+    def source_is_eligible(row: CanonicalEvidence) -> bool:
+        return bool(row.candidate_id and row.source_text.strip()) and is_extracted_header_source(
+            field.field_name, document_type=row.document_type, filename=row.filename,
+            source_page=row.source_page, evidence_class=row.evidence_class,
+        )
+
+    rows = field.evidence
+    eligible = tuple(row for row in rows if source_is_eligible(row))
+    force_review = field.state is CanonicalTruthState.REVIEW_REQUIRED
+    if field.field_name == "bill_of_lading":
+        direct_sources = eligible
+        # An exact scoped carrier anchor can explain an existing untyped
+        # reference. Preserve the original scope and all secondary citations.
+        value_key = canonical_ppq_value_key(field.field_name, field.values[0])
+        scoped_sources = tuple(
+            row
+            for key in ("house_bill_of_lading", "master_bill_of_lading")
+            for row in evidence_by_field.get(key, ())
+            if source_is_eligible(row)
+            and canonical_ppq_value_key(field.field_name, row.normalized_value) == value_key
+        )
+        eligible = (*direct_sources, *scoped_sources)
+        rows = (*rows, *scoped_sources)
+        force_review = (
+            force_review or not direct_sources
+            or aggregate_state == CanonicalTruthState.REVIEW_REQUIRED.value
+        )
+    elif len(eligible) == len(rows):
+        return field
+
+    state = (
+        CanonicalTruthState.REVIEW_REQUIRED if force_review or not eligible
+        else _field_state(target_key=field.field_name, aggregate_state=aggregate_state, rows=eligible)
+    )
+    return replace(field, state=state, evidence=rows, primary_source=max(eligible, key=_evidence_rank, default=None))
 
 
 def _ordinal(key: str) -> int | None:
@@ -1223,12 +1281,18 @@ def build_canonical_shipment_truth(payload: Mapping) -> CanonicalShipmentTruth:
         contract = PPQ505_FIELDS_BY_KEY.get(target)
         if contract is None or contract.scope is not PpqScope.SHIPMENT:
             continue
-        shipment_fields[target] = _field_truth(
+        field = _field_truth(
             target_key=target,
             field_payload=field_payload,
             rows=evidence_by_field.get(engine_key, ()),
             force_review=engine_key in low_authority_fields,
         )
+        if target in {"bill_of_lading", "estimated_arrival_date", "manufacturer_id"}:
+            field = _guard_shipment_field_source(
+                field, aggregate_state=str(field_payload.get("state") or "MISSING"),
+                evidence_by_field=evidence_by_field,
+            )
+        shipment_fields[target] = field
 
     composed_description = _composed_merchandise_description(plant_lines)
     if composed_description is not None:
@@ -1253,12 +1317,7 @@ def _confidence(score: float) -> float:
 
 
 def _primary_evidence(field: CanonicalFieldTruth) -> CanonicalEvidence | None:
-    if not field.evidence:
-        return None
-    return max(
-        field.evidence,
-        key=lambda row: (row.source_authority, row.candidate_score, row.candidate_id),
-    )
+    return field.primary_source or max(field.evidence, key=_evidence_rank, default=None)
 
 
 def _candidate_fingerprint(

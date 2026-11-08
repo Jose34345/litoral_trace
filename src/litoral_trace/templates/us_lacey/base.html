@@ -88,7 +88,9 @@
         </div>
         <progress class="lt-usage-progress mt-2" max="{{ entitlement.evaluation_total_operations }}" value="{{ entitlement.evaluation_completed_operations }}" aria-label="Evaluation shipment usage"></progress>
         <p class="mt-2 text-[10px] leading-4 text-slate-400">
-          {% if entitlement.evaluation_read_only %}
+          {% if entitlement.evaluation_status == 'EXHAUSTED' %}
+            No new shipments · Finish pending review
+          {% elif entitlement.evaluation_read_only %}
             Read-only evaluation
           {% elif entitlement.evaluation_can_claim %}
             {{ entitlement.evaluation_remaining_operations }} shipments remaining · Keep this workspace to continue
@@ -219,7 +221,7 @@
   <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
     <div>
       <p class="text-xs font-bold text-slate-950">Five-shipment evaluation complete.</p>
-      <p class="mt-0.5 text-[11px] leading-5 text-slate-600">Your results remain available read-only. Continue with Litoral Trace to create or modify shipments.</p>
+      <p class="mt-0.5 text-[11px] leading-5 text-slate-600">Existing results remain available. Any counted shipment awaiting review may still be completed; new shipments and document uploads are locked.</p>
     </div>
     <a href="/billing?evaluation=complete" class="inline-flex items-center rounded-lg border border-amber-300 bg-white px-3.5 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100">Continue with Litoral Trace</a>
   </div>

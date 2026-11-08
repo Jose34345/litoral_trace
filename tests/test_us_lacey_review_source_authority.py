@@ -9,7 +9,9 @@ from litoral_trace.us_lacey.quick_review_eligibility import quick_accept_eligibl
 
 class SourceRows:
     def __init__(self, row):
-        self.row = row
+        self.row = None if row is None else (
+            *row[:4], row[4] if len(row) > 4 else None, "application/pdf", "UNKNOWN",
+        )
         self.statement = None
 
     def execute(self, statement):

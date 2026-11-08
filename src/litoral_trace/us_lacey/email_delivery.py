@@ -99,7 +99,17 @@ def load_us_lacey_email_config() -> UsLaceyEmailConfig:
     )
 
 
-def _verification_message(*, company_name: str, verification_url: str) -> tuple[str, str]:
+def _verification_message(
+    *, company_name: str, verification_url: str, evaluation: bool = False,
+) -> tuple[str, str]:
+    if evaluation:
+        return (
+            "Confirm your Litoral Trace evaluation email",
+            "Confirm your work email to keep your Litoral Trace evaluation:\n"
+            f"{verification_url}\n\n"
+            "This link expires in 30 minutes. Open it in the browser where you "
+            "started the evaluation. If you did not request it, ignore this message.",
+        )
     subject = "Verify your Litoral Trace account"
     body = (
         "Welcome to Litoral Trace.\n\n"
@@ -228,6 +238,7 @@ def send_us_lacey_verification_email(
     verification_token: str,
     config: UsLaceyEmailConfig | None = None,
     public_origin: str | None = None,
+    evaluation: bool = False,
 ) -> None:
     recipient = str(recipient or "").strip().lower()
     if not recipient or "@" not in recipient:
@@ -242,10 +253,12 @@ def send_us_lacey_verification_email(
         origin = f"https://{runtime.app_hostname.strip().lower()}"
     if not origin.lower().startswith("https://"):
         raise UsLaceyEmailDeliveryError("Verification origin must use HTTPS.")
-    verification_url = f"{origin}/verify-email?token={token}"
+    route = "/evaluation/verify" if evaluation else "/verify-email"
+    verification_url = f"{origin}{route}?token={token}"
     subject, body = _verification_message(
         company_name=company_name,
         verification_url=verification_url,
+        evaluation=evaluation,
     )
 
     if settings.provider == "brevo_api":

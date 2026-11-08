@@ -40,8 +40,13 @@ from litoral_trace.us_lacey.audit_trail import (
 )
 from litoral_trace.us_lacey.evaluation import (
     UsLaceyEvaluationError,
-    claim_evaluation,
+    can_finish_exhausted_evaluation_operation,
+    get_evaluation_state,
     touch_evaluation_activity,
+)
+from litoral_trace.us_lacey.evaluation_claim_email import (
+    complete_evaluation_claim_email,
+    request_evaluation_claim_email,
 )
 from litoral_trace.us_lacey.evidence_catalog import UsLaceyEvidenceCatalogService
 from litoral_trace.us_lacey.email_delivery import (
@@ -130,10 +135,13 @@ from litoral_trace.web.us_lacey_operational_views import (
     render_trust_center,
 )
 from litoral_trace.web.us_lacey_source_inspector import stream_current_pdf
+from litoral_trace.web.us_lacey_uploads import read_operation_uploads
+from litoral_trace.web.us_lacey_multipart_limits import LaceyMultipartBudgetMiddleware
 from litoral_trace.web.us_lacey_audit_views import render_audit_log_list
 from litoral_trace.web.us_lacey_evaluation_views import (
     render_evaluation_claim,
     render_evaluation_upgrade,
+    render_evaluation_verify,
 )
 from litoral_trace.web.us_lacey_supplier_views import (
     render_supplier_detail,
@@ -160,7 +168,51 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
+app.add_middleware(LaceyMultipartBudgetMiddleware)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.middleware("http")
+async def _refresh_claimed_evaluation_cookie(request: Request, call_next):
+    """Match browser cookie expiry to the server's sliding inactivity deadline."""
+    response = await call_next(request)
+    path = request.url.path
+    if not path.startswith((
+        "/operations", "/evaluation", "/suppliers", "/evidence",
+        "/audit-log", "/billing", "/regulatory", "/trust",
+    )):
+        return response
+    token = request.cookies.get(US_LACEY_SESSION_COOKIE)
+    if not token or response.status_code >= 400:
+        return response
+    if US_LACEY_SESSION_COOKIE + "=" in response.headers.get("set-cookie", ""):
+        return response
+    try:
+        identity = resolve_us_lacey_session(token)
+        state = get_evaluation_state(organization_id=identity.organization_id)
+        if not state or not state.claimed or state.inactive_expires_at is None:
+            return response
+        expiry = state.inactive_expires_at
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        seconds = int((expiry - datetime.now(timezone.utc)).total_seconds())
+        if seconds <= 0:
+            return response
+        response.set_cookie(
+            US_LACEY_SESSION_COOKIE, token,
+            max_age=seconds, httponly=True,
+            secure=load_us_lacey_portal_config().session_cookie_secure,
+            samesite="lax", path="/",
+        )
+    except (UsLaceyPortalAuthError, UsLaceyEvaluationError,
+            UsLaceyPortalConfigurationError):
+        pass
+    except Exception:
+        # Never turn a successful authenticated page into an error because a
+        # best-effort browser-cookie refresh failed.
+        LOGGER.warning("us_lacey_evaluation_cookie_refresh_failed")
+    return response
+
 
 # Shadow-only, deny-by-default Assurance V2. OFF unless explicitly enabled in
 # staging. Never bypasses legacy portal sessions or creates export authority.
@@ -242,13 +294,24 @@ def _operational_context(
     return identity, entitlement
 
 
-def _operational_mutation_context(us_session: str | None):
-    """Resolve the normal workspace context, then block read-only evaluations."""
+def _operational_mutation_context(
+    us_session: str | None, *, review_operation_id: str | None = None,
+):
+    """Preserve completed evaluations as read-only except unfinished counted review."""
     identity, entitlement = _operational_context(us_session)
     if bool(getattr(entitlement, "evaluation_read_only", False)):
-        raise UsLaceyOperationalAccessError(
-            "This evaluation is read-only. Continue with Litoral Trace to make changes."
+        can_finish = (
+            review_operation_id is not None
+            and getattr(entitlement, "evaluation_status", None) == "EXHAUSTED"
+            and can_finish_exhausted_evaluation_operation(
+                organization_id=identity.organization_id,
+                operation_public_id=review_operation_id,
+            )
         )
+        if not can_finish:
+            raise UsLaceyOperationalAccessError(
+                "This evaluation is read-only. Continue with Litoral Trace to make changes."
+            )
     return identity, entitlement
 
 
@@ -307,18 +370,12 @@ def _workspace_fragment(
         organization_id=identity.organization_id,
         operation_public_id=operation_public_id,
     )
+    # HTMX also loads this fragment automatically after processing.
     safe_record_outreach_event(
         session_token=us_session,
         organization_id=identity.organization_id,
         event_name="REVIEW_REACHED",
         event_key=str(detail.public_id),
-    )
-    safe_record_outreach_event(
-        session_token=us_session,
-        organization_id=identity.organization_id,
-        event_name="PQL_QUALIFIED",
-        event_key="review-reached",
-        metadata={"reason": "review_reached"},
     )
     try:
         engine2_dossier = UsLaceyEngineDossierService().get_dossier(
@@ -981,9 +1038,95 @@ def evaluation_claim_submit(
             purpose="evaluation:claim",
             submitted_token=csrf_token,
         )
-        result = claim_evaluation(
+        if not bool(getattr(entitlement, "evaluation_can_claim", False)):
+            return RedirectResponse("/operations", status_code=303)
+        portal = load_us_lacey_portal_config()
+
+        def deliver(recipient: str, challenge: str) -> None:
+            send_us_lacey_verification_email(
+                recipient=recipient,
+                company_name="Litoral Trace evaluation",
+                verification_token=challenge,
+                public_origin=portal.public_origin,
+                evaluation=True,
+            )
+
+        email = request_evaluation_claim_email(
             session_token=us_session or "",
             work_email=work_email,
+            verification_delivery=deliver,
+        )
+        return _html(render_check_email(request=request, email=email))
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except (UsLaceyCsrfError, UsLaceyEvaluationError, UsLaceyPortalConfigurationError) as exc:
+        return _html(
+            render_evaluation_claim(
+                request=request,
+                identity=identity,
+                entitlement=entitlement,
+                csrf_token=us_lacey_csrf_token(
+                    session_token=us_session or "",
+                    purpose="evaluation:claim",
+                ),
+                error=str(exc),
+            ),
+            status_code=400,
+        )
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+
+
+@app.get("/evaluation/verify", response_class=HTMLResponse)
+def evaluation_verify_page(
+    request: Request,
+    token: str = "",
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    if not token or len(token) > 256:
+        return _html(
+            render_verification_error(
+                request=request, message="Verification link is invalid or expired."
+            ), status_code=400,
+        )
+    try:
+        identity, entitlement = _operational_context(us_session)
+    except UsLaceyPortalAuthError:
+        return _login_redirect(clear_cookie=bool(us_session))
+    except UsLaceyOperationalAccessError:
+        return RedirectResponse("/billing", status_code=303)
+    if bool(getattr(entitlement, "evaluation_claimed", False)):
+        return RedirectResponse("/operations", status_code=303)
+    if not bool(getattr(entitlement, "evaluation_can_claim", False)):
+        return RedirectResponse("/operations/new", status_code=303)
+    response = _html(render_evaluation_verify(
+        request=request, identity=identity, entitlement=entitlement,
+        csrf_token=us_lacey_csrf_token(
+            session_token=us_session or "", purpose="evaluation:verify",
+        ),
+        verification_token=token,
+    ))
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@app.post("/evaluation/verify", response_class=HTMLResponse)
+def evaluation_verify_submit(
+    request: Request,
+    verification_token: str = Form(...),
+    csrf_token: str = Form(...),
+    us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
+):
+    try:
+        identity, entitlement = _operational_context(us_session)
+        verify_us_lacey_csrf(
+            session_token=us_session or "",
+            purpose="evaluation:verify",
+            submitted_token=csrf_token,
+        )
+        result = complete_evaluation_claim_email(
+            session_token=us_session or "",
+            verification_token=verification_token,
         )
         safe_record_outreach_event(
             session_token=us_session or "",
@@ -999,12 +1142,7 @@ def evaluation_claim_submit(
         response = RedirectResponse("/operations", status_code=303)
         max_age = max(
             1,
-            int(
-                (
-                    result.inactive_expires_at
-                    - datetime.now(timezone.utc)
-                ).total_seconds()
-            ),
+            int((result.inactive_expires_at - datetime.now(timezone.utc)).total_seconds()),
         )
         response.set_cookie(
             key=US_LACEY_SESSION_COOKIE,
@@ -1021,20 +1159,12 @@ def evaluation_claim_submit(
         return _login_redirect(clear_cookie=bool(us_session))
     except (UsLaceyCsrfError, UsLaceyEvaluationError) as exc:
         return _html(
-            render_evaluation_claim(
-                request=request,
-                identity=identity,
-                entitlement=entitlement,
-                csrf_token=us_lacey_csrf_token(
-                    session_token=us_session or "",
-                    purpose="evaluation:claim",
-                ),
-                error=str(exc),
-            ),
+            render_verification_error(request=request, message=str(exc)),
             status_code=400,
         )
     except UsLaceyOperationalAccessError:
         return RedirectResponse("/billing", status_code=303)
+
 
 
 def _anonymous_resumable_operation(*, identity, entitlement):
@@ -1103,6 +1233,8 @@ async def new_operation_submit(
             purpose="operation:create",
             submitted_token=csrf_token,
         )
+        uploads = [upload for upload in (documents or ()) if upload.filename]
+        payloads = await read_operation_uploads(uploads, document_role=document_role) if uploads else ()
         resumable = _anonymous_resumable_operation(
             identity=identity,
             entitlement=entitlement,
@@ -1132,24 +1264,12 @@ async def new_operation_submit(
                 event_key=created_public_id,
             )
 
-        uploads = [upload for upload in (documents or ()) if upload.filename]
-        if uploads:
-            payloads: list[tuple[str, str, bytes, str]] = []
-            for upload in uploads:
-                content = await upload.read()
-                if not content:
-                    raise UsLaceyWorkflowError("The uploaded document is empty.")
-                payloads.append((
-                    upload.filename or "document",
-                    upload.content_type or "application/octet-stream",
-                    content,
-                    document_role,
-                ))
+        if payloads:
             upload_and_enqueue_us_lacey_document_batch(
                 organization_id=identity.organization_id,
                 user_id=identity.user_id,
                 operation_public_id=created_public_id,
-                documents=tuple(payloads),
+                documents=payloads,
             )
             safe_record_outreach_event(
                 session_token=us_session or "",
@@ -1248,7 +1368,7 @@ def operation_applicability_attest(
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
-        identity, _ = _operational_mutation_context(us_session)
+        identity, _ = _operational_mutation_context(us_session, review_operation_id=operation_public_id)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"applicability:{operation_public_id}",
@@ -1556,6 +1676,13 @@ async def operation_upload_submit(
             purpose=f"upload:{operation_public_id}",
             submitted_token=csrf_token,
         )
+        uploads = list(documents or ())
+        if document is not None:
+            uploads.append(document)
+        if not uploads:
+            raise UsLaceyWorkflowError("Choose at least one shipment or supplier document.")
+        payloads = await read_operation_uploads(uploads, document_role=document_role)
+
         if (
             learning_consent == "accepted"
             and entitlement.evaluation_status == "ANONYMOUS"
@@ -1574,29 +1701,11 @@ async def operation_upload_submit(
                     "us_lacey_evaluation_learning_consent_not_saved",
                     extra={"organization_id": identity.organization_id},
                 )
-        uploads = list(documents or ())
-        if document is not None:
-            uploads.append(document)
-        if not uploads:
-            raise UsLaceyWorkflowError("Choose at least one shipment or supplier document.")
-
-        payloads: list[tuple[str, str, bytes, str]] = []
-        for upload in uploads:
-            content = await upload.read()
-            if not content:
-                raise UsLaceyWorkflowError("The uploaded document is empty.")
-            payloads.append((
-                upload.filename or "document",
-                upload.content_type or "application/octet-stream",
-                content,
-                document_role,
-            ))
-
         upload_and_enqueue_us_lacey_document_batch(
             organization_id=identity.organization_id,
             user_id=identity.user_id,
             operation_public_id=operation_public_id,
-            documents=tuple(payloads),
+            documents=payloads,
         )
         safe_record_outreach_event(
             session_token=us_session or "",
@@ -1645,7 +1754,7 @@ def operation_review_submit(
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
-        identity, _entitlement = _operational_mutation_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session, review_operation_id=operation_public_id)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"review:{operation_public_id}:{field_id}",
@@ -1703,7 +1812,7 @@ def operation_review_action_fragment(
 ):
     """HTMX mutation endpoint that returns only the authoritative workspace."""
     try:
-        identity, _entitlement = _operational_mutation_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session, review_operation_id=operation_public_id)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"review:{operation_public_id}:{field_id}",
@@ -1764,7 +1873,7 @@ def operation_review_mass_pair(
     identity = None
     htmx = request.headers.get("HX-Request", "").lower() == "true"
     try:
-        identity, _entitlement = _operational_mutation_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session, review_operation_id=operation_public_id)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"complete:{operation_public_id}",
@@ -1821,7 +1930,7 @@ def operation_review_accept_supported(
 ):
     """Non-HTMX fallback for one-click confirmation of supported evidence."""
     try:
-        identity, _entitlement = _operational_mutation_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session, review_operation_id=operation_public_id)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"complete:{operation_public_id}",
@@ -1875,7 +1984,7 @@ def operation_review_accept_supported_fragment(
 ):
     """HTMX bulk mutation endpoint; returns one complete workspace replacement."""
     try:
-        identity, _entitlement = _operational_mutation_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session, review_operation_id=operation_public_id)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"complete:{operation_public_id}",
@@ -1932,7 +2041,7 @@ def operation_pre_entry_review_submit(
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
-        identity, _entitlement = _operational_mutation_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session, review_operation_id=operation_public_id)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"complete:{operation_public_id}",
@@ -1971,7 +2080,7 @@ def operation_complete_submit(
     us_session: str | None = Cookie(None, alias=US_LACEY_SESSION_COOKIE),
 ):
     try:
-        identity, _entitlement = _operational_mutation_context(us_session)
+        identity, _entitlement = _operational_mutation_context(us_session, review_operation_id=operation_public_id)
         verify_us_lacey_csrf(
             session_token=us_session or "",
             purpose=f"complete:{operation_public_id}",

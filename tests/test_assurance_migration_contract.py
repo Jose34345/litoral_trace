@@ -399,7 +399,7 @@ def test_us_lacey_outreach_human_signals_follow_product_led_evaluation():
 
 def test_ci_canonical_head_tracks_latest_platform_migration():
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "079_us_lacey_assurance_v2_claim_snapshots (head)" in text
+    assert "080_us_lacey_evaluation_email_proof (head)" in text
 
 
 def test_us_lacey_pilot_activation_follows_portal_auth():

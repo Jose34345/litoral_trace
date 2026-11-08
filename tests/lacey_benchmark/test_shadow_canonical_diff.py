@@ -48,12 +48,15 @@ def test_multilingual_pack_quantitative_binding_matches_refreshed_canonical_base
 
     assert fixture.pack_id == "pack-multilingual-es-pt-en"
     assert report.comparable_slots == 19
-    assert report.agreement_count == 19
+    assert report.agreement_count == 18
     assert report.shadow_supported_but_canonical_missing == 0
     assert report.canonical_supported_but_shadow_missing == 0
-    assert report.false_conflict_count == 0
-    assert report.agreement_rate == 1.0
-    assert report.false_conflict_rate == 0.0
+    assert report.false_conflict_count == 1
+    assert report.agreement_rate == 18 / 19
+    assert report.false_conflict_rate == 1 / 19
+    # The fixture's MID names a file but lacks typed, literal source evidence.
+    assert report.by_field["manufacturer_id"].false_conflict_count == 1
+    assert fixture.canonical.shipment_fields["manufacturer_id"].state == "REVIEW_REQUIRED"
 
     species = report.by_field["species"]
     assert species.comparable_slots == 3

@@ -155,7 +155,7 @@ def test_review_filters_and_package_regulatory_preserve_htmx_actions():
     assert 'data-review-filter-bar' in template
     assert "Review decisions" not in template
     assert "Confirm value" in template
-    assert "Auto-Resolved Data" in template
+    assert "Document evidence</h2>" in template
     assert "Confirmed fields <span" in template
     assert "Regulatory Analysis" in regulatory
     assert "Confirm Supported Fields" in template

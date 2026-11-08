@@ -11,7 +11,9 @@ from litoral_trace.us_lacey.review_source_authority import is_independent_review
 
 class _Rows:
     def __init__(self, row):
-        self.row = row
+        self.row = None if row is None else (
+            *row[:4], row[4] if len(row) > 4 else None, "application/pdf", "UNKNOWN",
+        )
 
     def execute(self, statement):
         return SimpleNamespace(first=lambda: self.row)

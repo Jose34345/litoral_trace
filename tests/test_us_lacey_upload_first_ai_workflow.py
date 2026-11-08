@@ -73,7 +73,7 @@ def test_workspace_offers_safe_bulk_confirmation_but_keeps_conflicts_explicit():
     assert "/review/actions/fields/" in source
     assert "Confirm Supported Fields" in source
     assert "Pending fields <span" in source
-    assert "Auto-Resolved Data" in source
+    assert "Document evidence</h2>" in source
     assert "Counts represent individual fields, not reviewer clicks." in source
     assert "field.status in ['MISSING', 'CONFLICT']" in source
     assert "Regulatory Analysis" in source
